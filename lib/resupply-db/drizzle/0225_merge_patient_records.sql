@@ -1,5 +1,5 @@
 -- 0225_merge_patient_records — atomic patient-record merge (CSR #C1,
--- merge half). Detection shipped in 0223; this is the consolidation.
+-- merge half). Detection shipped in 0229; this is the consolidation.
 --
 -- DME intake creates duplicate patient records; a CSR picks the survivor
 -- (primary) and a duplicate to fold in. This function repoints every
@@ -15,7 +15,7 @@
 --     silently missed.
 --   * Non-destructive — the duplicate row is marked status='closed' +
 --     merged_into_patient_id, NOT deleted. The merge is recoverable and
---     the duplicate-detection RPC (0223) already excludes closed rows.
+--     the duplicate-detection RPC (0229) already excludes closed rows.
 --
 -- The route maps the RAISEd SQLSTATEs: 23505 -> 409 conflict (CSR
 -- resolves by hand), P0001 -> 400 same patient, P0002 -> 404 not found,

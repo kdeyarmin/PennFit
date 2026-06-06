@@ -10,7 +10,7 @@
 // Not env-gated: it's a read-only computation that writes an 11-row
 // aggregate table (no PHI, no patient contact), so it's safe to run
 // unconditionally. Registered via registerIfProvisioned so it stays
-// inert until the 0224 table exists (forward-deploy safe).
+// inert until the 0230 table exists (forward-deploy safe).
 
 import type PgBoss from "pg-boss";
 

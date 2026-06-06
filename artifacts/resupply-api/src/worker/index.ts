@@ -465,7 +465,7 @@ async function doStartWorker(): Promise<void> {
   await registerCoachingAutoEnrollJob(boss);
   // Learned insurance-estimate stats (O2) — weekly recompute of P50/P90
   // patient OOP per payer slug from adjudicated claims, into the small
-  // table the public estimate route reads. Inert until 0224 lands.
+  // table the public estimate route reads. Inert until 0230 lands.
   await registerIfProvisioned(
     boss,
     "insurance-estimate.stats-refresh",

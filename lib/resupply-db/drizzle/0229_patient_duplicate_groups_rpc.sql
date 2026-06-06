@@ -1,4 +1,4 @@
--- 0223_patient_duplicate_groups_rpc — server-side fuzzy-ish duplicate
+-- 0229_patient_duplicate_groups_rpc — server-side fuzzy-ish duplicate
 -- detection for the patient roster (CSR #C1, detection half).
 --
 -- Background: the only uniqueness enforced on resupply.patients is
@@ -20,7 +20,7 @@
 -- + the HAVING filter run in Postgres so the route receives only the
 -- (small) set of actual collisions, never the whole roster.
 --
--- Follows the established RPC pattern (0164 / 0222): SECURITY DEFINER +
+-- Follows the established RPC pattern (0164 / 0228): SECURITY DEFINER +
 -- pinned search_path + GRANT to service_role only, STABLE.
 --
 -- Per ADR 003 — versioned hand-authored migration.
@@ -77,6 +77,7 @@ AS $$
     WHERE pp.status <> 'closed'
       AND pp.email IS NOT NULL
       AND btrim(pp.email) <> ''
+  ),
   dup_groups AS (
     SELECT k.gkey, k.reason
     FROM keyed k
