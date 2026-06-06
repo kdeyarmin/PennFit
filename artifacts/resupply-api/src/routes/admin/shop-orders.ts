@@ -734,10 +734,10 @@ router.post(
       req.log?.warn?.(
         {
           orderId,
-          err:
-            packetErr instanceof Error ? packetErr.message : String(packetErr),
+          err: packetErr instanceof Error ? packetErr : new Error(String(packetErr)),
         },
         "admin/shop/orders: auto-send patient packet failed (non-fatal)",
+      );
       );
     }
 
