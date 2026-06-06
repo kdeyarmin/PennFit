@@ -49,6 +49,11 @@ import { DashboardPage } from "@/pages/admin/dashboard";
 const PatientsPage = lazy(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
+const AdminPatientsDuplicatesPage = lazy(() =>
+  import("@/pages/admin/admin-patients-duplicates").then((m) => ({
+    default: m.AdminPatientsDuplicatesPage,
+  })),
+);
 const PatientDetailPage = lazy(() =>
   import("@/pages/admin/patient-detail").then((m) => ({
     default: m.PatientDetailPage,
@@ -734,6 +739,11 @@ function AdminConsole() {
               )}
             </Route>
             <Route path="/admin/patients" component={PatientsPage} />
+            {/* Literal segment — MUST precede /admin/patients/:id below. */}
+            <Route
+              path="/admin/patients/duplicates"
+              component={AdminPatientsDuplicatesPage}
+            />
             <Route path="/admin/patients/:patientId/insurance-claims">
               {(params) => (
                 <AdminInsuranceClaimsPage patientId={params.patientId} />

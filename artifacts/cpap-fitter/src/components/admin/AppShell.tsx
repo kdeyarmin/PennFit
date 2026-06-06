@@ -24,6 +24,7 @@ import {
   Sparkles,
   Mail,
   Users,
+  CopyCheck,
   ShoppingBag,
   Repeat,
   Undo2,
@@ -320,6 +321,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/patients",
         hint: "Patient roster, profiles, and 360 view",
         badgeKey: "newPatientDocuments",
+      },
+      {
+        label: "Duplicate review",
+        icon: CopyCheck,
+        href: "/admin/patients/duplicates",
+        matchPrefix: "/admin/patients/duplicates",
+        hint: "Find and reconcile likely-duplicate patient records",
       },
       {
         label: "Clinical work",
