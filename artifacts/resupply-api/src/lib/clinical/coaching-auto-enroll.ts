@@ -146,7 +146,7 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
       stats.skippedExistingPlan += 1;
       continue;
     }
-    let score: AdherenceScore | null;
+    let score: AdherenceScore | null = null;
     try {
       score = await scorePatientAdherence(patientId);
     } catch (err) {

@@ -121,6 +121,7 @@ router.get(
       memberCount: g.members.length,
     }));
     res.json({ groups, groupCount: groups.length });
+  }
 );
 
 export default router;
