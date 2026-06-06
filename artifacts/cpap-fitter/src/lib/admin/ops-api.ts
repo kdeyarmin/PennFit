@@ -57,6 +57,16 @@ export interface OpsStatus {
     activeAgents: number;
     pendingInvites: number;
   };
+  /**
+   * Voice → CSR handoff queue snapshot. `open` is every voice call the
+   * post-call summarizer flagged for human follow-up that still sits in
+   * the escalated queue; `urgent` is the distressed-sentiment subset.
+   * Optional so older API responses still typecheck.
+   */
+  voiceHandoffs?: {
+    open: number;
+    urgent: number;
+  };
   serverTime: string;
 }
 

@@ -72,6 +72,7 @@ function Body({ data, onRefresh }: { data: OpsStatus; onRefresh: () => void }) {
         pendingRestart={data.vendorsPendingRestart}
       />
       <DispatchersPanel dispatchers={data.dispatchers} onRefresh={onRefresh} />
+      <VoiceHandoffsPanel handoffs={data.voiceHandoffs} />
       <QueuesPanel queues={data.queues} />
       <TeamSummary team={data.team} />
     </div>
@@ -101,6 +102,69 @@ function QueuesPanel({ queues }: { queues: OpsStatus["queues"] }) {
           </p>
           <div className="text-xl font-bold tabular-nums text-slate-900">
             {faxPending}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VoiceHandoffsPanel({
+  handoffs,
+}: {
+  handoffs: OpsStatus["voiceHandoffs"];
+}) {
+  // Optional on the API contract — skip the section entirely for older
+  // responses rather than render a confusing all-zero panel.
+  if (!handoffs) return null;
+  const { open, urgent } = handoffs;
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600">
+          Voice handoffs
+        </h2>
+        <Link
+          href="/admin/conversations?view=escalated"
+          className="text-xs underline decoration-dotted"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          Open escalated queue →
+        </Link>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <div className="text-xs uppercase tracking-wider text-slate-500">
+            Awaiting follow-up
+          </div>
+          <div className="text-2xl font-bold tabular-nums mt-1 text-slate-900">
+            {open}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            Voice calls the AI agent flagged for a human teammate, still in
+            the escalated queue.
+          </div>
+        </div>
+        <div
+          className={`rounded-lg border p-3 ${
+            urgent > 0
+              ? "border-rose-200 bg-rose-50"
+              : "border-slate-200 bg-white"
+          }`}
+        >
+          <div className="text-xs uppercase tracking-wider text-slate-500">
+            Urgent (distressed)
+          </div>
+          <div
+            className={`text-2xl font-bold tabular-nums mt-1 ${
+              urgent > 0 ? "text-rose-700" : "text-slate-900"
+            }`}
+          >
+            {urgent}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            Callers the summarizer scored as distressed — routed at urgent
+            priority. Triage these first.
           </div>
         </div>
       </div>
