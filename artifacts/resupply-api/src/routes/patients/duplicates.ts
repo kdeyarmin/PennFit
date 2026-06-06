@@ -116,11 +116,11 @@ router.get(
     }
 
     const groups = [...byGroup.values()].map((g) => ({
-      ...g,
+      matchReason: g.matchReason,
+      members: g.members,
       memberCount: g.members.length,
     }));
     res.json({ groups, groupCount: groups.length });
-  },
 );
 
 export default router;
