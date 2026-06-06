@@ -6,6 +6,7 @@ import trackOrderRouter from "./track-order.js";
 import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
+import patientPacketsRouter from "./patient-packets.js";
 import chatRouter from "./chat.js";
 import sleepCoachRouter from "./sleep-coach.js";
 import meClaimsRouter from "./me-claims.js";
@@ -23,6 +24,10 @@ router.use(trackOrderRouter);
 router.use(adminRouter);
 router.use(usageEventsRouter);
 router.use(remindersRouter);
+// /api/patient-packets/view + /sign — public e-signature flow for the
+// new-patient document packet. Token-gated (HMAC); no login. Mounted
+// before attachSignedIn so it stays unauthenticated.
+router.use(patientPacketsRouter);
 router.use(chatRouter);
 // Patient-portal session resolution for the routers below. They read
 // `req.shopCustomerId` (the signed-in patient's customer key) — without
