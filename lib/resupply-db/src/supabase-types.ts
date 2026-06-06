@@ -2279,6 +2279,7 @@ export interface Database {
           created_by_email: string | null;
           reminder_count: number;
           last_reminded_at: string | null;
+          delivery_details: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -2329,6 +2330,8 @@ export interface Database {
           signed_at: string;
           signer_ip: string | null;
           signer_user_agent: string | null;
+          signer_reason: string | null;
+          date_received: string | null;
           created_at: string;
         };
         Insert: Partial<

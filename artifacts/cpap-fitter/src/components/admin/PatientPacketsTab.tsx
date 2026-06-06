@@ -180,7 +180,8 @@ export function PatientPacketsTab({
                     <input
                       type="checkbox"
                       className="mt-1"
-                      checked={Boolean(selectedKeys[t.key])}
+                      checked={t.required || Boolean(selectedKeys[t.key])}
+                      disabled={t.required}
                       onChange={() =>
                         setSelectedKeys({
                           ...selectedKeys,
@@ -193,14 +194,21 @@ export function PatientPacketsTab({
                       style={{ color: "hsl(var(--ink-1))" }}
                     >
                       {t.title}
-                      {!t.requiresSignature && (
+                      {t.required ? (
+                        <span
+                          className="ml-2 text-xs font-medium"
+                          style={{ color: "hsl(var(--penn-navy))" }}
+                        >
+                          (required)
+                        </span>
+                      ) : !t.requiresSignature ? (
                         <span
                           className="ml-2 text-xs"
                           style={{ color: "hsl(var(--ink-3))" }}
                         >
                           (informational)
                         </span>
-                      )}
+                      ) : null}
                     </span>
                   </label>
                 ))}

@@ -513,7 +513,8 @@ function SendPacketPanel({
                       <input
                         type="checkbox"
                         className="mt-1"
-                        checked={Boolean(selectedKeys[t.key])}
+                        checked={t.required || Boolean(selectedKeys[t.key])}
+                        disabled={t.required}
                         onChange={() => toggleKey(t.key)}
                       />
                       <span>
@@ -522,10 +523,12 @@ function SendPacketPanel({
                           style={{ color: "hsl(var(--ink-1))" }}
                         >
                           {t.title}
-                        </span>
-                        {!t.requiresSignature && (
+                        </span>{" "}
+                        {t.required ? (
+                          <Badge variant="info">Required</Badge>
+                        ) : !t.requiresSignature ? (
                           <Badge variant="muted">Informational</Badge>
-                        )}
+                        ) : null}
                         <span
                           className="block text-xs mt-0.5"
                           style={{ color: "hsl(var(--ink-3))" }}

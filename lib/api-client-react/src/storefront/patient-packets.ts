@@ -31,6 +31,9 @@ export interface PublicPacketView {
   title?: string;
   recipientName?: string;
   company?: { legalName: string; phone: string; email: string };
+  /** True when the packet has a Proof of Delivery — the signer must
+   *  record the date they received the equipment (a Medicare field). */
+  requiresDateReceived?: boolean;
   documents: PublicPacketDocument[];
 }
 
@@ -47,6 +50,10 @@ export interface SignPacketRequest {
   signerName: string;
   signerRelationship: SignerRelationship;
   signatureImage?: string | null;
+  /** Required when signing as someone other than the patient. */
+  signerReason?: string | null;
+  /** Required (YYYY-MM-DD) when the packet has a Proof of Delivery. */
+  dateReceived?: string | null;
   consentEsign: true;
   acknowledgedDocumentKeys: string[];
 }

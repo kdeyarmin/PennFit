@@ -11,17 +11,23 @@
 // The caller owns audit logging and HTTP shaping; this helper only
 // returns structured data.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
 import { resolveCompanyProfile } from "./company";
 import {
+  PACKET_TEMPLATES,
   defaultPacketDocumentKeys,
   getPacketTemplate,
   isValidPacketDocumentKey,
+  requiredPacketDocumentKeys,
   type CompanyProfile,
+  type DeliveryDetails,
 } from "./templates";
 import { signPatientPacketToken } from "../patient-packet-token";
 
@@ -53,6 +59,14 @@ export interface CreateAndSendPatientPacketOptions {
   channels?: PacketChannel[];
   /** Flavours the email subject ("Reminder: …" vs "Please review …"). */
   reminder?: boolean;
+  /** Itemized Proof of Delivery snapshot stored on the packet. */
+  deliveryDetails?: DeliveryDetails | null;
+  /**
+   * Skip the "every compliance-required document is included" guarantee.
+   * Off by default so normal sends are always complete; an explicit
+   * caller (e.g. a re-delivery POD-only packet) can opt out.
+   */
+  allowPartial?: boolean;
 }
 
 export type CreateAndSendPatientPacketResult =
@@ -98,8 +112,16 @@ export async function createAndSendPatientPacket(
   if (invalidKeys.length > 0) {
     return { ok: false, code: "invalid_document_keys", invalidKeys };
   }
-  // De-dupe while preserving order.
-  const uniqueKeys = Array.from(new Set(documentKeys));
+  // Guarantee compliance completeness: unless the caller explicitly opts
+  // out, every required document is present. Then order the final set by
+  // the catalog order for a consistent packet sequence.
+  const selected = new Set(documentKeys);
+  if (!opts.allowPartial) {
+    for (const k of requiredPacketDocumentKeys()) selected.add(k);
+  }
+  const uniqueKeys = PACKET_TEMPLATES.map((t) => t.key).filter((k) =>
+    selected.has(k),
+  );
 
   const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
@@ -136,6 +158,9 @@ export async function createAndSendPatientPacket(
       sent_at: nowIso,
       expires_at: expiresAt,
       created_by_email: opts.createdByEmail ?? null,
+      delivery_details: opts.deliveryDetails
+        ? (opts.deliveryDetails as unknown as Json)
+        : null,
     })
     .select("id, link_version")
     .single();

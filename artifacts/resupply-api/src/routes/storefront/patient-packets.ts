@@ -25,7 +25,11 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
-import { getPacketTemplate } from "../../lib/patient-packet/templates";
+import {
+  getPacketTemplate,
+  packetRequiresDateReceived,
+  type DeliveryDetails,
+} from "../../lib/patient-packet/templates";
 import { verifyPatientPacketToken } from "../../lib/patient-packet-token";
 
 const router: IRouter = Router();
@@ -58,6 +62,7 @@ type ResolvedPacket = {
   title: string;
   recipient_name: string;
   completed_at: string | null;
+  delivery_details: DeliveryDetails | null;
 };
 
 // Verify a token against a freshly-loaded packet row. Returns the
@@ -79,7 +84,7 @@ async function resolveOpenPacket(
     .schema("resupply")
     .from("patient_packets")
     .select(
-      "id, status, link_version, expires_at, title, recipient_name, completed_at",
+      "id, status, link_version, expires_at, title, recipient_name, completed_at, delivery_details",
     )
     .eq("id", verified.packetId)
     .limit(1)
@@ -95,7 +100,7 @@ async function resolveOpenPacket(
   if (packet.expires_at && new Date(packet.expires_at).getTime() < Date.now()) {
     return { ok: false, code: "expired" };
   }
-  return { ok: true, packet };
+  return { ok: true, packet: packet as unknown as ResolvedPacket };
 }
 
 // ── GET /patient-packets/view ─────────────────────────────────────
@@ -144,6 +149,9 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
       .eq("status", "sent");
   }
 
+  const docKeys = (docs ?? []).map((d) => d.document_key);
+  const buildCtx = { deliveryDetails: packet.delivery_details };
+
   res.json({
     status: "open",
     title: packet.title,
@@ -153,6 +161,9 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
       phone: company.phone,
       email: company.email,
     },
+    // The signer must record the date they received the equipment when
+    // the packet carries a Proof of Delivery (a Medicare POD field).
+    requiresDateReceived: packetRequiresDateReceived(docKeys),
     documents: (docs ?? []).map((d) => {
       const t = getPacketTemplate(d.document_key);
       return {
@@ -160,7 +171,7 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
         title: d.title,
         category: t?.category ?? "consent",
         requiresSignature: d.requires_signature,
-        sections: t ? t.build(company) : [],
+        sections: t ? t.build(company, buildCtx) : [],
       };
     }),
   });
@@ -185,6 +196,16 @@ const signBody = z
       .string()
       .max(SIGNATURE_MAX_CHARS)
       .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/u)
+      .optional()
+      .nullable(),
+    // Medicare: when a representative signs, the reason the beneficiary
+    // could not sign must be recorded.
+    signerReason: z.string().trim().max(500).optional().nullable(),
+    // Medicare Proof of Delivery: the date the beneficiary received the
+    // equipment (YYYY-MM-DD), distinct from the signing date.
+    dateReceived: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u, "Must be a YYYY-MM-DD date")
       .optional()
       .nullable(),
     consentEsign: z.literal(true),
@@ -235,6 +256,20 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
     return;
   }
 
+  // Medicare: a representative signing on the beneficiary's behalf must
+  // record the reason the beneficiary could not sign.
+  const signerReason = b.signerReason?.trim() || null;
+  if (b.signerRelationship !== "self" && !signerReason) {
+    res.status(400).json({ error: "signer_reason_required" });
+    return;
+  }
+  // Medicare Proof of Delivery requires the date the equipment was
+  // received whenever the POD is part of the packet.
+  if (packetRequiresDateReceived([...requiredKeys]) && !b.dateReceived) {
+    res.status(400).json({ error: "date_received_required" });
+    return;
+  }
+
   const nowIso = new Date().toISOString();
   const ip = req.ip ?? null;
   const userAgent = (req.get("user-agent") ?? "").slice(0, 500) || null;
@@ -252,6 +287,8 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
       signed_at: nowIso,
       signer_ip: ip,
       signer_user_agent: userAgent,
+      signer_reason: signerReason,
+      date_received: b.dateReceived ?? null,
     });
   if (sigErr) throw sigErr;
 

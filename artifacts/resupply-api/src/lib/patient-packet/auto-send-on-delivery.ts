@@ -81,6 +81,12 @@ export async function autoSendPatientPacketOnDelivery(opts: {
     supabase,
     patientId: patient.id,
     createdByEmail: "system:order-delivered",
+    // Seed the Proof of Delivery with what we know at delivery time; the
+    // patient confirms the actual date-received when they sign.
+    deliveryDetails: {
+      deliveryDate: new Date().toISOString().slice(0, 10),
+      orderRef: orderId,
+    },
   });
   if (!result.ok) {
     logger.warn(

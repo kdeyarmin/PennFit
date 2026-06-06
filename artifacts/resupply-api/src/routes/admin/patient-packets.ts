@@ -23,13 +23,19 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
-import { renderPatientPacketPdf } from "../../lib/patient-packet/packet-pdf";
+import {
+  renderPatientPacketPdf,
+  type PacketPdfInput,
+} from "../../lib/patient-packet/packet-pdf";
 import {
   createAndSendPatientPacket,
   deliverPacketLink,
   PACKET_CHANNELS,
 } from "../../lib/patient-packet/send";
-import { PACKET_TEMPLATES } from "../../lib/patient-packet/templates";
+import {
+  PACKET_TEMPLATES,
+  isRequiredPacketDocumentKey,
+} from "../../lib/patient-packet/templates";
 import { signPatientPacketToken } from "../../lib/patient-packet-token";
 import {
   adminRateLimit,
@@ -49,6 +55,27 @@ const channelsSchema = z
   .min(1)
   .max(2)
   .optional();
+
+const deliveryItemSchema = z
+  .object({
+    description: z.string().trim().min(1).max(200),
+    hcpcs: z.string().trim().max(16).optional().nullable(),
+    quantity: z.number().int().min(1).max(999).optional().nullable(),
+  })
+  .strict();
+
+const deliveryDetailsSchema = z
+  .object({
+    items: z.array(deliveryItemSchema).max(40).optional(),
+    deliveryDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u)
+      .optional()
+      .nullable(),
+    deliveryAddress: z.string().trim().max(300).optional().nullable(),
+    orderRef: z.string().trim().max(120).optional().nullable(),
+  })
+  .strict();
 
 const createBody = z
   .object({
@@ -70,6 +97,8 @@ const createBody = z
     // Which channels to deliver the signing link on. Omitted = every
     // channel the patient has a contact point for (email + SMS).
     channels: channelsSchema,
+    // Itemized Proof of Delivery snapshot (CMS-compliant POD).
+    deliveryDetails: deliveryDetailsSchema.optional().nullable(),
     expiresInDays: z.number().int().min(1).max(90).optional(),
   })
   .strict();
@@ -95,6 +124,7 @@ router.get(
         summary: t.summary,
         requiresSignature: t.requiresSignature,
         defaultIncluded: t.defaultIncluded,
+        required: isRequiredPacketDocumentKey(t.key),
       })),
     });
   },
@@ -190,6 +220,7 @@ router.post(
       recipientEmailOverride: b.recipientEmail,
       recipientPhoneOverride: b.recipientPhone,
       channels: b.channels,
+      deliveryDetails: b.deliveryDetails ?? null,
       expiresInDays: b.expiresInDays,
       createdByEmail: req.adminEmail ?? null,
     });
@@ -482,7 +513,7 @@ router.get(
       .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, sent_at, completed_at",
+        "id, patient_id, title, status, recipient_name, sent_at, completed_at, delivery_details",
       )
       .eq("id", parsed.data.packetId)
       .limit(1)
@@ -497,7 +528,9 @@ router.get(
       supabase
         .schema("resupply")
         .from("patient_packet_documents")
-        .select("document_key, title, requires_signature, sort_order")
+        .select(
+          "document_key, title, requires_signature, content_version, sort_order",
+        )
         .eq("packet_id", packet.id)
         .order("sort_order", { ascending: true }),
       supabase
@@ -526,7 +559,10 @@ router.get(
         documentKey: d.document_key,
         title: d.title,
         requiresSignature: d.requires_signature,
+        contentVersion: d.content_version,
       })),
+      deliveryDetails: (packet.delivery_details ??
+        null) as PacketPdfInput["deliveryDetails"],
       signature: sig
         ? {
             signerName: sig.signer_name,
@@ -536,6 +572,8 @@ router.get(
             signedAt: sig.signed_at,
             signerIp: sig.signer_ip,
             signerUserAgent: sig.signer_user_agent,
+            signerReason: sig.signer_reason,
+            dateReceived: sig.date_received,
           }
         : null,
     });

@@ -37,6 +37,29 @@ export type PacketDocumentCategory =
   | "financial"
   | "delivery";
 
+/** A line item on the Proof of Delivery (CMS requires a detailed item
+ *  description; HCPCS + quantity strengthen the audit trail). */
+export interface DeliveryItem {
+  description: string;
+  hcpcs?: string | null;
+  quantity?: number | null;
+}
+
+/** Itemized delivery snapshot stored on the packet and rendered into the
+ *  Proof of Delivery document. */
+export interface DeliveryDetails {
+  items?: DeliveryItem[];
+  deliveryDate?: string | null;
+  deliveryAddress?: string | null;
+  orderRef?: string | null;
+}
+
+/** Extra context some documents fold into their rendered content so the
+ *  on-screen text and the signed PDF stay byte-for-byte identical. */
+export interface PacketBuildContext {
+  deliveryDetails?: DeliveryDetails | null;
+}
+
 export interface PacketDocumentTemplate {
   key: string;
   title: string;
@@ -50,7 +73,10 @@ export interface PacketDocumentTemplate {
   /** Whether this document is selected by default in a standard new
    *  patient packet. */
   defaultIncluded: boolean;
-  build: (company: CompanyProfile) => PacketDocumentSection[];
+  build: (
+    company: CompanyProfile,
+    ctx?: PacketBuildContext,
+  ) => PacketDocumentSection[];
 }
 
 // Every template carries the same date stamp in its version so a
@@ -327,29 +353,90 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       "Confirms the patient received the equipment listed and was instructed on its use (signature of delivery).",
     requiresSignature: true,
     defaultIncluded: true,
-    build: (c) => [
-      {
-        paragraphs: [
-          `By signing below, I confirm that I have received the equipment and supplies furnished by ${c.legalName} as itemized on my order and accompanying delivery documentation.`,
-        ],
-      },
-      {
-        heading: "I confirm that",
-        bullets: [
-          "The items I received match the items on my order and are in good working condition.",
-          "I was instructed on the proper setup, use, cleaning, and maintenance of the equipment.",
-          "I was given information on whom to contact with questions or problems.",
-          "The equipment was delivered to me or my authorized representative on the date of my signature.",
-        ],
-      },
-      {
-        paragraphs: [
-          `This signed proof of delivery serves as confirmation of receipt for my records and for billing. If any item listed was not received, I will contact ${c.legalName} at ${c.phone} before signing.`,
-        ],
-      },
-    ],
+    build: (c, ctx) => {
+      const dd = ctx?.deliveryDetails ?? null;
+      const sections: PacketDocumentSection[] = [
+        {
+          paragraphs: [
+            `By signing below, I confirm that I have received the equipment and supplies furnished by ${c.legalName} as itemized below and on my accompanying delivery documentation.`,
+          ],
+        },
+      ];
+      // CMS requires a detailed description of the delivered items on a
+      // compliant Proof of Delivery. Render the itemized list when known.
+      if (dd?.items && dd.items.length > 0) {
+        sections.push({
+          heading: "Equipment delivered",
+          bullets: dd.items.map((it) => {
+            const qty = it.quantity ? `${it.quantity} × ` : "";
+            const hcpcs = it.hcpcs ? ` (HCPCS ${it.hcpcs})` : "";
+            return `${qty}${it.description}${hcpcs}`;
+          }),
+        });
+      }
+      const deliveryFacts: string[] = [];
+      if (dd?.deliveryDate)
+        deliveryFacts.push(`Delivery date: ${dd.deliveryDate}`);
+      if (dd?.deliveryAddress)
+        deliveryFacts.push(`Delivered to: ${dd.deliveryAddress}`);
+      if (deliveryFacts.length > 0) {
+        sections.push({ heading: "Delivery details", bullets: deliveryFacts });
+      }
+      sections.push(
+        {
+          heading: "I confirm that",
+          bullets: [
+            "The items I received match the items listed above and are in good working condition.",
+            "I was instructed on the proper setup, use, cleaning, and maintenance of the equipment.",
+            "I was given information on whom to contact with questions or problems.",
+            "I am recording below the actual date I received this equipment.",
+          ],
+        },
+        {
+          paragraphs: [
+            `This signed proof of delivery, together with the date of receipt I provide, serves as confirmation of delivery for my records and for billing my insurance, including Medicare. If any item listed was not received, I will contact ${c.legalName} at ${c.phone} before signing.`,
+          ],
+        },
+      );
+      return sections;
+    },
   },
 ];
+
+/** The document key whose presence requires capturing a date-received
+ *  (a Medicare Proof of Delivery field). */
+export const PROOF_OF_DELIVERY_KEY = "proof_of_delivery";
+
+/**
+ * Compliance-mandatory document keys: the signed agreements and required
+ * disclosures every onboarding packet must carry. The admin UI locks
+ * these and the API rejects a packet missing any of them.
+ */
+const REQUIRED_DOC_KEYS = new Set<string>([
+  "assignment_of_benefits",
+  "notice_of_privacy_practices",
+  "patient_rights_responsibilities",
+  "financial_responsibility",
+  "medicare_supplier_standards",
+  "consent_to_care",
+  "proof_of_delivery",
+]);
+
+export function requiredPacketDocumentKeys(): string[] {
+  return PACKET_TEMPLATES.filter((t) => REQUIRED_DOC_KEYS.has(t.key)).map(
+    (t) => t.key,
+  );
+}
+
+export function isRequiredPacketDocumentKey(key: string): boolean {
+  return REQUIRED_DOC_KEYS.has(key);
+}
+
+/** True when the packet contains the Proof of Delivery (so the signer
+ *  must record the date they received the equipment). */
+export function packetRequiresDateReceived(documentKeys: string[]): boolean {
+  return documentKeys.includes(PROOF_OF_DELIVERY_KEY);
+}
 
 const TEMPLATE_BY_KEY = new Map<string, PacketDocumentTemplate>(
   PACKET_TEMPLATES.map((t) => [t.key, t]),

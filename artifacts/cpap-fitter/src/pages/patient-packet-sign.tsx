@@ -203,6 +203,8 @@ export function PatientPacketSign() {
   const [acked, setAcked] = useState<Record<string, boolean>>({});
   const [signerName, setSignerName] = useState("");
   const [relationship, setRelationship] = useState<SignerRelationship>("self");
+  const [signerReason, setSignerReason] = useState("");
+  const [dateReceived, setDateReceived] = useState("");
   const [consent, setConsent] = useState(false);
   const [sigMode, setSigMode] = useState<"type" | "draw">("type");
   const [styleIndex, setStyleIndex] = useState(0);
@@ -212,9 +214,16 @@ export function PatientPacketSign() {
   const sigRef = useRef<SignaturePadHandle | null>(null);
 
   const documents = data?.documents ?? [];
+  const requiresDateReceived = Boolean(data?.requiresDateReceived);
+  const isRepresentative = relationship !== "self";
   const ackedCount = documents.filter((d) => acked[d.key]).length;
   const allAcked = documents.length > 0 && ackedCount === documents.length;
-  const canSubmit = allAcked && signerName.trim().length >= 2 && consent;
+  const canSubmit =
+    allAcked &&
+    signerName.trim().length >= 2 &&
+    consent &&
+    (!isRepresentative || signerReason.trim().length > 0) &&
+    (!requiresDateReceived || dateReceived.length > 0);
 
   // Pre-fill the signer's name from the packet recipient so the
   // signature is ready the moment the page loads — one less thing for
@@ -364,6 +373,8 @@ export function PatientPacketSign() {
         signerName: signerName.trim(),
         signerRelationship: relationship,
         signatureImage,
+        signerReason: isRepresentative ? signerReason.trim() : null,
+        dateReceived: requiresDateReceived ? dateReceived : null,
         consentEsign: true,
         acknowledgedDocumentKeys: documents
           .filter((d) => acked[d.key])
@@ -491,6 +502,43 @@ export function PatientPacketSign() {
               </Select>
             </div>
           </div>
+
+          {/* Medicare: a representative must state why the patient can't sign */}
+          {isRepresentative && (
+            <div className="space-y-1.5">
+              <Label htmlFor="signerReason">
+                Reason the patient is unable to sign
+              </Label>
+              <Input
+                id="signerReason"
+                value={signerReason}
+                onChange={(e) => setSignerReason(e.target.value)}
+                placeholder="e.g. Patient is hospitalized / physically unable to sign"
+              />
+              <p className="text-xs text-slate-400">
+                Required when someone other than the patient signs.
+              </p>
+            </div>
+          )}
+
+          {/* Medicare Proof of Delivery: the date the equipment arrived */}
+          {requiresDateReceived && (
+            <div className="space-y-1.5">
+              <Label htmlFor="dateReceived">
+                Date you received the equipment
+              </Label>
+              <Input
+                id="dateReceived"
+                type="date"
+                value={dateReceived}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDateReceived(e.target.value)}
+              />
+              <p className="text-xs text-slate-400">
+                Required for your proof of delivery.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
@@ -649,6 +697,10 @@ export function PatientPacketSign() {
 function friendlySubmitError(raw: string): string {
   if (/documents_not_acknowledged/.test(raw))
     return "Please confirm you've read every document before signing.";
+  if (/signer_reason_required/.test(raw))
+    return "Please enter the reason the patient is unable to sign.";
+  if (/date_received_required/.test(raw))
+    return "Please enter the date you received the equipment.";
   if (/already_completed/.test(raw))
     return "These documents have already been signed.";
   if (/expired|voided|invalid|not_found/.test(raw))

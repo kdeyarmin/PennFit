@@ -27,6 +27,21 @@ export interface PatientPacketTemplate {
   summary: string;
   requiresSignature: boolean;
   defaultIncluded: boolean;
+  /** Compliance-mandatory documents the UI locks into every packet. */
+  required: boolean;
+}
+
+export interface PacketDeliveryItem {
+  description: string;
+  hcpcs?: string | null;
+  quantity?: number | null;
+}
+
+export interface PacketDeliveryDetails {
+  items?: PacketDeliveryItem[];
+  deliveryDate?: string | null;
+  deliveryAddress?: string | null;
+  orderRef?: string | null;
 }
 
 export type PatientPacketStatus =
@@ -97,6 +112,8 @@ export interface SendPatientPacketRequest {
   recipientPhone?: string | null;
   /** Delivery channels. Omitted = every channel the patient has on file. */
   channels?: PacketChannel[];
+  /** Itemized Proof of Delivery snapshot. */
+  deliveryDetails?: PacketDeliveryDetails | null;
   expiresInDays?: number;
 }
 
