@@ -145,10 +145,15 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
       score = await scorePatientAdherence(patientId);
     } catch (err) {
       logger.warn(
-        { err: err instanceof Error ? err.message : String(err), patientId },
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : { message: String(err) },
+          patientId,
+        },
         "coaching-auto-enroll: score failed (skip)",
       );
-      continue;
     }
     if (!score) continue;
     stats.scored += 1;
