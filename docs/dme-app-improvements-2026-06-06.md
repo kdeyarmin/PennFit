@@ -86,7 +86,7 @@ missing code — the clinical engine is built.
 | - | ----------- | -------- | ------------------- | ------ | --------- |
 | R1 | **Unblock live ResMed/Philips device data.** Adapters are production-quality but their endpoints/OAuth are gated on executed partner BAAs. Until then, adherence monitoring, smart-triggers, the RT board, and coaching plans all run on 3B/patient-push data only. | 🟡 (contract) | This single blocker gates a whole value pillar — the RT's entire adherence workflow depends on it. Worth tracking explicitly as a business action. | — (contract) + S (config) | `lib/therapy-cloud/index.ts`, `lib/resupply-integrations-airview`, `-care-orchestrator` |
 | R2 | **Sleep coach grounded in real therapy data.** The PHI-safe Claude sleep coach exists; feed it the patient's last-7-day therapy snapshot so it can answer "why is my mask leaking at 2 a.m.?" with real numbers. | 🟡 (depends on R1 data) | Materially improves adherence (cf. ResMed myAir "Dawn"); offloads routine RT questions. | S–M | `lib/clinical/sleep-coach`, `routes/shop/me-therapy-summary.ts` |
-| R3 | **Auto-enroll early-risk patients into coaching.** Heuristic first: week-1 average usage < 4 hr → ~4× non-compliance risk → auto-route to `coaching_plans` and the RT intervention queue. | 🔴 | RTs spend clinical time on the patients most likely to quit, *before* the Medicare 90-day window closes. | M | `worker/jobs/coaching-plan-progress.ts`, `routes/admin/interventions.ts`, `lib/resupply-domain` (heuristic) |
+| R3 | **Auto-enroll early-risk patients into coaching.** A daily sweep scores active early-window patients (existing `scorePatientAdherence` heuristic) and opens a `patient_coaching_plans` row for the at-risk ones with no recent/open plan. | ✅ **(this PR)** | RTs spend clinical time on the patients most likely to quit, *before* the Medicare 90-day window closes. | M (done) | `lib/clinical/coaching-auto-enroll.ts`, `worker/jobs/coaching-auto-enroll.ts` (env-gated, off by default) |
 | R4 | **Mask-fit tuning visibility nudge.** The feedback loop is wired but neutral below 10 outcomes/mask; add an RT-facing "N more fits until this mask earns a ranking adjustment" indicator so the data-accrual is legible rather than invisible. | 🟡 | Makes a working-but-silent feature observable; encourages outcome capture that improves recommendations. | XS–S | `lib/storefront/mask-fit-tuning.ts`, `routes/admin/mask-fit-worklist.ts:142` |
 
 ---
@@ -156,9 +156,13 @@ A coherent, high-ROI sequence touching all three personas, mostly small:
 4. **O3 — predictive denial scoring at preflight** (owner): ✅ **implemented in this
    PR** — a non-blocking preflight warning driven by the claim's own (payer × HCPCS)
    denial history (`lib/billing/denial-risk.ts` + RPC migration `0222`).
-5. **R3 — auto-enroll early-risk patients into coaching** (RT): a heuristic that
-   protects the Medicare 90-day adherence window. *Next up — scoped new code.*
+5. **R3 — auto-enroll early-risk patients into coaching** (RT): ✅ **implemented** —
+   a daily, env-gated sweep that opens a coaching plan for at-risk early-window
+   patients (`lib/clinical/coaching-auto-enroll.ts`), reusing the existing
+   adherence heuristic. Off by default; flip `RESUPPLY_COACHING_AUTO_ENROLL_ENABLED=1`.
 
-Items 1–2 are runtime/consent activations for the owner (not code). O3 is delivered
-here; R3 is the recommended next code item. **Tell me which remaining items you want
-and I'll implement them one focused, tested change at a time.**
+Items 1–2 are runtime/consent activations for the owner (not code); C5 was already
+shipped. **O3 and R3 are both delivered in this PR.** Remaining genuinely-open code
+items from the tables above (O2 learning insurance estimate, O4 KPI tiles, C1 patient
+dedup/merge, C2 inbound-fax OCR, C3 real-time staffing) are each a clean next step —
+tell me which and I'll implement it one focused, tested change at a time.

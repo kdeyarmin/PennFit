@@ -57,6 +57,7 @@ import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
+import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
@@ -454,6 +455,12 @@ async function doStartWorker(): Promise<void> {
     ["patient_coaching_plans"],
     registerCoachingProgressJob,
   );
+  // Adherence coaching auto-enroll sweep (RT #R3) — daily at 05:23,
+  // after nightly-sync + progress-sweep. Scores active early-window
+  // patients and opens a coaching plan for the at-risk ones with no
+  // recent/open plan. OFF by default — flip
+  // RESUPPLY_COACHING_AUTO_ENROLL_ENABLED=1 to turn it on.
+  await registerCoachingAutoEnrollJob(boss);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase
