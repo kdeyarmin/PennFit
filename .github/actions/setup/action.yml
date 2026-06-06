@@ -44,6 +44,15 @@ runs:
         npm install -g pnpm@${{ inputs.pnpm-version }}
         pnpm --version
 
+    - name: Verify pnpm is on PATH
+      shell: bash
+      run: |
+        if ! command -v pnpm >/dev/null 2>&1; then
+          echo "::error::pnpm is not on PATH after install. Ensure setup installs pnpm before enabling pnpm cache."
+          exit 1
+        fi
+        echo "pnpm binary: $(command -v pnpm)"
+
     - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
