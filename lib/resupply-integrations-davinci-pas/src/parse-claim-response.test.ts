@@ -167,4 +167,69 @@ describe("parseClaimResponse", () => {
     });
     expect(submittedOnly.decision).toBe("pended");
   });
+
+  // requestIdentifier is the security-critical field: the route compares it
+  // against the locally-sent claim identifier before applying any state
+  // change, so a misrouted / replayed / compromised payer response can't
+  // overwrite the wrong prior authorization. These cases lock in the
+  // extraction precedence and the null-when-absent contract.
+  it("extracts requestIdentifier from ClaimResponse.request.identifier.value", () => {
+    const r = parseClaimResponse({
+      resourceType: "ClaimResponse",
+      outcome: "complete",
+      request: { identifier: { value: "pa-1234abcd-1" } },
+      // identifier[0] present too — request.identifier must win.
+      identifier: [{ value: "should-not-be-used" }],
+    });
+    expect(r.requestIdentifier).toBe("pa-1234abcd-1");
+  });
+
+  it("falls back to identifier[0].value when request.identifier is absent", () => {
+    const r = parseClaimResponse({
+      resourceType: "ClaimResponse",
+      outcome: "complete",
+      identifier: [{ value: "pa-5678efgh-2" }, { value: "ignored-second" }],
+    });
+    expect(r.requestIdentifier).toBe("pa-5678efgh-2");
+  });
+
+  it("returns null requestIdentifier when neither field is present", () => {
+    const r = parseClaimResponse({
+      resourceType: "ClaimResponse",
+      outcome: "complete",
+    });
+    expect(r.requestIdentifier).toBeNull();
+  });
+
+  it("returns null requestIdentifier when there is no ClaimResponse in the payload", () => {
+    expect(parseClaimResponse(null).requestIdentifier).toBeNull();
+    expect(parseClaimResponse({ resourceType: "Patient" }).requestIdentifier).toBeNull();
+  });
+
+  it("resolves requestIdentifier through a Bundle-wrapped ClaimResponse", () => {
+    const r = parseClaimResponse({
+      resourceType: "Bundle",
+      entry: [
+        { resource: { resourceType: "OperationOutcome" } },
+        {
+          resource: {
+            resourceType: "ClaimResponse",
+            outcome: "complete",
+            request: { identifier: { value: "pa-bundle-9" } },
+          },
+        },
+      ],
+    });
+    expect(r.requestIdentifier).toBe("pa-bundle-9");
+  });
+
+  it("ignores a non-string request.identifier.value (treats as absent)", () => {
+    const r = parseClaimResponse({
+      resourceType: "ClaimResponse",
+      outcome: "complete",
+      request: { identifier: { value: 12345 } },
+      identifier: [{ value: "pa-fallback-3" }],
+    });
+    expect(r.requestIdentifier).toBe("pa-fallback-3");
+  });
 });
