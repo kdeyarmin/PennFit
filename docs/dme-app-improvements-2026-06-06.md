@@ -98,7 +98,7 @@ in one screen, and less manual data entry**.
 
 | # | Opportunity | Maturity | Why it helps the CSR | Effort | Key files |
 | - | ----------- | -------- | -------------------- | ------ | --------- |
-| C1 | **Patient dedup / merge.** Only `pacware_id` uniqueness is enforced; fax/referral intake produces variant spellings with no fuzzy (name+DOB+phone) match or guarded merge workflow. | 🔴 | Kills the most common DME data-hygiene headache; one clean patient record instead of three. | M | `routes/patients/create.ts`, `routes/patients/` (new merge endpoint) |
+| C1 | **Patient dedup / merge.** Only `pacware_id` uniqueness is enforced; fax/referral intake produces variant spellings. **Detection** ✅ done (this PR) — `GET /patients/duplicates` surfaces likely-duplicate groups (same DOB+last name / phone / email) via an RPC. The destructive **merge** (repoint every patient_id FK) and a console tile remain 🔴 (deliberate follow-ups). | ✅/🔴 | Kills the most common DME data-hygiene headache; one clean patient record instead of three. | detection done; merge M–L | `routes/patients/duplicates.ts`, RPC migration `0223` |
 | C2 | **Inbound fax → structured referral (OCR).** Faxes land in a `new` queue but are hand-triaged into patient/referral records. OCR + parse (the dominant DME intake channel) into a draft referral. | 🔴 | Removes the heaviest manual data-entry step in DME intake. | M–L | `routes/admin/inbound-faxes.ts` |
 | C3 | **Real-time staffing / queue dashboard.** Today's productivity metrics are *lagging* (closed-this-week, snapshots). Add a live "which CSR is overloaded right now," plus voice-queue wait/handle time (the full voice stack already emits the events). | 🔴 | Lets a lead rebalance load mid-shift; surfaces the voice queue that's otherwise invisible. | M | `routes/admin/productivity.ts`, `today.ts`, `work-items.ts` |
 | C4 | **Auto-action the obvious queues.** Turn on the **already-built** cart-abandonment cron (gated `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED`, seeded off), auto-approve low-risk RMAs, and ship a daily failed-order-email digest. | 🟡 / 🔴 (mixed) | Shifts CSRs from repetitive dialing to exception resolution — the core promise of resupply automation. | XS (flag) + S (RMA rules) | `worker/jobs/cart-abandonment-scan.ts:439` (worker/index.ts), `routes/admin/shop-returns.ts` |
@@ -162,7 +162,7 @@ A coherent, high-ROI sequence touching all three personas, mostly small:
    adherence heuristic. Off by default; flip `RESUPPLY_COACHING_AUTO_ENROLL_ENABLED=1`.
 
 Items 1–2 are runtime/consent activations for the owner (not code); C5 was already
-shipped. **O3 and R3 are both delivered in this PR.** Remaining genuinely-open code
-items from the tables above (O2 learning insurance estimate, O4 KPI tiles, C1 patient
-dedup/merge, C2 inbound-fax OCR, C3 real-time staffing) are each a clean next step —
-tell me which and I'll implement it one focused, tested change at a time.
+shipped. **O3, R3, and the C1 detection backend are delivered in this PR.** Remaining
+genuinely-open code items: the C1 **merge** + console tile, O2 (learning insurance
+estimate), O4 (KPI tiles), C2 (inbound-fax OCR), C3 (real-time staffing) — each a clean
+next step; tell me which and I'll implement it one focused, tested change at a time.

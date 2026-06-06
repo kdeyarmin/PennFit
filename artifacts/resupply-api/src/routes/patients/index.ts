@@ -9,6 +9,7 @@ import { Router, type IRouter } from "express";
 import bulkStatusRouter from "./bulk-status";
 import createRouter from "./create";
 import detailRouter from "./detail";
+import duplicatesRouter from "./duplicates";
 import exportCsvRouter from "./export-csv";
 import importCsvRouter from "./import-csv";
 import listRouter from "./list";
@@ -42,6 +43,10 @@ const router: IRouter = Router();
 router.use(importCsvRouter);
 router.use(exportCsvRouter);
 router.use(bulkStatusRouter);
+// /patients/duplicates — likely-duplicate roster groups for CSR review
+// (C1, detection only). A literal segment, so it MUST sit in this band
+// before detailRouter or the `:id` param route would swallow it.
+router.use(duplicatesRouter);
 router.use(listRouter);
 router.use(createRouter);
 router.use(notesListRouter);
