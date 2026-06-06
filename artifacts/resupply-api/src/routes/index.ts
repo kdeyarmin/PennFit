@@ -163,6 +163,7 @@ import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import connectionTestsRouter from "./admin/connection-tests.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
+import patientPacketsAdminRouter from "./admin/patient-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
 import conversationsRouter from "./conversations/index.js";
@@ -537,6 +538,9 @@ router.use(connectionTestsRouter);
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
 router.use(documentationPacketsRouter);
+// /admin/patient-packets, /admin/patients/:id/packets, /admin/packets/:id*
+// — electronic new-patient document packets (e-sign).
+router.use(patientPacketsAdminRouter);
 // /admin/webhook-deliveries/:id/retry-now — manual re-queue of an
 // exhausted/failed delivery.
 router.use(webhookDeliveryRetryRouter);

@@ -322,6 +322,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         badgeKey: "newPatientDocuments",
       },
       {
+        label: "Document packets",
+        icon: FileCheck2,
+        href: "/admin/patient-packets",
+        matchPrefix: "/admin/patient-packets",
+        hint: "Send & track e-signature packets for new patients",
+      },
+      {
         label: "Clinical work",
         icon: Stethoscope,
         hint: "RT clinical work — encounters, interventions, mask-fit, coaching",

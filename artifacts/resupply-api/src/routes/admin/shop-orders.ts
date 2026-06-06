@@ -61,6 +61,7 @@ import {
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
+import { autoSendPatientPacketOnDelivery } from "../../lib/patient-packet/auto-send-on-delivery";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -722,6 +723,23 @@ router.post(
       { orderId, adminEmail: req.adminEmail },
       "admin/shop/orders: marked delivered",
     );
+
+    // Best-effort: when the auto-send flag is on and this order's
+    // customer is linked to a patient, email them their new-patient
+    // signature packet. Feature-flag-gated, one-time per patient, and
+    // never fatal to the delivery transition.
+    try {
+      await autoSendPatientPacketOnDelivery({ orderId });
+    } catch (packetErr) {
+      req.log?.warn?.(
+        {
+          orderId,
+          err:
+            packetErr instanceof Error ? packetErr.message : String(packetErr),
+        },
+        "admin/shop/orders: auto-send patient packet failed (non-fatal)",
+      );
+    }
 
     res.json({ order: projectOrder(rowToOrderRow(row)) });
   },
