@@ -436,4 +436,58 @@ describe("fetchShopProducts", () => {
       expect(result.previewMode).toBe(false);
     }
   });
+
+  // Back-compat: an API that predates `purchasingEnabled` won't send it.
+  // The client falls back to "enabled unless previewMode", reproducing
+  // the prior behavior where checkout was gated only by previewMode.
+  test("defaults purchasingEnabled to true when neither field is sent", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ products: [], categories: [], byCategory: {} }),
+    });
+
+    const result = await fetchShopProducts();
+    if (!("unavailable" in result)) {
+      expect(result.purchasingEnabled).toBe(true);
+    }
+  });
+
+  test("defaults purchasingEnabled to false when previewMode is true and the field is absent", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        previewMode: true,
+        products: [],
+        categories: [],
+        byCategory: {},
+      }),
+    });
+
+    const result = await fetchShopProducts();
+    if (!("unavailable" in result)) {
+      expect(result.purchasingEnabled).toBe(false);
+    }
+  });
+
+  test("honors an explicit purchasingEnabled:false even when previewMode is false", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        previewMode: false,
+        purchasingEnabled: false,
+        products: [],
+        categories: [],
+        byCategory: {},
+      }),
+    });
+
+    const result = await fetchShopProducts();
+    if (!("unavailable" in result)) {
+      expect(result.purchasingEnabled).toBe(false);
+      expect(result.previewMode).toBe(false);
+    }
+  });
 });
