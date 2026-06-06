@@ -32,23 +32,24 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "pnpm"
+        cache-dependency-path: pnpm-lock.yaml
+
     # Install pnpm via npm rather than corepack — corepack's pnpm shim
     # fails with ERR_PNPM_NO_PKG_MANIFEST when the runner cwd doesn't
     # contain a package.json (see copilot-setup-steps.yml for the long
-    # version of this rationale). Disabling the corepack shim first
-    # ensures the npm-installed binary wins the PATH lookup.
+    # version of this rationale). Run this after setup-node so the
+    # npm-global binary we install is on the final PATH for subsequent
+    # workflow steps.
     - name: Install pnpm
       shell: bash
       run: |
         corepack disable pnpm 2>/dev/null || true
         npm install -g pnpm@${{ inputs.pnpm-version }}
         pnpm --version
-
-    - uses: actions/setup-node@v5
-      with:
-        node-version: ${{ inputs.node-version }}
-        cache: "pnpm"
-        cache-dependency-path: pnpm-lock.yaml
 
     - name: Install dependencies
       if: inputs.install == 'true'
