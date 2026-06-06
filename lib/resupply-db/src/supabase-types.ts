@@ -2860,11 +2860,32 @@ export interface Database {
           triaged_at: string | null;
           triaged_by_user_id: string | null;
           notes: string | null;
+          ocr_status: "extracted" | "failed" | "unsupported" | "offline" | null;
+          ocr_extraction: Json | null;
+          ocr_extracted_at: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: Partial<Database["resupply"]["Tables"]["inbound_faxes"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["inbound_faxes"]["Row"]>;
+        Relationships: [];
+      };
+      voice_calls: {
+        Row: {
+          id: string;
+          call_sid: string;
+          conversation_id: string | null;
+          direction: string | null;
+          status: string | null;
+          initiated_at: string | null;
+          answered_at: string | null;
+          ended_at: string | null;
+          duration_seconds: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["voice_calls"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["voice_calls"]["Row"]>;
         Relationships: [];
       };
       equipment_assets: {

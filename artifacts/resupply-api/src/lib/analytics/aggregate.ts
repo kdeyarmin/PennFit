@@ -111,6 +111,14 @@ export interface ResupplyKpiInput {
   activePatientCount: number;
   /** Analysis window in days (drives annualization). */
   windowDays: number;
+  /** Fulfillment line items created in the window, each tagged with the
+   *  episode (order) it belongs to. Drives items-per-order. Optional so
+   *  existing callers/tests stay valid. */
+  fulfillments?: Array<{ episodeId: string }>;
+  /** amount_total_cents for storefront orders PAID in the window. Drives
+   *  average order value (resupply fulfillments bill insurance and carry
+   *  no cash amount, so AOV is a storefront-cash metric). Optional. */
+  paidOrderAmountsCents?: number[];
 }
 
 export interface ResupplyKpiResult {
@@ -130,6 +138,17 @@ export interface ResupplyKpiResult {
   /** confirmedOrders per active patient, annualized. Null when there
    *  are no active patients or a zero window. */
   ordersPerActivePatientAnnualized: number | null;
+  /** Fulfillment line items in the window. */
+  fulfillmentLineItems: number;
+  /** Distinct episodes (orders) that have at least one fulfillment. */
+  ordersWithFulfillments: number;
+  /** fulfillmentLineItems / ordersWithFulfillments. Null when none. */
+  itemsPerOrder: number | null;
+  /** Storefront orders paid in the window. */
+  paidOrderCount: number;
+  /** Mean amount_total_cents across paid storefront orders. Null when
+   *  none. Integer cents. */
+  averageOrderValueCents: number | null;
 }
 
 /**
@@ -168,6 +187,29 @@ export function aggregateResupplyKpis(
             (365 / input.windowDays),
         );
 
+  // Items per order: fulfillment line items / distinct orders that have
+  // fulfillments. A row with a falsy episodeId can't be attributed to an
+  // order and is dropped.
+  const fulfillments = input.fulfillments ?? [];
+  const fulfillmentOrderIds = new Set<string>();
+  for (const f of fulfillments) {
+    if (f.episodeId) fulfillmentOrderIds.add(f.episodeId);
+  }
+  const fulfillmentLineItems = fulfillments.length;
+  const ordersWithFulfillments = fulfillmentOrderIds.size;
+  const itemsPerOrder =
+    ordersWithFulfillments === 0
+      ? null
+      : round4(fulfillmentLineItems / ordersWithFulfillments);
+
+  // Average order value: mean of paid storefront order totals (cents).
+  const amounts = input.paidOrderAmountsCents ?? [];
+  const paidOrderCount = amounts.length;
+  const averageOrderValueCents =
+    paidOrderCount === 0
+      ? null
+      : Math.round(amounts.reduce((s, c) => s + c, 0) / paidOrderCount);
+
   return {
     totalEpisodes,
     confirmedOrders,
@@ -180,6 +222,11 @@ export function aggregateResupplyKpis(
     fulfillmentRate,
     connectionRate,
     ordersPerActivePatientAnnualized,
+    fulfillmentLineItems,
+    ordersWithFulfillments,
+    itemsPerOrder,
+    paidOrderCount,
+    averageOrderValueCents,
   };
 }
 
@@ -388,6 +435,140 @@ export function aggregateCsrProductivity(
   }
   const out = Array.from(byOperator.values()).sort((a, b) => b.total - a.total);
   return { windowDays, rows: out, totalActions };
+}
+
+// ── Patient retention ──────────────────────────────────────────────
+
+/**
+ * Patient retention, measured on fulfilled resupply episodes (the
+ * truest signal that a patient actually received product). One row per
+ * fulfilled episode goes in; the patient is the unit of analysis.
+ *
+ * Definitions (all deliberately simple + explainable to a business
+ * owner — no statistical cohort modelling):
+ *   * patientsServed — distinct patients with ≥1 fulfilled episode in
+ *     the lookback window.
+ *   * repeatRate — of patients whose FIRST fulfilled episode is old
+ *     enough to have had a realistic reorder opportunity
+ *     (firstFulfilled ≥ reorderWindowDays ago), the share that came
+ *     back for ≥2 fulfilled episodes. Brand-new patients who simply
+ *     haven't hit their next cycle yet are excluded from the
+ *     denominator so they don't drag the rate down.
+ *   * activeRate — of all patients served, the share whose MOST RECENT
+ *     fulfilled episode is within activeWindowDays (still ordering).
+ *     The complement is `lapsed` — served before, gone quiet since.
+ *   * byCohort — patients grouped by the month of their first fulfilled
+ *     episode, with that cohort's repeat share.
+ */
+export interface RetentionEpisodeRow {
+  patientId: string;
+  /** Timestamp of the fulfilled episode (created_at). Only the
+   *  millisecond value + YYYY-MM prefix are used. */
+  createdAt: string;
+}
+
+export interface RetentionCohortBucket {
+  cohort: string; // YYYY-MM of first fulfilled episode
+  size: number; // patients whose first fulfilled episode fell here
+  repeat: number; // …of which came back for ≥2
+  repeatRate: number | null;
+}
+
+export interface PatientRetentionResult {
+  patientsServed: number;
+  repeatPatients: number;
+  /** Patients eligible to have reordered (first fulfilled ≥ window ago). */
+  reorderEligible: number;
+  repeatRate: number | null;
+  activePatients: number;
+  lapsedPatients: number;
+  activeRate: number | null;
+  byCohort: RetentionCohortBucket[];
+}
+
+export interface PatientRetentionInput {
+  episodes: RetentionEpisodeRow[];
+  nowMs: number;
+  activeWindowDays: number;
+  reorderWindowDays: number;
+}
+
+export function aggregatePatientRetention(
+  input: PatientRetentionInput,
+): PatientRetentionResult {
+  const { nowMs, activeWindowDays, reorderWindowDays } = input;
+  const activeCutoff = nowMs - activeWindowDays * 86_400_000;
+  const reorderCutoff = nowMs - reorderWindowDays * 86_400_000;
+
+  // Per patient: first + last fulfilled ms, fulfilled count.
+  const perPatient = new Map<
+    string,
+    { first: number; last: number; count: number }
+  >();
+  for (const e of input.episodes) {
+    if (!e.patientId) continue;
+    const t = new Date(e.createdAt).getTime();
+    if (Number.isNaN(t)) continue;
+    const cur = perPatient.get(e.patientId);
+    if (!cur) {
+      perPatient.set(e.patientId, { first: t, last: t, count: 1 });
+    } else {
+      cur.first = Math.min(cur.first, t);
+      cur.last = Math.max(cur.last, t);
+      cur.count += 1;
+    }
+  }
+
+  let patientsServed = 0;
+  let repeatPatients = 0;
+  let reorderEligible = 0;
+  let activePatients = 0;
+  const cohorts = new Map<string, { size: number; repeat: number }>();
+
+  for (const { first, last, count } of perPatient.values()) {
+    patientsServed += 1;
+    const repeated = count >= 2;
+    if (repeated) repeatPatients += 1;
+    if (last >= activeCutoff) activePatients += 1;
+    if (first <= reorderCutoff) reorderEligible += 1;
+
+    const cohort = new Date(first).toISOString().slice(0, 7); // YYYY-MM
+    const bucket = cohorts.get(cohort) ?? { size: 0, repeat: 0 };
+    bucket.size += 1;
+    if (repeated) bucket.repeat += 1;
+    cohorts.set(cohort, bucket);
+  }
+
+  // repeatRate's numerator is repeat patients WHO ARE ALSO eligible —
+  // a patient with 2 fulfilled episodes is, by definition, past their
+  // first, but the eligibility gate is on the FIRST episode's age, so
+  // recompute the numerator over eligible patients only.
+  let repeatAmongEligible = 0;
+  for (const { first, count } of perPatient.values()) {
+    if (first <= reorderCutoff && count >= 2) repeatAmongEligible += 1;
+  }
+
+  const byCohort: RetentionCohortBucket[] = Array.from(cohorts.entries())
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([cohort, { size, repeat }]) => ({
+      cohort,
+      size,
+      repeat,
+      repeatRate: size === 0 ? null : round4(repeat / size),
+    }));
+
+  return {
+    patientsServed,
+    repeatPatients,
+    reorderEligible,
+    repeatRate:
+      reorderEligible === 0 ? null : round4(repeatAmongEligible / reorderEligible),
+    activePatients,
+    lapsedPatients: patientsServed - activePatients,
+    activeRate:
+      patientsServed === 0 ? null : round4(activePatients / patientsServed),
+    byCohort,
+  };
 }
 
 // ── helpers ──────────────────────────────────────────────────────

@@ -60,6 +60,12 @@ interface ServerEstimate {
   note: string;
 }
 
+interface LearnedRange {
+  typicalDollars: number;
+  upToDollars: number;
+  sampleSize: number;
+}
+
 export function InsuranceEstimate() {
   useDocumentTitle(
     "Quick CPAP coverage check — PennPaps",
@@ -72,6 +78,7 @@ export function InsuranceEstimate() {
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ServerEstimate | null>(null);
+  const [learned, setLearned] = useState<LearnedRange | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const trimmedEmail = email.trim();
@@ -121,6 +128,7 @@ export function InsuranceEstimate() {
         website: "",
       });
       setResult(res.estimate);
+      setLearned(res.learned ?? null);
     } catch (err) {
       const code = err instanceof Error ? err.message : "unknown";
       setError(
@@ -167,7 +175,11 @@ export function InsuranceEstimate() {
         </CardHeader>
         <CardContent>
           {result ? (
-            <ResultPanel result={result} zipShown={zip.trim() || null} />
+            <ResultPanel
+              result={result}
+              learned={learned}
+              zipShown={zip.trim() || null}
+            />
           ) : (
             <form
               onSubmit={handleSubmit}
@@ -357,9 +369,11 @@ export function InsuranceEstimate() {
 
 function ResultPanel({
   result,
+  learned,
   zipShown,
 }: {
   result: ServerEstimate;
+  learned: LearnedRange | null;
   zipShown: string | null;
 }) {
   const range = formatEstimateRange({
@@ -383,6 +397,28 @@ function ResultPanel({
           Post-deductible · {result.label}
         </p>
       </div>
+      {learned ? (
+        <div
+          className="rounded-xl bg-[hsl(var(--penn-gold))]/[0.08] ring-1 ring-[hsl(var(--penn-gold))]/20 p-4 text-center"
+          data-testid="insurance-estimate-learned"
+        >
+          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            What {result.label} patients actually paid
+          </p>
+          <p className="text-lg font-semibold tabular-nums text-primary mt-1">
+            {learned.typicalDollars === 0
+              ? "$0 typical"
+              : `~$${learned.typicalDollars} typical`}{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              (up to ${learned.upToDollars})
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Based on {learned.sampleSize} recent claims we filed for{" "}
+            {result.label} patients.
+          </p>
+        </div>
+      ) : null}
       <div className="rounded-xl glass-panel p-4 sm:p-5 space-y-2">
         <p className="text-sm font-semibold text-primary flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-[hsl(var(--penn-gold))]" />

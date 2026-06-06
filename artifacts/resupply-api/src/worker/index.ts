@@ -57,6 +57,8 @@ import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
+import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
+import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminders.js";
@@ -454,6 +456,21 @@ async function doStartWorker(): Promise<void> {
     "coaching-plan.progress-sweep",
     ["patient_coaching_plans"],
     registerCoachingProgressJob,
+  );
+  // Adherence coaching auto-enroll sweep (RT #R3) — daily at 05:23,
+  // after nightly-sync + progress-sweep. Scores active early-window
+  // patients and opens a coaching plan for the at-risk ones with no
+  // recent/open plan. OFF by default — flip
+  // RESUPPLY_COACHING_AUTO_ENROLL_ENABLED=1 to turn it on.
+  await registerCoachingAutoEnrollJob(boss);
+  // Learned insurance-estimate stats (O2) — weekly recompute of P50/P90
+  // patient OOP per payer slug from adjudicated claims, into the small
+  // table the public estimate route reads. Inert until 0224 lands.
+  await registerIfProvisioned(
+    boss,
+    "insurance-estimate.stats-refresh",
+    ["payer_estimate_stats"],
+    registerPayerEstimateStatsJob,
   );
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates

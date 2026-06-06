@@ -26,6 +26,10 @@ import {
   type DispatcherResult,
   type OpsStatus,
 } from "@/lib/admin/ops-api";
+import {
+  fetchVoiceMetrics,
+  type VoiceMetrics,
+} from "@/lib/admin/voice-metrics-api";
 
 export function AdminOperationsPage() {
   const status = useQuery({
@@ -72,6 +76,8 @@ function Body({ data, onRefresh }: { data: OpsStatus; onRefresh: () => void }) {
         pendingRestart={data.vendorsPendingRestart}
       />
       <DispatchersPanel dispatchers={data.dispatchers} onRefresh={onRefresh} />
+      <VoiceHandoffsPanel handoffs={data.voiceHandoffs} />
+      <VoiceMetricsPanel />
       <QueuesPanel queues={data.queues} />
       <TeamSummary team={data.team} />
     </div>
@@ -107,6 +113,154 @@ function QueuesPanel({ queues }: { queues: OpsStatus["queues"] }) {
     </section>
   );
 }
+
+function VoiceHandoffsPanel({
+  handoffs,
+}: {
+  handoffs: OpsStatus["voiceHandoffs"];
+}) {
+  // Optional on the API contract — skip the section entirely for older
+  // responses rather than render a confusing all-zero panel.
+  if (!handoffs) return null;
+  const { open, urgent } = handoffs;
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600">
+          Voice handoffs
+        </h2>
+        <Link
+          href="/admin/conversations?view=escalated"
+          className="text-xs underline decoration-dotted"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          Open escalated queue →
+        </Link>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <div className="text-xs uppercase tracking-wider text-slate-500">
+            Awaiting follow-up
+          </div>
+          <div className="text-2xl font-bold tabular-nums mt-1 text-slate-900">
+            {open}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            Voice calls the AI agent flagged for a human teammate, still in
+            the escalated queue.
+          </div>
+        </div>
+        <div
+          className={`rounded-lg border p-3 ${
+            urgent > 0
+              ? "border-rose-200 bg-rose-50"
+              : "border-slate-200 bg-white"
+          }`}
+        >
+          <div className="text-xs uppercase tracking-wider text-slate-500">
+            Urgent (distressed)
+          </div>
+          <div
+            className={`text-2xl font-bold tabular-nums mt-1 ${
+              urgent > 0 ? "text-rose-700" : "text-slate-900"
+            }`}
+          >
+            {urgent}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            Callers the summarizer scored as distressed — routed at urgent
+            priority. Triage these first.
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function fmtDuration(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function fmtPct(rate: number | null): string {
+  return rate == null ? "—" : `${Math.round(rate * 1000) / 10}%`;
+}
+
+function VoiceMetricsPanel() {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["admin-voice-metrics", 30],
+    queryFn: () => fetchVoiceMetrics(30),
+    refetchInterval: 120_000,
+  });
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
+        Voice calls — last 30 days
+      </h2>
+      {isPending ? (
+        <div className="text-sm text-slate-500">Loading…</div>
+      ) : isError || !data ? (
+        <div className="text-sm text-slate-500">
+          Voice metrics unavailable.
+        </div>
+      ) : data.totalCalls === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+          No voice calls recorded in the last 30 days.
+        </div>
+      ) : (
+        <VoiceMetricsBody data={data} />
+      )}
+    </section>
+  );
+}
+
+function VoiceMetricsBody({ data }: { data: VoiceMetrics }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <Tile label="Total calls" value={data.totalCalls} />
+        <Tile
+          label="Answer rate"
+          value={fmtPct(data.answerRate)}
+          hint={`${data.answeredCalls} answered`}
+        />
+        <Tile
+          label="Avg handle"
+          value={fmtDuration(data.avgHandleSeconds)}
+          hint={`median ${fmtDuration(data.medianHandleSeconds)}`}
+        />
+        <Tile
+          label="Avg ring"
+          value={fmtDuration(data.avgRingSeconds)}
+          hint={`median ${fmtDuration(data.medianRingSeconds)}`}
+        />
+        <Tile
+          label="In / Out"
+          value={`${data.byDirection.inbound} / ${data.byDirection.outbound}`}
+          hint="inbound / outbound"
+        />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(data.byStatus)
+          .sort(([, a], [, b]) => b - a)
+          .map(([status, count]) => (
+            <span
+              key={status}
+              className="text-xs rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700"
+            >
+              {status}: <span className="font-semibold tabular-nums">{count}</span>
+            </span>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+// Tile accepts string|number so the voice panel can pass formatted
+// durations / percentages alongside the integer team counts.
 
 // Visual treatment per connectivity state. "pending" is the saved-in-app
 // -but-not-yet-live window (catalog keys are applyMode: "restart").
@@ -469,7 +623,7 @@ function Tile({
   hint,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   hint?: string;
 }) {
   return (
