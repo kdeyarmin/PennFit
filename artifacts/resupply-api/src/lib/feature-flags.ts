@@ -67,6 +67,7 @@ export const FEATURE_FLAG_KEYS = [
   "failed_email_digest.dispatcher",
   "inbound_referrals.dispatcher",
   "patient_packets.autosend_on_delivery",
+  "patient_packets.autoremind",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

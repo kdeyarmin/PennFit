@@ -73,6 +73,20 @@ function signingUrl(baseUrl: string, token: string): string {
   return `${baseUrl.replace(/\/$/, "")}/patient-packet-sign?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Mint a fresh signing link for an existing packet (used by the resend
+ * route and the reminder sweep). Pass the packet's CURRENT link_version
+ * after bumping it so previously-issued links are invalidated.
+ */
+export function buildPacketSigningLink(
+  packetId: string,
+  linkVersion: number,
+  ttlSeconds = DEFAULT_PACKET_TTL_DAYS * 24 * 60 * 60,
+): string {
+  const token = signPatientPacketToken(packetId, linkVersion, ttlSeconds);
+  return signingUrl(getAuthDeps().publicBaseUrl, token);
+}
+
 export async function createAndSendPatientPacket(
   opts: CreateAndSendPatientPacketOptions,
 ): Promise<CreateAndSendPatientPacketResult> {

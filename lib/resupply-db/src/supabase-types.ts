@@ -2277,6 +2277,8 @@ export interface Database {
           voided_at: string | null;
           voided_reason: string | null;
           created_by_email: string | null;
+          reminder_count: number;
+          last_reminded_at: string | null;
           created_at: string;
           updated_at: string;
         };
