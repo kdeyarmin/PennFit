@@ -1,10 +1,10 @@
 name: "Setup pnpm + Node"
 description: >-
   Shared toolchain bootstrap for every CI job: installs the pinned pnpm,
-  sets up Node with the pnpm store cache, and runs a frozen-lockfile
-  install. Extracted so the pnpm/Node version pins live in ONE place
-  instead of being copy-pasted into every job (ci.yml had 7 identical
-  copies). Bump a version here and every job picks it up.
+  sets up Node, and runs a frozen-lockfile install. Extracted so the
+  pnpm/Node version pins live in ONE place instead of being copy-pasted
+  into every job (ci.yml had 7 identical copies). Bump a version here
+  and every job picks it up.
 
 # NOTE: this is the bootstrap the smoke-job comment in ci.yml asked for
 # ("factor the shared setup into a composite action"). It intentionally
@@ -35,8 +35,6 @@ runs:
     - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "pnpm"
-        cache-dependency-path: pnpm-lock.yaml
 
     # Install pnpm via npm rather than corepack — corepack's pnpm shim
     # fails with ERR_PNPM_NO_PKG_MANIFEST when the runner cwd doesn't
