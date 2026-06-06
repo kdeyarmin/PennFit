@@ -55,6 +55,9 @@ new workflows**, and **performance + regulatory readiness at scale** — not bas
   forecast, timely-filing, good-faith-estimates, capped-rental cycles, PECOS sync.
 - 270/271 round-trip, inbound reorder IVR, Da Vinci PAS submit, nightly therapy
   sync, PA expiry sweep, AI denial analyzer — all present and wired.
+- Eligibility coverage guard at order/confirm time (`order-flow.ts:475`) — the
+  cached 271 is consulted and a `resupply_coverage_blocked` CSR alert is raised
+  before auto-shipping (this was tagged "open" in earlier docs; it is shipped).
 
 ---
 
@@ -66,7 +69,7 @@ Owners care about **cash, denial rate, recurring-revenue capture, and visibility
 | - | ----------- | -------- | ---------------------- | ------ | --------- |
 | O1 | **Turn on storefront auto-reminder enrollment.** A paid cash-pay order can auto-enroll the buyer in replacement reminders. Code is done and opt-out-safe but flag-gated `storefront.auto_reminder_enrollment` and seeded **disabled** pending a CAN-SPAM/consent decision. | 🟡 | Recurring-revenue annuity capture — the single biggest lever in the resupply market — with zero new code; needs an owner consent-policy sign-off. | XS (decision + flag) | `lib/storefront/order-reminder-enrollment.ts:141` |
 | O2 | **Insurance estimate that learns from real outcomes.** The patient-facing OOP estimate is a static ~11-row `PAYER_ESTIMATES` table; real `insurance_claims` + paid amounts can compute P50/P90 patient responsibility per (payer, SKU). | 🔴 | Higher checkout conversion + fewer "surprise bill" complaints; turns a guess into a data-backed range. | M | `lib/insurance-estimates/data.ts:29`, `routes/shop/insurance-estimate.ts` |
-| O3 | **Predictive denial scoring at claim preflight.** The denial-code catalog, AI denial analyzer, and claim history already exist — surface "payer X denies E0601 without KX 38% of the time" *before* submission, feeding the existing AI billing queue. | 🔴 | Directly cuts the denial rate (~2–5% of DME revenue in write-offs/rework) and DSO. | M | `lib/billing/claim-preflight.ts`, `lib/billing/ai-denial-analyzer.ts` |
+| O3 | **Predictive denial scoring at claim preflight.** Surface "payer X denied 38% of recent E0601 claims" *as a non-blocking preflight warning* before submission, from the claim's own (payer × HCPCS) history. | ✅ **(this PR)** | Directly cuts the denial rate (~2–5% of DME revenue in write-offs/rework) and DSO. | M (done) | `lib/billing/denial-risk.ts`, `lib/billing/claim-preflight.ts`, RPC migration `0222` |
 | O4 | **Resupply KPI benchmark tiles.** Add the industry-standard set — connection rate, order/conversion rate, items-per-order, AOV, orders-per-patient-per-year, retention — to the existing analytics surface (per-touch metrics are a head start). | 🔴 | "Measure it to manage it"; lets the owner benchmark against published resupply norms. | M | `routes/admin/analytics.ts`, `routes/admin/control-center.ts` |
 | O5 | **Performance at scale** (see §6). | 🔴 | Keeps admin dashboards fast as patient/claim volume grows. | S–M | see §6 |
 | O6 | Native owner/manager mobile app. | ⚪ | Deferred — no business trigger yet; the SPA + Apple Wallet cover today's need. | — | — |
@@ -99,7 +102,7 @@ in one screen, and less manual data entry**.
 | C2 | **Inbound fax → structured referral (OCR).** Faxes land in a `new` queue but are hand-triaged into patient/referral records. OCR + parse (the dominant DME intake channel) into a draft referral. | 🔴 | Removes the heaviest manual data-entry step in DME intake. | M–L | `routes/admin/inbound-faxes.ts` |
 | C3 | **Real-time staffing / queue dashboard.** Today's productivity metrics are *lagging* (closed-this-week, snapshots). Add a live "which CSR is overloaded right now," plus voice-queue wait/handle time (the full voice stack already emits the events). | 🔴 | Lets a lead rebalance load mid-shift; surfaces the voice queue that's otherwise invisible. | M | `routes/admin/productivity.ts`, `today.ts`, `work-items.ts` |
 | C4 | **Auto-action the obvious queues.** Turn on the **already-built** cart-abandonment cron (gated `RESUPPLY_CART_ABANDONMENT_CRON_ENABLED`, seeded off), auto-approve low-risk RMAs, and ship a daily failed-order-email digest. | 🟡 / 🔴 (mixed) | Shifts CSRs from repetitive dialing to exception resolution — the core promise of resupply automation. | XS (flag) + S (RMA rules) | `worker/jobs/cart-abandonment-scan.ts:439` (worker/index.ts), `routes/admin/shop-returns.ts` |
-| C5 | **Eligibility coverage guard at order/confirm time.** The 270/271 loop now lands a parsed coverage row, but `getCachedEligibility()` isn't consulted before a fulfillment is created — a patient can confirm an SMS reorder with inactive/PA-required coverage. Add a fail-open, flag-gated guard that raises a CSR alert instead of auto-shipping. | 🔴 | Catches misspelled member IDs / plan-year changes at minute 5, not week 3 — fewer denials land back on the CSR. | M | `lib/messaging/order-flow.ts`, `routes/admin/eligibility-checks.ts` |
+| C5 | **Eligibility coverage guard at order/confirm time.** Consult the cached 270/271 before creating a fulfillment; raise a CSR alert instead of auto-shipping when coverage is inactive/PA-required. | ✅ **Shipped** (verified) | Catches misspelled member IDs / plan-year changes at minute 5, not week 3 — fewer denials land back on the CSR. | — | `lib/messaging/order-flow.ts:475` (`consultCoverageEligibility` + `raiseCoverageAlert`) |
 
 ---
 
@@ -145,15 +148,17 @@ A coherent, high-ROI sequence touching all three personas, mostly small:
 
 1. **O1 — activate storefront auto-reminder enrollment** (owner): an XS flag flip
    after a consent decision unlocks recurring-revenue capture with zero new code.
+   *Owner runtime/consent decision — not a code change.*
 2. **C4 — auto-action obvious queues** (CSR): turn on the built cart-abandonment
-   cron + a failed-order digest; immediate CSR-labor relief.
-3. **C5 — eligibility coverage guard at order time** (CSR/owner): kills the biggest
-   avoidable denial category and protects patients from surprise bills.
-4. **O3 — predictive denial scoring at preflight** (owner): builds on the existing
-   AI billing stack; visible denial-rate impact.
+   cron + a failed-order digest; immediate CSR-labor relief. *Mostly runtime flags.*
+3. ~~**C5 — eligibility coverage guard at order time**~~ — ✅ already shipped
+   (`order-flow.ts:475`); verified during this work.
+4. **O3 — predictive denial scoring at preflight** (owner): ✅ **implemented in this
+   PR** — a non-blocking preflight warning driven by the claim's own (payer × HCPCS)
+   denial history (`lib/billing/denial-risk.ts` + RPC migration `0222`).
 5. **R3 — auto-enroll early-risk patients into coaching** (RT): a heuristic that
-   protects the Medicare 90-day adherence window.
+   protects the Medicare 90-day adherence window. *Next up — scoped new code.*
 
-Items 1–2 are near-free activations; 3–5 are scoped new code that reuses existing
-models and utilities. **Pick the items you want and I'll implement them one focused,
-tested change at a time.**
+Items 1–2 are runtime/consent activations for the owner (not code). O3 is delivered
+here; R3 is the recommended next code item. **Tell me which remaining items you want
+and I'll implement them one focused, tested change at a time.**

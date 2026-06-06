@@ -18,6 +18,13 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { logger } from "../logger";
+import {
+  DENIAL_RISK_WINDOW_DAYS,
+  scoreDenialRiskItems,
+  type DenialRiskStat,
+} from "./denial-risk";
+
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -600,6 +607,53 @@ export async function preflightClaim(
               "Per LCD L33718 the KX modifier asserts compliance: 21+ nights of 4+ hours in any 30-day window.",
           },
     );
+  }
+
+  // ── Predictive denial risk (payer × HCPCS history) ──────────────
+  // Non-blocking heads-up: if this payer has historically denied a high
+  // share of recent decisioned claims carrying one of this claim's HCPCS
+  // codes, surface it so the CSR double-checks modifiers/docs before
+  // submit. Fail-soft: any error / missing payer profile / thin history
+  // → no opinion (never adds an error, never blocks, never throws).
+  if (claim.payer_profile_id && lines && lines.length > 0) {
+    try {
+      const distinctHcpcs = [...new Set(lines.map((l) => l.hcpcs_code))];
+      const cutoff = new Date(
+        Date.now() - DENIAL_RISK_WINDOW_DAYS * MS_PER_DAY,
+      ).toISOString();
+      const { data: riskRows, error: riskErr } = await supabase
+        .schema("resupply")
+        .rpc("billing_denial_risk", {
+          p_payer_profile_id: claim.payer_profile_id,
+          p_hcpcs: distinctHcpcs,
+          p_cutoff: cutoff,
+        });
+      if (riskErr) throw riskErr;
+      const stats: DenialRiskStat[] = (
+        (riskRows ?? []) as Array<{
+          hcpcs_code: string;
+          decisions: number | string;
+          denials: number | string;
+        }>
+      ).map((r) => ({
+        hcpcsCode: String(r.hcpcs_code),
+        // PostgREST serializes bigint as string — coerce defensively.
+        decisions: Number(r.decisions),
+        denials: Number(r.denials),
+      }));
+      items.push(
+        ...scoreDenialRiskItems(claim.payer_name ?? "This payer", stats),
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          event: "billing.preflight.denial_risk_failed",
+          claimId: claim.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "preflight: denial-risk scoring skipped (non-fatal)",
+      );
+    }
   }
 
   // ── Submit-readiness summary ────────────────────────────────────
