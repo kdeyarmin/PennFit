@@ -50,4 +50,6 @@ Thumbs.db
 .cache/
 .local/
 .env
+.env.*
+!.env.example
 test-results/
