@@ -858,6 +858,13 @@ export interface InsuranceEstimateResponse {
     highDollars: number;
     note: string;
   };
+  /** Data-derived range from our own adjudicated claims, when we have a
+   *  robust sample for this payer. Null → show the static range only. */
+  learned?: {
+    typicalDollars: number;
+    upToDollars: number;
+    sampleSize: number;
+  } | null;
 }
 
 export async function submitInsuranceEstimate(

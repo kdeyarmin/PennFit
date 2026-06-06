@@ -58,6 +58,7 @@ import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerCoachingAutoEnrollJob } from "./jobs/coaching-auto-enroll.js";
+import { registerPayerEstimateStatsJob } from "./jobs/payer-estimate-stats-refresh.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
@@ -461,6 +462,15 @@ async function doStartWorker(): Promise<void> {
   // recent/open plan. OFF by default — flip
   // RESUPPLY_COACHING_AUTO_ENROLL_ENABLED=1 to turn it on.
   await registerCoachingAutoEnrollJob(boss);
+  // Learned insurance-estimate stats (O2) — weekly recompute of P50/P90
+  // patient OOP per payer slug from adjudicated claims, into the small
+  // table the public estimate route reads. Inert until 0224 lands.
+  await registerIfProvisioned(
+    boss,
+    "insurance-estimate.stats-refresh",
+    ["payer_estimate_stats"],
+    registerPayerEstimateStatsJob,
+  );
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase
