@@ -24,6 +24,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
 import {
   PAYER_SLUGS,
   findPayerEstimate,
@@ -32,6 +34,48 @@ import { recordFitterLead } from "../../lib/fitter-lead-record";
 import { sendInsuranceEstimateEmail } from "../../lib/order-emails/send-insurance-estimate-email";
 
 const router: IRouter = Router();
+
+/**
+ * Only surface a LEARNED range once it rests on a robust sample — below
+ * this we show the conservative static range instead. (The worker only
+ * writes a slug at >=10 samples; this is a stricter public-display bar.)
+ */
+const LEARNED_DISPLAY_MIN_SAMPLE = 20;
+
+interface LearnedEstimate {
+  typicalDollars: number;
+  upToDollars: number;
+  sampleSize: number;
+}
+
+/**
+ * Read the precomputed learned OOP stat for a payer slug. Fail-soft:
+ * any error (incl. the table not existing pre-0224) → null, so the
+ * route always degrades to the static estimate.
+ */
+async function fetchLearnedEstimate(
+  slug: string,
+): Promise<LearnedEstimate | null> {
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("payer_estimate_stats")
+      .select("p50_cents, p90_cents, sample_size")
+      .eq("slug", slug)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    if ((data.sample_size ?? 0) < LEARNED_DISPLAY_MIN_SAMPLE) return null;
+    return {
+      typicalDollars: Math.round(data.p50_cents / 100),
+      upToDollars: Math.round(data.p90_cents / 100),
+      sampleSize: data.sample_size,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX = 3;
@@ -182,6 +226,11 @@ router.post("/shop/insurance-estimates", async (req, res) => {
     }
   })();
 
+  // A data-derived range from our own adjudicated claims, when we have
+  // enough of them for this payer. The page shows it alongside the
+  // static range; the email stays on the conservative static numbers.
+  const learned = await fetchLearnedEstimate(estimate.slug);
+
   // Return the canonical range so the page renders the same numbers
   // we just emailed — avoids any drift between the on-page result
   // and the email body.
@@ -194,6 +243,7 @@ router.post("/shop/insurance-estimates", async (req, res) => {
       highDollars: estimate.postDeductibleHighDollars,
       note: estimate.note,
     },
+    learned,
   });
 });
 

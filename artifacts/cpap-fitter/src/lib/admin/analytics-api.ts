@@ -31,6 +31,11 @@ export interface ResupplyKpisResponse {
   fulfillmentRate: number | null;
   connectionRate: number | null;
   ordersPerActivePatientAnnualized: number | null;
+  fulfillmentLineItems: number;
+  ordersWithFulfillments: number;
+  itemsPerOrder: number | null;
+  paidOrderCount: number;
+  averageOrderValueCents: number | null;
 }
 
 export interface ComplianceCohortBucket {
@@ -70,6 +75,27 @@ export interface CsrProductivityResponse {
   unavailable?: boolean;
 }
 
+export interface RetentionCohortBucket {
+  cohort: string; // YYYY-MM of first fulfilled episode
+  size: number;
+  repeat: number;
+  repeatRate: number | null;
+}
+
+export interface PatientRetentionResponse {
+  lookbackDays: number;
+  activeDays: number;
+  reorderDays: number;
+  patientsServed: number;
+  repeatPatients: number;
+  reorderEligible: number;
+  repeatRate: number | null;
+  activePatients: number;
+  lapsedPatients: number;
+  activeRate: number | null;
+  byCohort: RetentionCohortBucket[];
+}
+
 async function jsonFetch<T>(path: string): Promise<T> {
   const url = `/resupply-api${path}`;
   const res = await fetch(url, {
@@ -105,6 +131,11 @@ export const fetchComplianceCohorts = (days: number) =>
 export const fetchCsrProductivity = (days: number) =>
   jsonFetch<CsrProductivityResponse>(
     `/admin/analytics/csr-productivity?days=${days}`,
+  );
+
+export const fetchPatientRetention = (lookbackDays: number) =>
+  jsonFetch<PatientRetentionResponse>(
+    `/admin/analytics/patient-retention?lookbackDays=${lookbackDays}`,
   );
 
 export type StuckEpisodeStage =

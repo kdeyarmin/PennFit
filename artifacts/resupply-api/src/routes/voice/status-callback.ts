@@ -23,6 +23,10 @@ import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
 import {
+  parseCallDuration,
+  recordVoiceCallEvent,
+} from "../../lib/voice/voice-call-record";
+import {
   readTwilioWebhookAuthTokenOrNull,
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
@@ -152,6 +156,31 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
         );
       }
     }
+  }
+
+  // Best-effort timing telemetry for /admin/voice/metrics. Runs for
+  // EVERY lifecycle event (not just terminal) so we capture
+  // initiated/answered/ended. Never affects the 200 ack — a telemetry
+  // failure must not make Twilio retry the lifecycle.
+  try {
+    await recordVoiceCallEvent(getSupabaseServiceRoleClient(), {
+      callSid,
+      conversationId,
+      callStatus,
+      // Direction is structural (inbound vs outbound), not PHI.
+      direction: typeof body.Direction === "string" ? body.Direction : null,
+      durationSeconds: parseCallDuration(body.CallDuration),
+      nowIso: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_call_record_failed",
+        err: serializeErr(err),
+        conversationId,
+      },
+      "status-callback: voice-call timing record failed",
+    );
   }
 
   res.status(200).type("text/xml").send("<Response/>");

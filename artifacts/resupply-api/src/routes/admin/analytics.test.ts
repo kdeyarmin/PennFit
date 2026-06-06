@@ -177,3 +177,41 @@ describe("GET /admin/analytics/resupply-funnel.csv", () => {
     expect(csv).toMatch(/total,6,summary/);
   });
 });
+
+describe("GET /admin/analytics/patient-retention", () => {
+  it("401s without a session", async () => {
+    mockAdmin.current = null;
+    const res = await request(makeApp()).get(
+      "/admin/analytics/patient-retention",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns the retention shape (thin shim over the aggregator)", async () => {
+    mockAdmin.current = SUPERVISOR;
+    // Two fulfilled episodes for one patient → repeat; both recent.
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        { patient_id: "p1", created_at: "2025-08-01T00:00:00Z" },
+        { patient_id: "p1", created_at: "2026-05-01T00:00:00Z" },
+        { patient_id: "p2", created_at: "2026-05-15T00:00:00Z" },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/analytics/patient-retention?activeDays=120&reorderDays=90&lookbackDays=365",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.patientsServed).toBe(2);
+    expect(res.body.repeatPatients).toBe(1);
+    expect(res.body.lookbackDays).toBe(365);
+    expect(Array.isArray(res.body.byCohort)).toBe(true);
+  });
+
+  it("400s on an out-of-range window", async () => {
+    mockAdmin.current = SUPERVISOR;
+    const res = await request(makeApp()).get(
+      "/admin/analytics/patient-retention?activeDays=9999",
+    );
+    expect(res.status).toBe(400);
+  });
+});

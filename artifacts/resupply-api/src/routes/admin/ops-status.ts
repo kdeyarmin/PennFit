@@ -131,6 +131,8 @@ router.get(
       adminRes,
       agentRes,
       pendingRes,
+      voiceHandoffOpenRes,
+      voiceHandoffUrgentRes,
     ] = await Promise.all([
       // Saved System Configuration overrides (catalog keys → value),
       // cached + fail-soft (degrades to "{}" on any DB hiccup). Folded
@@ -207,6 +209,30 @@ router.get(
         .from("admin_users")
         .select("*", { count: "exact", head: true })
         .eq("status", "pending"),
+
+      // Voice → CSR handoff queue (live snapshot). The post-call
+      // summarizer escalates a conversation with escalation_reason
+      // prefixed `voice_post_call_handoff` when it flags
+      // recommendsHandoff (see lib/voice/post-call-handoff.ts). These
+      // are the calls a human should follow up on. `escalated_at IS NOT
+      // NULL` is the live signal — resolving a conversation nulls it, so
+      // this counts exactly what sits in the supervisor's escalated
+      // queue right now. The urgent slice is the distressed-sentiment
+      // subset (routed at urgent priority).
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .not("escalated_at", "is", null)
+        .like("escalation_reason", "voice_post_call_handoff%"),
+
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .not("escalated_at", "is", null)
+        .like("escalation_reason", "voice_post_call_handoff%")
+        .eq("priority", "urgent"),
     ]);
     for (const r of [
       abandonedCartRes,
@@ -217,6 +243,8 @@ router.get(
       adminRes,
       agentRes,
       pendingRes,
+      voiceHandoffOpenRes,
+      voiceHandoffUrgentRes,
     ]) {
       if (r.error) throw r.error;
     }
@@ -262,6 +290,10 @@ router.get(
         activeAdmins: adminRes.count ?? 0,
         activeAgents: agentRes.count ?? 0,
         pendingInvites: pendingRes.count ?? 0,
+      },
+      voiceHandoffs: {
+        open: voiceHandoffOpenRes.count ?? 0,
+        urgent: voiceHandoffUrgentRes.count ?? 0,
       },
       serverTime: new Date().toISOString(),
     });

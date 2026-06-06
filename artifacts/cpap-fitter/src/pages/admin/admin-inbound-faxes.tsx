@@ -16,7 +16,13 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FileText, Inbox, Loader2 } from "lucide-react";
+import {
+  ExternalLink,
+  FileText,
+  Inbox,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -27,8 +33,11 @@ import {
   inboundFaxMediaUrl,
   listInboundFaxes,
   patchInboundFax,
+  runFaxOcr,
+  type FaxOcrFields,
   type InboundFaxListItem,
   type InboundFaxStatus,
+  type RunFaxOcrResponse,
 } from "@/lib/admin/inbound-faxes-api";
 import { useUrlState } from "@/hooks/use-url-state";
 
@@ -253,6 +262,22 @@ function TriageModal({
   const [docType, setDocType] = useState(fax?.attachedDocumentType ?? "");
   const [notes, setNotes] = useState(fax?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [ocr, setOcr] = useState<RunFaxOcrResponse | null>(null);
+
+  const runOcr = useMutation({
+    mutationFn: () => runFaxOcr(faxId),
+    onSuccess: (r) => {
+      setOcr(r);
+      // Auto-apply the unambiguous, non-identifying field (document
+      // category) only when the CSR hasn't already typed one. Patient
+      // identity stays a human decision — we surface it as a hint, never
+      // auto-fill a UUID we can't derive from a name anyway.
+      if (r.fields?.documentType && docType.trim() === "") {
+        setDocType(r.fields.documentType);
+      }
+    },
+    onError: (e: Error) => setError(e.message),
+  });
 
   const patch = useMutation({
     mutationFn: (body: Parameters<typeof patchInboundFax>[1]) =>
@@ -340,6 +365,19 @@ function TriageModal({
 
             {/* Triage form */}
             <div className="space-y-3">
+              {fax?.hasMedia && (
+                <OcrPanel
+                  running={runOcr.isPending}
+                  result={ocr}
+                  onRun={() => {
+                    setError(null);
+                    runOcr.mutate();
+                  }}
+                  onUseSummary={(text) =>
+                    setNotes((prev) => (prev.trim() ? prev : text))
+                  }
+                />
+              )}
               <FormField
                 label="Patient ID"
                 value={patientId}
@@ -451,6 +489,137 @@ function TriageModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// AI extraction panel: a "read the fax for me" button plus the
+// resulting fields shown as copy-able hints. We never auto-fill patient
+// UUIDs (we can't derive them from a name); the CSR uses the hints to
+// find the right patient. Document category auto-applies upstream.
+function OcrPanel({
+  running,
+  result,
+  onRun,
+  onUseSummary,
+}: {
+  running: boolean;
+  result: RunFaxOcrResponse | null;
+  onRun: () => void;
+  onUseSummary: (text: string) => void;
+}) {
+  return (
+    <div
+      className="rounded border p-3 space-y-2"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--bg-2))",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="text-xs font-semibold flex items-center gap-1"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          AI field extraction
+        </span>
+        <Button intent="ghost" size="sm" disabled={running} onClick={onRun}>
+          {running ? (
+            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          ) : null}
+          {result ? "Re-run" : "Extract fields"}
+        </Button>
+      </div>
+
+      {result?.status === "offline" && (
+        <p className="text-xs text-muted-foreground">
+          AI extraction isn&apos;t configured on this environment — key the
+          fields by hand from the preview.
+        </p>
+      )}
+      {(result?.status === "failed" ||
+        result?.status === "unsupported") && (
+        <p className="text-xs text-amber-800">
+          Couldn&apos;t read this fax automatically ({result.status}). Key the
+          fields by hand from the preview.
+        </p>
+      )}
+      {result?.status === "extracted" && result.fields && (
+        <OcrFields fields={result.fields} onUseSummary={onUseSummary} />
+      )}
+    </div>
+  );
+}
+
+function OcrFields({
+  fields,
+  onUseSummary,
+}: {
+  fields: FaxOcrFields;
+  onUseSummary: (text: string) => void;
+}) {
+  const rows: Array<[string, string | null]> = [
+    ["Patient", fields.patientName],
+    ["DOB", fields.patientDob],
+    ["Phone", fields.patientPhone],
+    ["Physician", fields.physicianName],
+    ["NPI", fields.physicianNpi],
+    ["Doc type", fields.documentType],
+  ];
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+          Detected
+        </span>
+        <span
+          className="text-[10px] rounded-full px-1.5 py-0.5"
+          style={{
+            backgroundColor: "hsl(var(--line-2))",
+            color: "hsl(var(--ink-2))",
+          }}
+        >
+          confidence: {fields.confidence}
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-2">
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd className="font-medium text-right truncate" title={v ?? ""}>
+              {v ?? "—"}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {fields.items.length > 0 && (
+        <div className="text-xs">
+          <div className="text-muted-foreground mb-0.5">Items</div>
+          <ul className="list-disc pl-4 space-y-0.5">
+            {fields.items.map((it, i) => (
+              <li key={i}>
+                {it.description}
+                {it.hcpcs ? ` (${it.hcpcs})` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {fields.summary && (
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs italic text-muted-foreground">
+            {fields.summary}
+          </p>
+          <button
+            type="button"
+            className="text-[11px] font-semibold whitespace-nowrap underline text-[hsl(var(--penn-navy))]"
+            onClick={() => onUseSummary(fields.summary ?? "")}
+          >
+            Use as note
+          </button>
+        </div>
+      )}
     </div>
   );
 }

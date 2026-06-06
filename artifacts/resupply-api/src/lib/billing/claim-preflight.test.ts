@@ -7,6 +7,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -77,6 +78,28 @@ describe("preflightClaim", () => {
     const out = await preflightClaim(CLAIM_ID);
     expect(out.readyToSubmit).toBe(true);
     expect(out.errorCount).toBe(0);
+  });
+
+  it("surfaces a non-blocking denial-risk warning from the history RPC", async () => {
+    stageHappyPath();
+    // Payer has denied 40% of recent E0601 claims (n=50, ≥ defaults).
+    // PostgREST serializes bigint as string — stage them that way.
+    stageSupabaseRpcResponse("billing_denial_risk", {
+      data: [{ hcpcs_code: "E0601", decisions: "50", denials: "20" }],
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const risk = out.items.find((i) => i.key === "denial_risk:E0601");
+    expect(risk?.severity).toBe("warning");
+    expect(risk?.detail).toContain("40%");
+    // A warning must never flip the submit gate.
+    expect(out.readyToSubmit).toBe(true);
+    expect(out.errorCount).toBe(0);
+  });
+
+  it("adds no denial-risk item when the history RPC returns nothing", async () => {
+    stageHappyPath();
+    const out = await preflightClaim(CLAIM_ID);
+    expect(out.items.some((i) => i.key.startsWith("denial_risk:"))).toBe(false);
   });
 
   it("flags missing referring provider as an error", async () => {

@@ -94,6 +94,26 @@ export interface AnthropicToolResultBlock {
 }
 
 /**
+ * Image block — base64-encoded image sent on a user turn for the
+ * vision-capable models (Claude Sonnet/Opus). `media_type` is the
+ * source MIME (image/png, image/jpeg, image/gif, image/webp).
+ */
+export interface AnthropicImageBlock {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+}
+
+/**
+ * Document block — base64-encoded PDF sent on a user turn. Claude reads
+ * the PDF natively (text + page images), which is what inbound-fax OCR
+ * uses for multi-page prescription PDFs.
+ */
+export interface AnthropicDocumentBlock {
+  type: "document";
+  source: { type: "base64"; media_type: "application/pdf"; data: string };
+}
+
+/**
  * Content block union for messages sent INTO the Messages API.
  * Anthropic accepts text blocks on either role and tool_use /
  * tool_result blocks where appropriate (tool_use only on assistant,
@@ -102,6 +122,8 @@ export interface AnthropicToolResultBlock {
  */
 export type AnthropicContentBlock =
   | AnthropicTextBlock
+  | AnthropicImageBlock
+  | AnthropicDocumentBlock
   | AnthropicToolUseBlock
   | AnthropicToolResultBlock;
 
