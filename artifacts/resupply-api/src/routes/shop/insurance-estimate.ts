@@ -50,7 +50,7 @@ interface LearnedEstimate {
 
 /**
  * Read the precomputed learned OOP stat for a payer slug. Fail-soft:
- * any error (incl. the table not existing pre-0224) → null, so the
+ * any error (incl. the table not existing pre-0230) → null, so the
  * route always degrades to the static estimate.
  */
 async function fetchLearnedEstimate(

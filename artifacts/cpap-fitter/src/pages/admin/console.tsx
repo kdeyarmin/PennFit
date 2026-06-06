@@ -749,10 +749,7 @@ function AdminConsole() {
               )}
             </Route>
             <Route path="/admin/patients" component={PatientsPage} />
-            <Route
-              path="/admin/patient-packets"
-              component={AdminPatientPacketsPage}
-            />
+            <Route path="/admin/patient-packets" component={AdminPatientPacketsPage} />
             {/* Literal segment — MUST precede /admin/patients/:id below. */}
             <Route
               path="/admin/patients/duplicates"

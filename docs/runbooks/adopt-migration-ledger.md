@@ -73,6 +73,17 @@ End state to expect: **51 payers** (50 with claims/flat addresses; only the
 `pa_chip` umbrella has none), **51 PA notes**, **~152 base tables**, ledger
 fully populated (227 rows), 0 payers at `enrollment_status='unknown'`.
 
+> **Update (verified 2026-06-06, production through migration `0224`).** The
+> counts above are the snapshot at the `0207` cutover. Production has since
+> applied the `0208`–`0224` tail (national / workers' comp / auto / CHIP payer
+> cohorts), so the live numbers are now a superset: **107 payers**, **254
+> ledger rows**, **153 base tables**. The adoption invariants still hold —
+> **0 payers at `enrollment_status='unknown'`** (distribution: 60 `active` /
+> 28 `not_required` / 19 `pending`), the original `0207` **`[PA]` note cohort
+> is intact at 51**, and there are no duplicate slugs or null payer names. So
+> read `51 / 227 / ~152` as the historical cutover snapshot, not a live health
+> check — the ledger is fully adopted and there are **0 pending migrations**.
+
 ## Procedure B — manual CLI (alternative; needs shell + prod `DATABASE_URL`)
 
 > The migrator takes a session advisory lock, so it is safe to run while the

@@ -1,4 +1,4 @@
--- 0224_payer_estimate_stats — learn the patient out-of-pocket (OOP)
+-- 0230_payer_estimate_stats — learn the patient out-of-pocket (OOP)
 -- estimate from real claim outcomes (owner #O2).
 --
 -- Today the public /shop/insurance-estimates route returns a hardcoded
@@ -24,7 +24,7 @@
 --     worker never pulls raw line items. HAVING sum(allowed)>0 drops
 --     un-adjudicated claims that would otherwise skew the median to $0.
 --
--- Follows the established RPC pattern (0164 / 0222 / 0223).
+-- Follows the established RPC pattern (0164 / 0228 / 0229).
 -- Per ADR 003 — versioned hand-authored migration.
 
 CREATE TABLE IF NOT EXISTS "resupply"."payer_estimate_stats" (

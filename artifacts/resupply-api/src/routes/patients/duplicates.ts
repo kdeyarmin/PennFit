@@ -10,7 +10,7 @@
 // deliberate change.
 //
 // Grouping is done server-side by the resupply.patient_duplicate_groups
-// RPC (migration 0223), so the route only ever receives the small set of
+// RPC (migration 0229), so the route only ever receives the small set of
 // actual collisions, never the whole roster. PHI posture mirrors the
 // patient list: names + DOB are returned (a CSR needs them to confirm a
 // match), but phone/email VALUES are reduced to hasPhone/hasEmail markers.
@@ -121,6 +121,7 @@ router.get(
       memberCount: g.members.length,
     }));
     res.json({ groups, groupCount: groups.length });
+  }
 );
 
 export default router;
