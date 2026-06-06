@@ -25,11 +25,11 @@ import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPatientPacketPdf } from "../../lib/patient-packet/packet-pdf";
 import {
-  PACKET_TEMPLATES,
-  defaultPacketDocumentKeys,
-  getPacketTemplate,
-  isValidPacketDocumentKey,
-} from "../../lib/patient-packet/templates";
+  createAndSendPatientPacket,
+  renderPacketInviteHtml,
+  renderPacketInviteText,
+} from "../../lib/patient-packet/send";
+import { PACKET_TEMPLATES } from "../../lib/patient-packet/templates";
 import { signPatientPacketToken } from "../../lib/patient-packet-token";
 import {
   adminRateLimit,
@@ -164,105 +164,28 @@ router.post(
     }
     const b = parsed.data;
 
-    const documentKeys = b.documentKeys ?? defaultPacketDocumentKeys();
-    const invalidKeys = documentKeys.filter(
-      (k) => !isValidPacketDocumentKey(k),
-    );
-    if (invalidKeys.length > 0) {
-      res.status(400).json({ error: "invalid_document_keys", invalidKeys });
-      return;
-    }
-    // De-dupe while preserving order.
-    const uniqueKeys = Array.from(new Set(documentKeys));
-
     const supabase = getSupabaseServiceRoleClient();
-    const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id, legal_first_name, legal_last_name, email")
-      .eq("id", idParsed.data.id)
-      .limit(1)
-      .maybeSingle();
-    if (patientErr) throw patientErr;
-    if (!patient) {
+    const result = await createAndSendPatientPacket({
+      supabase,
+      patientId: idParsed.data.id,
+      documentKeys: b.documentKeys,
+      title: b.title,
+      recipientEmailOverride: b.recipientEmail,
+      expiresInDays: b.expiresInDays,
+      createdByEmail: req.adminEmail ?? null,
+    });
+    if (!result.ok) {
+      if (result.code === "invalid_document_keys") {
+        res
+          .status(400)
+          .json({
+            error: "invalid_document_keys",
+            invalidKeys: result.invalidKeys,
+          });
+        return;
+      }
       res.status(404).json({ error: "patient_not_found" });
       return;
-    }
-
-    const recipientName =
-      `${patient.legal_first_name ?? ""} ${patient.legal_last_name ?? ""}`.trim() ||
-      "Patient";
-    const recipientEmail =
-      b.recipientEmail ?? patient.email?.toLowerCase() ?? null;
-    const nowIso = new Date().toISOString();
-    const expiresAt = new Date(
-      Date.now() + (b.expiresInDays ?? DEFAULT_TTL_DAYS) * 24 * 60 * 60 * 1000,
-    ).toISOString();
-
-    const { data: packet, error: insertErr } = await supabase
-      .schema("resupply")
-      .from("patient_packets")
-      .insert({
-        patient_id: idParsed.data.id,
-        title: b.title ?? "New Patient Document Packet",
-        status: "sent",
-        recipient_name: recipientName,
-        recipient_email: recipientEmail,
-        link_version: 1,
-        sent_at: nowIso,
-        expires_at: expiresAt,
-        created_by_email: req.adminEmail ?? null,
-      })
-      .select("id, link_version")
-      .single();
-    if (insertErr) throw insertErr;
-
-    // Snapshot the selected documents (title + content version).
-    const docRows = uniqueKeys.map((key, i) => {
-      const t = getPacketTemplate(key)!;
-      return {
-        packet_id: packet.id,
-        document_key: key,
-        title: t.title,
-        content_version: t.version,
-        sort_order: i,
-        requires_signature: t.requiresSignature,
-      };
-    });
-    const { error: docsErr } = await supabase
-      .schema("resupply")
-      .from("patient_packet_documents")
-      .insert(docRows);
-    if (docsErr) throw docsErr;
-
-    const token = signPatientPacketToken(
-      packet.id,
-      packet.link_version,
-      (b.expiresInDays ?? DEFAULT_TTL_DAYS) * 24 * 60 * 60,
-    );
-    const deps = getAuthDeps();
-    const link = signingUrl(deps.publicBaseUrl, token);
-
-    let emailSent = false;
-    if (recipientEmail) {
-      const company = await resolveCompanyProfile(supabase);
-      try {
-        await deps.email({
-          to: recipientEmail,
-          subject: `Please review and sign your ${company.legalName} new patient documents`,
-          html: renderInviteHtml(company.legalName, recipientName, link),
-          text: renderInviteText(company.legalName, recipientName, link),
-        });
-        emailSent = true;
-      } catch (err) {
-        logger.warn(
-          {
-            err: err instanceof Error ? err.message : "unknown",
-            packet_id: packet.id,
-          },
-          "patient packet invite email failed",
-        );
-      }
     }
 
     await logAudit({
@@ -270,11 +193,11 @@ router.post(
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "patient_packets",
-      targetId: packet.id,
+      targetId: result.packetId,
       metadata: {
         patient_id: idParsed.data.id,
-        document_count: uniqueKeys.length,
-        email_sent: emailSent,
+        document_count: result.documentCount,
+        email_sent: result.emailSent,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -283,11 +206,11 @@ router.post(
     });
 
     res.status(201).json({
-      id: packet.id,
+      id: result.packetId,
       status: "sent",
-      emailSent,
+      emailSent: result.emailSent,
       // Always returned so the CSR can deliver it by hand if needed.
-      signingLink: link,
+      signingLink: result.signingLink,
     });
   },
 );
@@ -415,12 +338,12 @@ router.post(
         await deps.email({
           to: packet.recipient_email,
           subject: `Reminder: please sign your ${company.legalName} new patient documents`,
-          html: renderInviteHtml(
+          html: renderPacketInviteHtml(
             company.legalName,
             packet.recipient_name,
             link,
           ),
-          text: renderInviteText(
+          text: renderPacketInviteText(
             company.legalName,
             packet.recipient_name,
             link,
@@ -607,53 +530,5 @@ router.get(
     res.status(200).end(pdf);
   },
 );
-
-function renderInviteHtml(
-  company: string,
-  recipientName: string,
-  link: string,
-): string {
-  const safeName = escapeHtml(recipientName);
-  const safeCompany = escapeHtml(company);
-  return `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e2e8f0">
-      <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a">${safeCompany}</h1>
-      <p style="font-size:15px;line-height:1.55">Hello ${safeName},</p>
-      <p style="font-size:15px;line-height:1.55">Welcome! Before we set up your therapy, please review and electronically sign your new patient documents. It only takes a few minutes on any phone, tablet, or computer.</p>
-      <p style="text-align:center;margin:28px 0">
-        <a href="${link}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:9999px;font-weight:bold;font-size:15px">Review &amp; sign my documents</a>
-      </p>
-      <p style="font-size:13px;color:#64748b;line-height:1.5">If the button doesn't work, copy and paste this link into your browser:<br><span style="word-break:break-all;color:#334155">${link}</span></p>
-      <p style="font-size:13px;color:#64748b;line-height:1.5">This is a secure, personalized link. Please don't forward it. If you didn't expect this message, you can ignore it.</p>
-    </div>
-  </div></body></html>`;
-}
-
-function renderInviteText(
-  company: string,
-  recipientName: string,
-  link: string,
-): string {
-  return [
-    `${company}`,
-    "",
-    `Hello ${recipientName},`,
-    "",
-    "Welcome! Before we set up your therapy, please review and electronically sign your new patient documents. It only takes a few minutes on any device.",
-    "",
-    `Review & sign: ${link}`,
-    "",
-    "This is a secure, personalized link. Please don't forward it.",
-  ].join("\n");
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 export default router;

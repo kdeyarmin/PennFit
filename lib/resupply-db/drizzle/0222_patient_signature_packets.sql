@@ -94,3 +94,15 @@ CREATE TABLE IF NOT EXISTS "resupply"."patient_packet_signatures" (
 
 CREATE INDEX IF NOT EXISTS "patient_packet_signatures_packet_idx"
   ON "resupply"."patient_packet_signatures" ("packet_id");
+
+-- Admin-flippable toggle for automatically emailing a new-patient
+-- signature packet when a shop order is marked delivered. Seeded OFF so
+-- enabling outbound auto-email is an explicit, deliberate opt-in by the
+-- business owner (it can be turned on from the admin Control Center).
+INSERT INTO resupply.feature_flags (key, enabled, description, category)
+VALUES
+  ('patient_packets.autosend_on_delivery',
+   false,
+   'Automatically email a new-patient document packet for e-signature the first time an order is delivered to a customer linked to a patient record. One-time per patient; the admin "Send packet" action is always available regardless of this toggle. OFF by default.',
+   'Messaging')
+ON CONFLICT (key) DO NOTHING;

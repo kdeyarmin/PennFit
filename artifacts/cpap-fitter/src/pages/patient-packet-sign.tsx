@@ -44,6 +44,11 @@ import {
   SignaturePad,
   type SignaturePadHandle,
 } from "@/components/signature-pad";
+import {
+  SIGNATURE_STYLES,
+  renderTypedSignatureDataUrl,
+} from "@/lib/typed-signature";
+import { cn } from "@/lib/utils";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const PAGE_TITLE = "Sign your documents";
@@ -199,7 +204,9 @@ export function PatientPacketSign() {
   const [signerName, setSignerName] = useState("");
   const [relationship, setRelationship] = useState<SignerRelationship>("self");
   const [consent, setConsent] = useState(false);
-  const [signatureEmpty, setSignatureEmpty] = useState(true);
+  const [sigMode, setSigMode] = useState<"type" | "draw">("type");
+  const [styleIndex, setStyleIndex] = useState(0);
+  const [drawnEmpty, setDrawnEmpty] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [completedAt, setCompletedAt] = useState<string | null>(null);
   const sigRef = useRef<SignaturePadHandle | null>(null);
@@ -327,7 +334,13 @@ export function PatientPacketSign() {
   const handleSubmit = async () => {
     setSubmitError(null);
     if (!canSubmit) return;
-    const signatureImage = sigRef.current?.toDataURL() ?? null;
+    const signatureImage =
+      sigMode === "draw"
+        ? (sigRef.current?.toDataURL() ?? null)
+        : renderTypedSignatureDataUrl(
+            signerName.trim(),
+            SIGNATURE_STYLES[styleIndex].fontStack,
+          );
     try {
       const res = await sign.mutateAsync({
         token,
@@ -453,18 +466,104 @@ export function PatientPacketSign() {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Draw your signature</Label>
-            <SignaturePad
-              ref={sigRef}
-              onChange={setSignatureEmpty}
-              ariaLabel="Draw your signature"
-            />
-            {signatureEmpty && (
-              <p className="text-xs text-slate-400">
-                Optional but recommended. Your typed name above also serves as
-                your signature.
-              </p>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <Label>Signature</Label>
+              {/* Type vs Draw toggle */}
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setSigMode("type")}
+                  className={cn(
+                    "rounded-md px-3 py-1 font-medium transition-colors",
+                    sigMode === "type"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500",
+                  )}
+                >
+                  Type
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSigMode("draw")}
+                  className={cn(
+                    "rounded-md px-3 py-1 font-medium transition-colors",
+                    sigMode === "draw"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500",
+                  )}
+                >
+                  Draw
+                </button>
+              </div>
+            </div>
+
+            {sigMode === "type" ? (
+              <div className="space-y-3">
+                {/* Live preview generated from the typed legal name */}
+                <div className="flex h-32 items-center justify-center overflow-hidden rounded-xl border-2 border-slate-200 bg-white px-4">
+                  {signerName.trim() ? (
+                    <span
+                      className="truncate text-slate-900"
+                      style={{
+                        fontFamily: SIGNATURE_STYLES[styleIndex].fontStack,
+                        fontStyle: "italic",
+                        fontSize: "44px",
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      {signerName.trim()}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-slate-400">
+                      Type your full legal name above to create your signature
+                    </span>
+                  )}
+                </div>
+                {/* Style picker */}
+                <div className="flex flex-wrap gap-2">
+                  {SIGNATURE_STYLES.map((s, i) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      onClick={() => setStyleIndex(i)}
+                      className={cn(
+                        "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                        i === styleIndex
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                      )}
+                    >
+                      <span
+                        style={{
+                          fontFamily: s.fontStack,
+                          fontStyle: "italic",
+                        }}
+                      >
+                        {s.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-400">
+                  Your signature is created from your name — no drawing needed.
+                  Prefer to draw it? Switch to “Draw”.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <SignaturePad
+                  ref={sigRef}
+                  onChange={setDrawnEmpty}
+                  ariaLabel="Draw your signature"
+                />
+                {drawnEmpty && (
+                  <p className="text-xs text-slate-400">
+                    Draw your signature above, or switch to “Type” for the
+                    easiest option.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
