@@ -108,6 +108,19 @@ export interface ShopProductsResponse {
    * resupply-api/src/lib/stripe/preview-catalog.ts.
    */
   previewMode: boolean;
+  /**
+   * `true` when a shopper can actually complete a purchase: Stripe is
+   * configured AND the `storefront.checkout` feature flag is enabled in
+   * the admin Control Center. When `false`, the storefront still
+   * renders the full catalog for browsing but the buy / checkout
+   * affordances are disabled (and the checkout endpoints 503) — so the
+   * shop can be shown without a payment processor wired up, and the
+   * business owner can flip online ordering on/off from the Control
+   * Center. Distinct from `previewMode`: `previewMode` means
+   * specifically "no Stripe yet"; purchasing can also be off because an
+   * admin paused online ordering while Stripe is connected.
+   */
+  purchasingEnabled: boolean;
   categories: readonly ShopProductView["category"][];
   products: ShopProductView[];
   byCategory: Record<ShopProductView["category"], ShopProductView[]>;
@@ -173,6 +186,11 @@ export async function fetchShopProducts(): Promise<ShopProductsResult> {
   }
   return {
     previewMode: json.previewMode ?? false,
+    // Back-compat: an older API that predates this field won't send
+    // `purchasingEnabled`. Fall back to "enabled unless we're in preview
+    // mode", which reproduces the previous behavior where checkout was
+    // gated only by previewMode.
+    purchasingEnabled: json.purchasingEnabled ?? !(json.previewMode ?? false),
     categories: json.categories ?? [],
     products: json.products ?? [],
     byCategory:
@@ -858,6 +876,13 @@ export interface InsuranceEstimateResponse {
     highDollars: number;
     note: string;
   };
+  /** Data-derived range from our own adjudicated claims, when we have a
+   *  robust sample for this payer. Null → show the static range only. */
+  learned?: {
+    typicalDollars: number;
+    upToDollars: number;
+    sampleSize: number;
+  } | null;
 }
 
 export async function submitInsuranceEstimate(

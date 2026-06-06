@@ -66,6 +66,8 @@ export {
   type AnthropicClient,
   type AnthropicClientOptions,
   type AnthropicContentBlock,
+  type AnthropicDocumentBlock,
+  type AnthropicImageBlock,
   type AnthropicRequest,
   type AnthropicResponse,
   type AnthropicResponseContentBlock,

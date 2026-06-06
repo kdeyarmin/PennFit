@@ -11,9 +11,11 @@ import {
   PRODUCTIVE_ACTIONS,
   aggregateComplianceCohorts,
   aggregateCsrProductivity,
+  aggregatePatientRetention,
   aggregateResupplyFunnel,
   aggregateResupplyKpis,
   type EpisodeKpiRow,
+  type RetentionEpisodeRow,
 } from "./aggregate";
 
 describe("aggregateResupplyKpis", () => {
@@ -74,6 +76,54 @@ describe("aggregateResupplyKpis", () => {
     expect(r.confirmationRate).toBe(0); // 0/2
     expect(r.fulfillmentRate).toBeNull(); // 0 confirmed → null
     expect(r.connectionRate).toBe(0);
+  });
+
+  it("computes items-per-order from fulfillment line items", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+      // 5 line items across 2 distinct orders → 2.5 items/order.
+      fulfillments: [
+        { episodeId: "e1" },
+        { episodeId: "e1" },
+        { episodeId: "e1" },
+        { episodeId: "e2" },
+        { episodeId: "e2" },
+      ],
+    });
+    expect(r.fulfillmentLineItems).toBe(5);
+    expect(r.ordersWithFulfillments).toBe(2);
+    expect(r.itemsPerOrder).toBe(2.5);
+  });
+
+  it("computes average order value (cents) from paid orders", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+      paidOrderAmountsCents: [1000, 2000, 3050], // mean 2016.67 → 2017
+    });
+    expect(r.paidOrderCount).toBe(3);
+    expect(r.averageOrderValueCents).toBe(2017);
+  });
+
+  it("returns null items-per-order and AOV when those inputs are empty", () => {
+    const r = aggregateResupplyKpis({
+      episodes: [],
+      outreachCount: 0,
+      respondedCount: 0,
+      activePatientCount: 0,
+      windowDays: 30,
+    });
+    expect(r.itemsPerOrder).toBeNull();
+    expect(r.fulfillmentLineItems).toBe(0);
+    expect(r.averageOrderValueCents).toBeNull();
+    expect(r.paidOrderCount).toBe(0);
   });
 });
 
@@ -359,5 +409,83 @@ describe("aggregateCsrProductivity", () => {
     expect(r.rows).toEqual([]);
     expect(r.totalActions).toBe(0);
     expect(r.windowDays).toBe(14);
+  });
+});
+
+describe("aggregatePatientRetention", () => {
+  const NOW = Date.parse("2026-06-15T00:00:00Z");
+  const ep = (patientId: string, date: string): RetentionEpisodeRow => ({
+    patientId,
+    createdAt: `${date}T00:00:00Z`,
+  });
+
+  it("computes repeat / active / lapsed rates and cohorts", () => {
+    const r = aggregatePatientRetention({
+      episodes: [
+        // p1: repeated, eligible (first >90d ago), active (last 10d ago)
+        ep("p1", "2025-11-01"),
+        ep("p1", "2026-06-05"),
+        // p2: single, eligible, lapsed (last >120d ago)
+        ep("p2", "2026-01-10"),
+        // p3: single, NOT eligible (first 3d ago), active
+        ep("p3", "2026-06-12"),
+        // p4: repeated but NOT eligible (first 26d ago) → not in repeat denom
+        ep("p4", "2026-05-20"),
+        ep("p4", "2026-06-13"),
+      ],
+      nowMs: NOW,
+      activeWindowDays: 120,
+      reorderWindowDays: 90,
+    });
+
+    expect(r.patientsServed).toBe(4);
+    expect(r.repeatPatients).toBe(2); // p1, p4
+    expect(r.reorderEligible).toBe(2); // p1, p2
+    // Only p1 is BOTH eligible AND repeated → 1/2.
+    expect(r.repeatRate).toBe(0.5);
+    expect(r.activePatients).toBe(3); // p1, p3, p4
+    expect(r.lapsedPatients).toBe(1); // p2
+    expect(r.activeRate).toBe(0.75);
+
+    expect(r.byCohort).toEqual([
+      { cohort: "2025-11", size: 1, repeat: 1, repeatRate: 1 },
+      { cohort: "2026-01", size: 1, repeat: 0, repeatRate: 0 },
+      { cohort: "2026-05", size: 1, repeat: 1, repeatRate: 1 }, // p4
+      { cohort: "2026-06", size: 1, repeat: 0, repeatRate: 0 }, // p3
+    ]);
+  });
+
+  it("returns null rates and empty cohorts for no fulfilled episodes", () => {
+    const r = aggregatePatientRetention({
+      episodes: [],
+      nowMs: NOW,
+      activeWindowDays: 120,
+      reorderWindowDays: 90,
+    });
+    expect(r).toEqual({
+      patientsServed: 0,
+      repeatPatients: 0,
+      reorderEligible: 0,
+      repeatRate: null,
+      activePatients: 0,
+      lapsedPatients: 0,
+      activeRate: null,
+      byCohort: [],
+    });
+  });
+
+  it("skips rows with no patient id or an unparseable date", () => {
+    const r = aggregatePatientRetention({
+      episodes: [
+        ep("", "2026-01-01"),
+        { patientId: "p9", createdAt: "not-a-date" },
+        ep("p9", "2026-06-01"),
+      ],
+      nowMs: NOW,
+      activeWindowDays: 120,
+      reorderWindowDays: 90,
+    });
+    expect(r.patientsServed).toBe(1);
+    expect(r.repeatPatients).toBe(0); // the NaN-dated p9 row was dropped
   });
 });

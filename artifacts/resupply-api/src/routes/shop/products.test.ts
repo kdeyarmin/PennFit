@@ -32,6 +32,13 @@ vi.mock("../../lib/stripe/preview-catalog", () => ({
   getPreviewCatalog: () => getPreviewCatalogMock(),
 }));
 
+// storefront.checkout feature flag. Toggle `featureEnabled.value` per
+// test; defaults to on (reset in beforeEach).
+const featureEnabled = vi.hoisted(() => ({ value: true }));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => featureEnabled.value),
+}));
+
 import productsRouter from "./products";
 
 function makeApp(): Express {
@@ -69,6 +76,7 @@ beforeEach(() => {
   readStripeConfigOrNullMock.mockReset();
   getStripeClientMock.mockReset();
   getPreviewCatalogMock.mockReset();
+  featureEnabled.value = true;
 
   getStripeClientMock.mockReturnValue({
     products: { list: stripeProductsList },
@@ -86,6 +94,8 @@ describe("GET /shop/products — degradation behaviour", () => {
     const res = await request(makeApp()).get("/shop/products");
     expect(res.status).toBe(200);
     expect(res.body.previewMode).toBe(true);
+    // No Stripe → purchasing is off regardless of the feature flag.
+    expect(res.body.purchasingEnabled).toBe(false);
     expect(Array.isArray(res.body.products)).toBe(true);
   });
 
@@ -168,5 +178,44 @@ describe("GET /shop/products — degradation behaviour", () => {
     expect(third.status).toBe(503);
 
     vi.restoreAllMocks();
+  });
+});
+
+describe("GET /shop/products — purchasingEnabled", () => {
+  it("is true when Stripe is configured and storefront.checkout is on", async () => {
+    readStripeConfigOrNullMock.mockReturnValue({
+      secretKey: "skDDDDDD_purchasing_on",
+      publishableKey: "pk_test_x",
+    });
+    featureEnabled.value = true;
+    stripeProductsList.mockResolvedValue({
+      data: [freshProduct("prod_pe1", "Mask PE", 1000)],
+    });
+
+    const res = await request(makeApp()).get("/shop/products");
+    expect(res.status).toBe(200);
+    expect(res.body.purchasingEnabled).toBe(true);
+    expect(res.body.previewMode).toBe(false);
+    expect(res.body.products).toHaveLength(1);
+  });
+
+  it("is false when the storefront.checkout flag is off, but still returns the catalog for browsing", async () => {
+    readStripeConfigOrNullMock.mockReturnValue({
+      secretKey: "skEEEEEE_purchasing_off",
+      publishableKey: "pk_test_x",
+    });
+    featureEnabled.value = false;
+    stripeProductsList.mockResolvedValue({
+      data: [freshProduct("prod_pe2", "Mask PE2", 2000)],
+    });
+
+    const res = await request(makeApp()).get("/shop/products");
+    expect(res.status).toBe(200);
+    // Purchasing is paused...
+    expect(res.body.purchasingEnabled).toBe(false);
+    // ...but it's NOT preview mode (Stripe IS connected) and the
+    // catalog still renders so shoppers can browse.
+    expect(res.body.previewMode).toBe(false);
+    expect(res.body.products).toHaveLength(1);
   });
 });

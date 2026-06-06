@@ -84,7 +84,10 @@ afterEach(() => {
  *   6/7/8. admin_users — same table queried three times
  *           (active admins / active agents / pending invites)
  */
-function queueCounts(counts: number[]): void {
+function queueCounts(
+  counts: number[],
+  voiceHandoffs: [open: number, urgent: number] = [0, 0],
+): void {
   if (counts.length !== 8) {
     throw new Error("queueCounts expects exactly 8 values");
   }
@@ -123,6 +126,17 @@ function queueCounts(counts: number[]): void {
   stageSupabaseResponse("admin_users", "select", {
     data: null,
     count: counts[7],
+  });
+  // Two conversations count probes: voice-handoff open, then urgent.
+  // Matched by table name, so they're order-independent vs. the queries
+  // above; staged here so every caller gets a complete mock.
+  stageSupabaseResponse("conversations", "select", {
+    data: null,
+    count: voiceHandoffs[0],
+  });
+  stageSupabaseResponse("conversations", "select", {
+    data: null,
+    count: voiceHandoffs[1],
   });
 }
 
@@ -295,6 +309,13 @@ describe("GET /admin/ops-status", () => {
       activeAgents: 6,
       pendingInvites: 1,
     });
+  });
+
+  it("returns the voice-handoff queue snapshot (open + urgent)", async () => {
+    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    queueCounts([0, 0, 0, 0, 0, 0, 0, 0], [5, 2]);
+    const res = await request(makeApp()).get("/admin/ops-status");
+    expect(res.body.voiceHandoffs).toEqual({ open: 5, urgent: 2 });
   });
 
   it("includes serverTime as ISO 8601 timestamp", async () => {

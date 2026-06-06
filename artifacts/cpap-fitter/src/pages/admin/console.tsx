@@ -49,6 +49,16 @@ import { DashboardPage } from "@/pages/admin/dashboard";
 const PatientsPage = lazy(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
+const AdminPatientsDuplicatesPage = lazy(() =>
+  import("@/pages/admin/admin-patients-duplicates").then((m) => ({
+    default: m.AdminPatientsDuplicatesPage,
+  })),
+);
+const AdminLiveStaffingPage = lazy(() =>
+  import("@/pages/admin/admin-live-staffing").then((m) => ({
+    default: m.AdminLiveStaffingPage,
+  })),
+);
 const PatientDetailPage = lazy(() =>
   import("@/pages/admin/patient-detail").then((m) => ({
     default: m.PatientDetailPage,
@@ -739,6 +749,11 @@ function AdminConsole() {
               )}
             </Route>
             <Route path="/admin/patients" component={PatientsPage} />
+            {/* Literal segment — MUST precede /admin/patients/:id below. */}
+            <Route
+              path="/admin/patients/duplicates"
+              component={AdminPatientsDuplicatesPage}
+            />
             <Route
               path="/admin/patient-packets"
               component={AdminPatientPacketsPage}
@@ -918,6 +933,10 @@ function AdminConsole() {
             <Route
               path="/admin/productivity"
               component={AdminProductivityPage}
+            />
+            <Route
+              path="/admin/live-staffing"
+              component={AdminLiveStaffingPage}
             />
             <Route
               path="/admin/shop/backorders"

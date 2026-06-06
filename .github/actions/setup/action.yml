@@ -37,12 +37,32 @@ runs:
     # contain a package.json (see copilot-setup-steps.yml for the long
     # version of this rationale). Disabling the corepack shim first
     # ensures the npm-installed binary wins the PATH lookup.
+    #
+    # ORDERING IS LOAD-BEARING: pnpm MUST be installed before
+    # actions/setup-node runs. setup-node enables the pnpm package-manager
+    # cache (cache: "pnpm" below), and that cache step shells out to the
+    # `pnpm` binary to locate the store — so pnpm has to be on PATH first.
+    # Putting setup-node ahead of this step breaks EVERY CI job with
+    # "Unable to locate executable file: pnpm" (the PR #531 regression).
+    # Do not swap these two steps.
     - name: Install pnpm
       shell: bash
       run: |
         corepack disable pnpm 2>/dev/null || true
         npm install -g pnpm@${{ inputs.pnpm-version }}
-        pnpm --version
+        # Assert the pnpm we just installed is the one that resolves on
+        # PATH — not a runner-preinstalled pnpm 10 (the version mismatch
+        # PR #531 set out to fix). Fail loudly rather than silently
+        # building with the wrong major.
+        installed="$(pnpm --version)"
+        echo "Resolved pnpm: $installed"
+        case "$installed" in
+          11.*) ;;
+          *)
+            echo "::error::Expected pnpm 11.x (pinned ${{ inputs.pnpm-version }}), but '$installed' resolved on PATH"
+            exit 1
+            ;;
+        esac
 
     - uses: actions/setup-node@v5
       with:

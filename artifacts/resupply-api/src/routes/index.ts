@@ -40,6 +40,7 @@ import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
+import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
 import todayRouter from "./admin/today.js";
@@ -56,6 +57,7 @@ import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
 import productivityRouter from "./admin/productivity.js";
+import staffingLiveRouter from "./admin/staffing-live.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
 import officeClosuresRouter from "./admin/office-closures.js";
@@ -641,6 +643,9 @@ router.use(teamRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
+// /admin/voice/metrics — voice-call timing metrics (volume, answer
+// rate, handle + ring time) from the voice_calls ledger. Read-only.
+router.use(voiceMetricsRouter);
 // /admin/account-setup — new-account / production launch checklist.
 // Read-only "is this done?" feed (env presence + DB probes) for the
 // Settings -> Account Setup page. Never returns env-var values.
@@ -817,6 +822,9 @@ router.use(integrationsSyncEquipmentRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);
+// /admin/staffing/live — real-time per-agent open-conversation load +
+// availability + on-shift + unassigned backlog. reports.read-gated.
+router.use(staffingLiveRouter);
 // /admin/bulk-campaigns/* — staging-side surface for bulk-email
 // campaigns. Phase A persists draft + cancelled; Phase B will add
 // the send-side worker that drains bulk_campaign_recipients.

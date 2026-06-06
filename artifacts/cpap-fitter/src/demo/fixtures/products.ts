@@ -319,6 +319,7 @@ export function demoProductsResponse() {
   }
   return {
     previewMode: false,
+    purchasingEnabled: true,
     categories: CATEGORY_ORDER.filter((c) => byCategory[c]?.length),
     products: DEMO_PRODUCTS,
     byCategory,
