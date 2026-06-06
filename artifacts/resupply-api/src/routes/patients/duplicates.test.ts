@@ -104,6 +104,7 @@ describe("GET /patients/duplicates", () => {
     const nameGroup = res.body.groups.find(
       (g: { matchReason: string }) => g.matchReason === "dob_lastname",
     );
+    expect(nameGroup).not.toHaveProperty("groupKey");
     expect(nameGroup.memberCount).toBe(2);
     expect(nameGroup.members.map((m: { patientId: string }) => m.patientId)).toEqual([
       "p1",
