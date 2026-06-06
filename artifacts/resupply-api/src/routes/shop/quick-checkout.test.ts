@@ -81,6 +81,13 @@ const { loggerMock } = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/logger", () => ({ logger: loggerMock }));
 
+// ── storefront.checkout feature flag ──────────────────────────────────────────
+// Toggle `featureEnabled.value` per test; defaults on (reset in beforeEach).
+const featureEnabled = vi.hoisted(() => ({ value: true }));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => featureEnabled.value),
+}));
+
 import quickCheckoutRouter from "./quick-checkout";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -136,6 +143,7 @@ function stubCartValid(): void {
 
 beforeEach(() => {
   mockSignedIn.current = null;
+  featureEnabled.value = true;
   supabaseMock.reset();
   readStripeConfigOrNullMock.mockReset();
   getOrCreateStripeCustomerMock.mockReset();
@@ -166,6 +174,21 @@ describe("POST /shop/me/quick-checkout — auth and config guards", () => {
       .send({ items: ONE_ITEM });
     expect(res.status).toBe(503);
     expect(res.body.error).toBe("shop_unavailable");
+  });
+
+  it("returns 503 checkout_disabled when the storefront.checkout flag is off", async () => {
+    stubSignedIn();
+    // Even with Stripe fully configured, a paused storefront must block
+    // express checkout — parity with POST /shop/checkout so the toggle
+    // can't be bypassed via the saved-card fast path.
+    stubStripeConfigured();
+    featureEnabled.value = false;
+
+    const res = await request(makeApp())
+      .post("/shop/me/quick-checkout")
+      .send({ items: ONE_ITEM });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("checkout_disabled");
   });
 
   it("returns 400 when neither items nor reorderSessionId is provided", async () => {

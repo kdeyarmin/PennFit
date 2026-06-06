@@ -41,6 +41,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -98,6 +99,19 @@ router.post(
   limiter,
   requireSignedIn,
   async (req, res) => {
+    // Control Center master switch for storefront purchasing. Mirrors
+    // the gate on POST /shop/checkout so express checkout can't bypass
+    // a paused storefront. Existing subscriptions and orders are
+    // managed through their own routes and stay available.
+    if (!(await isFeatureEnabled("storefront.checkout"))) {
+      res.status(503).json({
+        error: "checkout_disabled",
+        message:
+          "Checkout is temporarily unavailable. Please try again in a few minutes.",
+      });
+      return;
+    }
+
     const config = readStripeConfigOrNull();
     if (!config) {
       res.status(503).json(SHOP_UNAVAILABLE_BODY);
