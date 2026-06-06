@@ -64,6 +64,11 @@ const PatientDetailPage = lazy(() =>
     default: m.PatientDetailPage,
   })),
 );
+const AdminPatientPacketsPage = lazy(() =>
+  import("@/pages/admin/patient-packets").then((m) => ({
+    default: m.AdminPatientPacketsPage,
+  })),
+);
 const ConversationsPage = lazy(() =>
   import("@/pages/admin/conversations").then((m) => ({
     default: m.ConversationsPage,
@@ -748,6 +753,10 @@ function AdminConsole() {
             <Route
               path="/admin/patients/duplicates"
               component={AdminPatientsDuplicatesPage}
+            />
+            <Route
+              path="/admin/patient-packets"
+              component={AdminPatientPacketsPage}
             />
             <Route path="/admin/patients/:patientId/insurance-claims">
               {(params) => (

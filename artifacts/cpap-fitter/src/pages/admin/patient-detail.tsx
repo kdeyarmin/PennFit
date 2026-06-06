@@ -27,6 +27,7 @@ import { LogInterventionCard } from "@/components/admin/LogInterventionCard";
 import { PatientCmnCard } from "@/components/admin/PatientCmnCard";
 import { PatientBillingTab } from "@/components/admin/PatientBillingTab";
 import { PatientResupplyTab } from "@/components/admin/PatientResupplyTab";
+import { PatientPacketsTab } from "@/components/admin/PatientPacketsTab";
 import { PortalTab } from "@/components/admin/PortalTab";
 import { PrescriptionsTab } from "@/components/admin/PrescriptionsTab";
 import { SettingsCard } from "@/components/admin/SettingsCard";
@@ -108,6 +109,7 @@ type Tab =
   | "resupply"
   | "equipment"
   | "forms"
+  | "packets"
   | "alert-overrides";
 
 /**
@@ -419,6 +421,9 @@ export function PatientDetailPage({ id }: { id: string }) {
         <TabButton active={tab === "forms"} onClick={() => setTab("forms")}>
           Forms
         </TabButton>
+        <TabButton active={tab === "packets"} onClick={() => setTab("packets")}>
+          Signatures
+        </TabButton>
         <TabButton
           active={tab === "alert-overrides"}
           onClick={() => setTab("alert-overrides")}
@@ -473,6 +478,14 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "resupply" && <PatientResupplyTab patientId={id} />}
         {tab === "equipment" && <EquipmentTab patientId={id} />}
         {tab === "forms" && <FormAcksTab patientId={id} />}
+        {tab === "packets" && (
+          <PatientPacketsTab
+            patientId={id}
+            hasEmail={data.hasEmail}
+            hasPhone={data.hasPhone}
+            onChanged={() => void refetch()}
+          />
+        )}
         {tab === "alert-overrides" && (
           <AlertMessageOverridesPanel patientId={id} />
         )}

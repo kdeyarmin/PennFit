@@ -337,12 +337,21 @@ export function ShopCart() {
       // Malformed JSON or storage blocked — silently no banner.
     }
   }, []);
-  // Tri-state preview probe: `null` until the products fetch resolves,
-  // then `true`/`false`. Keeping it tri-state lets us disable Checkout
-  // during the probe so a fast click can't beat the response and POST
-  // to /shop/checkout (the server would 503 anyway, but disabling
-  // avoids a flash-of-error). The /shop/products endpoint is cached
-  // server-side for 60s, so this single GET is cheap.
+  // Tri-state purchasing probe: `null` until the products fetch
+  // resolves, then `true`/`false`. Keeping it tri-state lets us disable
+  // Checkout during the probe so a fast click can't beat the response
+  // and POST to /shop/checkout (the server would 503 anyway, but
+  // disabling avoids a flash-of-error). The /shop/products endpoint is
+  // cached server-side for 60s, so this single GET is cheap.
+  //
+  // `purchasingEnabled` is the authoritative "can the shopper actually
+  // pay" signal (Stripe configured AND the storefront.checkout flag is
+  // on). `previewMode` is kept only to pick the right wording when
+  // purchasing is off — "Stripe not connected yet" vs. "online ordering
+  // paused".
+  const [purchasingEnabled, setPurchasingEnabled] = useState<boolean | null>(
+    null,
+  );
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
   // Auth + saved-card probe for the Express Checkout button. Same
   // tri-state pattern as previewMode: `null` means "still finding out"
@@ -406,12 +415,14 @@ export function ShopCart() {
       .then((r) => {
         if (!active) return;
         if ("unavailable" in r) {
-          // Treat hard-503 as preview-equivalent for the cart: no
+          // Treat hard-503 as "can't purchase" for the cart: no
           // checkout possible either way. Catalog stays empty so the
           // cross-sell strip self-hides.
+          setPurchasingEnabled(false);
           setPreviewMode(true);
           return;
         }
+        setPurchasingEnabled(r.purchasingEnabled);
         setPreviewMode(r.previewMode);
         setCatalog(r.products);
       })
@@ -419,18 +430,21 @@ export function ShopCart() {
         // Fail open to "live" so a transient products fetch failure
         // doesn't block a real customer's checkout. The button click
         // path still surfaces the real error if checkout itself fails.
-        if (active) setPreviewMode(false);
+        if (active) {
+          setPurchasingEnabled(true);
+          setPreviewMode(false);
+        }
       });
     return () => {
       active = false;
     };
   }, []);
 
-  const probing = previewMode === null;
+  const probing = purchasingEnabled === null;
 
   async function handleCheckout() {
     if (items.length === 0) return;
-    if (previewMode !== false) return;
+    if (purchasingEnabled !== true) return;
     setError(null);
     track("checkout_started", {
       lineItems: items.length,
@@ -484,7 +498,7 @@ export function ShopCart() {
   // a one-tap "Pay $X.XX" button on the Stripe page.
   async function handleExpressCheckout() {
     if (items.length === 0) return;
-    if (previewMode !== false) return;
+    if (purchasingEnabled !== true) return;
     setError(null);
     track("checkout_started", {
       lineItems: items.length,
@@ -535,7 +549,7 @@ export function ShopCart() {
     signedIn === true &&
     savedCard !== null &&
     savedCard.last4 !== null &&
-    previewMode === false;
+    purchasingEnabled === true;
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-4xl">
@@ -918,7 +932,9 @@ export function ShopCart() {
                         setError(null);
                         void handleCheckout();
                       }}
-                      disabled={checkingOut || probing || previewMode === true}
+                      disabled={
+                        checkingOut || probing || purchasingEnabled === false
+                      }
                       className="mt-2 text-xs font-semibold underline text-rose-800 hover:text-rose-900 disabled:opacity-50 disabled:no-underline inline-flex items-center gap-1"
                       data-testid="cart-error-retry"
                     >
@@ -940,6 +956,25 @@ export function ShopCart() {
                     </span>{" "}
                     Card checkout opens once Stripe is connected — no charge
                     will be made today.
+                  </p>
+                </div>
+              )}
+              {/* Online ordering paused by the business (storefront.checkout
+                  flag off) while Stripe IS connected — distinct wording from
+                  the preview banner above so we don't imply Stripe is missing. */}
+              {purchasingEnabled === false && previewMode === false && (
+                <div
+                  className="rounded-xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 px-3 py-3 mb-3 flex items-start gap-2"
+                  data-testid="cart-ordering-paused-banner"
+                  role="status"
+                >
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-[hsl(var(--penn-navy))]" />
+                  <p className="text-xs leading-relaxed text-foreground/85">
+                    <span className="font-semibold text-[hsl(var(--penn-navy))]">
+                      Online ordering is paused.
+                    </span>{" "}
+                    Your cart is saved — check back soon, or use the insurance
+                    flow below ($0 with a prescription).
                   </p>
                 </div>
               )}
@@ -974,14 +1009,16 @@ export function ShopCart() {
               )}
               <Button
                 onClick={handleCheckout}
-                disabled={checkingOut || probing || previewMode === true}
+                disabled={checkingOut || probing || purchasingEnabled === false}
                 className="w-full"
                 data-testid="cart-checkout"
               >
-                {previewMode === true ? (
+                {purchasingEnabled === false ? (
                   <>
-                    <Lock className="w-4 h-4 mr-2" /> Checkout disabled in
-                    preview
+                    <Lock className="w-4 h-4 mr-2" />{" "}
+                    {previewMode === true
+                      ? "Checkout disabled in preview"
+                      : "Online ordering paused"}
                   </>
                 ) : probing ? (
                   <>
@@ -1000,7 +1037,7 @@ export function ShopCart() {
                 )}
               </Button>
               <p className="text-[11px] text-muted-foreground mt-3 text-center leading-relaxed">
-                {previewMode === true
+                {purchasingEnabled === false
                   ? "Use the insurance flow below — it's $0 with a prescription and fully live today."
                   : "Secure payment processed by Stripe. We never see your card details."}
               </p>

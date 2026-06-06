@@ -365,6 +365,11 @@ const RemindersManage = lazyWithRetry(() =>
     default: m.RemindersManage,
   })),
 );
+const PatientPacketSign = lazyWithRetry(() =>
+  import("@/pages/patient-packet-sign").then((m) => ({
+    default: m.PatientPacketSign,
+  })),
+);
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
@@ -764,6 +769,7 @@ function PatientRouter() {
           <Route path="/account/billing" component={GuardedAccountBilling} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />
+          <Route path="/patient-packet-sign" component={PatientPacketSign} />
           <Route path="/privacy" component={Privacy} />
           <Route path="/terms" component={Terms} />
           <Route path="/returns" component={ReturnsPage} />

@@ -2255,6 +2255,93 @@ export interface Database {
         >;
         Relationships: [];
       };
+      patient_packets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          title: string;
+          status:
+            | "draft"
+            | "sent"
+            | "viewed"
+            | "completed"
+            | "voided"
+            | "expired";
+          recipient_name: string;
+          recipient_email: string | null;
+          link_version: number;
+          expires_at: string | null;
+          sent_at: string | null;
+          first_viewed_at: string | null;
+          completed_at: string | null;
+          voided_at: string | null;
+          voided_reason: string | null;
+          created_by_email: string | null;
+          reminder_count: number;
+          last_reminded_at: string | null;
+          delivery_details: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_packet_documents: {
+        Row: {
+          id: string;
+          packet_id: string;
+          document_key: string;
+          title: string;
+          content_version: string;
+          sort_order: number;
+          requires_signature: boolean;
+          acknowledged: boolean;
+          acknowledged_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_packet_signatures: {
+        Row: {
+          id: string;
+          packet_id: string;
+          signer_name: string;
+          signer_relationship:
+            | "self"
+            | "spouse"
+            | "guardian"
+            | "power_of_attorney"
+            | "caregiver"
+            | "other";
+          signature_image: string | null;
+          consent_esign: boolean;
+          acknowledged_document_keys: string[];
+          signed_at: string;
+          signer_ip: string | null;
+          signer_user_agent: string | null;
+          signer_reason: string | null;
+          date_received: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_signatures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_signatures"]["Row"]
+        >;
+        Relationships: [];
+      };
       providers_pecos_status: {
         Row: {
           npi: string;
