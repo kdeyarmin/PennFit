@@ -1,4 +1,4 @@
--- 0222_billing_denial_risk_rpc — payer × HCPCS denial-rate aggregation
+-- 0228_billing_denial_risk_rpc — payer × HCPCS denial-rate aggregation
 -- that powers a predictive "elevated denial risk" hint at claim preflight.
 --
 -- Background: claim preflight (lib/billing/claim-preflight.ts) is a

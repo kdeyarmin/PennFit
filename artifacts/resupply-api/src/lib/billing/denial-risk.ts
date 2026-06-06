@@ -2,7 +2,7 @@
 //
 // Closes the loop the deterministic preflight checklist flies blind on:
 // turn the historical (payer × HCPCS) denial counts produced by the
-// resupply.billing_denial_risk RPC (migration 0222) into non-blocking
+// resupply.billing_denial_risk RPC (migration 0228) into non-blocking
 // "elevated denial risk" warnings the CSR sees BEFORE submitting — the
 // thing the resupply market calls predictive denial scoring ("payer X
 // denied 38% of recent E0601 claims").

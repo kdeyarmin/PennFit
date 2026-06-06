@@ -1,7 +1,7 @@
 // Route test for GET /patients/duplicates (CSR #C1, detection half).
 //
 // The grouping/HAVING runs in the resupply.patient_duplicate_groups RPC
-// (migration 0223). The route's job is: call the RPC, fold the flat
+// (migration 0229). The route's job is: call the RPC, fold the flat
 // (group_key, patient) rows into groups, and shape the response. This
 // pins that folding + the PHI posture (no phone/email values, just
 // hasPhone/hasEmail markers passed through from the RPC).
