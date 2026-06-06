@@ -40,6 +40,7 @@ import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
+import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
 import todayRouter from "./admin/today.js";
@@ -638,6 +639,9 @@ router.use(teamRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
+// /admin/voice/metrics — voice-call timing metrics (volume, answer
+// rate, handle + ring time) from the voice_calls ledger. Read-only.
+router.use(voiceMetricsRouter);
 // /admin/account-setup — new-account / production launch checklist.
 // Read-only "is this done?" feed (env presence + DB probes) for the
 // Settings -> Account Setup page. Never returns env-var values.
