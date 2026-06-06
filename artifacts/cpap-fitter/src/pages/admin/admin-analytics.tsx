@@ -32,12 +32,14 @@ import {
   complianceCohortsCsvUrl,
   fetchComplianceCohorts,
   fetchCsrProductivity,
+  fetchPatientRetention,
   fetchResupplyFunnel,
   fetchResupplyKpis,
   fetchStuckEpisodes,
   resupplyFunnelCsvUrl,
   type ComplianceCohortsResponse,
   type CsrProductivityResponse,
+  type PatientRetentionResponse,
   type ResupplyFunnelResponse,
   type ResupplyKpisResponse,
   type StuckEpisode,
@@ -49,6 +51,7 @@ export function AdminAnalyticsPage() {
   const [funnelDays, setFunnelDays] = useState(30);
   const [cohortDays, setCohortDays] = useState(180);
   const [productivityDays, setProductivityDays] = useState(14);
+  const [retentionDays, setRetentionDays] = useState(365);
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -62,6 +65,7 @@ export function AdminAnalyticsPage() {
       </header>
 
       <KpisPanel days={kpiDays} onDaysChange={setKpiDays} />
+      <RetentionPanel days={retentionDays} onDaysChange={setRetentionDays} />
       <FunnelPanel days={funnelDays} onDaysChange={setFunnelDays} />
       <StuckEpisodesPanel />
       <CohortsPanel days={cohortDays} onDaysChange={setCohortDays} />
@@ -245,6 +249,97 @@ function KpisPanel({
         <ErrorPanel error={error} onRetry={() => void refetch()} />
       ) : (
         <KpisBody data={data} />
+      )}
+    </Card>
+  );
+}
+
+// ── Patient retention ───────────────────────────────────────────────
+
+function RetentionBody({ data }: { data: PatientRetentionResponse }) {
+  if (data.patientsServed === 0) {
+    return (
+      <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
+        No fulfilled resupply episodes in this window yet.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiTile
+          label="Repeat-supply rate"
+          value={pct(data.repeatRate)}
+          hint={`${data.repeatPatients} of ${data.reorderEligible} eligible patients reordered`}
+        />
+        <KpiTile
+          label="Active rate"
+          value={pct(data.activeRate)}
+          hint={`${data.activePatients} of ${data.patientsServed} served are still ordering`}
+        />
+        <KpiTile
+          label="Active patients"
+          value={String(data.activePatients)}
+          hint={`fulfilled within ${data.activeDays}d`}
+        />
+        <KpiTile
+          label="Lapsed patients"
+          value={String(data.lapsedPatients)}
+          hint={`no fulfillment in ${data.activeDays}d`}
+        />
+      </div>
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider mb-2 text-muted-foreground">
+          Repeat rate by first-supply month
+        </h3>
+        <CohortTable
+          rows={data.byCohort.map((b) => ({
+            label: b.cohort,
+            total: b.size,
+            qualifying: b.repeat,
+            rate: b.repeatRate,
+          }))}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RetentionPanel({
+  days,
+  onDaysChange,
+}: {
+  days: number;
+  onDaysChange: (d: number) => void;
+}) {
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "analytics", "retention", days],
+    queryFn: () => fetchPatientRetention(days),
+  });
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Patient retention
+        </span>
+      }
+      subtitle="Are we keeping patients? Repeat-supply rate (did they reorder), active vs. lapsed, and repeat rate by the month a patient first received product. Measured on fulfilled episodes."
+      action={
+        <WindowPicker
+          value={days}
+          onChange={onDaysChange}
+          options={[180, 365, 730]}
+        />
+      }
+    >
+      {isPending ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
+      ) : (
+        <RetentionBody data={data} />
       )}
     </Card>
   );

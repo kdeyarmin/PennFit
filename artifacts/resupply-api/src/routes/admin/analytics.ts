@@ -25,11 +25,13 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
   aggregateComplianceCohorts,
+  aggregatePatientRetention,
   aggregateResupplyFunnel,
   aggregateResupplyKpis,
   type EpisodeKpiRow,
   type EpisodeRow,
   type PatientCohortPoint,
+  type RetentionEpisodeRow,
 } from "../../lib/analytics/aggregate";
 import {
   COMPLIANT_MINUTES_PER_NIGHT,
@@ -706,6 +708,66 @@ router.get(
       );
     }
     res.end();
+  },
+);
+
+// Patient retention — repeat-supply + active/lapsed rates measured on
+// fulfilled episodes. The owner's "are we keeping patients?" number,
+// which the headline KPIs (throughput, conversion) don't answer.
+//
+// Three window knobs, all bounded:
+//   * lookbackDays  — how far back to read fulfilled episodes (and thus
+//                     the earliest cohort). Default 365, max 1095.
+//   * activeDays    — a patient is "active" if their latest fulfilled
+//                     episode is within this window. Default 120 (a bit
+//                     longer than a typical 90-day resupply cadence so a
+//                     patient mid-cycle isn't miscounted as lapsed).
+//   * reorderDays   — a patient counts toward the repeat-rate
+//                     denominator only once their first fulfilled
+//                     episode is this old (had a real chance to
+//                     reorder). Default 90.
+const retentionQuerySchema = z.object({
+  lookbackDays: z.coerce.number().int().min(30).max(1095).optional().default(365),
+  activeDays: z.coerce.number().int().min(1).max(365).optional().default(120),
+  reorderDays: z.coerce.number().int().min(1).max(365).optional().default(90),
+});
+
+router.get(
+  "/admin/analytics/patient-retention",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const parsed = retentionQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { lookbackDays, activeDays, reorderDays } = parsed.data;
+    const cutoff = isoDaysAgo(lookbackDays);
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Fulfilled episodes only — the real-shipment signal. Capped for
+    // safety on a very long lookback; a DME book that exceeds this in a
+    // year is a good problem to have and the rates stay representative.
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("patient_id, created_at")
+      .eq("status", "fulfilled")
+      .gte("created_at", cutoff)
+      .limit(100000);
+    if (error) throw error;
+
+    const episodes: RetentionEpisodeRow[] = (data ?? []).map((r) => ({
+      patientId: r.patient_id,
+      createdAt: r.created_at,
+    }));
+    const result = aggregatePatientRetention({
+      episodes,
+      nowMs: Date.now(),
+      activeWindowDays: activeDays,
+      reorderWindowDays: reorderDays,
+    });
+    res.json({ lookbackDays, activeDays, reorderDays, ...result });
   },
 );
 
