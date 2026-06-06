@@ -26,8 +26,8 @@ import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPatientPacketPdf } from "../../lib/patient-packet/packet-pdf";
 import {
   createAndSendPatientPacket,
-  renderPacketInviteHtml,
-  renderPacketInviteText,
+  deliverPacketLink,
+  PACKET_CHANNELS,
 } from "../../lib/patient-packet/send";
 import { PACKET_TEMPLATES } from "../../lib/patient-packet/templates";
 import { signPatientPacketToken } from "../../lib/patient-packet-token";
@@ -44,6 +44,12 @@ const packetIdParam = z.object({ packetId: z.string().uuid() });
 
 const DEFAULT_TTL_DAYS = 30;
 
+const channelsSchema = z
+  .array(z.enum(["email", "sms"]))
+  .min(1)
+  .max(2)
+  .optional();
+
 const createBody = z
   .object({
     documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
@@ -55,9 +61,20 @@ const createBody = z
       .email()
       .optional()
       .nullable(),
+    recipientPhone: z
+      .string()
+      .trim()
+      .regex(/^\+1\d{10}$/, "Must be E.164, e.g. +12155551234")
+      .optional()
+      .nullable(),
+    // Which channels to deliver the signing link on. Omitted = every
+    // channel the patient has a contact point for (email + SMS).
+    channels: channelsSchema,
     expiresInDays: z.number().int().min(1).max(90).optional(),
   })
   .strict();
+
+const resendBody = z.object({ channels: channelsSchema }).strict();
 
 function signingUrl(baseUrl: string, token: string): string {
   return `${baseUrl.replace(/\/$/, "")}/patient-packet-sign?token=${encodeURIComponent(token)}`;
@@ -171,17 +188,17 @@ router.post(
       documentKeys: b.documentKeys,
       title: b.title,
       recipientEmailOverride: b.recipientEmail,
+      recipientPhoneOverride: b.recipientPhone,
+      channels: b.channels,
       expiresInDays: b.expiresInDays,
       createdByEmail: req.adminEmail ?? null,
     });
     if (!result.ok) {
       if (result.code === "invalid_document_keys") {
-        res
-          .status(400)
-          .json({
-            error: "invalid_document_keys",
-            invalidKeys: result.invalidKeys,
-          });
+        res.status(400).json({
+          error: "invalid_document_keys",
+          invalidKeys: result.invalidKeys,
+        });
         return;
       }
       res.status(404).json({ error: "patient_not_found" });
@@ -198,6 +215,7 @@ router.post(
         patient_id: idParsed.data.id,
         document_count: result.documentCount,
         email_sent: result.emailSent,
+        sms_sent: result.smsSent,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -209,6 +227,7 @@ router.post(
       id: result.packetId,
       status: "sent",
       emailSent: result.emailSent,
+      smsSent: result.smsSent,
       // Always returned so the CSR can deliver it by hand if needed.
       signingLink: result.signingLink,
     });
@@ -288,12 +307,18 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const bodyParsed = resendBody.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+
     const supabase = getSupabaseServiceRoleClient();
     const { data: packet, error } = await supabase
       .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, status, link_version, recipient_name, recipient_email, expires_at",
+        "id, patient_id, status, link_version, recipient_name, recipient_email, expires_at",
       )
       .eq("id", parsed.data.packetId)
       .limit(1)
@@ -327,39 +352,29 @@ router.post(
       .eq("id", packet.id);
     if (updErr) throw updErr;
 
-    const token = signPatientPacketToken(packet.id, nextVersion);
-    const deps = getAuthDeps();
-    const link = signingUrl(deps.publicBaseUrl, token);
+    // Pull the patient's phone so SMS resend works (the packet row only
+    // snapshots the email recipient).
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("phone_e164")
+      .eq("id", packet.patient_id)
+      .limit(1)
+      .maybeSingle();
 
-    let emailSent = false;
-    if (packet.recipient_email) {
-      const company = await resolveCompanyProfile(supabase);
-      try {
-        await deps.email({
-          to: packet.recipient_email,
-          subject: `Reminder: please sign your ${company.legalName} new patient documents`,
-          html: renderPacketInviteHtml(
-            company.legalName,
-            packet.recipient_name,
-            link,
-          ),
-          text: renderPacketInviteText(
-            company.legalName,
-            packet.recipient_name,
-            link,
-          ),
-        });
-        emailSent = true;
-      } catch (err) {
-        logger.warn(
-          {
-            err: err instanceof Error ? err.message : "unknown",
-            packet_id: packet.id,
-          },
-          "patient packet resend email failed",
-        );
-      }
-    }
+    const token = signPatientPacketToken(packet.id, nextVersion);
+    const link = signingUrl(getAuthDeps().publicBaseUrl, token);
+
+    const { emailSent, smsSent } = await deliverPacketLink({
+      supabase,
+      recipientName: packet.recipient_name,
+      link,
+      email: packet.recipient_email,
+      phone: patient?.phone_e164 ?? null,
+      channels: bodyParsed.data.channels ?? PACKET_CHANNELS,
+      reminder: true,
+      packetId: packet.id,
+    });
 
     await logAudit({
       action: "patient_packet.resent",
@@ -367,14 +382,18 @@ router.post(
       adminUserId: req.adminUserId ?? null,
       targetTable: "patient_packets",
       targetId: packet.id,
-      metadata: { email_sent: emailSent, link_version: nextVersion },
+      metadata: {
+        email_sent: emailSent,
+        sms_sent: smsSent,
+        link_version: nextVersion,
+      },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
       logger.warn({ err }, "patient_packet.resent audit write failed");
     });
 
-    res.json({ status: "sent", emailSent, signingLink: link });
+    res.json({ status: "sent", emailSent, smsSent, signingLink: link });
   },
 );
 

@@ -216,6 +216,23 @@ export function PatientPacketSign() {
   const allAcked = documents.length > 0 && ackedCount === documents.length;
   const canSubmit = allAcked && signerName.trim().length >= 2 && consent;
 
+  // Pre-fill the signer's name from the packet recipient so the
+  // signature is ready the moment the page loads — one less thing for
+  // the patient to do.
+  const prefilledName = useRef(false);
+  useEffect(() => {
+    if (!prefilledName.current && data?.recipientName && !signerName) {
+      setSignerName(data.recipientName);
+      prefilledName.current = true;
+    }
+  }, [data?.recipientName, signerName]);
+
+  const acknowledgeAll = () => {
+    const next: Record<string, boolean> = {};
+    for (const d of documents) next[d.key] = true;
+    setAcked(next);
+  };
+
   const progress = useMemo(() => {
     const totalSteps = documents.length + 1; // docs + signing step
     const done = ackedCount + (canSubmit ? 1 : 0);
@@ -404,6 +421,15 @@ export function PatientPacketSign() {
           <span>{progress}%</span>
         </div>
         <Progress value={progress} className="h-2" />
+        {!allAcked && documents.length > 1 && (
+          <button
+            type="button"
+            onClick={acknowledgeAll}
+            className="mt-2 w-full rounded-lg bg-slate-900 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+          >
+            I’ve read and agree to all {documents.length} documents
+          </button>
+        )}
       </div>
 
       {/* Documents */}

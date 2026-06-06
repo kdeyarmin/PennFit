@@ -4,12 +4,15 @@
 // packets) and the automatic send-on-delivery hook so the two paths
 // can never drift. Encapsulates: resolve the patient, insert the
 // packet + its document snapshot, mint the HMAC signing link, and
-// (optionally) email the secure link via the shared SendGrid client.
+// deliver the secure link over the requested channel(s) — email
+// (SendGrid) and/or SMS (Twilio). Each channel degrades gracefully
+// when unconfigured or when the patient has no address/number on file.
 //
 // The caller owns audit logging and HTTP shaping; this helper only
 // returns structured data.
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
@@ -18,12 +21,16 @@ import {
   defaultPacketDocumentKeys,
   getPacketTemplate,
   isValidPacketDocumentKey,
+  type CompanyProfile,
 } from "./templates";
 import { signPatientPacketToken } from "../patient-packet-token";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export const DEFAULT_PACKET_TTL_DAYS = 30;
+
+export type PacketChannel = "email" | "sms";
+export const PACKET_CHANNELS: PacketChannel[] = ["email", "sms"];
 
 export interface CreateAndSendPatientPacketOptions {
   supabase: SupabaseClient;
@@ -33,11 +40,17 @@ export interface CreateAndSendPatientPacketOptions {
   title?: string;
   /** Overrides the patient's email-on-file as the link recipient. */
   recipientEmailOverride?: string | null;
+  /** Overrides the patient's phone-on-file as the SMS recipient. */
+  recipientPhoneOverride?: string | null;
   expiresInDays?: number;
   /** Stamped onto the packet (admin email, or e.g. "system:delivery"). */
   createdByEmail?: string | null;
-  /** When false, the packet is created but no email is sent (default true). */
-  sendEmail?: boolean;
+  /**
+   * Which channels to deliver on. When omitted, the link is sent on
+   * every channel for which the patient has a contact point on file
+   * (email + SMS) — maximising the chance the patient completes it.
+   */
+  channels?: PacketChannel[];
   /** Flavours the email subject ("Reminder: …" vs "Please review …"). */
   reminder?: boolean;
 }
@@ -48,7 +61,9 @@ export type CreateAndSendPatientPacketResult =
       packetId: string;
       signingLink: string;
       emailSent: boolean;
+      smsSent: boolean;
       recipientEmail: string | null;
+      recipientPhone: string | null;
       documentCount: number;
     }
   | { ok: false; code: "patient_not_found" }
@@ -75,7 +90,7 @@ export async function createAndSendPatientPacket(
   const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
-    .select("id, legal_first_name, legal_last_name, email")
+    .select("id, legal_first_name, legal_last_name, email, phone_e164")
     .eq("id", patientId)
     .limit(1)
     .maybeSingle();
@@ -87,6 +102,8 @@ export async function createAndSendPatientPacket(
     "Patient";
   const recipientEmail =
     opts.recipientEmailOverride ?? patient.email?.toLowerCase() ?? null;
+  const recipientPhone =
+    opts.recipientPhoneOverride ?? patient.phone_e164 ?? null;
   const nowIso = new Date().toISOString();
   const expiresAt = new Date(
     Date.now() + ttlDays * 24 * 60 * 60 * 1000,
@@ -132,41 +149,139 @@ export async function createAndSendPatientPacket(
     packet.link_version,
     ttlDays * 24 * 60 * 60,
   );
-  const deps = getAuthDeps();
-  const link = signingUrl(deps.publicBaseUrl, token);
+  const link = signingUrl(getAuthDeps().publicBaseUrl, token);
 
-  let emailSent = false;
-  if (recipientEmail && opts.sendEmail !== false) {
-    const company = await resolveCompanyProfile(supabase);
-    try {
-      await deps.email({
-        to: recipientEmail,
-        subject: opts.reminder
-          ? `Reminder: please sign your ${company.legalName} new patient documents`
-          : `Please review and sign your ${company.legalName} new patient documents`,
-        html: renderPacketInviteHtml(company.legalName, recipientName, link),
-        text: renderPacketInviteText(company.legalName, recipientName, link),
-      });
-      emailSent = true;
-    } catch (err) {
-      logger.warn(
-        {
-          err: err instanceof Error ? err.message : "unknown",
-          packet_id: packet.id,
-        },
-        "patient packet invite email failed",
-      );
-    }
-  }
+  const { emailSent, smsSent } = await deliverPacketLink({
+    supabase,
+    recipientName,
+    link,
+    email: recipientEmail,
+    phone: recipientPhone,
+    channels: opts.channels ?? PACKET_CHANNELS,
+    reminder: opts.reminder,
+    packetId: packet.id,
+  });
 
   return {
     ok: true,
     packetId: packet.id,
     signingLink: link,
     emailSent,
+    smsSent,
     recipientEmail,
+    recipientPhone,
     documentCount: uniqueKeys.length,
   };
+}
+
+export interface DeliverPacketLinkInput {
+  supabase: SupabaseClient;
+  recipientName: string;
+  link: string;
+  email: string | null;
+  phone: string | null;
+  /** Channels to attempt. Each is skipped when its recipient is absent. */
+  channels: PacketChannel[];
+  reminder?: boolean;
+  /** For log correlation only. */
+  packetId?: string;
+}
+
+/**
+ * Delivers a packet signing link over the requested channels. Resolves
+ * the company profile once and reuses it. Every channel is best-effort:
+ * a missing contact point, an unconfigured vendor, or a send error
+ * leaves that channel's flag false without throwing.
+ */
+export async function deliverPacketLink(
+  input: DeliverPacketLinkInput,
+): Promise<{ emailSent: boolean; smsSent: boolean }> {
+  const wantEmail = input.channels.includes("email") && Boolean(input.email);
+  const wantSms = input.channels.includes("sms") && Boolean(input.phone);
+  if (!wantEmail && !wantSms) return { emailSent: false, smsSent: false };
+
+  const company = await resolveCompanyProfile(input.supabase);
+
+  let emailSent = false;
+  if (wantEmail && input.email) {
+    try {
+      await getAuthDeps().email({
+        to: input.email,
+        subject: input.reminder
+          ? `Reminder: please sign your ${company.legalName} new patient documents`
+          : `Please review and sign your ${company.legalName} new patient documents`,
+        html: renderPacketInviteHtml(
+          company.legalName,
+          input.recipientName,
+          input.link,
+        ),
+        text: renderPacketInviteText(
+          company.legalName,
+          input.recipientName,
+          input.link,
+        ),
+      });
+      emailSent = true;
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : "unknown",
+          packet_id: input.packetId,
+        },
+        "patient packet invite email failed",
+      );
+    }
+  }
+
+  let smsSent = false;
+  if (wantSms && input.phone) {
+    smsSent = await sendPacketSms(
+      company,
+      input.phone,
+      input.link,
+      input.packetId,
+    );
+  }
+
+  return { emailSent, smsSent };
+}
+
+function sendPacketSms(
+  company: CompanyProfile,
+  phoneE164: string,
+  link: string,
+  packetId?: string,
+): Promise<boolean> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID ?? null;
+  const authToken = process.env.TWILIO_AUTH_TOKEN ?? null;
+  const from = process.env.TWILIO_PHONE_NUMBER ?? null;
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
+  if (!accountSid || !authToken || !(from || messagingServiceSid)) {
+    // SMS not configured (dev / preview). Graceful no-op.
+    return Promise.resolve(false);
+  }
+  const body =
+    `${company.legalName}: please review & sign your new patient documents here: ${link}` +
+    ` Reply STOP to opt out.`;
+  const client = createTwilioSmsClient({
+    accountSid,
+    authToken,
+    from: from ?? undefined,
+    messagingServiceSid: messagingServiceSid ?? undefined,
+  });
+  return client
+    .sendSms({ to: phoneE164, body: body.slice(0, 480) })
+    .then(() => true)
+    .catch((err: unknown) => {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : "unknown",
+          packet_id: packetId,
+        },
+        "patient packet invite SMS failed",
+      );
+      return false;
+    });
 }
 
 export function renderPacketInviteHtml(

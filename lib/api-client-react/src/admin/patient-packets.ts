@@ -88,10 +88,15 @@ export interface PatientPacketDetail {
   signingLink: string | null;
 }
 
+export type PacketChannel = "email" | "sms";
+
 export interface SendPatientPacketRequest {
   documentKeys?: string[];
   title?: string;
   recipientEmail?: string | null;
+  recipientPhone?: string | null;
+  /** Delivery channels. Omitted = every channel the patient has on file. */
+  channels?: PacketChannel[];
   expiresInDays?: number;
 }
 
@@ -99,6 +104,7 @@ export interface SendPatientPacketResponse {
   id: string;
   status: string;
   emailSent: boolean;
+  smsSent: boolean;
   signingLink: string;
 }
 
@@ -222,21 +228,31 @@ export function useSendPatientPacket(options?: {
 
 export function useResendPatientPacket(options?: {
   mutation?: UseMutationOptions<
-    { status: string; emailSent: boolean; signingLink: string },
+    {
+      status: string;
+      emailSent: boolean;
+      smsSent: boolean;
+      signingLink: string;
+    },
     PacketError,
-    { packetId: string }
+    { packetId: string; channels?: PacketChannel[] }
   >;
 }) {
   return useMutation<
-    { status: string; emailSent: boolean; signingLink: string },
+    {
+      status: string;
+      emailSent: boolean;
+      smsSent: boolean;
+      signingLink: string;
+    },
     PacketError,
-    { packetId: string }
+    { packetId: string; channels?: PacketChannel[] }
   >({
-    mutationFn: ({ packetId }) =>
+    mutationFn: ({ packetId, channels }) =>
       customFetch(`/resupply-api/admin/packets/${packetId}/resend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(channels ? { channels } : {}),
       }),
     ...options?.mutation,
   });

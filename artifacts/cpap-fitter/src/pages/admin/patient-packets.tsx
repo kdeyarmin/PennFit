@@ -265,13 +265,18 @@ function SendPacketPanel({
     id: string;
     name: string;
     hasEmail: boolean;
+    hasPhone: boolean;
   } | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Record<string, boolean>>({});
+  const [useEmail, setUseEmail] = useState(true);
+  const [useSms, setUseSms] = useState(true);
   const [title, setTitle] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
   const [result, setResult] = useState<{
     link: string;
     emailSent: boolean;
+    smsSent: boolean;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -315,6 +320,13 @@ function SendPacketPanel({
       setError("Select at least one document.");
       return;
     }
+    const channels: ("email" | "sms")[] = [];
+    if (useEmail) channels.push("email");
+    if (useSms) channels.push("sms");
+    if (channels.length === 0) {
+      setError("Choose at least one delivery channel (email or text).");
+      return;
+    }
     try {
       const res = await send.mutateAsync({
         patientId: selectedPatient.id,
@@ -322,9 +334,15 @@ function SendPacketPanel({
           documentKeys: chosen.map((t) => t.key),
           title: title.trim() || undefined,
           recipientEmail: recipientEmail.trim() || undefined,
+          recipientPhone: recipientPhone.trim() || undefined,
+          channels,
         },
       });
-      setResult({ link: res.signingLink, emailSent: res.emailSent });
+      setResult({
+        link: res.signingLink,
+        emailSent: res.emailSent,
+        smsSent: res.smsSent,
+      });
       onSent();
     } catch (err) {
       setError(describeError(err).detail ?? "Failed to send packet.");
@@ -346,10 +364,14 @@ function SendPacketPanel({
                 color: "hsl(142 60% 25%)",
               }}
             >
-              Packet sent
-              {result.emailSent ? " and emailed to the patient." : "."}{" "}
-              {!result.emailSent &&
-                "No email was sent — share the secure link below directly."}
+              Packet created.{" "}
+              {result.emailSent && result.smsSent
+                ? "Emailed and texted to the patient."
+                : result.emailSent
+                  ? "Emailed to the patient."
+                  : result.smsSent
+                    ? "Texted to the patient."
+                    : "No message was sent — share the secure link below directly."}
             </div>
             <div>
               <Label htmlFor="signlink">Secure signing link</Label>
@@ -373,6 +395,7 @@ function SendPacketPanel({
                   setSearch("");
                   setTitle("");
                   setRecipientEmail("");
+                  setRecipientPhone("");
                 }}
               >
                 Send another
@@ -445,13 +468,18 @@ function SendPacketPanel({
                             type="button"
                             className="block w-full text-left px-3 py-2 text-sm hover:bg-black/5"
                             style={{ color: "hsl(var(--ink-1))" }}
-                            onClick={() =>
+                            onClick={() => {
                               setSelectedPatient({
                                 id: pt.id,
                                 name: `${pt.firstName} ${pt.lastName}`.trim(),
                                 hasEmail: pt.hasEmail,
-                              })
-                            }
+                                hasPhone: pt.hasPhone,
+                              });
+                              // Default each channel on when the patient
+                              // has a contact point of that kind on file.
+                              setUseEmail(pt.hasEmail);
+                              setUseSms(pt.hasPhone);
+                            }}
                           >
                             {pt.firstName} {pt.lastName}
                             <span
@@ -511,6 +539,65 @@ function SendPacketPanel({
               )}
             </div>
 
+            {/* Delivery channels */}
+            <div>
+              <Label htmlFor="channels">Send the signing link via</Label>
+              <div className="flex flex-wrap gap-2" id="channels">
+                <button
+                  type="button"
+                  onClick={() => setUseEmail((v) => !v)}
+                  className="rounded-md border px-3 py-1.5 text-sm font-medium"
+                  style={{
+                    borderColor: useEmail
+                      ? "hsl(var(--penn-navy))"
+                      : "hsl(var(--line-2))",
+                    backgroundColor: useEmail
+                      ? "hsl(var(--penn-navy) / 0.08)"
+                      : "white",
+                    color: useEmail
+                      ? "hsl(var(--penn-navy-deep))"
+                      : "hsl(var(--ink-3))",
+                  }}
+                >
+                  {useEmail ? "✓ " : ""}Email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseSms((v) => !v)}
+                  className="rounded-md border px-3 py-1.5 text-sm font-medium"
+                  style={{
+                    borderColor: useSms
+                      ? "hsl(var(--penn-navy))"
+                      : "hsl(var(--line-2))",
+                    backgroundColor: useSms
+                      ? "hsl(var(--penn-navy) / 0.08)"
+                      : "white",
+                    color: useSms
+                      ? "hsl(var(--penn-navy-deep))"
+                      : "hsl(var(--ink-3))",
+                  }}
+                >
+                  {useSms ? "✓ " : ""}Text message
+                </button>
+              </div>
+              {selectedPatient && !selectedPatient.hasEmail && useEmail && (
+                <p
+                  className="mt-1 text-xs"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  No email on file — enter one below to deliver by email.
+                </p>
+              )}
+              {selectedPatient && !selectedPatient.hasPhone && useSms && (
+                <p
+                  className="mt-1 text-xs"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  No phone on file — enter one below to deliver by text.
+                </p>
+              )}
+            </div>
+
             {/* Optional overrides */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -522,16 +609,34 @@ function SendPacketPanel({
                   onChange={(e) => setTitle(e.target.value)}
                 />
               </div>
-              <div>
-                <Label htmlFor="recipientEmail">Send to email (optional)</Label>
-                <Input
-                  id="recipientEmail"
-                  type="email"
-                  placeholder="Defaults to email on file"
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                />
-              </div>
+              {useEmail && (
+                <div>
+                  <Label htmlFor="recipientEmail">
+                    Send to email (optional)
+                  </Label>
+                  <Input
+                    id="recipientEmail"
+                    type="email"
+                    placeholder="Defaults to email on file"
+                    value={recipientEmail}
+                    onChange={(e) => setRecipientEmail(e.target.value)}
+                  />
+                </div>
+              )}
+              {useSms && (
+                <div>
+                  <Label htmlFor="recipientPhone">
+                    Send to phone (optional)
+                  </Label>
+                  <Input
+                    id="recipientPhone"
+                    type="tel"
+                    placeholder="Defaults to phone on file (+1…)"
+                    value={recipientPhone}
+                    onChange={(e) => setRecipientPhone(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             {error && (
