@@ -119,14 +119,21 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
   //    days — never duplicate, never churn a plan a CSR just worked.
   const suppressSinceMs =
     Date.now() - RECENT_PLAN_SUPPRESSION_DAYS * 24 * 3600 * 1000;
-  const { data: plans, error: plansErr } = await supabase
-    .schema("resupply")
-    .from("patient_coaching_plans")
-    .select("patient_id, closed_at")
-    .in("patient_id", candidateIds);
-  if (plansErr) throw plansErr;
+
+  const plans: Array<{ patient_id: string; closed_at: string | null }> = [];
+  for (let i = 0; i < candidateIds.length; i += 200) {
+    const chunk = candidateIds.slice(i, i + 200);
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patient_coaching_plans")
+      .select("patient_id, closed_at")
+      .in("patient_id", chunk);
+    if (error) throw error;
+    plans.push(...(data ?? []));
+  }
+
   const suppressed = new Set<string>();
-  for (const p of plans ?? []) {
+  for (const p of plans) {
     if (p.closed_at == null || Date.parse(p.closed_at) >= suppressSinceMs) {
       suppressed.add(p.patient_id);
     }
