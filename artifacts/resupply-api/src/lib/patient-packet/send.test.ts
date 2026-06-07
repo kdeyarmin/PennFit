@@ -34,21 +34,34 @@ type Handler = (q: {
 interface MockBuilder {
   select: () => MockBuilder;
   eq: (column: string, value: unknown) => MockBuilder;
+  ilike: (column: string, value: unknown) => MockBuilder;
   not: (column: string, operator: string, value: unknown) => MockBuilder;
-  limit: (n: number) => Promise<QueryResult>;
+  limit: (n: number) => MockBuilder;
+  maybeSingle: () => Promise<QueryResult>;
+  then: (
+    onfulfilled: (value: QueryResult) => unknown,
+    onrejected?: (reason: unknown) => unknown,
+  ) => Promise<unknown>;
 }
 
 // Minimal Supabase query-builder stand-in that records the table +
-// equality filters and hands them to a per-test handler. Only the
+// equality/ilike filters and hands them to a per-test handler. The
+// builder is awaitable (for the list queries that end in .limit()) and
+// also exposes .maybeSingle() for the single-row verify query. Only the
 // chain shape resolvePatientByContact actually uses is implemented.
 function makeSupabase(
   handler: Handler,
 ): Parameters<typeof resolvePatientByContact>[0] {
   const fromTable = (table: string): MockBuilder => {
     const filters: Record<string, unknown> = {};
+    const run = () => Promise.resolve(handler({ table, filters }));
     const builder: MockBuilder = {
       select: () => builder,
       eq: (column, value) => {
+        filters[column] = value;
+        return builder;
+      },
+      ilike: (column, value) => {
         filters[column] = value;
         return builder;
       },
@@ -56,7 +69,9 @@ function makeSupabase(
         filters[`${column}__not`] = true;
         return builder;
       },
-      limit: () => Promise.resolve(handler({ table, filters })),
+      limit: () => builder,
+      maybeSingle: () => run(),
+      then: (onfulfilled, onrejected) => run().then(onfulfilled, onrejected),
     };
     return builder;
   };
@@ -154,6 +169,69 @@ describe("resolvePatientByContact", () => {
     const supabase = makeSupabase(() => ({ data: [], error: null }));
     const res = await resolvePatientByContact(supabase, {
       emailLower: "nobody@example.com",
+      phoneE164: "+12155551212",
+    });
+    expect(res).toEqual({ status: "none" });
+  });
+
+  it("links when email and phone both match the same patient", async () => {
+    const supabase = makeSupabase(({ table, filters }) => {
+      if (table !== "patients") return { data: [], error: null };
+      // The verify query carries an id filter and returns one row.
+      if (filters.id) return { data: { id: "p1" }, error: null };
+      if (
+        filters.email === "ann@example.com" ||
+        filters.phone_e164 === "+12155551212"
+      ) {
+        return { data: [patientRow("p1", "Ann", "Lee")], error: null };
+      }
+      return { data: [], error: null };
+    });
+    const res = await resolvePatientByContact(supabase, {
+      emailLower: "ann@example.com",
+      phoneE164: "+12155551212",
+    });
+    expect(res).toEqual({
+      status: "matched",
+      patientId: "p1",
+      name: "Ann Lee",
+    });
+  });
+
+  it("leaves it unlinked when both are given but only the email matches a chart", async () => {
+    const supabase = makeSupabase(({ table, filters }) => {
+      if (table !== "patients") return { data: [], error: null };
+      // verify query: p1 does not carry this phone → no row.
+      if (filters.id) return { data: null, error: null };
+      if (filters.email === "ann@example.com")
+        return { data: [patientRow("p1", "Ann", "Lee")], error: null };
+      return { data: [], error: null }; // phone matches nobody
+    });
+    const res = await resolvePatientByContact(supabase, {
+      emailLower: "ann@example.com",
+      phoneE164: "+19998887777",
+    });
+    expect(res).toEqual({ status: "none" });
+  });
+
+  it("does not link when the email bridges to a different patient than the phone", async () => {
+    const supabase = makeSupabase(({ table, filters }) => {
+      if (table === "patients") {
+        if (filters.phone_e164 === "+12155551212" && !filters.id)
+          return { data: [patientRow("p1", "Ann", "Lee")], error: null };
+        if (filters.portal_auth_user_id === "auth-2")
+          return { data: [patientRow("p2", "Bo", "Ng")], error: null };
+        return { data: [], error: null }; // direct email + verify → nothing
+      }
+      if (
+        table === "shop_customers" &&
+        filters.email_lower === "ann@example.com"
+      )
+        return { data: [{ auth_user_id: "auth-2" }], error: null };
+      return { data: [], error: null };
+    });
+    const res = await resolvePatientByContact(supabase, {
+      emailLower: "ann@example.com",
       phoneE164: "+12155551212",
     });
     expect(res).toEqual({ status: "none" });

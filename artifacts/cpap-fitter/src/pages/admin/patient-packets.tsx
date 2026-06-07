@@ -495,8 +495,18 @@ function SendPacketPanel({
           <>
             {/* Recipient mode */}
             <div>
-              <Label htmlFor="recipientMode">Send to</Label>
-              <div className="flex flex-wrap gap-2" id="recipientMode">
+              <div
+                id="recipientModeLabel"
+                className="block text-xs font-semibold mb-1"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                Send to
+              </div>
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-labelledby="recipientModeLabel"
+              >
                 {(
                   [
                     ["patient", "A patient on file"],
@@ -508,6 +518,7 @@ function SendPacketPanel({
                     <button
                       key={value}
                       type="button"
+                      aria-pressed={active}
                       onClick={() => {
                         setMode(value);
                         setError(null);
