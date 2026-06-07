@@ -198,6 +198,36 @@ describe("webhook-handler — charge.dispute.closed (PR change)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// charge.refunded — cumulative amount mirror must not regress on
+// out-of-order / replayed delivery (monotonic guard).
+// ---------------------------------------------------------------------------
+
+describe("markStatusByPaymentIntent — refund mirror is monotonic", () => {
+  // `charge.amount_refunded` is cumulative and Stripe can redeliver /
+  // reorder charge.refunded events (distinct event.ids, so the dedup
+  // gate passes them through). The refund UPDATE must carry a forward-
+  // only guard so a stale lower cumulative is a no-op rather than
+  // regressing amount_refunded_cents / un-flagging a full refund.
+  const block = sliceBetween(
+    SRC,
+    "async function markStatusByPaymentIntent(",
+    "async function sendOrderConfirmationIfFirst",
+  );
+
+  it("guards the refund UPDATE with .lt('amount_refunded_cents', incoming)", () => {
+    expect(block).toMatch(
+      /\.lt\(\s*"amount_refunded_cents"\s*,\s*ctx\.amountRefundedCents\s*\)/,
+    );
+  });
+
+  it("skips (logs stale) instead of writing an audit row on a no-op update", () => {
+    expect(block).toContain(
+      "shop order refund skipped — stale or already-recorded cumulative",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Log payload simulation — pure dispatch logic
 //
 // The three new event cases share a common pattern: extract a few
