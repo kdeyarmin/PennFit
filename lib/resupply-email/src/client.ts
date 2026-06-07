@@ -188,9 +188,10 @@ export function createSendgridClient(
   // (option or env) still wins, but an unset/blank value falls back to
   // the platform constant rather than failing closed.
   const fromEmailOverride = opts.fromEmail ?? process.env.SENDGRID_FROM_EMAIL;
+  const fromEmailCandidate = fromEmailOverride?.trim();
   const fromEmail =
-    fromEmailOverride && fromEmailOverride.trim() !== ""
-      ? fromEmailOverride
+    fromEmailCandidate && fromEmailCandidate !== ""
+      ? fromEmailCandidate
       : DEFAULT_SENDGRID_FROM_EMAIL;
   const fromName = opts.fromName ?? process.env.SENDGRID_FROM_NAME;
 
