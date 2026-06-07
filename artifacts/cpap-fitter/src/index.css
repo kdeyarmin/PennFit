@@ -1193,6 +1193,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 0.875rem;
     margin: 0 auto 1.75rem;
     font-size: 0.6875rem;
@@ -1220,6 +1221,23 @@
     background: hsl(var(--penn-gold));
     box-shadow: 0 0 0 2px hsl(var(--penn-gold) / 0.18);
   }
+  /* On narrow phones the label wraps to two lines, which stranded
+     the flanking hairlines and gold dots beside off-center text.
+     Drop the decorative rules/marks there and tighten the tracking
+     so the eyebrow reads as a clean centered label. (Placed after
+     the base rules above so the override wins within this layer.) */
+  @media (max-width: 640px) {
+    .hero-eyebrow {
+      gap: 0;
+      letter-spacing: 0.16em;
+      font-size: 0.625rem;
+      margin-bottom: 1.25rem;
+    }
+    .hero-eyebrow-rule,
+    .hero-eyebrow-mark {
+      display: none;
+    }
+  }
 
   /* Serif italic accent for one word inside an otherwise
      sans-serif display headline — a single editorial moment that
@@ -1231,6 +1249,17 @@
     letter-spacing: -0.012em;
   }
 
+  /* Hero headline — fluid display type. A clamp() keeps the
+     headline from outgrowing narrow phones (where the fixed
+     text-4xl wrapped "Fit. Shop. Resupply." onto two lines and
+     orphaned the gold swoosh under just one word) while still
+     reaching the full 3.75rem on desktop. The vw term shrinks the
+     type in lockstep with the viewport so the swoosh phrase stays
+     on one line down to ~320px. */
+  .hero-headline {
+    font-size: clamp(1.4rem, 7vw, 3.75rem);
+  }
+
   /* Hand-drawn gold swoosh beneath an accented headline line —
      echoes the logo's signature swoosh under "PennPaps", which
      dips DOWN through the middle (Q60 56 120 48 in the logo SVG).
@@ -1238,6 +1267,9 @@
   .hero-headline-swoosh {
     position: relative;
     display: inline-block;
+    /* Keep the three words (and the swoosh that underlines them)
+       together on a single line at every width. */
+    white-space: nowrap;
   }
   .hero-headline-swoosh::after {
     content: "";
