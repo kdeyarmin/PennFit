@@ -406,9 +406,7 @@ async function resolvePatientViaCustomerEmail(
 function resolveDocumentKeys(
   documentKeys: string[] | undefined,
   allowPartial: boolean | undefined,
-):
-  | { ok: true; uniqueKeys: string[] }
-  | { ok: false; invalidKeys: string[] } {
+): { ok: true; uniqueKeys: string[] } | { ok: false; invalidKeys: string[] } {
   const keys = documentKeys ?? defaultPacketDocumentKeys();
   const invalidKeys = keys.filter((k) => !isValidPacketDocumentKey(k));
   if (invalidKeys.length > 0) return { ok: false, invalidKeys };

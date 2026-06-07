@@ -263,14 +263,14 @@ Three independent AI vendors are wired into the codebase, each used
 where it's strongest. All three are HIPAA-eligible and covered by
 executed vendor BAAs, and gracefully degrade when their API key is unset.
 
-| Surface                 | Primary                  | Fallback              | Key                                               |
-| ----------------------- | ------------------------ | --------------------- | ------------------------------------------------- |
-| Voice agent (LLM brain) | OpenAI `gpt-realtime`    | n/a (offline if down) | `OPENAI_API_KEY`                                  |
-| Voice agent (STT)       | `gpt-4o-mini-transcribe` | Deepgram Nova-3 (opt) | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`              |
+| Surface                 | Primary                                        | Fallback                           | Key                                                |
+| ----------------------- | ---------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
+| Voice agent (LLM brain) | OpenAI `gpt-realtime`                          | n/a (offline if down)              | `OPENAI_API_KEY`                                   |
+| Voice agent (STT)       | `gpt-4o-mini-transcribe`                       | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
 | Voice agent (TTS)       | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
-| Storefront chatbot      | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
-| Sleep coach             | Claude Sonnet 4.6        | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
-| SMS intent classifier   | Claude Haiku 4.5         | `gpt-4o-mini`         | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY` |
+| Storefront chatbot      | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Sleep coach             | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| SMS intent classifier   | Claude Haiku 4.5                               | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 
 Provider selection happens in
 `artifacts/resupply-api/src/lib/llm-provider.ts:selectLlmProvider()` —
@@ -338,10 +338,10 @@ unified types, the `IntegrationAdapter` contract, and the Zod schemas;
 every vendor package depends on it and on nothing in the data layer.
 The adapters cover two distinct domains:
 
-| Domain                      | Packages                                                                                                                     | Direction       |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)                                            | pull / ingest   |
-| Payer / claims / prior-auth | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth)                                | outbound        |
+| Domain                      | Packages                                                                                      | Direction     |
+| --------------------------- | --------------------------------------------------------------------------------------------- | ------------- |
+| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)             | pull / ingest |
+| Payer / claims / prior-auth | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth) | outbound      |
 
 Wiring & conventions:
 

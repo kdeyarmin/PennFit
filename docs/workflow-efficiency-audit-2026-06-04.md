@@ -19,18 +19,18 @@ etc.) — these are pure build/CI/dev-loop changes.
 
 ## Summary
 
-| #   | Finding                                                       | Severity | Status                          |
-| --- | ------------------------------------------------------------- | -------- | ------------------------------- |
-| W1  | CI bootstrap (pnpm+Node+install) copy-pasted into 9 jobs      | HIGH     | ✅ fixed (composite action)     |
-| W2  | Playwright browser downloaded twice/run, never cached         | MEDIUM   | ✅ fixed (cache step)           |
-| W3  | SPA built twice per CI run (a11y + smoke)                     | MEDIUM   | ✅ measured — not worth fixing   |
-| W4  | `results-page-resilience.spec.ts` runs in no CI job           | MEDIUM   | ✅ fixed (new `e2e-dev` job)    |
-| W5  | Shell-script test files (`*.sh.test`) execute nowhere         | MEDIUM   | ✅ all 4 wired in                |
-| W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM | ✅ fixed (fixtures repointed)    |
-| W5b | The architecture gate was a **silent no-op in CI** (no `rg`)   | HIGH     | ✅ fixed (install rg + hard-fail) |
-| W6  | No single "run what CI runs" local command                   | LOW      | ✅ fixed (`pnpm verify`)         |
-| W7  | Hooks not auto-installed on fresh clone (only post-merge)     | LOW      | ✅ fixed (documented setup step) |
-| W8  | `pnpm typecheck` runs in `build`, then again in CI standalone | INFO     | open — note                     |
+| #   | Finding                                                          | Severity | Status                            |
+| --- | ---------------------------------------------------------------- | -------- | --------------------------------- |
+| W1  | CI bootstrap (pnpm+Node+install) copy-pasted into 9 jobs         | HIGH     | ✅ fixed (composite action)       |
+| W2  | Playwright browser downloaded twice/run, never cached            | MEDIUM   | ✅ fixed (cache step)             |
+| W3  | SPA built twice per CI run (a11y + smoke)                        | MEDIUM   | ✅ measured — not worth fixing    |
+| W4  | `results-page-resilience.spec.ts` runs in no CI job              | MEDIUM   | ✅ fixed (new `e2e-dev` job)      |
+| W5  | Shell-script test files (`*.sh.test`) execute nowhere            | MEDIUM   | ✅ all 4 wired in                 |
+| W5a | The architecture-guard test had rotted (stale `resupply-worker`) | MEDIUM   | ✅ fixed (fixtures repointed)     |
+| W5b | The architecture gate was a **silent no-op in CI** (no `rg`)     | HIGH     | ✅ fixed (install rg + hard-fail) |
+| W6  | No single "run what CI runs" local command                       | LOW      | ✅ fixed (`pnpm verify`)          |
+| W7  | Hooks not auto-installed on fresh clone (only post-merge)        | LOW      | ✅ fixed (documented setup step)  |
+| W8  | `pnpm typecheck` runs in `build`, then again in CI standalone    | INFO     | open — note                       |
 
 Shipped on this branch: W1, W2 (mechanical CI DRY + caching), W4 (the
 dev-server e2e job, soft-gated), W5 (all four dormant/under-run guard-test
@@ -130,7 +130,7 @@ build-spa` + download. **Measured before committing to it** (CI run
 26966267295): the "Build cpap-fitter SPA" step took **~2 seconds** in
 each job (16:50:22→24 and 16:50:20→22), out of ~50 s total per job, and
 the two builds run **in parallel** — so the duplication costs ~2 s of
-runner time, not wall-clock time. The dedup would *add* an
+runner time, not wall-clock time. The dedup would _add_ an
 `actions/upload-artifact` + `download-artifact` round-trip (typically
 longer than 2 s for a multi-MB `dist/`) **and** serialize the build
 ahead of both jobs via `needs:`, making wall-clock time worse. **Verdict:
@@ -169,12 +169,12 @@ guard script exposes a `--self-test` flag that `exec`s its sibling
 `*.sh.test` (builds a synthetic tree, plants known violations, asserts
 the checker catches them, then asserts a clean tree passes).
 
-| Test file (`--self-test`)                  | Size  | Tests its sibling                    | Status before / after               |
-| ------------------------------------------ | ----- | ------------------------------------ | ----------------------------------- |
-| `check-admin-route-gates.sh.test`          | 5.7 KB| `check-admin-route-gates.sh`         | already ran via `--self-test`       |
-| `check-resupply-architecture.sh.test`      | 35 KB | `check-resupply-architecture.sh`     | dormant + rotted → ✅ fixed & wired |
-| `check-resupply-migration-prefix.sh.test`  | 6.3 KB| `check-resupply-migration-prefix.sh` | dormant → ✅ wired                  |
-| `git-hooks/lib-staged-snapshot.test`       | 11 KB | `lib-staged-snapshot.sh`             | dormant + buggy → ✅ fixed & wired  |
+| Test file (`--self-test`)                 | Size   | Tests its sibling                    | Status before / after               |
+| ----------------------------------------- | ------ | ------------------------------------ | ----------------------------------- |
+| `check-admin-route-gates.sh.test`         | 5.7 KB | `check-admin-route-gates.sh`         | already ran via `--self-test`       |
+| `check-resupply-architecture.sh.test`     | 35 KB  | `check-resupply-architecture.sh`     | dormant + rotted → ✅ fixed & wired |
+| `check-resupply-migration-prefix.sh.test` | 6.3 KB | `check-resupply-migration-prefix.sh` | dormant → ✅ wired                  |
+| `git-hooks/lib-staged-snapshot.test`      | 11 KB  | `lib-staged-snapshot.sh`             | dormant + buggy → ✅ fixed & wired  |
 
 **Correction to the first pass of this audit:** the admin-gate harness
 was _not_ dormant — the `drift` job already ran

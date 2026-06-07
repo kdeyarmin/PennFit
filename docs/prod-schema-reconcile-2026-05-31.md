@@ -29,7 +29,7 @@ applied idempotently.
    `fitter_campaign_clicks.subject_variant_key`, `providers.portal_link_version`.
    Committed to the repo as migration
    **`0186_reconcile_prod_column_drift.sql`** (idempotent `ADD COLUMN IF NOT
-   EXISTS`; no-op on a fresh replay). Verified: 65/65 present after apply.
+EXISTS`; no-op on a fresh replay). Verified: 65/65 present after apply.
 
 2. **11 `resupply` RPC functions** (prod had only `set_updated_at`; canonical
    has 12) — `billing_denial_rate`, `record_fitter_touch_open`,
@@ -80,13 +80,13 @@ committed script
 
 Post-apply verification against the canonical full-chain replay:
 
-| Check | Reference | Prod | |
-| --- | --- | --- | --- |
-| `resupply` base tables | 136 | 136 | ✓ |
-| columns across the 56 tables | 696 | 696 | ✓ |
-| PK / unique / FK / check constraints | 56 / 2 / 53 / 112 | 56 / 2 / 53 / 112 | ✓ |
-| indexes / triggers | 147 / 1 | 147 / 1 | ✓ |
-| core seed content (md5, ts-excluded) | — | — | ✓ `hcpcs_codes`, `sku_hcpcs_map`, `product_hcpcs_map`, `alert_definitions`, `claim_templates` all match |
+| Check                                | Reference         | Prod              |                                                                                                         |
+| ------------------------------------ | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `resupply` base tables               | 136               | 136               | ✓                                                                                                       |
+| columns across the 56 tables         | 696               | 696               | ✓                                                                                                       |
+| PK / unique / FK / check constraints | 56 / 2 / 53 / 112 | 56 / 2 / 53 / 112 | ✓                                                                                                       |
+| indexes / triggers                   | 147 / 1           | 147 / 1           | ✓                                                                                                       |
+| core seed content (md5, ts-excluded) | —                 | —                 | ✓ `hcpcs_codes`, `sku_hcpcs_map`, `product_hcpcs_map`, `alert_definitions`, `claim_templates` all match |
 
 prod's `ALTER DEFAULT PRIVILEGES` auto-granted `service_role` on every new table
 (verified). A transcription drop of one `product_hcpcs_map` row was caught by the
@@ -108,7 +108,7 @@ classification:
 
 - **4 additive columns added + verified** — `davinci_pas_submissions.request_bundle_json`
   (jsonb), `payer_profiles.{accepts_secondary_electronic, era_enrollment_required,
-  era_payer_id}`. The first and `era_payer_id` are code-referenced (were latent 500s).
+era_payer_id}`. The first and `era_payer_id` are code-referenced (were latent 500s).
 - **2 VIEWS created + verified** — `fitter_campaign_touch_metrics` and
   `fitter_campaign_touch_variant_metrics` (both code-referenced; queryable;
   `service_role` SELECT auto-granted via default privileges).

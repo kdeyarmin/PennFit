@@ -46,7 +46,10 @@ describe("shouldAutoEnroll", () => {
   it("does not enroll before the minimum days of therapy", () => {
     expect(
       shouldAutoEnroll(
-        score({ daysOfTherapy: EARLY_WINDOW_MIN_DAYS - 1, probabilityCompliant: 0.05 }),
+        score({
+          daysOfTherapy: EARLY_WINDOW_MIN_DAYS - 1,
+          probabilityCompliant: 0.05,
+        }),
       ),
     ).toBe(false);
   });
@@ -54,7 +57,10 @@ describe("shouldAutoEnroll", () => {
   it("does not enroll after the early-therapy window has closed", () => {
     expect(
       shouldAutoEnroll(
-        score({ daysOfTherapy: EARLY_WINDOW_MAX_DAYS + 1, probabilityCompliant: 0.05 }),
+        score({
+          daysOfTherapy: EARLY_WINDOW_MAX_DAYS + 1,
+          probabilityCompliant: 0.05,
+        }),
       ),
     ).toBe(false);
   });
@@ -84,11 +90,7 @@ describe("runCoachingAutoEnrollSweep", () => {
   it("enrolls an early-risk patient and suppresses one with an open plan", async () => {
     // 1. Candidate nights → patients A and B (A appears twice → deduped).
     stageSupabaseResponse("patient_therapy_nights", "select", {
-      data: [
-        { patient_id: "A" },
-        { patient_id: "A" },
-        { patient_id: "B" },
-      ],
+      data: [{ patient_id: "A" }, { patient_id: "A" }, { patient_id: "B" }],
     });
     // 2. Existing plans → B has an open plan (suppressed); A has none.
     stageSupabaseResponse("patient_coaching_plans", "select", {

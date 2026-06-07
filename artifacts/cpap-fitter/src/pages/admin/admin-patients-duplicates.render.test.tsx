@@ -88,9 +88,7 @@ describe("AdminPatientsDuplicatesPage", () => {
 
     render(<AdminPatientsDuplicatesPage />);
 
-    expect(
-      screen.getByText(/Same last name \+ date of birth/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Same last name \+ date of birth/)).toBeTruthy();
     // Both records render, each linking to the admin patient detail page.
     const jane = screen.getByText("JANE SMITH") as HTMLAnchorElement;
     expect(jane.getAttribute("href")).toBe("/admin/patients/p1");

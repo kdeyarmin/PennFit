@@ -51,7 +51,10 @@ export function useShopIdentity(): ShopIdentity {
               await fetch("/resupply-api/shop/me/push-subscriptions", {
                 method: "DELETE",
                 credentials: "include",
-                headers: { "Content-Type": "application/json", ...csrfHeader() },
+                headers: {
+                  "Content-Type": "application/json",
+                  ...csrfHeader(),
+                },
                 body: JSON.stringify({ endpoint }),
               });
             } catch {

@@ -98,10 +98,7 @@ export function AdminPatientsDuplicatesPage() {
         </p>
       </header>
 
-      <DuplicateGroupsCard
-        onMerge={handleMerge}
-        merging={mergeMut.isPending}
-      />
+      <DuplicateGroupsCard onMerge={handleMerge} merging={mergeMut.isPending} />
       {ConfirmDialogEl}
     </div>
   );

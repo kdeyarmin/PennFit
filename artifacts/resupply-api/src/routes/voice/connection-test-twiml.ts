@@ -16,7 +16,10 @@
 
 import { Router, type IRouter } from "express";
 
-import { buildHangupTwiml, requireTwilioSignature } from "@workspace/resupply-telecom";
+import {
+  buildHangupTwiml,
+  requireTwilioSignature,
+} from "@workspace/resupply-telecom";
 
 import { TEST_VOICE_MESSAGE } from "../../lib/connection-tests/runners";
 import {
@@ -36,8 +39,12 @@ const signatureMiddleware = requireTwilioSignature({
   },
 });
 
-router.post("/voice/connection-test-twiml", signatureMiddleware, (_req, res) => {
-  res.status(200).type("text/xml").send(buildHangupTwiml(TEST_VOICE_MESSAGE));
-});
+router.post(
+  "/voice/connection-test-twiml",
+  signatureMiddleware,
+  (_req, res) => {
+    res.status(200).type("text/xml").send(buildHangupTwiml(TEST_VOICE_MESSAGE));
+  },
+);
 
 export default router;

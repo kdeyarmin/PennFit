@@ -51,8 +51,8 @@ the `system.config.manage` gate actually read.
   environment-variable name** (`OPENAI_API_KEY`, `AIRVIEW_CLIENT_SECRET`,
   …). The key being identical to the env var is what lets a stored value
   overlay `process.env[key]` directly — no name-mapping layer.
-- `value` is **plaintext**. Per the repo hard rule *"No new column-level
-  encryption"* (migration 0025 stripped pgcrypto), there is no at-rest
+- `value` is **plaintext**. Per the repo hard rule _"No new column-level
+  encryption"_ (migration 0025 stripped pgcrypto), there is no at-rest
   column encryption. The protection model is:
   1. the table is reachable only via the **service-role** client
      (server-side; never the browser),
@@ -68,16 +68,16 @@ the `system.config.manage` gate actually read.
 
 A DB value **wins over** the matching Railway environment variable for
 catalog keys — entering a value in the UI is meant to be authoritative.
-*Clear* removes the row and the environment value takes over again. When
+_Clear_ removes the row and the environment value takes over again. When
 both exist, the UI shows the DB value with an "also set in environment
 (overridden)" note.
 
 ## When a saved value takes effect
 
-| Apply mode | Settings | Mechanism |
-| --- | --- | --- |
-| **Live** | Therapy cloud (ResMed AirView, Philips Care Orchestrator, 3B Medical / React Health) | The integration registry rebuilds per call from `getEffectiveEnv()` (DB overlay on `process.env`), so a rotated credential takes effect on the next nightly sync / manual refresh — no restart. |
-| **On next deploy** | Everything else (AI vendors, Twilio, SendGrid, Stripe, Office Ally) | These are read at boot or by a vendor client built at boot. `applyAppConfigOverlayToEnv()` folds saved values into `process.env` **once at startup**, in the decoupled post-listen boot path (fail-soft, never blocks the listener). They're picked up at the next service restart / deploy. |
+| Apply mode         | Settings                                                                             | Mechanism                                                                                                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Live**           | Therapy cloud (ResMed AirView, Philips Care Orchestrator, 3B Medical / React Health) | The integration registry rebuilds per call from `getEffectiveEnv()` (DB overlay on `process.env`), so a rotated credential takes effect on the next nightly sync / manual refresh — no restart.                                                                                              |
+| **On next deploy** | Everything else (AI vendors, Twilio, SendGrid, Stripe, Office Ally)                  | These are read at boot or by a vendor client built at boot. `applyAppConfigOverlayToEnv()` folds saved values into `process.env` **once at startup**, in the decoupled post-listen boot path (fail-soft, never blocks the listener). They're picked up at the next service restart / deploy. |
 
 ## Scope: optional/feature-gated keys only
 

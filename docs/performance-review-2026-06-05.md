@@ -63,17 +63,19 @@ definitions). Hottest tables by `.from()` frequency: `patients` (142),
   supporting index**. `%term%` can't use a btree → full sequential scan of
   the largest (highest-write) table on an interactive CSR path.
   Fix:
+
   ```sql
   CREATE EXTENSION IF NOT EXISTS pg_trgm;
   CREATE INDEX CONCURRENTLY messages_body_trgm_idx
     ON resupply.messages USING gin (body gin_trgm_ops);
   ```
+
   (or a `tsvector` column + GIN + `websearch_to_tsquery`).
 
 - **`patients` list orders by `created_at DESC` with no `created_at`
   index** — `routes/patients/list.ts:75`. The most-queried table's primary
   admin landing list does a full scan + top-N sort every page load, and
-  `count: "exact"` forces a *second* full scan.
+  `count: "exact"` forces a _second_ full scan.
   ```sql
   CREATE INDEX CONCURRENTLY patients_created_at_idx
     ON resupply.patients (created_at DESC);
@@ -88,8 +90,9 @@ definitions). Hottest tables by `.from()` frequency: `patients` (142),
   filter `vendor_metadata->>'twilio_message_sid'` /
   `...sendgrid_message_id` **without** a `direction='inbound'` predicate,
   but `messages_twilio_sid_inbound_uniq` is partial (`WHERE
-  direction='inbound'`). Outbound delivery callbacks (the common, high-volume
+direction='inbound'`). Outbound delivery callbacks (the common, high-volume
   case) seq-scan `messages` on every Twilio/SendGrid webhook.
+
   ```sql
   CREATE INDEX CONCURRENTLY messages_twilio_sid_idx
     ON resupply.messages ((vendor_metadata->>'twilio_message_sid'));
@@ -102,6 +105,7 @@ definitions). Hottest tables by `.from()` frequency: `patients` (142),
   `escalated_at, sla_due_at, last_message_at, created_at` and filters
   `assigned_admin_user_id`, but the existing index is on
   `assigned_admin_clerk_id` (a **renamed/dead column** no query uses).
+
   ```sql
   CREATE INDEX CONCURRENTLY conversations_assignee_status_idx
     ON resupply.conversations (assigned_admin_user_id, status);
@@ -113,15 +117,17 @@ definitions). Hottest tables by `.from()` frequency: `patients` (142),
 - **`inbox-counts` fires 7 `count: "exact"` per badge refresh, 2 on
   unindexed predicates** — `routes/admin/inbox-counts.ts:69-106` (also
   `dashboard/summary.ts`, `episodes/counts.ts`). `patient_documents
-  .is("reviewed_at", null)` and `shop_customer_followups
-  .is("completed_at", null).lt("due_at", now)` have no partial index.
+.is("reviewed_at", null)` and `shop_customer_followups
+.is("completed_at", null).lt("due_at", now)` have no partial index.
   Runs on every admin nav.
+
   ```sql
   CREATE INDEX CONCURRENTLY patient_documents_unreviewed_idx
     ON resupply.patient_documents (created_at) WHERE reviewed_at IS NULL;
   CREATE INDEX CONCURRENTLY shop_customer_followups_open_due_idx
     ON resupply.shop_customer_followups (due_at) WHERE completed_at IS NULL;
   ```
+
   …and switch the badges to `count: "planned"` / a `head:true`
   `.limit(100)` "99+" style.
 
@@ -131,7 +137,7 @@ definitions). Hottest tables by `.from()` frequency: `patients` (142),
   `conversations/list.ts:101`, `episodes/list.ts:154`,
   `storefront/admin.ts:99/268/381`, `admin/customers.ts:472`,
   `admin/fitter-leads.ts:119`. `count: "exact"` runs a second full
-  aggregate over the *entire filtered set* per request; deep `OFFSET`
+  aggregate over the _entire filtered set_ per request; deep `OFFSET`
   walks+discards skipped rows. Switch list endpoints to
   `count: "planned"`/`"estimated"` ("~N"), reserve `exact` for small
   tables, and prefer keyset pagination for deep pages (the worker jobs
@@ -218,7 +224,7 @@ jobs below should be brought in line with.
   `MAX_PATIENTS_PER_RUN = 5000` patients, 1–2 serial queries each, every
   night, re-evaluating the full 60-night window even when nothing changed.
   Add an incremental `nights.updated_at` watermark (only changed patients)
-  + bounded concurrency.
+  - bounded concurrency.
 
 - **`lifecycle-touchpoints.ts:298-308`** — anniversary pass does a per-
   candidate `MIN(night_date)` query (up to ~2000 serial round-trips on
@@ -239,7 +245,7 @@ jobs below should be brought in line with.
 
 - **`fitter-conversion-attribution.ts:83-92`** — unbounded `public.orders`
   scan every hour (no `.limit()`); PostgREST silently caps at ~1000 →
-  truncation *and* a full-window load. Add keyset pagination + a
+  truncation _and_ a full-window load. Add keyset pagination + a
   `created_at` watermark so attributed orders aren't re-scanned hourly.
 
 ### MEDIUM
@@ -280,10 +286,19 @@ react-query.
   query without an override inherits `staleTime: 0` +
   `refetchOnWindowFocus: true` → refetch storms on every remount, route
   revisit, and tab focus. One-line fix:
+
   ```ts
-  new QueryClient({ defaultOptions: { queries: {
-    staleTime: 60_000, refetchOnWindowFocus: false, retry: 1 } } });
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60_000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+    },
+  });
   ```
+
   Pages that need fresh-on-focus already opt in explicitly.
 
 - **Near-static mask catalog refetches on every mount** —
@@ -371,7 +386,7 @@ the "clean" list at the end). The genuine findings are few.
 - **Redundant full-body `JSON.stringify` + regex on `recommend` /
   `me-chat`** — `routes/storefront/recommend.ts:71-74`,
   `routes/shop/me-chat.ts:389-392` re-serialize the whole body and run two
-  regexes *after* Zod already enforced strict shape + `.max()` lengths.
+  regexes _after_ Zod already enforced strict shape + `.max()` lengths.
   Run the check only on the specific string fields, or drop it.
 
 ### Verified clean (no action)
@@ -400,15 +415,17 @@ paths using `{ count: "exact", head: true }`.
   keeping `index.html` and other non-hashed files (favicons, the
   `mediapipe/` model) on revalidation:
   ```ts
-  app.use(express.static(SPA_DIST, {
-    index: false,
-    fallthrough: true,
-    setHeaders(res, filePath) {
-      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      }
-    },
-  }));
+  app.use(
+    express.static(SPA_DIST, {
+      index: false,
+      fallthrough: true,
+      setHeaders(res, filePath) {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
   ```
   (The existing history-fallback handler already sends `no-store` for
   `index.html`, so the build can roll forward safely.) On Railway there is
@@ -424,37 +441,37 @@ paths using `{ count: "exact", head: true }`.
 1. Add the missing hot-table indexes: `patients(created_at)` +
    `(status, created_at)`; `messages` body trigram; `messages` vendor-sid
    expression indexes; `conversations` assignee/queue indexes;
-   `inbox-counts` partial indexes. *(§1 CRITICAL+HIGH)*
+   `inbox-counts` partial indexes. _(§1 CRITICAL+HIGH)_
 2. Switch hot paginated admin lists from `count: "exact"` to
-   `count: "planned"`. *(§1 HIGH)*
-3. `QueryClient` default `staleTime`/`refetchOnWindowFocus`. *(§3 HIGH —
-   one line)*
-4. Static-asset `immutable` cache headers. *(§5 — one block)*
+   `count: "planned"`. _(§1 HIGH)_
+3. `QueryClient` default `staleTime`/`refetchOnWindowFocus`. _(§3 HIGH —
+   one line)_
+4. Static-asset `immutable` cache headers. _(§5 — one block)_
 5. Fix `metrics-snapshot.ts` revenue under-count (RPC aggregate — this one
-   is also a **correctness** bug past 1000 rows). *(§2 MEDIUM)*
+   is also a **correctness** bug past 1000 rows). _(§2 MEDIUM)_
 
 **Tier 2 — meaningful, slightly larger:**
 
-6. `therapy-milestones.ts` watermark + batch + cap. *(§2 CRITICAL)*
+6. `therapy-milestones.ts` watermark + batch + cap. _(§2 CRITICAL)_
 7. `smart-triggers/evaluator.ts` incremental watermark + concurrency.
-   *(§2 HIGH)*
-8. `/shop` catalog → react-query shared cache. *(§3 HIGH)*
-9. `me-reorder-suggestions.ts` bulk Stripe + cache. *(§4 HIGH)*
+   _(§2 HIGH)_
+8. `/shop` catalog → react-query shared cache. _(§3 HIGH)_
+9. `me-reorder-suggestions.ts` bulk Stripe + cache. _(§4 HIGH)_
 10. `lifecycle-touchpoints.ts` / `maintenance-nudges.ts` batch the N+1
-    lookups. *(§2 HIGH)*
+    lookups. _(§2 HIGH)_
 
 **Tier 3 — opportunistic / as-convenient:**
 
-11. Admin customer directory pagination to PostgREST/RPC. *(§4 MEDIUM)*
-12. Review-aggregate caching + `Promise.all`. *(§4 MEDIUM)*
-13. Analytics 50k-row JS aggregations → Postgres RPCs. *(§4 MEDIUM)*
-14. Image `loading="lazy"` + dimensions; downsize source PNGs. *(§3 MEDIUM)*
-15. Drop redundant/dead indexes after confirming `idx_scan = 0`. *(§1)*
+11. Admin customer directory pagination to PostgREST/RPC. _(§4 MEDIUM)_
+12. Review-aggregate caching + `Promise.all`. _(§4 MEDIUM)_
+13. Analytics 50k-row JS aggregations → Postgres RPCs. _(§4 MEDIUM)_
+14. Image `loading="lazy"` + dimensions; downsize source PNGs. _(§3 MEDIUM)_
+15. Drop redundant/dead indexes after confirming `idx_scan = 0`. _(§1)_
 
 ---
 
-*Reviewers: four parallel domain agents (API, DB/indexes, SPA, worker) plus
+_Reviewers: four parallel domain agents (API, DB/indexes, SPA, worker) plus
 a manual HTTP-layer pass. All findings are pointed to specific `file:line`;
-no files other than this report were modified.*
+no files other than this report were modified._
 </content>
 </invoke>

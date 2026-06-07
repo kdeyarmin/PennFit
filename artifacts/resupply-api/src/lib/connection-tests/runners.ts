@@ -211,8 +211,7 @@ export const TEST_VOICE_MESSAGE =
   "This is a connection test from Penn Fit. " +
   "Your outbound voice integration is working correctly. Goodbye.";
 
-const CHAT_TEST_PROMPT =
-  "Connection test. Reply with the single word: OK.";
+const CHAT_TEST_PROMPT = "Connection test. Reply with the single word: OK.";
 
 // ── Runners ──────────────────────────────────────────────────────────
 
@@ -262,7 +261,12 @@ export async function runEmailTest(
     };
   } catch (err) {
     if (err instanceof EmailConfigError) {
-      return { ok: false, channel: "email", code: "config_error", message: err.message };
+      return {
+        ok: false,
+        channel: "email",
+        code: "config_error",
+        message: err.message,
+      };
     }
     if (err instanceof EmailApiError) {
       return {
@@ -313,7 +317,12 @@ export async function runSmsTest(
     };
   } catch (err) {
     if (err instanceof TwilioConfigError) {
-      return { ok: false, channel: "sms", code: "config_error", message: err.message };
+      return {
+        ok: false,
+        channel: "sms",
+        code: "config_error",
+        message: err.message,
+      };
     }
     if (err instanceof TwilioApiError) {
       return {
@@ -372,7 +381,12 @@ export async function runVoiceTest(
     return { ok: true, channel: "voice", detail: { callSid: result.sid } };
   } catch (err) {
     if (err instanceof TwilioConfigError) {
-      return { ok: false, channel: "voice", code: "config_error", message: err.message };
+      return {
+        ok: false,
+        channel: "voice",
+        code: "config_error",
+        message: err.message,
+      };
     }
     if (err instanceof TwilioApiError) {
       return {
@@ -487,7 +501,9 @@ async function runOpenAiChatTest(
         ok: false,
         channel: "chat",
         code: "upstream_error",
-        message: cap(openAiErrorMessage(bodyText) ?? `OpenAI HTTP ${resp.status}`),
+        message: cap(
+          openAiErrorMessage(bodyText) ?? `OpenAI HTTP ${resp.status}`,
+        ),
         upstream: { status: resp.status },
       };
     }

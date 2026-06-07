@@ -57,7 +57,8 @@ export function installDemoFetchInterceptor(): void {
           const method = (
             init?.method ?? (input instanceof Request ? input.method : "GET")
           ).toUpperCase();
-          const body = method === "GET" || method === "HEAD" ? {} : { ok: true };
+          const body =
+            method === "GET" || method === "HEAD" ? {} : { ok: true };
           return new Response(JSON.stringify(body), {
             status: 200,
             headers: { "content-type": "application/json" },

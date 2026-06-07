@@ -15,7 +15,7 @@
 > - **feature-flag activity** (`GET /admin/feature-flags/activity`) is
 >   **not** stubbed — it was migrated in migration 0163 to read from
 >   `resupply.feature_flag_events`, which the `PATCH
->   /admin/feature-flags/:key` handler now populates. The activity feed
+/admin/feature-flags/:key` handler now populates. The activity feed
 >   is fully operational; only the `audit_log` source is gone.
 
 ## Historical reference

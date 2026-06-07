@@ -20,7 +20,9 @@ function makeDeps(over: Partial<ConnectionTestDeps> = {}): ConnectionTestDeps {
   return { ...defaultConnectionTestDeps, ...over };
 }
 
-const VOICE_BASE = { RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennfit.example.com" };
+const VOICE_BASE = {
+  RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://pennfit.example.com",
+};
 
 describe("computeConnectionTestStatus", () => {
   it("reports each channel unconfigured on an empty env", () => {
@@ -66,18 +68,27 @@ describe("computeConnectionTestStatus", () => {
     expect(computeConnectionTestStatus(base).voice.configured).toBe(false);
     // Add a from-number but still no public base url.
     expect(
-      computeConnectionTestStatus({ ...base, TWILIO_PHONE_NUMBER: "+12155550000" })
-        .voice.configured,
+      computeConnectionTestStatus({
+        ...base,
+        TWILIO_PHONE_NUMBER: "+12155550000",
+      }).voice.configured,
     ).toBe(false);
   });
 });
 
 describe("runEmailTest", () => {
-  const cfg = { SENDGRID_API_KEY: "SG.x", SENDGRID_FROM_EMAIL: "info@pennpaps.com" };
+  const cfg = {
+    SENDGRID_API_KEY: "SG.x",
+    SENDGRID_FROM_EMAIL: "info@pennpaps.com",
+  };
 
   it("returns not_configured when SendGrid env is missing", async () => {
     const r = await runEmailTest({}, { to: "a@b.com" }, makeDeps());
-    expect(r).toMatchObject({ ok: false, channel: "email", code: "not_configured" });
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "email",
+      code: "not_configured",
+    });
   });
 
   it("sends and returns the messageId on success", async () => {
@@ -119,9 +130,11 @@ describe("runEmailTest", () => {
   it("maps an EmailApiError to upstream_error with status", async () => {
     const deps = makeDeps({
       createSendgridClient: vi.fn().mockReturnValue({
-        sendEmail: vi.fn().mockRejectedValue(
-          new EmailApiError("Sender Identity not verified", 403),
-        ),
+        sendEmail: vi
+          .fn()
+          .mockRejectedValue(
+            new EmailApiError("Sender Identity not verified", 403),
+          ),
       }),
     });
     const r = await runEmailTest(cfg, { to: "a@b.com" }, deps);
@@ -143,7 +156,11 @@ describe("runSmsTest", () => {
 
   it("returns not_configured when Twilio env is missing", async () => {
     const r = await runSmsTest({}, { to: "+12155551212" }, makeDeps());
-    expect(r).toMatchObject({ ok: false, channel: "sms", code: "not_configured" });
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "sms",
+      code: "not_configured",
+    });
   });
 
   it("sends and returns the messageSid on success", async () => {
@@ -152,14 +169,20 @@ describe("runSmsTest", () => {
       createTwilioSmsClient: vi.fn().mockReturnValue({ sendSms }),
     });
     const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
-    expect(r).toMatchObject({ ok: true, channel: "sms", detail: { messageSid: "SM_1" } });
+    expect(r).toMatchObject({
+      ok: true,
+      channel: "sms",
+      detail: { messageSid: "SM_1" },
+    });
     expect(sendSms.mock.calls[0][0]).toMatchObject({ to: "+12155551212" });
   });
 
   it("maps a TwilioApiError to upstream_error with status + code", async () => {
     const deps = makeDeps({
       createTwilioSmsClient: vi.fn().mockReturnValue({
-        sendSms: vi.fn().mockRejectedValue(new TwilioApiError("bad number", 400, 21211)),
+        sendSms: vi
+          .fn()
+          .mockRejectedValue(new TwilioApiError("bad number", 400, 21211)),
       }),
     });
     const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
@@ -183,7 +206,11 @@ describe("runVoiceTest", () => {
   it("returns not_configured without a public base url", async () => {
     const noBase = { ...cfg, RESUPPLY_VOICE_PUBLIC_BASE_URL: "" };
     const r = await runVoiceTest(noBase, { to: "+12155551212" }, makeDeps());
-    expect(r).toMatchObject({ ok: false, channel: "voice", code: "not_configured" });
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "voice",
+      code: "not_configured",
+    });
   });
 
   it("places a call pointing at the signed test-twiml route", async () => {
@@ -192,7 +219,11 @@ describe("runVoiceTest", () => {
       createTwilioVoiceClient: vi.fn().mockReturnValue({ placeCall }),
     });
     const r = await runVoiceTest(cfg, { to: "+12155551212" }, deps);
-    expect(r).toMatchObject({ ok: true, channel: "voice", detail: { callSid: "CA_1" } });
+    expect(r).toMatchObject({
+      ok: true,
+      channel: "voice",
+      detail: { callSid: "CA_1" },
+    });
     expect(placeCall.mock.calls[0][0]).toMatchObject({
       to: "+12155551212",
       from: "+12155550000",
@@ -204,7 +235,11 @@ describe("runVoiceTest", () => {
 describe("runChatTest", () => {
   it("returns not_configured when no provider key is set", async () => {
     const r = await runChatTest({}, makeDeps());
-    expect(r).toMatchObject({ ok: false, channel: "chat", code: "not_configured" });
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "chat",
+      code: "not_configured",
+    });
   });
 
   it("pings Claude when ANTHROPIC_API_KEY is set", async () => {
@@ -225,7 +260,9 @@ describe("runChatTest", () => {
       }),
       stream: vi.fn(),
     };
-    const deps = makeDeps({ getAnthropicClient: vi.fn().mockReturnValue(fakeClient) });
+    const deps = makeDeps({
+      getAnthropicClient: vi.fn().mockReturnValue(fakeClient),
+    });
     const r = await runChatTest({ ANTHROPIC_API_KEY: "sk-ant-x" }, deps);
     expect(r).toMatchObject({
       ok: true,
@@ -237,7 +274,10 @@ describe("runChatTest", () => {
   it("pings OpenAI when only OPENAI_API_KEY is set", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ model: "gpt-4o-mini", choices: [{ message: { content: "OK" } }] }),
+        JSON.stringify({
+          model: "gpt-4o-mini",
+          choices: [{ message: { content: "OK" } }],
+        }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
     );
@@ -257,9 +297,12 @@ describe("runChatTest", () => {
 
   it("maps an OpenAI non-2xx to upstream_error", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: { message: "Incorrect API key" } }), {
-        status: 401,
-      }),
+      new Response(
+        JSON.stringify({ error: { message: "Incorrect API key" } }),
+        {
+          status: 401,
+        },
+      ),
     );
     const deps = makeDeps({ fetchImpl: fetchImpl as unknown as typeof fetch });
     const r = await runChatTest({ OPENAI_API_KEY: "bad" }, deps);

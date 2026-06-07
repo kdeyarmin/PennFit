@@ -25,7 +25,9 @@ describe("buildLiveStaffing", () => {
       openConversationAssignees: ["a", "a", "a", "b", null, null],
       onShiftIds: ["a"],
     });
-    expect(snap.agents.map((x) => [x.adminUserId, x.openConversations])).toEqual([
+    expect(
+      snap.agents.map((x) => [x.adminUserId, x.openConversations]),
+    ).toEqual([
       ["a", 3],
       ["b", 1],
       ["c", 0],
