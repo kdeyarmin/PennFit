@@ -2,6 +2,9 @@
 //
 //   GET  /admin/patient-packet-templates            — the document catalog
 //   GET  /admin/patient-packets                      — recent packets (all patients)
+//   POST /admin/patient-packets                      — send to an email/phone (no patient
+//                                                      selected; auto-files to the chart if
+//                                                      the contact matches a patient)
 //   GET  /admin/patients/:id/packets                 — a patient's packets
 //   POST /admin/patients/:id/packets                 — create + send a packet
 //   GET  /admin/packets/:packetId                    — packet detail
@@ -29,6 +32,7 @@ import {
 } from "../../lib/patient-packet/packet-pdf";
 import {
   createAndSendPatientPacket,
+  createAndSendPatientPacketToContact,
   deliverPacketLink,
   PACKET_CHANNELS,
 } from "../../lib/patient-packet/send";
@@ -102,6 +106,25 @@ const createBody = z
     expiresInDays: z.number().int().min(1).max(90).optional(),
   })
   .strict();
+
+// Send a packet to a typed-in email and/or phone, with no patient
+// selected. The phone is accepted in any common format and normalized
+// server-side. At least one of email/phone must be present.
+const sendToContactBody = z
+  .object({
+    email: z.string().trim().toLowerCase().email().optional().nullable(),
+    phone: z.string().trim().min(3).max(40).optional().nullable(),
+    recipientName: z.string().trim().min(1).max(160).optional().nullable(),
+    documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
+    title: z.string().trim().min(1).max(160).optional(),
+    channels: channelsSchema,
+    expiresInDays: z.number().int().min(1).max(90).optional(),
+  })
+  .strict()
+  .refine((b) => Boolean(b.email) || Boolean(b.phone), {
+    message: "Provide an email address or a phone number.",
+    path: ["email"],
+  });
 
 const resendBody = z.object({ channels: channelsSchema }).strict();
 
@@ -265,6 +288,89 @@ router.post(
   },
 );
 
+// ── Send to a contact (no patient selected) ───────────────────────
+router.post(
+  "/admin/patient-packets",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "patient_packets.create_contact",
+    preset: "sensitive",
+  }),
+  async (req, res) => {
+    const parsed = sendToContactBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = parsed.data;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const result = await createAndSendPatientPacketToContact({
+      supabase,
+      email: b.email,
+      phone: b.phone,
+      recipientName: b.recipientName,
+      documentKeys: b.documentKeys,
+      title: b.title,
+      channels: b.channels,
+      expiresInDays: b.expiresInDays,
+      createdByEmail: req.adminEmail ?? null,
+    });
+    if (!result.ok) {
+      if (result.code === "invalid_document_keys") {
+        res.status(400).json({
+          error: "invalid_document_keys",
+          invalidKeys: result.invalidKeys,
+        });
+        return;
+      }
+      // invalid_phone | no_recipient — both are client input problems.
+      res.status(400).json({ error: result.code });
+      return;
+    }
+
+    await logAudit({
+      action: "patient_packet.sent",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packets",
+      targetId: result.packetId,
+      // PHI-safe: ids + counts + flags only; never the contact itself.
+      metadata: {
+        patient_id: result.matchedPatientId,
+        linked: result.matchedPatientId != null,
+        match_ambiguous: result.matchAmbiguous,
+        via_contact: true,
+        document_count: result.documentCount,
+        email_sent: result.emailSent,
+        sms_sent: result.smsSent,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient_packet.sent (contact) audit write failed");
+    });
+
+    res.status(201).json({
+      id: result.packetId,
+      status: "sent",
+      emailSent: result.emailSent,
+      smsSent: result.smsSent,
+      signingLink: result.signingLink,
+      // Lets the SPA tell the operator whether it filed to a chart.
+      matchedPatientId: result.matchedPatientId,
+      matchedPatientName: result.matchedPatientName,
+      matchAmbiguous: result.matchAmbiguous,
+    });
+  },
+);
+
 // ── Packet detail ─────────────────────────────────────────────────
 router.get(
   "/admin/packets/:packetId",
@@ -349,7 +455,7 @@ router.post(
       .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, status, link_version, recipient_name, recipient_email, expires_at",
+        "id, patient_id, status, link_version, recipient_name, recipient_email, recipient_phone, expires_at",
       )
       .eq("id", parsed.data.packetId)
       .limit(1)
@@ -383,15 +489,20 @@ router.post(
       .eq("id", packet.id);
     if (updErr) throw updErr;
 
-    // Pull the patient's phone so SMS resend works (the packet row only
-    // snapshots the email recipient).
-    const { data: patient } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("phone_e164")
-      .eq("id", packet.patient_id)
-      .limit(1)
-      .maybeSingle();
+    // Prefer the phone snapshotted on the packet at send time. Older
+    // packets (created before recipient_phone existed) didn't snapshot
+    // it, so fall back to the linked patient's number when present.
+    let resendPhone = packet.recipient_phone ?? null;
+    if (!resendPhone && packet.patient_id) {
+      const { data: patient } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("phone_e164")
+        .eq("id", packet.patient_id)
+        .limit(1)
+        .maybeSingle();
+      resendPhone = patient?.phone_e164 ?? null;
+    }
 
     const token = signPatientPacketToken(packet.id, nextVersion);
     const link = signingUrl(getAuthDeps().publicBaseUrl, token);
@@ -401,7 +512,7 @@ router.post(
       recipientName: packet.recipient_name,
       link,
       email: packet.recipient_email,
-      phone: patient?.phone_e164 ?? null,
+      phone: resendPhone,
       channels: bodyParsed.data.channels ?? PACKET_CHANNELS,
       reminder: true,
       packetId: packet.id,
