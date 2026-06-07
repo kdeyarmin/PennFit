@@ -143,7 +143,7 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
       .maybeSingle();
     if (claimErr) {
       logger.warn(
-        { err: claimErr.message, packet_id: c.id },
+        { err: claimErr, packet_id: c.id },
         "patient-packet.reminders: claim failed (non-fatal)",
       );
       continue;
@@ -169,7 +169,7 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     } catch (err) {
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err: err instanceof Error ? err : new Error(String(err)),
           packet_id: c.id,
         },
         "patient-packet.reminders: delivery failed (non-fatal)",
