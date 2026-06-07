@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json",
-    "migrate": "node scripts/migrate.mjs",
+    "migrate": "node --env-file-if-exists=../../.env scripts/migrate.mjs",
     "rotate-to-master-key": "node scripts/rotate-to-master-key.mjs"
   },
   "dependencies": {
