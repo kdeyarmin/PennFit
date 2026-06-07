@@ -256,7 +256,7 @@ export async function runEmailTest(
       detail: {
         messageId: result.messageId,
         from: nonEmpty(env.SENDGRID_FROM_EMAIL)
-          ? env.SENDGRID_FROM_EMAIL
+          ? env.SENDGRID_FROM_EMAIL.trim()
           : DEFAULT_SENDGRID_FROM_EMAIL,
       },
     };
