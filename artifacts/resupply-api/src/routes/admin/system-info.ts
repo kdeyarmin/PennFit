@@ -12,7 +12,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { hasLinkHmacKey } from "@workspace/resupply-secrets";
+import { applyEnvAliases, hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { getEffectiveEnv } from "../../lib/app-config/store";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -43,7 +43,20 @@ router.get(
     // degrades to process.env. Non-vendor fields below stay on the live
     // process.env (e.g. the public webhook URLs, which the running process
     // signs against until the next deploy).
-    const vendorEnv = await getEffectiveEnv();
+    //
+    // applyEnvAliases() then resolves the consolidated env aliases over
+    // that effective env — the same backfill the process runs at boot
+    // (app.ts), but extended to cover values saved in System
+    // Configuration. Without it, a Twilio number entered there (saved
+    // under the canonical TWILIO_PHONE_NUMBER, the name the call path and
+    // the catalog use) would never flip `voicePhoneConfigured` below,
+    // which reads the retired TWILIO_VOICE_PHONE_NUMBER alias: the
+    // boot-time aliaser only runs over process.env, never over the
+    // app_config overlay. Spread into a fresh object first so we never
+    // mutate process.env (getEffectiveEnv returns it as-is when there are
+    // no overrides).
+    const vendorEnv = { ...(await getEffectiveEnv()) };
+    applyEnvAliases(vendorEnv);
     const allowlistCount = (raw: string | undefined) =>
       raw
         ? raw
