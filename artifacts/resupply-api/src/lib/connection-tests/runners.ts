@@ -228,8 +228,8 @@ export async function runEmailTest(
       code: "not_configured",
       message:
         "SendGrid is not configured. Set SENDGRID_API_KEY (in System " +
-        "Configuration or the environment). The From address is fixed to " +
-        `${DEFAULT_SENDGRID_FROM_EMAIL}.`,
+        "Configuration or the environment). The From address defaults to " +
+        `${DEFAULT_SENDGRID_FROM_EMAIL} but can be overridden with SENDGRID_FROM_EMAIL.`,
     };
   }
   let client: SendgridClient;
