@@ -14,7 +14,10 @@ deploy. Railpack auto-detects pnpm + Node from the root `package.json`
 `Dockerfile` is required. Custom domain → Railway → DNS; the fallback
 host is `pennfit.up.railway.app`. Environment variables are configured
 under **Variables** in the Railway service settings; the required set is
-documented below and validated by `preflight:prod`.
+documented below and validated by `preflight:prod`. For how Railway builds
+and runs the repo (the `railway.json` fields, the boot-contract invariants,
+Node/pnpm version resolution, and the pre/post-deploy probes), see
+[`docs/railway-deployment.md`](./docs/railway-deployment.md).
 
 ## Git source of truth
 
@@ -55,7 +58,7 @@ top-level structure is:
 
 ## Prerequisites
 
-- Node.js **v24** (matches CI; `engines.node` is pinned to `>=24`).
+- Node.js **v24** (matches CI; `engines.node` is pinned to `24.x`).
   The repo ships `.nvmrc` and `.node-version` (both `24`), so
   `nvm use` / `fnm use` / `asdf` auto-select the right major on
   clone — run it before `pnpm install` to avoid an
