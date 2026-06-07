@@ -17,6 +17,7 @@ import {
   type PatientPacketSummary,
   type PatientPacketStatus,
   type PatientPacketTemplate,
+  type PacketDeliveryDetails,
 } from "@workspace/api-client-react/admin";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
@@ -25,6 +26,8 @@ import { Input, Label, Select } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
+import { DeliveryItemsEditor } from "@/components/admin/DeliveryItemsEditor";
+import { PacketEditForm } from "@/components/admin/PacketEditForm";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 type BadgeVariant =
@@ -280,6 +283,8 @@ function SendPacketPanel({
   const [title, setTitle] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
+  const [deliveryDetails, setDeliveryDetails] =
+    useState<PacketDeliveryDetails | null>(null);
   const [result, setResult] = useState<{
     link: string;
     emailSent: boolean;
@@ -351,6 +356,7 @@ function SendPacketPanel({
             recipientEmail: recipientEmail.trim() || undefined,
             recipientPhone: recipientPhone.trim() || undefined,
             channels,
+            deliveryDetails,
           },
         });
         setResult({
@@ -377,6 +383,7 @@ function SendPacketPanel({
           documentKeys: chosen.map((t) => t.key),
           title: title.trim() || undefined,
           channels,
+          deliveryDetails,
         });
         setResult({
           link: res.signingLink,
@@ -482,6 +489,7 @@ function SendPacketPanel({
                   setContactName("");
                   setContactEmail("");
                   setContactPhone("");
+                  setDeliveryDetails(null);
                 }}
               >
                 Send another
@@ -732,6 +740,17 @@ function SendPacketPanel({
               />
             </div>
 
+            {/* Itemized Proof of Delivery (optional) */}
+            <div
+              className="rounded-md border p-3"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <DeliveryItemsEditor
+                idPrefix="send"
+                onChange={setDeliveryDetails}
+              />
+            </div>
+
             {mode === "patient" && (
               <>
                 {/* Delivery channels */}
@@ -874,6 +893,7 @@ function PacketDetailPanel({
   const resend = useResendPatientPacket();
   const voidPacket = useVoidPatientPacket();
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: getPatientPacketQueryKey(packetId) });
@@ -948,29 +968,76 @@ function PacketDetailPanel({
           </div>
         )}
 
-        {/* Documents */}
-        <div>
-          <h3
-            className="text-sm font-semibold mb-2"
-            style={{ color: "hsl(var(--ink-2))" }}
-          >
-            Documents ({documents.length})
-          </h3>
-          <ul className="space-y-1.5">
-            {documents.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                style={{ borderColor: "hsl(var(--line-1))" }}
+        {/* Documents — read-only list, or the edit form when editing */}
+        {editing ? (
+          <PacketEditForm
+            packetId={packetId}
+            onSaved={() => {
+              setEditing(false);
+              setActionMsg("Packet updated.");
+              refresh();
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3
+                className="text-sm font-semibold"
+                style={{ color: "hsl(var(--ink-2))" }}
               >
-                <span style={{ color: "hsl(var(--ink-1))" }}>{d.title}</span>
-                <Badge variant={d.acknowledged ? "success" : "muted"}>
-                  {d.acknowledged ? "Acknowledged" : "Pending"}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
+                Documents ({documents.length})
+              </h3>
+              {!closed && (
+                <Button
+                  intent="ghost"
+                  size="sm"
+                  onClick={() => setEditing(true)}
+                >
+                  Edit
+                </Button>
+              )}
+            </div>
+            <ul className="space-y-1.5">
+              {documents.map((d) => (
+                <li
+                  key={d.id}
+                  className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <span style={{ color: "hsl(var(--ink-1))" }}>{d.title}</span>
+                  <Badge variant={d.acknowledged ? "success" : "muted"}>
+                    {d.acknowledged ? "Acknowledged" : "Pending"}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+
+            {packet.delivery_details?.items &&
+              packet.delivery_details.items.length > 0 && (
+                <div className="mt-3">
+                  <h4
+                    className="text-xs font-semibold mb-1"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    Proof of Delivery items
+                  </h4>
+                  <ul
+                    className="text-sm list-disc pl-5"
+                    style={{ color: "hsl(var(--ink-2))" }}
+                  >
+                    {packet.delivery_details.items.map((it, i) => (
+                      <li key={i}>
+                        {it.quantity ? `${it.quantity} × ` : ""}
+                        {it.description}
+                        {it.hcpcs ? ` (HCPCS ${it.hcpcs})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+          </div>
+        )}
 
         {/* Signature */}
         {signature && (

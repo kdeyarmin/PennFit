@@ -10,6 +10,7 @@ import {
   getPatientPacketsQueryKey,
   patientPacketPdfUrl,
   type PatientPacketStatus,
+  type PacketDeliveryDetails,
 } from "@workspace/api-client-react/admin";
 import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
@@ -17,6 +18,8 @@ import { Input, Label } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
+import { DeliveryItemsEditor } from "@/components/admin/DeliveryItemsEditor";
+import { PacketEditForm } from "@/components/admin/PacketEditForm";
 
 type BadgeVariant =
   | "neutral"
@@ -78,6 +81,9 @@ export function PatientPacketsTab({
   const [seeded, setSeeded] = useState(false);
   const [useEmailCh, setUseEmailCh] = useState(hasEmail);
   const [useSmsCh, setUseSmsCh] = useState(hasPhone);
+  const [deliveryDetails, setDeliveryDetails] =
+    useState<PacketDeliveryDetails | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [linkResult, setLinkResult] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +128,11 @@ export function PatientPacketsTab({
     try {
       const res = await send.mutateAsync({
         patientId,
-        data: { documentKeys: chosen.map((t) => t.key), channels },
+        data: {
+          documentKeys: chosen.map((t) => t.key),
+          channels,
+          deliveryDetails,
+        },
       });
       setLinkResult(res.signingLink);
       setFeedback(
@@ -276,6 +286,16 @@ export function PatientPacketsTab({
             )}
           </div>
 
+          <div
+            className="rounded-md border p-3"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <DeliveryItemsEditor
+              idPrefix="tab-send"
+              onChange={setDeliveryDetails}
+            />
+          </div>
+
           {error && (
             <div className="text-sm" style={{ color: "hsl(0 70% 45%)" }}>
               {error}
@@ -313,6 +333,18 @@ export function PatientPacketsTab({
             </Button>
           </div>
         </div>
+      )}
+
+      {editingId && (
+        <PacketEditForm
+          packetId={editingId}
+          onSaved={() => {
+            setEditingId(null);
+            setFeedback("Packet updated.");
+            refresh();
+          }}
+          onCancel={() => setEditingId(null)}
+        />
       )}
 
       {packetsQuery.isPending ? (
@@ -379,6 +411,17 @@ export function PatientPacketsTab({
                         >
                           PDF
                         </a>
+                      )}
+                      {open && (
+                        <Button
+                          intent="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEditingId((cur) => (cur === p.id ? null : p.id))
+                          }
+                        >
+                          {editingId === p.id ? "Close" : "Edit"}
+                        </Button>
                       )}
                       {open && (
                         <Button
