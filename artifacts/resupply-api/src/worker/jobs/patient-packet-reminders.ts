@@ -174,7 +174,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
         },
         "patient-packet.reminders: delivery failed (non-fatal)",
       );
-      );
     }
 
     stats.reminded += 1;

@@ -738,7 +738,6 @@ router.post(
         },
         "admin/shop/orders: auto-send patient packet failed (non-fatal)",
       );
-      );
     }
 
     res.json({ order: projectOrder(rowToOrderRow(row)) });
