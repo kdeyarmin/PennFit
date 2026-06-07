@@ -28,7 +28,7 @@
 // when the patient portal launches a SMART app.
 
 import { Router, type IRouter, type Request } from "express";
-import expressRateLimit from "express-rate-limit";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -86,8 +86,6 @@ const idParam = z.object({ id: z.string().uuid() });
 //
 // Built from `express-rate-limit` (not our middlewares/rate-limit
 // wrapper) so CodeQL's js/missing-rate-limiting query recognises it,
-// Built from `express-rate-limit` (not our middlewares/rate-limit
-// wrapper) so CodeQL's js/missing-rate-limiting query recognises it,
 // and mounted BEFORE `requireAdmin` on the routes below — requireAdmin
 // performs a DB session lookup, so a limiter placed after it leaves
 // that read unprotected (and CodeQL flags the requireAdmin line).
@@ -100,8 +98,9 @@ const fhirAdminReadLimiter = expressRateLimit({
   legacyHeaders: false,
   keyGenerator: (req: Request) =>
     (req as unknown as { adminUserId?: string }).adminUserId ??
-    req.ip ??
-    "unknown",
+    // Bucket the IP fallback by subnet via ipKeyGenerator so IPv6 clients
+    // can't rotate within a /64 to dodge the limit (ERR_ERL_KEY_GEN_IPV6).
+    ipKeyGenerator(req.ip ?? "0.0.0.0"),
   message: {
     error: "too_many_requests",
     limiter: "fhir_admin_patient_read",

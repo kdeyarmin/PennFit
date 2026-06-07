@@ -25,7 +25,10 @@
 
 import type { RequestHandler } from "express";
 
-import { rateLimit as expressRateLimit } from "express-rate-limit";
+import {
+  rateLimit as expressRateLimit,
+  ipKeyGenerator,
+} from "express-rate-limit";
 
 import { rateLimit } from "./rate-limit";
 
@@ -122,9 +125,12 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
   legacyHeaders: false,
   keyGenerator: (req) =>
     (req as { adminUserId?: string }).adminUserId ??
-    req.ip ??
-    req.socket.remoteAddress ??
-    "unknown",
+    // Normalise the pre-auth IP fallback through ipKeyGenerator so IPv6
+    // clients are bucketed by subnet, not by full address — otherwise a
+    // client on a /64 could rotate addresses to bypass the limit
+    // (express-rate-limit ERR_ERL_KEY_GEN_IPV6). Matches the pattern used
+    // by the storefront limiters (e.g. routes/shop/reviews.ts).
+    ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "0.0.0.0"),
 });
 
 // Shared write-endpoint limiter for admin MUTATIONS (POST/PATCH/PUT/
@@ -157,8 +163,11 @@ export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
   legacyHeaders: false,
   keyGenerator: (req) =>
     (req as { adminUserId?: string }).adminUserId ??
-    req.ip ??
-    req.socket.remoteAddress ??
-    "unknown",
+    // Normalise the pre-auth IP fallback through ipKeyGenerator so IPv6
+    // clients are bucketed by subnet, not by full address — otherwise a
+    // client on a /64 could rotate addresses to bypass the limit
+    // (express-rate-limit ERR_ERL_KEY_GEN_IPV6). Matches the pattern used
+    // by the storefront limiters (e.g. routes/shop/reviews.ts).
+    ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "0.0.0.0"),
   message: { error: "too_many_requests", limiter: "admin_write" },
 });
