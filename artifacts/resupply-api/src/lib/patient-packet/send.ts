@@ -257,7 +257,7 @@ export type ContactPatientMatch =
  * answer is ambiguous, so a packet is never silently filed onto the
  * wrong patient's chart (cross-linking PHI). The lookups, in order:
  *
- *   1. patients.email (exact, lowercased) + patients.phone_e164 (exact).
+ *   1. patients.email (case-insensitive) + patients.phone_e164 (exact).
  *      A 2+ row hit on either, or a different patient on each, is
  *      ambiguous → do not link.
  *   2. Fallback when (1) finds nothing and an email was given: bridge
@@ -299,7 +299,7 @@ export async function resolvePatientByContact(
       .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
-      .eq("email", contact.emailLower)
+      .ilike("email", contact.emailLower)
       .limit(2);
     if (error) throw error;
     ingest(data);
@@ -315,18 +315,34 @@ export async function resolvePatientByContact(
     ingest(data);
   }
 
+  // A 2+ row hit on either contact field, or different patients on each, is
+  // ambiguous — never link to avoid cross-filing PHI.
+  if (ambiguous || candidates.size > 1) {
+    return { status: "ambiguous" };
+  }
+
   if (candidates.size === 1) {
     const [[patientId, name]] = candidates;
 
     // When both contact points are provided, only link if the same patient
     // matches both. Otherwise leave it unlinked to avoid cross-filing PHI.
     if (contact.emailLower && contact.phoneE164) {
+      // Check the email bridge before committing: if the portal email resolves
+      // to a different patient, the situation is ambiguous — don't link.
+      const bridged = await resolvePatientViaCustomerEmail(
+        supabase,
+        contact.emailLower,
+      );
+      if (bridged && bridged.patientId !== patientId) {
+        return { status: "none" };
+      }
+
       const { data: verify, error: verifyErr } = await supabase
         .schema("resupply")
         .from("patients")
         .select("id")
         .eq("id", patientId)
-        .eq("email", contact.emailLower)
+        .ilike("email", contact.emailLower)
         .eq("phone_e164", contact.phoneE164)
         .limit(1)
         .maybeSingle();
