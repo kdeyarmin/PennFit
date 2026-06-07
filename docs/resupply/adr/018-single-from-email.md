@@ -59,9 +59,13 @@ the From itself stays one value.
 
 ## What `createSendgridClient` enforces
 
-- Required env: `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`,
-  `SENDGRID_FROM_NAME`. Missing any throws `EmailConfigError` at
-  construction.
+- Required env: `SENDGRID_API_KEY`. Missing it throws `EmailConfigError`
+  at construction (fail-closed — a missing key must surface as a 503, not
+  a silent no-send). `SENDGRID_FROM_EMAIL` is **optional**: when unset it
+  defaults in code to the platform constant `info@pennpaps.com`
+  (exported as `DEFAULT_SENDGRID_FROM_EMAIL`), so the single-From rule
+  holds with zero configuration and an explicit value still wins.
+  `SENDGRID_FROM_NAME` is optional (display name only).
 - Single From wired into every `sendEmail` call. Callers cannot
   override `from`; the option is intentionally absent from
   `SendEmailInput`.

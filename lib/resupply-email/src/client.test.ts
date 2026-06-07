@@ -42,9 +42,27 @@ describe("createSendgridClient", () => {
     expect(() => createSendgridClient()).toThrow(/SENDGRID_API_KEY/);
   });
 
-  it("throws EmailConfigError when SENDGRID_FROM_EMAIL is unset", () => {
+  it("defaults the From address to info@pennpaps.com when SENDGRID_FROM_EMAIL is unset", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
-    expect(() => createSendgridClient()).toThrow(/SENDGRID_FROM_EMAIL/);
+    // SENDGRID_FROM_EMAIL intentionally left unset — the From address is a
+    // fixed platform constant, so the client must NOT throw and must send
+    // from info@pennpaps.com (ADR 016/018).
+    const send = vi
+      .fn()
+      .mockResolvedValue([
+        { statusCode: 202, headers: { "x-message-id": "msg-default" } },
+        undefined,
+      ]);
+    const client = createSendgridClient({ sgFactory: () => fakeSdk(send) });
+    await client.sendEmail({
+      to: "p@e.com",
+      subject: "s",
+      html: "h",
+      text: "t",
+    });
+    expect(send.mock.calls[0]?.[0].from).toEqual({
+      email: "info@pennpaps.com",
+    });
   });
 
   it("constructs successfully with required env", () => {

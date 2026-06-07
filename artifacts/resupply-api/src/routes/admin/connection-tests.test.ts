@@ -14,7 +14,9 @@ import {
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
 }));
-vi.mock("../../middlewares/requireAdmin", () => makeRequireAdminMock(mockAdmin));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 // getEffectiveEnv would otherwise hit Supabase; pin it to a fixed env.
 vi.mock("../../lib/app-config/store", () => ({
@@ -93,12 +95,15 @@ describe("validation", () => {
     expect(runners.runEmailTest).not.toHaveBeenCalled();
   });
 
-  it("400 on an unparseable phone for sms", async () => {
+  it("400 with an issue message on an unparseable phone for sms", async () => {
     const res = await request(makeApp())
       .post("/admin/connection-tests/sms")
-      .send({ to: "123" });
+      .send({ to: "not-a-number" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
+    // The opaque "HTTP 400 : invalid_body" the UI used to show is backed
+    // by a human-readable issue the client can surface instead.
+    expect(res.body.issues?.[0]?.message).toMatch(/valid phone number/i);
     expect(runners.runSmsTest).not.toHaveBeenCalled();
   });
 
@@ -180,9 +185,14 @@ describe("happy paths", () => {
       channel: "chat",
       detail: { provider: "anthropic", reply: "OK" },
     });
-    const res = await request(makeApp()).post("/admin/connection-tests/chat").send({});
+    const res = await request(makeApp())
+      .post("/admin/connection-tests/chat")
+      .send({});
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ok: true, detail: { provider: "anthropic" } });
+    expect(res.body).toMatchObject({
+      ok: true,
+      detail: { provider: "anthropic" },
+    });
     expect(runners.runChatTest).toHaveBeenCalledWith({ MARK: "effective" });
   });
 

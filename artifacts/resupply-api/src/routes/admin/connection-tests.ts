@@ -85,7 +85,10 @@ function badBody(res: Response, err: z.ZodError): void {
 }
 
 /** Log the OUTCOME only — never the recipient, body, or any secret. */
-function logOutcome(adminEmail: string | undefined, result: ConnectionTestResult): void {
+function logOutcome(
+  adminEmail: string | undefined,
+  result: ConnectionTestResult,
+): void {
   logger.info(
     {
       event: "admin.connection_test.run",
