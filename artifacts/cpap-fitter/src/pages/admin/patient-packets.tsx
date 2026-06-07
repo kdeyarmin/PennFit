@@ -8,6 +8,7 @@ import {
   useAllPatientPackets,
   usePatientPacket,
   useSendPatientPacket,
+  useSendPacketToContact,
   useResendPatientPacket,
   useVoidPatientPacket,
   getAllPatientPacketsQueryKey,
@@ -260,6 +261,9 @@ function SendPacketPanel({
   const templatesQuery = usePatientPacketTemplates();
   const templates = templatesQuery.data?.templates ?? [];
 
+  // "patient" = pick an existing patient; "contact" = type an email /
+  // phone with no patient selected (auto-files to a chart if it matches).
+  const [mode, setMode] = useState<"patient" | "contact">("patient");
   const [search, setSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<{
     id: string;
@@ -267,6 +271,9 @@ function SendPacketPanel({
     hasEmail: boolean;
     hasPhone: boolean;
   } | null>(null);
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<Record<string, boolean>>({});
   const [useEmail, setUseEmail] = useState(true);
   const [useSms, setUseSms] = useState(true);
@@ -277,18 +284,25 @@ function SendPacketPanel({
     link: string;
     emailSent: boolean;
     smsSent: boolean;
+    // Populated only for contact sends, to report chart linkage.
+    contact?: {
+      matchedId: string | null;
+      matchedName: string | null;
+      ambiguous: boolean;
+    };
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const patientSearchParams = { search: search.trim(), limit: 8 };
   const patientsQuery = useListPatients(patientSearchParams, {
     query: {
-      enabled: search.trim().length >= 2,
+      enabled: mode === "patient" && search.trim().length >= 2,
       queryKey: getListPatientsQueryKey(patientSearchParams),
     },
   });
 
   const send = useSendPatientPacket();
+  const sendContact = useSendPacketToContact();
 
   // Seed the selection with the default-included documents once the
   // template catalog loads (react-query's data ref is stable, so this
@@ -312,37 +326,69 @@ function SendPacketPanel({
   const handleSend = async () => {
     setError(null);
     setResult(null);
-    if (!selectedPatient) {
-      setError("Select a patient first.");
-      return;
-    }
     if (chosen.length === 0) {
       setError("Select at least one document.");
       return;
     }
-    const channels: ("email" | "sms")[] = [];
-    if (useEmail) channels.push("email");
-    if (useSms) channels.push("sms");
-    if (channels.length === 0) {
-      setError("Choose at least one delivery channel (email or text).");
-      return;
-    }
     try {
-      const res = await send.mutateAsync({
-        patientId: selectedPatient.id,
-        data: {
+      if (mode === "patient") {
+        if (!selectedPatient) {
+          setError("Select a patient first.");
+          return;
+        }
+        const channels: ("email" | "sms")[] = [];
+        if (useEmail) channels.push("email");
+        if (useSms) channels.push("sms");
+        if (channels.length === 0) {
+          setError("Choose at least one delivery channel (email or text).");
+          return;
+        }
+        const res = await send.mutateAsync({
+          patientId: selectedPatient.id,
+          data: {
+            documentKeys: chosen.map((t) => t.key),
+            title: title.trim() || undefined,
+            recipientEmail: recipientEmail.trim() || undefined,
+            recipientPhone: recipientPhone.trim() || undefined,
+            channels,
+          },
+        });
+        setResult({
+          link: res.signingLink,
+          emailSent: res.emailSent,
+          smsSent: res.smsSent,
+        });
+      } else {
+        const email = contactEmail.trim();
+        const phone = contactPhone.trim();
+        if (!email && !phone) {
+          setError("Enter an email address or a phone number.");
+          return;
+        }
+        // Channels follow whatever the operator typed: email it when
+        // there's an email, text it when there's a number.
+        const channels: ("email" | "sms")[] = [];
+        if (email) channels.push("email");
+        if (phone) channels.push("sms");
+        const res = await sendContact.mutateAsync({
+          email: email || undefined,
+          phone: phone || undefined,
+          recipientName: contactName.trim() || undefined,
           documentKeys: chosen.map((t) => t.key),
           title: title.trim() || undefined,
-          recipientEmail: recipientEmail.trim() || undefined,
-          recipientPhone: recipientPhone.trim() || undefined,
           channels,
-        },
-      });
-      setResult({
-        link: res.signingLink,
-        emailSent: res.emailSent,
-        smsSent: res.smsSent,
-      });
+        });
+        setResult({
+          link: res.signingLink,
+          emailSent: res.emailSent,
+          smsSent: res.smsSent,
+          contact: {
+            matchedId: res.matchedPatientId,
+            matchedName: res.matchedPatientName,
+            ambiguous: res.matchAmbiguous,
+          },
+        });
+      }
       onSent();
     } catch (err) {
       setError(describeError(err).detail ?? "Failed to send packet.");
@@ -352,7 +398,7 @@ function SendPacketPanel({
   return (
     <Card
       title="Send a new patient packet"
-      subtitle="Choose a patient and the documents to include."
+      subtitle="Send to a patient on file, or straight to an email or phone number."
     >
       <div className="p-5 space-y-5">
         {result ? (
@@ -366,13 +412,50 @@ function SendPacketPanel({
             >
               Packet created.{" "}
               {result.emailSent && result.smsSent
-                ? "Emailed and texted to the patient."
+                ? "Emailed and texted the signing link."
                 : result.emailSent
-                  ? "Emailed to the patient."
+                  ? "Emailed the signing link."
                   : result.smsSent
-                    ? "Texted to the patient."
+                    ? "Texted the signing link."
                     : "No message was sent — share the secure link below directly."}
             </div>
+            {result.contact &&
+              (result.contact.matchedId ? (
+                <div
+                  className="rounded-md p-3 text-sm"
+                  style={{
+                    backgroundColor: "hsl(142 70% 45% / 0.10)",
+                    color: "hsl(142 60% 25%)",
+                  }}
+                >
+                  Filed to{" "}
+                  <strong>{result.contact.matchedName ?? "the patient"}</strong>
+                  ’s chart — the signed documents will appear there.
+                </div>
+              ) : result.contact.ambiguous ? (
+                <div
+                  className="rounded-md p-3 text-sm"
+                  style={{
+                    backgroundColor: "hsl(38 92% 50% / 0.12)",
+                    color: "hsl(30 70% 30%)",
+                  }}
+                >
+                  More than one patient matches this contact, so it wasn’t filed
+                  to a chart automatically. Open the right patient and attach it
+                  by hand if needed.
+                </div>
+              ) : (
+                <div
+                  className="rounded-md p-3 text-sm"
+                  style={{
+                    backgroundColor: "hsl(215 16% 47% / 0.12)",
+                    color: "hsl(215 25% 27%)",
+                  }}
+                >
+                  No matching patient on file — this packet isn’t linked to a
+                  chart.
+                </div>
+              ))}
             <div>
               <Label htmlFor="signlink">Secure signing link</Label>
               <div className="flex gap-2">
@@ -396,6 +479,9 @@ function SendPacketPanel({
                   setTitle("");
                   setRecipientEmail("");
                   setRecipientPhone("");
+                  setContactName("");
+                  setContactEmail("");
+                  setContactPhone("");
                 }}
               >
                 Send another
@@ -407,95 +493,177 @@ function SendPacketPanel({
           </div>
         ) : (
           <>
-            {/* Patient picker */}
+            {/* Recipient mode */}
             <div>
-              <Label htmlFor="patientSearch">Patient</Label>
-              {selectedPatient ? (
-                <div
-                  className="flex items-center justify-between rounded-md border px-3 py-2"
-                  style={{ borderColor: "hsl(var(--line-2))" }}
-                >
-                  <span style={{ color: "hsl(var(--ink-1))" }}>
-                    {selectedPatient.name}
-                    {!selectedPatient.hasEmail && (
-                      <span
-                        className="ml-2 text-xs"
-                        style={{ color: "hsl(var(--ink-3))" }}
-                      >
-                        (no email on file)
-                      </span>
-                    )}
-                  </span>
-                  <Button
-                    intent="ghost"
-                    size="sm"
-                    onClick={() => setSelectedPatient(null)}
-                  >
-                    Change
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Input
-                    id="patientSearch"
-                    placeholder="Search by name or Pacware ID…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  {search.trim().length >= 2 && (
-                    <div
-                      className="mt-1 rounded-md border divide-y max-h-56 overflow-y-auto"
-                      style={{ borderColor: "hsl(var(--line-1))" }}
+              <Label htmlFor="recipientMode">Send to</Label>
+              <div className="flex flex-wrap gap-2" id="recipientMode">
+                {(
+                  [
+                    ["patient", "A patient on file"],
+                    ["contact", "An email or phone"],
+                  ] as const
+                ).map(([value, label]) => {
+                  const active = mode === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setMode(value);
+                        setError(null);
+                      }}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium"
+                      style={{
+                        borderColor: active
+                          ? "hsl(var(--penn-navy))"
+                          : "hsl(var(--line-2))",
+                        backgroundColor: active
+                          ? "hsl(var(--penn-navy) / 0.08)"
+                          : "white",
+                        color: active
+                          ? "hsl(var(--penn-navy-deep))"
+                          : "hsl(var(--ink-3))",
+                      }}
                     >
-                      {patientsQuery.isPending ? (
-                        <div
-                          className="px-3 py-2 text-sm"
-                          style={{ color: "hsl(var(--ink-3))" }}
-                        >
-                          Searching…
-                        </div>
-                      ) : (patientsQuery.data?.items ?? []).length === 0 ? (
-                        <div
-                          className="px-3 py-2 text-sm"
-                          style={{ color: "hsl(var(--ink-3))" }}
-                        >
-                          No matches.
-                        </div>
-                      ) : (
-                        (patientsQuery.data?.items ?? []).map((pt) => (
-                          <button
-                            key={pt.id}
-                            type="button"
-                            className="block w-full text-left px-3 py-2 text-sm hover:bg-black/5"
-                            style={{ color: "hsl(var(--ink-1))" }}
-                            onClick={() => {
-                              setSelectedPatient({
-                                id: pt.id,
-                                name: `${pt.firstName} ${pt.lastName}`.trim(),
-                                hasEmail: pt.hasEmail,
-                                hasPhone: pt.hasPhone,
-                              });
-                              // Default each channel on when the patient
-                              // has a contact point of that kind on file.
-                              setUseEmail(pt.hasEmail);
-                              setUseSms(pt.hasPhone);
-                            }}
-                          >
-                            {pt.firstName} {pt.lastName}
-                            <span
-                              className="ml-2 text-xs"
-                              style={{ color: "hsl(var(--ink-3))" }}
-                            >
-                              {pt.pacwareId}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
+                      {active ? "✓ " : ""}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {mode === "patient" ? (
+              /* Patient picker */
+              <div>
+                <Label htmlFor="patientSearch">Patient</Label>
+                {selectedPatient ? (
+                  <div
+                    className="flex items-center justify-between rounded-md border px-3 py-2"
+                    style={{ borderColor: "hsl(var(--line-2))" }}
+                  >
+                    <span style={{ color: "hsl(var(--ink-1))" }}>
+                      {selectedPatient.name}
+                      {!selectedPatient.hasEmail && (
+                        <span
+                          className="ml-2 text-xs"
+                          style={{ color: "hsl(var(--ink-3))" }}
+                        >
+                          (no email on file)
+                        </span>
+                      )}
+                    </span>
+                    <Button
+                      intent="ghost"
+                      size="sm"
+                      onClick={() => setSelectedPatient(null)}
+                    >
+                      Change
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      id="patientSearch"
+                      placeholder="Search by name or Pacware ID…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {search.trim().length >= 2 && (
+                      <div
+                        className="mt-1 rounded-md border divide-y max-h-56 overflow-y-auto"
+                        style={{ borderColor: "hsl(var(--line-1))" }}
+                      >
+                        {patientsQuery.isPending ? (
+                          <div
+                            className="px-3 py-2 text-sm"
+                            style={{ color: "hsl(var(--ink-3))" }}
+                          >
+                            Searching…
+                          </div>
+                        ) : (patientsQuery.data?.items ?? []).length === 0 ? (
+                          <div
+                            className="px-3 py-2 text-sm"
+                            style={{ color: "hsl(var(--ink-3))" }}
+                          >
+                            No matches.
+                          </div>
+                        ) : (
+                          (patientsQuery.data?.items ?? []).map((pt) => (
+                            <button
+                              key={pt.id}
+                              type="button"
+                              className="block w-full text-left px-3 py-2 text-sm hover:bg-black/5"
+                              style={{ color: "hsl(var(--ink-1))" }}
+                              onClick={() => {
+                                setSelectedPatient({
+                                  id: pt.id,
+                                  name: `${pt.firstName} ${pt.lastName}`.trim(),
+                                  hasEmail: pt.hasEmail,
+                                  hasPhone: pt.hasPhone,
+                                });
+                                // Default each channel on when the patient
+                                // has a contact point of that kind on file.
+                                setUseEmail(pt.hasEmail);
+                                setUseSms(pt.hasPhone);
+                              }}
+                            >
+                              {pt.firstName} {pt.lastName}
+                              <span
+                                className="ml-2 text-xs"
+                                style={{ color: "hsl(var(--ink-3))" }}
+                              >
+                                {pt.pacwareId}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              /* Contact (email / phone) inputs */
+              <div className="space-y-3">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <Label htmlFor="contactName">Name (optional)</Label>
+                    <Input
+                      id="contactName"
+                      placeholder="e.g. Jordan Smith"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="contactEmail">Email</Label>
+                    <Input
+                      id="contactEmail"
+                      type="email"
+                      placeholder="name@example.com"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="contactPhone">Mobile number</Label>
+                    <Input
+                      id="contactPhone"
+                      type="tel"
+                      placeholder="(215) 555-1234"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                  We’ll send the signing link to whichever you enter. If the
+                  email or number matches a patient on file, the signed
+                  documents are filed to their chart automatically.
+                </p>
+              </div>
+            )}
 
             {/* Document selection */}
             <div>
@@ -542,105 +710,113 @@ function SendPacketPanel({
               )}
             </div>
 
-            {/* Delivery channels */}
+            {/* Title (both modes) */}
             <div>
-              <Label htmlFor="channels">Send the signing link via</Label>
-              <div className="flex flex-wrap gap-2" id="channels">
-                <button
-                  type="button"
-                  onClick={() => setUseEmail((v) => !v)}
-                  className="rounded-md border px-3 py-1.5 text-sm font-medium"
-                  style={{
-                    borderColor: useEmail
-                      ? "hsl(var(--penn-navy))"
-                      : "hsl(var(--line-2))",
-                    backgroundColor: useEmail
-                      ? "hsl(var(--penn-navy) / 0.08)"
-                      : "white",
-                    color: useEmail
-                      ? "hsl(var(--penn-navy-deep))"
-                      : "hsl(var(--ink-3))",
-                  }}
-                >
-                  {useEmail ? "✓ " : ""}Email
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUseSms((v) => !v)}
-                  className="rounded-md border px-3 py-1.5 text-sm font-medium"
-                  style={{
-                    borderColor: useSms
-                      ? "hsl(var(--penn-navy))"
-                      : "hsl(var(--line-2))",
-                    backgroundColor: useSms
-                      ? "hsl(var(--penn-navy) / 0.08)"
-                      : "white",
-                    color: useSms
-                      ? "hsl(var(--penn-navy-deep))"
-                      : "hsl(var(--ink-3))",
-                  }}
-                >
-                  {useSms ? "✓ " : ""}Text message
-                </button>
-              </div>
-              {selectedPatient && !selectedPatient.hasEmail && useEmail && (
-                <p
-                  className="mt-1 text-xs"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  No email on file — enter one below to deliver by email.
-                </p>
-              )}
-              {selectedPatient && !selectedPatient.hasPhone && useSms && (
-                <p
-                  className="mt-1 text-xs"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  No phone on file — enter one below to deliver by text.
-                </p>
-              )}
+              <Label htmlFor="packetTitle">Title (optional)</Label>
+              <Input
+                id="packetTitle"
+                placeholder="New Patient Document Packet"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
             </div>
 
-            {/* Optional overrides */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="packetTitle">Title (optional)</Label>
-                <Input
-                  id="packetTitle"
-                  placeholder="New Patient Document Packet"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </div>
-              {useEmail && (
+            {mode === "patient" && (
+              <>
+                {/* Delivery channels */}
                 <div>
-                  <Label htmlFor="recipientEmail">
-                    Send to email (optional)
-                  </Label>
-                  <Input
-                    id="recipientEmail"
-                    type="email"
-                    placeholder="Defaults to email on file"
-                    value={recipientEmail}
-                    onChange={(e) => setRecipientEmail(e.target.value)}
-                  />
+                  <Label htmlFor="channels">Send the signing link via</Label>
+                  <div className="flex flex-wrap gap-2" id="channels">
+                    <button
+                      type="button"
+                      onClick={() => setUseEmail((v) => !v)}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium"
+                      style={{
+                        borderColor: useEmail
+                          ? "hsl(var(--penn-navy))"
+                          : "hsl(var(--line-2))",
+                        backgroundColor: useEmail
+                          ? "hsl(var(--penn-navy) / 0.08)"
+                          : "white",
+                        color: useEmail
+                          ? "hsl(var(--penn-navy-deep))"
+                          : "hsl(var(--ink-3))",
+                      }}
+                    >
+                      {useEmail ? "✓ " : ""}Email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseSms((v) => !v)}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium"
+                      style={{
+                        borderColor: useSms
+                          ? "hsl(var(--penn-navy))"
+                          : "hsl(var(--line-2))",
+                        backgroundColor: useSms
+                          ? "hsl(var(--penn-navy) / 0.08)"
+                          : "white",
+                        color: useSms
+                          ? "hsl(var(--penn-navy-deep))"
+                          : "hsl(var(--ink-3))",
+                      }}
+                    >
+                      {useSms ? "✓ " : ""}Text message
+                    </button>
+                  </div>
+                  {selectedPatient && !selectedPatient.hasEmail && useEmail && (
+                    <p
+                      className="mt-1 text-xs"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      No email on file — enter one below to deliver by email.
+                    </p>
+                  )}
+                  {selectedPatient && !selectedPatient.hasPhone && useSms && (
+                    <p
+                      className="mt-1 text-xs"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      No phone on file — enter one below to deliver by text.
+                    </p>
+                  )}
                 </div>
-              )}
-              {useSms && (
-                <div>
-                  <Label htmlFor="recipientPhone">
-                    Send to phone (optional)
-                  </Label>
-                  <Input
-                    id="recipientPhone"
-                    type="tel"
-                    placeholder="Defaults to phone on file (+1…)"
-                    value={recipientPhone}
-                    onChange={(e) => setRecipientPhone(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
+
+                {/* Optional contact overrides */}
+                {(useEmail || useSms) && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {useEmail && (
+                      <div>
+                        <Label htmlFor="recipientEmail">
+                          Send to email (optional)
+                        </Label>
+                        <Input
+                          id="recipientEmail"
+                          type="email"
+                          placeholder="Defaults to email on file"
+                          value={recipientEmail}
+                          onChange={(e) => setRecipientEmail(e.target.value)}
+                        />
+                      </div>
+                    )}
+                    {useSms && (
+                      <div>
+                        <Label htmlFor="recipientPhone">
+                          Send to phone (optional)
+                        </Label>
+                        <Input
+                          id="recipientPhone"
+                          type="tel"
+                          placeholder="Defaults to phone on file (+1…)"
+                          value={recipientPhone}
+                          onChange={(e) => setRecipientPhone(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
 
             {error && (
               <div className="text-sm" style={{ color: "hsl(0 70% 45%)" }}>
@@ -651,8 +827,13 @@ function SendPacketPanel({
             <div className="flex gap-2">
               <Button
                 onClick={handleSend}
-                isLoading={send.isPending}
-                disabled={!selectedPatient || chosen.length === 0}
+                isLoading={send.isPending || sendContact.isPending}
+                disabled={
+                  chosen.length === 0 ||
+                  (mode === "patient"
+                    ? !selectedPatient
+                    : !contactEmail.trim() && !contactPhone.trim())
+                }
               >
                 Send packet
               </Button>

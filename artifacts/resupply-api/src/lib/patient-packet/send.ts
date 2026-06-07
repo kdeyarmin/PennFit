@@ -15,6 +15,7 @@ import {
   getSupabaseServiceRoleClient,
   type Json,
 } from "@workspace/resupply-db";
+import { normalizeE164 } from "@workspace/resupply-domain";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
@@ -69,17 +70,21 @@ export interface CreateAndSendPatientPacketOptions {
   allowPartial?: boolean;
 }
 
+export interface SendPatientPacketSuccess {
+  ok: true;
+  packetId: string;
+  signingLink: string;
+  emailSent: boolean;
+  smsSent: boolean;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  documentCount: number;
+  /** The patient chart this packet was filed under, or null if unlinked. */
+  matchedPatientId: string | null;
+}
+
 export type CreateAndSendPatientPacketResult =
-  | {
-      ok: true;
-      packetId: string;
-      signingLink: string;
-      emailSent: boolean;
-      smsSent: boolean;
-      recipientEmail: string | null;
-      recipientPhone: string | null;
-      documentCount: number;
-    }
+  | SendPatientPacketSuccess
   | { ok: false; code: "patient_not_found" }
   | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] };
 
@@ -105,23 +110,17 @@ export async function createAndSendPatientPacket(
   opts: CreateAndSendPatientPacketOptions,
 ): Promise<CreateAndSendPatientPacketResult> {
   const { supabase, patientId } = opts;
-  const ttlDays = opts.expiresInDays ?? DEFAULT_PACKET_TTL_DAYS;
 
-  const documentKeys = opts.documentKeys ?? defaultPacketDocumentKeys();
-  const invalidKeys = documentKeys.filter((k) => !isValidPacketDocumentKey(k));
-  if (invalidKeys.length > 0) {
-    return { ok: false, code: "invalid_document_keys", invalidKeys };
+  // Validate + resolve the document set before any DB work so a bad
+  // request fails cheaply (this contract holds without a live client).
+  const docs = resolveDocumentKeys(opts.documentKeys, opts.allowPartial);
+  if (!docs.ok) {
+    return {
+      ok: false,
+      code: "invalid_document_keys",
+      invalidKeys: docs.invalidKeys,
+    };
   }
-  // Guarantee compliance completeness: unless the caller explicitly opts
-  // out, every required document is present. Then order the final set by
-  // the catalog order for a consistent packet sequence.
-  const selected = new Set(documentKeys);
-  if (!opts.allowPartial) {
-    for (const k of requiredPacketDocumentKeys()) selected.add(k);
-  }
-  const uniqueKeys = PACKET_TEMPLATES.map((t) => t.key).filter((k) =>
-    selected.has(k),
-  );
 
   const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
@@ -140,6 +139,297 @@ export async function createAndSendPatientPacket(
     opts.recipientEmailOverride ?? patient.email?.toLowerCase() ?? null;
   const recipientPhone =
     opts.recipientPhoneOverride ?? patient.phone_e164 ?? null;
+
+  const built = await buildAndDeliverPacket({
+    supabase,
+    patientId,
+    recipientName,
+    recipientEmail,
+    recipientPhone,
+    uniqueKeys: docs.uniqueKeys,
+    title: opts.title,
+    channels: opts.channels,
+    deliveryDetails: opts.deliveryDetails ?? null,
+    expiresInDays: opts.expiresInDays,
+    createdByEmail: opts.createdByEmail ?? null,
+    reminder: opts.reminder,
+  });
+  return { ...built, matchedPatientId: patientId };
+}
+
+// ── Send to an arbitrary contact (no patient selected up front) ───
+//
+// A CSR can send a signature packet straight to an email address and/or
+// phone number without first locating the patient. If the contact
+// resolves to exactly one patient (or one portal customer linked to a
+// patient), the packet is filed onto that patient's chart by setting
+// patient_id; otherwise it is created unlinked but still fully signable.
+
+export interface SendPatientPacketToContactOptions {
+  supabase: SupabaseClient;
+  /** Email to send to (also used to match a patient). Case-insensitive. */
+  email?: string | null;
+  /** Phone to text (also used to match a patient). Any common format. */
+  phone?: string | null;
+  /** Display name for the packet when no patient matches. */
+  recipientName?: string | null;
+  documentKeys?: string[];
+  title?: string;
+  channels?: PacketChannel[];
+  expiresInDays?: number;
+  createdByEmail?: string | null;
+}
+
+export type SendPatientPacketToContactResult =
+  | (SendPatientPacketSuccess & {
+      matchedPatientName: string | null;
+      /** True when 2+ candidate patients matched, so we did NOT link. */
+      matchAmbiguous: boolean;
+    })
+  | { ok: false; code: "no_recipient" }
+  | { ok: false; code: "invalid_phone" }
+  | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] };
+
+export async function createAndSendPatientPacketToContact(
+  opts: SendPatientPacketToContactOptions,
+): Promise<SendPatientPacketToContactResult> {
+  const { supabase } = opts;
+  const emailLower = opts.email?.trim().toLowerCase() || null;
+  const rawPhone = opts.phone?.trim() || null;
+
+  let phoneE164: string | null = null;
+  if (rawPhone) {
+    phoneE164 = normalizeE164(rawPhone);
+    if (!phoneE164) return { ok: false, code: "invalid_phone" };
+  }
+  if (!emailLower && !phoneE164) return { ok: false, code: "no_recipient" };
+
+  // Validate the document set before any DB work (mirrors the patient
+  // path; lets the route surface a 400 without a wasted round-trip).
+  const docs = resolveDocumentKeys(opts.documentKeys, undefined);
+  if (!docs.ok) {
+    return {
+      ok: false,
+      code: "invalid_document_keys",
+      invalidKeys: docs.invalidKeys,
+    };
+  }
+
+  const match = await resolvePatientByContact(supabase, {
+    emailLower,
+    phoneE164,
+  });
+  const matchedPatientId = match.status === "matched" ? match.patientId : null;
+  const matchedPatientName = match.status === "matched" ? match.name : null;
+  const recipientName =
+    opts.recipientName?.trim() || matchedPatientName || "Patient";
+
+  const built = await buildAndDeliverPacket({
+    supabase,
+    patientId: matchedPatientId,
+    recipientName,
+    recipientEmail: emailLower,
+    recipientPhone: phoneE164,
+    uniqueKeys: docs.uniqueKeys,
+    title: opts.title,
+    channels: opts.channels,
+    expiresInDays: opts.expiresInDays,
+    createdByEmail: opts.createdByEmail ?? null,
+  });
+
+  return {
+    ...built,
+    matchedPatientId,
+    matchedPatientName,
+    matchAmbiguous: match.status === "ambiguous",
+  };
+}
+
+export type ContactPatientMatch =
+  | { status: "matched"; patientId: string; name: string }
+  | { status: "none" }
+  | { status: "ambiguous" };
+
+/**
+ * Resolve a contact (email and/or phone) to a single patient chart.
+ *
+ * Matching is deliberately conservative — it NEVER links when the
+ * answer is ambiguous, so a packet is never silently filed onto the
+ * wrong patient's chart (cross-linking PHI). The lookups, in order:
+ *
+ *   1. patients.email (exact, lowercased) + patients.phone_e164 (exact).
+ *      A 2+ row hit on either, or a different patient on each, is
+ *      ambiguous → do not link.
+ *   2. Fallback when (1) finds nothing and an email was given: bridge
+ *      through the portal account — shop_customers.email_lower →
+ *      auth_user_id → patients.portal_auth_user_id. This catches a
+ *      customer whose portal login differs from the email on their
+ *      clinical record. Any non-unique hop is treated as no-match.
+ */
+export async function resolvePatientByContact(
+  supabase: SupabaseClient,
+  contact: { emailLower?: string | null; phoneE164?: string | null },
+): Promise<ContactPatientMatch> {
+  const candidates = new Map<string, string>(); // patientId -> display name
+  let ambiguous = false;
+
+  const ingest = (
+    rows:
+      | {
+          id: string;
+          legal_first_name: string | null;
+          legal_last_name: string | null;
+        }[]
+      | null,
+  ) => {
+    if (!rows || rows.length === 0) return;
+    if (rows.length > 1) {
+      ambiguous = true;
+      return;
+    }
+    const r = rows[0]!;
+    const name =
+      `${r.legal_first_name ?? ""} ${r.legal_last_name ?? ""}`.trim() ||
+      "Patient";
+    candidates.set(r.id, name);
+  };
+
+  if (contact.emailLower) {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, legal_first_name, legal_last_name")
+      .eq("email", contact.emailLower)
+      .limit(2);
+    if (error) throw error;
+    ingest(data);
+  }
+  if (contact.phoneE164) {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, legal_first_name, legal_last_name")
+      .eq("phone_e164", contact.phoneE164)
+      .limit(2);
+    if (error) throw error;
+    ingest(data);
+  }
+
+  if (ambiguous) return { status: "ambiguous" };
+  if (candidates.size > 1) return { status: "ambiguous" };
+  if (candidates.size === 1) {
+    const [[patientId, name]] = candidates;
+    return { status: "matched", patientId, name };
+  }
+
+  // Direct match found nothing — try the portal-customer bridge by email.
+  if (contact.emailLower) {
+    const bridged = await resolvePatientViaCustomerEmail(
+      supabase,
+      contact.emailLower,
+    );
+    if (bridged) return { status: "matched", ...bridged };
+  }
+
+  return { status: "none" };
+}
+
+async function resolvePatientViaCustomerEmail(
+  supabase: SupabaseClient,
+  emailLower: string,
+): Promise<{ patientId: string; name: string } | null> {
+  const { data: customers, error: custErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("auth_user_id")
+    .eq("email_lower", emailLower)
+    .not("auth_user_id", "is", null)
+    .limit(2);
+  if (custErr) throw custErr;
+  // Need exactly one portal account for this email to resolve safely.
+  if (!customers || customers.length !== 1) return null;
+  const authUserId = customers[0]!.auth_user_id;
+  if (!authUserId) return null;
+
+  const { data: patients, error: patErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, legal_first_name, legal_last_name")
+    .eq("portal_auth_user_id", authUserId)
+    .limit(2);
+  if (patErr) throw patErr;
+  if (!patients || patients.length !== 1) return null;
+  const p = patients[0]!;
+  const name =
+    `${p.legal_first_name ?? ""} ${p.legal_last_name ?? ""}`.trim() ||
+    "Patient";
+  return { patientId: p.id, name };
+}
+
+// Validate the caller's requested document keys and expand them into
+// the final, catalog-ordered list to snapshot onto the packet. Pure +
+// DB-free, so both send paths can fail fast before any round-trip.
+//
+// Unless `allowPartial` is set, every compliance-required document is
+// folded in so a normal send is always complete.
+function resolveDocumentKeys(
+  documentKeys: string[] | undefined,
+  allowPartial: boolean | undefined,
+):
+  | { ok: true; uniqueKeys: string[] }
+  | { ok: false; invalidKeys: string[] } {
+  const keys = documentKeys ?? defaultPacketDocumentKeys();
+  const invalidKeys = keys.filter((k) => !isValidPacketDocumentKey(k));
+  if (invalidKeys.length > 0) return { ok: false, invalidKeys };
+  const selected = new Set(keys);
+  if (!allowPartial) {
+    for (const k of requiredPacketDocumentKeys()) selected.add(k);
+  }
+  const uniqueKeys = PACKET_TEMPLATES.map((t) => t.key).filter((k) =>
+    selected.has(k),
+  );
+  return { ok: true, uniqueKeys };
+}
+
+// ── Shared packet builder ─────────────────────────────────────────
+//
+// The common tail of both send paths: insert the packet + its document
+// snapshot, mint the HMAC signing link, and deliver it over the
+// requested channels. `patientId` is null for an unlinked contact send.
+// `uniqueKeys` must already be validated + ordered (resolveDocumentKeys).
+
+interface BuildAndDeliverPacketInput {
+  supabase: SupabaseClient;
+  patientId: string | null;
+  recipientName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  uniqueKeys: string[];
+  title?: string;
+  channels?: PacketChannel[];
+  deliveryDetails?: DeliveryDetails | null;
+  expiresInDays?: number;
+  createdByEmail?: string | null;
+  reminder?: boolean;
+}
+
+interface BuildAndDeliverPacketResult {
+  ok: true;
+  packetId: string;
+  signingLink: string;
+  emailSent: boolean;
+  smsSent: boolean;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  documentCount: number;
+}
+
+async function buildAndDeliverPacket(
+  input: BuildAndDeliverPacketInput,
+): Promise<BuildAndDeliverPacketResult> {
+  const { supabase, uniqueKeys } = input;
+  const ttlDays = input.expiresInDays ?? DEFAULT_PACKET_TTL_DAYS;
+
   const nowIso = new Date().toISOString();
   const expiresAt = new Date(
     Date.now() + ttlDays * 24 * 60 * 60 * 1000,
@@ -149,17 +439,18 @@ export async function createAndSendPatientPacket(
     .schema("resupply")
     .from("patient_packets")
     .insert({
-      patient_id: patientId,
-      title: opts.title ?? "New Patient Document Packet",
+      patient_id: input.patientId,
+      title: input.title ?? "New Patient Document Packet",
       status: "sent",
-      recipient_name: recipientName,
-      recipient_email: recipientEmail,
+      recipient_name: input.recipientName,
+      recipient_email: input.recipientEmail,
+      recipient_phone: input.recipientPhone,
       link_version: 1,
       sent_at: nowIso,
       expires_at: expiresAt,
-      created_by_email: opts.createdByEmail ?? null,
-      delivery_details: opts.deliveryDetails
-        ? (opts.deliveryDetails as unknown as Json)
+      created_by_email: input.createdByEmail ?? null,
+      delivery_details: input.deliveryDetails
+        ? (input.deliveryDetails as unknown as Json)
         : null,
     })
     .select("id, link_version")
@@ -192,12 +483,12 @@ export async function createAndSendPatientPacket(
 
   const { emailSent, smsSent } = await deliverPacketLink({
     supabase,
-    recipientName,
+    recipientName: input.recipientName,
     link,
-    email: recipientEmail,
-    phone: recipientPhone,
-    channels: opts.channels ?? PACKET_CHANNELS,
-    reminder: opts.reminder,
+    email: input.recipientEmail,
+    phone: input.recipientPhone,
+    channels: input.channels ?? PACKET_CHANNELS,
+    reminder: input.reminder,
     packetId: packet.id,
   });
 
@@ -207,8 +498,8 @@ export async function createAndSendPatientPacket(
     signingLink: link,
     emailSent,
     smsSent,
-    recipientEmail,
-    recipientPhone,
+    recipientEmail: input.recipientEmail,
+    recipientPhone: input.recipientPhone,
     documentCount: uniqueKeys.length,
   };
 }

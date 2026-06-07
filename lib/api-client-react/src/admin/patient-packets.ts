@@ -54,7 +54,8 @@ export type PatientPacketStatus =
 
 export interface PatientPacketSummary {
   id: string;
-  patient_id: string;
+  /** Null when the packet was sent to a contact that matched no patient. */
+  patient_id: string | null;
   title: string;
   status: PatientPacketStatus;
   recipient_name: string;
@@ -123,6 +124,35 @@ export interface SendPatientPacketResponse {
   emailSent: boolean;
   smsSent: boolean;
   signingLink: string;
+}
+
+/**
+ * Send a packet to a typed-in email and/or phone with no patient
+ * selected. At least one of `email` / `phone` must be provided. When
+ * the contact resolves to a single patient (directly, or via a linked
+ * portal account) the packet is filed onto that patient's chart.
+ */
+export interface SendPacketToContactRequest {
+  email?: string | null;
+  phone?: string | null;
+  recipientName?: string | null;
+  documentKeys?: string[];
+  title?: string;
+  channels?: PacketChannel[];
+  expiresInDays?: number;
+}
+
+export interface SendPacketToContactResponse {
+  id: string;
+  status: string;
+  emailSent: boolean;
+  smsSent: boolean;
+  signingLink: string;
+  /** The patient chart the packet was filed under, or null if unlinked. */
+  matchedPatientId: string | null;
+  matchedPatientName: string | null;
+  /** True when the contact matched 2+ patients, so it was left unlinked. */
+  matchAmbiguous: boolean;
 }
 
 type PacketError = ErrorType<{ error?: string; message?: string }>;
@@ -239,6 +269,28 @@ export function useSendPatientPacket(options?: {
           body: JSON.stringify(data),
         },
       ),
+    ...options?.mutation,
+  });
+}
+
+export function useSendPacketToContact(options?: {
+  mutation?: UseMutationOptions<
+    SendPacketToContactResponse,
+    PacketError,
+    SendPacketToContactRequest
+  >;
+}) {
+  return useMutation<
+    SendPacketToContactResponse,
+    PacketError,
+    SendPacketToContactRequest
+  >({
+    mutationFn: (data) =>
+      customFetch<SendPacketToContactResponse>(ALL_PACKETS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
     ...options?.mutation,
   });
 }
