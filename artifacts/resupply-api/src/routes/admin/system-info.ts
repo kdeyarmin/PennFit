@@ -97,9 +97,7 @@ router.get(
       },
       vendors: {
         sendgrid: {
-          configured: Boolean(
-            vendorEnv.SENDGRID_API_KEY && vendorEnv.SENDGRID_FROM_EMAIL,
-          ),
+          configured: Boolean(vendorEnv.SENDGRID_API_KEY),
           fromEmailConfigured: Boolean(vendorEnv.SENDGRID_FROM_EMAIL),
         },
         twilio: {

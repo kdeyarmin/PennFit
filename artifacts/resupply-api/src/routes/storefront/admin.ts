@@ -577,12 +577,10 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
     // send" instead of silently reporting `sent: 0`.
     // Read the same env vars the shared SendGrid integration reads, so
     // this readiness flag matches what `createSendgridClient()` will
-    // actually do. There is no longer a separate PENN_FROM_EMAIL — every
-    // outbound mail uses SENDGRID_FROM_EMAIL (operations sets this to
-    // info@pennpaps.com).
-    sendgridConfigured: Boolean(
-      process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL,
-    ),
+    // actually do. The API key is the only requirement — the From address
+    // now defaults in code to info@pennpaps.com when SENDGRID_FROM_EMAIL
+    // is unset (ADR 018), so it is not part of the readiness check.
+    sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY),
   });
 });
 

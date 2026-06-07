@@ -39,7 +39,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { createSendgridClient } from "@workspace/resupply-email";
+import {
+  createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
+} from "@workspace/resupply-email";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 
@@ -77,7 +80,7 @@ interface NotifyStats {
 
 interface MessagingConfig {
   sendgridApiKey: string | null;
-  sendgridFromEmail: string | null;
+  sendgridFromEmail: string;
   sendgridFromName: string | null;
   practiceName: string;
   publicBaseUrl: string;
@@ -88,7 +91,8 @@ export function readNotifyMessagingConfig(
 ): MessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
-    sendgridFromEmail: env.SENDGRID_FROM_EMAIL ?? null,
+    sendgridFromEmail:
+      env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
     publicBaseUrl:
@@ -207,7 +211,7 @@ export async function runInvitePasswordExpiryNotifySweep(
     skippedAlreadyClaimed: 0,
     errors: 0,
   };
-  if (!cfg.sendgridApiKey || !cfg.sendgridFromEmail || !cfg.sendgridFromName) {
+  if (!cfg.sendgridApiKey || !cfg.sendgridFromName) {
     stats.skippedNoConfig = 1;
     logger.warn(
       { event: "invite-password.expiry-notify.skipped_no_config" },

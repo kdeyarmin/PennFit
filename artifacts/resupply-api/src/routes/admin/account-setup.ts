@@ -300,9 +300,8 @@ export function buildChecklistItems(
       title: "SendGrid",
       description:
         "Outbound email — receipts, reminders, review requests, password resets. The From address must be info@pennpaps.com.",
-      configured:
-        isSet(env, "SENDGRID_API_KEY") && isSet(env, "SENDGRID_FROM_EMAIL"),
-      envHint: "SENDGRID_API_KEY + SENDGRID_FROM_EMAIL",
+      configured: isSet(env, "SENDGRID_API_KEY"),
+      envHint: "SENDGRID_API_KEY",
     }),
     vendorItem({
       id: "vendor-twilio-sms",
