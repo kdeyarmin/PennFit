@@ -198,9 +198,7 @@ function ChannelTest({
       </div>
 
       {mutation.isError && (
-        <ResultLine ok={false}>
-          {errorMessage(mutation.error)}
-        </ResultLine>
+        <ResultLine ok={false}>{errorMessage(mutation.error)}</ResultLine>
       )}
       {mutation.data && <TestResult result={mutation.data} />}
     </div>
@@ -234,9 +232,11 @@ function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {
   return (
     <p
       className="flex items-start gap-1.5 text-xs rounded-md px-2.5 py-2"
-      role="status"
+      role={ok ? "status" : "alert"}
       style={{
-        backgroundColor: ok ? "hsl(152 70% 24% / 0.08)" : "hsl(354 75% 38% / 0.07)",
+        backgroundColor: ok
+          ? "hsl(152 70% 24% / 0.08)"
+          : "hsl(354 75% 38% / 0.07)",
         color: ok ? "hsl(152 70% 22%)" : "hsl(354 70% 36%)",
       }}
     >
