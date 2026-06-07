@@ -26,6 +26,8 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
+import { normalizeE164 } from "@workspace/resupply-domain";
+
 import { getEffectiveEnv } from "../../lib/app-config/store";
 import {
   computeConnectionTestStatus,
@@ -44,14 +46,32 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-// E.164: a leading + and 7–15 digits, first digit non-zero.
-const e164 = z
+// Accept any reasonable phone input — a bare 10-digit US number
+// (`8142418865`), one with punctuation (`(814) 241-8865`), or an
+// already-E.164 value (`+18142418865`) — and normalize to strict E.164
+// before the test call/SMS is placed. This mirrors how every other
+// inbound phone field is handled (SMS/voice inbound, click-to-dial,
+// patient lookup); demanding a hand-typed `+1` was the cause of the
+// spurious `invalid_body` rejection an operator hit when entering a
+// plain national number.
+const phoneE164 = z
   .string()
   .trim()
-  .regex(/^\+[1-9]\d{6,14}$/, "Phone must be E.164, e.g. +12155551212.");
+  .transform((raw, ctx) => {
+    const normalized = normalizeE164(raw);
+    if (normalized === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Enter a valid phone number, e.g. (215) 555-1212 or +12155551212.",
+      });
+      return z.NEVER;
+    }
+    return normalized;
+  });
 
 const emailBody = z.object({ to: z.string().trim().email() }).strict();
-const phoneBody = z.object({ to: e164 }).strict();
+const phoneBody = z.object({ to: phoneE164 }).strict();
 
 function badBody(res: Response, err: z.ZodError): void {
   res.status(400).json({
@@ -64,7 +84,10 @@ function badBody(res: Response, err: z.ZodError): void {
 }
 
 /** Log the OUTCOME only — never the recipient, body, or any secret. */
-function logOutcome(adminEmail: string | undefined, result: ConnectionTestResult): void {
+function logOutcome(
+  adminEmail: string | undefined,
+  result: ConnectionTestResult,
+): void {
   logger.info(
     {
       event: "admin.connection_test.run",

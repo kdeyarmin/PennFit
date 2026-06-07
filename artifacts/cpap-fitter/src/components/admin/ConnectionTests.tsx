@@ -198,9 +198,7 @@ function ChannelTest({
       </div>
 
       {mutation.isError && (
-        <ResultLine ok={false}>
-          {errorMessage(mutation.error)}
-        </ResultLine>
+        <ResultLine ok={false}>{errorMessage(mutation.error)}</ResultLine>
       )}
       {mutation.data && <TestResult result={mutation.data} />}
     </div>
@@ -236,7 +234,9 @@ function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {
       className="flex items-start gap-1.5 text-xs rounded-md px-2.5 py-2"
       role="status"
       style={{
-        backgroundColor: ok ? "hsl(152 70% 24% / 0.08)" : "hsl(354 75% 38% / 0.07)",
+        backgroundColor: ok
+          ? "hsl(152 70% 24% / 0.08)"
+          : "hsl(354 75% 38% / 0.07)",
         color: ok ? "hsl(152 70% 22%)" : "hsl(354 70% 36%)",
       }}
     >
@@ -288,9 +288,24 @@ function labelForCode(code: string): string {
 }
 
 function errorMessage(err: unknown): string {
+  // A 400 from a connection-test route carries Zod issues on the parsed
+  // body (ApiError.data). Surface the first one — e.g. "Enter a valid
+  // phone number, …" — instead of the opaque "HTTP 400 : invalid_body".
+  const issueMessage = firstIssueMessage(err);
+  if (issueMessage) return issueMessage;
   if (err && typeof err === "object" && "message" in err) {
     const m = (err as { message?: unknown }).message;
     if (typeof m === "string" && m.length > 0) return m;
   }
   return "Something went wrong. Try again.";
+}
+
+function firstIssueMessage(err: unknown): string | null {
+  if (!err || typeof err !== "object" || !("data" in err)) return null;
+  const data = (err as { data?: unknown }).data;
+  if (!data || typeof data !== "object" || !("issues" in data)) return null;
+  const issues = (data as { issues?: unknown }).issues;
+  if (!Array.isArray(issues) || issues.length === 0) return null;
+  const message = (issues[0] as { message?: unknown }).message;
+  return typeof message === "string" && message.length > 0 ? message : null;
 }
