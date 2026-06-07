@@ -294,9 +294,17 @@ one.
   `X-Forwarded-For` and confirm `req.ip` is the real client.
 - **If wrong, robust fix:** derive the client IP from the **`CF-Connecting-IP`**
   header (Cloudflare always sets it to the true client) rather than counting
-  XFF hops — it stays correct regardless of how many proxies sit in front.
-  (Bumping `trust proxy` to the real hop count also works but is brittle if
-  the chain ever changes.)
+  XFF hops. **Security caveat:** `CF-Connecting-IP` is trustworthy _only_ if
+  the origin cannot be reached except through Cloudflare — and today it can
+  (`pennfit.up.railway.app` serves the API directly), so a direct-to-origin
+  request could **forge** the header and pick its own rate-limit bucket /
+  audit IP. This fix therefore **requires** first locking ingress to
+  Cloudflare — e.g. a Cloudflare Tunnel, or a shared-secret header injected by
+  a Cloudflare Transform Rule and required at the origin (Railway has no
+  source-IP firewall, and behind its edge the immediate peer isn't Cloudflare,
+  so peer-IP validation isn't viable) — otherwise trusting the header is
+  strictly worse than the status quo. (Bumping `trust proxy` to the real hop
+  count avoids the spoofable header but is brittle if the chain ever changes.)
 
 ## Bottom line
 

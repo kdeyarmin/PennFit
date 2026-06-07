@@ -31,12 +31,12 @@ root; Railpack auto-detects pnpm + Node from `packageManager` and
 `Dockerfile`). Pushing a branch and opening a PR triggers Railway's
 GitHub integration to build a preview environment. Production is the
 `main`-branch deploy under the `pennfit.up.railway.app` host (or the
-bound custom domain `pennpaps.com`, which is fronted by **Cloudflare** —
-that adds an edge cache + a second proxy hop with two operator
-implications: set Cloudflare's Browser Cache TTL to "Respect Existing
-Headers" so the app's `immutable` `/assets/` caching reaches browsers, and
-verify `trust proxy`/`req.ip` still resolves the real client; see
-[`docs/railway-hosting-review-2026-05-29.md`](./docs/railway-hosting-review-2026-05-29.md)
+bound custom domain `pennpaps.com`). That custom domain is fronted by
+**Cloudflare**, which adds an edge cache plus a second proxy hop with two
+operator implications: set Cloudflare's Browser Cache TTL to "Respect
+Existing Headers" so the app's `immutable` `/assets/` caching reaches
+browsers, and verify `trust proxy`/`req.ip` still resolves the real client
+(see [`docs/railway-hosting-review-2026-05-29.md`](./docs/railway-hosting-review-2026-05-29.md)
 R7). The Express process is started directly by Node
 (`node --enable-source-maps artifacts/resupply-api/dist/index.mjs`) so
 SIGTERM reaches the graceful-shutdown handler — running it via
