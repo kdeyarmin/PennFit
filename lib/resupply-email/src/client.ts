@@ -156,31 +156,47 @@ export interface SendgridClient {
 }
 
 /**
+ * The platform's single outbound From address (ADR 016 / 018): one
+ * sender identity — info@pennpaps.com — across every environment. Used
+ * as the default when SENDGRID_FROM_EMAIL is unset so a deploy that only
+ * has the API key still sends from the canonical address (and the admin
+ * "connection test" can pass with just the key set).
+ */
+export const DEFAULT_SENDGRID_FROM_EMAIL = "info@pennpaps.com";
+
+/**
  * Build a SendgridClient.
  *
  * Reads SENDGRID_API_KEY, SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME from
- * the environment when options are unset. Throws EmailConfigError at
- * construction (NOT at first send) when any required value is missing.
+ * the environment when options are unset. The API key is the only
+ * required value — it throws EmailConfigError at construction (NOT at
+ * first send) when it is missing. The From address is a fixed platform
+ * constant: when SENDGRID_FROM_EMAIL is unset it defaults to
+ * {@link DEFAULT_SENDGRID_FROM_EMAIL} (info@pennpaps.com), so the
+ * "one From address" rule (ADR 016/018) holds with zero extra
+ * configuration. SENDGRID_FROM_NAME is optional (display name only).
  *
- * Production fail-closed: a missing API key or From address should never
- * silently degrade to "email didn't go out" — it must surface as a 503
- * at the route handler so admins see the misconfig immediately.
+ * Production fail-closed: a missing API key should never silently degrade
+ * to "email didn't go out" — it must surface as a 503 at the route
+ * handler so admins see the misconfig immediately.
  */
 export function createSendgridClient(
   opts: CreateSendgridClientOptions = {},
 ): SendgridClient {
   const apiKey = opts.apiKey ?? process.env.SENDGRID_API_KEY;
-  const fromEmail = opts.fromEmail ?? process.env.SENDGRID_FROM_EMAIL;
+  // One canonical sender identity (ADR 016/018). An explicit override
+  // (option or env) still wins, but an unset/blank value falls back to
+  // the platform constant rather than failing closed.
+  const fromEmailOverride = opts.fromEmail ?? process.env.SENDGRID_FROM_EMAIL;
+  const fromEmail =
+    fromEmailOverride && fromEmailOverride.trim() !== ""
+      ? fromEmailOverride
+      : DEFAULT_SENDGRID_FROM_EMAIL;
   const fromName = opts.fromName ?? process.env.SENDGRID_FROM_NAME;
 
   if (!apiKey) {
     throw new EmailConfigError(
       "SENDGRID_API_KEY is not set — refusing to construct SendGrid client.",
-    );
-  }
-  if (!fromEmail) {
-    throw new EmailConfigError(
-      "SENDGRID_FROM_EMAIL is not set — refusing to construct SendGrid client.",
     );
   }
 

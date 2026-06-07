@@ -41,6 +41,7 @@
 
 import {
   createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
   EmailApiError,
   EmailConfigError,
   type SendgridClient,
@@ -136,7 +137,10 @@ function nonEmpty(v: string | undefined | null): v is string {
 }
 
 function emailConfigured(env: NodeJS.ProcessEnv): boolean {
-  return nonEmpty(env.SENDGRID_API_KEY) && nonEmpty(env.SENDGRID_FROM_EMAIL);
+  // The From address is a fixed platform constant that createSendgridClient
+  // defaults to (info@pennpaps.com), so the API key is the only thing that
+  // actually gates whether we can send.
+  return nonEmpty(env.SENDGRID_API_KEY);
 }
 
 function smsConfigured(env: NodeJS.ProcessEnv): boolean {
@@ -223,8 +227,9 @@ export async function runEmailTest(
       channel: "email",
       code: "not_configured",
       message:
-        "SendGrid is not configured. Set SENDGRID_API_KEY and " +
-        "SENDGRID_FROM_EMAIL (in System Configuration or the environment).",
+        "SendGrid is not configured. Set SENDGRID_API_KEY (in System " +
+        "Configuration or the environment). The From address is fixed to " +
+        `${DEFAULT_SENDGRID_FROM_EMAIL}.`,
     };
   }
   let client: SendgridClient;
@@ -250,7 +255,9 @@ export async function runEmailTest(
       channel: "email",
       detail: {
         messageId: result.messageId,
-        from: env.SENDGRID_FROM_EMAIL ?? null,
+        from: nonEmpty(env.SENDGRID_FROM_EMAIL)
+          ? env.SENDGRID_FROM_EMAIL
+          : DEFAULT_SENDGRID_FROM_EMAIL,
       },
     };
   } catch (err) {

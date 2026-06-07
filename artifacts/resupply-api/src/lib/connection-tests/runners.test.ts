@@ -48,6 +48,13 @@ describe("computeConnectionTestStatus", () => {
     expect(s.chat).toEqual({ configured: true, provider: "anthropic" });
   });
 
+  it("treats email as configured with only the API key (From is a fixed default)", () => {
+    // The From address defaults to info@pennpaps.com in code, so the API
+    // key alone is enough to mark email configured.
+    const status = computeConnectionTestStatus({ SENDGRID_API_KEY: "SG.x" });
+    expect(status.email.configured).toBe(true);
+  });
+
   it("voice needs a from-number AND a public base url (not just SMS routing)", () => {
     const base = {
       TWILIO_ACCOUNT_SID: "AC1",
@@ -89,6 +96,23 @@ describe("runEmailTest", () => {
     expect(sendEmail.mock.calls[0][0]).toMatchObject({
       to: "ops@pennpaps.com",
       subject: "PennFit connection test",
+    });
+  });
+
+  it("is configured with only SENDGRID_API_KEY and reports the default From", async () => {
+    const sendEmail = vi.fn().mockResolvedValue({ messageId: "msg_def" });
+    const deps = makeDeps({
+      createSendgridClient: vi.fn().mockReturnValue({ sendEmail }),
+    });
+    const r = await runEmailTest(
+      { SENDGRID_API_KEY: "SG.x" },
+      { to: "ops@pennpaps.com" },
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    expect(r).toMatchObject({
+      channel: "email",
+      detail: { messageId: "msg_def", from: "info@pennpaps.com" },
     });
   });
 
