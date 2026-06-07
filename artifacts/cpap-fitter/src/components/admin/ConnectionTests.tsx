@@ -232,7 +232,7 @@ function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {
   return (
     <p
       className="flex items-start gap-1.5 text-xs rounded-md px-2.5 py-2"
-      role="status"
+      role={ok ? "status" : "alert"}
       style={{
         backgroundColor: ok
           ? "hsl(152 70% 24% / 0.08)"
