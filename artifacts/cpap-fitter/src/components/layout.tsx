@@ -62,6 +62,7 @@ const navLinks = [
   { href: "/cpap-masks", label: "Brands" },
   { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
+  { href: "/help", label: "Help" },
   { href: "/faq", label: "FAQ" },
 ];
 
@@ -354,6 +355,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
                       Track an order
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/help"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Help Center
                     </Link>
                   </li>
                   <li>

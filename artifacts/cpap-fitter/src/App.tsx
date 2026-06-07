@@ -138,6 +138,57 @@ const ReturnsPage = lazyWithRetry(() =>
   import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
 );
 
+// Help Center — task-oriented, "how do I use this feature" documentation.
+// Distinct from /learn (medical patient education) and /faq (quick clinical
+// Q&A): a category hub at /help plus step-by-step, screenshot-illustrated
+// how-to guides under /help/* for the fitter, ordering, the shop, tracking,
+// accounts, resupply reminders, insurance estimates, and returns. Lazy-loaded
+// because they're support content, not part of the fitter/checkout flow, so
+// they shouldn't bloat the initial patient-shop bundle.
+const Help = lazyWithRetry(() =>
+  import("@/pages/help").then((m) => ({ default: m.Help })),
+);
+const HelpFindYourMask = lazyWithRetry(() =>
+  import("@/pages/help-find-your-mask").then((m) => ({
+    default: m.HelpFindYourMask,
+  })),
+);
+const HelpPlaceAnOrder = lazyWithRetry(() =>
+  import("@/pages/help-place-an-order").then((m) => ({
+    default: m.HelpPlaceAnOrder,
+  })),
+);
+const HelpShopAndCheckout = lazyWithRetry(() =>
+  import("@/pages/help-shop-and-checkout").then((m) => ({
+    default: m.HelpShopAndCheckout,
+  })),
+);
+const HelpTrackYourOrder = lazyWithRetry(() =>
+  import("@/pages/help-track-your-order").then((m) => ({
+    default: m.HelpTrackYourOrder,
+  })),
+);
+const HelpCreateAnAccount = lazyWithRetry(() =>
+  import("@/pages/help-create-an-account").then((m) => ({
+    default: m.HelpCreateAnAccount,
+  })),
+);
+const HelpResupplyReminders = lazyWithRetry(() =>
+  import("@/pages/help-resupply-reminders").then((m) => ({
+    default: m.HelpResupplyReminders,
+  })),
+);
+const HelpInsuranceEstimate = lazyWithRetry(() =>
+  import("@/pages/help-insurance-estimate").then((m) => ({
+    default: m.HelpInsuranceEstimate,
+  })),
+);
+const HelpReturnsAndRefunds = lazyWithRetry(() =>
+  import("@/pages/help-returns-and-refunds").then((m) => ({
+    default: m.HelpReturnsAndRefunds,
+  })),
+);
+
 // Educational long-form articles under /learn/*. Lazy-loaded — these are
 // shareable awareness pages, not entry points for the fitter flow, so
 // they shouldn't bloat the initial bundle. The marketing/contact flows
@@ -662,6 +713,32 @@ function PatientRouter() {
           />
           <Route path="/how-it-works" component={HowItWorks} />
           <Route path="/faq" component={Faq} />
+          {/* Help Center — specific /help/* guides registered before the
+              /help hub so wouter's <Switch> matches them first. */}
+          <Route path="/help/find-your-mask" component={HelpFindYourMask} />
+          <Route path="/help/place-an-order" component={HelpPlaceAnOrder} />
+          <Route
+            path="/help/shop-and-checkout"
+            component={HelpShopAndCheckout}
+          />
+          <Route path="/help/track-your-order" component={HelpTrackYourOrder} />
+          <Route
+            path="/help/create-an-account"
+            component={HelpCreateAnAccount}
+          />
+          <Route
+            path="/help/resupply-reminders"
+            component={HelpResupplyReminders}
+          />
+          <Route
+            path="/help/insurance-estimate"
+            component={HelpInsuranceEstimate}
+          />
+          <Route
+            path="/help/returns-and-refunds"
+            component={HelpReturnsAndRefunds}
+          />
+          <Route path="/help" component={Help} />
           <Route path="/learn" component={Learn} />
           <Route path="/learn/videos" component={LearnVideos} />
           <Route
