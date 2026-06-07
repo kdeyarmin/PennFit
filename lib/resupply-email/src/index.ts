@@ -8,6 +8,7 @@
 
 export {
   createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
   EmailConfigError,
   EmailApiError,
   type SendEmailInput,
