@@ -315,10 +315,25 @@ export async function resolvePatientByContact(
     ingest(data);
   }
 
-  if (ambiguous) return { status: "ambiguous" };
-  if (candidates.size > 1) return { status: "ambiguous" };
   if (candidates.size === 1) {
     const [[patientId, name]] = candidates;
+
+    // When both contact points are provided, only link if the same patient
+    // matches both. Otherwise leave it unlinked to avoid cross-filing PHI.
+    if (contact.emailLower && contact.phoneE164) {
+      const { data: verify, error: verifyErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id")
+        .eq("id", patientId)
+        .eq("email", contact.emailLower)
+        .eq("phone_e164", contact.phoneE164)
+        .limit(1)
+        .maybeSingle();
+      if (verifyErr) throw verifyErr;
+      if (!verify) return { status: "none" };
+    }
+
     return { status: "matched", patientId, name };
   }
 
