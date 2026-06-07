@@ -13,6 +13,11 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import {
+  type ModifierRuleContext,
+  type ModifierRuleRow,
+  resolveModifiersFromRules,
+} from "../../lib/billing/modifier-rules";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -111,6 +116,81 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({ rules: (data ?? []).map(rowToApi) });
+  },
+);
+
+// GET /admin/payer-modifier-rules/resolve — resolve the modifiers a
+// payer requires for a HCPCS under a given context. Powers modifier
+// pre-fill on MANUAL / corrected claims (B8): the line editor passes the
+// payer + HCPCS (+ optional rental/compliance/PA context) and gets back
+// the same KX/KH/KI rotation the fulfillment-built claims auto-attach, so
+// hand-keyed claims aren't denied for a missing modifier. Read-only.
+const boolish = z
+  .union([
+    z.literal("1"),
+    z.literal("true"),
+    z.literal("0"),
+    z.literal("false"),
+  ])
+  .transform((v) => v === "1" || v === "true")
+  .optional();
+
+const resolveQuery = z.object({
+  payerProfileId: z.string().uuid(),
+  hcpcs: z
+    .string()
+    .trim()
+    .transform((s) => s.toUpperCase())
+    .refine((s) => HCPCS_RE.test(s), "must be a HCPCS code like E0601"),
+  rentalMonth: z.coerce.number().int().min(1).max(13).optional(),
+  purchased: boolish,
+  compliant: boolish,
+  initialDispense: boolish,
+  paApproved: boolish,
+});
+
+router.get(
+  "/admin/payer-modifier-rules/resolve",
+  requirePermission("reports.read"),
+  async (req, res) => {
+    const parsed = resolveQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const q = parsed.data;
+    const ctx: ModifierRuleContext = {
+      rentalMonth: q.rentalMonth ?? null,
+      isPurchased: q.purchased ?? false,
+      isCompliant: q.compliant ?? false,
+      isInitialDispense: q.initialDispense ?? false,
+      hasPriorAuth: q.paApproved ?? false,
+    };
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("payer_modifier_rules")
+      .select("condition, modifiers_csv, priority")
+      .eq("payer_profile_id", q.payerProfileId)
+      .eq("hcpcs_code", q.hcpcs)
+      .eq("is_active", true)
+      .order("priority", { ascending: true });
+    if (error) throw error;
+    const rules = (data ?? []) as ModifierRuleRow[];
+    const modifiers = resolveModifiersFromRules(rules, ctx);
+    res.json({
+      payerProfileId: q.payerProfileId,
+      hcpcs: q.hcpcs,
+      context: ctx,
+      ruleCount: rules.length,
+      modifiers,
+    });
   },
 );
 

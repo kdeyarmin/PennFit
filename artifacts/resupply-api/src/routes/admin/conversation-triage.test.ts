@@ -147,6 +147,38 @@ describe("PATCH /admin/conversations/:id/snooze — adminRateLimit integration",
       .send({ snoozedUntil: null });
     expect(res.status).toBe(404);
   });
+
+  it("resolves a relative snoozeSpec server-side and echoes the instant", async () => {
+    stubAdmin();
+    stageSupabaseResponse("conversations", "update", {
+      data: [{ id: CONV_UUID }],
+    });
+    const res = await request(makeApp())
+      .patch(`/admin/conversations/${CONV_UUID}/snooze`)
+      .send({ snoozeSpec: "1d" });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    // A resolved future ISO instant is returned (not echoed verbatim).
+    expect(typeof res.body.snoozedUntil).toBe("string");
+    expect(Date.parse(res.body.snoozedUntil)).toBeGreaterThan(Date.now());
+  });
+
+  it("400s on an unrecognized snoozeSpec", async () => {
+    stubAdmin();
+    const res = await request(makeApp())
+      .patch(`/admin/conversations/${CONV_UUID}/snooze`)
+      .send({ snoozeSpec: "someday" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_snooze_spec");
+  });
+
+  it("400s when neither snoozedUntil nor snoozeSpec is provided", async () => {
+    stubAdmin();
+    const res = await request(makeApp())
+      .patch(`/admin/conversations/${CONV_UUID}/snooze`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
 });
 
 // ── PATCH /admin/conversations/:id/tags ─────────────────────────────────────

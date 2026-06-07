@@ -276,3 +276,54 @@ describe("PATCH /admin/payer-modifier-rules/:id — adminRateLimit removed", () 
     expect(res.body.ok).toBe(true);
   });
 });
+
+describe("GET /admin/payer-modifier-rules/resolve", () => {
+  const HCPCS = "E0601";
+
+  it("401s when unauthenticated (reports.read gate fires)", async () => {
+    mockAdmin.current = null;
+    const res = await request(makeApp())
+      .get("/admin/payer-modifier-rules/resolve")
+      .query({ payerProfileId: PAYER_PROFILE_UUID, hcpcs: HCPCS });
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a missing/invalid HCPCS", async () => {
+    stubAdmin();
+    const res = await request(makeApp())
+      .get("/admin/payer-modifier-rules/resolve")
+      .query({ payerProfileId: PAYER_PROFILE_UUID, hcpcs: "nope" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_query");
+  });
+
+  it("resolves the month-1 rental rotation from active rules", async () => {
+    stubAdmin();
+    stageSupabaseResponse("payer_modifier_rules", "select", {
+      data: [
+        { condition: "always", modifiers_csv: "KX", priority: 10 },
+        {
+          condition: "if_rental_month_le_3",
+          modifiers_csv: "KH",
+          priority: 20,
+        },
+        {
+          condition: "if_rental_month_ge_4",
+          modifiers_csv: "KI",
+          priority: 20,
+        },
+      ],
+    });
+    const res = await request(makeApp())
+      .get("/admin/payer-modifier-rules/resolve")
+      .query({
+        payerProfileId: PAYER_PROFILE_UUID,
+        hcpcs: HCPCS,
+        rentalMonth: "1",
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.modifiers).toEqual(["KX", "KH"]);
+    expect(res.body.ruleCount).toBe(3);
+    expect(res.body.context.rentalMonth).toBe(1);
+  });
+});
