@@ -134,7 +134,7 @@ router.post(
           "SMS+Email reply is disabled because one or more required env " +
           "vars are missing. Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
           "TWILIO_PHONE_NUMBER or TWILIO_MESSAGING_SERVICE_SID, SENDGRID_API_KEY, " +
-          "SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, " +
+          "SENDGRID_FROM_NAME, " +
           "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and RESUPPLY_LINK_HMAC_KEY.",
       });
       return;

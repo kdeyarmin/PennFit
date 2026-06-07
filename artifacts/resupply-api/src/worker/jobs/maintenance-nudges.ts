@@ -19,7 +19,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { createSendgridClient } from "@workspace/resupply-email";
+import {
+  createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
+} from "@workspace/resupply-email";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
@@ -52,7 +55,7 @@ interface NudgeStats {
 
 interface MessagingConfig {
   sendgridApiKey: string | null;
-  sendgridFromEmail: string | null;
+  sendgridFromEmail: string;
   sendgridFromName: string | null;
   practiceName: string;
   publicBaseUrl: string;
@@ -63,7 +66,8 @@ export function readNudgeMessagingConfig(
 ): MessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
-    sendgridFromEmail: env.SENDGRID_FROM_EMAIL ?? null,
+    sendgridFromEmail:
+      env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
     publicBaseUrl:
@@ -144,12 +148,7 @@ export async function runMaintenanceNudgeSweep(
     skippedNoContact: 0,
     errors: 0,
   };
-  if (
-    !cfg.sendgridApiKey ||
-    !cfg.sendgridFromEmail ||
-    !cfg.sendgridFromName ||
-    !cfg.publicBaseUrl
-  ) {
+  if (!cfg.sendgridApiKey || !cfg.sendgridFromName || !cfg.publicBaseUrl) {
     logger.warn(
       { event: "patient-maintenance.weekly-nudge.skipped_no_config" },
       "maintenance-nudge: skipping run, messaging config incomplete",

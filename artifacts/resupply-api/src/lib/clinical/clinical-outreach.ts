@@ -23,7 +23,10 @@ import {
   type CommunicationPreferences,
   type Json,
 } from "@workspace/resupply-db";
-import { createSendgridClient } from "@workspace/resupply-email";
+import {
+  createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
+} from "@workspace/resupply-email";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { isInDndWindow, type DndOptions } from "../comm-prefs";
@@ -33,7 +36,7 @@ type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export interface OutreachMessagingConfig {
   sendgridApiKey: string | null;
-  sendgridFromEmail: string | null;
+  sendgridFromEmail: string;
   sendgridFromName: string | null;
   twilioAccountSid: string | null;
   twilioAuthToken: string | null;
@@ -47,7 +50,8 @@ export function readOutreachMessagingConfig(
 ): OutreachMessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
-    sendgridFromEmail: env.SENDGRID_FROM_EMAIL ?? null,
+    sendgridFromEmail:
+      env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
     twilioAccountSid: env.TWILIO_ACCOUNT_SID ?? null,
     twilioAuthToken: env.TWILIO_AUTH_TOKEN ?? null,
@@ -310,12 +314,7 @@ async function deliver(
   deps: OutreachDeps,
 ): Promise<OutreachOutcome> {
   if (channel === "email") {
-    if (
-      !contact.email ||
-      !cfg.sendgridApiKey ||
-      !cfg.sendgridFromEmail ||
-      !cfg.sendgridFromName
-    ) {
+    if (!contact.email || !cfg.sendgridApiKey || !cfg.sendgridFromName) {
       return { kind: "skipped", reason: "email_channel_unconfigured" };
     }
     try {

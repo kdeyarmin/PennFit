@@ -170,13 +170,14 @@ describe("GET /admin/ops-status", () => {
     });
   });
 
-  it("flags sendgrid only when both API key + from email are set", async () => {
+  it("flags sendgrid configured on the API key alone (From defaults in code)", async () => {
     mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
     process.env.SENDGRID_API_KEY = "SG.xxx";
-    // FROM_EMAIL deliberately missing.
+    // FROM_EMAIL deliberately missing — it is no longer required because
+    // the From address defaults in code to info@pennpaps.com (ADR 018).
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
-    expect(res.body.vendors.sendgrid).toBe(false);
+    expect(res.body.vendors.sendgrid).toBe(true);
   });
 
   it("flags twilioSms only when SID + token + messaging service are all set", async () => {

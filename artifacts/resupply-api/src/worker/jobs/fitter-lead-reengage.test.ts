@@ -23,6 +23,7 @@ vi.mock("@workspace/resupply-email", () => ({
   createSendgridClient: () => ({
     sendEmail: sendEmailMock,
   }),
+  DEFAULT_SENDGRID_FROM_EMAIL: "info@pennpaps.com",
 }));
 
 import {
@@ -79,7 +80,7 @@ describe("runFitterLeadReengageSweep", () => {
   it("exits cleanly when SendGrid creds are missing", async () => {
     const stats = await runFitterLeadReengageSweep({
       sendgridApiKey: null,
-      sendgridFromEmail: null,
+      sendgridFromEmail: "info@pennpaps.com",
       sendgridFromName: null,
       practiceName: "PennPaps",
       publicBaseUrl: "https://pennfit.example",
@@ -387,7 +388,9 @@ describe("readReengageMessagingConfig", () => {
   it("returns null for credentials that are not in env", () => {
     const cfg = readReengageMessagingConfig({});
     expect(cfg.sendgridApiKey).toBeNull();
-    expect(cfg.sendgridFromEmail).toBeNull();
+    // From address always resolves to the single canonical default
+    // (ADR 018) — it is no longer gated on the env var being set.
+    expect(cfg.sendgridFromEmail).toBe("info@pennpaps.com");
     expect(cfg.sendgridFromName).toBeNull();
     expect(cfg.publicBaseUrl).toBe("");
   });

@@ -8,18 +8,23 @@
  *   - We do NOT persist the order — it is composed, sent, and discarded.
  *   - The recommendation engine and route remain stateless and PHI-free.
  *
- * Configuration (all REQUIRED — set as Railway Variables):
+ * Configuration (set as Railway Variables):
  *   - SENDGRID_API_KEY       — SendGrid API key with "Mail Send" permission
+ *                              (REQUIRED — the only gate on delivery)
  *   - PENN_FULFILLMENT_EMAIL — Where the order is delivered
- *   - SENDGRID_FROM_EMAIL    — Verified sender on the SendGrid account
- *                              (must be verified in SendGrid before delivery
- *                              works — operations should set this to
- *                              info@pennpaps.com so every outbound email
- *                              originates from the canonical practice address)
  *   - SENDGRID_FROM_NAME     — Display name shown next to the From address
  *
- * If any of the above is missing, the function returns { configured: false }
- * and the route returns HTTP 503. We never silently swallow an order.
+ * Optional:
+ *   - SENDGRID_FROM_EMAIL    — Verified sender on the SendGrid account.
+ *                              Optional: when unset it defaults in code to
+ *                              info@pennpaps.com (the canonical practice
+ *                              address), so it is no longer required for
+ *                              delivery. An explicit override must be a
+ *                              verified sender in SendGrid.
+ *
+ * If the API key (or the fulfillment recipient) is missing, the function
+ * returns { configured: false } and the route returns HTTP 503. We never
+ * silently swallow an order.
  *
  * All outbound mail funnels through the shared SendGrid integration in
  * @workspace/resupply-email — no raw fetch, no separate PENN_FROM_EMAIL,

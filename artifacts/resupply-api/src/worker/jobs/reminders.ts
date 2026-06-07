@@ -71,6 +71,7 @@ import {
   type OutreachRule,
 } from "@workspace/resupply-domain";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
   sendReminderSms,
@@ -369,15 +370,11 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   }
 
   let email: ReturnType<typeof readWorkerMessagingConfig>["email"] = null;
-  if (
-    env.SENDGRID_API_KEY &&
-    env.SENDGRID_FROM_EMAIL &&
-    env.SENDGRID_FROM_NAME &&
-    publicBaseUrl
-  ) {
+  if (env.SENDGRID_API_KEY && env.SENDGRID_FROM_NAME && publicBaseUrl) {
     email = {
       sendgridApiKey: env.SENDGRID_API_KEY,
-      sendgridFromEmail: env.SENDGRID_FROM_EMAIL,
+      sendgridFromEmail:
+        env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
       sendgridFromName: env.SENDGRID_FROM_NAME,
       publicBaseUrl,
       practiceName,

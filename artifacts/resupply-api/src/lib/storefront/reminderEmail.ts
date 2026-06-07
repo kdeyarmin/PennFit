@@ -11,16 +11,17 @@
  *   - sendReminderDue — sent by the dispatcher when one or more of a
  *     subscriber's items has reached its replacement interval.
  *
- * Configuration (all REQUIRED for actual delivery — read by the shared
- * `createSendgridClient()` from @workspace/resupply-email):
+ * Configuration (read by the shared `createSendgridClient()` from
+ * @workspace/resupply-email):
  *   - SENDGRID_API_KEY     — SendGrid API key with "Mail Send" permission
- *   - SENDGRID_FROM_EMAIL  — Verified sender on the SendGrid account
- *                            (operations should set this to info@pennpaps.com
- *                            so every outbound email originates from the
- *                            canonical practice address)
+ *                            (REQUIRED — the only gate on delivery)
  *   - SENDGRID_FROM_NAME   — Display name shown next to the From address
  *
  * Optional:
+ *   - SENDGRID_FROM_EMAIL  — Verified sender on the SendGrid account.
+ *                            Optional: defaults in code to info@pennpaps.com
+ *                            (the canonical practice address) when unset, so
+ *                            it is no longer required for delivery.
  *   - REMINDER_PUBLIC_BASE_URL — Base URL for manage / unsubscribe links.
  *     Defaults to https://pennpaps.com so links emitted from preview /
  *     staging deploys still resolve to production.

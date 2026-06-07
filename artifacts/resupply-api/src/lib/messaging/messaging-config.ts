@@ -18,6 +18,7 @@
 //   versa). The aggregate `readMessagingConfigOrNull()` is true only
 //   when both are configured AND the link-HMAC key is set.
 
+import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 export interface SmsConfig {
@@ -92,12 +93,15 @@ export function readEmailConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,
 ): EmailConfig | null {
   const sendgridApiKey = env.SENDGRID_API_KEY;
-  const sendgridFromEmail = env.SENDGRID_FROM_EMAIL;
+  // The From address now defaults to the platform constant
+  // (info@pennpaps.com) when SENDGRID_FROM_EMAIL is unset/blank, so it is
+  // no longer a precondition for enabling email — see ADR 018.
+  const sendgridFromEmail =
+    env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL;
   const sendgridFromName = env.SENDGRID_FROM_NAME;
   const sendgridEventWebhookPublicKey = env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY;
   if (
     !sendgridApiKey ||
-    !sendgridFromEmail ||
     !sendgridFromName ||
     !sendgridEventWebhookPublicKey
   ) {
