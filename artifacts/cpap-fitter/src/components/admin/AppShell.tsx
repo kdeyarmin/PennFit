@@ -323,18 +323,18 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         badgeKey: "newPatientDocuments",
       },
       {
-        label: "Duplicate review",
-        icon: CopyCheck,
-        href: "/admin/patients/duplicates",
-        matchPrefix: "/admin/patients/duplicates",
-        hint: "Find and reconcile likely-duplicate patient records",
-      },
-      {
         label: "Document packets",
         icon: FileCheck2,
         href: "/admin/patient-packets",
         matchPrefix: "/admin/patient-packets",
         hint: "Send & track e-signature packets for new patients",
+      },
+      {
+        label: "Duplicate review",
+        icon: CopyCheck,
+        href: "/admin/patients/duplicates",
+        matchPrefix: "/admin/patients/duplicates",
+        hint: "Find and reconcile likely-duplicate patient records",
       },
       {
         label: "Clinical work",

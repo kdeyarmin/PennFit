@@ -301,7 +301,7 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   if (docUpdErr) throw docUpdErr;
 
   // Finalize: complete + invalidate the link (bump version high).
-  const { error: finErr } = await supabase
+  const { data: finalized, error: finErr } = await supabase
     .schema("resupply")
     .from("patient_packets")
     .update({
@@ -311,8 +311,13 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
       updated_at: nowIso,
     })
     .eq("id", packet.id)
-    .eq("status", packet.status); // optimistic guard against a double-submit
+    .eq("status", packet.status) // optimistic guard against a double-submit
+    .select("id");
   if (finErr) throw finErr;
+  if (!finalized || finalized.length === 0) {
+    res.status(409).json({ error: "concurrent_modification" });
+    return;
+  }
 
   await logAudit({
     action: "patient_packet.signed",

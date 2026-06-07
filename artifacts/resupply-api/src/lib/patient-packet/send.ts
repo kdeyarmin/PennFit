@@ -264,7 +264,7 @@ export async function deliverPacketLink(
     } catch (err) {
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err: err instanceof Error ? err : new Error(String(err)),
           packet_id: input.packetId,
         },
         "patient packet invite email failed",
@@ -314,7 +314,7 @@ function sendPacketSms(
     .catch((err: unknown) => {
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err: err instanceof Error ? err : new Error(String(err)),
           packet_id: packetId,
         },
         "patient packet invite SMS failed",
