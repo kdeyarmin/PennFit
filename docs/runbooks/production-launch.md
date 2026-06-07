@@ -83,6 +83,17 @@ to PostgREST or every Supabase-JS query at boot fails with
 Settings → API → "Exposed schemas"**, confirm both `resupply` and
 `resupply_auth` are listed. This is a one-time setup per project.
 
+### Recommended Railway platform pin — Node version
+
+| Variable                | Production value                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RAILPACK_NODE_VERSION` | `24`. Outranks `engines.node` (`24.x`) in Railpack's resolution order, so it is the only fully authoritative Node pin — set it to remove any chance of Railpack falling back to its default major. Optional (the app already pins `engines.node` + `.node-version`); confirm the resolved major in the next Railway **build log**. |
+
+This is a Railpack build setting rather than an app secret; `assertRequiredEnv()`
+does not check it, so a missing value never blocks boot. Background:
+[`docs/railway-deployment.md` → Node & pnpm versions](../railway-deployment.md#node--pnpm-versions)
+and hosting review R2.
+
 ### Vendor secrets — production credentials, not test
 
 | Variable                        | Production value                                                                                      |

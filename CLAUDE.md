@@ -434,6 +434,11 @@ Wiring & conventions:
   [`docs/runbooks/production-launch.md`](./docs/runbooks/production-launch.md)
   (paired with the broader checklist in
   [`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md)).
+- For how Railway builds & runs the repo (the `railway.json` fields, the
+  service-boot contract, Node/pnpm version resolution, and the pre/post-deploy
+  probes), read [`docs/railway-deployment.md`](./docs/railway-deployment.md)
+  (point-in-time audit:
+  [`docs/railway-hosting-review-2026-05-29.md`](./docs/railway-hosting-review-2026-05-29.md)).
 - For env-shape validation before a deploy, run
   `pnpm --filter @workspace/scripts preflight:prod`.
 - For the Git source-of-truth rule, the post-mortem in
