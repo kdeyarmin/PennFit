@@ -269,7 +269,6 @@ export async function deliverPacketLink(
         },
         "patient packet invite email failed",
       );
-      );
     }
   }
 
@@ -319,7 +318,6 @@ function sendPacketSms(
           packet_id: packetId,
         },
         "patient packet invite SMS failed",
-      );
       );
       return false;
     });
