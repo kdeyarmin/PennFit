@@ -98,6 +98,35 @@ interface Probe {
   json: unknown;
 }
 
+// `fetch` rejects with a generic `TypeError: fetch failed` whenever the
+// connection can't be established — the actionable reason (ECONNREFUSED,
+// ENOTFOUND, a connect timeout, an egress-policy block, …) lives in
+// `err.cause`, not in `err.message`. Surface it so a connectivity/egress
+// failure (e.g. running this probe from a sandbox whose network policy
+// blocks the public host) isn't mistaken for a dead or unrouted API.
+// undici nests its codes one level deeper inside an AggregateError's
+// `.errors` when several candidate addresses were tried, so recurse.
+function causeDetail(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const code = (value as { code?: unknown }).code;
+  if (typeof code === "string" && code) return code;
+  const nested = (value as { errors?: unknown }).errors;
+  if (Array.isArray(nested)) {
+    for (const e of nested) {
+      const found = causeDetail(e);
+      if (found) return found;
+    }
+  }
+  const message = (value as { message?: unknown }).message;
+  if (typeof message === "string" && message) return message;
+  return null;
+}
+
+function describeError(err: Error): string {
+  const detail = causeDetail(err.cause);
+  return detail ? `${err.message} (${detail})` : err.message;
+}
+
 async function probe(
   url: string,
   accept: string,
@@ -126,7 +155,7 @@ async function probe(
       err instanceof Error
         ? err.name === "AbortError"
           ? `timeout after ${TIMEOUT_MS}ms`
-          : err.message
+          : describeError(err)
         : String(err);
     return { error: msg };
   } finally {
