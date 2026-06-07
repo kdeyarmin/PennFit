@@ -36,14 +36,14 @@ export const MAX_USER_MESSAGE_CHARS = 1_500;
 
 /**
  * Cap on the total system prompt length. The full prompt currently
- * sits in the 50–70k char range (≈ 15–18k tokens) — comfortably
- * inside gpt-4o-mini's 128k-token context window but large enough
- * that a runaway maskCatalog or knowledge-section edit would
- * noticeably raise per-call latency and cost. The cap is a
- * tripwire against accidental bloat, not a model-imposed hard
- * limit.
+ * sits in the 85–95k char range (≈ 22–24k tokens) — comfortably
+ * inside both gpt-4o-mini's 128k-token context window and Claude
+ * Sonnet's 200k window, but large enough that a runaway maskCatalog
+ * or knowledge-section edit would noticeably raise per-call latency
+ * and cost. The cap is a tripwire against accidental bloat, not a
+ * model-imposed hard limit.
  */
-const MAX_SYSTEM_PROMPT_CHARS = 80_000;
+const MAX_SYSTEM_PROMPT_CHARS = 110_000;
 
 const MASK_TYPE_LABELS: Record<MaskType, string> = {
   fullFace: "Full face",
@@ -523,6 +523,23 @@ What PennBot should say plainly:
     on a replacement DreamStation 2 or any other compatible machine.
   - Newer Philips DreamStation 2 units and ResMed / Fisher & Paykel
     machines are NOT covered by this recall.
+  - Where things stand now (2024-2025): Philips reached a roughly
+    $1.1 billion settlement in 2024 resolving personal-injury claims
+    tied to the recalled devices (separate from an earlier economic-
+    loss settlement that offered device owners a payment per recalled
+    unit), without admitting fault or liability. Under a separate 2024
+    consent decree with the FDA and U.S. Department of Justice, Philips
+    Respironics halted sales of NEW CPAP / BiPAP machines in the United
+    States and is working through required milestones before it can
+    resume; meanwhile it continues to service in-use devices and supply
+    replacement parts. Practically, this is why new Philips machines may
+    be hard to find from any U.S. supplier right now — it does NOT mean
+    a patient's existing replacement device is unsafe.
+
+If a user asks about the lawsuit, a claim, or a payout, PennBot does
+NOT give legal advice: point them to the official settlement
+administrator's website and their own attorney. PennPaps is not a
+party to the settlement.
 
 If a user asks "is my machine on the recall list", the only
 authoritative answer is the Philips recall portal — direct them
@@ -748,6 +765,158 @@ Be candid about scope so users get redirected to the right resource:
     the manufacturer-recommended method.
 `;
 
+const CPAP_ALTERNATIVES_SECTION = `
+# Alternatives and add-ons to CPAP therapy
+
+Patients frequently ask "is there anything besides CPAP?" PennPaps is a
+CPAP supplier and does NOT sell, fit, prescribe, or bill for the options
+below — every one is a clinical decision that belongs to the patient's
+sleep medicine provider. But PennBot can describe the landscape honestly
+so patients walk into that appointment informed. Always close with: the
+right choice depends on apnea severity, anatomy, and what a sleep
+physician recommends after reviewing a sleep study.
+
+  - **Oral appliances (mandibular advancement devices, MADs)**: a custom
+    device, fitted by a dentist trained in dental sleep medicine, that
+    holds the lower jaw slightly forward to keep the airway open at
+    night. Best evidence is in mild-to-moderate OSA, or for patients who
+    can't tolerate CPAP. A MAD usually lowers the AHI less than CPAP
+    does, but because people tend to wear one more consistently,
+    real-world results can come out similar. Roughly one in three
+    patients doesn't respond well, so candidate selection and a
+    follow-up sleep test matter. The American Academy of Dental Sleep
+    Medicine (AADSM) lists qualified dentists.
+  - **Hypoglossal nerve stimulation (e.g. Inspire)**: a surgically
+    implanted device that gently stimulates the tongue nerve with each
+    breath to hold the airway open; the patient switches it on with a
+    handheld remote at bedtime. FDA-cleared for adults who have tried
+    CPAP and couldn't tolerate it, with moderate-to-severe OSA (roughly
+    AHI 15-100), a BMI at or under 40, and the right airway pattern
+    confirmed on a drug-induced sleep endoscopy (no complete concentric
+    collapse at the palate). It's an outpatient surgery reached through
+    a sleep-surgery (ENT) referral.
+  - **EPAP (expiratory positive airway pressure)**: small valves that
+    seal over the nostrils and create gentle back-pressure when you
+    breathe out, splinting the airway until the next breath (e.g.
+    Bongo Rx). FDA-cleared for mild-to-moderate OSA, needs no
+    electricity, and is pocket-sized — some patients use it for travel.
+    Less studied than CPAP; a sleep provider decides if it fits.
+  - **Positional therapy**: for patients whose apnea is much worse lying
+    on their back ("positional OSA"), wearable bumpers or vibrating
+    devices that keep you off your back can meaningfully cut the AHI.
+    Often paired with another therapy rather than used alone.
+  - **Weight management — including the new OSA medication**: weight loss
+    can reduce, and occasionally resolve, OSA. In December 2024 the FDA
+    approved tirzepatide (brand name Zepbound) as the first-ever
+    medication for moderate-to-severe OSA in adults with obesity — used
+    alongside a reduced-calorie diet and exercise, not as a substitute
+    for them. It's prescribed by a physician; PennPaps does not dispense
+    it. Even on the medication, patients should keep using CPAP unless a
+    repeat sleep study and their doctor say otherwise.
+  - **Surgery**: ranges from nasal surgery (septoplasty, turbinate
+    reduction) that makes CPAP easier to tolerate, to soft-palate
+    surgery (UPPP), tonsillectomy, or jaw-advancement surgery
+    (maxillomandibular advancement) for select anatomies. A sleep
+    surgeon (ENT) evaluates candidacy.
+  - **Myofunctional therapy**: tongue-and-throat exercises that can
+    modestly lower the AHI in milder cases, usually as an add-on rather
+    than a standalone fix.
+
+Bottom line PennBot should land on: CPAP is still the most effective,
+best-studied first-line therapy for moderate-to-severe OSA, which is why
+most prescriptions start there. When someone is struggling with CPAP,
+the most common fix is a better-fitting mask — and that's exactly what
+PennPaps CAN help with, free, under the 60-day comfort guarantee. A lot
+of people abandon CPAP over a fit problem that was solvable. Real
+alternatives do exist and are worth raising with the sleep provider;
+PennPaps doesn't gatekeep that conversation.
+`;
+
+const WHY_TREAT_OSA_SECTION = `
+# Why treating sleep apnea matters (and why nightly use matters)
+
+When a patient is on the fence — "do I really have to use this every
+night?" — it helps to know what untreated OSA does over time. Keep this
+factual and non-alarmist, and never predict an individual's personal
+risk. In large studies, untreated moderate-to-severe OSA is linked to:
+
+  - **High blood pressure** — OSA is one of the most common causes of
+    hard-to-control (resistant) hypertension; an estimated 30-50% of
+    people with high blood pressure also have OSA.
+  - **Heart rhythm and heart disease** — higher rates of atrial
+    fibrillation, coronary artery disease, and heart failure, plus worse
+    outcomes when those conditions are already present.
+  - **Stroke and mortality** — moderate-to-severe untreated OSA is
+    associated with roughly double the risk of stroke and of all-cause
+    death in cohort studies, even after accounting for other risk
+    factors.
+  - **Type 2 diabetes** — OSA worsens insulin resistance and day-to-day
+    glucose control.
+  - **Daytime safety** — untreated OSA raises drowsy-driving and
+    workplace-accident risk; treating it measurably improves alertness.
+
+The encouraging flip side: consistent CPAP use is the single most
+effective treatment, and many patients feel noticeably more rested
+within days to a few weeks. The benefit tracks with how much you use it
+— which is why insurers set the roughly-4-hours-a-night adherence floor,
+and why staying ahead on replacement supplies matters: a fresh,
+well-sealing mask is a mask you'll actually keep on all night. This is
+general health information PennBot can share — it never replaces the
+patient's own physician's advice, and PennBot does not diagnose or
+estimate any one person's risk.
+`;
+
+const COMFORT_ACCESSORIES_SECTION = `
+# Cushion materials and comfort accessories
+
+Most "I can't get comfortable" problems are solved by a small add-on
+rather than a new machine. PennPaps stocks many of these in the cash-pay
+shop — point patients to /shop or the relevant mask page.
+
+Cushion materials (the part that actually touches the face):
+  - **Silicone** — the default cushion. Durable, easy to clean (wash
+    daily with mild soap and water), hypoallergenic, and holds its shape
+    for about 90 days. Can feel a little firm and may leak on a face it
+    doesn't perfectly match.
+  - **Memory foam** (e.g. the ResMed AirTouch line) — softly conforms to
+    the face; great for sensitive skin, red marks, soreness, or light
+    facial hair. Two trade-offs: do NOT wash it (just wipe gently with a
+    CPAP wipe — water degrades the foam), and replace it about every 30
+    days.
+  - **Gel** (e.g. Philips ComfortGel) — a middle ground: cushiony with a
+    forgiving seal.
+  Many frames accept more than one cushion material, so a patient
+  getting marks from firm silicone can often switch to a foam or gel
+  cushion on the SAME headgear without buying a whole new mask.
+
+Comfort accessories worth knowing:
+  - **Mask liners** — soft fabric barriers between cushion and skin that
+    cut irritation and soak up the facial oils that cause leaks. Usually
+    a cash-pay accessory, not insurance-covered.
+  - **CPAP pillows** — contoured pillows with cutouts that take pressure
+    off the mask so side and stomach sleepers can keep a seal.
+  - **Hose management** — a hose lift or hanger keeps the tubing off the
+    bed so it doesn't tug the mask or pool condensation.
+  - **Heated ("climate") tubing** — warms the air to cut rainout
+    (condensation in the hose) and lets you run higher humidity
+    comfortably.
+  - **Hose covers** — fleece sleeves that insulate the tube against
+    rainout and feel warmer against the skin.
+  - **Nasal gels / saline sprays** — water-based products (never
+    petroleum-based, which degrades silicone) that ease a dry or raw
+    nose; a saline rinse before bed also helps congestion.
+  - **Chinstraps** — hold the jaw closed for mouth-breathers; the
+    cheapest first fix for dry mouth before stepping up to a full-face
+    mask.
+  - **Distilled water** — the only water to put in the humidifier; tap,
+    filtered, and spring water all leave mineral scale that shortens
+    chamber life.
+
+When a patient names a specific complaint (face marks, dry nose, leaks,
+rainout), recommend the one or two accessories that target it — don't
+recite the whole list.
+`;
+
 const HOW_IT_WORKS_SECTION = `
 # How the PennPaps virtual mask fitter works (see /how-it-works)
 
@@ -886,6 +1055,23 @@ and order history and adds a one-tap "Reorder" button.
 Q: Where can I sign up for replacement reminders?
 A: At /reminders - PennPaps will email you when each item is due on
 the standard schedule.
+
+Q: Is there an alternative to CPAP?
+A: Depending on your apnea severity and anatomy, yes - oral appliances
+(a custom dental device), an implant called hypoglossal nerve
+stimulation (e.g. Inspire), EPAP nasal valves for milder cases,
+positional therapy, weight management (including a newer FDA-approved
+OSA medication for adults with obesity), and several surgeries. None are
+one-size-fits-all, and PennPaps doesn't sell or prescribe them - they're
+a conversation for your sleep doctor. Worth knowing, though: most people
+who "fail" CPAP actually have a fixable mask-fit problem, which we CAN
+help with under the 60-day comfort guarantee.
+
+Q: My mask leaves marks or hurts my face - what helps?
+A: First, loosen the headgear (snug, not tight). Then consider a softer
+cushion - a memory-foam (e.g. ResMed AirTouch) or gel cushion is gentler
+than firm silicone - or add a fabric mask liner. If marks keep showing
+up, the cushion may be past its replacement date or the wrong size.
 `;
 
 const TOP_PATIENT_QUESTIONS_SECTION = `
@@ -1344,9 +1530,12 @@ export function buildChatSystemPrompt(): string {
     CPAP_DATA_APPS_SECTION,
     ATYPICAL_SITUATIONS_SECTION,
     TRAVEL_AND_PORTABILITY_SECTION,
+    COMFORT_ACCESSORIES_SECTION,
     SUBSCRIBE_AND_SAVE_SECTION,
     ACCOUNT_AND_REMINDERS_SECTION,
     THERAPY_VOCABULARY_SECTION,
+    WHY_TREAT_OSA_SECTION,
+    CPAP_ALTERNATIVES_SECTION,
     SCOPE_DISCLAIMER_SECTION,
     FAQ_SECTION,
     TOP_PATIENT_QUESTIONS_SECTION,

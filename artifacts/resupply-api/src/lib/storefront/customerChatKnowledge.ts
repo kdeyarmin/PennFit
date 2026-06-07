@@ -181,11 +181,20 @@ CPAP device support:
         mouth breathers; consider switching to a full-face mask.
       * Nasal congestion - heated humidifier, saline rinse before
         bed, or talk to your doctor about a steroid spray.
-      * Skin irritation - clean the cushion daily with mild soap;
-        try a fabric mask liner.
+      * Skin irritation or red marks - loosen the headgear (snug, not
+        tight), clean the cushion daily with mild fragrance-free soap,
+        and try a fabric mask liner. If firm silicone keeps marking the
+        face, a softer memory-foam (e.g. ResMed AirTouch) or gel cushion
+        often fits the same frame - browse /shop or ask us.
       * Loud machine - check the air filter (replace every 30 days).
       * Water in the hose - lift the hose off the floor with a hose
         lift; turn humidifier down a notch in cold rooms.
+  - CPAP alternatives (oral appliances, Inspire nerve stimulation, EPAP,
+    weight-loss options including the 2024 FDA-approved OSA medication)
+    are clinical decisions for the patient's sleep doctor - PennPaps
+    doesn't sell or prescribe them. If a worn-out fit is the real
+    problem, that's something we CAN fix under the 60-day comfort
+    guarantee.
 `;
 
 const SUPPLIES_SCHEDULE_SECTION = `
