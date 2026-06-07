@@ -198,9 +198,7 @@ function ChannelTest({
       </div>
 
       {mutation.isError && (
-        <ResultLine ok={false}>
-          {errorMessage(mutation.error)}
-        </ResultLine>
+        <ResultLine ok={false}>{errorMessage(mutation.error)}</ResultLine>
       )}
       {mutation.data && <TestResult result={mutation.data} />}
     </div>
@@ -234,9 +232,11 @@ function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {
   return (
     <p
       className="flex items-start gap-1.5 text-xs rounded-md px-2.5 py-2"
-      role="status"
+      role={ok ? "status" : "alert"}
       style={{
-        backgroundColor: ok ? "hsl(152 70% 24% / 0.08)" : "hsl(354 75% 38% / 0.07)",
+        backgroundColor: ok
+          ? "hsl(152 70% 24% / 0.08)"
+          : "hsl(354 75% 38% / 0.07)",
         color: ok ? "hsl(152 70% 22%)" : "hsl(354 70% 36%)",
       }}
     >
@@ -288,9 +288,32 @@ function labelForCode(code: string): string {
 }
 
 function errorMessage(err: unknown): string {
+  // Prefer a server-supplied validation message (e.g. "Enter a valid
+  // phone number…") over the raw "HTTP 400: invalid_body" that ApiError
+  // builds from the error code — the structured issue is what's useful
+  // to the operator. ApiError exposes the parsed body on `.data`.
+  const validation = firstValidationMessage(err);
+  if (validation) return validation;
   if (err && typeof err === "object" && "message" in err) {
     const m = (err as { message?: unknown }).message;
     if (typeof m === "string" && m.length > 0) return m;
   }
   return "Something went wrong. Try again.";
+}
+
+/** Pull the first Zod issue message out of an ApiError's parsed body. */
+function firstValidationMessage(err: unknown): string | null {
+  const data =
+    err && typeof err === "object" ? (err as { data?: unknown }).data : null;
+  if (!data || typeof data !== "object") return null;
+  const issues = (data as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return null;
+  for (const issue of issues) {
+    const m =
+      issue && typeof issue === "object"
+        ? (issue as { message?: unknown }).message
+        : null;
+    if (typeof m === "string" && m.trim().length > 0) return m.trim();
+  }
+  return null;
 }
