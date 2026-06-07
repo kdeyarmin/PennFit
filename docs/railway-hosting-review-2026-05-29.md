@@ -246,6 +246,66 @@ no install step is needed in the buildCommand.
 > plan's memory, or `NODE_OPTIONS=--max-old-space-size=<MB>` in the
 > buildCommand (only helps if the container actually has the memory).
 
+### R7 — Production is fronted by Cloudflare (found 2026-06-07)
+
+_Addendum, found while verifying a post-deploy `/assets/` cache header._ The
+production hostname `pennpaps.com` resolves through **Cloudflare**
+(`server: cloudflare`, `cf-ray`, `cf-cache-status`) sitting in front of the
+Railway origin (`x-railway-edge`, `x-powered-by: Express`). Nothing in the
+repo references Cloudflare, so the double-proxy was implicit. Two consequences:
+
+#### R7a — Cloudflare caps the browser Cache-Control (the cache win is throttled)
+
+The immutable asset header added in the perf PR (`app.ts` serves `/assets/*`
+as `Cache-Control: public, max-age=31536000, immutable`) is **rewritten by
+Cloudflare to `public, max-age=14400`** (4 h — Cloudflare's default _Browser
+Cache TTL_) before it reaches the browser. Observed on both a Cloudflare cache
+hit (`cf-cache-status: REVALIDATED`) and a forced miss (cache-buster →
+`cf-cache-status: MISS`), so it is Cloudflare's edge setting, not the origin.
+The origin change is still correct — it drives Cloudflare's **edge** cache and
+any non-Cloudflare path — but the 1-year _browser_ cache is currently capped
+at 4 h.
+
+- **Operator fix (no redeploy):** Cloudflare → Caching → Configuration →
+  **Browser Cache TTL → "Respect Existing Headers"**, or add a **Cache Rule**
+  scoped to `/assets/*` that respects the origin TTL. Then the `immutable`
+  header reaches browsers and repeat visits skip revalidation entirely.
+- Severity: **optimization, not regression** — 4 h browser caching is fine;
+  this just unlocks the full repeat-visit win.
+
+#### R7b — `trust proxy = 1` assumes ONE proxy; there are now two
+
+`app.ts:48` sets `app.set("trust proxy", 1)` (comment: "behind Railway's
+reverse proxy") — correct when Railway's edge was the only proxy. Cloudflare
+adds a **second** hop, so `req.ip` may now resolve to a **Cloudflare egress
+IP** instead of the real client. If so, two things silently degrade:
+
+- **Rate limiting** (including the IPv6 `ipKeyGenerator` fix) buckets distinct
+  clients together under shared Cloudflare IPs — limits become far too coarse.
+- **Audit IP capture** records a Cloudflare IP, not the client.
+
+This is **unconfirmed remotely** (no endpoint echoes `req.ip` / the
+`X-Forwarded-For` chain) — flagged for verification, **not changed**, because
+the correct hop count depends on exactly how Railway's edge rewrites
+`X-Forwarded-For`, and a wrong `trust proxy` value is as bad as the current
+one.
+
+- **Verify:** on one production request, log `req.ip` and the raw
+  `X-Forwarded-For` and confirm `req.ip` is the real client.
+- **If wrong, robust fix:** derive the client IP from the **`CF-Connecting-IP`**
+  header (Cloudflare always sets it to the true client) rather than counting
+  XFF hops. **Security caveat:** `CF-Connecting-IP` is trustworthy _only_ if
+  the origin cannot be reached except through Cloudflare — and today it can
+  (`pennfit.up.railway.app` serves the API directly), so a direct-to-origin
+  request could **forge** the header and pick its own rate-limit bucket /
+  audit IP. This fix therefore **requires** first locking ingress to
+  Cloudflare — e.g. a Cloudflare Tunnel, or a shared-secret header injected by
+  a Cloudflare Transform Rule and required at the origin (Railway has no
+  source-IP firewall, and behind its edge the immediate peer isn't Cloudflare,
+  so peer-IP validation isn't viable) — otherwise trusting the header is
+  strictly worse than the status quo. (Bumping `trust proxy` to the real hop
+  count avoids the spoofable header but is brittle if the chain ever changes.)
+
 ## Bottom line
 
 Config and app are Railway-appropriate and reflect real production hardening
@@ -256,3 +316,10 @@ build-time egress) with a fail-loud guard + runtime check as backup; Node pinned
 to `24.x` + `.node-version`; explicit `::` bind. The only remaining item is
 operator-side and optional: set `RAILPACK_NODE_VERSION=24` in Railway →
 Variables as the authoritative Node pin.
+
+**R7 (addendum, 2026-06-07):** production (`pennpaps.com`) is fronted by
+Cloudflare. Two operator items follow: set Cloudflare's **Browser Cache TTL**
+to "Respect Existing Headers" so the app's `immutable` `/assets/` caching
+reaches browsers (today Cloudflare caps it at 4 h), and **verify** that
+`trust proxy` / `req.ip` still resolves the real client through the extra
+proxy hop (otherwise rate limits and audit IPs bucket on a Cloudflare IP).
