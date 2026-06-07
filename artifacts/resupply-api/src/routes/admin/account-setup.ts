@@ -232,10 +232,10 @@ export function buildChecklistItems(
       group: "Database",
       title: "Apply database migrations",
       description:
-        "Adopt the migration ledger once (baseline), then apply the pending tail. Production carries most of the schema with no ledger, so it must be baselined before enabling RUN_DB_MIGRATIONS.",
+        "Production's migration ledger is adopted and RUN_DB_MIGRATIONS is on, so every deploy auto-applies the pending tail via Railway's preDeployCommand — the one-time baseline is already done. Run this by hand only to apply a tail out-of-band, or against a fresh database (which replays from 0000).",
       status: "manual",
       detail:
-        "One-time baseline, then apply. Tick once the migrator prints “migrations up to date”.",
+        "Adopted — auto-runs on deploy. A manual run is a no-op when current; tick once the migrator prints “migrations up to date”.",
       docHref: doc("docs/runbooks/adopt-migration-ledger.md"),
       command: "pnpm --filter @workspace/resupply-db run migrate",
     },

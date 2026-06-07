@@ -42,13 +42,16 @@ deploy rollover.
 once per deploy, before the new release goes live, and **gates the deploy
 on success** (a migration error keeps the previous release running — it
 does not take the site down). It is **opt-in**: it only runs when
-`RUN_DB_MIGRATIONS=true`, so it is safe with the flag unset. Production has
-no migration ledger yet, so it must be **baselined once** before enabling
-the flag — see
+`RUN_DB_MIGRATIONS=true`, so it is safe with the flag unset. Production's
+ledger has since been **adopted** (the one-time baseline ran — verified
+2026-06-06) and `RUN_DB_MIGRATIONS=true` is set, so every deploy now
+auto-applies the pending tail; no further baseline step is needed. The
+historical adoption procedure (and the verified end state) is preserved in
 [`docs/runbooks/adopt-migration-ledger.md`](./docs/runbooks/adopt-migration-ledger.md).
-The migrator refuses a destructive full replay onto a populated,
-unledgered database (`migrate.mjs` adoption guard); use
-`migrate.mjs --baseline-through=<prefix>` to adopt an existing DB.
+The migrator still refuses a destructive full replay onto a populated,
+_unledgered_ database (`migrate.mjs` adoption guard) — that now only
+applies to a brand-new environment adopting an existing DB, via
+`migrate.mjs --baseline-through=<prefix>`.
 
 Post-mortem of the historical Git-drift event:
 [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
