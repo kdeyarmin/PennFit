@@ -103,6 +103,26 @@ describe("resolvePatientByContact", () => {
     });
   });
 
+  it("escapes LIKE wildcards so the email matches literally", async () => {
+    // The "_" must be backslash-escaped before reaching ilike, or it
+    // would act as a single-char wildcard and could match a different
+    // patient (cross-filing PHI). The handler only answers the escaped
+    // form, so a match proves the escaping was applied.
+    const supabase = makeSupabase(({ table, filters }) =>
+      table === "patients" && filters.email === "a\\_b@example.com"
+        ? { data: [patientRow("p1", "Ann", "Lee")], error: null }
+        : { data: [], error: null },
+    );
+    const res = await resolvePatientByContact(supabase, {
+      emailLower: "a_b@example.com",
+    });
+    expect(res).toEqual({
+      status: "matched",
+      patientId: "p1",
+      name: "Ann Lee",
+    });
+  });
+
   it("matches a single patient by phone", async () => {
     const supabase = makeSupabase(({ table, filters }) =>
       table === "patients" && filters.phone_e164 === "+12155551212"

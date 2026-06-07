@@ -12,6 +12,7 @@
 // returns structured data.
 
 import {
+  escapePostgRESTFilterValue,
   getSupabaseServiceRoleClient,
   type Json,
 } from "@workspace/resupply-db";
@@ -257,9 +258,9 @@ export type ContactPatientMatch =
  * answer is ambiguous, so a packet is never silently filed onto the
  * wrong patient's chart (cross-linking PHI). The lookups, in order:
  *
- *   1. patients.email (case-insensitive) + patients.phone_e164 (exact).
- *      A 2+ row hit on either, or a different patient on each, is
- *      ambiguous → do not link.
+ *   1. patients.email (case-insensitive, LIKE wildcards escaped so the
+ *      match is literal) + patients.phone_e164 (exact). A 2+ row hit on
+ *      either, or a different patient on each, is ambiguous → do not link.
  *   2. Fallback when (1) finds nothing and an email was given: bridge
  *      through the portal account — shop_customers.email_lower →
  *      auth_user_id → patients.portal_auth_user_id. This catches a
@@ -299,7 +300,7 @@ export async function resolvePatientByContact(
       .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
-      .ilike("email", contact.emailLower)
+      .ilike("email", escapePostgRESTFilterValue(contact.emailLower))
       .limit(2);
     if (error) throw error;
     ingest(data);
@@ -342,7 +343,7 @@ export async function resolvePatientByContact(
         .from("patients")
         .select("id")
         .eq("id", patientId)
-        .ilike("email", contact.emailLower)
+        .ilike("email", escapePostgRESTFilterValue(contact.emailLower))
         .eq("phone_e164", contact.phoneE164)
         .limit(1)
         .maybeSingle();
