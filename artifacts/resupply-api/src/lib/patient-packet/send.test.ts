@@ -4,6 +4,7 @@ import {
   createAndSendPatientPacket,
   createAndSendPatientPacketToContact,
   deliverPacketLink,
+  reconcilePacketDocuments,
   resolvePatientByContact,
 } from "./send";
 
@@ -272,6 +273,109 @@ describe("createAndSendPatientPacketToContact", () => {
       phone: "12",
     });
     expect(res).toEqual({ ok: false, code: "invalid_phone" });
+  });
+});
+
+// ── Reconcile an open packet's document set ──────────────────────
+interface RecordedOp {
+  op: "select" | "insert" | "update" | "delete";
+  payload?: unknown;
+  filters: Record<string, unknown>;
+}
+
+// Records every terminal operation against patient_packet_documents and
+// answers the initial select with the supplied existing keys. Only the
+// chain shape reconcilePacketDocuments uses is implemented.
+function makeReconcileSupabase(existingKeys: string[]) {
+  const ops: RecordedOp[] = [];
+  const fromTable = () => {
+    let op: RecordedOp["op"] = "select";
+    let payload: unknown;
+    const filters: Record<string, unknown> = {};
+    const builder = {
+      select: () => builder,
+      insert: (rows: unknown) => {
+        op = "insert";
+        payload = rows;
+        return builder;
+      },
+      update: (patch: unknown) => {
+        op = "update";
+        payload = patch;
+        return builder;
+      },
+      delete: () => {
+        op = "delete";
+        return builder;
+      },
+      eq: (column: string, value: unknown) => {
+        filters[column] = value;
+        return builder;
+      },
+      in: (column: string, value: unknown) => {
+        filters[`${column}__in`] = value;
+        return builder;
+      },
+      then: (
+        onfulfilled: (value: { data: unknown; error: unknown }) => unknown,
+        onrejected?: (reason: unknown) => unknown,
+      ) => {
+        ops.push({ op, payload, filters });
+        const result =
+          op === "select"
+            ? {
+                data: existingKeys.map((k) => ({ document_key: k })),
+                error: null,
+              }
+            : { data: null, error: null };
+        return Promise.resolve(result).then(onfulfilled, onrejected);
+      },
+    };
+    return builder;
+  };
+  const supabase = {
+    schema: () => ({ from: fromTable }),
+  } as unknown as Parameters<typeof reconcilePacketDocuments>[0];
+  return { supabase, ops };
+}
+
+describe("reconcilePacketDocuments", () => {
+  // Real template keys (the insert path snapshots from the catalog).
+  const WELCOME = "welcome_instructions";
+  const AOB = "assignment_of_benefits";
+  const NPP = "notice_of_privacy_practices";
+  const POD = "proof_of_delivery";
+
+  it("deletes removed docs, inserts added docs, and reorders survivors", async () => {
+    const { supabase, ops } = makeReconcileSupabase([WELCOME, AOB, NPP]);
+    // Drop AOB, add POD, keep WELCOME + NPP — final order [WELCOME, NPP, POD].
+    await reconcilePacketDocuments(supabase, "pkt-1", [WELCOME, NPP, POD]);
+
+    const del = ops.find((o) => o.op === "delete");
+    expect(del?.filters["document_key__in"]).toEqual([AOB]);
+
+    const ins = ops.find((o) => o.op === "insert");
+    const insertedKeys = (ins?.payload as { document_key: string }[]).map(
+      (r) => r.document_key,
+    );
+    expect(insertedKeys).toEqual([POD]);
+
+    // Survivors get their sort_order restamped to their new index.
+    const updates = ops.filter((o) => o.op === "update");
+    const byKey = Object.fromEntries(
+      updates.map((u) => [
+        u.filters["document_key"],
+        (u.payload as { sort_order: number }).sort_order,
+      ]),
+    );
+    expect(byKey).toEqual({ [WELCOME]: 0, [NPP]: 1 });
+  });
+
+  it("makes no delete/insert when the document set is unchanged", async () => {
+    const { supabase, ops } = makeReconcileSupabase([WELCOME, AOB]);
+    await reconcilePacketDocuments(supabase, "pkt-2", [WELCOME, AOB]);
+    expect(ops.some((o) => o.op === "delete")).toBe(false);
+    expect(ops.some((o) => o.op === "insert")).toBe(false);
   });
 });
 

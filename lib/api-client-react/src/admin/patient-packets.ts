@@ -98,6 +98,8 @@ export interface PatientPacketDetail {
     voided_reason: string | null;
     created_by_email: string | null;
     updated_at: string;
+    /** Itemized Proof of Delivery snapshot, when one was captured. */
+    delivery_details: PacketDeliveryDetails | null;
   };
   documents: PatientPacketDocumentRow[];
   signature: PatientPacketSignatureRow | null;
@@ -139,7 +141,25 @@ export interface SendPacketToContactRequest {
   documentKeys?: string[];
   title?: string;
   channels?: PacketChannel[];
+  /** Itemized Proof of Delivery snapshot. */
+  deliveryDetails?: PacketDeliveryDetails | null;
   expiresInDays?: number;
+}
+
+/**
+ * Edit an open (unsigned) packet: change its document set, title, and/or
+ * the itemized Proof of Delivery snapshot. Every field is optional; send
+ * only what changed. Rejected (409) on completed or voided packets.
+ */
+export interface UpdatePatientPacketRequest {
+  documentKeys?: string[];
+  title?: string;
+  deliveryDetails?: PacketDeliveryDetails | null;
+}
+
+export interface UpdatePatientPacketResponse {
+  status: string;
+  documentCount: number | null;
 }
 
 export interface SendPacketToContactResponse {
@@ -345,6 +365,31 @@ export function useVoidPatientPacket(options?: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason }),
       }),
+    ...options?.mutation,
+  });
+}
+
+export function useUpdatePatientPacket(options?: {
+  mutation?: UseMutationOptions<
+    UpdatePatientPacketResponse,
+    PacketError,
+    { packetId: string; data: UpdatePatientPacketRequest }
+  >;
+}) {
+  return useMutation<
+    UpdatePatientPacketResponse,
+    PacketError,
+    { packetId: string; data: UpdatePatientPacketRequest }
+  >({
+    mutationFn: ({ packetId, data }) =>
+      customFetch<UpdatePatientPacketResponse>(
+        `/resupply-api/admin/packets/${packetId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        },
+      ),
     ...options?.mutation,
   });
 }

@@ -21,7 +21,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient, type Json } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
@@ -34,6 +34,8 @@ import {
   createAndSendPatientPacket,
   createAndSendPatientPacketToContact,
   deliverPacketLink,
+  reconcilePacketDocuments,
+  resolveDocumentKeys,
   PACKET_CHANNELS,
 } from "../../lib/patient-packet/send";
 import {
@@ -118,6 +120,7 @@ const sendToContactBody = z
     documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
     title: z.string().trim().min(1).max(160).optional(),
     channels: channelsSchema,
+    deliveryDetails: deliveryDetailsSchema.optional().nullable(),
     expiresInDays: z.number().int().min(1).max(90).optional(),
   })
   .strict()
@@ -125,6 +128,24 @@ const sendToContactBody = z
     message: "Provide an email address or a phone number.",
     path: ["email"],
   });
+
+// Edit an open (unsigned) packet: change the document set, the title,
+// and/or the itemized Proof of Delivery snapshot. Every field is
+// optional but at least one must be present.
+const updateBody = z
+  .object({
+    documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
+    title: z.string().trim().min(1).max(160).optional(),
+    deliveryDetails: deliveryDetailsSchema.optional().nullable(),
+  })
+  .strict()
+  .refine(
+    (b) =>
+      b.documentKeys !== undefined ||
+      b.title !== undefined ||
+      b.deliveryDetails !== undefined,
+    { message: "Provide at least one field to update." },
+  );
 
 const resendBody = z.object({ channels: channelsSchema }).strict();
 
@@ -319,6 +340,7 @@ router.post(
       documentKeys: b.documentKeys,
       title: b.title,
       channels: b.channels,
+      deliveryDetails: b.deliveryDetails ?? null,
       expiresInDays: b.expiresInDays,
       createdByEmail: req.adminEmail ?? null,
     });
@@ -430,6 +452,113 @@ router.get(
       signature: sigRes.data ?? null,
       signingLink,
     });
+  },
+);
+
+// ── Edit an open packet (documents / title / delivery items) ──────
+//
+// Only packets that have not been signed (draft | sent | viewed) are
+// editable; a completed or voided packet is immutable so the captured
+// signature always matches the documents it was applied to. The signing
+// link stays valid — the patient-facing signing UI loads the document
+// set and delivery details fresh on every view, so edits are reflected
+// the next time the patient opens the link.
+router.patch(
+  "/admin/packets/:packetId",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "patient_packets.update", preset: "sensitive" }),
+  async (req, res) => {
+    const parsed = packetIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const bodyParsed = updateBody.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = bodyParsed.data;
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: packet, error } = await supabase
+      .schema("resupply")
+      .from("patient_packets")
+      .select("id, status")
+      .eq("id", parsed.data.packetId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!packet) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (packet.status === "completed" || packet.status === "voided") {
+      res.status(409).json({ error: "packet_closed", status: packet.status });
+      return;
+    }
+
+    // Reconcile the document set first so an invalid key fails before any
+    // write — the same validation + required-folding the send paths use.
+    let documentCount: number | null = null;
+    if (b.documentKeys !== undefined) {
+      const docs = resolveDocumentKeys(b.documentKeys, undefined);
+      if (!docs.ok) {
+        res.status(400).json({
+          error: "invalid_document_keys",
+          invalidKeys: docs.invalidKeys,
+        });
+        return;
+      }
+      await reconcilePacketDocuments(supabase, packet.id, docs.uniqueKeys);
+      documentCount = docs.uniqueKeys.length;
+    }
+
+    // Apply the scalar/JSONB column edits.
+    const patch: {
+      updated_at: string;
+      title?: string;
+      delivery_details?: Json | null;
+    } = { updated_at: new Date().toISOString() };
+    if (b.title !== undefined) patch.title = b.title;
+    if (b.deliveryDetails !== undefined) {
+      patch.delivery_details = b.deliveryDetails
+        ? (b.deliveryDetails as unknown as Json)
+        : null;
+    }
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("patient_packets")
+      .update(patch)
+      .eq("id", packet.id);
+    if (updErr) throw updErr;
+
+    await logAudit({
+      action: "patient_packet.updated",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packets",
+      targetId: packet.id,
+      // PHI-safe: counts + which fields changed, never the contents.
+      metadata: {
+        documents_changed: b.documentKeys !== undefined,
+        document_count: documentCount,
+        title_changed: b.title !== undefined,
+        delivery_details_changed: b.deliveryDetails !== undefined,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient_packet.updated audit write failed");
+    });
+
+    res.json({ status: packet.status, documentCount });
   },
 );
 
