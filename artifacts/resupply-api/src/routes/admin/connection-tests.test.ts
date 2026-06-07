@@ -107,35 +107,39 @@ describe("validation", () => {
     expect(runners.runSmsTest).not.toHaveBeenCalled();
   });
 
-  it("normalizes a bare national number to E.164 before running (sms)", async () => {
+  it("normalizes a bare NANP number to E.164 before running the sms test", async () => {
+    // Regression: an operator-typed US number with no +1 (8142418865)
+    // used to fail the strict E.164 regex with "invalid_body". It now
+    // normalizes and reaches Twilio as +18142418865.
     runners.runSmsTest.mockResolvedValue({
       ok: true,
       channel: "sms",
-      detail: { messageSid: "SM_1" },
+      detail: { messageSid: "sm_1" },
     });
     const res = await request(makeApp())
       .post("/admin/connection-tests/sms")
-      .send({ to: "2155551212" });
+      .send({ to: "8142418865" });
     expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, channel: "sms" });
     expect(runners.runSmsTest).toHaveBeenCalledWith(
       { MARK: "effective" },
-      { to: "+12155551212" },
+      { to: "+18142418865" },
     );
   });
 
-  it("normalizes a punctuated national number to E.164 before placing the call (voice)", async () => {
+  it("normalizes a punctuated number to E.164 for the voice test", async () => {
     runners.runVoiceTest.mockResolvedValue({
       ok: true,
       channel: "voice",
-      detail: { callSid: "CA_1" },
+      detail: { callSid: "ca_1" },
     });
     const res = await request(makeApp())
       .post("/admin/connection-tests/voice")
-      .send({ to: "(814) 241-8865" });
+      .send({ to: "(215) 555-1212" });
     expect(res.status).toBe(200);
     expect(runners.runVoiceTest).toHaveBeenCalledWith(
       { MARK: "effective" },
-      { to: "+18142418865" },
+      { to: "+12155551212" },
     );
   });
 });
