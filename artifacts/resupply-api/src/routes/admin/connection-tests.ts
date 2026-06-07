@@ -59,7 +59,7 @@ const phoneE164 = z
   .trim()
   .transform((raw, ctx) => {
     const normalized = normalizeE164(raw);
-    if (normalized === null) {
+    if (normalized === null || !/^\+[1-9]\d{7,14}$/.test(normalized)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
