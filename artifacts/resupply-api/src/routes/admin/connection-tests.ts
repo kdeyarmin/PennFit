@@ -26,6 +26,8 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
+import { normalizeE164 } from "@workspace/resupply-domain";
+
 import { getEffectiveEnv } from "../../lib/app-config/store";
 import {
   computeConnectionTestStatus,
@@ -44,11 +46,30 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-// E.164: a leading + and 7–15 digits, first digit non-zero.
+// Accept whatever shape an operator naturally types — a bare 10-digit
+// NANP number (8142418865), a punctuated one ((215) 555-1212), or an
+// already-E.164 string — and normalize to strict E.164 for Twilio.
+// Requiring the operator to pre-format as E.164 (the old strict regex)
+// rejected ordinary US numbers with a bare "invalid_body"; normalizing
+// here delegates to the same domain helper the inbound SMS/voice paths
+// use, so all phone entry points parse identically. `normalizeE164`
+// returns null for anything that can't be a real number, which we
+// surface as a clear validation message instead of a raw 400.
 const e164 = z
   .string()
   .trim()
-  .regex(/^\+[1-9]\d{6,14}$/, "Phone must be E.164, e.g. +12155551212.");
+  .transform((raw, ctx) => {
+    const normalized = normalizeE164(raw);
+    if (normalized === null || !/^\+[1-9]\d{7,14}$/.test(normalized)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Enter a valid phone number, e.g. (215) 555-1212 or +12155551212.",
+      });
+      return z.NEVER;
+    }
+    return normalized;
+  });
 
 const emailBody = z.object({ to: z.string().trim().email() }).strict();
 const phoneBody = z.object({ to: e164 }).strict();
