@@ -188,6 +188,16 @@ const HelpReturnsAndRefunds = lazyWithRetry(() =>
     default: m.HelpReturnsAndRefunds,
   })),
 );
+const HelpResetPassword = lazyWithRetry(() =>
+  import("@/pages/help-reset-password").then((m) => ({
+    default: m.HelpResetPassword,
+  })),
+);
+const HelpSaveToWishlist = lazyWithRetry(() =>
+  import("@/pages/help-save-to-wishlist").then((m) => ({
+    default: m.HelpSaveToWishlist,
+  })),
+);
 
 // Educational long-form articles under /learn/*. Lazy-loaded — these are
 // shareable awareness pages, not entry points for the fitter flow, so
@@ -738,6 +748,8 @@ function PatientRouter() {
             path="/help/returns-and-refunds"
             component={HelpReturnsAndRefunds}
           />
+          <Route path="/help/reset-password" component={HelpResetPassword} />
+          <Route path="/help/save-to-wishlist" component={HelpSaveToWishlist} />
           <Route path="/help" component={Help} />
           <Route path="/learn" component={Learn} />
           <Route path="/learn/videos" component={LearnVideos} />

@@ -47,6 +47,14 @@ const steps: HelpStep[] = [
         shows the mask you picked and the estimated cost as you go.
       </p>
     ),
+    substeps: [
+      <>Enter your full name and shipping address.</>,
+      <>
+        Add a phone number and email — this is where order updates and your
+        confirmation go.
+      </>,
+      <>Double-check the address; it&apos;s where your mask ships.</>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/order"
@@ -60,26 +68,36 @@ const steps: HelpStep[] = [
     title: "Add your insurance and prescription",
     body: (
       <p>
-        Enter your insurance provider and member ID so we can verify coverage,
-        then tell us about your prescription: choose{" "}
-        <strong>&ldquo;PennPaps has it on file&rdquo;</strong> if we already do,
-        or let us know your sleep provider and we&apos;ll coordinate one
-        directly. CPAP masks are prescription devices, so we won&apos;t ship
-        without a valid prescription on record.
+        Enter your insurance details so we can verify coverage, then tell us
+        about your prescription. CPAP masks are prescription devices, so we
+        won&apos;t ship without a valid prescription on record.
       </p>
     ),
+    substeps: [
+      <>Enter your insurance provider and member ID.</>,
+      <>
+        Choose <strong>&ldquo;PennPaps has it on file&rdquo;</strong> if we
+        already have your prescription…
+      </>,
+      <>
+        …or enter your sleep provider&apos;s details and we&apos;ll coordinate
+        one directly.
+      </>,
+    ],
     tip: "Not sure what you'll pay? Run an insurance estimate first — it takes a few seconds and there's no obligation.",
+    note: "Paying cash instead of using insurance? Just leave the insurance fields blank and note it — our team will follow up with your options.",
   },
   {
     title: "Submit your order",
     body: (
       <p>
         Review the summary one last time and tap <strong>Submit order</strong>.
-        Nothing is charged at this step — submitting sends the order to Penn
-        Home Medical Supply, where a team member verifies your insurance and
-        prescription before anything ships.
+        Submitting sends the order to Penn Home Medical Supply, where a team
+        member verifies your insurance and prescription before anything ships.
       </p>
     ),
+    warning:
+      "Nothing is charged when you submit. We confirm your exact out-of-pocket cost with you before any payment or shipment — so you'll never get a surprise charge.",
   },
   {
     title: "Save your confirmation",
@@ -105,6 +123,7 @@ const steps: HelpStep[] = [
         <OrderSuccessShot />
       </Screenshot>
     ),
+    tip: "Create a free account before you order and every order is saved automatically — no need to keep the reference number.",
   },
 ];
 
@@ -117,7 +136,26 @@ export function HelpPlaceAnOrder() {
       minutes="4 min"
       metaDescription="How to order a CPAP mask from PennPaps: choosing a mask from your results, entering shipping, insurance, and prescription details, submitting, and saving your confirmation."
       intro="Found your match? Turning a recommendation into a real order takes about four minutes. Here's every step, including how insurance and prescriptions are handled."
+      summary={
+        <>
+          Pick a mask from your results, fill in shipping, insurance, and
+          prescription details, then submit. Nothing is charged at submit — we
+          verify coverage and confirm your cost first. Keep the reference number
+          you&apos;re given to track the order.
+        </>
+      }
+      prerequisites={[
+        "A mask in mind — ideally from your fitter results.",
+        "Your shipping address and contact details.",
+        "Your insurance provider and member ID (or plan to pay cash).",
+        "Your prescription on file with us, or your sleep provider's details.",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/track-your-order",
+        label: "Track your order",
+        blurb: "Follow your order from received all the way to delivered.",
+      }}
       faqs={[
         {
           q: "Am I charged when I submit the order?",
@@ -142,6 +180,23 @@ export function HelpPlaceAnOrder() {
         {
           q: "What if PennPaps doesn't have my prescription?",
           a: "Tell us your sleep provider on the order form and we'll reach out to coordinate one. You don't have to chase your doctor's office yourself.",
+        },
+        {
+          q: "How long until it arrives?",
+          a: (
+            <>
+              Standard orders ship within 1–3 business days once your
+              prescription and insurance are verified, and you&apos;ll get a
+              tracking email. See{" "}
+              <Link
+                href="/help/track-your-order"
+                className="text-primary hover:underline"
+              >
+                tracking your order
+              </Link>{" "}
+              for the status stages.
+            </>
+          ),
         },
       ]}
       related={[

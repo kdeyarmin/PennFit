@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,14 @@ import {
   ArrowRight,
   Lightbulb,
   LifeBuoy,
+  Printer,
+  ListChecks,
+  Info,
+  AlertTriangle,
+  CheckCircle2,
+  ThumbsUp,
+  ThumbsDown,
+  Compass,
 } from "lucide-react";
 
 export type HelpStep = {
@@ -25,10 +33,19 @@ export type HelpStep = {
   title: string;
   /** The instruction prose. */
   body: React.ReactNode;
+  /**
+   * Optional granular click-by-click actions rendered as a tight ordered
+   * list under the prose — the literal "do this, then this" sequence.
+   */
+  substeps?: React.ReactNode[];
   /** Optional <Screenshot> for this step. */
   shot?: React.ReactNode;
-  /** Optional inline tip surfaced in a gold callout under the step. */
+  /** Optional gold "Tip" callout — a helpful shortcut or best practice. */
   tip?: React.ReactNode;
+  /** Optional blue "Note" callout — clarifying context. */
+  note?: React.ReactNode;
+  /** Optional amber "Heads up" callout — something to avoid or watch for. */
+  warning?: React.ReactNode;
 };
 
 export type HelpFaq = { q: string; a: React.ReactNode };
@@ -43,9 +60,18 @@ type HelpArticleShellProps = {
   Icon: React.ComponentType<{ className?: string }>;
   /** Estimated read/do time, e.g. "3 min". */
   minutes: string;
+  /**
+   * Optional one- or two-sentence "quick answer" surfaced in a highlighted
+   * callout above the steps — for readers who just want the gist.
+   */
+  summary?: React.ReactNode;
+  /** Optional "what you'll need before you start" checklist. */
+  prerequisites?: React.ReactNode[];
   steps: HelpStep[];
   faqs?: HelpFaq[];
   related?: HelpRelated[];
+  /** Optional "do this next" continuation that chains guides into a journey. */
+  next?: { href: string; label: string; blurb: string };
   /** SEO meta description for <head>. */
   metaDescription: string;
   /** Optional id prefix for data-testids (defaults from title slug). */
@@ -59,11 +85,128 @@ function slugify(s: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+/** Shared callout used for per-step tip / note / warning blocks. */
+function Callout({
+  variant,
+  children,
+}: {
+  variant: "tip" | "note" | "warning";
+  children: React.ReactNode;
+}) {
+  const config = {
+    tip: {
+      Icon: Lightbulb,
+      label: "Tip",
+      wrap: "border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/[0.08]",
+      accent: "text-[hsl(var(--penn-gold-deep))]",
+    },
+    note: {
+      Icon: Info,
+      label: "Note",
+      wrap: "border-[hsl(var(--penn-navy))]/25 bg-[hsl(var(--penn-navy))]/[0.05]",
+      accent: "text-[hsl(var(--penn-navy))]",
+    },
+    warning: {
+      Icon: AlertTriangle,
+      label: "Heads up",
+      wrap: "border-amber-400/50 bg-amber-50",
+      accent: "text-amber-700",
+    },
+  }[variant];
+  const { Icon, label, wrap, accent } = config;
+  return (
+    <div className={`flex gap-3 rounded-xl border px-4 py-3 ${wrap}`}>
+      <Icon
+        className={`w-4 h-4 shrink-0 mt-0.5 ${accent}`}
+        aria-hidden="true"
+      />
+      <p className="text-sm text-foreground/80 leading-relaxed">
+        <span className={`font-semibold ${accent}`}>{label}: </span>
+        {children}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * "Was this helpful?" feedback affordance. Stays entirely client-side (no
+ * tracking backend): a thumbs-up just thanks the reader, a thumbs-down opens
+ * PennBot pre-filled with the article topic so a confused reader is routed
+ * straight to a human-grade answer instead of hitting a dead end.
+ */
+function HelpfulWidget({ title, prefix }: { title: string; prefix: string }) {
+  const [answer, setAnswer] = useState<null | "yes" | "no">(null);
+
+  if (answer === "yes") {
+    return (
+      <p
+        className="inline-flex items-center gap-2 text-sm font-medium text-[hsl(var(--penn-navy))]"
+        data-testid={`help-feedback-thanks-${prefix}`}
+      >
+        <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+        Thanks for the feedback!
+      </p>
+    );
+  }
+  if (answer === "no") {
+    return (
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid={`help-feedback-followup-${prefix}`}
+      >
+        Sorry this didn&apos;t do the trick — we&apos;ve opened PennBot so you
+        can ask in your own words.
+      </p>
+    );
+  }
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3"
+      data-testid={`help-feedback-${prefix}`}
+    >
+      <span className="text-sm font-medium text-foreground/80">
+        Was this helpful?
+      </span>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setAnswer("yes")}
+          className="rounded-full glass-panel border-border/60 gap-1.5"
+          data-testid={`help-feedback-yes-${prefix}`}
+        >
+          <ThumbsUp className="w-3.5 h-3.5" />
+          Yes
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setAnswer("no");
+            openPennBot({
+              prefill: `I need help with: ${title}`,
+            });
+          }}
+          className="rounded-full glass-panel border-border/60 gap-1.5"
+          data-testid={`help-feedback-no-${prefix}`}
+        >
+          <ThumbsDown className="w-3.5 h-3.5" />
+          No
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Shared scaffold for every step-by-step Help Center article. Keeps the
- * breadcrumb, hero, numbered-step rhythm, screenshot placement, mini-FAQ,
- * "still stuck?" contact block, and related-links grid identical across
- * articles so the only thing an individual page supplies is its content.
+ * breadcrumb, hero, quick-answer + prerequisites blocks, numbered-step
+ * rhythm (with optional substeps and tip/note/warning callouts), screenshot
+ * placement, mini-FAQ, "was this helpful?" + "still stuck?" blocks, a
+ * "do this next" continuation, and the related-links grid identical across
+ * articles so an individual page only supplies its content.
  */
 export function HelpArticleShell({
   eyebrow,
@@ -71,9 +214,12 @@ export function HelpArticleShell({
   intro,
   Icon,
   minutes,
+  summary,
+  prerequisites,
   steps,
   faqs,
   related,
+  next,
   metaDescription,
   testIdPrefix,
 }: HelpArticleShellProps) {
@@ -103,13 +249,28 @@ export function HelpArticleShell({
 
       {/* Hero */}
       <header className="space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="shrink-0 h-12 w-12 rounded-2xl icon-halo-navy flex items-center justify-center">
-            <Icon className="w-6 h-6" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="shrink-0 h-12 w-12 rounded-2xl icon-halo-navy flex items-center justify-center">
+              <Icon className="w-6 h-6" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[hsl(var(--penn-gold-deep))]">
+              {eyebrow}
+            </span>
           </div>
-          <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[hsl(var(--penn-gold-deep))]">
-            {eyebrow}
-          </span>
+          {/* Print — help articles are commonly printed or saved as PDF to
+              follow along away from the screen. Hidden in print output. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => window.print()}
+            className="rounded-full text-muted-foreground hover:text-primary gap-1.5 print:hidden"
+            data-testid={`help-print-${prefix}`}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">Print</span>
+          </Button>
         </div>
         <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand leading-[1.1]">
           {title}
@@ -125,6 +286,50 @@ export function HelpArticleShell({
           </span>
         </div>
       </header>
+
+      {/* Quick answer */}
+      {summary ? (
+        <section
+          className="rounded-2xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/[0.08] p-5"
+          data-testid={`help-summary-${prefix}`}
+        >
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--penn-gold-deep))] mb-1.5">
+            Quick answer
+          </h2>
+          <p className="text-[15px] text-foreground/85 leading-relaxed">
+            {summary}
+          </p>
+        </section>
+      ) : null}
+
+      {/* What you'll need */}
+      {prerequisites && prerequisites.length > 0 ? (
+        <section
+          className="glass-card rounded-2xl p-5"
+          data-testid={`help-prereqs-${prefix}`}
+        >
+          <h2 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-3">
+            <ListChecks
+              className="w-4 h-4 text-[hsl(var(--penn-navy))]"
+              aria-hidden="true"
+            />
+            What you&apos;ll need
+          </h2>
+          <ul className="space-y-2">
+            {prerequisites.map((item, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm">
+                <CheckCircle2
+                  className="w-4 h-4 text-[hsl(var(--penn-navy))] shrink-0 mt-0.5"
+                  aria-hidden="true"
+                />
+                <span className="text-foreground/80 leading-relaxed">
+                  {item}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {/* In this guide — jump links */}
       {steps.length > 2 ? (
@@ -181,20 +386,25 @@ export function HelpArticleShell({
               <div className="text-[15px] text-muted-foreground leading-relaxed space-y-3">
                 {step.body}
               </div>
+              {step.substeps && step.substeps.length > 0 ? (
+                <ol className="space-y-2 rounded-xl bg-[hsl(var(--penn-navy))]/[0.03] border border-border/50 p-4">
+                  {step.substeps.map((sub, si) => (
+                    <li key={si} className="flex items-start gap-3 text-sm">
+                      <span className="shrink-0 h-5 w-5 rounded-full bg-white border border-[hsl(var(--penn-navy))]/25 text-[hsl(var(--penn-navy))] text-[11px] font-bold flex items-center justify-center mt-0.5">
+                        {String.fromCharCode(97 + si)}
+                      </span>
+                      <span className="text-foreground/80 leading-relaxed">
+                        {sub}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
               {step.shot ? <div className="pt-1">{step.shot}</div> : null}
-              {step.tip ? (
-                <div className="flex gap-3 rounded-xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/[0.08] px-4 py-3">
-                  <Lightbulb
-                    className="w-4 h-4 text-[hsl(var(--penn-gold-deep))] shrink-0 mt-0.5"
-                    aria-hidden="true"
-                  />
-                  <p className="text-sm text-foreground/80 leading-relaxed">
-                    <span className="font-semibold text-[hsl(var(--penn-gold-deep))]">
-                      Tip:{" "}
-                    </span>
-                    {step.tip}
-                  </p>
-                </div>
+              {step.note ? <Callout variant="note">{step.note}</Callout> : null}
+              {step.tip ? <Callout variant="tip">{step.tip}</Callout> : null}
+              {step.warning ? (
+                <Callout variant="warning">{step.warning}</Callout>
               ) : null}
             </div>
           </li>
@@ -228,7 +438,42 @@ export function HelpArticleShell({
         </section>
       ) : null}
 
-      {/* Still stuck? */}
+      {/* Do this next */}
+      {next ? (
+        <section
+          aria-label="Next step"
+          className="relative overflow-hidden rounded-2xl border border-[hsl(var(--penn-gold))]/40 bg-gradient-to-br from-[hsl(var(--penn-navy))] to-[#0d2a5c] text-white p-6"
+          data-testid={`help-next-${prefix}`}
+        >
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-12 -right-12 h-40 w-40 rounded-full bg-[hsl(var(--penn-gold))]/25 blur-3xl"
+          />
+          <Link
+            href={next.href}
+            className="relative flex items-center gap-4 group"
+            data-testid={`help-next-link-${prefix}`}
+          >
+            <div className="shrink-0 h-11 w-11 rounded-xl bg-[hsl(var(--penn-gold))]/20 ring-1 ring-[hsl(var(--penn-gold))]/40 flex items-center justify-center">
+              <Compass className="w-5 h-5 text-[hsl(var(--penn-gold))]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[hsl(var(--penn-gold))]">
+                Do this next
+              </div>
+              <div className="text-lg font-bold tracking-tight">
+                {next.label}
+              </div>
+              <p className="text-sm text-white/80 leading-relaxed">
+                {next.blurb}
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-[hsl(var(--penn-gold))] shrink-0 transition-transform group-hover:translate-x-1" />
+          </Link>
+        </section>
+      ) : null}
+
+      {/* Was this helpful? + Still stuck? */}
       <section>
         <div className="glass-card rounded-2xl relative overflow-hidden">
           <div
@@ -239,38 +484,44 @@ export function HelpArticleShell({
             }}
             aria-hidden="true"
           />
-          <div className="p-6 sm:p-8 flex flex-col sm:flex-row gap-5 items-start relative">
-            <div className="shrink-0 h-12 w-12 rounded-xl icon-halo-gold flex items-center justify-center">
-              <LifeBuoy className="w-5 h-5" />
-            </div>
-            <div className="space-y-2 flex-1">
-              <h3 className="text-xl font-semibold tracking-tight">
-                Still stuck?
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Ask PennBot for a typed answer in seconds, or call our care team
-                — real people who fit masks and handle insurance every day.
-              </p>
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Button
-                  type="button"
-                  onClick={() => openPennBot()}
-                  className="rounded-full btn-primary-glow gap-2"
-                  data-testid={`help-ask-pennbot-${prefix}`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Ask PennBot
-                </Button>
-                <a href={`tel:${SUPPORT_PHONE_E164}`}>
-                  <Button
-                    variant="outline"
-                    className="rounded-full glass-panel border-border/60 gap-2"
-                  >
-                    <PhoneCall className="w-4 h-4" />
-                    {SUPPORT_PHONE_DISPLAY}
-                  </Button>
-                </a>
+          <div className="p-6 sm:p-8 space-y-5 relative">
+            <div className="flex flex-col sm:flex-row gap-5 items-start">
+              <div className="shrink-0 h-12 w-12 rounded-xl icon-halo-gold flex items-center justify-center">
+                <LifeBuoy className="w-5 h-5" />
               </div>
+              <div className="space-y-2 flex-1">
+                <h3 className="text-xl font-semibold tracking-tight">
+                  Still stuck?
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Ask PennBot for a typed answer in seconds, or call our care
+                  team — real people who fit masks and handle insurance every
+                  day.
+                </p>
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <Button
+                    type="button"
+                    onClick={() => openPennBot()}
+                    className="rounded-full btn-primary-glow gap-2"
+                    data-testid={`help-ask-pennbot-${prefix}`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Ask PennBot
+                  </Button>
+                  <a href={`tel:${SUPPORT_PHONE_E164}`}>
+                    <Button
+                      variant="outline"
+                      className="rounded-full glass-panel border-border/60 gap-2"
+                    >
+                      <PhoneCall className="w-4 h-4" />
+                      {SUPPORT_PHONE_DISPLAY}
+                    </Button>
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-border/40">
+              <HelpfulWidget title={title} prefix={prefix} />
             </div>
           </div>
         </div>

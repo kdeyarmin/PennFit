@@ -34,12 +34,21 @@ const steps: HelpStep[] = [
     title: "Find what you need",
     body: (
       <p>
-        Use the <strong>search box</strong> to jump straight to an item (try
-        &ldquo;cushion&rdquo; or &ldquo;filter&rdquo;), or scroll the grid. Tap
-        any product card to see sizing, compatibility, and photos on its detail
-        page.
+        Use the <strong>search box</strong> to jump straight to an item, or
+        scroll the grid. Tap any product card to see sizing, compatibility, and
+        photos on its detail page.
       </p>
     ),
+    substeps: [
+      <>
+        Type a keyword like &ldquo;cushion&rdquo;, &ldquo;filter&rdquo;, or your
+        mask model.
+      </>,
+      <>Open a product to confirm it fits your machine and mask.</>,
+      <>
+        Check the size/variant selector before adding — sizes differ by mask.
+      </>,
+    ],
     tip: "Saving an item for later? Tap the heart to add it to your wishlist — it'll be waiting next time you visit.",
   },
   {
@@ -51,16 +60,27 @@ const steps: HelpStep[] = [
         inside without leaving the page.
       </p>
     ),
+    note: "Your cart is saved on this device, so you can keep browsing and come back to it — even if you close the tab.",
   },
   {
     title: "Review your cart",
     body: (
       <p>
-        Open the cart to check quantities and the running total. Use the{" "}
-        <strong>− / +</strong> steppers to change quantities or remove anything
-        you don&apos;t want. When it looks right, tap <strong>Checkout</strong>.
+        Open the cart to check quantities and the running total before you pay.
       </p>
     ),
+    substeps: [
+      <>
+        Tap the <strong>cart icon</strong> in the header.
+      </>,
+      <>
+        Use the <strong>− / +</strong> steppers to change quantities, or remove
+        anything you don&apos;t want.
+      </>,
+      <>
+        Confirm the total looks right, then tap <strong>Checkout</strong>.
+      </>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/shop/cart"
@@ -87,6 +107,8 @@ const steps: HelpStep[] = [
         anytime.
       </p>
     ),
+    warning:
+      "If checkout doesn't open, your browser may be blocking the secure payment window — disable any pop-up blocker for pennpaps.com and try again.",
   },
 ];
 
@@ -99,7 +121,23 @@ export function HelpShopAndCheckout() {
       minutes="3 min"
       metaDescription="How to shop CPAP supplies on PennPaps: browsing and searching products, adding to your cart, reviewing quantities, and checking out securely with Stripe."
       intro="Need replacement cushions, filters, or tubing? The PennPaps shop works like any online store. Here's how to find supplies, build your cart, and check out safely."
+      summary={
+        <>
+          Open <strong>Shop</strong>, search or browse for supplies, add them to
+          your cart, review quantities, and check out securely through Stripe.
+          Most consumables need no prescription.
+        </>
+      }
+      prerequisites={[
+        "Nothing to start browsing — no account or prescription needed for most consumables.",
+        "A payment card for checkout (processed securely by Stripe).",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/track-your-order",
+        label: "Track your order",
+        blurb: "Watch your package move from shipped to your doorstep.",
+      }}
       faqs={[
         {
           q: "Do I need a prescription to buy supplies?",
@@ -131,6 +169,11 @@ export function HelpShopAndCheckout() {
           href: "/help/track-your-order",
           label: "Track your order",
           blurb: "Watch your package move toward your door.",
+        },
+        {
+          href: "/help/save-to-wishlist",
+          label: "Save & reorder favorites",
+          blurb: "Keep supplies handy for one-tap reordering.",
         },
         {
           href: "/help/returns-and-refunds",

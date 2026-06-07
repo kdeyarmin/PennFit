@@ -34,6 +34,11 @@ const steps: HelpStep[] = [
         only to manage your account and orders — never sold to third parties.
       </p>
     ),
+    substeps: [
+      <>Enter the email you want order updates sent to.</>,
+      <>Choose a strong password you don&apos;t reuse elsewhere.</>,
+      <>Submit to create the account.</>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/sign-up"
@@ -42,7 +47,7 @@ const steps: HelpStep[] = [
         <SignInShot />
       </Screenshot>
     ),
-    tip: "Already have an account? Use Sign in instead — and if you've forgotten your password, the Forgot password link emails you a reset.",
+    tip: "Already have an account? Use Sign in instead — and if you've forgotten your password, see the reset-password guide.",
   },
   {
     title: "Verify your email",
@@ -50,10 +55,21 @@ const steps: HelpStep[] = [
       <p>
         We&apos;ll send a verification link to your inbox. Click it to confirm
         your address — this protects your account and makes sure order updates
-        reach you. If it doesn&apos;t arrive in a minute or two, check spam or
-        request a new link from the verification screen.
+        reach you.
       </p>
     ),
+    substeps: [
+      <>Open the email from PennPaps in your inbox.</>,
+      <>
+        Click <strong>Verify my email</strong>.
+      </>,
+      <>
+        Don&apos;t see it within a couple of minutes? Check spam, or request a
+        fresh link from the verification screen.
+      </>,
+    ],
+    warning:
+      "Verification links expire after a short window for security. If yours has lapsed, just request a new one — old links stop working.",
   },
   {
     title: "Use your account dashboard",
@@ -68,7 +84,8 @@ const steps: HelpStep[] = [
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Profile & addresses</strong> — saved so checkout is faster.
+            <strong>Profile &amp; addresses</strong> — saved so checkout is
+            faster.
           </li>
           <li>
             <strong>Orders</strong> — full history with status and a{" "}
@@ -110,7 +127,24 @@ export function HelpCreateAnAccount() {
       minutes="3 min"
       metaDescription="How to create a PennPaps account, verify your email, sign in, and use your dashboard to manage profile, addresses, orders, billing, and resupply reminders."
       intro="A free account saves your shipping details and order history and gives you one-tap reordering. Here's how to set one up and find your way around the dashboard."
+      summary={
+        <>
+          Tap the account icon → <strong>Create an account</strong>, enter your
+          email and a password, click the verification link we email you, and
+          you&apos;re in. Your dashboard then keeps your profile, addresses,
+          orders, billing, and reminders together.
+        </>
+      }
+      prerequisites={[
+        "An email address you can check right now (for the verification link).",
+        "A password you don't reuse on other sites.",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/resupply-reminders",
+        label: "Set up resupply reminders",
+        blurb: "Let your account remind you when supplies are due.",
+      }}
       faqs={[
         {
           q: "Do I have to create an account to order?",
@@ -132,12 +166,15 @@ export function HelpCreateAnAccount() {
           q: "I forgot my password.",
           a: (
             <>
-              On the{" "}
-              <Link href="/sign-in" className="text-primary hover:underline">
-                sign-in page
-              </Link>
-              , tap <strong>Forgot password</strong>. We&apos;ll email you a
-              secure reset link.
+              Use the{" "}
+              <Link
+                href="/help/reset-password"
+                className="text-primary hover:underline"
+              >
+                reset-password guide
+              </Link>{" "}
+              — tap <strong>Forgot password</strong> on the sign-in page and
+              we&apos;ll email you a secure reset link.
             </>
           ),
         },
@@ -147,6 +184,11 @@ export function HelpCreateAnAccount() {
         },
       ]}
       related={[
+        {
+          href: "/help/reset-password",
+          label: "Reset your password",
+          blurb: "Locked out? Get back in with a reset link.",
+        },
         {
           href: "/help/resupply-reminders",
           label: "Set up resupply reminders",

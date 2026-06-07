@@ -20,8 +20,8 @@ const steps: HelpStep[] = [
         <Link href="/track-order" className="text-primary hover:underline">
           Track an order
         </Link>{" "}
-        (it&apos;s in the site footer under Patient Services, and linked from
-        your confirmation email). No sign-in is required.
+        — it&apos;s in the site footer under Patient Services, and linked from
+        your confirmation email. No sign-in is required.
       </p>
     ),
   },
@@ -29,13 +29,23 @@ const steps: HelpStep[] = [
     title: "Enter your reference and email",
     body: (
       <p>
-        Type your <strong>order reference number</strong> (it starts with{" "}
-        <code className="text-xs bg-muted px-1 py-0.5 rounded">PEN-</code> and
-        is on your confirmation screen and email) and the{" "}
-        <strong>email address</strong> you used on the order. The two must
-        match, which keeps your order details private.
+        Look up any order with two pieces of information. They must match
+        what&apos;s on the order, which keeps your details private.
       </p>
     ),
+    substeps: [
+      <>
+        Type your <strong>order reference number</strong> — it starts with{" "}
+        <code className="text-xs bg-muted px-1 py-0.5 rounded">PEN-</code> and
+        is on your confirmation screen and email.
+      </>,
+      <>
+        Enter the <strong>email address</strong> you used on the order.
+      </>,
+      <>
+        Tap <strong>Find my order</strong>.
+      </>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/track-order"
@@ -51,9 +61,8 @@ const steps: HelpStep[] = [
     body: (
       <>
         <p>
-          Tap <strong>Find my order</strong> to see a status timeline. Completed
-          stages are checked off in green so you can see at a glance where
-          things stand:
+          You&apos;ll see a status timeline with completed stages checked off in
+          green, so you can tell at a glance where things stand:
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
@@ -72,6 +81,7 @@ const steps: HelpStep[] = [
         </ul>
       </>
     ),
+    note: "Stuck on “Insurance verified” for a day or two is normal — that's the verification-to-ship window, usually 1–3 business days.",
   },
   {
     title: "Or track from your account",
@@ -109,7 +119,25 @@ export function HelpTrackYourOrder() {
       minutes="2 min"
       metaDescription="How to track a PennPaps order: look it up by reference number and email, read the delivery status timeline, or view all orders from your account."
       intro="Wondering where your order is? You can look up any order in seconds with your reference number and email — or see everything at once from your account."
+      summary={
+        <>
+          Open <strong>Track an order</strong>, enter your{" "}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">PEN-</code>{" "}
+          reference number and the email on the order, and read the status
+          timeline. Signed-in customers can skip the lookup and see every order
+          under <strong>Orders</strong>.
+        </>
+      }
+      prerequisites={[
+        "Your order reference number (starts with PEN-), from your confirmation email…",
+        "…and the email address you used on the order — or just sign in.",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/resupply-reminders",
+        label: "Set up resupply reminders",
+        blurb: "Never run out — get nudged when supplies are due.",
+      }}
       faqs={[
         {
           q: "Why do I need both the reference number and my email?",

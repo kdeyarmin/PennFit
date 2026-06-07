@@ -8,7 +8,7 @@
 // scanning can't see.
 
 import { describe, expect, it, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { Router } from "wouter";
 
 import { Help } from "./help";
@@ -20,6 +20,8 @@ import { HelpCreateAnAccount } from "./help-create-an-account";
 import { HelpResupplyReminders } from "./help-resupply-reminders";
 import { HelpInsuranceEstimate } from "./help-insurance-estimate";
 import { HelpReturnsAndRefunds } from "./help-returns-and-refunds";
+import { HelpResetPassword } from "./help-reset-password";
+import { HelpSaveToWishlist } from "./help-save-to-wishlist";
 
 afterEach(() => cleanup());
 
@@ -67,6 +69,8 @@ const GUIDES: Array<[string, React.ReactNode, string]> = [
     <HelpReturnsAndRefunds />,
     "Returns, exchanges & refunds",
   ],
+  ["reset password", <HelpResetPassword />, "Reset your password"],
+  ["save to wishlist", <HelpSaveToWishlist />, "Save favorites & reorder"],
 ];
 
 describe("Help Center guides render", () => {
@@ -86,4 +90,51 @@ describe("Help Center guides render", () => {
       expect(document.querySelector('svg[role="img"]')).toBeTruthy();
     });
   }
+});
+
+describe("Help article shell — enhanced helpers render", () => {
+  it("renders the quick-answer summary, prerequisites, next-step, print, and feedback widget", () => {
+    renderAt(<HelpFindYourMask />);
+    expect(
+      screen.getByTestId("help-summary-find-your-mask-with-the-virtual-fitter"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("help-prereqs-find-your-mask-with-the-virtual-fitter"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("help-next-find-your-mask-with-the-virtual-fitter"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("help-print-find-your-mask-with-the-virtual-fitter"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId(
+        "help-feedback-find-your-mask-with-the-virtual-fitter",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("acknowledges a thumbs-up on the feedback widget", () => {
+    renderAt(<HelpFindYourMask />);
+    fireEvent.click(
+      screen.getByTestId(
+        "help-feedback-yes-find-your-mask-with-the-virtual-fitter",
+      ),
+    );
+    expect(
+      screen.getByTestId(
+        "help-feedback-thanks-find-your-mask-with-the-virtual-fitter",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders substeps (a/b/c) within a step", () => {
+    renderAt(<HelpFindYourMask />);
+    // Step 1 has substeps — the lettered markers a/b should be present.
+    const letters = Array.from(document.querySelectorAll("li span")).map(
+      (n) => n.textContent,
+    );
+    expect(letters).toContain("a");
+    expect(letters).toContain("b");
+  });
 });

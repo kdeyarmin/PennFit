@@ -21,6 +21,8 @@ import {
   RotateCcw,
   HelpCircle,
   PhoneCall,
+  KeyRound,
+  Heart,
 } from "lucide-react";
 import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact";
 
@@ -106,6 +108,15 @@ const categories: HelpCategory[] = [
         tone: "gold",
       },
       {
+        href: "/help/save-to-wishlist",
+        Icon: Heart,
+        title: "Save favorites & reorder",
+        blurb:
+          "Save products to your wishlist and reorder past purchases in one tap.",
+        keywords: "wishlist save favorite reorder repeat buy again heart",
+        tone: "navy",
+      },
+      {
         href: "/help/returns-and-refunds",
         Icon: RotateCcw,
         title: "Returns, exchanges & refunds",
@@ -130,6 +141,14 @@ const categories: HelpCategory[] = [
           "Set up a free account to save addresses and reorder in one tap.",
         keywords: "account sign in sign up register password login profile",
         tone: "gold",
+      },
+      {
+        href: "/help/reset-password",
+        Icon: KeyRound,
+        title: "Reset your password",
+        blurb: "Locked out? Get a secure reset link and choose a new password.",
+        keywords: "password reset forgot locked out sign in login recover",
+        tone: "navy",
       },
       {
         href: "/help/resupply-reminders",

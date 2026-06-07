@@ -35,12 +35,17 @@ const steps: HelpStep[] = [
     title: "Pick the order and item",
     body: (
       <p>
-        Choose the order you&apos;re returning (sign in to pick from your
-        history, or enter your order reference and email). Then select the
-        specific item — you can return a single product without affecting the
-        rest of the order.
+        Choose the order you&apos;re returning, then the specific item — you can
+        return a single product without affecting the rest of the order.
       </p>
     ),
+    substeps: [
+      <>
+        Sign in to pick from your order history, or enter your order reference
+        and email.
+      </>,
+      <>Select the item (or items) you want to return.</>,
+    ],
     tip: "For hygiene and safety, unopened consumables are the easiest to return. If a mask doesn't fit, the comfort guarantee covers an exchange even after it's been worn.",
   },
   {
@@ -53,6 +58,7 @@ const steps: HelpStep[] = [
         refund, so you end up with something that actually works.
       </p>
     ),
+    note: "Choosing “wrong fit” flags your request for our fitting team, who can recommend an alternative under the comfort guarantee.",
   },
   {
     title: "Submit and ship it back",
@@ -64,6 +70,8 @@ const steps: HelpStep[] = [
         method once we receive the item.
       </p>
     ),
+    warning:
+      "Hold onto the item until you hear from us — don't ship anything back before you receive return instructions, so your package is tracked to the right place.",
   },
 ];
 
@@ -76,7 +84,25 @@ export function HelpReturnsAndRefunds() {
       minutes="3 min"
       metaDescription="How to return or exchange a PennPaps order: start a return, pick the order and item, choose a reason, and use the 60-day mask comfort guarantee."
       intro="If something isn't right, returns are straightforward — and your mask is backed by a 60-day comfort guarantee. Here's how to start a return or exchange."
+      summary={
+        <>
+          Open <strong>Returns &amp; refunds</strong>, pick the order and item,
+          choose a reason, and tap <strong>Start a return</strong>. We email you
+          next steps. Masks fitted with us are covered by a 60-day comfort
+          guarantee, so a bad fit means a free exchange.
+        </>
+      }
+      prerequisites={[
+        "The order you want to return — sign in, or have its reference number and email.",
+        "The item still in returnable condition (the comfort guarantee covers worn masks).",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/find-your-mask",
+        label: "Re-run the fitter",
+        blurb:
+          "Exchanging for fit? Get a fresh, better-matched recommendation.",
+      }}
       faqs={[
         {
           q: "What is the 60-day comfort guarantee?",

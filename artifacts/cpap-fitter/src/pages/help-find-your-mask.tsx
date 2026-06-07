@@ -17,15 +17,23 @@ const steps: HelpStep[] = [
     title: "Open the Virtual Mask Fitter",
     body: (
       <p>
-        From the top menu, choose{" "}
+        The fitter works on any phone, tablet, or computer with a front-facing
+        camera and a modern browser (Chrome, Safari, Edge, or Firefox) — there
+        is no app to install.
+      </p>
+    ),
+    substeps: [
+      <>
+        Tap{" "}
         <Link href="/how-it-works" className="text-primary hover:underline">
           Virtual Mask Fitter
         </Link>{" "}
-        and tap <strong>Get fitted for a mask</strong>. The fitter works on any
-        phone, tablet, or computer with a front-facing camera and a modern
-        browser — no app to install.
-      </p>
-    ),
+        in the top menu.
+      </>,
+      <>
+        Press the <strong>Get fitted for a mask</strong> button.
+      </>,
+    ],
     tip: "Use a phone if you can. It's easier to hold the camera at eye level, which gives the most accurate measurements.",
   },
   {
@@ -36,10 +44,19 @@ const steps: HelpStep[] = [
         data is handled. Your photo is processed{" "}
         <strong>entirely on your device</strong> and is never uploaded — only
         the resulting numerical measurements (in millimeters) and your
-        questionnaire answers are sent to our recommendation engine. Check the
-        boxes and continue.
+        questionnaire answers are sent to our recommendation engine.
       </p>
     ),
+    substeps: [
+      <>
+        Read the short summary of what does — and doesn&apos;t — leave your
+        device.
+      </>,
+      <>Tick the consent checkboxes.</>,
+      <>
+        Tap <strong>I agree — continue</strong>.
+      </>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/consent"
@@ -48,28 +65,33 @@ const steps: HelpStep[] = [
         <ConsentShot />
       </Screenshot>
     ),
+    note: (
+      <>
+        If your browser asks for camera permission, choose{" "}
+        <strong>Allow</strong>. You can revoke it anytime in your browser
+        settings.
+      </>
+    ),
   },
   {
     title: "Capture your face",
     body: (
-      <>
-        <p>
-          Hold the device at arm&apos;s length with the lens at eye level, and
-          line your face up inside the oval guide. When the framing looks good,
-          tap the capture button. You can retake the photo as many times as you
-          like — nothing is stored.
-        </p>
-        <p>For the cleanest scan:</p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>Remove glasses, hats, and anything covering your face.</li>
-          <li>Pull hair away from your forehead, eyebrows, and jawline.</li>
-          <li>
-            Keep a relaxed, neutral expression — don&apos;t smile or clench.
-          </li>
-          <li>Look straight ahead in even, front-on lighting.</li>
-        </ul>
-      </>
+      <p>
+        Hold the device at arm&apos;s length with the lens at eye level, and
+        line your face up inside the oval guide. When the framing looks good,
+        tap the capture button. You can retake the photo as many times as you
+        like — nothing is stored.
+      </p>
     ),
+    substeps: [
+      <>Remove glasses, hats, and anything covering your face.</>,
+      <>Pull hair away from your forehead, eyebrows, and jawline.</>,
+      <>
+        Keep a relaxed, neutral expression — don&apos;t smile or clench your
+        jaw.
+      </>,
+      <>Look straight ahead in even, front-on lighting, then tap capture.</>,
+    ],
     shot: (
       <Screenshot
         frame="phone"
@@ -78,6 +100,8 @@ const steps: HelpStep[] = [
         <FitterCaptureShot />
       </Screenshot>
     ),
+    warning:
+      "Backlighting (a bright window behind you) throws off the measurements. Face a light source instead, so your face is evenly lit.",
   },
   {
     title: "Answer a few quick questions",
@@ -99,10 +123,20 @@ const steps: HelpStep[] = [
         PennPaps ranks masks from our catalog using your measurements and
         questionnaire, with a clear match score and a plain-English explanation
         of <em>why</em> each one fits you. The strongest match is flagged{" "}
-        <strong>Best fit</strong>. Tap any card to see full details, or choose a
-        mask to start an order.
+        <strong>Best fit</strong>.
       </p>
     ),
+    substeps: [
+      <>Compare the match scores and the reasoning under each mask.</>,
+      <>
+        Tap any card&apos;s <strong>View details</strong> to see sizing and
+        photos.
+      </>,
+      <>
+        When you&apos;ve decided, tap <strong>Choose this mask</strong> to start
+        an order.
+      </>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/results"
@@ -123,7 +157,25 @@ export function HelpFindYourMask() {
       minutes="3 min"
       metaDescription="Step-by-step guide to the PennPaps Virtual Mask Fitter: consent, on-device face capture, the questionnaire, and reading your ranked mask recommendations."
       intro="The Virtual Mask Fitter matches you to the right CPAP mask from a quick on-device face scan and a few questions. Here's exactly what to expect, screen by screen."
+      summary={
+        <>
+          Open the fitter from the menu, agree to the privacy notice, take a
+          well-lit front-on photo (it never leaves your device), answer a few
+          questions about how you sleep, and pick from your ranked, explained
+          recommendations.
+        </>
+      }
+      prerequisites={[
+        "A device with a front-facing camera (a phone works best).",
+        "A modern browser — Chrome, Safari, Edge, or Firefox.",
+        "Good, even lighting on your face — and glasses/hats off.",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/place-an-order",
+        label: "Order your recommended mask",
+        blurb: "Turn your best-fit recommendation into a finished order.",
+      }}
       faqs={[
         {
           q: "Is my photo stored or sent anywhere?",

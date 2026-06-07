@@ -25,12 +25,18 @@ const steps: HelpStep[] = [
     title: "Choose how we reach you",
     body: (
       <p>
-        Toggle the channels you want — <strong>text message</strong>,{" "}
-        <strong>email</strong>, or a <strong>phone call</strong>. Turn on as
-        many or as few as you like. SMS is the most popular because the reminder
-        includes a secure one-tap link to confirm your reorder.
+        Toggle the channels you want. Turn on as many or as few as you like —
+        SMS is the most popular because the reminder includes a secure one-tap
+        link to confirm your reorder.
       </p>
     ),
+    substeps: [
+      <>
+        Flip on <strong>Text message (SMS)</strong>, <strong>Email</strong>,
+        and/or <strong>Phone call</strong>.
+      </>,
+      <>Confirm the phone number and email shown are current.</>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/reminders"
@@ -46,7 +52,7 @@ const steps: HelpStep[] = [
     body: (
       <>
         <p>
-          Your schedule is based on the standard insurance-covered replacement
+          Your schedule follows the standard insurance-covered replacement
           cadence, so each item is tracked separately:
         </p>
         <ul className="list-disc pl-5 space-y-1">
@@ -68,6 +74,7 @@ const steps: HelpStep[] = [
         </p>
       </>
     ),
+    note: "These cadences match what most US insurance plans cover. We bill insurance on this schedule so covered items typically cost you little to nothing.",
   },
   {
     title: "Save your preferences",
@@ -75,10 +82,10 @@ const steps: HelpStep[] = [
       <p>
         Tap <strong>Save preferences</strong>. From then on, we&apos;ll reach
         out on your chosen channels when you&apos;re due, bill insurance on the
-        covered schedule, and ship without you having to remember a thing. You
-        can change channels, snooze, or unsubscribe anytime from this same page.
+        covered schedule, and ship without you having to remember a thing.
       </p>
     ),
+    tip: "Change channels, snooze, or unsubscribe anytime from this same page — you're always in control.",
   },
 ];
 
@@ -91,7 +98,25 @@ export function HelpResupplyReminders() {
       minutes="3 min"
       metaDescription="How to set up PennPaps resupply reminders: choose SMS, email, or phone reminders, review your per-item replacement schedule, and save your preferences."
       intro="Resupply reminders nudge you when cushions, filters, tubing, and headgear are due — and bill insurance on the covered schedule. Here's how to set them up."
+      summary={
+        <>
+          Open <strong>Reminders</strong>, toggle on SMS, email, and/or phone,
+          check your per-item replacement schedule, and tap{" "}
+          <strong>Save preferences</strong>. We&apos;ll nudge you when supplies
+          are due and bill insurance on schedule — nothing ships until you
+          confirm.
+        </>
+      }
+      prerequisites={[
+        "A current phone number and/or email so reminders reach you.",
+        "An established order with us so we know your replacement schedule.",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/shop-and-checkout",
+        label: "Shop supplies",
+        blurb: "Need something before your next reminder? Order it now.",
+      }}
       faqs={[
         {
           q: "Will I be charged automatically?",

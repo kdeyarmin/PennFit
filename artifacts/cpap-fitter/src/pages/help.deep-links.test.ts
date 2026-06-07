@@ -60,6 +60,16 @@ const GUIDES = [
     module: "help-returns-and-refunds",
     export: "HelpReturnsAndRefunds",
   },
+  {
+    href: "/help/reset-password",
+    module: "help-reset-password",
+    export: "HelpResetPassword",
+  },
+  {
+    href: "/help/save-to-wishlist",
+    module: "help-save-to-wishlist",
+    export: "HelpSaveToWishlist",
+  },
 ] as const;
 
 function escapeRegExp(input: string): string {
@@ -181,6 +191,18 @@ for (const g of GUIDES) {
     it("provides a metaDescription for SEO", () => {
       expect(src).toContain("metaDescription");
     });
+
+    it("provides a quick-answer summary", () => {
+      expect(src).toContain("summary={");
+    });
+
+    it("lists prerequisites (what you'll need)", () => {
+      expect(src).toContain("prerequisites={");
+    });
+
+    it("chains to a next guide/step", () => {
+      expect(src).toContain("next={");
+    });
   });
 }
 
@@ -218,5 +240,24 @@ describe("help shared components exist and are exported", () => {
     const roleImgCount = (screens.match(/role="img"/g) ?? []).length;
     expect(roleImgCount).toBeGreaterThan(0);
     expect(titleCount).toBeGreaterThanOrEqual(roleImgCount);
+  });
+
+  it("HelpArticleShell supports the enhanced helpers", () => {
+    // Quick answer, prerequisites, granular substeps, tip/note/warning
+    // callouts, next-step chaining, print, and the helpful widget.
+    for (const token of [
+      "summary",
+      "prerequisites",
+      "substeps",
+      "warning",
+      "Callout",
+      "next",
+      "window.print()",
+      "HelpfulWidget",
+      "Was this helpful?",
+      "What you",
+    ]) {
+      expect(shell).toContain(token);
+    }
   });
 });

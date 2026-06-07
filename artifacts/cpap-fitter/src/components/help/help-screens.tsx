@@ -1380,3 +1380,135 @@ export function ReturnsShot() {
     </svg>
   );
 }
+
+/** Forgot-password request screen. */
+export function PasswordResetShot() {
+  return (
+    <svg viewBox="0 0 800 400" role="img" {...svgProps}>
+      <title>
+        The forgot-password screen where you request a secure reset link
+      </title>
+      <rect width="800" height="400" fill={C.bg} />
+      <AppHeader />
+      <rect
+        x={250}
+        y={86}
+        width={300}
+        height={250}
+        rx="16"
+        fill={C.panel}
+        stroke={C.line}
+      />
+      <circle cx="400" cy="128" r="18" fill={C.goldSoft} />
+      <path
+        d="M392 128v-6a8 8 0 0116 0v6"
+        fill="none"
+        stroke={C.goldDeep}
+        strokeWidth="3"
+      />
+      <rect x={390} y={126} width={20} height={15} rx="2.5" fill={C.goldDeep} />
+      <text
+        x="400"
+        y="178"
+        fontSize="15"
+        fontWeight="800"
+        fill={C.navy}
+        textAnchor="middle"
+      >
+        Reset your password
+      </text>
+      <text x="400" y="200" fontSize="11" fill={C.sub} textAnchor="middle">
+        We&apos;ll email you a secure link.
+      </text>
+      <text x={272} y={232} fontSize="11" fontWeight="600" fill={C.sub}>
+        Email
+      </text>
+      <rect
+        x={272}
+        y={240}
+        width={256}
+        height={30}
+        rx="7"
+        fill={C.bg}
+        stroke={C.line}
+      />
+      <Btn
+        x={272}
+        y={286}
+        w={256}
+        h={32}
+        label="Email me a reset link"
+        variant="gold"
+      />
+    </svg>
+  );
+}
+
+/** Wishlist with saved items and a reorder/add affordance. */
+export function WishlistShot() {
+  return (
+    <svg viewBox="0 0 800 440" role="img" {...svgProps}>
+      <title>Your saved wishlist items, each with an add-to-cart button</title>
+      <rect width="800" height="440" fill={C.bg} />
+      <AppHeader active="Shop" />
+      <g>
+        <path
+          d="M52 78c-4-5-12-5-12 2 0 6 12 12 12 12s12-6 12-12c0-7-8-7-12-2z"
+          fill={C.gold}
+        />
+        <text x="74" y="84" fontSize="16" fontWeight="800" fill={C.navy}>
+          Your wishlist
+        </text>
+      </g>
+      {[0, 1, 2].map((i) => {
+        const y = 110 + i * 100;
+        return (
+          <g key={i}>
+            <rect
+              x={40}
+              y={y}
+              width={720}
+              height={84}
+              rx="12"
+              fill={C.panel}
+              stroke={C.line}
+            />
+            <rect
+              x={56}
+              y={y + 14}
+              width={72}
+              height={56}
+              rx="8"
+              fill={C.blueSoft}
+            />
+            <ellipse cx={92} cy={y + 42} rx="24" ry="16" fill="#cdd9e8" />
+            <Line x={148} y={y + 24} w={220} color={C.line} />
+            <Line x={148} y={y + 42} w={160} color={C.line} />
+            <text
+              x={148}
+              y={y + 66}
+              fontSize="13"
+              fontWeight="800"
+              fill={C.navy}
+            >
+              ${18 + i * 7}.00
+            </text>
+            <Btn
+              x={560}
+              y={y + 28}
+              w={180}
+              h={30}
+              label="Add to cart"
+              variant="gold"
+            />
+            {/* remove (heart) */}
+            <path
+              d={`M540 ${y + 38}c-3-4-9-4-9 1.5 0 4.5 9 9 9 9s9-4.5 9-9c0-5.5-6-5.5-9-1.5z`}
+              fill={C.gold}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}

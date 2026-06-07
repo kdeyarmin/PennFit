@@ -35,13 +35,22 @@ const steps: HelpStep[] = [
     title: "Enter your plan details",
     body: (
       <p>
-        Choose your <strong>insurance provider</strong> and{" "}
-        <strong>plan type</strong>, and tell us whether you&apos;ve{" "}
-        <strong>met your deductible</strong> this year. These three answers
-        drive the estimate — the more accurate they are, the closer the
-        projection.
+        Three answers drive the estimate — the more accurate they are, the
+        closer the projection.
       </p>
     ),
+    substeps: [
+      <>
+        Choose your <strong>insurance provider</strong>.
+      </>,
+      <>
+        Pick your <strong>plan type</strong> (e.g. Medicare, commercial, HMO).
+      </>,
+      <>
+        Tell us whether you&apos;ve <strong>met your deductible</strong> this
+        year.
+      </>,
+    ],
     shot: (
       <Screenshot
         url="pennpaps.com/insurance/estimate"
@@ -63,14 +72,14 @@ const steps: HelpStep[] = [
         many patients land at little to no cost.
       </p>
     ),
+    warning:
+      "This is a projection, not a bill. Your real cost depends on your specific plan and how much of your deductible is left — we always verify it before anything ships.",
   },
   {
     title: "Move forward with confidence",
     body: (
       <p>
-        The estimate is a projection, not a bill — we always{" "}
-        <strong>verify your exact cost before anything ships</strong>. When
-        you&apos;re ready, head to the{" "}
+        When you&apos;re ready, head to the{" "}
         <Link
           href="/help/find-your-mask"
           className="text-primary hover:underline"
@@ -84,7 +93,7 @@ const steps: HelpStep[] = [
         >
           place an order
         </Link>
-        , and our team confirms coverage as part of processing.
+        , and our team confirms your exact coverage as part of processing.
       </p>
     ),
   },
@@ -99,7 +108,24 @@ export function HelpInsuranceEstimate() {
       minutes="2 min"
       metaDescription="How to use the PennPaps insurance estimate tool: enter your provider, plan type, and deductible status to see a projected out-of-pocket cost for CPAP supplies."
       intro="Want to know what you'll pay before you order? The insurance estimate tool projects your out-of-pocket cost from a few plan details in about two minutes."
+      summary={
+        <>
+          Open the estimate tool, pick your provider, plan type, and deductible
+          status, and tap <strong>Estimate my cost</strong> for a projected
+          out-of-pocket range. It&apos;s a no-obligation projection — we verify
+          your exact cost before anything ships.
+        </>
+      }
+      prerequisites={[
+        "Your insurance provider and plan type.",
+        "A rough idea of whether you've met this year's deductible.",
+      ]}
       steps={steps}
+      next={{
+        href: "/help/find-your-mask",
+        label: "Find your mask",
+        blurb: "Match to the right mask, then turn it into an order.",
+      }}
       faqs={[
         {
           q: "Is the estimate a guaranteed price?",
