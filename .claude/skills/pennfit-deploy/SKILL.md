@@ -75,8 +75,11 @@ sk_test, base64 round-trip on HMAC keys, HTTPS-only public URLs,
 `.env.example` placeholder detection, the `STRIPE_WEBHOOK_SECRET` alias
 confusion). Exits non-zero on any FAIL so it can gate a deploy.
 
-DB migrations on deploy are **opt-in** via `RUN_DB_MIGRATIONS=true` and must
-be baselined once first — see the **pennfit-migrations** skill and
+DB migrations on deploy are **opt-in** via `RUN_DB_MIGRATIONS=true`.
+Production's ledger is already **adopted** (verified 2026-06-06) and the flag
+is on, so every deploy auto-applies the pending tail — no baseline step
+remains. The one-time adoption (now only relevant for a fresh environment
+adopting an existing DB) is in the **pennfit-migrations** skill and
 `docs/runbooks/adopt-migration-ledger.md`.
 
 ## After a deploy — confirm the API is actually routed
