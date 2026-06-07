@@ -93,6 +93,13 @@ export function AdminSystemConfigurationPage() {
 
       <SecurityNotice overlayDisabled={data?.overlayDisabled ?? false} />
 
+      {/* Connection tests lead the page: confirming a credential actually
+          works is the fastest reason to be here. The panel fetches its own
+          status independently of the config list below, so it stays usable
+          even while that list is loading or if its fetch fails. It also has
+          its own dedicated nav entry at /admin/connection-tests. */}
+      <ConnectionTests />
+
       {isPending ? (
         <Spinner label="Loading configuration…" />
       ) : isError ? (
@@ -149,7 +156,6 @@ export function AdminSystemConfigurationPage() {
               </Card>
             ))
           )}
-          <ConnectionTests />
           <TwilioWebhookUrls webhooks={data?.twilioWebhooks} />
           <RecentActivity />
         </>

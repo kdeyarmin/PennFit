@@ -997,12 +997,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
           },
           {
+            href: "/admin/connection-tests",
+            label: "Connection tests",
+            icon: Plug,
+            matchPrefix: "/admin/connection-tests",
+            requiredPermission: "system.config.manage",
+            hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
+          },
+          {
             href: "/admin/system/configuration",
-            label: "Configuration",
+            label: "Configuration & tests",
             icon: SlidersHorizontal,
             matchPrefix: "/admin/system/configuration",
             requiredPermission: "system.config.manage",
-            hint: "Integration credentials & platform secrets (super-admin)",
+            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
           },
           {
             href: "/admin/closures",

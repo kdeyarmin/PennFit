@@ -309,3 +309,40 @@ describe("AppShell NAV_GROUPS — admin.tools.manage gated entries", () => {
     expect(APPSHELL_SRC).toContain("group.items.length > 0");
   });
 });
+
+// ---------------------------------------------------------------------------
+// New nav item: Connection tests (Settings group) + the paired rename of the
+// System Configuration entry.
+//
+// The "send a test" panel (email/SMS/voice/chat) lived only at the bottom of
+// /admin/system/configuration, so operators couldn't find it. This adds a
+// dedicated, super-admin-gated /admin/connection-tests entry and renames the
+// configuration entry to "Configuration & tests" so the panel is discoverable
+// from the sidebar. Both are gated on system.config.manage (super_admin only).
+// ---------------------------------------------------------------------------
+describe("AppShell NAV_GROUPS — connection-tests entry (Settings group)", () => {
+  it("registers the /admin/connection-tests href", () => {
+    expect(APPSHELL_SRC).toContain('href: "/admin/connection-tests"');
+  });
+
+  it("uses 'Connection tests' as the label", () => {
+    expect(APPSHELL_SRC).toContain('label: "Connection tests"');
+  });
+
+  it("uses /admin/connection-tests as the matchPrefix", () => {
+    expect(APPSHELL_SRC).toContain('matchPrefix: "/admin/connection-tests"');
+  });
+
+  it("gates the entry on system.config.manage (super_admin only)", () => {
+    const idx = APPSHELL_SRC.indexOf('href: "/admin/connection-tests"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = APPSHELL_SRC.slice(idx, idx + 320);
+    expect(block).toContain('requiredPermission: "system.config.manage"');
+  });
+
+  it("renames the System Configuration entry to surface the test panel", () => {
+    expect(APPSHELL_SRC).toContain('label: "Configuration & tests"');
+    // The bare old label must be gone so the rename is real.
+    expect(APPSHELL_SRC).not.toContain('label: "Configuration"');
+  });
+});
