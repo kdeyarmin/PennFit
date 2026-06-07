@@ -577,18 +577,37 @@ export async function scanForDueReminders(
   }
 
   // Step 5: quiet-period — episodes that had a conversation with
-  // last_message_at >= quietCutoff. Pull those conversation rows and
-  // build an episode_id set to subtract.
-  const recentConvRes = await supabase
-    .schema("resupply")
-    .from("conversations")
-    .select("episode_id")
-    .gte("last_message_at", quietCutoffIso)
-    .not("episode_id", "is", null);
-  if (recentConvRes.error) throw recentConvRes.error;
+  // last_message_at >= quietCutoff. Build an episode_id set to subtract.
+  //
+  // Scope the read to the candidate episodes (chunk the `episode_id` IN
+  // list at 200 UUIDs for the PostgREST URL-length limit) AND page within
+  // each chunk: `conversations` accumulates one row per outreach across
+  // ALL patients over ALL time, so the trailing-quiet-window slice can
+  // exceed PostgREST's ~1000-row cap. An unpaginated select silently
+  // truncated there — building `quietEpisodeIds` from an arbitrary ~1000
+  // rows, so recently-contacted patients behind the dropped rows slipped
+  // past the quiet-period filter in Step 6 and got re-pinged. Same class
+  // of cap-truncation bug the Step-2 paging comment above describes.
   const quietEpisodeIds = new Set<string>();
-  for (const row of recentConvRes.data ?? []) {
-    if (row.episode_id) quietEpisodeIds.add(row.episode_id);
+  const candidateEpisodeIds = allEpisodes.map((ep) => ep.id);
+  for (let i = 0; i < candidateEpisodeIds.length; i += 200) {
+    const idChunk = candidateEpisodeIds.slice(i, i + 200);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("id, episode_id")
+        .in("episode_id", idChunk)
+        .gte("last_message_at", quietCutoffIso)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        if (row.episode_id) quietEpisodeIds.add(row.episode_id);
+      }
+      if (data.length < PAGE_SIZE) break;
+    }
   }
 
   // Step 6: stitch the candidate (patient, prescription, episode)

@@ -489,3 +489,29 @@ describe("scanForDueReminders — timezone field included in patient SELECT (PR 
     expect(SRC).toContain("timezone: patient.timezone");
   });
 });
+
+// ---------------------------------------------------------------------------
+// scanForDueReminders — quiet-period conversations read must be bounded so it
+// cannot silently truncate at PostgREST's ~1000-row cap (which would let
+// recently-contacted patients slip past the quiet filter and get re-pinged).
+// ---------------------------------------------------------------------------
+
+describe("scanForDueReminders — quiet-period conversations read is paged + chunked", () => {
+  // The conversations slice must be scoped to candidate episodes (chunked
+  // `.in("episode_id", …)`) AND paginated with `.range(...)` inside each
+  // chunk, exactly like the prescriptions/episodes reads above it. A bare
+  // `.from("conversations").select(...).gte("last_message_at", …)` with no
+  // `.range()` is the exact unbounded shape that silently truncated.
+  const quietBlock = SRC.slice(
+    SRC.indexOf('.from("conversations")'),
+    SRC.indexOf('.from("conversations")') + 600,
+  );
+
+  it("chunks the conversations read by episode_id", () => {
+    expect(quietBlock).toMatch(/\.in\(\s*"episode_id"/);
+  });
+
+  it("pages the conversations read with .range() (no unbounded select)", () => {
+    expect(quietBlock).toMatch(/\.range\(/);
+  });
+});

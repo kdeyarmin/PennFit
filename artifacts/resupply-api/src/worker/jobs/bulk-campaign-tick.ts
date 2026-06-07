@@ -209,22 +209,38 @@ export async function processTick(
   // concurrent worker tick can't re-claim the same rows. recipient_kind
   // + recipient_id are included on the RETURNING set so the per-row
   // opt-out re-check below has them without a second fetch.
+  // Chunk the `.in("id", …)` claim at 200 UUIDs — PostgREST limits URL
+  // length, and at the max throttle (3600/min) `batchSizeForThrottle`
+  // yields a 600-id batch, well past that limit. Each chunked UPDATE is
+  // independently atomic (the `status = pending` guard still prevents a
+  // concurrent tick from double-claiming), so accumulating the RETURNING
+  // rows across chunks is equivalent to one UPDATE.
   const claimedIds = pendingRows.map((r) => r.id);
-  const { data: claimed, error: claimErr } = await supabase
-    .schema("resupply")
-    .from("bulk_campaign_recipients")
-    .update({ status: "sending" })
-    .in("id", claimedIds)
-    .eq("status", "pending")
-    .select("id, recipient_email, recipient_kind, recipient_id");
-  if (claimErr) {
-    log.error(
-      { err: claimErr.message },
-      "bulk_campaigns.tick: claim update failed",
-    );
-    throw claimErr;
+  const claimed: Array<{
+    id: string;
+    recipient_email: string | null;
+    recipient_kind: string;
+    recipient_id: string;
+  }> = [];
+  for (let i = 0; i < claimedIds.length; i += 200) {
+    const idChunk = claimedIds.slice(i, i + 200);
+    const { data, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("bulk_campaign_recipients")
+      .update({ status: "sending" })
+      .in("id", idChunk)
+      .eq("status", "pending")
+      .select("id, recipient_email, recipient_kind, recipient_id");
+    if (claimErr) {
+      log.error(
+        { err: claimErr.message },
+        "bulk_campaigns.tick: claim update failed",
+      );
+      throw claimErr;
+    }
+    if (data) claimed.push(...data);
   }
-  const winningIds = new Set((claimed ?? []).map((r) => r.id));
+  const winningIds = new Set(claimed.map((r) => r.id));
   if (winningIds.size === 0) {
     // Lost the race to another worker — bail out, the next tick
     // will pick up the leftovers.
@@ -273,12 +289,16 @@ export async function processTick(
       .update({ status: "paused" })
       .eq("id", campaign.id);
     // Roll the claimed batch back to pending so the resume can pick
-    // them up.
-    await supabase
-      .schema("resupply")
-      .from("bulk_campaign_recipients")
-      .update({ status: "pending" })
-      .in("id", Array.from(winningIds));
+    // them up. Chunk the `.in()` at 200 for the same URL-length reason
+    // as the claim above.
+    const winningIdList = Array.from(winningIds);
+    for (let i = 0; i < winningIdList.length; i += 200) {
+      await supabase
+        .schema("resupply")
+        .from("bulk_campaign_recipients")
+        .update({ status: "pending" })
+        .in("id", winningIdList.slice(i, i + 200));
+    }
     return;
   }
 

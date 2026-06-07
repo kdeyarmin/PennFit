@@ -1431,16 +1431,39 @@ async function markStatusByPaymentIntent(
   if (isFullRefund) {
     update.status = "refunded";
   }
+  // `charge.amount_refunded` is CUMULATIVE, and Stripe can redeliver /
+  // reorder `charge.refunded` events (each a distinct event.id, so the
+  // dedup gate lets them through). Guard the write so the mirror only
+  // moves forward: a stale event carrying a lower cumulative is a no-op
+  // and won't regress `amount_refunded_cents` (or un-flag a full
+  // refund). The column is `NOT NULL DEFAULT 0`, so the first refund
+  // (0 < incoming) still applies. Mirrors the out-of-order guard on the
+  // subscription upsert above.
   const { data: updated, error } = await supabase
     .schema("resupply")
     .from("shop_orders")
     .update(update)
     .eq("id", row.id)
+    .lt("amount_refunded_cents", ctx.amountRefundedCents)
     .select("id, customer_id");
   if (error) throw error;
+  if (!updated || updated.length === 0) {
+    // Either the order's recorded cumulative refund is already >= this
+    // event's (a stale/replayed lower cumulative — the monotonic guard
+    // above), so there is nothing to do.
+    ctx.log?.info?.(
+      {
+        orderId: row.id,
+        amountRefundedCents: ctx.amountRefundedCents,
+        orderTotalCents,
+      },
+      "shop order refund skipped — stale or already-recorded cumulative",
+    );
+    return;
+  }
   ctx.log?.info?.(
     {
-      matched: updated?.length ?? 0,
+      matched: updated.length,
       isFullRefund,
       amountRefundedCents: ctx.amountRefundedCents,
       orderTotalCents,
@@ -1449,7 +1472,6 @@ async function markStatusByPaymentIntent(
       ? "shop order marked refunded (full)"
       : "shop order partial-refund recorded (status unchanged)",
   );
-  if (!updated || updated.length === 0) return;
 
   // Audit row carries the structured "why" so admins can later answer
   // questions like "how many refunds last month were customer-
