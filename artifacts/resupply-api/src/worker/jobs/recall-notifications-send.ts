@@ -34,7 +34,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { createSendgridClient } from "@workspace/resupply-email";
+import {
+  createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
+} from "@workspace/resupply-email";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
@@ -62,7 +65,7 @@ interface SweepStats {
 
 interface MessagingConfig {
   sendgridApiKey: string | null;
-  sendgridFromEmail: string | null;
+  sendgridFromEmail: string;
   sendgridFromName: string | null;
   twilioAccountSid: string | null;
   twilioAuthToken: string | null;
@@ -80,7 +83,8 @@ export function readRecallMessagingConfig(
 ): MessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
-    sendgridFromEmail: env.SENDGRID_FROM_EMAIL ?? null,
+    sendgridFromEmail:
+      env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
     twilioAccountSid: env.TWILIO_ACCOUNT_SID ?? null,
     twilioAuthToken: env.TWILIO_AUTH_TOKEN ?? null,
@@ -136,12 +140,7 @@ export async function sendRecallNotification(
 
   // Prefer email when available — its body carries the full
   // description; SMS is the short-form fallback.
-  if (
-    ctx.patient.email &&
-    cfg.sendgridApiKey &&
-    cfg.sendgridFromEmail &&
-    cfg.sendgridFromName
-  ) {
+  if (ctx.patient.email && cfg.sendgridApiKey && cfg.sendgridFromName) {
     try {
       const client = createSendgridClient({
         apiKey: cfg.sendgridApiKey,

@@ -33,7 +33,7 @@ const REVIEW_REQUEST_AGE_DAYS = 14;
 // immediately instead of looking "not configured" until the next deploy.
 function computeVendorFlags(env: NodeJS.ProcessEnv) {
   return {
-    sendgrid: Boolean(env.SENDGRID_API_KEY && env.SENDGRID_FROM_EMAIL),
+    sendgrid: Boolean(env.SENDGRID_API_KEY),
     twilioVoice: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN),
     twilioSms: Boolean(
       env.TWILIO_ACCOUNT_SID &&

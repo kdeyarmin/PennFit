@@ -44,7 +44,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { createSendgridClient } from "@workspace/resupply-email";
+import {
+  createSendgridClient,
+  DEFAULT_SENDGRID_FROM_EMAIL,
+} from "@workspace/resupply-email";
 import {
   escapePostgRESTFilterValue,
   getSupabaseServiceRoleClient,
@@ -76,7 +79,7 @@ interface ReengageStats {
 
 interface MessagingConfig {
   sendgridApiKey: string | null;
-  sendgridFromEmail: string | null;
+  sendgridFromEmail: string;
   sendgridFromName: string | null;
   practiceName: string;
   publicBaseUrl: string;
@@ -87,7 +90,8 @@ export function readReengageMessagingConfig(
 ): MessagingConfig {
   return {
     sendgridApiKey: env.SENDGRID_API_KEY ?? null,
-    sendgridFromEmail: env.SENDGRID_FROM_EMAIL ?? null,
+    sendgridFromEmail:
+      env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL,
     sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
     publicBaseUrl:
@@ -156,12 +160,7 @@ export async function runFitterLeadReengageSweep(
     skippedAlreadyClaimed: 0,
     errors: 0,
   };
-  if (
-    !cfg.sendgridApiKey ||
-    !cfg.sendgridFromEmail ||
-    !cfg.sendgridFromName ||
-    !cfg.publicBaseUrl
-  ) {
+  if (!cfg.sendgridApiKey || !cfg.sendgridFromName || !cfg.publicBaseUrl) {
     stats.skippedNoConfig = 1;
     logger.warn(
       { event: "fitter-lead.reengage.skipped_no_config" },

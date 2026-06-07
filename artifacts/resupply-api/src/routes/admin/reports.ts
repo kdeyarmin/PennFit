@@ -2353,7 +2353,7 @@ router.post(
         res.status(503).json({
           error: "email_not_configured",
           message:
-            "Email delivery is not configured on this environment (SENDGRID_API_KEY or SENDGRID_FROM_EMAIL missing).",
+            "Email delivery is not configured on this environment (SENDGRID_API_KEY missing).",
         });
         return;
       }
