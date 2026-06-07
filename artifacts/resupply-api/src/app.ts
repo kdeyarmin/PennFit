@@ -422,13 +422,30 @@ const SPA_DIST = path.resolve(
 const SPA_INDEX_HTML = path.join(SPA_DIST, "index.html");
 
 if (existsSync(SPA_INDEX_HTML)) {
-  // Vite emits content-hashed filenames under `assets/`; the default
-  // ETag/304 revalidation is plenty for everything else. `index: false`
-  // forces the explicit history-fallback handler below to be the only
-  // path that serves index.html, so a GET to `/` and a GET to
-  // `/admin/sign-in` go through the same code path and pick up the
-  // same Cache-Control header.
-  app.use(express.static(SPA_DIST, { index: false, fallthrough: true }));
+  // Vite emits content-hashed filenames under `assets/` (e.g.
+  // `index-DJvwPG8s.js`): the bytes behind a given name can never change,
+  // so serve those `immutable` with a 1-year max-age. That skips even the
+  // ETag/304 *revalidation* round-trip on repeat visits — a real win on
+  // high-latency mobile and it lets Railway's edge / any CDN hold them.
+  // Files NOT under `assets/` (the vendored, fixed-NAME MediaPipe model and
+  // the favicons) keep the default ETag/304 so a new build is picked up
+  // immediately instead of being pinned for a year.
+  // `index: false` forces the explicit history-fallback handler below to be
+  // the only path that serves index.html, so a GET to `/` and a GET to
+  // `/admin/sign-in` go through the same code path and pick up the same
+  // (no-store) Cache-Control header.
+  app.use(
+    express.static(SPA_DIST, {
+      index: false,
+      fallthrough: true,
+      setHeaders: (res, filePath) => {
+        const rel = path.relative(SPA_DIST, filePath);
+        if (rel === "assets" || rel.startsWith(`assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
 
   // SPA history fallback. Any unmatched GET that accepts HTML and
   // isn't under /api or /resupply-api (those return their own
