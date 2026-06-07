@@ -17,7 +17,7 @@ tables). Generated deterministically:
    `DATABASE_URL=postgres://… node lib/resupply-db/scripts/migrate.mjs`
    (create roles `anon`/`authenticated`/`service_role` first).
 2. `pg_dump --no-owner --no-comments --quote-all-identifiers --column-inserts
-   -t resupply.<each-missing-table> …` (table list:
+-t resupply.<each-missing-table> …` (table list:
    `2026-05-31-missing-tables.txt`), with the leading `\restrict`/`\unrestrict`
    psql guards stripped.
 
@@ -33,6 +33,7 @@ Sections are in pg_dump order (pre-data → data → post-data), so applying the
 whole file in one transaction loads seed rows before FK constraints are added.
 
 ### Apply (requires prod DB access — not available in the web session that
+
 ### prepared this)
 
 ```bash

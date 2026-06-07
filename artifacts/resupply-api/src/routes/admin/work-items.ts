@@ -104,81 +104,82 @@ router.get(
   adminWorkItemsRateLimiter,
   requireAdmin,
   async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const nowIso = new Date().toISOString();
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
 
-  const results = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("conversations")
-      .select("id, created_at")
-      .eq("status", "awaiting_admin")
-      .order("created_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-    supabase
-      .schema("resupply")
-      .from("shop_returns")
-      .select("id, created_at")
-      .in("status", ["requested", "shipped_back", "received"])
-      .order("created_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-    supabase
-      .schema("resupply")
-      .from("shop_reviews")
-      .select("id, created_at")
-      .eq("status", "pending")
-      .order("created_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-    supabase
-      .schema("resupply")
-      .from("patient_documents")
-      .select("id, created_at")
-      .is("reviewed_at", null)
-      .order("created_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-    supabase
-      .schema("resupply")
-      .from("shop_customer_followups")
-      .select("id, created_at, due_at")
-      .is("completed_at", null)
-      .lt("due_at", nowIso)
-      .order("due_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-    supabase
-      .schema("resupply")
-      .from("patient_followups")
-      .select("id, created_at, due_at")
-      .is("completed_at", null)
-      .lt("due_at", nowIso)
-      .order("due_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-    supabase
-      .schema("resupply")
-      .from("inbound_faxes")
-      .select("id, created_at")
-      .eq("status", "new")
-      .order("created_at", { ascending: true })
-      .limit(PER_SOURCE_LIMIT),
-  ]);
-  for (const r of results) {
-    if (r.error) throw r.error;
-  }
-  const rows = results.map((r) => (r.data ?? []) as RawRow[]);
+    const results = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("id, created_at")
+        .eq("status", "awaiting_admin")
+        .order("created_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .schema("resupply")
+        .from("shop_returns")
+        .select("id, created_at")
+        .in("status", ["requested", "shipped_back", "received"])
+        .order("created_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .schema("resupply")
+        .from("shop_reviews")
+        .select("id, created_at")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .schema("resupply")
+        .from("patient_documents")
+        .select("id, created_at")
+        .is("reviewed_at", null)
+        .order("created_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .schema("resupply")
+        .from("shop_customer_followups")
+        .select("id, created_at, due_at")
+        .is("completed_at", null)
+        .lt("due_at", nowIso)
+        .order("due_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .schema("resupply")
+        .from("patient_followups")
+        .select("id, created_at, due_at")
+        .is("completed_at", null)
+        .lt("due_at", nowIso)
+        .order("due_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+      supabase
+        .schema("resupply")
+        .from("inbound_faxes")
+        .select("id, created_at")
+        .eq("status", "new")
+        .order("created_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
+    ]);
+    for (const r of results) {
+      if (r.error) throw r.error;
+    }
+    const rows = results.map((r) => (r.data ?? []) as RawRow[]);
 
-  const workItems = buildWorkItems(
-    {
-      conversations: rows[0] ?? [],
-      returns: rows[1] ?? [],
-      reviews: rows[2] ?? [],
-      documents: rows[3] ?? [],
-      shopFollowups: rows[4] ?? [],
-      patientFollowups: rows[5] ?? [],
-      faxes: rows[6] ?? [],
-    },
-    nowIso,
-  );
+    const workItems = buildWorkItems(
+      {
+        conversations: rows[0] ?? [],
+        returns: rows[1] ?? [],
+        reviews: rows[2] ?? [],
+        documents: rows[3] ?? [],
+        shopFollowups: rows[4] ?? [],
+        patientFollowups: rows[5] ?? [],
+        faxes: rows[6] ?? [],
+      },
+      nowIso,
+    );
 
-  res.json({ workItems, count: workItems.length, serverTime: nowIso });
-});
+    res.json({ workItems, count: workItems.length, serverTime: nowIso });
+  },
+);
 
 export default router;

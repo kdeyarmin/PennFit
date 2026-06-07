@@ -100,11 +100,7 @@ export function readEmailConfigOrNull(
     env.SENDGRID_FROM_EMAIL?.trim() || DEFAULT_SENDGRID_FROM_EMAIL;
   const sendgridFromName = env.SENDGRID_FROM_NAME;
   const sendgridEventWebhookPublicKey = env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY;
-  if (
-    !sendgridApiKey ||
-    !sendgridFromName ||
-    !sendgridEventWebhookPublicKey
-  ) {
+  if (!sendgridApiKey || !sendgridFromName || !sendgridEventWebhookPublicKey) {
     return null;
   }
 

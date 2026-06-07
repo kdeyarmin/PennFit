@@ -32,7 +32,11 @@ export type ConnectionTestResult =
   | {
       ok: false;
       channel: ConnectionChannel;
-      code: "not_configured" | "upstream_error" | "config_error" | "unknown_error";
+      code:
+        | "not_configured"
+        | "upstream_error"
+        | "config_error"
+        | "unknown_error";
       message: string;
       upstream?: { status?: number | null; code?: string | number | null };
     };

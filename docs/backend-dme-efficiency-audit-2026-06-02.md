@@ -58,8 +58,8 @@ machinery most resupply shops buy from three or four separate vendors:
    in-memory aggregation of unbounded reads, a few missing indexes on
    hot billing-query columns, and no HTTP response compression. These are
    the cheapest, highest-confidence wins.
-2. **"Last-mile" automation gaps** — the system *notifies* beautifully
-   but stops short of *acting*: resupply eligibility never becomes an
+2. **"Last-mile" automation gaps** — the system _notifies_ beautifully
+   but stops short of _acting_: resupply eligibility never becomes an
    order without a CSR click; backorders never auto-clear; there's no
    inventory reservation; claims are created one-at-a-time.
 3. **Revenue-cycle operationalization** — the hard EDI plumbing is built,
@@ -152,14 +152,14 @@ Several analytics endpoints fetch a large row set with a hard
 today's volume but **silently truncate** once the cap is hit, and they
 pull far more data than the answer needs:
 
-| Endpoint | File:line | Read | Risk |
-| --- | --- | --- | --- |
-| LTV/CAC | `ltv-cac.ts:60-71, 83-91` | `shop_orders` + `customer_acquisition`, `.limit(20000)`, **no time window** | grows unbounded with revenue; silent truncation |
-| Denial trend | `billing-director.ts:120-126` | `insurance_claims` 90d, `.limit(20000)` | high-volume billing can exceed cap |
-| Compliance cohorts | `analytics.ts:207-243` | all `patient_therapy_nights` for cohort, JS-partition + per-patient `findBestAdherenceWindow()` | CPU-heavy on 1000+ patients |
-| Mask-fit rec-signal | `mask-fit-worklist.ts:128-133` | `mask_fit_outcomes` `.limit(20000)`, no window | silent truncation as outcomes accrue |
+| Endpoint            | File:line                      | Read                                                                                            | Risk                                            |
+| ------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| LTV/CAC             | `ltv-cac.ts:60-71, 83-91`      | `shop_orders` + `customer_acquisition`, `.limit(20000)`, **no time window**                     | grows unbounded with revenue; silent truncation |
+| Denial trend        | `billing-director.ts:120-126`  | `insurance_claims` 90d, `.limit(20000)`                                                         | high-volume billing can exceed cap              |
+| Compliance cohorts  | `analytics.ts:207-243`         | all `patient_therapy_nights` for cohort, JS-partition + per-patient `findBestAdherenceWindow()` | CPU-heavy on 1000+ patients                     |
+| Mask-fit rec-signal | `mask-fit-worklist.ts:128-133` | `mask_fit_outcomes` `.limit(20000)`, no window                                                  | silent truncation as outcomes accrue            |
 
-- **Fix**: the team *already* has the right pattern — SQL RPCs in
+- **Fix**: the team _already_ has the right pattern — SQL RPCs in
   `lib/resupply-db/drizzle/0164_admin_aggregate_rpcs.sql`
   (`resupply.billing_denial_rate`, `resupply.shop_back_in_stock_queue`),
   called from 10 route files via `.rpc()`. Push these aggregations into
@@ -174,10 +174,10 @@ The hourly `reminders.scan` (`src/worker/jobs/reminders.ts:420`) loads
 **all** active prescriptions (paged 1000), their episodes (paged per
 200-Rx chunk), all active patients (200/batch), all fulfillments
 (200/batch), and recent conversations, then resolves cadence in
-TypeScript. This is a *deliberate* loosening (`reminders.ts:461-467`):
+TypeScript. This is a _deliberate_ loosening (`reminders.ts:461-467`):
 SQL can't express the override-rule precedence (per-patient override →
-frequency_rule → prescription default), so an SQL `due` filter would
-miss patients made due *earlier* by a rule.
+frequency*rule → prescription default), so an SQL `due` filter would
+miss patients made due \_earlier* by a rule.
 
 - **Not a bug** — the comment history shows a prior SQL filter silently
   dropped patients. But it's the single heaviest recurring scan and will
@@ -205,7 +205,7 @@ software tells me what to do, then makes me do it by hand."
 ### 3.1 — Resupply eligibility never becomes an order `[P0, high value]`
 
 `reminders.scan` and `/admin/therapy-resupply/opportunities`
-(`therapy-resupply.ts:204`) surface *who is due* and even pull device
+(`therapy-resupply.ts:204`) surface _who is due_ and even pull device
 `nextEligibleDate` from the therapy nightly sync — but **no path converts
 eligibility into a draft order/fulfillment**. Every order is a manual CSR
 action. There is no auto-create, no batch-create, no "one patient, three
@@ -239,7 +239,7 @@ stock. Wire auto-clear to the same restock signal as 3.2.
 ### 3.4 — Claims created one-at-a-time `[P1, medium]`
 
 `fulfillment-to-claim.ts:46` is single-fulfillment → single draft claim.
-Batch 837P *submission* exists (`billing-batch-submit.ts`, up to 100
+Batch 837P _submission_ exists (`billing-batch-submit.ts`, up to 100
 claims), but **claim creation** has no batch endpoint, so the billing
 queue bottlenecks at "click create-claim N times." Add
 `POST /admin/fulfillments/batch-create-claims`.
@@ -264,7 +264,7 @@ operator-facing surfaces and two unwired pipelines.
 `src/lib/billing/eligibility-verifier.ts:1-10` ships the 270 over Office
 Ally SFTP and writes an `eligibility_checks` row as `submitted`, but the
 inbound poller doesn't yet parse/dispatch the **271** that lands in the
-SFTP outbound dir (999/277CA/835 dispatch *are* wired in
+SFTP outbound dir (999/277CA/835 dispatch _are_ wired in
 `office-ally-inbound-poll.ts:361-580`). So eligibility results sit
 `submitted` until an operator hand-checks the row.
 
@@ -346,7 +346,7 @@ credentials. Track as an integration/onboarding task, not a code defect.
 ### 5.3 — No real-time staffing/queue dashboard `[P2, medium]`
 
 Productivity surfaces (`productivity.ts`, `today.ts`, `work-items.ts`) are
-strong on *lagging* metrics (closed-this-week, queue snapshots) but there's
+strong on _lagging_ metrics (closed-this-week, queue snapshots) but there's
 no real-time "which CSR is overloaded right now," and no voice queue
 metrics (wait time, handle time) despite a full voice stack. Relevant once
 the shop runs 10+ concurrent CSRs.
@@ -372,29 +372,29 @@ mistaken for a regression. Do **not** add new `audit_log` readers.
 
 Sequenced by **value ÷ effort**. P0 = cheap, high-confidence, ship soon.
 
-| # | Enhancement | Area | Value | Effort | Pri |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Add `compression` middleware (§2.1) | Perf | M | XS | **P0** |
-| 2 | `count: 'estimated'` on large-table dashboard counts (§2.2) | Perf | M | S | **P0** |
-| 3 | Indexes on `insurance_claims.decision_at` + `(status, submitted_at)` (§2.3) | Perf | M | S | **P0** |
-| 4 | Wire 271 inbound dispatch + parser (§4.1) | Rev-cycle | H | M | **P0** |
-| 5 | A/R aging / DSO endpoint + RPC (§4.3) | Rev-cycle | H | M | **P0** |
-| 6 | Resupply eligibility → batch order creation (§3.1) | Fulfillment | H | M-H | **P0** |
-| 7 | pg_trgm/GIN index for patient name/email search (§2.4) | Perf | M | S | P1 |
-| 8 | Push analytics aggregation into SQL RPCs / bound reads (§2.5) | Perf | M | M | P1 |
-| 9 | Wire Da Vinci PAS into prior-auth queue (§4.2) | Rev-cycle | H | M | P1 |
-| 10 | Denial worklist route + bulk patch-apply (§4.4) | Rev-cycle | H | M | P1 |
-| 11 | Batch claim creation endpoint (§3.4) | Fulfillment | M | S | P1 |
-| 12 | Inventory reservation ledger + auto-reorder (§3.2) | Fulfillment | M | M-H | P1 |
-| 13 | Auto-clear backorders on restock (§3.3) | Fulfillment | M | S | P1 |
-| 14 | Patient dedup/merge workflow (§5.1) | Patient | M | M | P1 |
-| 15 | Materialized `next_due_at` for reminders.scan (§2.6) | Perf | M | M | P2 |
-| 16 | Carrier tracking-webhook ingest (§3.5) | Fulfillment | M | M | P2 |
-| 17 | Secondary auto-submit + secondary ERA (§4.5) | Rev-cycle | M | M | P2 |
-| 18 | Appeal tracking table + aging (§4.5) | Rev-cycle | M | S | P2 |
-| 19 | Real-time staffing/queue dashboard (§5.3) | Ops | M | M | P2 |
-| 20 | Inbound-fax OCR → referral (§5.4) | Intake | M | H | P2 |
-| 21 | Bound `conversation-routing` admin/convo reads (§2.7) | Perf | L | XS | P2 |
+| #   | Enhancement                                                                 | Area        | Value | Effort | Pri    |
+| --- | --------------------------------------------------------------------------- | ----------- | ----- | ------ | ------ |
+| 1   | Add `compression` middleware (§2.1)                                         | Perf        | M     | XS     | **P0** |
+| 2   | `count: 'estimated'` on large-table dashboard counts (§2.2)                 | Perf        | M     | S      | **P0** |
+| 3   | Indexes on `insurance_claims.decision_at` + `(status, submitted_at)` (§2.3) | Perf        | M     | S      | **P0** |
+| 4   | Wire 271 inbound dispatch + parser (§4.1)                                   | Rev-cycle   | H     | M      | **P0** |
+| 5   | A/R aging / DSO endpoint + RPC (§4.3)                                       | Rev-cycle   | H     | M      | **P0** |
+| 6   | Resupply eligibility → batch order creation (§3.1)                          | Fulfillment | H     | M-H    | **P0** |
+| 7   | pg_trgm/GIN index for patient name/email search (§2.4)                      | Perf        | M     | S      | P1     |
+| 8   | Push analytics aggregation into SQL RPCs / bound reads (§2.5)               | Perf        | M     | M      | P1     |
+| 9   | Wire Da Vinci PAS into prior-auth queue (§4.2)                              | Rev-cycle   | H     | M      | P1     |
+| 10  | Denial worklist route + bulk patch-apply (§4.4)                             | Rev-cycle   | H     | M      | P1     |
+| 11  | Batch claim creation endpoint (§3.4)                                        | Fulfillment | M     | S      | P1     |
+| 12  | Inventory reservation ledger + auto-reorder (§3.2)                          | Fulfillment | M     | M-H    | P1     |
+| 13  | Auto-clear backorders on restock (§3.3)                                     | Fulfillment | M     | S      | P1     |
+| 14  | Patient dedup/merge workflow (§5.1)                                         | Patient     | M     | M      | P1     |
+| 15  | Materialized `next_due_at` for reminders.scan (§2.6)                        | Perf        | M     | M      | P2     |
+| 16  | Carrier tracking-webhook ingest (§3.5)                                      | Fulfillment | M     | M      | P2     |
+| 17  | Secondary auto-submit + secondary ERA (§4.5)                                | Rev-cycle   | M     | M      | P2     |
+| 18  | Appeal tracking table + aging (§4.5)                                        | Rev-cycle   | M     | S      | P2     |
+| 19  | Real-time staffing/queue dashboard (§5.3)                                   | Ops         | M     | M      | P2     |
+| 20  | Inbound-fax OCR → referral (§5.4)                                           | Intake      | M     | H      | P2     |
+| 21  | Bound `conversation-routing` admin/convo reads (§2.7)                       | Perf        | L     | XS     | P2     |
 
 ---
 
@@ -409,7 +409,7 @@ reviewable. Recommended first PR(s):
    call-site; keep `'exact'` on partial-index-backed inbox badges.
 3. **Migration `0208`** — `CREATE INDEX CONCURRENTLY` on
    `insurance_claims (decision_at DESC)` and partial `(status,
-   submitted_at)`. Hand-written SQL per convention; **do not** touch
+submitted_at)`. Hand-written SQL per convention; **do not** touch
    `_journal.json` (frozen at 52 entries per CLAUDE.md).
 
 Each ships independently behind its own PR with no schema-shape or

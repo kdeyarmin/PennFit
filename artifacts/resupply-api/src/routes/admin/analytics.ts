@@ -727,7 +727,13 @@ router.get(
 //                     episode is this old (had a real chance to
 //                     reorder). Default 90.
 const retentionQuerySchema = z.object({
-  lookbackDays: z.coerce.number().int().min(30).max(1095).optional().default(365),
+  lookbackDays: z.coerce
+    .number()
+    .int()
+    .min(30)
+    .max(1095)
+    .optional()
+    .default(365),
   activeDays: z.coerce.number().int().min(1).max(365).optional().default(120),
   reorderDays: z.coerce.number().int().min(1).max(365).optional().default(90),
 });

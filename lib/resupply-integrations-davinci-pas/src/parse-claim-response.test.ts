@@ -203,7 +203,9 @@ describe("parseClaimResponse", () => {
 
   it("returns null requestIdentifier when there is no ClaimResponse in the payload", () => {
     expect(parseClaimResponse(null).requestIdentifier).toBeNull();
-    expect(parseClaimResponse({ resourceType: "Patient" }).requestIdentifier).toBeNull();
+    expect(
+      parseClaimResponse({ resourceType: "Patient" }).requestIdentifier,
+    ).toBeNull();
   });
 
   it("resolves requestIdentifier through a Bundle-wrapped ClaimResponse", () => {

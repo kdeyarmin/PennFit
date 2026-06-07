@@ -14,7 +14,9 @@ function fakeStorage() {
   };
 }
 
-const staleErr = new Error("Failed to fetch dynamically imported module: /assets/x.js");
+const staleErr = new Error(
+  "Failed to fetch dynamically imported module: /assets/x.js",
+);
 
 describe("isStaleChunkError", () => {
   it("matches the Chromium dynamic-import failure", () => {
@@ -70,7 +72,10 @@ describe("importWithRetry", () => {
     const reload = vi.fn();
 
     let settled = false;
-    void importWithRetry(() => Promise.reject(staleErr), { storage, reload }).then(
+    void importWithRetry(() => Promise.reject(staleErr), {
+      storage,
+      reload,
+    }).then(
       () => {
         settled = true;
       },

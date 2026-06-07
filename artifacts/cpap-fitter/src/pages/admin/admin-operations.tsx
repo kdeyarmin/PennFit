@@ -146,8 +146,8 @@ function VoiceHandoffsPanel({
             {open}
           </div>
           <div className="text-[11px] text-slate-500 mt-1">
-            Voice calls the AI agent flagged for a human teammate, still in
-            the escalated queue.
+            Voice calls the AI agent flagged for a human teammate, still in the
+            escalated queue.
           </div>
         </div>
         <div
@@ -203,9 +203,7 @@ function VoiceMetricsPanel() {
       {isPending ? (
         <div className="text-sm text-slate-500">Loading…</div>
       ) : isError || !data ? (
-        <div className="text-sm text-slate-500">
-          Voice metrics unavailable.
-        </div>
+        <div className="text-sm text-slate-500">Voice metrics unavailable.</div>
       ) : data.totalCalls === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
           No voice calls recorded in the last 30 days.
@@ -251,7 +249,8 @@ function VoiceMetricsBody({ data }: { data: VoiceMetrics }) {
               key={status}
               className="text-xs rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700"
             >
-              {status}: <span className="font-semibold tabular-nums">{count}</span>
+              {status}:{" "}
+              <span className="font-semibold tabular-nums">{count}</span>
             </span>
           ))}
       </div>
@@ -365,9 +364,9 @@ function VendorStrip({
         >
           System Configuration
         </Link>{" "}
-        but not yet applied shows as &ldquo;saved — applies after
-        restart&rdquo; instead. Neither state means the most recent send
-        succeeded — check the dispatcher result panels below for that.
+        but not yet applied shows as &ldquo;saved — applies after restart&rdquo;
+        instead. Neither state means the most recent send succeeded — check the
+        dispatcher result panels below for that.
       </p>
       {anyPending && (
         <p className="text-xs text-sky-700 mt-1">

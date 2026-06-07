@@ -317,7 +317,9 @@ router.post(
     // streams). arrayBuffer() so we can base64 them for the model.
     let bytes: Buffer;
     try {
-      const file = await objectStorage.getObjectEntityFile(row.media_object_key);
+      const file = await objectStorage.getObjectEntityFile(
+        row.media_object_key,
+      );
       const response = await objectStorage.downloadObject(file, 0);
       bytes = Buffer.from(await response.arrayBuffer());
     } catch (err) {

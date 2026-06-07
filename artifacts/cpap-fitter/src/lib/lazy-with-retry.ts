@@ -77,7 +77,8 @@ export async function importWithRetry<T>(
   factory: ModuleFactory<T>,
   deps: RetryDeps = {},
 ): Promise<{ default: T }> {
-  const storage = deps.storage === undefined ? safeSessionStorage() : deps.storage;
+  const storage =
+    deps.storage === undefined ? safeSessionStorage() : deps.storage;
   const reload =
     deps.reload ??
     (() => {

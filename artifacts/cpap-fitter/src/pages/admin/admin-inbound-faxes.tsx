@@ -16,13 +16,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ExternalLink,
-  FileText,
-  Inbox,
-  Loader2,
-  Sparkles,
-} from "lucide-react";
+import { ExternalLink, FileText, Inbox, Loader2, Sparkles } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -525,9 +519,7 @@ function OcrPanel({
           AI field extraction
         </span>
         <Button intent="ghost" size="sm" disabled={running} onClick={onRun}>
-          {running ? (
-            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-          ) : null}
+          {running ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
           {result ? "Re-run" : "Extract fields"}
         </Button>
       </div>
@@ -538,8 +530,7 @@ function OcrPanel({
           fields by hand from the preview.
         </p>
       )}
-      {(result?.status === "failed" ||
-        result?.status === "unsupported") && (
+      {(result?.status === "failed" || result?.status === "unsupported") && (
         <p className="text-xs text-amber-800">
           Couldn&apos;t read this fax automatically ({result.status}). Key the
           fields by hand from the preview.

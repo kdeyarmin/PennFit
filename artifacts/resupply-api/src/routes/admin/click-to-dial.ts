@@ -70,7 +70,9 @@ export function withinCallWindow(
 }
 
 const patientIdParam = z.string().uuid();
-const callDispositionsBody = z.object({ patientId: z.string().uuid() }).strict();
+const callDispositionsBody = z
+  .object({ patientId: z.string().uuid() })
+  .strict();
 const dialBody = z
   .object({ override: z.boolean().optional() })
   .strict()

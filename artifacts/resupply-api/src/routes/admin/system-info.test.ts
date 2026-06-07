@@ -22,7 +22,9 @@ import {
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
 }));
-vi.mock("../../middlewares/requireAdmin", () => makeRequireAdminMock(mockAdmin));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 // getEffectiveEnv would otherwise hit Supabase; pin it per test. The real
 // applyEnvAliases (from @workspace/resupply-secrets) runs unmocked so the

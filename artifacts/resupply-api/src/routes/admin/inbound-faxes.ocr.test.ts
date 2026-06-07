@@ -25,8 +25,8 @@ function lastUpdate(table: string): Record<string, unknown> {
 
 const supabaseMock = installSupabaseMock();
 
-const { downloadObjectMock, getFileMock, ObjectNotFoundErrorClass } = vi.hoisted(
-  () => ({
+const { downloadObjectMock, getFileMock, ObjectNotFoundErrorClass } =
+  vi.hoisted(() => ({
     downloadObjectMock: vi.fn(async (_file?: unknown) => ({
       arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
     })),
@@ -37,8 +37,7 @@ const { downloadObjectMock, getFileMock, ObjectNotFoundErrorClass } = vi.hoisted
         this.name = "ObjectNotFoundError";
       }
     },
-  }),
-);
+  }));
 
 vi.mock("../../lib/object-storage/objectStorage", () => ({
   ObjectNotFoundError: ObjectNotFoundErrorClass,

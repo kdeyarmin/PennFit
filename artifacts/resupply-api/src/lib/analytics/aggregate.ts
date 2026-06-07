@@ -562,7 +562,9 @@ export function aggregatePatientRetention(
     repeatPatients,
     reorderEligible,
     repeatRate:
-      reorderEligible === 0 ? null : round4(repeatAmongEligible / reorderEligible),
+      reorderEligible === 0
+        ? null
+        : round4(repeatAmongEligible / reorderEligible),
     activePatients,
     lapsedPatients: patientsServed - activePatients,
     activeRate:

@@ -106,10 +106,9 @@ describe("GET /patients/duplicates", () => {
     );
     expect(nameGroup).not.toHaveProperty("groupKey");
     expect(nameGroup.memberCount).toBe(2);
-    expect(nameGroup.members.map((m: { patientId: string }) => m.patientId)).toEqual([
-      "p1",
-      "p2",
-    ]);
+    expect(
+      nameGroup.members.map((m: { patientId: string }) => m.patientId),
+    ).toEqual(["p1", "p2"]);
     // PHI posture: markers only, no phone/email values on the wire.
     expect(nameGroup.members[0]).toHaveProperty("hasPhone", true);
     expect(nameGroup.members[0]).not.toHaveProperty("phone");

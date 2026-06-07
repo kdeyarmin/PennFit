@@ -37,14 +37,14 @@ function computeVendorFlags(env: NodeJS.ProcessEnv) {
     twilioVoice: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN),
     twilioSms: Boolean(
       env.TWILIO_ACCOUNT_SID &&
-        env.TWILIO_AUTH_TOKEN &&
-        env.TWILIO_MESSAGING_SERVICE_SID,
+      env.TWILIO_AUTH_TOKEN &&
+      env.TWILIO_MESSAGING_SERVICE_SID,
     ),
     twilioFax: Boolean(
       env.TWILIO_ACCOUNT_SID &&
-        env.TWILIO_AUTH_TOKEN &&
-        env.TWILIO_FAX_FROM_NUMBER &&
-        (env.RESUPPLY_VOICE_PUBLIC_BASE_URL || env.RAILWAY_PUBLIC_DOMAIN),
+      env.TWILIO_AUTH_TOKEN &&
+      env.TWILIO_FAX_FROM_NUMBER &&
+      (env.RESUPPLY_VOICE_PUBLIC_BASE_URL || env.RAILWAY_PUBLIC_DOMAIN),
     ),
     stripe: Boolean(env.STRIPE_SECRET_KEY),
     objectStorage: Boolean(env.SUPABASE_STORAGE_BUCKET_PRIVATE),

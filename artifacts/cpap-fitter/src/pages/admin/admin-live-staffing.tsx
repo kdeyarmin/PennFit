@@ -63,8 +63,14 @@ function StaffingBody({ data }: { data: LiveStaffingSnapshot }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3 text-sm">
-        <Stat label="On shift" value={`${data.onShiftAgents}/${data.activeAgents}`} />
-        <Stat label="Open conversations" value={String(data.totalOpenConversations)} />
+        <Stat
+          label="On shift"
+          value={`${data.onShiftAgents}/${data.activeAgents}`}
+        />
+        <Stat
+          label="Open conversations"
+          value={String(data.totalOpenConversations)}
+        />
         <Stat
           label="Unassigned backlog"
           value={String(data.unassignedOpenConversations)}

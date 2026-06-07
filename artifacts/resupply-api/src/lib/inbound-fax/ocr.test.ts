@@ -3,7 +3,10 @@
 // network call.
 
 import { describe, it, expect, vi } from "vitest";
-import type { AnthropicClient, AnthropicResponse } from "@workspace/resupply-ai";
+import type {
+  AnthropicClient,
+  AnthropicResponse,
+} from "@workspace/resupply-ai";
 
 import { extractFaxFields, type FaxOcrFields } from "./ocr";
 
@@ -63,7 +66,7 @@ describe("extractFaxFields", () => {
       client,
     });
     expect(r.status).toBe("unsupported");
-    expect((client.send as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(client.send as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 
   it("rejects empty media and oversize media", async () => {
@@ -107,7 +110,9 @@ describe("extractFaxFields", () => {
     });
     const req = (client.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(req.messages[0].content[0].type).toBe("document");
-    expect(req.messages[0].content[0].source.media_type).toBe("application/pdf");
+    expect(req.messages[0].content[0].source.media_type).toBe(
+      "application/pdf",
+    );
   });
 
   it("fails (not throws) on a model error", async () => {

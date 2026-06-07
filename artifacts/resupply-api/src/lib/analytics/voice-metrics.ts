@@ -43,7 +43,9 @@ function median(values: number[]): number | null {
     : sorted[mid]!;
 }
 
-export function aggregateVoiceMetrics(rows: VoiceCallRow[]): VoiceMetricsResult {
+export function aggregateVoiceMetrics(
+  rows: VoiceCallRow[],
+): VoiceMetricsResult {
   const byStatus: Record<string, number> = {};
   const byDirection = { inbound: 0, outbound: 0, other: 0 };
   const handleTimes: number[] = [];

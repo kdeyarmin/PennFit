@@ -78,7 +78,12 @@ export const faxOcrFieldsSchema = z
 export type FaxOcrFields = z.infer<typeof faxOcrFieldsSchema>;
 
 export type FaxOcrResult =
-  | { status: "extracted"; model: string; extractedAt: string; fields: FaxOcrFields }
+  | {
+      status: "extracted";
+      model: string;
+      extractedAt: string;
+      fields: FaxOcrFields;
+    }
   | { status: "offline" }
   | { status: "unsupported"; reason: string }
   | { status: "failed"; reason: string };
@@ -131,8 +136,13 @@ export async function extractFaxFields(input: {
    *  process-wide cached Anthropic client (null when no key). */
   client?: ReturnType<typeof getAnthropicClient>;
 }): Promise<FaxOcrResult> {
-  const contentType = (input.contentType ?? "").toLowerCase().split(";")[0]!.trim();
-  const isImage = (FAX_OCR_IMAGE_TYPES as readonly string[]).includes(contentType);
+  const contentType = (input.contentType ?? "")
+    .toLowerCase()
+    .split(";")[0]!
+    .trim();
+  const isImage = (FAX_OCR_IMAGE_TYPES as readonly string[]).includes(
+    contentType,
+  );
   const isPdf = contentType === FAX_OCR_PDF_TYPE;
   if (!isImage && !isPdf) {
     return {
@@ -156,14 +166,18 @@ export async function extractFaxFields(input: {
   // image/jpg isn't a real MIME; normalise so the API accepts it.
   const mediaType = contentType === "image/jpg" ? "image/jpeg" : contentType;
   const mediaBlock = isPdf
-    ? ({
+    ? {
         type: "document" as const,
-        source: { type: "base64" as const, media_type: "application/pdf" as const, data },
-      })
-    : ({
+        source: {
+          type: "base64" as const,
+          media_type: "application/pdf" as const,
+          data,
+        },
+      }
+    : {
         type: "image" as const,
         source: { type: "base64" as const, media_type: mediaType, data },
-      });
+      };
 
   const startedAt = Date.now();
   const result = await client.send({
@@ -172,7 +186,10 @@ export async function extractFaxFields(input: {
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [
-      { role: "user", content: [mediaBlock, { type: "text", text: USER_PROMPT }] },
+      {
+        role: "user",
+        content: [mediaBlock, { type: "text", text: USER_PROMPT }],
+      },
     ],
   });
 
