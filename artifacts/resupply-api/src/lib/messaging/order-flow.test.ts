@@ -27,10 +27,10 @@ import {
 const supabaseMock = installSupabaseMock();
 
 import {
-  decideCoverageBlock,
   placeResupplyOrderForConversation,
   reactivatePatient,
 } from "./order-flow";
+import { decideCoverageBlock } from "../billing/coverage-eligibility";
 import { invalidateFeatureFlagCache } from "../feature-flags";
 
 beforeEach(() => {

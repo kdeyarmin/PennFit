@@ -106,6 +106,101 @@ app server. Railway variables are strings, so use one of:
 Pin `known_hosts` to Office Ally's published host key — never use blind /
 `StrictHostKeyChecking=no` trust.
 
+## Real-time eligibility (optional — instant 271)
+
+By default an eligibility check submits the 270 over SFTP and the 271
+arrives later via the inbound poll (minutes). Office Ally is CAQH
+CORE-certified for **real-time** 270/271 over an HTTPS web service; when
+that's configured, `verifyEligibility()` POSTs the 270 and parses the 271
+**inline** (seconds), writing the check straight to `status='parsed'`.
+
+This is **fully optional and fail-soft**: configure it and the real-time
+path activates; leave it unconfigured (or hit a transient failure) and the
+check transparently falls back to the SFTP submit-and-poll path. It uses
+the real-time web-service credentials Office Ally issues **separately from
+the SFTP key**.
+
+### Two ways to configure (same resolution order as the SFTP path)
+
+- **A. Admin console (recommended).** On **Billing → Config →
+  Clearinghouse connection** there is a **Real-time eligibility (270/271)**
+  card: an **Enabled** toggle, endpoint URL, username, CORE sender/receiver
+  IDs, timeout, and **password**. All of these are saved to the
+  `clearinghouse_credentials` row. The password field is write-only — the
+  saved value is never shown back (GET returns only "set / not set"); leave
+  it blank on edit to keep the current password.
+- **B. Environment variables** (dev / preview, or no seeded DB row): set
+  all of `OFFICE_ALLY_REALTIME_URL`, `_USERNAME`, `_PASSWORD` (plus the
+  optional `_SENDER_ID` / `_RECEIVER_ID` / `_TIMEOUT_MS`).
+
+The resolver prefers the **DB row's** real-time fields; the **password**
+specifically uses the DB value when set and falls back to
+`OFFICE_ALLY_REALTIME_PASSWORD`. (Security note: a DB-stored password is
+held in **plaintext**, readable by the service-role client — unlike the
+SFTP key, which stays a file path. Prefer the env var if you'd rather keep
+the secret out of the database.)
+
+| Variable                           | Notes                                                                       |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `OFFICE_ALLY_REALTIME_PASSWORD`    | Password — DB value wins, this is the fallback. One of the two is required. |
+| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint (or set in the admin card)                   |
+| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username (or set in the admin card)                   |
+| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)                                      |
+| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`)                             |
+| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)                                |
+
+**Before going live, confirm against Office Ally's real-time companion
+guide:** the exact endpoint URL, the `SOAPAction`/auth placement, the
+`PayloadType` string, and whether the X12 payload is raw or base64. Those
+spots are marked `CONFIRM(oa-spec)` in
+`lib/resupply-integrations-office-ally/src/transport/realtime.ts`; the
+CORE vC2.2.0 SOAP envelope is the shipped default. The check still records
+the same `eligibility_checks` row and fires the same
+`eligibility.completed` webhook as the SFTP path — only the latency
+differs.
+
+**Diagnosing real-time:** the `eligibility.verify` audit row records
+`realtime` (true/false), the terminal `status`, and `latency_ms`, so you
+can see at a glance whether a check resolved inline and how fast. A
+real-time application error returned by the clearinghouse (HTTP 200 with a
+CORE `<ErrorCode>`) is surfaced as the failure reason rather than a generic
+"no 271" — and any real-time failure transparently falls back to the SFTP
+submit path, so the check still completes.
+
+## Eligibility gates (when to auto-check coverage)
+
+Once 270/271 results are flowing, two **admin-toggleable** gates consult
+the most recent parsed 271 at the moments a denial would otherwise slip
+through. Both live in the **Control Center** (Settings → feature flags),
+are **seeded OFF**, and are **fail-open** (a missing/stale result or any
+lookup error always lets the action proceed):
+
+| Flag                               | Decision point                                    | On a bad result                                                                 |
+| ---------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `resupply.eligibility_enforcement` | Patient **confirms a resupply** (SMS YES / email) | Raises a `resupply_coverage_blocked` CSR alert + holds the order for review.    |
+| `billing.eligibility_precheck`     | CSR **batch-submits 837P claims** to Office Ally  | Holds the batch and returns `eligibility_blocked` with the offending claim ids. |
+
+"Bad result" = the coverage's latest parsed 271 is **explicitly inactive**
+or **flags prior-auth-required** (within a 45-day freshness window). The
+decision matrix is shared (`lib/billing/coverage-eligibility.ts`) so both
+gates behave identically. Turn them on after you've verified eligibility is
+being run for the population (otherwise they mostly no-op / fail open).
+
+**Auto-refresh (opt-in).** A third flag,
+`billing.eligibility_precheck_refresh`, upgrades the claim precheck from
+"consult cache" to "check it now": when it's on **and real-time
+eligibility is configured**, the precheck runs a **fresh real-time 270**
+for any coverage in the batch with no recent result, instead of failing
+open. It's deduped per coverage and **capped at 10 fresh checks per
+batch** so a large submit can't fan out into a slow request; coverages
+beyond the cap fall back to consult-only. Off → cache-only. Because
+auto-firing 270s has a per-transaction cost, this is a separate opt-in
+from the cheap consult-only precheck.
+
+To populate the 271 cache the gates read, run eligibility from the patient
+page or the **Billing → Eligibility worklist** (instant when real-time is
+configured — see above).
+
 ## Same-or-Similar (HETS)
 
 Medicare Same-or-Similar (`/admin/.../same-or-similar`) is a **manual** CSR

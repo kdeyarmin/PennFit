@@ -16,10 +16,12 @@ import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-import type {
-  BillingProvider,
-  SftpTransportConfig,
-  SubmitterIdentity,
+import {
+  readOfficeAllyRealtimeConfigOrNull,
+  type BillingProvider,
+  type OfficeAllyRealtimeConfig,
+  type SftpTransportConfig,
+  type SubmitterIdentity,
 } from "@workspace/resupply-integrations-office-ally";
 
 import { logger } from "../logger";
@@ -41,6 +43,11 @@ export interface ResolvedClearinghouse {
   source: "db" | "env" | "stub";
   /** Null when neither DB row nor env are set. */
   config: SftpTransportConfig | null;
+  /** Real-time eligibility (270/271) config, or null when not enabled.
+   *  Built from the DB row's non-secret fields + the
+   *  OFFICE_ALLY_REALTIME_PASSWORD env secret, falling back to the
+   *  fully-env path. Independent of the SFTP `config` above. */
+  realtimeConfig: OfficeAllyRealtimeConfig | null;
   /** Null when DB row absent. */
   row: ClearinghouseRow | null;
   usageIndicator: "P" | "T";
@@ -120,6 +127,9 @@ export async function resolveClearinghouse(
   const env = opts.env ?? process.env;
   const slug = opts.slug ?? "office_ally";
   const row = await loadClearinghouse(supabase, slug);
+  // Real-time config is independent of the SFTP path — compute it once
+  // from (row, env) and surface it in every branch.
+  const realtimeConfig = buildRealtimeConfig(row, env);
   if (row) {
     return {
       source: "db",
@@ -132,6 +142,7 @@ export async function resolveClearinghouse(
         knownHostsPath: row.known_hosts_path,
         remoteInboxDir: row.remote_inbox_dir,
       },
+      realtimeConfig,
       usageIndicator: row.usage_indicator,
       submitter: {
         etin: row.etin,
@@ -158,6 +169,7 @@ export async function resolveClearinghouse(
         knownHostsPath: env.OFFICE_ALLY_KNOWN_HOSTS_PATH,
         remoteInboxDir: env.OFFICE_ALLY_REMOTE_INBOX?.trim() || "inbound",
       },
+      realtimeConfig,
       usageIndicator: env.OFFICE_ALLY_USAGE_INDICATOR === "P" ? "P" : "T",
       submitter: envSubmitter_(env) ?? stubSubmitter(),
     };
@@ -166,9 +178,62 @@ export async function resolveClearinghouse(
     source: "stub",
     row: null,
     config: null,
+    realtimeConfig,
     usageIndicator: "T",
     submitter: stubSubmitter(),
   };
+}
+
+/**
+ * Resolve the real-time eligibility config.
+ *
+ * A clearinghouse DB row is **authoritative** when present: it decides
+ * whether real-time is on (the admin toggle), so an env var can NEVER
+ * silently re-enable real-time when the row has it disabled or
+ * incompletely configured. The fully-env path
+ * (readOfficeAllyRealtimeConfigOrNull) applies ONLY when no DB row exists
+ * (dev/preview). Returns null when real-time isn't configured (or stub
+ * mode is forced).
+ */
+function buildRealtimeConfig(
+  row: ClearinghouseRow | null,
+  env: NodeJS.ProcessEnv,
+): OfficeAllyRealtimeConfig | null {
+  // Stub mode means "don't transmit anywhere" — honor it here too.
+  if (env.OFFICE_ALLY_STUB === "1") return null;
+  if (row) {
+    // The row owns the on/off decision; don't fall back to env when it's
+    // disabled or missing the endpoint/username.
+    if (!row.realtime_enabled || !row.realtime_url || !row.realtime_username) {
+      return null;
+    }
+    // Password precedence: the DB row's stored password wins (used as-is),
+    // with the OFFICE_ALLY_REALTIME_PASSWORD env var as a fallback
+    // (dev/preview). A blank stored value counts as "unset".
+    const dbPassword = row.realtime_password;
+    const password =
+      dbPassword && dbPassword.trim().length > 0
+        ? dbPassword
+        : env.OFFICE_ALLY_REALTIME_PASSWORD;
+    // CORE SenderID is mandatory; missing one (no override, no ETIN) means
+    // not configured rather than an empty <SenderID> the payer rejects.
+    const senderId = row.realtime_sender_id?.trim() || row.etin || "";
+    if (!password || !senderId) return null;
+    return {
+      url: row.realtime_url,
+      username: row.realtime_username,
+      password,
+      senderId,
+      receiverId: row.realtime_receiver_id?.trim() || "OFFICEALLY",
+      timeoutMs:
+        typeof row.realtime_timeout_ms === "number" &&
+        row.realtime_timeout_ms > 0
+          ? row.realtime_timeout_ms
+          : 30_000,
+    };
+  }
+  // No DB row at all → env-only path (dev/preview).
+  return readOfficeAllyRealtimeConfigOrNull(env);
 }
 
 // ── Loaders ─────────────────────────────────────────────────────────
@@ -203,7 +268,7 @@ async function loadClearinghouse(
     .schema("resupply")
     .from("clearinghouse_credentials")
     .select(
-      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, created_at, updated_at",
+      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, created_at, updated_at",
     )
     .eq("slug", slug)
     .eq("is_active", true)

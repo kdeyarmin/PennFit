@@ -77,6 +77,19 @@ const SUBMITTER: FieldDef[] = [
     placeholder: "+12155551234",
   },
 ];
+const REALTIME: FieldDef[] = [
+  {
+    key: "realtimeUrl",
+    label: "Real-time endpoint URL",
+    placeholder: "https://…",
+  },
+  { key: "realtimeUsername", label: "Real-time username" },
+  { key: "realtimeSenderId", label: "CORE Sender ID (default: ETIN)" },
+  {
+    key: "realtimeReceiverId",
+    label: "CORE Receiver ID (default: OFFICEALLY)",
+  },
+];
 
 const NULLABLE = new Set<keyof ClearinghouseBody>([
   "remoteArchiveDir",
@@ -84,6 +97,10 @@ const NULLABLE = new Set<keyof ClearinghouseBody>([
   "contactName",
   "contactPhoneE164",
   "notes",
+  "realtimeUrl",
+  "realtimeUsername",
+  "realtimeSenderId",
+  "realtimeReceiverId",
 ]);
 
 const INPUT_STYLE = { borderColor: "hsl(var(--line))" } as const;
@@ -269,6 +286,84 @@ export function AdminBillingConfigClearinghousePage() {
       <Card title="Submitter identity">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {SUBMITTER.map(textField)}
+        </div>
+      </Card>
+
+      <Card title="Real-time eligibility (270/271)">
+        <p className="text-sm mb-3" style={{ color: "hsl(var(--ink-3))" }}>
+          Optional. When enabled, an eligibility check returns the 271 inline
+          (seconds) instead of submitting over SFTP and waiting for the poll
+          (minutes). Enter the password below (stored on the connection) or set{" "}
+          <code>OFFICE_ALLY_REALTIME_PASSWORD</code> — the saved value is never
+          shown back. Confirm the endpoint + auth against Office Ally&rsquo;s
+          real-time companion guide before enabling in production.
+        </p>
+        <label className="flex items-center gap-2 text-sm mb-3">
+          <input
+            type="checkbox"
+            checked={body.realtimeEnabled}
+            onChange={(e) => {
+              setSaved(false);
+              setBody((p) => ({ ...p, realtimeEnabled: e.target.checked }));
+            }}
+          />
+          <span style={{ color: "hsl(var(--ink-2))" }}>
+            Enabled (use real-time for eligibility)
+          </span>
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {REALTIME.map(textField)}
+          <label className="block text-sm">
+            <span style={{ color: "hsl(var(--ink-2))" }}>
+              Timeout (ms, default 30000)
+            </span>
+            <input
+              type="number"
+              min={1000}
+              max={120000}
+              step={1000}
+              className="mt-1 w-full rounded-md border px-2.5 py-1.5 text-sm"
+              style={INPUT_STYLE}
+              value={body.realtimeTimeoutMs ?? ""}
+              placeholder="30000"
+              onChange={(e) => {
+                setSaved(false);
+                const raw = e.target.value.trim();
+                const n = Number.parseInt(raw, 10);
+                setBody((p) => ({
+                  ...p,
+                  realtimeTimeoutMs:
+                    raw === "" || !Number.isFinite(n) ? null : n,
+                }));
+              }}
+            />
+          </label>
+          <label className="block text-sm">
+            <span style={{ color: "hsl(var(--ink-2))" }}>
+              Password{" "}
+              {existing?.realtimePasswordSet
+                ? "(saved — leave blank to keep)"
+                : "(or set via env)"}
+            </span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              className="mt-1 w-full rounded-md border px-2.5 py-1.5 text-sm"
+              style={INPUT_STYLE}
+              value={body.realtimePassword ?? ""}
+              placeholder={
+                existing?.realtimePasswordSet ? "•••••••• (unchanged)" : ""
+              }
+              onChange={(e) => {
+                setSaved(false);
+                const v = e.target.value;
+                setBody((p) => ({
+                  ...p,
+                  realtimePassword: v === "" ? null : v,
+                }));
+              }}
+            />
+          </label>
         </div>
       </Card>
 

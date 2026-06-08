@@ -34,13 +34,29 @@ export interface ClearinghouseBody {
   contactPhoneE164: string | null;
   isActive: boolean;
   notes: string | null;
+  // Real-time eligibility (270/271) config. The password (below) is
+  // write-only; everything else round-trips via GET.
+  realtimeEnabled: boolean;
+  realtimeUrl: string | null;
+  realtimeUsername: string | null;
+  realtimeSenderId: string | null;
+  realtimeReceiverId: string | null;
+  realtimeTimeoutMs: number | null;
+  /** Write-only — sent on save, never returned by GET. Blank on edit
+   *  keeps the currently-stored password. */
+  realtimePassword: string | null;
 }
 
-export interface Clearinghouse extends ClearinghouseBody {
+export interface Clearinghouse extends Omit<
+  ClearinghouseBody,
+  "realtimePassword"
+> {
   id: string;
   lastPolledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Whether a real-time password is stored (the value is never returned). */
+  realtimePasswordSet: boolean;
 }
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -131,6 +147,13 @@ export function emptyClearinghouseBody(): ClearinghouseBody {
     contactPhoneE164: null,
     isActive: true,
     notes: null,
+    realtimeEnabled: false,
+    realtimeUrl: null,
+    realtimeUsername: null,
+    realtimeSenderId: null,
+    realtimeReceiverId: null,
+    realtimeTimeoutMs: null,
+    realtimePassword: null,
   };
 }
 
@@ -154,6 +177,15 @@ export function clearinghouseToBody(c: Clearinghouse): ClearinghouseBody {
     contactPhoneE164: c.contactPhoneE164,
     isActive: c.isActive,
     notes: c.notes,
+    realtimeEnabled: c.realtimeEnabled,
+    realtimeUrl: c.realtimeUrl,
+    realtimeUsername: c.realtimeUsername,
+    realtimeSenderId: c.realtimeSenderId,
+    realtimeReceiverId: c.realtimeReceiverId,
+    realtimeTimeoutMs: c.realtimeTimeoutMs,
+    // Always blank on load — entering a value replaces the stored one;
+    // leaving it blank keeps the current password.
+    realtimePassword: null,
   };
 }
 

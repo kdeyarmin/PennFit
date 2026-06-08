@@ -1,22 +1,28 @@
-// Eligibility verifier — round-trip 270 → upload → poll 271 →
-// persist parsed result.
+// Eligibility verifier — build a 270 and resolve the 271 via one of two
+// transports:
 //
-// The 271 doesn't arrive inline; Office Ally drops it in the
-// outbound SFTP dir alongside 999/277CA/835. The inbound poller
-// (worker/jobs/office-ally-inbound-poll.ts) needs a small extension
-// to dispatch 271s — for now this module returns the queued state
-// and the operator polls the eligibility_checks row to see when the
-// 271 lands. The poller extension lands in a follow-up alongside
-// the classifyEdiPayload("271") update.
+//   * Real-time (preferred when OFFICE_ALLY_REALTIME_* is configured):
+//     POST the 270 to Office Ally's HTTPS service and parse the 271
+//     INLINE — the row is written status='parsed' with benefits in one
+//     request (seconds). See lib/.../transport/realtime.ts.
+//   * SFTP submit-and-poll (fallback / default): upload the 270 over
+//     SFTP and write the row status='submitted'. The 271 arrives later
+//     in the outbound dir and the inbound poll's dispatch271()
+//     (worker/jobs/office-ally-inbound-poll.ts) fills in is_active /
+//     deductible / etc and flips the row to 'parsed' (minutes).
+//
+// The 271 → row mapping and the eligibility.completed webhook are shared
+// with the poller via ./eligibility-271 so both paths write identical
+// rows. A real-time failure falls through to the SFTP path, so a flaky
+// endpoint never blocks the check.
 //
 // Flow:
 //   1. Look up the insurance_coverage_id + payer_profile_id + patient.
 //   2. Allocate control numbers (monotonic ISA13).
 //   3. Build the 270 via build270().
-//   4. Upload via the existing OA SFTP transport.
-//   5. Insert an eligibility_checks row in status='submitted'.
-//
-// The poller fills in is_active / deductible / etc when the 271 arrives.
+//   4. Real-time: request 271 inline → insert status='parsed'. On failure
+//      OR when real-time is unconfigured, fall to (5).
+//   5. SFTP/file: upload the 270 and insert status='submitted'.
 
 import {
   type Database,
@@ -26,12 +32,19 @@ import {
   allocateControlNumbers,
   build270,
   createFileTransport,
+  createRealtimeEligibilityTransport,
   createSftpTransport,
+  parse271,
   resolveOutboxDir,
   type SubmissionTransport,
 } from "@workspace/resupply-integrations-office-ally";
 
 import { logger } from "../logger";
+import { publishEvent } from "../webhooks/publisher";
+import {
+  eligibilityCompletedEvent,
+  parsed271ToCheckColumns,
+} from "./eligibility-271";
 import {
   resolveBillingIdentity,
   resolveClearinghouse,
@@ -67,6 +80,13 @@ export interface VerifyEligibilityResult {
   traceReference: string;
   uploadOk: boolean;
   errorMessage: string | null;
+  /** True when the 271 was obtained inline via the real-time service
+   *  (row is already status='parsed'); false for the SFTP submit path. */
+  realtime: boolean;
+  /** Terminal status written to the row. */
+  status: "parsed" | "submitted" | "transport_failed";
+  /** Real-time round-trip in ms (null for the SFTP submit path). */
+  latencyMs: number | null;
 }
 
 /**
@@ -176,6 +196,73 @@ export async function verifyEligibility(
   });
 
   const fileName = `PF-ELI-${built.interchangeControlNumber}.txt`;
+
+  // Real-time path: when Office Ally real-time eligibility is configured
+  // (resolved from the clearinghouse DB row + env password, or fully via
+  // env), POST the 270 and parse the 271 inline so the check resolves in
+  // one request. Any real-time failure falls through to the SFTP submit
+  // path below, so a flaky endpoint never blocks the check.
+  const realtimeConfig = clearinghouse.realtimeConfig;
+  if (realtimeConfig) {
+    const realtime = createRealtimeEligibilityTransport(realtimeConfig);
+    const startedAt = Date.now();
+    const res = await realtime.requestEligibility({ payload: built.payload });
+    const latencyMs = Date.now() - startedAt;
+    if (res.ok) {
+      const parsed = parse271(res.payload271);
+      const realtimeRow: Database["resupply"]["Tables"]["eligibility_checks"]["Insert"] =
+        {
+          insurance_coverage_id: coverage.id,
+          patient_id: coverage.patient_id,
+          payer_profile_id: payerProfile.id,
+          service_hcpcs: input.hcpcsCode ?? null,
+          isa_control_number: built.interchangeControlNumber,
+          gs_control_number: built.groupControlNumber,
+          outbound_file_name: fileName,
+          status: "parsed",
+          requested_by_email: input.requestedByEmail,
+          responded_at: new Date().toISOString(),
+          ...parsed271ToCheckColumns(parsed),
+        };
+      const { data: rtInserted, error: rtErr } = await supabase
+        .schema("resupply")
+        .from("eligibility_checks")
+        .insert(realtimeRow)
+        .select("id")
+        .single();
+      if (rtErr) throw rtErr;
+      void publishEvent(
+        eligibilityCompletedEvent(
+          {
+            eligibilityCheckId: rtInserted.id,
+            patientId: coverage.patient_id,
+            insuranceCoverageId: coverage.id,
+          },
+          parsed,
+        ),
+      );
+      // Operational only — no PHI (timing + outcome, no patient detail).
+      logger.info(
+        { event: "eligibility.realtime.resolved", latencyMs },
+        "verifyEligibility: real-time 271 resolved",
+      );
+      return {
+        eligibilityCheckId: rtInserted.id,
+        isaControlNumber: built.interchangeControlNumber,
+        traceReference: built.traceReference,
+        uploadOk: true,
+        errorMessage: null,
+        realtime: true,
+        status: "parsed",
+        latencyMs,
+      };
+    }
+    logger.warn(
+      { kind: res.kind, message: res.message, latencyMs },
+      "verifyEligibility: real-time path failed; falling back to SFTP submit",
+    );
+  }
+
   const transport: SubmissionTransport = clearinghouse.config
     ? createSftpTransport(clearinghouse.config)
     : createFileTransport({ outboxDir: resolveOutboxDir() });
@@ -212,6 +299,9 @@ export async function verifyEligibility(
     traceReference: built.traceReference,
     uploadOk: upload.ok,
     errorMessage: upload.ok ? null : upload.message,
+    realtime: false,
+    status: upload.ok ? "submitted" : "transport_failed",
+    latencyMs: null,
   };
 }
 

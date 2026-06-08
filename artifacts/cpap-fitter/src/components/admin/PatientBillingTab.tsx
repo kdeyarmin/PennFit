@@ -29,6 +29,10 @@ import {
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
+import {
+  listInsuranceCoverages,
+  verifyEligibility,
+} from "@/lib/admin/clinical-tabs-api";
 import { csrfHeader } from "@/lib/csrf";
 
 const BASE = "/resupply-api";
@@ -162,6 +166,19 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
       ),
     staleTime: 30_000,
   });
+  const coverages = useQuery({
+    queryKey: ["patient-coverages", patientId],
+    queryFn: () => listInsuranceCoverages(patientId),
+    staleTime: 60_000,
+  });
+
+  // The coverage we run eligibility against from this tab: the primary,
+  // or the first on file. (Multi-coverage selection lives in the claim
+  // workbench; here we optimize for the one-click common case.)
+  const billableCoverage = useMemo(() => {
+    const list = coverages.data?.coverages ?? [];
+    return list.find((c) => c.rank === "primary") ?? list[0] ?? null;
+  }, [coverages.data]);
 
   // Sum patient responsibility across paid/denied/closed/appealed
   // claims (the only statuses that contribute to a current balance).
@@ -286,6 +303,46 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
     },
     onError: (err) => {
       setPacketError(err instanceof Error ? err.message : "Failed.");
+    },
+  });
+
+  // ── Run eligibility (270/271) for the billable coverage, right here —
+  // no need to leave the patient for the system-wide queue. Real-time
+  // (when configured) answers inline; otherwise the 270 is submitted and
+  // the 271 lands shortly. Either way the new row shows in the list below.
+  const [eligMessage, setEligMessage] = useState<string | null>(null);
+  const [eligError, setEligError] = useState<string | null>(null);
+  const checkEligibility = useMutation({
+    mutationFn: async () => {
+      if (!billableCoverage) {
+        throw new Error("Add an insurance coverage first.");
+      }
+      return verifyEligibility(patientId, billableCoverage.id);
+    },
+    onSuccess: (r) => {
+      setEligError(null);
+      if (r.realtime && r.status === "parsed") {
+        const secs =
+          typeof r.latencyMs === "number"
+            ? ` (${(r.latencyMs / 1000).toFixed(1)}s)`
+            : "";
+        setEligMessage(`Verified in real time${secs} — result below.`);
+      } else if (r.status === "submitted") {
+        setEligMessage(
+          "270 submitted — the 271 lands shortly; refresh in a minute.",
+        );
+      } else {
+        setEligMessage(r.errorMessage ?? "Submitted.");
+      }
+      void qc.invalidateQueries({
+        queryKey: ["patient-eligibility", patientId],
+      });
+    },
+    onError: (err) => {
+      setEligMessage(null);
+      setEligError(
+        err instanceof Error ? err.message : "Eligibility check failed.",
+      );
     },
   });
 
@@ -423,15 +480,46 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
         title="Recent eligibility checks"
         subtitle="Latest 270/271 round trips for this patient"
         action={
-          <Link
-            href="/admin/billing/eligibility"
-            className="text-xs underline"
-            style={{ color: "hsl(var(--penn-navy))" }}
-          >
-            System-wide →
-          </Link>
+          <div className="flex items-center gap-3">
+            <Button
+              intent="secondary"
+              size="sm"
+              disabled={checkEligibility.isPending || !billableCoverage}
+              isLoading={checkEligibility.isPending}
+              onClick={() => {
+                setEligMessage(null);
+                setEligError(null);
+                checkEligibility.mutate();
+              }}
+              data-testid="patient-billing-check-eligibility"
+              title={
+                billableCoverage
+                  ? `Run a 270/271 for ${billableCoverage.payerName}`
+                  : "Add an insurance coverage first"
+              }
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              {checkEligibility.isPending ? "Checking…" : "Check eligibility"}
+            </Button>
+            <Link
+              href="/admin/billing/eligibility"
+              className="text-xs underline"
+              style={{ color: "hsl(var(--penn-navy))" }}
+            >
+              System-wide →
+            </Link>
+          </div>
         }
       >
+        {(eligMessage || eligError) && (
+          <p
+            className="text-xs mb-2"
+            style={{ color: eligError ? "#b91c1c" : "#15803d" }}
+            data-testid="patient-billing-eligibility-result"
+          >
+            {eligError ?? eligMessage}
+          </p>
+        )}
         {eligibility.isPending ? (
           <Spinner label="Loading eligibility…" />
         ) : eligibility.isError ? (

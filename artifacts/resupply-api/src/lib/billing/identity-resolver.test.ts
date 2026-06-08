@@ -174,3 +174,127 @@ describe("resolveClearinghouse", () => {
     expect(result.config?.port).toBe(22);
   });
 });
+
+describe("resolveClearinghouse — real-time eligibility config", () => {
+  const REALTIME_ROW = {
+    id: "ch_1",
+    slug: "office_ally",
+    etin: "DBETIN",
+    usage_indicator: "T",
+    sftp_host: "h",
+    sftp_port: 22,
+    sftp_username: "u",
+    private_key_path: "/k",
+    known_hosts_path: "/kh",
+    remote_inbox_dir: "inbound",
+    realtime_enabled: true,
+    realtime_url: "https://oa.example/rt",
+    realtime_username: "rtuser",
+    realtime_sender_id: null,
+    realtime_receiver_id: null,
+    realtime_timeout_ms: null,
+  } as const;
+
+  it("builds realtimeConfig from the DB row + env password", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: REALTIME_ROW,
+    });
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_PASSWORD: "secret" },
+    });
+    expect(result.realtimeConfig).not.toBeNull();
+    expect(result.realtimeConfig?.url).toBe("https://oa.example/rt");
+    expect(result.realtimeConfig?.username).toBe("rtuser");
+    expect(result.realtimeConfig?.password).toBe("secret");
+    // sender id falls back to the ETIN; receiver to OFFICEALLY; default timeout.
+    expect(result.realtimeConfig?.senderId).toBe("DBETIN");
+    expect(result.realtimeConfig?.receiverId).toBe("OFFICEALLY");
+    expect(result.realtimeConfig?.timeoutMs).toBe(30000);
+  });
+
+  it("returns null realtimeConfig when the password env is absent", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: REALTIME_ROW,
+    });
+    const result = await resolveClearinghouse({ env: {} });
+    expect(result.realtimeConfig).toBeNull();
+  });
+
+  it("returns null realtimeConfig in stub mode even with the password set", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: REALTIME_ROW,
+    });
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_PASSWORD: "secret", OFFICE_ALLY_STUB: "1" },
+    });
+    expect(result.realtimeConfig).toBeNull();
+  });
+
+  it("falls back to the fully-env real-time path when no DB row exists", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: null,
+    });
+    const result = await resolveClearinghouse({
+      env: {
+        ...FULL_ENV,
+        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        OFFICE_ALLY_REALTIME_USERNAME: "envuser",
+        OFFICE_ALLY_REALTIME_PASSWORD: "envpass",
+      },
+    });
+    expect(result.source).toBe("env");
+    expect(result.realtimeConfig?.url).toBe("https://oa.example/env-rt");
+    expect(result.realtimeConfig?.username).toBe("envuser");
+  });
+
+  it("uses the DB row's explicit sender/receiver/timeout when set", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: {
+        ...REALTIME_ROW,
+        realtime_sender_id: "SND",
+        realtime_receiver_id: "RCV",
+        realtime_timeout_ms: 9000,
+      },
+    });
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_PASSWORD: "secret" },
+    });
+    expect(result.realtimeConfig?.senderId).toBe("SND");
+    expect(result.realtimeConfig?.receiverId).toBe("RCV");
+    expect(result.realtimeConfig?.timeoutMs).toBe(9000);
+  });
+
+  it("prefers the DB row's stored password over the env var", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...REALTIME_ROW, realtime_password: "dbsecret" },
+    });
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_PASSWORD: "envsecret" },
+    });
+    expect(result.realtimeConfig?.password).toBe("dbsecret");
+  });
+
+  it("uses the DB row's stored password when no env password is set", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...REALTIME_ROW, realtime_password: "dbsecret" },
+    });
+    const result = await resolveClearinghouse({ env: {} });
+    expect(result.realtimeConfig?.password).toBe("dbsecret");
+  });
+
+  it("does NOT let env vars re-enable real-time when the DB row has it disabled", async () => {
+    // The admin toggle is off — env vars must not silently turn it back on.
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...REALTIME_ROW, realtime_enabled: false },
+    });
+    const result = await resolveClearinghouse({
+      env: {
+        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        OFFICE_ALLY_REALTIME_USERNAME: "envuser",
+        OFFICE_ALLY_REALTIME_PASSWORD: "envpass",
+        OFFICE_ALLY_ETIN: "ENVETIN",
+      },
+    });
+    expect(result.realtimeConfig).toBeNull();
+  });
+});

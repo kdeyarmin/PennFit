@@ -12,7 +12,7 @@
 // These tests verify the corrected mapping via buildOneDetail's return
 // value.
 
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 
 // The supabase mock must be imported (registering its hoisted
 // vi.mock("@workspace/resupply-db", …)) BEFORE @workspace/resupply-db is
@@ -25,9 +25,19 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// The eligibility precheck is gated by this flag — force it ON.
+vi.mock("../feature-flags", () => ({
+  isFeatureEnabled: vi.fn(
+    async (key: string) => key === "billing.eligibility_precheck",
+  ),
+}));
+
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { buildOneDetail } from "./office-ally-batch";
+import {
+  buildOneDetail,
+  executeOfficeAllyBatchSubmit,
+} from "./office-ally-batch";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -94,6 +104,61 @@ function stageMinimalDetail(
 // ---------------------------------------------------------------------------
 // billedCents = billed_cents × quantity (the PR's core change)
 // ---------------------------------------------------------------------------
+
+describe("executeOfficeAllyBatchSubmit — eligibility precheck", () => {
+  it("returns eligibility_blocked (before transmitting) when a claim's coverage is inactive", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        {
+          id: "claim-1",
+          payer_profile_id: "pp-1",
+          status: "draft",
+          insurance_coverage_id: "cov-1",
+          patient_id: "pat-1",
+        },
+      ],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: {
+        id: "pp-1",
+        payer_legal_name: "Aetna",
+        office_ally_payer_id: "60054",
+        paper_only: false,
+        claim_format: "837p",
+        is_active: true,
+        edi_enrollment_status: "enrolled",
+      },
+    });
+    // getCachedEligibility(cov-1) → inactive parsed 271
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: "eli-1",
+        is_active: false,
+        requires_prior_auth: false,
+        status: "parsed",
+        responded_at: new Date().toISOString(),
+      },
+    });
+
+    const result = await executeOfficeAllyBatchSubmit({
+      claimIds: ["claim-1"],
+      adminEmail: "ops@example.com",
+      adminUserId: "u-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("eligibility_blocked");
+      const blocked = result.detail.blocked as Array<{
+        claimId: string;
+        reason: string;
+      }>;
+      expect(blocked).toHaveLength(1);
+      expect(blocked[0]!.claimId).toBe("claim-1");
+      expect(blocked[0]!.reason).toBe("inactive");
+    }
+  });
+});
 
 describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity", () => {
   it("multiplies billed_cents by quantity to produce the extended line charge", async () => {

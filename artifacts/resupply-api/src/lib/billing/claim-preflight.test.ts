@@ -80,6 +80,57 @@ describe("preflightClaim", () => {
     expect(out.errorCount).toBe(0);
   });
 
+  it("surfaces active coverage from a recent parsed 271", async () => {
+    stageHappyPath();
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: "eli-1",
+        is_active: true,
+        in_network: true,
+        requires_prior_auth: false,
+        responded_at: "2026-05-20T10:00:00.000Z",
+        requested_at: "2026-05-20T09:59:00.000Z",
+      },
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "eligibility");
+    expect(item?.severity).toBe("ok");
+    expect(item?.label).toBe("Coverage active");
+    expect(item?.detail).toContain("2026-05-20");
+    expect(item?.detail).toContain("in-network");
+    expect(out.readyToSubmit).toBe(true);
+  });
+
+  it("warns (without blocking) when the cached 271 shows the plan inactive", async () => {
+    stageHappyPath();
+    stageSupabaseResponse("eligibility_checks", "select", {
+      data: {
+        id: "eli-2",
+        is_active: false,
+        in_network: null,
+        requires_prior_auth: false,
+        responded_at: "2026-05-18T10:00:00.000Z",
+        requested_at: "2026-05-18T09:59:00.000Z",
+      },
+    });
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "eligibility");
+    expect(item?.severity).toBe("warning");
+    expect(item?.label).toBe("Coverage shows inactive");
+    // Advisory only — eligibility never flips the submit gate.
+    expect(out.readyToSubmit).toBe(true);
+    expect(out.errorCount).toBe(0);
+  });
+
+  it("warns when there is no recent eligibility check on file", async () => {
+    stageHappyPath();
+    // eligibility_checks unstaged → getCachedEligibility returns null
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "eligibility");
+    expect(item?.severity).toBe("warning");
+    expect(item?.label).toBe("Eligibility not verified recently");
+  });
+
   it("surfaces a non-blocking denial-risk warning from the history RPC", async () => {
     stageHappyPath();
     // Payer has denied 40% of recent E0601 claims (n=50, ≥ defaults).

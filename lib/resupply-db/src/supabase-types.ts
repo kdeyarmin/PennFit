@@ -2699,6 +2699,13 @@ export interface Database {
           is_active: boolean;
           last_polled_at: string | null;
           notes: string | null;
+          realtime_enabled: boolean;
+          realtime_url: string | null;
+          realtime_username: string | null;
+          realtime_sender_id: string | null;
+          realtime_receiver_id: string | null;
+          realtime_timeout_ms: number | null;
+          realtime_password: string | null;
           created_at: string;
           updated_at: string;
         };

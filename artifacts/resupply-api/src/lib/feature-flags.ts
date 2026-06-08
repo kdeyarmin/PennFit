@@ -51,6 +51,8 @@ export const FEATURE_FLAG_KEYS = [
   "cart_abandonment.dispatcher",
   "ai_billing.suggestions",
   "billing.auto_submit_claims",
+  "billing.eligibility_precheck",
+  "billing.eligibility_precheck_refresh",
   "smart_triggers.dispatcher",
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
