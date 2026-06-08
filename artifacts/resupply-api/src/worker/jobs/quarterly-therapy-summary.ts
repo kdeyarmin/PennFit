@@ -131,10 +131,23 @@ async function loadOptInStatuses(
       );
       continue;
     }
+    const rowCounts = new Map<string, number>();
+    const prefsByEmail = new Map<string, CommunicationPreferences>();
     for (const c of custRows ?? []) {
       if (!c.email_lower) continue;
-      const prefs = readPrefs(c.communication_preferences ?? null);
-      byEmail.set(c.email_lower, {
+      rowCounts.set(c.email_lower, (rowCounts.get(c.email_lower) ?? 0) + 1);
+      if (!prefsByEmail.has(c.email_lower)) {
+        prefsByEmail.set(
+          c.email_lower,
+          readPrefs(c.communication_preferences ?? null),
+        );
+      }
+    }
+    for (const [email, count] of rowCounts) {
+      if (count !== 1) continue;
+      const prefs = prefsByEmail.get(email);
+      if (!prefs) continue;
+      byEmail.set(email, {
         optedIn: shouldSendEmail(prefs, "marketing"),
         hadShopCustomer: true,
       });

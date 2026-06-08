@@ -71,10 +71,19 @@ export async function persistTherapyNights(
   // Chunked to keep the PostgREST request body bounded.
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const dedupedChunk = [
+      ...new Map(
+        chunk.map((row) => [
+          `${String(row.patient_id)}|${String(row.night_date)}|${String(row.source)}`,
+          row,
+        ]),
+      ).values(),
+    ];
     const { error } = await supabase
       .schema("resupply")
       .from("patient_therapy_nights")
-      .upsert(rows.slice(i, i + CHUNK), {
+      .upsert(dedupedChunk, {
         onConflict: "patient_id,night_date,source",
       });
     if (error) throw error;
