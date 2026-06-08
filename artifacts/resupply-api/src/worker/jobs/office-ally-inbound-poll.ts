@@ -60,6 +60,7 @@ import {
   downloadFile,
   listOutboundFiles,
   parse271,
+  parse277,
   parse277CA,
   parse835,
   parse999,
@@ -91,6 +92,7 @@ export interface PollStats {
   dispatched: number;
   dispatch999: number;
   dispatch277ca: number;
+  dispatch277: number;
   dispatch835: number;
   dispatch271: number;
   dispatchUnknown: number;
@@ -113,6 +115,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     dispatched: 0,
     dispatch999: 0,
     dispatch277ca: 0,
+    dispatch277: 0,
     dispatch835: 0,
     dispatch271: 0,
     dispatchUnknown: 0,
@@ -311,6 +314,10 @@ async function processRemoteFile(
       case "271":
         await dispatch271(supabase, row.id, download.content);
         stats.dispatch271 += 1;
+        break;
+      case "277":
+        await dispatch277(supabase, row.id, download.content);
+        stats.dispatch277 += 1;
         break;
       default:
         stats.dispatchUnknown += 1;
@@ -715,6 +722,62 @@ export async function dispatch271(
       requires_prior_auth: parsed.requiresPriorAuth,
     },
   });
+}
+
+/**
+ * Ingest a 277 claim-status RESPONSE (005010X212). Matches each claim
+ * loop to its claim_status_checks row by the ISA control number embedded
+ * in the echoed trace reference (same scheme as dispatch271) and stamps
+ * the parsed category/status + amounts. Fires a webhook per matched
+ * claim so the billing queue can react without polling.
+ */
+export async function dispatch277(
+  supabase: SupabaseClient,
+  inboundFileId: string,
+  content: string,
+): Promise<void> {
+  const parsed = parse277(content);
+  for (const claim of parsed.claims) {
+    const trace = claim.traceReference;
+    if (!trace) continue;
+    // trace = `<etin>-<isaCtl>-<stCtl>-<nonce>`; the ISA control number
+    // is the second hyphen-delimited segment (see build276 / build270).
+    const isaCtl = trace.split("-")[1] ?? "";
+    if (!isaCtl) continue;
+    const { data: check } = await supabase
+      .schema("resupply")
+      .from("claim_status_checks")
+      .select("id, claim_id")
+      .eq("isa_control_number", isaCtl)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!check) continue;
+    await supabase
+      .schema("resupply")
+      .from("claim_status_checks")
+      .update({
+        status: "parsed",
+        outcome: claim.outcome,
+        category_code: claim.categoryCode,
+        status_code: claim.statusCode,
+        total_charge_cents: claim.totalChargeCents,
+        total_paid_cents: claim.totalPaidCents,
+        parsed_response_json: claim as unknown as Json,
+        responded_at: new Date().toISOString(),
+        applied_to_inbound_file_id: inboundFileId,
+      })
+      .eq("id", check.id);
+    // IDs + coarse outcome only — no PHI in the webhook payload.
+    void publishEvent({
+      eventType: "claim_status.completed",
+      payload: {
+        claim_status_check_id: check.id,
+        claim_id: check.claim_id,
+        outcome: claim.outcome,
+      },
+    });
+  }
 }
 
 function summarise999(p: Parsed999): Record<string, unknown> {

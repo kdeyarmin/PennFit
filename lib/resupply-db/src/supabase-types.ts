@@ -1831,6 +1831,36 @@ export interface Database {
         >;
         Relationships: [];
       };
+      claim_status_checks: {
+        Row: {
+          id: string;
+          claim_id: string;
+          payer_profile_id: string | null;
+          isa_control_number: string | null;
+          gs_control_number: string | null;
+          outbound_file_name: string | null;
+          trace_reference: string | null;
+          status: "submitted" | "transport_failed" | "parsed" | "error";
+          category_code: string | null;
+          status_code: string | null;
+          outcome: string | null;
+          total_charge_cents: number | null;
+          total_paid_cents: number | null;
+          parsed_response_json: Json | null;
+          error_message: string | null;
+          requested_by_email: string;
+          requested_at: string;
+          responded_at: string | null;
+          applied_to_inbound_file_id: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_status_checks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_status_checks"]["Row"]
+        >;
+        Relationships: [];
+      };
       locations: {
         Row: {
           id: string;
@@ -2688,7 +2718,7 @@ export interface Database {
           file_name: string;
           file_sha256: string;
           file_size_bytes: number;
-          file_kind: "999" | "277ca" | "835" | "271" | "unknown";
+          file_kind: "999" | "277ca" | "277" | "835" | "271" | "unknown";
           parse_summary_json: Json;
           dispatch_status:
             | "pending"
