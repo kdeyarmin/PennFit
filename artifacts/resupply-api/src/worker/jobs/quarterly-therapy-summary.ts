@@ -124,7 +124,13 @@ async function loadOptInStatuses(
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", chunk);
-    if (error) throw error;
+    if (error) {
+      logger.warn(
+        { err: error, chunkSize: chunk.length },
+        "quarterly-summary: opt-in batch lookup failed (treating as no shop_customer)",
+      );
+      continue;
+    }
     for (const c of custRows ?? []) {
       if (!c.email_lower) continue;
       const prefs = readPrefs(c.communication_preferences ?? null);
