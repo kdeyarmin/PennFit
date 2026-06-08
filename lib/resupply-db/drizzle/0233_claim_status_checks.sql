@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS "resupply"."claim_status_checks" (
   "requested_by_email" text NOT NULL,
   "requested_at" timestamp with time zone NOT NULL DEFAULT now(),
   "responded_at" timestamp with time zone,
-  "applied_to_inbound_file_id" uuid,
+  "applied_to_inbound_file_id" uuid
+    REFERENCES "resupply"."clearinghouse_inbound_files"("id") ON DELETE SET NULL,
   CONSTRAINT "claim_status_checks_status_chk" CHECK (
     "status" IN ('submitted', 'transport_failed', 'parsed', 'error')
   )
@@ -47,3 +48,7 @@ CREATE INDEX IF NOT EXISTS "claim_status_checks_isa_idx"
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "claim_status_checks_status_idx"
   ON "resupply"."claim_status_checks" ("status");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "claim_status_checks_inbound_file_idx"
+  ON "resupply"."claim_status_checks" ("applied_to_inbound_file_id")
+  WHERE "applied_to_inbound_file_id" IS NOT NULL;
