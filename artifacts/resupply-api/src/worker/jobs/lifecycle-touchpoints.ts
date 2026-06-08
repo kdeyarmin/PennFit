@@ -158,8 +158,13 @@ async function loadOptInStatuses(
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", chunk);
-    if (error) throw error;
-    for (const r of rows ?? []) {
+    if (error) {
+      logger.warn(
+        { err: error, chunkSize: chunk.length },
+        "lifecycle-touchpoints: opt-in batch lookup failed (treating as no shop_customer)",
+      );
+      continue;
+    }
       if (!r.email_lower) continue;
       const prefs = readPrefs(r.communication_preferences ?? null);
       byEmail.set(r.email_lower, {
