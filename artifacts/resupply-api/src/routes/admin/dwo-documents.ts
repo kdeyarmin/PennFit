@@ -133,9 +133,6 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
 
     const [{ data: patient, error: patientErr }, providerRes] =
       await Promise.all([
