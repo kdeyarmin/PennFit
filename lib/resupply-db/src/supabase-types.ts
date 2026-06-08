@@ -1852,6 +1852,21 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
         Relationships: [];
       };
+      gl_account_mappings: {
+        Row: {
+          mapping_key: "deposit" | "revenue" | "refund" | "patient_pay";
+          account_name: string;
+          updated_by_email: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["gl_account_mappings"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["gl_account_mappings"]["Row"]
+        >;
+        Relationships: [];
+      };
       medicare_same_or_similar_checks: {
         Row: {
           id: string;

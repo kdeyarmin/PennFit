@@ -95,6 +95,7 @@ import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
 import locationsRouter from "./admin/locations.js";
+import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
@@ -848,6 +849,8 @@ router.use(mfaRouter);
 router.use(reportsRouter);
 // /admin/locations — business-location registry (owner O1 groundwork).
 router.use(locationsRouter);
+// /admin/billing/gl-account-mappings — configurable QuickBooks GL accounts (owner O3).
+router.use(glAccountMappingsRouter);
 // /admin/reports/presets/* — per-user saved report shortcuts
 // (slug + format + date-range preset). Mounted alongside the
 // reports router so the page-level UI only has one base path.
