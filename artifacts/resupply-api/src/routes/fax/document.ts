@@ -68,7 +68,6 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
       res.status(status).json({ error: result.reason });
       return;
     }
-    }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",

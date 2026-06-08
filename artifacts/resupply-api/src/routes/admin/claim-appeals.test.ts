@@ -120,6 +120,9 @@ describe("POST appeal-letter/:letterId/fax", () => {
     stageSupabaseResponse("claim_appeal_letters", "select", {
       data: { id: LETTER_ID, claim_id: CLAIM_ID },
     });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, patient_id: PID },
+    });
     const res = await request(makeApp())
       .post(url)
       .send({ faxNumber: "+18005551212" });
@@ -131,6 +134,9 @@ describe("POST appeal-letter/:letterId/fax", () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("claim_appeal_letters", "select", {
       data: { id: LETTER_ID, claim_id: CLAIM_ID },
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, patient_id: PID },
     });
     stageSupabaseResponse("claim_appeal_letters", "update", { data: null });
     const res = await request(makeApp())
@@ -151,6 +157,9 @@ describe("POST appeal-letter/:letterId/fax", () => {
     });
     stageSupabaseResponse("claim_appeal_letters", "select", {
       data: { id: LETTER_ID, claim_id: CLAIM_ID },
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID, patient_id: PID },
     });
     const res = await request(makeApp())
       .post(url)
