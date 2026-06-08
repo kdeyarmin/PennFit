@@ -326,7 +326,13 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       .from("patients")
       .select("id, email, legal_first_name")
       .in("id", chunk);
-    if (patientsErr) throw patientsErr;
+    if (patientsErr) {
+      logger.error(
+        { err: patientsErr.message, patientCount: chunk.length },
+        "therapy-milestones: batch patient lookup failed",
+      );
+      continue;
+    }
     for (const p of patientRows ?? []) {
       patientById.set(p.id, {
         email: p.email,
@@ -373,7 +379,38 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     };
 
     // Recipient email + first name, resolved from the batch lookup above.
-    const patient = patientById.get(claimed.patient_id) ?? null;
+    let patient = patientById.get(claimed.patient_id) ?? null;
+    if (!patient) {
+      const { data: fallbackPatient, error: patientError } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("email, legal_first_name")
+        .eq("id", claimed.patient_id)
+        .limit(1)
+        .maybeSingle();
+      if (patientError) {
+        await releaseClaim();
+        stats.sendFailed += 1;
+        logger.error(
+          {
+            err: patientError.message,
+            milestoneId: claimed.id,
+            patientId: claimed.patient_id,
+          },
+          "therapy-milestones: patient lookup failed",
+        );
+        continue;
+      }
+      patient = fallbackPatient
+        ? {
+            email: fallbackPatient.email,
+            legal_first_name: fallbackPatient.legal_first_name,
+          }
+        : null;
+      if (patient) {
+        patientById.set(claimed.patient_id, patient);
+      }
+    }
     if (!patient || !patient.email) {
       // No deliverable — leave the stamp so we don't retry every day.
       stats.sendSkipped += 1;
