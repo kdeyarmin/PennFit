@@ -186,6 +186,17 @@ decision matrix is shared (`lib/billing/coverage-eligibility.ts`) so both
 gates behave identically. Turn them on after you've verified eligibility is
 being run for the population (otherwise they mostly no-op / fail open).
 
+**Auto-refresh (opt-in).** A third flag,
+`billing.eligibility_precheck_refresh`, upgrades the claim precheck from
+"consult cache" to "check it now": when it's on **and real-time
+eligibility is configured**, the precheck runs a **fresh real-time 270**
+for any coverage in the batch with no recent result, instead of failing
+open. It's deduped per coverage and **capped at 10 fresh checks per
+batch** so a large submit can't fan out into a slow request; coverages
+beyond the cap fall back to consult-only. Off → cache-only. Because
+auto-firing 270s has a per-transaction cost, this is a separate opt-in
+from the cheap consult-only precheck.
+
 To populate the 271 cache the gates read, run eligibility from the patient
 page or the **Billing → Eligibility worklist** (instant when real-time is
 configured — see above).

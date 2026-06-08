@@ -11,7 +11,10 @@
 // proceeds. We never strand a legitimate order/claim on our own
 // eligibility plumbing.
 
-import { getCachedEligibility } from "./eligibility-verifier";
+import {
+  getCachedEligibility,
+  verifyEligibility,
+} from "./eligibility-verifier";
 
 /** A 271-derived reason to hold an order/claim for CSR review. */
 export interface CoverageBlock {
@@ -68,4 +71,46 @@ export async function consultCoverageEligibilityForCoverage(
 ): Promise<CoverageBlock | null> {
   const elig = await getCachedEligibility(coverageId, freshnessMs);
   return decideCoverageBlock(elig, payerName);
+}
+
+export interface CoverageGateResult {
+  block: CoverageBlock | null;
+  /** True when a fresh real-time 270 was run because the cache was stale. */
+  refreshed: boolean;
+}
+
+/**
+ * Like `consultCoverageEligibilityForCoverage`, but when the cache is
+ * stale/missing AND `refreshIfStale` is set, runs a fresh 270 first
+ * (`verifyEligibility`) and decides on the result.
+ *
+ * IMPORTANT: the caller must only set `refreshIfStale` when the real-time
+ * service is actually configured. Without it `verifyEligibility` falls
+ * back to an SFTP 270, which produces no inline answer (the re-read still
+ * misses) — so we'd pay a useless SFTP submission per coverage. Callers
+ * resolve `clearinghouse.realtimeConfig` first and pass that through.
+ */
+export async function gateCoverageEligibility(
+  coverageId: string,
+  patientId: string,
+  payerName: string,
+  opts: {
+    refreshIfStale: boolean;
+    requestedByEmail: string;
+    freshnessMs?: number;
+  },
+): Promise<CoverageGateResult> {
+  const freshnessMs = opts.freshnessMs ?? COVERAGE_FRESHNESS_MS;
+  let cached = await getCachedEligibility(coverageId, freshnessMs);
+  let refreshed = false;
+  if (!cached && opts.refreshIfStale) {
+    await verifyEligibility({
+      insuranceCoverageId: coverageId,
+      patientId,
+      requestedByEmail: opts.requestedByEmail,
+    });
+    refreshed = true;
+    cached = await getCachedEligibility(coverageId, freshnessMs);
+  }
+  return { block: decideCoverageBlock(cached, payerName), refreshed };
 }

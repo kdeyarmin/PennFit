@@ -25,14 +25,29 @@ import {
   type OtherSubscriberDetail,
 } from "@workspace/resupply-integrations-office-ally";
 
-import { consultCoverageEligibilityForCoverage } from "./coverage-eligibility";
-import { resolveBillingIdentity } from "./identity-resolver";
+import {
+  gateCoverageEligibility,
+  type CoverageBlock,
+} from "./coverage-eligibility";
+import {
+  resolveBillingIdentity,
+  resolveClearinghouse,
+} from "./identity-resolver";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
+
+/**
+ * Cap on fresh real-time 270s the eligibility precheck will fire in a
+ * single batch (deduped per coverage). Bounds the synchronous request:
+ * at ~1-2s per real-time round-trip this keeps the worst case to ~20s,
+ * and a large batch is almost always already-verified (cache hits)
+ * anyway. Coverages beyond the cap fall back to consult-only / fail-open.
+ */
+const MAX_PRECHECK_REALTIME_REFRESHES = 10;
 
 export interface BatchSubmitInput {
   claimIds: string[];
@@ -152,40 +167,77 @@ export async function executeOfficeAllyBatchSubmit(
   // or ANY lookup error allows the claim through — the same posture as
   // the order-confirm guard (resupply.eligibility_enforcement). Runs
   // before the EDI build so a blocked batch transmits nothing.
+  //
+  // When billing.eligibility_precheck_refresh is ALSO on and real-time
+  // eligibility is configured, a coverage with no recent result is checked
+  // fresh (real-time 270) instead of failing open — deduped per coverage
+  // and capped per batch so a large batch can't fan out into a slow
+  // synchronous request.
   if (await isFeatureEnabled("billing.eligibility_precheck")) {
-    const blocked: Array<{
-      claimId: string;
-      reason: string;
-      payerName: string;
-      eligibilityCheckId: string;
-    }> = [];
+    const refreshEnabled = await isFeatureEnabled(
+      "billing.eligibility_precheck_refresh",
+    );
+    const realtimeAvailable = refreshEnabled
+      ? !!(await resolveClearinghouse({ supabase })).realtimeConfig
+      : false;
+
+    // Dedup coverages — verify each at most once even if several claims in
+    // the batch share it.
+    const coverageToPatient = new Map<string, string>();
     for (const claim of claims) {
-      if (!claim.insurance_coverage_id) continue; // missing data caught below
+      if (
+        claim.insurance_coverage_id &&
+        !coverageToPatient.has(claim.insurance_coverage_id)
+      ) {
+        coverageToPatient.set(claim.insurance_coverage_id, claim.patient_id);
+      }
+    }
+
+    const blockByCoverage = new Map<string, CoverageBlock>();
+    let freshChecks = 0;
+    for (const [coverageId, patientId] of coverageToPatient) {
       try {
-        const block = await consultCoverageEligibilityForCoverage(
-          claim.insurance_coverage_id,
+        const allowRefresh =
+          realtimeAvailable && freshChecks < MAX_PRECHECK_REALTIME_REFRESHES;
+        const { block, refreshed } = await gateCoverageEligibility(
+          coverageId,
+          patientId,
           payer.payer_legal_name,
+          {
+            refreshIfStale: allowRefresh,
+            requestedByEmail: input.adminEmail ?? "system:eligibility-precheck",
+          },
         );
-        if (block) {
-          blocked.push({
-            claimId: claim.id,
-            reason: block.reason,
-            payerName: block.payerName,
-            eligibilityCheckId: block.eligibilityCheckId,
-          });
-        }
+        if (refreshed) freshChecks += 1;
+        if (block) blockByCoverage.set(coverageId, block);
       } catch (err) {
         logger.warn(
           {
             event: "billing.eligibility_precheck.failed",
-            claimId: claim.id,
+            coverageId,
             errName: err instanceof Error ? err.name : "unknown",
           },
           "billing: eligibility precheck failed; allowing claim (fail open)",
         );
       }
     }
-    if (blocked.length > 0) {
+
+    if (blockByCoverage.size > 0) {
+      const blocked = claims
+        .filter(
+          (c) =>
+            c.insurance_coverage_id &&
+            blockByCoverage.has(c.insurance_coverage_id),
+        )
+        .map((c) => {
+          const block = blockByCoverage.get(c.insurance_coverage_id!)!;
+          return {
+            claimId: c.id,
+            reason: block.reason,
+            payerName: block.payerName,
+            eligibilityCheckId: block.eligibilityCheckId,
+          };
+        });
       return { ok: false, kind: "eligibility_blocked", detail: { blocked } };
     }
   }
