@@ -130,6 +130,32 @@ export async function runDeductibleResetPush(
     (r): r is CustomerCandidate => typeof r.email_lower === "string",
   );
 
+  // Batch the active-customer gate. The prior per-customer existence
+  // query (`shop_orders … .eq("customer_id", …).gt("paid_at", …).limit(1)`)
+  // was an N+1 — one serial round-trip per candidate. The
+  // shop_customers_last_paid_at RPC (mig 0232) returns MAX(paid_at) per
+  // customer in one pass; chunk the candidate ids at 500 so each response
+  // stays well under the ~1000-row cap. MAX(paid_at) > activitySince is
+  // equivalent to "has at least one paid order in the window".
+  const activitySinceMs = new Date(activitySince).getTime();
+  const lastPaidByCustomer = new Map<string, string>();
+  const candidateIds = rows.map((r) => r.customer_id);
+  for (let i = 0; i < candidateIds.length; i += 500) {
+    const idChunk = candidateIds.slice(i, i + 500);
+    const { data: paidRows, error: paidErr } = await supabase
+      .schema("resupply")
+      .rpc("shop_customers_last_paid_at", { p_customer_ids: idChunk });
+    if (paidErr) throw paidErr;
+    for (const r of (paidRows ?? []) as Array<{
+      customer_id: string;
+      last_paid_at: string | null;
+    }>) {
+      if (r.customer_id && r.last_paid_at) {
+        lastPaidByCustomer.set(r.customer_id, r.last_paid_at);
+      }
+    }
+  }
+
   for (const row of rows) {
     if (stats.sent >= PER_RUN_MAX) break;
     stats.candidates += 1;
@@ -140,16 +166,12 @@ export async function runDeductibleResetPush(
       continue;
     }
 
-    // Active-customer gate: a paid order in the last 730 days.
-    const { data: recent } = await supabase
-      .schema("resupply")
-      .from("shop_orders")
-      .select("paid_at")
-      .eq("customer_id", row.customer_id)
-      .eq("status", "paid")
-      .gt("paid_at", activitySince)
-      .limit(1);
-    if (!recent || recent.length === 0) {
+    // Active-customer gate: a paid order in the last 730 days. Read from
+    // the pre-fetched MAX(paid_at) map. Compared as epoch ms so a
+    // PostgREST timestamptz offset (`+00:00`) and the `Z`-suffixed
+    // activitySince can't mis-compare as raw strings.
+    const lastPaid = lastPaidByCustomer.get(row.customer_id) ?? null;
+    if (!lastPaid || new Date(lastPaid).getTime() <= activitySinceMs) {
       stats.skipped += 1;
       continue;
     }

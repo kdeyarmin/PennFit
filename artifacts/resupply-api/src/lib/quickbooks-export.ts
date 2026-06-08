@@ -41,6 +41,23 @@ export interface QuickbooksExportInput {
   /** Practice name shown in the IIF header. */
   practiceName: string;
   rows: QuickbooksRowInput[];
+  /** Optional configurable GL account names (IIF only, owner #O3). */
+  accounts?: QuickbooksAccounts;
+}
+
+/**
+ * Configurable GL account names (owner #O3). Each unset field falls back
+ * to the historical hardcoded default, so exports are byte-for-byte
+ * unchanged until an owner configures a mapping. A per-row
+ * `incomeAccount` override still wins over `revenue`/`refund`.
+ */
+export interface QuickbooksAccounts {
+  /** TRNS clearing account every transaction posts to. */
+  deposit?: string;
+  /** SPL income account for ORDER rows. */
+  revenue?: string;
+  /** SPL account for REFUND rows. */
+  refund?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -120,12 +137,15 @@ export function renderIif(input: QuickbooksExportInput): string {
   );
   lines.push("!ENDTRNS");
 
+  const depositAccount = input.accounts?.deposit ?? DEPOSIT_ACCOUNT;
+  const revenueAccount = input.accounts?.revenue ?? REVENUE_ACCOUNT;
+  const refundAccount = input.accounts?.refund ?? REFUND_ACCOUNT;
+
   let splId = 1;
   for (const r of input.rows) {
     const trnsType = r.kind === "REFUND" ? "CREDIT MEMO" : "DEPOSIT";
     const splAccnt =
-      r.incomeAccount ??
-      (r.kind === "REFUND" ? REFUND_ACCOUNT : REVENUE_ACCOUNT);
+      r.incomeAccount ?? (r.kind === "REFUND" ? refundAccount : revenueAccount);
     // TRNS holds the gross amount posted to the Stripe clearing
     // account.
     lines.push(
@@ -134,7 +154,7 @@ export function renderIif(input: QuickbooksExportInput): string {
         escIif(r.txnId),
         trnsType,
         escIif(r.date),
-        DEPOSIT_ACCOUNT,
+        depositAccount,
         escIif(r.customerKey),
         fmtAmount(r.amountUsd),
         escIif(r.memo),

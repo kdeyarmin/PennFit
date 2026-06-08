@@ -113,26 +113,59 @@ function birthdayPatternsForToday(now: Date = new Date()): string[] {
   return patterns;
 }
 
-async function isOptedIn(
+type OptInStatus = { optedIn: boolean; hadShopCustomer: boolean };
+
+/**
+ * Batch the per-email opt-in gate into one query per 200 emails, keyed
+ * by lower-cased email. Use when every candidate in a pass needs its
+ * opt-in status anyway — replaces an N+1 of single-row shop_customers
+ * lookups inside the send loop. Exact-match (`.eq`/`.in` on email_lower)
+ * semantics — a `_`/`%` in an email can't cross-match another row.
+ */
+async function loadOptInStatuses(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
-  email: string,
-): Promise<{ optedIn: boolean; hadShopCustomer: boolean }> {
-  // .eq is exact; .ilike would let an email containing `_` or `%`
-  // cross-match other patients' shop_customers rows and resolve
-  // the opt-in gate against the wrong row.
-  const { data: cust } = await supabase
-    .schema("resupply")
-    .from("shop_customers")
-    .select("communication_preferences")
-    .eq("email_lower", email.toLowerCase())
-    .limit(1)
-    .maybeSingle();
-  if (!cust) return { optedIn: false, hadShopCustomer: false };
-  const prefs = readPrefs(cust.communication_preferences ?? null);
-  return {
-    optedIn: shouldSendEmail(prefs, "marketing"),
-    hadShopCustomer: true,
-  };
+  emails: readonly string[],
+): Promise<Map<string, OptInStatus>> {
+  const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
+  const byEmail = new Map<string, OptInStatus>();
+  const CHUNK = 200;
+  for (let i = 0; i < lowered.length; i += CHUNK) {
+    const chunk = lowered.slice(i, i + CHUNK);
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower, communication_preferences")
+      .in("email_lower", chunk);
+    if (error) {
+      logger.warn(
+        { err: error, chunkSize: chunk.length },
+        "lifecycle-touchpoints: opt-in batch lookup failed (treating as no shop_customer)",
+      );
+      continue;
+    }
+    const rowCounts = new Map<string, number>();
+    const prefsByEmail = new Map<string, CommunicationPreferences>();
+    for (const r of rows ?? []) {
+      if (!r.email_lower) continue;
+      rowCounts.set(r.email_lower, (rowCounts.get(r.email_lower) ?? 0) + 1);
+      if (!prefsByEmail.has(r.email_lower)) {
+        prefsByEmail.set(
+          r.email_lower,
+          readPrefs(r.communication_preferences ?? null),
+        );
+      }
+    }
+    for (const [email, count] of rowCounts) {
+      if (count !== 1) continue;
+      const prefs = prefsByEmail.get(email);
+      if (!prefs) continue;
+      byEmail.set(email, {
+        optedIn: shouldSendEmail(prefs, "marketing"),
+        hadShopCustomer: true,
+      });
+    }
+  }
+  return byEmail;
 }
 
 export async function runLifecycleTouchpoints(
@@ -181,10 +214,19 @@ export async function runLifecycleTouchpoints(
     .order("id", { ascending: true })
     .limit(PER_KIND_MAX * 2);
   if (bdayErr) throw bdayErr;
+  // Every birthday candidate hits the opt-in gate immediately, so resolve
+  // them all in one batched read instead of a query per candidate.
+  const bdayOptIn = await loadOptInStatuses(
+    supabase,
+    ((bdayRows ?? []) as PatientRow[]).map((r) => r.email),
+  );
   for (const row of (bdayRows ?? []) as PatientRow[]) {
     if (stats.birthdaySent >= PER_KIND_MAX) break;
     stats.birthdayCandidates += 1;
-    const gate = await isOptedIn(supabase, row.email);
+    const gate = bdayOptIn.get(row.email.toLowerCase()) ?? {
+      optedIn: false,
+      hadShopCustomer: false,
+    };
     if (!gate.hadShopCustomer) {
       stats.skippedNoShopCustomer += 1;
       continue;
@@ -269,49 +311,51 @@ export async function runLifecycleTouchpoints(
   }
 
   // ── ANNIVERSARY pass ────────────────────────────────────────────
-  // The patient's "first therapy night" lives in patient_therapy_nights.
-  // We MIN(night_date) per patient — PostgREST doesn't expose
-  // aggregates, so we do this row-by-row inside the loop, narrowed
-  // to patients with at least one night.
-  //
-  // For efficiency: first scan candidates (patients with non-null
-  // email + not stamped this year). Then per-patient query the
-  // earliest night. That's an O(N) scan over patients but each
-  // per-row lookup hits the patient_therapy_nights index on
-  // patient_id.
-  const { data: anniversaryRows, error: annErr } = await supabase
+  // The patient's "first therapy night" is MIN(night_date). PostgREST
+  // can't express that aggregate, so the prior pass scanned up to
+  // PER_KIND_MAX * 4 candidate patients and ran a per-candidate
+  // earliest-night read (an N+1) just to discard the ~all whose
+  // anniversary isn't today, then a per-candidate opt-in read on top.
+  // The patients_with_therapy_anniversary RPC (mig 0232) pushes the MIN
+  // plus the MM-DD / prior-year / not-yet-sent filters into Postgres and
+  // returns only the (few) true matches — ordered by id for the same
+  // deterministic-cohort reason, capped so a popular date can't burst
+  // the SendGrid quota. Because the cap now bounds MATCHES rather than
+  // candidates, a real anniversary can no longer be starved by
+  // non-matching rows ahead of it. The opt-in gate for the match set is
+  // then resolved in one batched read, same as the birthday pass.
+  const { data: annData, error: annErr } = await supabase
     .schema("resupply")
-    .from("patients")
-    .select(
-      "id, email, legal_first_name, date_of_birth, birthday_email_year_sent, sleep_anniversary_year_sent",
-    )
-    .not("email", "is", null)
-    .or(
-      `sleep_anniversary_year_sent.is.null,sleep_anniversary_year_sent.neq.${currentYear}`,
-    )
-    // Same deterministic order as the birthday query: without it,
-    // cohorts past the PER_KIND_MAX * 4 cap depend on the planner's
-    // arbitrary choice and large populations can starve.
-    .order("id", { ascending: true })
-    .limit(PER_KIND_MAX * 4);
+    .rpc("patients_with_therapy_anniversary", {
+      p_mmdd: mmdd,
+      p_current_year: currentYear,
+      p_limit: PER_KIND_MAX * 4,
+    });
   if (annErr) throw annErr;
-  for (const row of (anniversaryRows ?? []) as PatientRow[]) {
+  const annRows = (annData ?? []) as Array<{
+    patient_id: string;
+    email: string;
+    legal_first_name: string | null;
+    first_night_date: string;
+    sleep_anniversary_year_sent: number | null;
+  }>;
+  const annOptIn = await loadOptInStatuses(
+    supabase,
+    annRows.map((r) => r.email),
+  );
+  for (const row of annRows) {
     if (stats.anniversarySent >= PER_KIND_MAX) break;
-    const { data: firstNight } = await supabase
-      .schema("resupply")
-      .from("patient_therapy_nights")
-      .select("night_date")
-      .eq("patient_id", row.id)
-      .order("night_date", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (!firstNight?.night_date) continue;
-    if (firstNight.night_date.slice(5, 10) !== mmdd) continue;
-    const firstYear = Number(firstNight.night_date.slice(0, 4));
+    // The RPC already guarantees first_night MM-DD == today and year <
+    // currentYear; recompute firstYear for the "years on therapy" copy
+    // and keep the finite-year guard as defense-in-depth.
+    const firstYear = Number(row.first_night_date.slice(0, 4));
     if (!Number.isFinite(firstYear) || firstYear >= currentYear) continue;
 
     stats.anniversaryCandidates += 1;
-    const gate = await isOptedIn(supabase, row.email);
+    const gate = annOptIn.get(row.email.toLowerCase()) ?? {
+      optedIn: false,
+      hadShopCustomer: false,
+    };
     if (!gate.hadShopCustomer) {
       stats.skippedNoShopCustomer += 1;
       continue;
@@ -324,14 +368,14 @@ export async function runLifecycleTouchpoints(
       .schema("resupply")
       .from("patients")
       .update({ sleep_anniversary_year_sent: currentYear })
-      .eq("id", row.id)
+      .eq("id", row.patient_id)
       .or(
         `sleep_anniversary_year_sent.is.null,sleep_anniversary_year_sent.neq.${currentYear}`,
       )
       .select("id");
     if (claimErr) {
       logger.warn(
-        { err: claimErr.message, patientId: row.id },
+        { err: claimErr.message, patientId: row.patient_id },
         "lifecycle-touchpoints: anniversary claim failed",
       );
       stats.anniversaryFailed += 1;
@@ -352,12 +396,12 @@ export async function runLifecycleTouchpoints(
           .update({
             sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
           })
-          .eq("id", row.id);
+          .eq("id", row.patient_id);
         if (rollbackErr) {
           logger.error(
             {
               err: rollbackErr.message,
-              patientId: row.id,
+              patientId: row.patient_id,
               event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
             },
             "lifecycle-touchpoints: anniversary stamp rollback failed — patient may be permanently skipped this year",
@@ -374,12 +418,12 @@ export async function runLifecycleTouchpoints(
         .update({
           sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
         })
-        .eq("id", row.id);
+        .eq("id", row.patient_id);
       if (rollbackErr) {
         logger.error(
           {
             err: rollbackErr.message,
-            patientId: row.id,
+            patientId: row.patient_id,
             event: "lifecycle_touchpoints_anniversary_stamp_rollback_failed",
           },
           "lifecycle-touchpoints: anniversary stamp rollback failed — patient may be permanently skipped this year",
@@ -389,7 +433,7 @@ export async function runLifecycleTouchpoints(
       logger.error(
         {
           err: err instanceof Error ? err.message : String(err),
-          patientId: row.id,
+          patientId: row.patient_id,
         },
         "lifecycle-touchpoints: anniversary send threw",
       );

@@ -19,7 +19,7 @@ env:
   # The pnpm version pinned in root package.json. Mirror it explicitly so
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
-  PNPM_VERSION: "11.5.0"
+  PNPM_VERSION: "11.5.2"
   NODE_VERSION: "24"
 
 jobs:
@@ -567,8 +567,8 @@ jobs:
 
       - uses: ./.github/actions/setup
         with:
-          node-version: "24"
-          pnpm-version: "11.5.0"
+          node-version: ${{ env.NODE_VERSION }}
+          pnpm-version: ${{ env.PNPM_VERSION }}
           install: "false"
 
       - name: Toolchain + env

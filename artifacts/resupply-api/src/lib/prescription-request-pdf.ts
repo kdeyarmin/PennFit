@@ -37,7 +37,7 @@
 //   │  A7038  Disposable filter                  2   30 d        │
 //   │                                                            │
 //   │ ── Device settings ────────────────────────────────────    │
-//   │  Mode: Auto-CPAP    Pressure: 6–16 cm H₂O                  │
+//   │  Mode: Auto-CPAP    Pressure: 6–16 cm H2O                  │
 //   │  Ramp: 30 min from 4 cm    Humidifier: 3   Heated tube: Y  │
 //   │                                                            │
 //   │ ── Length of need ─────────────────────────────────────    │
@@ -127,10 +127,30 @@ export interface PrescriptionRequestSupplier {
   email: string | null;
 }
 
+export interface PrescriptionRequestCoverage {
+  /** Payer / insurer name, e.g. "Medicare Part B (Noridian)". */
+  payerName: string;
+  /**
+   * Member ID — for Medicare this is the Medicare Beneficiary
+   * Identifier (MBI). Printing it lets the physician's office match
+   * the patient to the right coverage and satisfies the
+   * "beneficiary name OR MBI" identifier of the CMS Standard Written
+   * Order (42 CFR 410.38(d)(1)(i)).
+   */
+  memberId: string;
+  planName?: string | null;
+  /** "primary" | "secondary" | "tertiary" — printed as a qualifier. */
+  rank?: string | null;
+  /** When true the member id is labeled "Medicare ID (MBI)". */
+  isMedicare?: boolean;
+}
+
 export interface PrescriptionRequestInputs {
   patient: PrescriptionRequestPatient;
   provider: PrescriptionRequestProvider;
   supplier: PrescriptionRequestSupplier;
+  /** Primary payer on file. Null when the patient has no coverage row. */
+  coverage: PrescriptionRequestCoverage | null;
   hcpcsLines: PrescriptionRequestHcpcsLine[];
   icd10Codes: string[];
   settings: PrescriptionRequestSettings | null;
@@ -210,6 +230,26 @@ export function renderPrescriptionRequest(
   drawRule(doc);
   doc.moveDown(0.6);
 
+  if (inputs.coverage) {
+    drawSectionHeader(doc, "Insurance");
+    const payerLine = inputs.coverage.planName
+      ? `${inputs.coverage.payerName} — ${inputs.coverage.planName}`
+      : inputs.coverage.payerName;
+    drawLabeledField(
+      doc,
+      inputs.coverage.rank ? `Payer (${inputs.coverage.rank})` : "Payer",
+      payerLine,
+    );
+    drawLabeledField(
+      doc,
+      inputs.coverage.isMedicare ? "Medicare ID (MBI)" : "Member ID",
+      inputs.coverage.memberId,
+    );
+    doc.moveDown(0.5);
+    drawRule(doc);
+    doc.moveDown(0.6);
+  }
+
   drawSectionHeader(doc, "Diagnosis");
   doc.fontSize(10).font("Helvetica");
   for (const code of inputs.icd10Codes) {
@@ -263,9 +303,54 @@ export function renderPrescriptionRequest(
     doc.moveDown(0.6);
   }
 
+  if (orderIncludesPapDevice(inputs.hcpcsLines, inputs.settings)) {
+    drawPapSupportingDocsNote(doc);
+  }
+
   drawAffirmationAndSignature(doc, inputs.provider);
   drawReturnInstructions(doc, inputs.supplier);
   drawHipaaFooter(doc);
+}
+
+// PAP (CPAP / BiPAP / RAD) device base codes. When the order includes
+// one of these — or carries a device-settings block — Medicare's PAP
+// LCD applies, so we print a short reminder of the supporting
+// documentation the treating practitioner must have on file before the
+// device can be dispensed.
+const PAP_DEVICE_HCPCS: ReadonlySet<string> = new Set([
+  "E0601", // CPAP
+  "E0470", // BiPAP / RAD without backup
+  "E0471", // BiPAP S/T / RAD with backup
+  "E0472", // RAD with backup (other)
+]);
+
+function orderIncludesPapDevice(
+  lines: PrescriptionRequestHcpcsLine[],
+  settings: PrescriptionRequestSettings | null,
+): boolean {
+  if (settings) return true;
+  return lines.some((l) => PAP_DEVICE_HCPCS.has(l.hcpcs.trim().toUpperCase()));
+}
+
+function drawPapSupportingDocsNote(doc: PDFKit.PDFDocument): void {
+  drawSectionHeader(doc, "Supporting documentation (Medicare PAP coverage)");
+  doc
+    .fontSize(9)
+    .font("Helvetica")
+    .fillColor("#333333")
+    .text(
+      "Per the Medicare PAP LCD (L33718), the following must be on file before a PAP device is dispensed: " +
+        "(1) a face-to-face evaluation by the treating practitioner within the 6 months preceding the order date " +
+        "documenting symptoms of obstructive sleep apnea, and (2) a qualifying sleep test (attended in-lab " +
+        "polysomnography or a Medicare-approved home sleep apnea test) interpreted by a qualified practitioner. " +
+        "For items on the Required List, this signed order must be received by the supplier prior to delivery " +
+        "(written order prior to delivery).",
+      { width: USABLE_WIDTH, lineGap: 2 },
+    )
+    .fillColor("#000000");
+  doc.moveDown(0.5);
+  drawRule(doc);
+  doc.moveDown(0.6);
 }
 
 // ── Section helpers ────────────────────────────────────────────────
@@ -314,7 +399,7 @@ function drawDateAndSubject(doc: PDFKit.PDFDocument, when: Date): void {
     month: "long",
     day: "numeric",
   });
-  doc.fontSize(11).font("Helvetica").text(`Date: ${today}`, {
+  doc.fontSize(11).font("Helvetica").text(`Order date: ${today}`, {
     width: USABLE_WIDTH,
   });
   doc.moveDown(0.3);
@@ -394,6 +479,14 @@ function drawEquipmentTable(
     doc.text(cadence, colCadence, rowY, { width: 100 });
     doc.moveDown(0.4);
   }
+
+  // The cells above were positioned with absolute X coordinates, which
+  // leaves pdfkit's text cursor parked under the last column. Reset it
+  // to the left margin so every following section (device settings,
+  // length of need, the signature block, return instructions, footer)
+  // flows full-width instead of being clipped into a narrow right-hand
+  // column.
+  doc.x = MARGIN;
 }
 
 function drawSettings(
@@ -404,7 +497,7 @@ function drawSettings(
 
   // Pressure block — varies by device class.
   if (s.deviceClass === "cpap" && typeof s.pressureCmh2o === "number") {
-    drawLabeledField(doc, "Pressure", `${s.pressureCmh2o} cm H₂O (fixed)`);
+    drawLabeledField(doc, "Pressure", `${s.pressureCmh2o} cm H2O (fixed)`);
   } else if (
     (s.deviceClass === "auto_cpap" || s.deviceClass === "bipap") &&
     typeof s.pressureMinCmh2o === "number" &&
@@ -413,14 +506,14 @@ function drawSettings(
     drawLabeledField(
       doc,
       "Pressure range",
-      `${s.pressureMinCmh2o}–${s.pressureMaxCmh2o} cm H₂O`,
+      `${s.pressureMinCmh2o}–${s.pressureMaxCmh2o} cm H2O`,
     );
   }
   if (typeof s.ipapCmh2o === "number" && typeof s.epapCmh2o === "number") {
     drawLabeledField(
       doc,
       "IPAP / EPAP",
-      `${s.ipapCmh2o} / ${s.epapCmh2o} cm H₂O`,
+      `${s.ipapCmh2o} / ${s.epapCmh2o} cm H2O`,
     );
   }
   if (typeof s.backupRateBpm === "number") {
@@ -429,7 +522,7 @@ function drawSettings(
   if (typeof s.rampMinutes === "number" && s.rampMinutes > 0) {
     const from =
       typeof s.rampStartCmh2o === "number"
-        ? ` from ${s.rampStartCmh2o} cm H₂O`
+        ? ` from ${s.rampStartCmh2o} cm H2O`
         : "";
     drawLabeledField(doc, "Ramp", `${s.rampMinutes} minutes${from}`);
   }

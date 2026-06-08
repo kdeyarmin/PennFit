@@ -22,6 +22,7 @@ function score(over: Partial<AdherenceScore> = {}): AdherenceScore {
     daysOfTherapy: 10,
     factors: [],
     scoredAt: new Date().toISOString(),
+    modelVersion: "heuristic-1.0",
     ...over,
   };
 }
