@@ -94,6 +94,67 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
   let evaluated = 0;
   let fired = 0;
 
+  // Batch the latest-snapshot reads. The prior loop issued one
+  // ordered-limit-1 `metrics_daily` read per threshold (N+1). The
+  // metrics_daily_latest RPC (mig 0232) returns the most-recent row per
+  // metric_key in one call; the key set is the small distinct set of
+  // enabled thresholds' metrics.
+  const metricKeys = Array.from(
+    new Set(thresholds.map((t) => String(t.metric_key))),
+  );
+  const latestByKey = new Map<
+    string,
+    { metric_date: string; metric_value: number; unit: string }
+  >();
+  if (metricKeys.length > 0) {
+    const { data: latestRows, error: latestErr } = await supabase
+      .schema("resupply")
+      .rpc("metrics_daily_latest", { p_metric_keys: metricKeys });
+    if (latestErr) throw latestErr;
+    for (const r of (latestRows ?? []) as Array<{
+      metric_key: string;
+      metric_date: string;
+      metric_value: number | string;
+      unit: string;
+    }>) {
+      latestByKey.set(r.metric_key, {
+        metric_date: String(r.metric_date),
+        metric_value: Number(r.metric_value),
+        unit: String(r.unit),
+      });
+    }
+  }
+
+  // Batch the delta-mode baselines (the value 7 days before each metric's
+  // latest date). One `.in()` over the distinct delta keys + baseline
+  // dates, matched back per (key, date). Bounded by the small number of
+  // delta-mode thresholds.
+  const baselineByKeyDate = new Map<string, number>();
+  const deltaKeys = new Set<string>();
+  const baselineDates = new Set<string>();
+  for (const t of thresholds) {
+    if (String(t.mode) === "absolute") continue;
+    const latest = latestByKey.get(String(t.metric_key));
+    if (!latest) continue;
+    deltaKeys.add(String(t.metric_key));
+    baselineDates.add(shiftDateUtc(latest.metric_date, -7));
+  }
+  if (deltaKeys.size > 0 && baselineDates.size > 0) {
+    const { data: baseRows, error: baseErr } = await supabase
+      .schema("resupply")
+      .from("metrics_daily")
+      .select("metric_key, metric_date, metric_value")
+      .in("metric_key", Array.from(deltaKeys))
+      .in("metric_date", Array.from(baselineDates));
+    if (baseErr) throw baseErr;
+    for (const r of baseRows ?? []) {
+      baselineByKeyDate.set(
+        `${r.metric_key}|${r.metric_date}`,
+        Number(r.metric_value),
+      );
+    }
+  }
+
   for (const t of thresholds) {
     evaluated += 1;
     const metricKey = String(t.metric_key);
@@ -103,34 +164,19 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
     const severity = String(t.severity);
     const thresholdId = String(t.id);
 
-    // Latest snapshot for this metric.
-    const { data: latestData } = await supabase
-      .schema("resupply")
-      .from("metrics_daily")
-      .select("metric_date, metric_value, unit")
-      .eq("metric_key", metricKey)
-      .order("metric_date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const latest = latestData as Record<string, unknown> | null;
+    // Latest snapshot for this metric (pre-fetched above).
+    const latest = latestByKey.get(metricKey);
     if (!latest) continue; // no data yet
 
-    const metricDate = String(latest.metric_date);
-    const currentValue = Number(latest.metric_value);
-    const unit = String(latest.unit);
+    const metricDate = latest.metric_date;
+    const currentValue = latest.metric_value;
+    const unit = latest.unit;
 
     let baselineValue: number | null = null;
     if (mode !== "absolute") {
       const baselineDate = shiftDateUtc(metricDate, -7);
-      const { data: baseData } = await supabase
-        .schema("resupply")
-        .from("metrics_daily")
-        .select("metric_value")
-        .eq("metric_key", metricKey)
-        .eq("metric_date", baselineDate)
-        .maybeSingle();
-      const base = baseData as Record<string, unknown> | null;
-      baselineValue = base == null ? null : Number(base.metric_value);
+      const base = baselineByKeyDate.get(`${metricKey}|${baselineDate}`);
+      baselineValue = base == null ? null : base;
     }
 
     const result = evaluateThreshold(
