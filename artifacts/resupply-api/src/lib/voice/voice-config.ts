@@ -94,6 +94,24 @@ export interface VoiceConfig {
    * Any value other than `"http"` resolves to `"ws"`.
    */
   elevenLabsTransport: "ws" | "http";
+  /**
+   * OpenAI Realtime session schema. `"beta"` (default, production) runs the
+   * proven `realtime=v1` flat schema on gpt-realtime. `"ga"` is the
+   * gpt-realtime-2 spike on OpenAI's GA nested session shape — setting it
+   * also switches the model to gpt-realtime-2 and the input STT to
+   * gpt-realtime-whisper unless overridden below. Validate on a preview
+   * with a real test call before production
+   * (docs/runbooks/realtime-ga-migration.md).
+   */
+  realtimeSchema: "beta" | "ga";
+  /** Realtime model override (e.g. pin a snapshot). */
+  realtimeModel?: string;
+  /** Realtime reasoning effort, GA only (default "low" in the client). */
+  realtimeReasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /** Realtime input-transcription model override. */
+  realtimeTranscribeModel?: string;
+  /** Realtime wire audio-format token override (GA µ-law correction). */
+  realtimeAudioFormat?: string;
 }
 
 /**
@@ -172,7 +190,33 @@ export function readVoiceConfigOrNull(
       env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
         ? "http"
         : "ws",
+    // Realtime stays on the proven beta schema unless explicitly set to
+    // `ga` (the gpt-realtime-2 spike). The ws-handler fills in coherent GA
+    // model/STT defaults when the schema is `ga`.
+    realtimeSchema:
+      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "ga" ? "ga" : "beta",
+    realtimeModel: env.OPENAI_REALTIME_MODEL?.trim() || undefined,
+    realtimeReasoningEffort: parseReasoningEffort(
+      env.OPENAI_REALTIME_REASONING_EFFORT,
+    ),
+    realtimeTranscribeModel:
+      env.OPENAI_REALTIME_TRANSCRIBE_MODEL?.trim() || undefined,
+    realtimeAudioFormat: env.OPENAI_REALTIME_AUDIO_FORMAT?.trim() || undefined,
   };
+}
+
+/**
+ * Parse the optional realtime reasoning-effort env var. Returns undefined
+ * (client default applies) when unset or not one of the allowed values, so
+ * a typo degrades to the default rather than sending an invalid value.
+ */
+function parseReasoningEffort(
+  raw: string | undefined,
+): "minimal" | "low" | "medium" | "high" | undefined {
+  const v = raw?.trim().toLowerCase();
+  return v === "minimal" || v === "low" || v === "medium" || v === "high"
+    ? v
+    : undefined;
 }
 
 /**

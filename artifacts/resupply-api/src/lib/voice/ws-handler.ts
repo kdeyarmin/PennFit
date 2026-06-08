@@ -42,6 +42,8 @@ import {
   createDeepgramClient,
   createElevenLabsClient,
   DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
+  DEFAULT_REALTIME_GA_MODEL,
+  DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL,
   openElevenLabsStream,
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
@@ -197,8 +199,43 @@ export async function handleVoiceWsConnection(
     );
   }
 
+  // Realtime session schema. Default "beta" (production). When an operator
+  // flips OPENAI_REALTIME_SCHEMA=ga on a preview, fill in coherent GA
+  // defaults — gpt-realtime-2 + gpt-realtime-whisper — unless overridden,
+  // so the whole upgrade is reachable from one env var. The µ-law token
+  // (audio/pcmu) and reasoning effort ("low") default inside RealtimeClient.
+  const realtimeIsGa = config.realtimeSchema === "ga";
+  const realtimeModel =
+    config.realtimeModel ??
+    (realtimeIsGa ? DEFAULT_REALTIME_GA_MODEL : undefined);
+  const realtimeTranscribeModel =
+    config.realtimeTranscribeModel ??
+    (realtimeIsGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined);
+  if (realtimeIsGa) {
+    logger.info(
+      {
+        event: "voice_realtime_ga_schema",
+        model: realtimeModel,
+        transcribe: realtimeTranscribeModel,
+        conversationId: pending.conversationId,
+      },
+      "voice: OpenAI Realtime GA schema enabled (gpt-realtime-2 spike)",
+    );
+  }
+
   const client = new RealtimeClient({
     apiKey: config.openaiApiKey,
+    sessionSchema: config.realtimeSchema,
+    ...(realtimeModel ? { model: realtimeModel } : {}),
+    ...(realtimeTranscribeModel
+      ? { transcriptionModel: realtimeTranscribeModel }
+      : {}),
+    ...(config.realtimeReasoningEffort
+      ? { reasoningEffort: config.realtimeReasoningEffort }
+      : {}),
+    ...(config.realtimeAudioFormat
+      ? { audioFormat: config.realtimeAudioFormat }
+      : {}),
     // When ElevenLabs owns the voice, the model emits text (not audio)
     // and the bridge synthesises it. Otherwise the model speaks (cedar).
     generateAudio: !externalVoice,

@@ -39,6 +39,19 @@ import type { OpenAiToolDescriptor, ToolName } from "./tools";
 
 const REALTIME_URL_BASE = "wss://api.openai.com/v1/realtime";
 export const DEFAULT_REALTIME_MODEL = "gpt-realtime";
+// gpt-realtime-2 (GA, May 2026) — GPT-5-class reasoning over speech, 128K
+// context, configurable reasoning effort. It requires OpenAI's *GA* nested
+// session schema (`session.type:"realtime"`, `audio.input/output`), so it
+// is opt-in behind `sessionSchema: "ga"` and validated on a preview before
+// becoming a default. See docs/runbooks/realtime-ga-migration.md.
+export const DEFAULT_REALTIME_GA_MODEL = "gpt-realtime-2";
+// Input STT for the conversational session (drives turn-taking + the
+// model's own transcript). Default is the proven beta model.
+export const DEFAULT_REALTIME_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
+// gpt-realtime-whisper — natively-streaming STT, the recommended GA
+// transcription model. Lower WER on phone audio → fewer "say that again?"
+// beats. Paired with the GA schema.
+export const DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL = "gpt-realtime-whisper";
 // `cedar` is the warmest of the current Realtime voices. In informal
 // listening tests against `marin`, `alloy`, and `verse`, callers
 // consistently rate cedar's prosody as the most "human" — slightly
@@ -121,6 +134,35 @@ export interface RealtimeClientOptions {
    * modality changes.
    */
   generateAudio?: boolean;
+  /**
+   * Realtime session schema. `"beta"` (default) is the proven
+   * `OpenAI-Beta: realtime=v1` flat session shape production runs on.
+   * `"ga"` is OpenAI's GA nested `audio.input/output` shape required by
+   * gpt-realtime-2. The GA path is feature-flagged and validated on a
+   * preview before it becomes a default — see
+   * docs/runbooks/realtime-ga-migration.md. The inbound event demux
+   * already handles both schemas' event names, so only the outbound
+   * session.update + connection header differ.
+   */
+  sessionSchema?: "beta" | "ga";
+  /**
+   * GA only — reasoning effort for gpt-realtime-2. `"low"` (default) keeps
+   * a live phone agent snappy; higher values add latency + token spend.
+   */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /**
+   * Input STT model for the conversational session. Defaults to
+   * gpt-4o-mini-transcribe (beta); pass gpt-realtime-whisper on GA.
+   */
+  transcriptionModel?: string;
+  /**
+   * Wire audio-format token. Beta sends it as a bare string
+   * (`g711_ulaw`); GA wraps it (`{ type: "audio/pcmu" }`). Exposed so the
+   * exact GA µ-law token can be corrected during preview validation
+   * without a code change (OpenAI's GA telephony token wasn't fully
+   * documented at build time).
+   */
+  audioFormat?: string;
   /** System prompt, already built (see prompts.ts). */
   instructions: string;
   /** Tool descriptors (see tools.ts). */
@@ -192,6 +234,7 @@ export class RealtimeClient extends EventEmitter {
         "RealtimeClient: apiKey is required. Set OPENAI_API_KEY.",
       );
     }
+    const sessionSchema = opts.sessionSchema ?? "beta";
     this.opts = {
       apiKey: opts.apiKey,
       model: opts.model ?? DEFAULT_REALTIME_MODEL,
@@ -200,6 +243,15 @@ export class RealtimeClient extends EventEmitter {
       instructions: opts.instructions,
       tools: opts.tools,
       allowedToolNames: opts.allowedToolNames,
+      sessionSchema,
+      reasoningEffort: opts.reasoningEffort ?? "low",
+      transcriptionModel:
+        opts.transcriptionModel ?? DEFAULT_REALTIME_TRANSCRIBE_MODEL,
+      // Beta sends a bare µ-law string; GA wraps the µ-law token in an
+      // object. Default the token per schema; either can be overridden.
+      audioFormat:
+        opts.audioFormat ??
+        (sessionSchema === "ga" ? "audio/pcmu" : "g711_ulaw"),
     };
 
     // Attach a noop "error" listener immediately so a synchronously
@@ -214,10 +266,16 @@ export class RealtimeClient extends EventEmitter {
     });
 
     const url = `${REALTIME_URL_BASE}?model=${encodeURIComponent(this.opts.model)}`;
-    const headers = {
+    // The `realtime=v1` beta marker selects the flat beta session schema.
+    // The GA schema (gpt-realtime-2) is reached WITHOUT it — sending the
+    // beta header alongside a GA model is one of the things preview
+    // validation confirms (see the realtime-ga runbook).
+    const headers: Record<string, string> = {
       Authorization: `Bearer ${this.opts.apiKey}`,
-      "OpenAI-Beta": "realtime=v1",
     };
+    if (this.opts.sessionSchema !== "ga") {
+      headers["OpenAI-Beta"] = "realtime=v1";
+    }
 
     this.ws = opts.webSocketFactory
       ? opts.webSocketFactory(url, headers)
@@ -507,57 +565,103 @@ export class RealtimeClient extends EventEmitter {
 
   private sendSessionUpdate(): void {
     if (this.sessionUpdateSent) return;
-    // Filter the descriptor list against `allowedToolNames` so a stray
-    // descriptor cannot enable a tool the dispatcher doesn't implement.
-    const tools = this.opts.tools.filter((t) =>
+    const session =
+      this.opts.sessionSchema === "ga"
+        ? this.buildGaSession()
+        : this.buildBetaSession();
+    this.sendJson({ type: "session.update", session });
+    this.sessionUpdateSent = true;
+  }
+
+  /** Tools, filtered against `allowedToolNames`. Shared by both schemas. */
+  private enabledTools(): readonly OpenAiToolDescriptor[] {
+    // A stray descriptor cannot enable a tool the dispatcher doesn't
+    // implement, so we filter even though the bridge also validates.
+    return this.opts.tools.filter((t) =>
       this.opts.allowedToolNames.has(t.name),
     );
+  }
+
+  /**
+   * Semantic VAD waits for a semantic end-of-thought rather than a fixed
+   * silence threshold, so the agent doesn't interrupt callers who pause
+   * mid-sentence to think (very common with elderly speakers).
+   * `eagerness: "low"` further pads the wait. This is the single biggest
+   * "feels human, not robot" tuning lever on the Realtime API. Identical
+   * shape in both schemas — only its placement differs.
+   */
+  private turnDetection(): Record<string, unknown> {
+    return {
+      type: "semantic_vad",
+      eagerness: "low",
+      create_response: true,
+      interrupt_response: true,
+    };
+  }
+
+  /** The proven `OpenAI-Beta: realtime=v1` flat session (production). */
+  private buildBetaSession(): Record<string, unknown> {
     // Output modality: built-in audio (cedar) by default, or text-only
-    // when an external TTS engine owns the voice. Input audio + STT +
-    // VAD are identical in both cases — only the output side changes.
+    // when an external TTS engine owns the voice. Input audio + STT + VAD
+    // are identical in both cases — only the output side changes.
     const session: Record<string, unknown> = {
       modalities: this.opts.generateAudio ? ["audio", "text"] : ["text"],
       instructions: this.opts.instructions,
       // µ-law @ 8kHz inbound — same as Twilio's Media Streams default —
       // so we do zero transcoding of the caller audio.
-      input_audio_format: "g711_ulaw",
-      input_audio_transcription: { model: "gpt-4o-mini-transcribe" },
+      input_audio_format: this.opts.audioFormat,
+      input_audio_transcription: { model: this.opts.transcriptionModel },
     };
     if (this.opts.generateAudio) {
-      // Only meaningful when the model generates the audio itself.
       session.voice = this.opts.voice;
-      session.output_audio_format = "g711_ulaw";
+      session.output_audio_format = this.opts.audioFormat;
     }
-    this.sendJson({
-      type: "session.update",
-      session: {
-        ...session,
-        // Semantic VAD waits for a semantic end-of-thought rather than
-        // a fixed silence threshold, so the agent doesn't interrupt
-        // callers who pause mid-sentence to think (very common with
-        // elderly speakers). `eagerness: "low"` further pads the wait —
-        // patients who say "and..." then think feel heard instead of
-        // cut off. This is the single biggest "feels human, not robot"
-        // tuning lever available on the Realtime API.
-        turn_detection: {
-          type: "semantic_vad",
-          eagerness: "low",
-          create_response: true,
-          interrupt_response: true,
-        },
-        // A small temperature bump lets the model vary phrasing turn-
-        // to-turn. Without it, repeat callers notice the agent uses the
-        // exact same sentence each time — the dead giveaway tell that
-        // "this is a bot."
-        temperature: 0.8,
-        // Cap response length so the agent doesn't drift into long
-        // monologues — phone calls reward brevity.
-        max_response_output_tokens: 200,
-        tools,
-        tool_choice: "auto",
+    return {
+      ...session,
+      turn_detection: this.turnDetection(),
+      // A small temperature bump lets the model vary phrasing turn-to-turn
+      // so repeat callers don't hear the exact same sentence each time.
+      temperature: 0.8,
+      // Cap response length so the agent doesn't drift into monologues.
+      max_response_output_tokens: 200,
+      tools: this.enabledTools(),
+      tool_choice: "auto",
+    };
+  }
+
+  /**
+   * OpenAI's GA nested session shape for gpt-realtime-2. The µ-law token,
+   * transcription model, and reasoning effort are all driven by options so
+   * the exact wire values can be corrected during preview validation
+   * without a code change. The bridge's Twilio µ-law wiring is unchanged —
+   * only the session schema differs.
+   */
+  private buildGaSession(): Record<string, unknown> {
+    const audioFormat = { type: this.opts.audioFormat };
+    const audio: Record<string, unknown> = {
+      input: {
+        format: audioFormat,
+        turn_detection: this.turnDetection(),
+        transcription: { model: this.opts.transcriptionModel },
       },
-    });
-    this.sessionUpdateSent = true;
+    };
+    if (this.opts.generateAudio) {
+      audio.output = { format: audioFormat, voice: this.opts.voice };
+    }
+    return {
+      type: "realtime",
+      model: this.opts.model,
+      instructions: this.opts.instructions,
+      output_modalities: this.opts.generateAudio ? ["audio"] : ["text"],
+      audio,
+      // gpt-realtime-2 is a reasoning model: depth is governed by `effort`,
+      // not `temperature` (temperature is not accepted). "low" keeps a live
+      // phone agent snappy.
+      reasoning: { effort: this.opts.reasoningEffort },
+      max_output_tokens: 200,
+      tools: this.enabledTools(),
+      tool_choice: "auto",
+    };
   }
 
   private sendJson(payload: Record<string, unknown>): void {
