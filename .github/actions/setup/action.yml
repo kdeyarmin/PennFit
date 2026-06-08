@@ -21,7 +21,7 @@ inputs:
       pnpm version to install. Must match the packageManager /
       engines.pnpm pin in the root package.json.
     required: false
-    default: "11.5.0"
+    default: "11.5.2"
   install:
     description: >-
       Whether to run `pnpm install --frozen-lockfile`. Set to "false"

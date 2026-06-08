@@ -53,14 +53,46 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import {
+  GL_ACCOUNT_DEFAULTS,
+  loadGlAccounts,
+} from "../../lib/billing/gl-accounts";
 import { logger } from "../../lib/logger";
 import {
   customerKeyForId,
   renderIif,
   renderQboCsv,
+  type QuickbooksExportInput,
   type QuickbooksRowInput,
 } from "../../lib/quickbooks-export";
 import { renderTablePdf } from "../../lib/report-pdf";
+
+// Render an IIF with the owner-configured GL accounts (owner #O3).
+// Loads the mapping once, applies deposit/revenue/refund to the export,
+// and remaps patient-pay rows (tagged with the default patient-pay
+// account) to the configured one. Defaults leave the output unchanged.
+async function renderIifWithAccounts(
+  base: Omit<QuickbooksExportInput, "accounts">,
+): Promise<string> {
+  const accounts = await loadGlAccounts();
+  const rows =
+    accounts.patientPay === GL_ACCOUNT_DEFAULTS.patientPay
+      ? base.rows
+      : base.rows.map((r) =>
+          r.incomeAccount === GL_ACCOUNT_DEFAULTS.patientPay
+            ? { ...r, incomeAccount: accounts.patientPay }
+            : r,
+        );
+  return renderIif({
+    ...base,
+    rows,
+    accounts: {
+      deposit: accounts.deposit,
+      revenue: accounts.revenue,
+      refund: accounts.refund,
+    },
+  });
+}
 import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -961,7 +993,7 @@ router.get(
   async (req, res) => {
     const { from, to } = parseRange(req);
     const orders = await fetchOrders(from, to);
-    const iif = renderIif({
+    const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
       practiceName: PRACTICE_NAME,
@@ -1071,7 +1103,7 @@ router.get(
   async (req, res) => {
     const { from, to } = parseRange(req);
     const rows = await fetchReturns(from, to);
-    const iif = renderIif({
+    const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
       practiceName: PRACTICE_NAME,
@@ -1407,7 +1439,7 @@ router.get(
   async (req, res) => {
     const { from, to } = parseRange(req);
     const rows = await fetchInsuranceClaims(from, to);
-    const iif = renderIif({
+    const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
       practiceName: PRACTICE_NAME,
@@ -1595,7 +1627,7 @@ router.get(
   async (req, res) => {
     const { from, to } = parseRange(req);
     const rows = await fetchPatientPayments(from, to);
-    const iif = renderIif({
+    const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
       practiceName: PRACTICE_NAME,
@@ -1707,7 +1739,7 @@ router.get(
   async (req, res) => {
     const { from, to } = parseRange(req);
     const rows = await fetchCombinedFinancial(from, to);
-    const iif = renderIif({
+    const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
       practiceName: PRACTICE_NAME,
@@ -2259,7 +2291,7 @@ async function buildReportArtifact(
     const fromIso = from.toISOString().slice(0, 10);
     const toIso = to.toISOString().slice(0, 10);
     if (format === "iif") {
-      const iif = renderIif({
+      const iif = await renderIifWithAccounts({
         from: fromIso,
         to: toIso,
         practiceName: PRACTICE_NAME,
