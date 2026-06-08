@@ -21,6 +21,7 @@ import {
   ListChecks,
   FolderKanban,
   CalendarClock,
+  CalendarDays,
   Sparkles,
   Mail,
   Users,
@@ -195,6 +196,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin",
         matchPrefix: "/admin",
         hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
+      },
+      {
+        label: "Company Calendar",
+        icon: CalendarDays,
+        href: "/admin/company-calendar",
+        matchPrefix: "/admin/company-calendar",
+        hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
       },
       {
         label: "Conversations",
