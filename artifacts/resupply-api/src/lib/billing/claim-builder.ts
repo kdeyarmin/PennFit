@@ -23,6 +23,11 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import {
+  type ModifierRuleContext,
+  type ModifierRuleRow,
+  resolveModifiersFromRules,
+} from "./modifier-rules";
 import { fetchUnitCostsBySku } from "./product-cost-lookup";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -438,14 +443,6 @@ async function buildLineForSku(
   return null;
 }
 
-interface ModifierRuleContext {
-  rentalMonth: number | null;
-  isPurchased: boolean;
-  isCompliant: boolean;
-  isInitialDispense: boolean;
-  hasPriorAuth: boolean;
-}
-
 async function resolveRuleContext(
   supabase: SupabaseClient,
   patientId: string,
@@ -519,42 +516,7 @@ async function applyPayerModifierRules(
     );
     return [];
   }
-  const mods: string[] = [];
-  for (const rule of rules ?? []) {
-    if (!ruleApplies(rule.condition, ctx)) continue;
-    const parsed = (rule.modifiers_csv as string)
-      .split(",")
-      .map((m: string) => m.trim().toUpperCase())
-      .filter((m: string) => m.length === 2);
-    for (const m of parsed) if (!mods.includes(m)) mods.push(m);
-  }
-  return mods;
-}
-
-function ruleApplies(
-  condition: Database["resupply"]["Tables"]["payer_modifier_rules"]["Row"]["condition"],
-  ctx: ModifierRuleContext,
-): boolean {
-  switch (condition) {
-    case "always":
-      return true;
-    case "if_rental_month_le_3":
-      return ctx.rentalMonth !== null && ctx.rentalMonth <= 3;
-    case "if_rental_month_ge_4":
-      return ctx.rentalMonth !== null && ctx.rentalMonth >= 4;
-    case "if_purchased":
-      return ctx.isPurchased;
-    case "if_compliant_90day":
-      return ctx.isCompliant;
-    case "if_initial_dispense":
-      return ctx.isInitialDispense;
-    case "if_abn_on_file":
-      // ABN status isn't modelled today — surface as false so the
-      // rule is opt-in once the data is wired.
-      return false;
-    case "if_pa_approved":
-      return ctx.hasPriorAuth;
-  }
+  return resolveModifiersFromRules((rules ?? []) as ModifierRuleRow[], ctx);
 }
 
 async function lookupFeeSchedule(

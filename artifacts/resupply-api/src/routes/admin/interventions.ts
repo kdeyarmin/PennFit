@@ -13,8 +13,17 @@
 //
 //   PATCH /admin/interventions/:id/outcome           (clinical.intervention.write)
 //     Record whether the plan worked on a later re-check (improved /
-//     no_change / worsened / unknown). This is the MANUAL outcome — the
-//     automated therapy-metric before/after comparison is a follow-up.
+//     no_change / worsened / unknown). This is the MANUAL outcome the
+//     RT attests to.
+//
+//   GET   /admin/interventions/:id/outcome-measurement  (clinical.read)
+//     The AUTOMATED outcome signal that complements the manual PATCH
+//     above. Compares the patient's therapy metrics in the window
+//     BEFORE the intervention date to the window AFTER it (average
+//     nightly usage minutes, Medicare-style compliance rate, AHI, and
+//     leak) and derives improved / no_change / worsened from the usage
+//     delta — so an RT can see whether the refit/coaching actually
+//     moved the numbers instead of guessing. Read-only.
 //
 // PHI posture: clinical content (reason/plan) is returned to the
 // clinical.read holder (their tool), but NEVER logged — the app logger
@@ -117,6 +126,155 @@ export function buildInterventionWorklist(
     // Both resolved → newest first.
     return Date.parse(b.createdAt) - Date.parse(a.createdAt);
   });
+}
+
+// ── RT #21b — automated before/after therapy-metric outcome ──────────
+//
+// Pure, I/O-free measurement core (unit-tested directly). Given the
+// intervention's anchor date and the patient's therapy nights in a
+// symmetric window around it, split the nights into BEFORE (night_date
+// strictly before the anchor day) and AFTER (on or after), then compare
+// the two windows. The derived `signal` is driven by average nightly
+// usage minutes — the clinically meaningful adherence metric — with AHI
+// and leak reported alongside as context.
+
+/** ≥ this many usage-bearing nights on EACH side or the signal is `insufficient_data`. */
+export const OUTCOME_MIN_NIGHTS_PER_SIDE = 3;
+/** Medicare compliant-night threshold (≥ 4 h). */
+const OUTCOME_COMPLIANT_MINUTES = 240;
+/** ± avg-usage swing (min/night) that flips the signal off `no_change`. */
+const OUTCOME_USAGE_DELTA_MINUTES = 30;
+
+export interface TherapyNightInput {
+  /** ISO date (YYYY-MM-DD). */
+  nightDate: string;
+  usageMinutes: number | null;
+  ahi: number | null;
+  leakLMin: number | null;
+}
+
+export interface OutcomeWindowStats {
+  /** Deduped night rows that fell in this window. */
+  nights: number;
+  /** Of those, how many carried a usage value (denominator for compliance). */
+  nightsWithUsage: number;
+  avgUsageMinutes: number | null;
+  /** Nights with usage ≥ 240 min. */
+  compliantNights: number;
+  /** compliantNights / nightsWithUsage, as a 0–100 percentage. */
+  complianceRatePct: number | null;
+  avgAhi: number | null;
+  avgLeak: number | null;
+}
+
+export type OutcomeSignal =
+  | "improved"
+  | "no_change"
+  | "worsened"
+  | "insufficient_data";
+
+export interface OutcomeMeasurement {
+  before: OutcomeWindowStats;
+  after: OutcomeWindowStats;
+  deltas: {
+    usageMinutes: number | null;
+    complianceRatePct: number | null;
+    ahi: number | null;
+    leak: number | null;
+  };
+  signal: OutcomeSignal;
+  minNightsPerSide: number;
+}
+
+function mean(vals: number[]): number | null {
+  if (vals.length === 0) return null;
+  return vals.reduce((s, v) => s + v, 0) / vals.length;
+}
+
+function round1(v: number | null): number | null {
+  return v == null ? null : Math.round(v * 10) / 10;
+}
+
+function numeric(vals: (number | null)[]): number[] {
+  return vals.filter((v): v is number => v != null && Number.isFinite(v));
+}
+
+function computeWindowStats(nights: TherapyNightInput[]): OutcomeWindowStats {
+  const usage = numeric(nights.map((n) => n.usageMinutes));
+  const compliantNights = usage.filter(
+    (u) => u >= OUTCOME_COMPLIANT_MINUTES,
+  ).length;
+  return {
+    nights: nights.length,
+    nightsWithUsage: usage.length,
+    avgUsageMinutes: round1(mean(usage)),
+    compliantNights,
+    complianceRatePct:
+      usage.length > 0 ? round1((compliantNights / usage.length) * 100) : null,
+    avgAhi: round1(mean(numeric(nights.map((n) => n.ahi)))),
+    avgLeak: round1(mean(numeric(nights.map((n) => n.leakLMin)))),
+  };
+}
+
+/**
+ * Pure: compute the before/after therapy-metric comparison for one
+ * intervention. `anchorDate` is the intervention day (YYYY-MM-DD). Nights
+ * are deduped by date (first occurrence wins — a patient synced from two
+ * clouds can carry duplicate dates). No I/O.
+ */
+export function computeOutcomeMeasurement(input: {
+  anchorDate: string;
+  nights: TherapyNightInput[];
+  minNightsPerSide?: number;
+}): OutcomeMeasurement {
+  const minNights = input.minNightsPerSide ?? OUTCOME_MIN_NIGHTS_PER_SIDE;
+
+  const seen = new Set<string>();
+  const deduped: TherapyNightInput[] = [];
+  for (const n of input.nights) {
+    if (!n?.nightDate || seen.has(n.nightDate)) continue;
+    seen.add(n.nightDate);
+    deduped.push(n);
+  }
+
+  // night_date and anchorDate are both YYYY-MM-DD, so lexical compare = date compare.
+  const before = computeWindowStats(
+    deduped.filter((n) => n.nightDate < input.anchorDate),
+  );
+  const after = computeWindowStats(
+    deduped.filter((n) => n.nightDate >= input.anchorDate),
+  );
+
+  const delta = (a: number | null, b: number | null): number | null =>
+    a == null || b == null ? null : round1(a - b);
+  const deltas = {
+    usageMinutes: delta(after.avgUsageMinutes, before.avgUsageMinutes),
+    complianceRatePct: delta(after.complianceRatePct, before.complianceRatePct),
+    ahi: delta(after.avgAhi, before.avgAhi),
+    leak: delta(after.avgLeak, before.avgLeak),
+  };
+
+  let signal: OutcomeSignal;
+  if (before.nightsWithUsage < minNights || after.nightsWithUsage < minNights) {
+    signal = "insufficient_data";
+  } else {
+    const d = deltas.usageMinutes ?? 0;
+    signal =
+      d >= OUTCOME_USAGE_DELTA_MINUTES
+        ? "improved"
+        : d <= -OUTCOME_USAGE_DELTA_MINUTES
+          ? "worsened"
+          : "no_change";
+  }
+
+  return { before, after, deltas, signal, minNightsPerSide: minNights };
+}
+
+/** Add `delta` days to a YYYY-MM-DD day in UTC, returning YYYY-MM-DD. */
+function addDaysIso(dayIso: string, delta: number): string {
+  const d = new Date(`${dayIso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
 }
 
 const patientIdParam = z.string().trim().min(1).max(128);
@@ -292,6 +450,110 @@ router.patch(
     res.json({
       id: (data as { id: string }).id,
       outcomeStatus: parsed.data.outcomeStatus,
+    });
+  },
+);
+
+const measurementQuerySchema = z.object({
+  // Symmetric window (days) before and after the intervention date.
+  windowDays: z.coerce.number().int().min(7).max(90).default(30),
+});
+
+router.get(
+  "/admin/interventions/:id/outcome-measurement",
+  adminReadRateLimiter,
+  requirePermission("clinical.read"),
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const parsed = measurementQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const windowDays = parsed.data.windowDays;
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    // 1) Resolve the intervention → patient + anchor date.
+    const { data: enc, error: encErr } = await supabase
+      .schema("resupply")
+      .from("clinical_encounters")
+      .select("id, patient_id, created_at, assessment_category, outcome_status")
+      .eq("id", idParsed.data)
+      .eq("encounter_type", "adherence_intervention")
+      .maybeSingle();
+    if (encErr) {
+      res.status(500).json({ error: "query_failed", message: encErr.message });
+      return;
+    }
+    if (!enc) {
+      res.status(404).json({ error: "intervention_not_found" });
+      return;
+    }
+    const encounter = enc as {
+      patient_id: string;
+      created_at: string;
+      assessment_category: string | null;
+      outcome_status: string | null;
+    };
+    const anchorDate = encounter.created_at.slice(0, 10);
+    const startIso = addDaysIso(anchorDate, -windowDays);
+    const endIso = addDaysIso(anchorDate, windowDays);
+
+    // 2) Pull the patient's nights across the symmetric window. Cap the
+    //    read at 4× the day-span to bound multi-source duplicate dates
+    //    (computeOutcomeMeasurement dedups by date).
+    const { data: nights, error: nightsErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_nights")
+      .select("night_date, usage_minutes, ahi, leak_rate_l_min")
+      .eq("patient_id", encounter.patient_id)
+      .gte("night_date", startIso)
+      .lte("night_date", endIso)
+      .order("night_date", { ascending: true })
+      .limit(windowDays * 2 * 4);
+    if (nightsErr) {
+      res
+        .status(500)
+        .json({ error: "query_failed", message: nightsErr.message });
+      return;
+    }
+
+    const measurement = computeOutcomeMeasurement({
+      anchorDate,
+      nights: ((nights ?? []) as Record<string, unknown>[]).map((n) => ({
+        nightDate: String(n.night_date),
+        usageMinutes: n.usage_minutes == null ? null : Number(n.usage_minutes),
+        ahi: n.ahi == null ? null : Number(n.ahi),
+        leakLMin: n.leak_rate_l_min == null ? null : Number(n.leak_rate_l_min),
+      })),
+    });
+
+    // Counts + signal only — never the per-night metrics (PHI).
+    req.log?.info(
+      {
+        event: "admin.intervention.outcome_measurement",
+        intervention_id: idParsed.data,
+        signal: measurement.signal,
+        before_nights: measurement.before.nights,
+        after_nights: measurement.after.nights,
+        adminEmail: req.adminEmail,
+      },
+      "admin.intervention.outcome_measurement",
+    );
+
+    res.json({
+      interventionId: idParsed.data,
+      patientId: encounter.patient_id,
+      assessmentCategory: encounter.assessment_category,
+      manualOutcomeStatus: encounter.outcome_status ?? "pending",
+      anchorDate,
+      windowDays,
+      ...measurement,
     });
   },
 );

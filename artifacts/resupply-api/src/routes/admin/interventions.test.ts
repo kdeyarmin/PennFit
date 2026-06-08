@@ -25,7 +25,9 @@ vi.mock("../../middlewares/requireAdmin", () =>
 
 import interventionsRouter, {
   buildInterventionWorklist,
+  computeOutcomeMeasurement,
   type InterventionRow,
+  type TherapyNightInput,
 } from "./interventions";
 
 // rt (clinician) holds clinical.read + clinical.intervention.write.
@@ -209,5 +211,179 @@ describe("PATCH /admin/interventions/:id/outcome", () => {
       .send({ outcomeStatus: "improved" });
     expect(res.status).toBe(200);
     expect(res.body.outcomeStatus).toBe("improved");
+  });
+});
+
+describe("computeOutcomeMeasurement (pure)", () => {
+  function night(over: Partial<TherapyNightInput>): TherapyNightInput {
+    return {
+      nightDate: "2026-05-01",
+      usageMinutes: 300,
+      ahi: 3,
+      leakLMin: 10,
+      ...over,
+    };
+  }
+
+  it("flags `improved` when avg nightly usage rises ≥ 30 min after the anchor", () => {
+    const m = computeOutcomeMeasurement({
+      anchorDate: "2026-05-15",
+      nights: [
+        // before: ~200 min/night, none compliant
+        night({ nightDate: "2026-05-10", usageMinutes: 200 }),
+        night({ nightDate: "2026-05-11", usageMinutes: 210 }),
+        night({ nightDate: "2026-05-12", usageMinutes: 190 }),
+        // after: ~310 min/night, all compliant
+        night({ nightDate: "2026-05-16", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-17", usageMinutes: 320 }),
+        night({ nightDate: "2026-05-18", usageMinutes: 310 }),
+      ],
+    });
+    expect(m.signal).toBe("improved");
+    expect(m.before.nights).toBe(3);
+    expect(m.after.nights).toBe(3);
+    expect(m.before.compliantNights).toBe(0);
+    expect(m.after.compliantNights).toBe(3);
+    expect(m.after.complianceRatePct).toBe(100);
+    expect(m.deltas.usageMinutes).toBeGreaterThanOrEqual(30);
+  });
+
+  it("flags `worsened` when usage drops and `no_change` when flat", () => {
+    const worse = computeOutcomeMeasurement({
+      anchorDate: "2026-05-15",
+      nights: [
+        night({ nightDate: "2026-05-12", usageMinutes: 320 }),
+        night({ nightDate: "2026-05-13", usageMinutes: 330 }),
+        night({ nightDate: "2026-05-14", usageMinutes: 310 }),
+        night({ nightDate: "2026-05-16", usageMinutes: 200 }),
+        night({ nightDate: "2026-05-17", usageMinutes: 210 }),
+        night({ nightDate: "2026-05-18", usageMinutes: 220 }),
+      ],
+    });
+    expect(worse.signal).toBe("worsened");
+
+    const flat = computeOutcomeMeasurement({
+      anchorDate: "2026-05-15",
+      nights: [
+        night({ nightDate: "2026-05-12", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-13", usageMinutes: 305 }),
+        night({ nightDate: "2026-05-14", usageMinutes: 295 }),
+        night({ nightDate: "2026-05-16", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-17", usageMinutes: 310 }),
+        night({ nightDate: "2026-05-18", usageMinutes: 290 }),
+      ],
+    });
+    expect(flat.signal).toBe("no_change");
+  });
+
+  it("returns `insufficient_data` when either side has too few usage nights", () => {
+    const m = computeOutcomeMeasurement({
+      anchorDate: "2026-05-15",
+      nights: [
+        night({ nightDate: "2026-05-14", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-16", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-17", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-18", usageMinutes: 300 }),
+      ],
+    });
+    expect(m.signal).toBe("insufficient_data");
+    expect(m.before.nightsWithUsage).toBe(1);
+  });
+
+  it("dedups duplicate night dates (multi-cloud sync) and ignores null usage in averages", () => {
+    const m = computeOutcomeMeasurement({
+      anchorDate: "2026-05-15",
+      nights: [
+        night({ nightDate: "2026-05-16", usageMinutes: 300 }),
+        night({ nightDate: "2026-05-16", usageMinutes: 999 }), // dup date — dropped
+        night({ nightDate: "2026-05-17", usageMinutes: null }), // counted as a night, not in usage avg
+      ],
+    });
+    expect(m.after.nights).toBe(2);
+    expect(m.after.nightsWithUsage).toBe(1);
+    expect(m.after.avgUsageMinutes).toBe(300);
+  });
+});
+
+describe("GET /admin/interventions/:id/outcome-measurement", () => {
+  it("403s for csr", async () => {
+    mockAdmin.current = CSR;
+    const res = await request(makeApp()).get(
+      `/admin/interventions/${ENC_ID}/outcome-measurement`,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("404s when the intervention doesn't exist", async () => {
+    mockAdmin.current = RT;
+    stageSupabaseResponse("clinical_encounters", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/admin/interventions/${ENC_ID}/outcome-measurement`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns the before/after measurement for a real intervention", async () => {
+    mockAdmin.current = RT;
+    stageSupabaseResponse("clinical_encounters", "select", {
+      data: {
+        id: ENC_ID,
+        patient_id: PATIENT_ID,
+        created_at: "2026-05-15T12:00:00.000Z",
+        assessment_category: "mask_leak",
+        outcome_status: "pending",
+      },
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [
+        {
+          night_date: "2026-05-10",
+          usage_minutes: 200,
+          ahi: 5,
+          leak_rate_l_min: 30,
+        },
+        {
+          night_date: "2026-05-11",
+          usage_minutes: 210,
+          ahi: 5,
+          leak_rate_l_min: 28,
+        },
+        {
+          night_date: "2026-05-12",
+          usage_minutes: 190,
+          ahi: 6,
+          leak_rate_l_min: 32,
+        },
+        {
+          night_date: "2026-05-16",
+          usage_minutes: 300,
+          ahi: 3,
+          leak_rate_l_min: 12,
+        },
+        {
+          night_date: "2026-05-17",
+          usage_minutes: 320,
+          ahi: 3,
+          leak_rate_l_min: 10,
+        },
+        {
+          night_date: "2026-05-18",
+          usage_minutes: 310,
+          ahi: 2,
+          leak_rate_l_min: 11,
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      `/admin/interventions/${ENC_ID}/outcome-measurement`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.interventionId).toBe(ENC_ID);
+    expect(res.body.patientId).toBe(PATIENT_ID);
+    expect(res.body.anchorDate).toBe("2026-05-15");
+    expect(res.body.signal).toBe("improved");
+    expect(res.body.after.compliantNights).toBe(3);
+    // Leak improved (dropped) after the mask-leak intervention.
+    expect(res.body.deltas.leak).toBeLessThan(0);
   });
 });
