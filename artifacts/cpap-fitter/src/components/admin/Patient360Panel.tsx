@@ -203,6 +203,7 @@ function TherapySnapshotSection({ patientId }: { patientId: string }) {
         />
       </div>
       <p className="text-[10px] text-slate-400 mt-1">
+        {`${data.nightsWithData} nights with data`}
         {data.staleDays != null ? ` · last sync ${data.staleDays}d ago` : ""}
       </p>
     </Section>
