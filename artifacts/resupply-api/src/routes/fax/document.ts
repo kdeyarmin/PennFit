@@ -64,8 +64,10 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
       verified.outreachId,
     );
     if (!result.ok) {
-      res.status(404).json({ error: result.reason });
+      const status = result.reason === "no_dme_organization" ? 409 : 404;
+      res.status(status).json({ error: result.reason });
       return;
+    }
     }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
