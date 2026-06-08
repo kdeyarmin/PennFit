@@ -167,6 +167,29 @@ CORE `<ErrorCode>`) is surfaced as the failure reason rather than a generic
 "no 271" — and any real-time failure transparently falls back to the SFTP
 submit path, so the check still completes.
 
+## Eligibility gates (when to auto-check coverage)
+
+Once 270/271 results are flowing, two **admin-toggleable** gates consult
+the most recent parsed 271 at the moments a denial would otherwise slip
+through. Both live in the **Control Center** (Settings → feature flags),
+are **seeded OFF**, and are **fail-open** (a missing/stale result or any
+lookup error always lets the action proceed):
+
+| Flag                               | Decision point                                    | On a bad result                                                                 |
+| ---------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `resupply.eligibility_enforcement` | Patient **confirms a resupply** (SMS YES / email) | Raises a `resupply_coverage_blocked` CSR alert + holds the order for review.    |
+| `billing.eligibility_precheck`     | CSR **batch-submits 837P claims** to Office Ally  | Holds the batch and returns `eligibility_blocked` with the offending claim ids. |
+
+"Bad result" = the coverage's latest parsed 271 is **explicitly inactive**
+or **flags prior-auth-required** (within a 45-day freshness window). The
+decision matrix is shared (`lib/billing/coverage-eligibility.ts`) so both
+gates behave identically. Turn them on after you've verified eligibility is
+being run for the population (otherwise they mostly no-op / fail open).
+
+To populate the 271 cache the gates read, run eligibility from the patient
+page or the **Billing → Eligibility worklist** (instant when real-time is
+configured — see above).
+
 ## Same-or-Similar (HETS)
 
 Medicare Same-or-Similar (`/admin/.../same-or-similar`) is a **manual** CSR

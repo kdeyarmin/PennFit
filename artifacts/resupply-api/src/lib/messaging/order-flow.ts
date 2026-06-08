@@ -49,7 +49,10 @@ import {
 } from "@workspace/resupply-db";
 
 import { resolveFulfillmentSku } from "../backorder/resolve-fulfillment-sku";
-import { getCachedEligibility } from "../billing/eligibility-verifier";
+import {
+  consultCoverageEligibilityForCoverage,
+  type CoverageBlock,
+} from "../billing/coverage-eligibility";
 import {
   resolveSkuEntitlement,
   type SkuEntitlement,
@@ -65,25 +68,6 @@ export interface NotEligibleEntitlement {
   daysUntilEligible: number;
   hcpcsCode: string;
 }
-
-export interface CoverageBlock {
-  /** Why the confirmation was held for CSR review. */
-  reason: "inactive" | "prior_auth_required";
-  /** Payer display name from the patient's primary coverage. */
-  payerName: string;
-  /** The `eligibility_checks` row the decision was read from. */
-  eligibilityCheckId: string;
-}
-
-/**
- * How far back a parsed 271 stays usable for the order-time coverage
- * consult. 270s are run intermittently (not on a continuous refresh),
- * so a same-day window would almost always miss; 45 days is recent
- * enough that a plan-year flip is unlikely to be masked, while still
- * letting a check run a few weeks ago count. Stale → treated as
- * "no opinion" (fail open).
- */
-const COVERAGE_FRESHNESS_MS = 45 * 24 * 60 * 60 * 1000;
 
 export type PlaceOrderResult =
   | {
@@ -431,46 +415,16 @@ async function raiseTooSoonAlert(
 }
 
 /**
- * Pure coverage decision from a parsed 271 row. Exported for unit
- * testing the decision matrix independently of the DB reads (mirrors
- * how the entitlement decision lives in a pure domain fn).
- *
- * Returns a `CoverageBlock` ONLY on an explicit negative signal
- * (`is_active === false`, or `requires_prior_auth === true`). A null
- * row, or any field that is null/unknown/positive, returns null → no
- * opinion → the order proceeds (fail open).
- */
-export function decideCoverageBlock(
-  elig: {
-    id: string;
-    is_active: boolean | null;
-    requires_prior_auth: boolean | null;
-  } | null,
-  payerName: string,
-): CoverageBlock | null {
-  if (!elig) return null;
-  if (elig.is_active === false) {
-    return { reason: "inactive", payerName, eligibilityCheckId: elig.id };
-  }
-  if (elig.requires_prior_auth === true) {
-    return {
-      reason: "prior_auth_required",
-      payerName,
-      eligibilityCheckId: elig.id,
-    };
-  }
-  return null;
-}
-
-/**
  * Consult the most recent parsed 270/271 for the patient's PRIMARY
  * insurance coverage. Returns a `CoverageBlock` when the coverage is
- * explicitly inactive or flags prior-auth-required, else null.
+ * explicitly inactive or flags prior-auth-required, else null. The
+ * decision matrix + freshness window live in
+ * `lib/billing/coverage-eligibility` and are shared with the claim-submit
+ * gate so both behave identically.
  *
  * FAIL OPEN by omission: a patient with no coverage on file (cash-pay),
- * no parsed result, or a result older than `COVERAGE_FRESHNESS_MS`
- * returns null → the order proceeds. A thrown DB error propagates to
- * the caller's fail-open catch.
+ * no/stale parsed result returns null → the order proceeds. A thrown DB
+ * error propagates to the caller's fail-open catch.
  */
 async function consultCoverageEligibility(
   supabase: ResupplySupabaseClient,
@@ -487,8 +441,10 @@ async function consultCoverageEligibility(
   if (covErr) throw covErr;
   if (!coverage) return null; // no coverage on file → no opinion
 
-  const elig = await getCachedEligibility(coverage.id, COVERAGE_FRESHNESS_MS);
-  return decideCoverageBlock(elig, coverage.payer_name);
+  return consultCoverageEligibilityForCoverage(
+    coverage.id,
+    coverage.payer_name,
+  );
 }
 
 /**

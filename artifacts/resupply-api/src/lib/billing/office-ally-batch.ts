@@ -25,7 +25,9 @@ import {
   type OtherSubscriberDetail,
 } from "@workspace/resupply-integrations-office-ally";
 
+import { consultCoverageEligibilityForCoverage } from "./coverage-eligibility";
 import { resolveBillingIdentity } from "./identity-resolver";
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
@@ -64,7 +66,8 @@ export type BatchSubmitResult =
         | "batch_payer_mismatch"
         | "non_draft_claims_in_batch"
         | "payer_not_electronic"
-        | "claim_missing_required_data";
+        | "claim_missing_required_data"
+        | "eligibility_blocked";
       detail: Record<string, unknown>;
     };
 
@@ -139,6 +142,52 @@ export async function executeOfficeAllyBatchSubmit(
         ediEnrollmentStatus: payer?.edi_enrollment_status ?? null,
       },
     };
+  }
+
+  // Eligibility precheck (feature-flagged). Before we transmit, consult
+  // each claim's most recent parsed 270/271. A coverage that is
+  // explicitly inactive or flags prior-auth-required would deny, so we
+  // hold the whole batch and hand the offending claims back for the CSR
+  // to re-verify / fix. FAIL OPEN: a missing/stale result, no coverage,
+  // or ANY lookup error allows the claim through — the same posture as
+  // the order-confirm guard (resupply.eligibility_enforcement). Runs
+  // before the EDI build so a blocked batch transmits nothing.
+  if (await isFeatureEnabled("billing.eligibility_precheck")) {
+    const blocked: Array<{
+      claimId: string;
+      reason: string;
+      payerName: string;
+      eligibilityCheckId: string;
+    }> = [];
+    for (const claim of claims) {
+      if (!claim.insurance_coverage_id) continue; // missing data caught below
+      try {
+        const block = await consultCoverageEligibilityForCoverage(
+          claim.insurance_coverage_id,
+          payer.payer_legal_name,
+        );
+        if (block) {
+          blocked.push({
+            claimId: claim.id,
+            reason: block.reason,
+            payerName: block.payerName,
+            eligibilityCheckId: block.eligibilityCheckId,
+          });
+        }
+      } catch (err) {
+        logger.warn(
+          {
+            event: "billing.eligibility_precheck.failed",
+            claimId: claim.id,
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "billing: eligibility precheck failed; allowing claim (fail open)",
+        );
+      }
+    }
+    if (blocked.length > 0) {
+      return { ok: false, kind: "eligibility_blocked", detail: { blocked } };
+    }
   }
 
   const detailEntries: ClaimDetail[] = [];
