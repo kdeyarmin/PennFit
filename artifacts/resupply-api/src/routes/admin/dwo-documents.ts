@@ -9,6 +9,11 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import {
+  renderDwoPdf,
+  validateDwoInput,
+  type DwoPdfInput,
+} from "../../lib/billing/dwo-pdf";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -96,6 +101,119 @@ router.get(
       .order("expires_on", { ascending: true })
       .limit(200);
     res.json({ documents: data ?? [] });
+  },
+);
+
+// GET /admin/dwo-documents/:id/pdf — render the tracked DWO/CMN order as
+// a signable PDF and stream it to the admin's browser. Read-only +
+// idempotent (same row → same document), so GET + patients.read, mirror
+// of the SWO route. The dwo_documents row only tracked metadata before;
+// this turns it into an actual on-file order document.
+router.get(
+  "/admin/dwo-documents/:id/pdf",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row } = await supabase
+      .schema("resupply")
+      .from("dwo_documents")
+      .select(
+        "id, patient_id, hcpcs_family, form_type, signing_provider_id, signed_on, expires_on, notes",
+      )
+      .eq("id", idParsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const [{ data: patient }, providerRes] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select("legal_first_name, legal_last_name, date_of_birth, address")
+        .eq("id", row.patient_id)
+        .limit(1)
+        .maybeSingle(),
+      row.signing_provider_id
+        ? supabase
+            .schema("resupply")
+            .from("providers")
+            .select("legal_name, npi, practice_name, phone_e164, fax_e164")
+            .eq("id", row.signing_provider_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    const provider = providerRes.data
+      ? {
+          legalName: providerRes.data.legal_name,
+          npi: providerRes.data.npi,
+          practiceName: providerRes.data.practice_name,
+          phoneE164: providerRes.data.phone_e164,
+          faxE164: providerRes.data.fax_e164,
+        }
+      : null;
+
+    const input: DwoPdfInput = {
+      formType: row.form_type,
+      hcpcsFamily: row.hcpcs_family,
+      signedOn: row.signed_on,
+      expiresOn: row.expires_on,
+      notes: row.notes,
+      patient: {
+        legalFirstName: patient.legal_first_name,
+        legalLastName: patient.legal_last_name,
+        dateOfBirth: patient.date_of_birth,
+        address: (patient.address ?? null) as DwoPdfInput["patient"]["address"],
+      },
+      provider,
+      generatedOn: new Date(),
+      supplierName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+    };
+
+    const errors = validateDwoInput(input);
+    if (errors.length > 0) {
+      res.status(422).json({ error: "incomplete_inputs", issues: errors });
+      return;
+    }
+
+    const pdf = await renderDwoPdf(input);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${row.form_type}-${row.id.slice(0, 8)}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).end(pdf);
+
+    await logAudit({
+      action: "dwo_document.generated",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "dwo_documents",
+      targetId: row.id,
+      metadata: {
+        patient_id: row.patient_id,
+        form: row.form_type,
+        family: row.hcpcs_family,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "dwo_document.generated audit write failed");
+    });
   },
 );
 
