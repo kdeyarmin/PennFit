@@ -160,17 +160,21 @@ export function readOfficeAllyRealtimeConfigOrNull(
   const url = env.OFFICE_ALLY_REALTIME_URL?.trim();
   const username = env.OFFICE_ALLY_REALTIME_USERNAME;
   const password = env.OFFICE_ALLY_REALTIME_PASSWORD;
+  // CORE SenderID is mandatory for the envelope; resolve it (explicit var
+  // → ETIN) up front and treat a missing one as "not configured" rather
+  // than emitting an empty <SenderID> that the payer would reject.
+  const senderId =
+    env.OFFICE_ALLY_REALTIME_SENDER_ID?.trim() ||
+    env.OFFICE_ALLY_ETIN?.trim() ||
+    "";
   // All-or-null, mirroring readOfficeAllyConfigOrNull: a partial config
   // degrades to the SFTP path rather than half-attempting real-time.
-  if (!url || !username || !password) return null;
+  if (!url || !username || !password || !senderId) return null;
   return {
     url,
     username,
     password,
-    senderId:
-      env.OFFICE_ALLY_REALTIME_SENDER_ID?.trim() ||
-      env.OFFICE_ALLY_ETIN?.trim() ||
-      "",
+    senderId,
     receiverId: env.OFFICE_ALLY_REALTIME_RECEIVER_ID?.trim() || "OFFICEALLY",
     timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_REALTIME_TIMEOUT_MS),
   };

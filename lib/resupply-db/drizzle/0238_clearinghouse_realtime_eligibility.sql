@@ -9,10 +9,10 @@
 -- real-time config — endpoint, username, CORE sender/receiver ids,
 -- timeout, on/off — the same way it drives the SFTP connection.
 --
--- The real-time PASSWORD is intentionally NOT stored here: it stays the
--- OFFICE_ALLY_REALTIME_PASSWORD environment secret, mirroring how the SFTP
--- key bytes are never stored in the DB (only a file path). This keeps the
--- "no plaintext secrets in Postgres" posture intact.
+-- This migration adds only the NON-SECRET fields. The real-time password
+-- lands in a follow-up (0239_clearinghouse_realtime_password.sql) as a
+-- write-only column, with OFFICE_ALLY_REALTIME_PASSWORD as the env
+-- fallback for anyone who'd rather keep the secret out of the DB.
 
 ALTER TABLE "resupply"."clearinghouse_credentials"
   ADD COLUMN IF NOT EXISTS "realtime_enabled" boolean NOT NULL DEFAULT false,

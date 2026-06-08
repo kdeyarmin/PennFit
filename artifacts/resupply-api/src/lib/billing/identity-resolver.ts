@@ -185,10 +185,15 @@ export async function resolveClearinghouse(
 }
 
 /**
- * Resolve the real-time eligibility config: DB row's non-secret fields +
- * the OFFICE_ALLY_REALTIME_PASSWORD env secret when the row enables it,
- * otherwise the fully-env path (readOfficeAllyRealtimeConfigOrNull).
- * Returns null when real-time isn't configured (or stub mode is forced).
+ * Resolve the real-time eligibility config.
+ *
+ * A clearinghouse DB row is **authoritative** when present: it decides
+ * whether real-time is on (the admin toggle), so an env var can NEVER
+ * silently re-enable real-time when the row has it disabled or
+ * incompletely configured. The fully-env path
+ * (readOfficeAllyRealtimeConfigOrNull) applies ONLY when no DB row exists
+ * (dev/preview). Returns null when real-time isn't configured (or stub
+ * mode is forced).
  */
 function buildRealtimeConfig(
   row: ClearinghouseRow | null,
@@ -196,31 +201,38 @@ function buildRealtimeConfig(
 ): OfficeAllyRealtimeConfig | null {
   // Stub mode means "don't transmit anywhere" — honor it here too.
   if (env.OFFICE_ALLY_STUB === "1") return null;
-  if (row?.realtime_enabled && row.realtime_url && row.realtime_username) {
+  if (row) {
+    // The row owns the on/off decision; don't fall back to env when it's
+    // disabled or missing the endpoint/username.
+    if (!row.realtime_enabled || !row.realtime_url || !row.realtime_username) {
+      return null;
+    }
     // Password precedence: the DB row's stored password wins (used as-is),
     // with the OFFICE_ALLY_REALTIME_PASSWORD env var as a fallback
-    // (dev/preview). A blank stored value counts as "unset". Without
-    // either, real-time can't run, so fall through to the env path.
+    // (dev/preview). A blank stored value counts as "unset".
     const dbPassword = row.realtime_password;
     const password =
       dbPassword && dbPassword.trim().length > 0
         ? dbPassword
         : env.OFFICE_ALLY_REALTIME_PASSWORD;
-    if (password) {
-      return {
-        url: row.realtime_url,
-        username: row.realtime_username,
-        password,
-        senderId: row.realtime_sender_id?.trim() || row.etin || "",
-        receiverId: row.realtime_receiver_id?.trim() || "OFFICEALLY",
-        timeoutMs:
-          typeof row.realtime_timeout_ms === "number" &&
-          row.realtime_timeout_ms > 0
-            ? row.realtime_timeout_ms
-            : 30_000,
-      };
-    }
+    // CORE SenderID is mandatory; missing one (no override, no ETIN) means
+    // not configured rather than an empty <SenderID> the payer rejects.
+    const senderId = row.realtime_sender_id?.trim() || row.etin || "";
+    if (!password || !senderId) return null;
+    return {
+      url: row.realtime_url,
+      username: row.realtime_username,
+      password,
+      senderId,
+      receiverId: row.realtime_receiver_id?.trim() || "OFFICEALLY",
+      timeoutMs:
+        typeof row.realtime_timeout_ms === "number" &&
+        row.realtime_timeout_ms > 0
+          ? row.realtime_timeout_ms
+          : 30_000,
+    };
   }
+  // No DB row at all → env-only path (dev/preview).
   return readOfficeAllyRealtimeConfigOrNull(env);
 }
 

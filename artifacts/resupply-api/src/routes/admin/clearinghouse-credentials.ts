@@ -64,9 +64,9 @@ const upsertBody = z
     contactPhoneE164: z.string().trim().regex(E164_RE).nullable().optional(),
     isActive: z.boolean().default(true),
     notes: z.string().trim().max(4000).nullable().optional(),
-    // Real-time eligibility (270/271) — non-secret config only. The
-    // password is the OFFICE_ALLY_REALTIME_PASSWORD env secret, never
-    // stored here (mirrors the SFTP key file).
+    // Real-time eligibility (270/271) connection. realtimePassword is
+    // write-only: it is stored on the row but never echoed back by GET
+    // (which exposes only `realtimePasswordSet`); see its field below.
     realtimeEnabled: z.boolean().default(false),
     realtimeUrl: z.string().trim().url().max(500).nullable().optional(),
     realtimeUsername: z.string().trim().max(200).nullable().optional(),
@@ -210,7 +210,7 @@ router.post(
         realtime_sender_id: b.realtimeSenderId ?? null,
         realtime_receiver_id: b.realtimeReceiverId ?? null,
         realtime_timeout_ms: b.realtimeTimeoutMs ?? null,
-        realtime_password: b.realtimePassword || null,
+        realtime_password: b.realtimePassword?.trim() || null,
       })
       .select("id")
       .single();
@@ -309,9 +309,11 @@ router.patch(
       update.realtime_receiver_id = b.realtimeReceiverId;
     if (b.realtimeTimeoutMs !== undefined)
       update.realtime_timeout_ms = b.realtimeTimeoutMs;
-    // Only overwrite the password when a non-empty value is supplied;
-    // a blank/omitted field leaves the stored password unchanged.
-    if (b.realtimePassword) update.realtime_password = b.realtimePassword;
+    // Only overwrite the password when a non-whitespace value is supplied;
+    // a blank/whitespace/omitted field leaves the stored password unchanged
+    // (so a stray "   " can't clobber a real credential).
+    if (b.realtimePassword?.trim())
+      update.realtime_password = b.realtimePassword.trim();
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase
       .schema("resupply")

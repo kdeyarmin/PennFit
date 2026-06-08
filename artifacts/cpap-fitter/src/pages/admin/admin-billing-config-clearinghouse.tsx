@@ -319,6 +319,9 @@ export function AdminBillingConfigClearinghousePage() {
             </span>
             <input
               type="number"
+              min={1000}
+              max={120000}
+              step={1000}
               className="mt-1 w-full rounded-md border px-2.5 py-1.5 text-sm"
               style={INPUT_STYLE}
               value={body.realtimeTimeoutMs ?? ""}

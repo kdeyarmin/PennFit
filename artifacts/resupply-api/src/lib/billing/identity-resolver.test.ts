@@ -281,4 +281,20 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     const result = await resolveClearinghouse({ env: {} });
     expect(result.realtimeConfig?.password).toBe("dbsecret");
   });
+
+  it("does NOT let env vars re-enable real-time when the DB row has it disabled", async () => {
+    // The admin toggle is off — env vars must not silently turn it back on.
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...REALTIME_ROW, realtime_enabled: false },
+    });
+    const result = await resolveClearinghouse({
+      env: {
+        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        OFFICE_ALLY_REALTIME_USERNAME: "envuser",
+        OFFICE_ALLY_REALTIME_PASSWORD: "envpass",
+        OFFICE_ALLY_ETIN: "ENVETIN",
+      },
+    });
+    expect(result.realtimeConfig).toBeNull();
+  });
 });

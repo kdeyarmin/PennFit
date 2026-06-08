@@ -265,4 +265,10 @@ describe("readOfficeAllyRealtimeConfigOrNull", () => {
     expect(cfg!.receiverId).toBe("RCV");
     expect(cfg!.timeoutMs).toBe(9000);
   });
+
+  it("returns null when neither a sender id nor an ETIN is set", () => {
+    // url/username/password present but no SenderID source — an empty
+    // <SenderID> would be rejected, so the config is treated as unset.
+    expect(readOfficeAllyRealtimeConfigOrNull(base)).toBeNull();
+  });
 });

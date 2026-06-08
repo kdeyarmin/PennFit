@@ -111,8 +111,15 @@ export function createRealtimeEligibilityTransport(
         resp = await fetchImpl(config.url, {
           method: "POST",
           headers: {
-            "Content-Type": "text/xml; charset=utf-8",
-            // CONFIRM(oa-spec): SOAPAction value for the real-time op.
+            // The envelope uses the SOAP 1.2 namespace, so the matching
+            // content type is application/soap+xml (1.2 carries the action
+            // as a content-type parameter, not a separate SOAPAction
+            // header). CONFIRM(oa-spec): some Office Ally real-time
+            // endpoints are SOAP 1.1 — those want `text/xml` + a separate
+            // `SOAPAction` header (and the 1.1 envelope namespace). Match
+            // whichever the issued account's companion guide specifies.
+            "Content-Type":
+              'application/soap+xml; charset=utf-8; action="RealTimeTransaction"',
             SOAPAction: "RealTimeTransaction",
             Authorization: `Basic ${basicAuth(config.username, config.password)}`,
           },
