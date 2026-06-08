@@ -159,6 +159,14 @@ the same `eligibility_checks` row and fires the same
 `eligibility.completed` webhook as the SFTP path — only the latency
 differs.
 
+**Diagnosing real-time:** the `eligibility.verify` audit row records
+`realtime` (true/false), the terminal `status`, and `latency_ms`, so you
+can see at a glance whether a check resolved inline and how fast. A
+real-time application error returned by the clearinghouse (HTTP 200 with a
+CORE `<ErrorCode>`) is surfaced as the failure reason rather than a generic
+"no 271" — and any real-time failure transparently falls back to the SFTP
+submit path, so the check still completes.
+
 ## Same-or-Similar (HETS)
 
 Medicare Same-or-Similar (`/admin/.../same-or-similar`) is a **manual** CSR

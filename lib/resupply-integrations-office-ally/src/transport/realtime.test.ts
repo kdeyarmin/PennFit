@@ -9,8 +9,21 @@ import {
   buildCoreRealTimeRequestEnvelope,
   createRealtimeEligibilityTransport,
   extract271FromCoreResponse,
+  extractCoreErrorFromResponse,
   type FetchLike,
 } from "./realtime";
+
+function coreErrorResponse(code: string, message?: string): string {
+  return [
+    '<?xml version="1.0"?>',
+    "<soap:Envelope><soap:Body>",
+    "<cor:COREEnvelopeRealTimeResponse>",
+    `<ErrorCode>${code}</ErrorCode>`,
+    message ? `<ErrorMessage>${message}</ErrorMessage>` : "",
+    "</cor:COREEnvelopeRealTimeResponse>",
+    "</soap:Body></soap:Envelope>",
+  ].join("");
+}
 
 const CONFIG = {
   url: "https://oa.example/realtime",
@@ -151,12 +164,38 @@ describe("createRealtimeEligibilityTransport — failure classification", () => 
   it("rejects a 200 response that carries no 271 payload", async () => {
     const { fetchImpl } = fakeFetch(
       200,
-      "<soap:Envelope><soap:Body><ErrorCode>Failure</ErrorCode></soap:Body></soap:Envelope>",
+      "<soap:Envelope><soap:Body></soap:Body></soap:Envelope>",
     );
     const transport = createRealtimeEligibilityTransport(CONFIG, { fetchImpl });
     const res = await transport.requestEligibility({ payload: "ISA~" });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.kind).toBe("rejected");
+  });
+
+  it("surfaces a CORE ErrorCode + message when a 200 carries no 271", async () => {
+    const { fetchImpl } = fakeFetch(
+      200,
+      coreErrorResponse("BadRequest", "Malformed payload"),
+    );
+    const transport = createRealtimeEligibilityTransport(CONFIG, { fetchImpl });
+    const res = await transport.requestEligibility({ payload: "ISA~" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe("rejected");
+      expect(res.message).toContain("BadRequest");
+      expect(res.message).toContain("Malformed payload");
+    }
+  });
+
+  it("classifies a CORE auth error code as auth_failed", async () => {
+    const { fetchImpl } = fakeFetch(
+      200,
+      coreErrorResponse("UnAuthorized", "bad creds"),
+    );
+    const transport = createRealtimeEligibilityTransport(CONFIG, { fetchImpl });
+    const res = await transport.requestEligibility({ payload: "ISA~" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.kind).toBe("auth_failed");
   });
 });
 
@@ -212,6 +251,36 @@ describe("extract271FromCoreResponse", () => {
     expect(
       extract271FromCoreResponse(coreResponse("not an edi payload")),
     ).toBeNull();
+  });
+
+  it("extracts a CDATA-wrapped X12 payload", () => {
+    const body = `<Payload><![CDATA[${SAMPLE_271}]]></Payload>`;
+    expect(extract271FromCoreResponse(body)).toContain("ST*271");
+  });
+});
+
+describe("extractCoreErrorFromResponse", () => {
+  it("returns null on a Success envelope", () => {
+    expect(extractCoreErrorFromResponse(coreResponse(SAMPLE_271))).toBeNull();
+  });
+
+  it("returns null when there is no ErrorCode element", () => {
+    expect(extractCoreErrorFromResponse("<env><Other/></env>")).toBeNull();
+  });
+
+  it("returns the code and message on an error envelope", () => {
+    const err = extractCoreErrorFromResponse(
+      coreErrorResponse("VersionMismatch", "Unsupported CORE version"),
+    );
+    expect(err).toEqual({
+      code: "VersionMismatch",
+      message: "Unsupported CORE version",
+    });
+  });
+
+  it("returns a null message when only the code is present", () => {
+    const err = extractCoreErrorFromResponse(coreErrorResponse("Forbidden"));
+    expect(err).toEqual({ code: "Forbidden", message: null });
   });
 });
 

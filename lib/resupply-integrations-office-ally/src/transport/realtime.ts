@@ -158,6 +158,20 @@ export function createRealtimeEligibilityTransport(
       const body = await resp.text();
       const payload271 = extract271FromCoreResponse(body);
       if (!payload271) {
+        // A 200 with no 271 is usually a CORE-level application error
+        // (auth, payload, version). Surface the code so it's actionable.
+        const coreError = extractCoreErrorFromResponse(body);
+        if (coreError) {
+          return {
+            ok: false,
+            kind: /unauthor|forbidden|denied|credential/i.test(coreError.code)
+              ? "auth_failed"
+              : "rejected",
+            message: `real-time rejected by clearinghouse: ${coreError.code}${
+              coreError.message ? ` — ${coreError.message}` : ""
+            }`,
+          };
+        }
         return {
           ok: false,
           kind: "rejected",
@@ -209,9 +223,9 @@ export function buildCoreRealTimeRequestEnvelope(
 
 /**
  * Extract the X12 271 from a CORE real-time response envelope. Tolerates
- * namespace prefixes on the `<Payload>` element and XML-escaped content,
- * and falls back to base64 decoding when the payload is encoded. Returns
- * null when no X12 (no `ISA` segment) can be recovered.
+ * namespace prefixes on the `<Payload>` element, `<![CDATA[…]]>` wrapping,
+ * XML-escaped content, and base64-encoded payloads. Returns null when no
+ * X12 (no `ISA` segment) can be recovered.
  */
 export function extract271FromCoreResponse(body: string): string | null {
   // Tolerate <Payload>, <ns:Payload>, and attributes on the tag.
@@ -219,12 +233,47 @@ export function extract271FromCoreResponse(body: string): string | null {
     /<(?:[A-Za-z0-9]+:)?Payload\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?Payload>/,
   );
   if (!match) return null;
-  const raw = xmlUnescape(match[1].trim());
+  const inner = match[1].trim();
+  // CDATA content is literal (no entity-decoding); everything else is
+  // XML-escaped text.
+  const cdata = inner.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/);
+  const raw = cdata ? cdata[1].trim() : xmlUnescape(inner);
   if (raw.includes("ISA")) return raw;
   // Some implementations base64-encode the X12 payload.
   const decoded = tryBase64Decode(raw);
   if (decoded && decoded.includes("ISA")) return decoded;
   return null;
+}
+
+export interface CoreResponseError {
+  /** The CORE `<ErrorCode>` value (never `Success`). */
+  code: string;
+  /** The CORE `<ErrorMessage>`, when present. */
+  message: string | null;
+}
+
+/**
+ * Extract a CORE-level error from a real-time response envelope. Office
+ * Ally (like most SOAP endpoints) commonly returns application errors as
+ * HTTP 200 with `<ErrorCode>…</ErrorCode>` rather than an HTTP status —
+ * surfacing it turns an opaque "no 271 payload" into an actionable
+ * reason. Returns null when the envelope reports success (or has no
+ * ErrorCode).
+ */
+export function extractCoreErrorFromResponse(
+  body: string,
+): CoreResponseError | null {
+  const codeMatch = body.match(
+    /<(?:[A-Za-z0-9]+:)?ErrorCode\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?ErrorCode>/,
+  );
+  const code = codeMatch ? xmlUnescape(codeMatch[1].trim()) : "";
+  // No code, or an explicit success marker → not an error.
+  if (!code || /^success$/i.test(code)) return null;
+  const msgMatch = body.match(
+    /<(?:[A-Za-z0-9]+:)?ErrorMessage\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?ErrorMessage>/,
+  );
+  const message = msgMatch ? xmlUnescape(msgMatch[1].trim()) : null;
+  return { code, message: message || null };
 }
 
 function basicAuth(username: string, password: string): string {

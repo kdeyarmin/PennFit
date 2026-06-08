@@ -85,6 +85,8 @@ export interface VerifyEligibilityResult {
   realtime: boolean;
   /** Terminal status written to the row. */
   status: "parsed" | "submitted" | "transport_failed";
+  /** Real-time round-trip in ms (null for the SFTP submit path). */
+  latencyMs: number | null;
 }
 
 /**
@@ -203,7 +205,9 @@ export async function verifyEligibility(
   const realtimeConfig = clearinghouse.realtimeConfig;
   if (realtimeConfig) {
     const realtime = createRealtimeEligibilityTransport(realtimeConfig);
+    const startedAt = Date.now();
     const res = await realtime.requestEligibility({ payload: built.payload });
+    const latencyMs = Date.now() - startedAt;
     if (res.ok) {
       const parsed = parse271(res.payload271);
       const realtimeRow: Database["resupply"]["Tables"]["eligibility_checks"]["Insert"] =
@@ -237,6 +241,11 @@ export async function verifyEligibility(
           parsed,
         ),
       );
+      // Operational only — no PHI (timing + outcome, no patient detail).
+      logger.info(
+        { event: "eligibility.realtime.resolved", latencyMs },
+        "verifyEligibility: real-time 271 resolved",
+      );
       return {
         eligibilityCheckId: rtInserted.id,
         isaControlNumber: built.interchangeControlNumber,
@@ -245,10 +254,11 @@ export async function verifyEligibility(
         errorMessage: null,
         realtime: true,
         status: "parsed",
+        latencyMs,
       };
     }
     logger.warn(
-      { kind: res.kind, message: res.message },
+      { kind: res.kind, message: res.message, latencyMs },
       "verifyEligibility: real-time path failed; falling back to SFTP submit",
     );
   }
@@ -291,6 +301,7 @@ export async function verifyEligibility(
     errorMessage: upload.ok ? null : upload.message,
     realtime: false,
     status: upload.ok ? "submitted" : "transport_failed",
+    latencyMs: null,
   };
 }
 

@@ -111,7 +111,9 @@ export {
   buildCoreRealTimeRequestEnvelope,
   createRealtimeEligibilityTransport,
   extract271FromCoreResponse,
+  extractCoreErrorFromResponse,
   type CoreRealTimeRequestInput,
+  type CoreResponseError,
   type FetchLike,
   type RealtimeTransportDeps,
 } from "./transport/realtime";
