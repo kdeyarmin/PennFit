@@ -19,6 +19,7 @@ import PDFDocument from "pdfkit";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 
 const router: IRouter = Router();
@@ -53,6 +54,29 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   }
 
   const supabase = getSupabaseServiceRoleClient();
+
+  // Appeal-letter faxes render the stored appeal PDF (claim_appeal_letters
+  // row) instead of the physician cover letter. Same signed-URL + stream
+  // posture; no PHI in the URL, bytes never logged.
+  if (verified.kind === "appeal_letter") {
+    const result = await renderAppealPdfForLetterId(
+      supabase,
+      verified.outreachId,
+    );
+    if (!result.ok) {
+      res.status(404).json({ error: result.reason });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'inline; filename="appeal-letter.pdf"',
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.end(result.pdf);
+    return;
+  }
+
   const { data: row, error } = await supabase
     .schema("resupply")
     .from("physician_fax_outreach")

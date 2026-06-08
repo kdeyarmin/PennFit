@@ -16,13 +16,20 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import {
+  createTwilioFaxClient,
+  TwilioApiError,
+} from "@workspace/resupply-telecom";
+
 import { renderAppealPdf } from "../../lib/billing/appeal-pdf";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { parsePayerAddressLines } from "../../lib/billing/payer-address";
+import { signAppealFaxToken } from "../../lib/fax-document-token";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { getFaxPublicBaseUrl, isFaxConfigured } from "./physician-fax-outreach";
 
 const router: IRouter = Router();
 
@@ -211,6 +218,120 @@ router.post(
     );
     res.setHeader("X-Appeal-Id", row.id);
     res.status(201).end(pdf);
+  },
+);
+
+// POST .../appeal-letter/:letterId/fax — fax an EXISTING appeal letter to
+// the payer's appeals fax number. Reuses the same signed fax-document URL
+// + Twilio sender as physician outreach; the appeal PDF is rendered on
+// demand when Twilio fetches the mediaUrl (no PHI in the URL). Marks the
+// letter delivery_method='fax' on a successful hand-off. The biller
+// supplies the destination fax number (payer appeal fax numbers aren't
+// modelled). Stripe/EDI-style fail-soft: a missing fax config is a clear
+// 503, not a 500.
+const faxBody = z
+  .object({
+    faxNumber: z
+      .string()
+      .trim()
+      .regex(/^\+[1-9]\d{6,14}$/),
+  })
+  .strict();
+const faxParams = z.object({
+  id: z.string().uuid(),
+  claimId: z.string().uuid(),
+  letterId: z.string().uuid(),
+});
+
+router.post(
+  "/admin/patients/:id/insurance-claims/:claimId/appeal-letter/:letterId/fax",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "claim_appeals.fax", preset: "sensitive" }),
+  async (req, res) => {
+    const params = faxParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = faxBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    // The letter must exist AND belong to the claim in the path.
+    const { data: letter } = await supabase
+      .schema("resupply")
+      .from("claim_appeal_letters")
+      .select("id, claim_id")
+      .eq("id", params.data.letterId)
+      .limit(1)
+      .maybeSingle();
+    if (!letter || letter.claim_id !== params.data.claimId) {
+      res.status(404).json({ error: "appeal_letter_not_found" });
+      return;
+    }
+
+    if (!isFaxConfigured()) {
+      res.status(503).json({ error: "fax_not_configured" });
+      return;
+    }
+    const baseUrl = getFaxPublicBaseUrl()!;
+    const token = signAppealFaxToken(letter.id);
+    const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
+    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
+    const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+
+    let sid: string;
+    try {
+      const result = await createTwilioFaxClient().sendFax({
+        to: parsed.data.faxNumber,
+        from: fromNumber,
+        mediaUrl,
+        statusCallbackUrl,
+      });
+      sid = result.sid;
+    } catch (err) {
+      const msg =
+        err instanceof TwilioApiError
+          ? `Twilio fax error: ${err.message}`
+          : `Fax dispatch error: ${String(err)}`;
+      logger.warn(
+        { event: "appeal_fax_dispatch_failed", appeal_letter_id: letter.id },
+        "claim_appeal.fax: Twilio dispatch failed",
+      );
+      res.status(502).json({ error: "fax_dispatch_failed", message: msg });
+      return;
+    }
+
+    // Twilio accepted the fax → mark the delivery method. delivered_at is
+    // stamped on Twilio's terminal status-callback in a follow-up; for now
+    // the accept timestamp records the hand-off.
+    const nowIso = new Date().toISOString();
+    await supabase
+      .schema("resupply")
+      .from("claim_appeal_letters")
+      .update({ delivery_method: "fax", delivered_at: nowIso })
+      .eq("id", letter.id);
+
+    await logAudit({
+      action: "claim_appeal.faxed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "claim_appeal_letters",
+      targetId: letter.id,
+      metadata: {
+        claim_id: params.data.claimId,
+        vendor_ref: sid,
+        vendor_name: "twilio",
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "claim_appeal.faxed audit write failed");
+    });
+
+    res.json({ ok: true, vendorRef: sid });
   },
 );
 
