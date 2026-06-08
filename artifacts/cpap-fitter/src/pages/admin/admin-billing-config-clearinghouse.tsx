@@ -80,8 +80,8 @@ const SUBMITTER: FieldDef[] = [
 const REALTIME: FieldDef[] = [
   {
     key: "realtimeUrl",
-    label: "Endpoint URL (Office Ally /v1/realtime-eligibility/x12)",
-    placeholder: "https://edi.officeally.io/v1/realtime-eligibility/x12",
+    label: "Endpoint URL (Office Ally /v2/eligibility-benefits/x12)",
+    placeholder: "https://edi.officeally.io/v2/eligibility-benefits/x12",
   },
 ];
 

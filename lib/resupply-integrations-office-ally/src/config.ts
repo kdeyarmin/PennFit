@@ -132,7 +132,7 @@ export function isOfficeAllyStubMode(
 // path. The endpoint + key are NOT the SFTP key; they are the real-time
 // REST credentials Office Ally issues separately.
 //
-//   OFFICE_ALLY_REALTIME_URL          — the /v1/realtime-eligibility/x12
+//   OFFICE_ALLY_REALTIME_URL          — the /v2/eligibility-benefits/x12
 //                                       endpoint URL
 //   OFFICE_ALLY_REALTIME_API_KEY      — API key, sent verbatim in the
 //                                       Authorization header (legacy alias:

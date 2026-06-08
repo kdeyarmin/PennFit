@@ -102,7 +102,7 @@ const REALTIME_RESOLVED = {
   config: null,
   row: null,
   realtimeConfig: {
-    url: "https://edi.officeally.io/v1/realtime-eligibility/x12",
+    url: "https://edi.officeally.io/v2/eligibility-benefits/x12",
     apiKey: "test-api-key",
     timeoutMs: 5000,
   },

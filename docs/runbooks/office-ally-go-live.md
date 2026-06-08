@@ -121,19 +121,22 @@ the REST credentials Office Ally issues **separately from the SFTP key**.
 
 ### How the call works (verified against the API spec)
 
-The real-time call is a plain HTTPS POST of the raw X12 270 — no SOAP, no
-CORE envelope:
+The real-time call is a JSON HTTPS POST that wraps the raw X12 270 — no
+SOAP, no CORE envelope:
 
 ```
-POST <OFFICE_ALLY_REALTIME_URL>      # /v1/realtime-eligibility/x12
+POST <OFFICE_ALLY_REALTIME_URL>      # /v2/eligibility-benefits/x12
   Authorization: <api key>           # apiKey scheme, header "Authorization"
-  Content-Type:  text/plain          # body is the raw X12 270
-  Accept:        application/EDI-X12
-→ 200 with the raw X12 271 in the body
+  Content-Type:  application/json     # RealTimeX12Request: {"x12": "<270>"}
+  Accept:        application/json
+→ 200 with ApiResponseOfEligibilityResponse:
+    {"data": {"x12": "<raw X12 271>", "responseStatus": {…}, …}}
+  The raw 271 is read from data.x12.
 ```
 
-Source: Office Ally's EDI API spec at `https://edi.officeally.io/swagger`
-(the `/RealTime` tag). `CONFIRM(oa-spec)` for the issued account: the exact
+Source: Office Ally's EDI API v2 spec at `https://edi.officeally.io/swagger`
+(`?urls.primaryName=v2`, the `eligibility-benefits` group).
+`CONFIRM(oa-spec)` for the issued account: the exact
 endpoint URL and whether the `Authorization` value needs a scheme prefix —
 the API key is sent **verbatim**, so set it exactly as issued (include a
 `Bearer ` prefix in the key itself if Office Ally requires one).
@@ -159,7 +162,7 @@ the secret out of the database.
 
 | Variable                          | Notes                                                                      |
 | --------------------------------- | -------------------------------------------------------------------------- |
-| `OFFICE_ALLY_REALTIME_URL`        | The `/v1/realtime-eligibility/x12` endpoint (or set in the admin card)     |
+| `OFFICE_ALLY_REALTIME_URL`        | The `/v2/eligibility-benefits/x12` endpoint (or set in the admin card)     |
 | `OFFICE_ALLY_REALTIME_API_KEY`    | API key for the Authorization header (DB value wins; this is the fallback) |
 | `OFFICE_ALLY_REALTIME_TIMEOUT_MS` | Optional per-request timeout (default 30000)                               |
 

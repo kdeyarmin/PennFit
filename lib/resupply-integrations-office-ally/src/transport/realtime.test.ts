@@ -1,19 +1,21 @@
 // Tests for the real-time eligibility transport — Office Ally's EDI REST
-// API: a POST of the raw X12 270 with an API-key Authorization header,
-// returning the raw X12 271. HTTP outcomes are exercised via an injected
-// fake fetch; the config reader is covered too.
+// API v2: a JSON POST that wraps the raw X12 270 ({"x12": …}) and returns
+// the X12 271 wrapped in a JSON envelope ({"data": {"x12": …}}). HTTP
+// outcomes are exercised via an injected fake fetch; the config reader is
+// covered too.
 
 import { describe, expect, it } from "vitest";
 
 import { readOfficeAllyRealtimeConfigOrNull } from "../config";
 import {
   createRealtimeEligibilityTransport,
+  extract271,
   isX12Response271,
   type FetchLike,
 } from "./realtime";
 
 const CONFIG = {
-  url: "https://edi.officeally.io/v1/realtime-eligibility/x12",
+  url: "https://edi.officeally.io/v2/eligibility-benefits/x12",
   apiKey: "test-api-key",
   timeoutMs: 5000,
 };
@@ -26,6 +28,18 @@ const SAMPLE_271 =
 const SAMPLE_270 =
   "ISA*00*          *00*          *ZZ*SENDER1        *ZZ*OFFALLY         *260608*1200*^*00501*000000001*0*P*:~" +
   "GS*HS*SENDER1*OFFALLY*20260608*1200*1*X*005010X279A1~ST*270*0001*005010X279A1~SE*2*0001~GE*1*1~IEA*1*000000001~";
+
+/** Office Ally v2 wraps the 271 in an ApiResponseOfEligibilityResponse
+ *  envelope; the raw X12 lives at data.x12. */
+function envelope271(x12: string): string {
+  return JSON.stringify({
+    data: {
+      responseStatus: { codeValue: "0", description: "Success" },
+      transactionId: "TXN-1",
+      x12,
+    },
+  });
+}
 
 /** Fake fetch that records the last request init and returns a canned
  *  status + body. */
@@ -58,8 +72,8 @@ describe("createRealtimeEligibilityTransport — unconfigured", () => {
 });
 
 describe("createRealtimeEligibilityTransport — happy path", () => {
-  it("returns the raw 271 and a sessionId", async () => {
-    const { fetchImpl } = fakeFetch(200, SAMPLE_271);
+  it("extracts the raw 271 from the JSON envelope and returns a sessionId", async () => {
+    const { fetchImpl } = fakeFetch(200, envelope271(SAMPLE_271));
     const transport = createRealtimeEligibilityTransport(CONFIG, {
       fetchImpl,
       ...DETERMINISTIC,
@@ -72,8 +86,8 @@ describe("createRealtimeEligibilityTransport — happy path", () => {
     }
   });
 
-  it("POSTs the raw 270 as text/plain with the API key in Authorization", async () => {
-    const { fetchImpl, lastInit } = fakeFetch(200, SAMPLE_271);
+  it("POSTs the 270 wrapped as JSON {x12} with the API key in Authorization", async () => {
+    const { fetchImpl, lastInit } = fakeFetch(200, envelope271(SAMPLE_271));
     const transport = createRealtimeEligibilityTransport(CONFIG, {
       fetchImpl,
       ...DETERMINISTIC,
@@ -82,11 +96,12 @@ describe("createRealtimeEligibilityTransport — happy path", () => {
     const init = lastInit();
     expect(init).not.toBeNull();
     expect(init!.method).toBe("POST");
-    // The body is the raw 270 — no SOAP/CORE envelope.
-    expect(init!.body).toBe("ISA*00*270-PAYLOAD~");
+    // The body is the raw 270 wrapped in the v2 RealTimeX12Request shape.
+    expect(init!.body).toBe(JSON.stringify({ x12: "ISA*00*270-PAYLOAD~" }));
+    expect(JSON.parse(init!.body)).toEqual({ x12: "ISA*00*270-PAYLOAD~" });
     expect(init!.headers.Authorization).toBe("test-api-key");
-    expect(init!.headers["Content-Type"]).toBe("text/plain");
-    expect(init!.headers.Accept).toBe("application/EDI-X12");
+    expect(init!.headers["Content-Type"]).toBe("application/json");
+    expect(init!.headers.Accept).toBe("application/json");
   });
 });
 
@@ -144,12 +159,55 @@ describe("createRealtimeEligibilityTransport — failure classification", () => 
     }
   });
 
-  it("rejects a 200 response that is not an X12 271", async () => {
-    const { fetchImpl } = fakeFetch(200, "<html>not edi</html>");
+  it("rejects a 200 JSON envelope that carries no X12 271 and surfaces the status detail", async () => {
+    const body = JSON.stringify({
+      data: {
+        responseStatus: { codeValue: "1", description: "Payer not available" },
+        x12: null,
+      },
+    });
+    const { fetchImpl } = fakeFetch(200, body);
+    const transport = createRealtimeEligibilityTransport(CONFIG, { fetchImpl });
+    const res = await transport.requestEligibility({ payload: SAMPLE_270 });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe("rejected");
+      expect(res.message).toContain("Payer not available");
+    }
+  });
+
+  it("rejects a 200 body that is not valid JSON", async () => {
+    const { fetchImpl } = fakeFetch(200, "<html>not json</html>");
+    const transport = createRealtimeEligibilityTransport(CONFIG, { fetchImpl });
+    const res = await transport.requestEligibility({ payload: SAMPLE_270 });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe("rejected");
+      expect(res.message).toContain("not valid JSON");
+    }
+  });
+
+  it("rejects a 200 JSON envelope whose data.x12 is present but not a 271", async () => {
+    const { fetchImpl } = fakeFetch(200, envelope271(SAMPLE_270));
     const transport = createRealtimeEligibilityTransport(CONFIG, { fetchImpl });
     const res = await transport.requestEligibility({ payload: SAMPLE_270 });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.kind).toBe("rejected");
+  });
+});
+
+describe("extract271", () => {
+  it("pulls data.x12 out of the v2 envelope", () => {
+    expect(extract271({ data: { x12: SAMPLE_271 } })).toBe(SAMPLE_271);
+  });
+
+  it("returns null when data or data.x12 is missing/empty/non-string", () => {
+    expect(extract271(null)).toBeNull();
+    expect(extract271({})).toBeNull();
+    expect(extract271({ data: null })).toBeNull();
+    expect(extract271({ data: {} })).toBeNull();
+    expect(extract271({ data: { x12: "" } })).toBeNull();
+    expect(extract271({ data: { x12: 123 } })).toBeNull();
   });
 });
 
@@ -167,7 +225,7 @@ describe("isX12Response271", () => {
 describe("readOfficeAllyRealtimeConfigOrNull", () => {
   const base = {
     OFFICE_ALLY_REALTIME_URL:
-      "https://edi.officeally.io/v1/realtime-eligibility/x12",
+      "https://edi.officeally.io/v2/eligibility-benefits/x12",
     OFFICE_ALLY_REALTIME_API_KEY: "key123",
   } as NodeJS.ProcessEnv;
 
@@ -194,7 +252,7 @@ describe("readOfficeAllyRealtimeConfigOrNull", () => {
   it("reads url + api key and defaults the timeout", () => {
     const cfg = readOfficeAllyRealtimeConfigOrNull(base);
     expect(cfg).not.toBeNull();
-    expect(cfg!.url).toContain("/realtime-eligibility/x12");
+    expect(cfg!.url).toContain("/eligibility-benefits/x12");
     expect(cfg!.apiKey).toBe("key123");
     expect(cfg!.timeoutMs).toBe(30_000);
   });

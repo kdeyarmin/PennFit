@@ -190,7 +190,7 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     known_hosts_path: "/kh",
     remote_inbox_dir: "inbound",
     realtime_enabled: true,
-    realtime_url: "https://edi.officeally.io/v1/realtime-eligibility/x12",
+    realtime_url: "https://edi.officeally.io/v2/eligibility-benefits/x12",
     realtime_username: null,
     realtime_sender_id: null,
     realtime_receiver_id: null,

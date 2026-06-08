@@ -10,19 +10,23 @@
 // sees coverage in seconds. Both build the SAME 270 (build270) and parse
 // the SAME 271 (parse271) — only the transport differs.
 //
-// Office Ally EDI REST API (edi.officeally.io)
-// --------------------------------------------
-// Verified against Office Ally's EDI API spec (https://edi.officeally.io/
-// swagger, the /RealTime tag). The real-time eligibility call is a plain
-// HTTPS POST of the raw X12 270 — no SOAP, no CORE envelope, no WS-Security:
+// Office Ally EDI REST API v2 (edi.officeally.io)
+// -----------------------------------------------
+// Verified against Office Ally's EDI API v2 spec (https://edi.officeally.io/
+// swagger, ?urls.primaryName=v2, the eligibility-benefits group). The
+// real-time eligibility call is a JSON POST that wraps the raw X12 270 and
+// returns the X12 271 wrapped in a JSON envelope — no SOAP, no CORE
+// envelope, no WS-Security:
 //
-//   POST <url>                          (the /v1/realtime-eligibility/x12
+//   POST <url>                          (the /v2/eligibility-benefits/x12
 //                                        endpoint, configured per account)
 //     Authorization: <api key>          (apiKey scheme; header is named
 //                                        "Authorization")
-//     Content-Type:  text/plain         (body is the raw X12 270)
-//     Accept:        application/EDI-X12
-//   → 200 with the raw X12 271 in the response body.
+//     Content-Type:  application/json   (RealTimeX12Request: {"x12": "<270>"})
+//     Accept:        application/json
+//   → 200 with ApiResponseOfEligibilityResponse:
+//       { "data": { "x12": "<raw X12 271>", "responseStatus": {…}, … } }
+//     The raw 271 lives at data.x12.
 //
 // CONFIRM(oa-spec) for the issued account: the exact endpoint URL and
 // whether the Authorization value needs a scheme prefix — we send the
@@ -111,10 +115,11 @@ export function createRealtimeEligibilityTransport(
             // Authorization header verbatim (set it exactly as issued —
             // include a "Bearer " prefix in the key if they require one).
             Authorization: config.apiKey,
-            "Content-Type": "text/plain",
-            Accept: "application/EDI-X12",
+            "Content-Type": "application/json",
+            Accept: "application/json",
           },
-          body: req.payload,
+          // RealTimeX12Request: the raw X12 270 wrapped as JSON {"x12": …}.
+          body: JSON.stringify({ x12: req.payload }),
           signal: controller.signal,
         });
       } catch (err) {
@@ -154,24 +159,65 @@ export function createRealtimeEligibilityTransport(
         };
       }
 
-      // The 200 body is the raw X12 271 (application/EDI-X12).
-      const body = await resp.text();
-      if (!isX12Response271(body)) {
+      // The 200 body is JSON (ApiResponseOfEligibilityResponse); the raw
+      // X12 271 lives at data.x12.
+      const rawBody = await resp.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawBody);
+      } catch {
         return {
           ok: false,
           kind: "rejected",
-          message: "real-time response was not an X12 271",
+          message: "real-time response was not valid JSON",
         };
       }
-      return { ok: true, payload271: body.trim(), sessionId: requestId };
+
+      const payload271 = extract271(parsed);
+      if (!payload271 || !isX12Response271(payload271)) {
+        // No 271 in the envelope — surface OA's PHI-free status text
+        // (responseStatus.description), e.g. "Payer not available".
+        const detail = extractStatusDetail(parsed);
+        return {
+          ok: false,
+          kind: "rejected",
+          message: `real-time response carried no X12 271${
+            detail ? `: ${detail}` : ""
+          }`,
+        };
+      }
+      return { ok: true, payload271: payload271.trim(), sessionId: requestId };
     },
   };
+}
+
+/** Pull the raw X12 271 out of Office Ally's v2 JSON envelope
+ *  (ApiResponseOfEligibilityResponse → data.x12). Returns null when the
+ *  field is absent or not a non-empty string. Exported for tests. */
+export function extract271(parsed: unknown): string | null {
+  const data = (parsed as { data?: unknown } | null | undefined)?.data;
+  const x12 = (data as { x12?: unknown } | null | undefined)?.x12;
+  return typeof x12 === "string" && x12.length > 0 ? x12 : null;
 }
 
 /** Heuristic that a response body is an X12 271 (carries an interchange
  *  header and the 271 transaction-set header). Exported for tests. */
 export function isX12Response271(body: string): boolean {
   return body.includes("ISA") && body.includes("ST*271");
+}
+
+/** Best-effort, PHI-free reason string from the v2 envelope's status —
+ *  data.responseStatus.description (a status code description like
+ *  "Success" / "Payer not available", never patient data). */
+function extractStatusDetail(parsed: unknown): string {
+  const data = (parsed as { data?: unknown } | null | undefined)?.data;
+  const status = (data as { responseStatus?: unknown } | null | undefined)
+    ?.responseStatus;
+  const desc = (status as { description?: unknown } | null | undefined)
+    ?.description;
+  return typeof desc === "string"
+    ? desc.replace(/\s+/g, " ").trim().slice(0, 200)
+    : "";
 }
 
 async function safeText(resp: { text(): Promise<string> }): Promise<string> {
