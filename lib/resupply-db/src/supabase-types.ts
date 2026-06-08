@@ -2158,6 +2158,48 @@ export interface Database {
         >;
         Relationships: [];
       };
+      patient_payment_plans: {
+        Row: {
+          id: string;
+          patient_id: string;
+          total_amount_cents: number;
+          installment_count: number;
+          frequency: "weekly" | "biweekly" | "monthly";
+          start_date: string;
+          status: "active" | "completed" | "cancelled";
+          note: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_payment_plans"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_payment_plans"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_payment_plan_installments: {
+        Row: {
+          id: string;
+          plan_id: string;
+          seq: number;
+          due_date: string;
+          amount_cents: number;
+          status: "scheduled" | "paid" | "overdue" | "waived";
+          paid_at: string | null;
+          patient_payment_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_payment_plan_installments"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_payment_plan_installments"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_payments: {
         Row: {
           id: string;

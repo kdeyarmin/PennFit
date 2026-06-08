@@ -127,6 +127,7 @@ import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
 import payerProfitabilityRouter from "./admin/payer-profitability.js";
 import denialsWorklistRouter from "./admin/denials-worklist.js";
+import paymentPlansRouter from "./admin/payment-plans.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
@@ -409,6 +410,8 @@ router.use(payerProfitabilityRouter);
 // /admin/billing/denials-worklist — denied claims ranked by recoverable
 // $ × win-probability (Biller #33). reports.read.
 router.use(denialsWorklistRouter);
+// /admin/.../payment-plans — patient installment-plan tracker (biller B7).
+router.use(paymentPlansRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
 // ranked by re-verification urgency (never/terminating/stale) (Biller
 // #31, read-only half). reports.read.
