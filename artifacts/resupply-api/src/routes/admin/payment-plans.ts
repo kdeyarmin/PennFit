@@ -127,7 +127,15 @@ router.post(
           status: "scheduled" as const,
         })),
       );
-    if (instErr) throw instErr;
+    if (instErr) {
+      // Best-effort cleanup: avoid leaving an orphaned plan if the schedule insert fails.
+      await supabase
+        .schema("resupply")
+        .from("patient_payment_plans")
+        .delete()
+        .eq("id", plan.id);
+      throw instErr;
+    }
 
     await audit(req, "payment_plan.create", "patient_payment_plans", plan.id, {
       patient_id: patientId.data,
