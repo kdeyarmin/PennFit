@@ -137,6 +137,27 @@ function isKnownTool(name: string): name is ToolName {
   return KNOWN_TOOL_NAMES.has(name as ToolName);
 }
 
+// Sentence-boundary detector for streaming the agent's voice on the
+// external-TTS path. Returns the exclusive end index up to which `text` is
+// one or more COMPLETE sentences — a run of terminal punctuation
+// (. ! ? …) plus any trailing closing quote/bracket, then whitespace.
+// Requiring the trailing whitespace keeps us from splitting a decimal
+// ("12.5"), an abbreviation, or a terminator that's still mid-stream.
+// Returns 0 when there's no safe split point yet.
+const SENTENCE_BOUNDARY_RE = /[.!?…]+["')\]]*\s/g;
+function lastSpeakableBoundary(text: string): number {
+  let end = 0;
+  SENTENCE_BOUNDARY_RE.lastIndex = 0;
+  for (
+    let m = SENTENCE_BOUNDARY_RE.exec(text);
+    m !== null;
+    m = SENTENCE_BOUNDARY_RE.exec(text)
+  ) {
+    end = m.index + m[0].length;
+  }
+  return end;
+}
+
 // `VoiceBridge` uses the standard typed-EventEmitter pattern: a class
 // merged with an interface of the same name that pins typed `on`/`off`/
 // `emit` overloads. ESLint's `no-unsafe-declaration-merging` flags this
@@ -164,6 +185,12 @@ export class VoiceBridge extends EventEmitter {
   private ttsDraining = false;
   private ttsAbort: AbortController | null = null;
 
+  // Per-output-item count of characters already handed to the external
+  // TTS engine as complete sentences, so the finalising `done` only
+  // synthesises the un-spoken tail (no sentence is voiced twice). Keyed by
+  // itemId like the transcript buffers above.
+  private readonly ttsFlushed = new Map<string, number>();
+
   constructor(opts: BridgeOptions) {
     super();
     this.client = opts.client;
@@ -184,6 +211,7 @@ export class VoiceBridge extends EventEmitter {
     // synthesiser promise can't keep writing to a sink whose socket is
     // closing.
     this.ttsQueue.length = 0;
+    this.ttsFlushed.clear();
     if (this.ttsAbort) {
       this.ttsAbort.abort();
       this.ttsAbort = null;
@@ -215,27 +243,41 @@ export class VoiceBridge extends EventEmitter {
     });
 
     this.client.on("transcript.delta", (delta) => {
+      // On the external-TTS path we voice each finalised OUTPUT sentence as
+      // soon as it lands (see flushSpeakableSentences) rather than waiting
+      // for the whole turn — far lower time-to-first-word. Input turns (the
+      // caller) and the built-in cedar path are never synthesised here.
+      const voiceThisTurn = this.tts !== null && delta.source === "output";
       const buf = delta.source === "input" ? this.inputBuf : this.outputBuf;
       const key = delta.itemId ?? `__${delta.source}__`;
       const prior = buf.get(key) ?? "";
       const next = delta.done ? delta.text || prior : prior + delta.text;
-      if (delta.done) {
-        buf.delete(key);
-        const text = next.trim();
-        if (text.length > 0) {
-          this.emit("transcript.turn", {
-            source: delta.source,
-            text,
-            itemId: delta.itemId,
-          });
-          // External-TTS path: synthesise the agent's finalised spoken
-          // turn. Input turns (the caller) are never synthesised.
-          if (this.tts && delta.source === "output") {
-            this.enqueueTts(text);
-          }
-        }
-      } else {
+
+      if (!delta.done) {
         buf.set(key, next);
+        if (voiceThisTurn) this.flushSpeakableSentences(key, next);
+        return;
+      }
+
+      // Turn finalised.
+      buf.delete(key);
+      const flushedLen = this.ttsFlushed.get(key) ?? 0;
+      this.ttsFlushed.delete(key);
+      const text = next.trim();
+      if (text.length > 0) {
+        this.emit("transcript.turn", {
+          source: delta.source,
+          text,
+          itemId: delta.itemId,
+        });
+      }
+      // External-TTS path: synthesise only the tail we did NOT already
+      // stream as complete sentences, so an early-flushed sentence is never
+      // re-spoken. `next` is the authoritative full turn text; the already-
+      // voiced prefix is exactly its first `flushedLen` characters.
+      if (voiceThisTurn) {
+        const remainder = next.slice(flushedLen).trim();
+        if (remainder.length > 0) this.enqueueTts(remainder);
       }
     });
 
@@ -378,6 +420,23 @@ export class VoiceBridge extends EventEmitter {
   }
 
   // ---- External TTS (ElevenLabs) --------------------------------------
+
+  /**
+   * Stream complete sentences from an in-progress agent turn to the TTS
+   * queue the moment each one lands. `accumulated` is the turn's text so
+   * far; we synthesise every whole sentence past the last flushed offset
+   * and remember how far we've gotten. Partial trailing text waits for the
+   * next delta (or the turn's `done`, which flushes the remainder).
+   */
+  private flushSpeakableSentences(key: string, accumulated: string): void {
+    const flushedLen = this.ttsFlushed.get(key) ?? 0;
+    const pending = accumulated.slice(flushedLen);
+    const boundary = lastSpeakableBoundary(pending);
+    if (boundary <= 0) return;
+    this.ttsFlushed.set(key, flushedLen + boundary);
+    const chunk = pending.slice(0, boundary).trim();
+    if (chunk.length > 0) this.enqueueTts(chunk);
+  }
 
   /** Queue an agent utterance for synthesis and kick the drain loop. */
   private enqueueTts(text: string): void {

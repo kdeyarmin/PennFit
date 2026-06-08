@@ -72,6 +72,20 @@ export interface VoiceConfig {
   elevenLabsVoiceId?: string;
   /** Optional ElevenLabs model id override (defaults to the client's). */
   elevenLabsModelId?: string;
+  /**
+   * Optional ElevenLabs stability override (0..1). Lower = more
+   * expressive prosody variation; higher = more consistent/flat. When
+   * unset, the bridge uses the tuned conversational default (0.45).
+   * Clamped into range so a fat-fingered value can't push the voice into
+   * an unstable register mid-call.
+   */
+  elevenLabsStability?: number;
+  /**
+   * Optional ElevenLabs speaking-rate override (0.7..1.2, 1.0 = natural).
+   * Nudge to ~0.95 for an older patient base. When unset, the bridge uses
+   * the tuned conversational default (1.0). Clamped into range.
+   */
+  elevenLabsSpeed?: number;
 }
 
 /**
@@ -142,7 +156,29 @@ export function readVoiceConfigOrNull(
     elevenLabsApiKey: env.ELEVENLABS_API_KEY?.trim() || undefined,
     elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID?.trim() || undefined,
     elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
+    elevenLabsStability: readBoundedFloatEnv(env.ELEVENLABS_STABILITY, 0, 1),
+    elevenLabsSpeed: readBoundedFloatEnv(env.ELEVENLABS_SPEED, 0.7, 1.2),
   };
+}
+
+/**
+ * Parse a bounded float env var. Returns undefined when unset, blank, or
+ * unparseable (the caller falls back to the tuned default), and clamps a
+ * valid number into [min, max] so an out-of-range value degrades to the
+ * nearest sane bound instead of handing ElevenLabs something it rejects
+ * mid-call.
+ */
+function readBoundedFloatEnv(
+  raw: string | undefined,
+  min: number,
+  max: number,
+): number | undefined {
+  if (raw == null) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(max, Math.max(min, n));
 }
 
 /**

@@ -306,10 +306,17 @@ Vendor clients live in `lib/resupply-ai/src/`:
   `ELEVENLABS_API_KEY` is set, ElevenLabs becomes the agent's voice —
   the `RealtimeClient` is constructed with `generateAudio: false`
   (text-output mode), and `VoiceBridge`'s `TtsSynthesizer` synthesises
-  each finalised agent turn through ElevenLabs (`ulaw_8000`, re-framed
-  to 160-byte µ-law frames) and streams it to Twilio. Caller barge-in
-  (`input.speech_started`) aborts the in-flight synthesis and flushes
-  the sink. When the key is **unset**, the bridge forwards OpenAI's
+  the agent's speech through ElevenLabs (`ulaw_8000`, re-framed to
+  160-byte µ-law frames) and streams it to Twilio. The bridge voices
+  each complete **sentence** as soon as it lands (rather than waiting
+  for the whole turn) so time-to-first-word stays low; the turn's `done`
+  flushes only the un-spoken tail. ElevenLabs uses
+  `DEFAULT_CONVERSATIONAL_VOICE_SETTINGS` (warm conversational tuning)
+  and defaults to the low-latency `eleven_flash_v2_5` model; voice,
+  model, stability, and speed are all env-overridable
+  (`ELEVENLABS_VOICE_ID` / `_MODEL_ID` / `_STABILITY` / `_SPEED`).
+  Caller barge-in (`input.speech_started`) aborts the in-flight
+  synthesis and flushes the sink. When the key is **unset**, the bridge forwards OpenAI's
   built-in `cedar` audio unchanged (the historical default) — so a
   missing key degrades gracefully, never breaks the call. A mid-call
   ElevenLabs failure drops that one utterance's audio (logged as a

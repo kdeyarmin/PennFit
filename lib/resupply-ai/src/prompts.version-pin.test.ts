@@ -62,6 +62,8 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
     "92ccc9744b4fa0354054ad636116d2cc2ae30b593fe20932421e9591d4f9b975",
   "2026-05-26.v3":
     "0391e79380bd79dc9455392f3e2dd3cd848d6869703d4b40031b3ea81136df27",
+  "2026-06-08.v4":
+    "d649f6de1b5dd50fae9e50b16ba5bc9a8173d10496debda1cd80fbb40215781d",
 };
 
 function renderCanonicalPrompt(): string {

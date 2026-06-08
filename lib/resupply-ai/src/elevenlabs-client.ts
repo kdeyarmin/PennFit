@@ -30,11 +30,16 @@ const DEFAULT_API_URL = "https://api.elevenlabs.io/v1";
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
- * Recommended defaults — Eleven Multilingual v2 is the most stable
- * across English accents. v3 (alpha) offers better prosody but is
- * not yet GA. Override per call when needed.
+ * Default model. `eleven_flash_v2_5` is ElevenLabs' lowest-latency model
+ * (~75ms time-to-first-byte), purpose-built for real-time conversational
+ * agents — the right default for a live phone call, where responsiveness
+ * is the dominant "feels human" factor and the 8kHz µ-law telephony band
+ * masks the small quality edge slower models hold. Override per
+ * deployment via ELEVENLABS_MODEL_ID — e.g. `eleven_turbo_v2_5` for a
+ * little more quality at higher latency, or `eleven_multilingual_v2` for
+ * the most stable cross-accent rendering on non-real-time paths.
  */
-export const DEFAULT_ELEVENLABS_MODEL = "eleven_turbo_v2_5";
+export const DEFAULT_ELEVENLABS_MODEL = "eleven_flash_v2_5";
 
 /**
  * "Rachel" — ElevenLabs' default warm female voice. Good neutral
@@ -73,6 +78,30 @@ export interface ElevenLabsVoiceSettings {
   /** 0.7..1.2 — playback speed multiplier. 1.0 = natural. */
   speed?: number;
 }
+
+/**
+ * Voice settings tuned for a warm, natural phone agent — distinct from
+ * ElevenLabs' library defaults, which lean neutral/broadcast:
+ *   - `stability: 0.45` — low enough to let prosody vary turn-to-turn (the
+ *     dead giveaway of a bot is identical intonation every time), high
+ *     enough to avoid the warble very low stability causes on the
+ *     flash/turbo models.
+ *   - `similarity_boost: 0.8` — hold the chosen voice's character.
+ *   - `style: 0` — no style exaggeration; it adds latency and pushes a
+ *     conversational read toward theatrical.
+ *   - `use_speaker_boost: true` — a touch more clarity, which matters for
+ *     the elderly / hard-of-hearing skew of the CPAP demographic.
+ *   - `speed: 1.0` — natural pace. Nudge toward ~0.95 (via the voice
+ *     bridge's ELEVENLABS_SPEED override) for an older patient base.
+ * Every field is overridable per call.
+ */
+export const DEFAULT_CONVERSATIONAL_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
+  stability: 0.45,
+  similarity_boost: 0.8,
+  style: 0,
+  use_speaker_boost: true,
+  speed: 1.0,
+};
 
 export interface ElevenLabsTtsInput {
   /** Text to synthesize. Max ~5000 chars per request. */

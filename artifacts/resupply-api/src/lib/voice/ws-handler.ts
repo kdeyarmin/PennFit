@@ -41,6 +41,7 @@ import {
   buildSystemPrompt,
   createDeepgramClient,
   createElevenLabsClient,
+  DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
@@ -48,6 +49,7 @@ import {
   VoiceBridge,
   type DeepgramLiveSession,
   type ElevenLabsClient,
+  type ElevenLabsVoiceSettings,
   type MediaStreamSink,
   type TranscriptTurn,
   type TtsSynthesizer,
@@ -164,6 +166,8 @@ export async function handleVoiceWsConnection(
         apiKey: config.elevenLabsApiKey,
         voiceId: config.elevenLabsVoiceId,
         modelId: config.elevenLabsModelId,
+        stability: config.elevenLabsStability,
+        speed: config.elevenLabsSpeed,
         conversationId: pending.conversationId,
       })
     : null;
@@ -865,8 +869,18 @@ function buildElevenLabsSynthesizer(opts: {
   apiKey: string;
   voiceId?: string;
   modelId?: string;
+  stability?: number;
+  speed?: number;
   conversationId: string;
 }): TtsSynthesizer {
+  // Start from the tuned conversational defaults and layer any operator
+  // env overrides (stability / speed) on top. Built once per call so we
+  // don't reallocate the object per synthesised sentence.
+  const voiceSettings: ElevenLabsVoiceSettings = {
+    ...DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
+    ...(opts.stability !== undefined ? { stability: opts.stability } : {}),
+    ...(opts.speed !== undefined ? { speed: opts.speed } : {}),
+  };
   let client: ElevenLabsClient;
   try {
     client = createElevenLabsClient({ apiKey: opts.apiKey });
@@ -892,6 +906,7 @@ function buildElevenLabsSynthesizer(opts: {
           text,
           ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
           ...(opts.modelId ? { modelId: opts.modelId } : {}),
+          voiceSettings,
           outputFormat: "ulaw_8000",
           signal,
         },

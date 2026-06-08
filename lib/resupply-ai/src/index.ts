@@ -104,6 +104,7 @@ export {
   createElevenLabsClient,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
   type ElevenLabsClient,
   type ElevenLabsClientOptions,
   type ElevenLabsTtsInput,

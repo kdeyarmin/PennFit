@@ -330,6 +330,51 @@ describe("VoiceBridge — external TTS path", () => {
     expect(sink.written).toEqual(["a:Hi there", "b:Hi there"]);
   });
 
+  it("streams the agent's voice sentence-by-sentence: a finished sentence is synthesised before the turn finalises, and is not re-spoken on done", async () => {
+    const synthesized: string[] = [];
+    const tts: TtsSynthesizer = {
+      async synthesize(text, onFrame) {
+        synthesized.push(text);
+        onFrame(`f:${text}`);
+      },
+    };
+    const { fake } = buildBridgeWithTts(tts);
+
+    // First sentence completes mid-stream (terminal punctuation + space).
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "Sure, let me pull that up. ",
+      done: false,
+      itemId: "o1",
+    });
+    await flush();
+    // The completed first sentence is synthesised immediately — we did NOT
+    // wait for the whole turn to finalise.
+    expect(synthesized).toEqual(["Sure, let me pull that up."]);
+
+    // The rest of the turn streams in (no terminator yet → not flushed),
+    // then the turn finalises with the full text.
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "You've got a mask and tubing due",
+      done: false,
+      itemId: "o1",
+    });
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "Sure, let me pull that up. You've got a mask and tubing due.",
+      done: true,
+      itemId: "o1",
+    });
+    await flush();
+    // Only the un-spoken tail is synthesised on done — the first sentence
+    // is NOT re-spoken.
+    expect(synthesized).toEqual([
+      "Sure, let me pull that up.",
+      "You've got a mask and tubing due.",
+    ]);
+  });
+
   it("does NOT synthesise the caller's (input) turns", async () => {
     const calls: string[] = [];
     const tts: TtsSynthesizer = {
