@@ -9,6 +9,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { safeCsvCell } from "../../lib/safe-csv-cell";
+import { resolveSnoozeUntil } from "../../lib/snooze-spec";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -18,11 +19,21 @@ const idParam = z.object({ id: z.string().uuid() });
 
 const TAG = /^[a-z0-9_-]{1,32}$/;
 
+// Two ways to set a snooze:
+//   - `snoozedUntil`: an absolute ISO instant (or null to clear) — the
+//     original contract, kept for back-compat.
+//   - `snoozeSpec`: a relative/named spec ("1d", "next_business_day", …)
+//     resolved server-side via resolveSnoozeUntil. Convenience for CSRs.
+// At least one must be present; if both are, `snoozeSpec` wins.
 const snoozeBody = z
   .object({
-    snoozedUntil: z.string().datetime().nullable(),
+    snoozedUntil: z.string().datetime().nullable().optional(),
+    snoozeSpec: z.string().trim().min(1).max(32).optional(),
   })
-  .strict();
+  .strict()
+  .refine((b) => b.snoozedUntil !== undefined || b.snoozeSpec !== undefined, {
+    message: "one of snoozedUntil or snoozeSpec is required",
+  });
 
 const tagsBody = z
   .object({
@@ -57,12 +68,27 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    // Resolve the effective snooze instant. A spec wins over an absolute
+    // timestamp; an unresolvable spec is a 400 rather than a silent no-op.
+    let snoozedUntil: string | null;
+    if (parsed.data.snoozeSpec !== undefined) {
+      const resolved = resolveSnoozeUntil(parsed.data.snoozeSpec);
+      if (!resolved.ok) {
+        res
+          .status(400)
+          .json({ error: "invalid_snooze_spec", reason: resolved.reason });
+        return;
+      }
+      snoozedUntil = resolved.untilIso;
+    } else {
+      snoozedUntil = parsed.data.snoozedUntil ?? null;
+    }
     const supabase = getSupabaseServiceRoleClient();
     const { data: updated, error } = await supabase
       .schema("resupply")
       .from("conversations")
       .update({
-        snoozed_until: parsed.data.snoozedUntil,
+        snoozed_until: snoozedUntil,
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.data.id)
@@ -72,7 +98,7 @@ router.patch(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    res.json({ ok: true });
+    res.json({ ok: true, snoozedUntil });
   },
 );
 
