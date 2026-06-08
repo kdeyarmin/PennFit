@@ -12,14 +12,67 @@
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+import {
+  extractAdherenceFeatures,
+  toFeatureVector,
+  type TherapyNightInput,
+} from "./adherence-features";
+import { loadConfiguredAdherenceModel } from "./adherence-model-store";
+import { predictProbability, type LogisticModel } from "./logistic-regression";
 
 export const ADHERENCE_MODEL_VERSION = "heuristic-1.0";
+/** Version stamped when a configured trained model produces the score. */
+export const ADHERENCE_ML_MODEL_VERSION = "logreg-1.0";
 
 export interface AdherenceScore {
   probabilityCompliant: number;
   daysOfTherapy: number;
   factors: Array<{ key: string; weight: number; label: string }>;
   scoredAt: string;
+  /** Which scorer produced this — heuristic-1.0 or logreg-1.0. */
+  modelVersion: string;
+}
+
+/** Predictor night-row shape (subset selected from patient_therapy_nights). */
+interface PredictorNightRow {
+  usage_minutes: number | null;
+  leak_rate_l_min: string | null;
+  night_date: string;
+}
+
+/**
+ * Pure: score via a configured trained model. Maps the predictor's night
+ * rows to the harness feature contract, runs the logistic model, and
+ * shapes an AdherenceScore. Unit-tested directly.
+ */
+export function buildMlAdherenceScore(
+  model: LogisticModel,
+  nights: readonly PredictorNightRow[],
+  daysOfTherapy: number,
+  now: Date = new Date(),
+): AdherenceScore {
+  const mapped: TherapyNightInput[] = nights.map((n) => ({
+    nightDate: n.night_date,
+    usageMinutes: n.usage_minutes,
+    leakLMin: n.leak_rate_l_min == null ? null : Number(n.leak_rate_l_min),
+  }));
+  const probability = predictProbability(
+    model,
+    toFeatureVector(extractAdherenceFeatures(mapped)),
+  );
+  return {
+    probabilityCompliant: Math.max(0.01, Math.min(0.99, probability)),
+    daysOfTherapy,
+    factors: [
+      {
+        key: "ml_model",
+        weight: 0,
+        label: `Scored by trained model ${ADHERENCE_ML_MODEL_VERSION} (${model.sampleCount} training samples).`,
+      },
+    ],
+    scoredAt: now.toISOString(),
+    modelVersion: ADHERENCE_ML_MODEL_VERSION,
+  };
 }
 
 const COMPLIANT_MINUTES = 240;
@@ -60,12 +113,21 @@ export async function scorePatientAdherence(
         },
       ],
       scoredAt: new Date().toISOString(),
+      modelVersion: ADHERENCE_MODEL_VERSION,
     };
   }
   const firstNight = new Date(nights[0]!.night_date).getTime();
   const daysOfTherapy = Math.floor(
     (Date.now() - firstNight) / (24 * 3600 * 1000),
   );
+
+  // Opt-in: when a trained model is configured (ADHERENCE_MODEL_JSON), use
+  // it instead of the heuristic. Unset → heuristic (the default; no
+  // behavior change). A malformed value parses to null → heuristic.
+  const model = loadConfiguredAdherenceModel();
+  if (model) {
+    return buildMlAdherenceScore(model, nights, daysOfTherapy);
+  }
 
   // Build a 0..1 score using survival math like the denial scorer.
   let positive = 0.5; // baseline
@@ -148,6 +210,7 @@ export async function scorePatientAdherence(
     daysOfTherapy,
     factors,
     scoredAt: new Date().toISOString(),
+    modelVersion: ADHERENCE_MODEL_VERSION,
   };
 }
 
@@ -162,7 +225,7 @@ export async function scoreAndPersistAdherence(
     .from("adherence_predictions")
     .insert({
       patient_id: patientId,
-      model_version: ADHERENCE_MODEL_VERSION,
+      model_version: score.modelVersion,
       days_of_therapy: score.daysOfTherapy,
       probability_compliant: score.probabilityCompliant,
       factors_json: score.factors as unknown as never,
