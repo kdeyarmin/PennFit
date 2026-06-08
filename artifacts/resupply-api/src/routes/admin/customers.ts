@@ -465,11 +465,12 @@ router.get(
         .from("shop_orders")
         .select("amount_total_cents, paid_at, status, created_at")
         .eq("customer_id", userId),
-      // 7b. Pending reviews count (single head-only query).
+      // 7b. Pending reviews count (single head-only query — project a
+      // single column since head:true discards the row data anyway).
       supabase
         .schema("resupply")
         .from("shop_reviews")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("customer_id", userId)
         .eq("status", "pending"),
     ]);
