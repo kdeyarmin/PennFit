@@ -101,6 +101,61 @@ function readPrefs(raw: Json | null): CommunicationPreferences {
   };
 }
 
+type OptInStatus = { optedIn: boolean; hadShopCustomer: boolean };
+
+/**
+ * Batch the per-email marketing opt-in gate into one query per 200
+ * emails, keyed by lower-cased email. Every candidate in this job hits
+ * the gate before any other per-patient work, so resolving them up front
+ * replaces an N+1 of single-row shop_customers reads. Same exact-match
+ * (`.eq` on email_lower) semantics as the original per-row lookup.
+ */
+async function loadOptInStatuses(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  emails: readonly string[],
+): Promise<Map<string, OptInStatus>> {
+  const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
+  const byEmail = new Map<string, OptInStatus>();
+  const CHUNK = 200;
+  for (let i = 0; i < lowered.length; i += CHUNK) {
+    const chunk = lowered.slice(i, i + CHUNK);
+    const { data: custRows, error } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower, communication_preferences")
+      .in("email_lower", chunk);
+    if (error) {
+      logger.warn(
+        { err: error, chunkSize: chunk.length },
+        "quarterly-summary: opt-in batch lookup failed (treating as no shop_customer)",
+      );
+      continue;
+    }
+    const rowCounts = new Map<string, number>();
+    const prefsByEmail = new Map<string, CommunicationPreferences>();
+    for (const c of custRows ?? []) {
+      if (!c.email_lower) continue;
+      rowCounts.set(c.email_lower, (rowCounts.get(c.email_lower) ?? 0) + 1);
+      if (!prefsByEmail.has(c.email_lower)) {
+        prefsByEmail.set(
+          c.email_lower,
+          readPrefs(c.communication_preferences ?? null),
+        );
+      }
+    }
+    for (const [email, count] of rowCounts) {
+      if (count !== 1) continue;
+      const prefs = prefsByEmail.get(email);
+      if (!prefs) continue;
+      byEmail.set(email, {
+        optedIn: shouldSendEmail(prefs, "marketing"),
+        hadShopCustomer: true,
+      });
+    }
+  }
+  return byEmail;
+}
+
 export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStats> {
   const supabase = getSupabaseServiceRoleClient();
   const stats: QuarterlySummaryStats = {
@@ -133,31 +188,30 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
 
   const practiceName = process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
 
+  // Honor comm-prefs by joining via lowercased email. Every candidate
+  // hits this gate, so resolve all of them in one batched read instead
+  // of a shop_customers query per patient. A patient who never created a
+  // shop_customer row implicitly inherits the "marketing OFF by default"
+  // stance — we skip them. Engaged customers (the target cohort for this
+  // email) all have a row via /account.
+  const optInByEmail = await loadOptInStatuses(
+    supabase,
+    rows.map((r) => r.email),
+  );
+
   for (const patient of rows) {
     if (stats.sent >= PER_RUN_MAX) break;
     stats.candidates += 1;
 
-    // Honor comm-prefs by joining via lowercased email. A patient
-    // who never created a shop_customer row implicitly inherits the
-    // "marketing OFF by default" stance — we skip them. Engaged
-    // customers (the target cohort for this email) all have a row
-    // via /account.
-    // .eq is exact; .ilike would let `_` / `%` in the patient's
-    // email cross-match other rows and resolve opt-in against the
-    // wrong customer.
-    const { data: cust } = await supabase
-      .schema("resupply")
-      .from("shop_customers")
-      .select("communication_preferences")
-      .eq("email_lower", patient.email.toLowerCase())
-      .limit(1)
-      .maybeSingle();
-    if (!cust) {
+    const gate = optInByEmail.get(patient.email.toLowerCase()) ?? {
+      optedIn: false,
+      hadShopCustomer: false,
+    };
+    if (!gate.hadShopCustomer) {
       stats.skippedNoShopCustomer += 1;
       continue;
     }
-    const prefs = readPrefs(cust.communication_preferences ?? null);
-    if (!shouldSendEmail(prefs, "marketing")) {
+    if (!gate.optedIn) {
       stats.skippedOptedOut += 1;
       continue;
     }
