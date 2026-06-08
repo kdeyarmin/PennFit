@@ -317,17 +317,21 @@ async function sendDigestEmail(
   body: string,
 ): Promise<void> {
   const html = textToHtml(body);
-  // Per-recipient send (the shared client validates a single `to`).
-  for (const to of recipients) {
-    try {
-      await sendgrid.sendEmail({ to, subject, html, text: body });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, to },
-        "owner.weekly-digest: send failed for one recipient",
-      );
-    }
-  }
+  // Per-recipient send (the shared client validates a single `to`), but
+  // fan the recipients out concurrently — each is an independent HTTP
+  // round-trip and one slow/failed send must not serialize the rest.
+  await Promise.all(
+    recipients.map(async (to) => {
+      try {
+        await sendgrid.sendEmail({ to, subject, html, text: body });
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : err, to },
+          "owner.weekly-digest: send failed for one recipient",
+        );
+      }
+    }),
+  );
 }
 
 export async function registerOwnerDigestJob(boss: PgBoss): Promise<void> {

@@ -307,7 +307,35 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     .limit(500);
   if (pendErr) throw pendErr;
 
-  for (const row of pending ?? []) {
+  // Batch-resolve recipient email + first name for every pending
+  // milestone up front (one query per 200 patients) instead of a
+  // per-row lookup inside the send loop.
+  const pendingRows = pending ?? [];
+  const pendingPatientIds = [
+    ...new Set(pendingRows.map((r) => r.patient_id).filter(Boolean)),
+  ];
+  const patientById = new Map<
+    string,
+    { email: string | null; legal_first_name: string | null }
+  >();
+  const PATIENT_CHUNK = 200;
+  for (let i = 0; i < pendingPatientIds.length; i += PATIENT_CHUNK) {
+    const chunk = pendingPatientIds.slice(i, i + PATIENT_CHUNK);
+    const { data: patientRows, error: patientsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, email, legal_first_name")
+      .in("id", chunk);
+    if (patientsErr) throw patientsErr;
+    for (const p of patientRows ?? []) {
+      patientById.set(p.id, {
+        email: p.email,
+        legal_first_name: p.legal_first_name,
+      });
+    }
+  }
+
+  for (const row of pendingRows) {
     // Claim the row first (atomic stamp). Wins iff still null.
     const claimIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
@@ -344,27 +372,8 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
         .eq("id", claimed.id);
     };
 
-    // Resolve recipient email + first name.
-    const { data: patient, error: patientError } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("email, legal_first_name")
-      .eq("id", claimed.patient_id)
-      .limit(1)
-      .maybeSingle();
-    if (patientError) {
-      await releaseClaim();
-      stats.sendFailed += 1;
-      logger.error(
-        {
-          err: patientError.message,
-          milestoneId: claimed.id,
-          patientId: claimed.patient_id,
-        },
-        "therapy-milestones: patient lookup failed",
-      );
-      continue;
-    }
+    // Recipient email + first name, resolved from the batch lookup above.
+    const patient = patientById.get(claimed.patient_id) ?? null;
     if (!patient || !patient.email) {
       // No deliverable — leave the stamp so we don't retry every day.
       stats.sendSkipped += 1;
