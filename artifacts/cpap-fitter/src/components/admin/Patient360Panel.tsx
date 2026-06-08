@@ -14,7 +14,10 @@
 // and a deep link to the full patient page.
 
 import { Link } from "wouter";
-import { useGetPatient } from "@workspace/api-client-react/admin";
+import {
+  useGetPatient,
+  useGetPatientTherapySnapshot,
+} from "@workspace/api-client-react/admin";
 import { Card } from "./Card";
 import { Badge, humanizeStatus, patientStatusVariant } from "./Badge";
 import { Spinner } from "./Spinner";
@@ -90,6 +93,8 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
           channelPref={data.channelPreference ?? null}
         />
 
+        <TherapySnapshotSection patientId={patientId} />
+
         {recentPrescriptions.length > 0 && (
           <Section title="Recent prescriptions">
             <ul className="space-y-1.5">
@@ -164,6 +169,56 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
           )}
       </div>
     </Card>
+  );
+}
+
+// Recent-adherence snapshot. Self-contained (own query) so it never
+// blocks the rest of the panel; renders nothing until there's real
+// therapy data, so patients with no device feed show no empty card.
+function TherapySnapshotSection({ patientId }: { patientId: string }) {
+  const { data, isPending, isError } = useGetPatientTherapySnapshot(patientId);
+  if (isError || isPending || !data || !data.hasData) return null;
+  return (
+    <Section title="Recent therapy (last 30d)">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-700">
+        <Metric
+          label="Avg usage"
+          value={
+            data.avgUsageHours != null ? `${data.avgUsageHours} h/night` : "—"
+          }
+        />
+        <Metric
+          label="Compliance"
+          value={
+            data.complianceRatePct != null ? `${data.complianceRatePct}%` : "—"
+          }
+        />
+        <Metric
+          label="Avg AHI"
+          value={data.avgAhi != null ? String(data.avgAhi) : "—"}
+        />
+        <Metric
+          label="Avg leak"
+          value={data.avgLeakLMin != null ? `${data.avgLeakLMin} L/min` : "—"}
+        />
+      </div>
+      <p className="text-[10px] text-slate-400 mt-1">
+        {data.nightsWithData} night{data.nightsWithData === 1 ? "" : "s"} with
+        data
+        {data.staleDays != null && data.staleDays > 2
+          ? ` · last sync ${data.staleDays}d ago`
+          : ""}
+      </p>
+    </Section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="text-slate-400">{label}: </span>
+      <span className="font-medium">{value}</span>
+    </div>
   );
 }
 
