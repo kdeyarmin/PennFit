@@ -34,6 +34,14 @@ export interface ClearinghouseBody {
   contactPhoneE164: string | null;
   isActive: boolean;
   notes: string | null;
+  // Real-time eligibility (270/271) — non-secret config. The password is
+  // the OFFICE_ALLY_REALTIME_PASSWORD env secret, never sent here.
+  realtimeEnabled: boolean;
+  realtimeUrl: string | null;
+  realtimeUsername: string | null;
+  realtimeSenderId: string | null;
+  realtimeReceiverId: string | null;
+  realtimeTimeoutMs: number | null;
 }
 
 export interface Clearinghouse extends ClearinghouseBody {
@@ -131,6 +139,12 @@ export function emptyClearinghouseBody(): ClearinghouseBody {
     contactPhoneE164: null,
     isActive: true,
     notes: null,
+    realtimeEnabled: false,
+    realtimeUrl: null,
+    realtimeUsername: null,
+    realtimeSenderId: null,
+    realtimeReceiverId: null,
+    realtimeTimeoutMs: null,
   };
 }
 
@@ -154,6 +168,12 @@ export function clearinghouseToBody(c: Clearinghouse): ClearinghouseBody {
     contactPhoneE164: c.contactPhoneE164,
     isActive: c.isActive,
     notes: c.notes,
+    realtimeEnabled: c.realtimeEnabled,
+    realtimeUrl: c.realtimeUrl,
+    realtimeUsername: c.realtimeUsername,
+    realtimeSenderId: c.realtimeSenderId,
+    realtimeReceiverId: c.realtimeReceiverId,
+    realtimeTimeoutMs: c.realtimeTimeoutMs,
   };
 }
 

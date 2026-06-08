@@ -119,6 +119,12 @@ const fakeRow = {
   is_active: true,
   last_polled_at: null,
   notes: null,
+  realtime_enabled: true,
+  realtime_url: "https://oa.example/realtime",
+  realtime_username: "rt_user",
+  realtime_sender_id: null,
+  realtime_receiver_id: null,
+  realtime_timeout_ms: 30000,
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
 };
@@ -231,6 +237,9 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     expect(ch).toHaveProperty("usageIndicator", "P");
     expect(ch).toHaveProperty("sftpHost", "sftp.test.example.com");
     expect(ch).toHaveProperty("isActive", true);
+    expect(ch).toHaveProperty("realtimeEnabled", true);
+    expect(ch).toHaveProperty("realtimeUrl", "https://oa.example/realtime");
+    expect(ch).toHaveProperty("realtimeUsername", "rt_user");
   });
 });
 

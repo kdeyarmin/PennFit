@@ -35,7 +35,6 @@ import {
   createRealtimeEligibilityTransport,
   createSftpTransport,
   parse271,
-  readOfficeAllyRealtimeConfigOrNull,
   resolveOutboxDir,
   type SubmissionTransport,
 } from "@workspace/resupply-integrations-office-ally";
@@ -196,11 +195,12 @@ export async function verifyEligibility(
 
   const fileName = `PF-ELI-${built.interchangeControlNumber}.txt`;
 
-  // Real-time path: when Office Ally real-time eligibility is configured,
-  // POST the 270 and parse the 271 inline so the check resolves in one
-  // request. Any real-time failure falls through to the SFTP submit path
-  // below, so a flaky endpoint never blocks the check.
-  const realtimeConfig = readOfficeAllyRealtimeConfigOrNull();
+  // Real-time path: when Office Ally real-time eligibility is configured
+  // (resolved from the clearinghouse DB row + env password, or fully via
+  // env), POST the 270 and parse the 271 inline so the check resolves in
+  // one request. Any real-time failure falls through to the SFTP submit
+  // path below, so a flaky endpoint never blocks the check.
+  const realtimeConfig = clearinghouse.realtimeConfig;
   if (realtimeConfig) {
     const realtime = createRealtimeEligibilityTransport(realtimeConfig);
     const res = await realtime.requestEligibility({ payload: built.payload });

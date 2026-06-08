@@ -127,8 +127,16 @@ existing `OFFICE_ALLY_*` env / `clearinghouse_credentials` columns:
 
 Extend `readOfficeAllyConfigOrNull()` (or a sibling
 `readOfficeAllyRealtimeConfigOrNull()`) with the same "all-or-null"
-semantics — partial config → null → fall back to SFTP. Same pattern in
-the admin Clearinghouse config page if we want UI parity.
+semantics — partial config → null → fall back to SFTP.
+
+**Implemented:** the non-secret fields (URL, username, sender/receiver
+IDs, timeout, on/off) are also stored on `clearinghouse_credentials`
+(migration `0238`) and editable in the admin console (Billing → Config →
+Clearinghouse). `resolveClearinghouse()` returns a `realtimeConfig` built
+from the DB row + the env password, falling back to the fully-env path.
+The **password is never stored in the DB** — it stays
+`OFFICE_ALLY_REALTIME_PASSWORD`, mirroring how the SFTP key bytes are
+provisioned out of band (honors the "no column-level encryption" rule).
 
 ### 4. Verifier branch (synchronous path)
 

@@ -64,6 +64,21 @@ const upsertBody = z
     contactPhoneE164: z.string().trim().regex(E164_RE).nullable().optional(),
     isActive: z.boolean().default(true),
     notes: z.string().trim().max(4000).nullable().optional(),
+    // Real-time eligibility (270/271) — non-secret config only. The
+    // password is the OFFICE_ALLY_REALTIME_PASSWORD env secret, never
+    // stored here (mirrors the SFTP key file).
+    realtimeEnabled: z.boolean().default(false),
+    realtimeUrl: z.string().trim().url().max(500).nullable().optional(),
+    realtimeUsername: z.string().trim().max(200).nullable().optional(),
+    realtimeSenderId: z.string().trim().max(80).nullable().optional(),
+    realtimeReceiverId: z.string().trim().max(80).nullable().optional(),
+    realtimeTimeoutMs: z
+      .number()
+      .int()
+      .min(1000)
+      .max(120000)
+      .nullable()
+      .optional(),
   })
   .strict();
 const patchBody = upsertBody.partial();
@@ -90,6 +105,12 @@ function rowToApi(r: Row) {
     isActive: r.is_active,
     lastPolledAt: r.last_polled_at,
     notes: r.notes,
+    realtimeEnabled: r.realtime_enabled,
+    realtimeUrl: r.realtime_url,
+    realtimeUsername: r.realtime_username,
+    realtimeSenderId: r.realtime_sender_id,
+    realtimeReceiverId: r.realtime_receiver_id,
+    realtimeTimeoutMs: r.realtime_timeout_ms,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -177,6 +198,12 @@ router.post(
         contact_phone_e164: b.contactPhoneE164 ?? null,
         is_active: b.isActive,
         notes: b.notes ?? null,
+        realtime_enabled: b.realtimeEnabled,
+        realtime_url: b.realtimeUrl ?? null,
+        realtime_username: b.realtimeUsername ?? null,
+        realtime_sender_id: b.realtimeSenderId ?? null,
+        realtime_receiver_id: b.realtimeReceiverId ?? null,
+        realtime_timeout_ms: b.realtimeTimeoutMs ?? null,
       })
       .select("id")
       .single();
@@ -264,6 +291,17 @@ router.patch(
       update.contact_phone_e164 = b.contactPhoneE164;
     if (b.isActive !== undefined) update.is_active = b.isActive;
     if (b.notes !== undefined) update.notes = b.notes;
+    if (b.realtimeEnabled !== undefined)
+      update.realtime_enabled = b.realtimeEnabled;
+    if (b.realtimeUrl !== undefined) update.realtime_url = b.realtimeUrl;
+    if (b.realtimeUsername !== undefined)
+      update.realtime_username = b.realtimeUsername;
+    if (b.realtimeSenderId !== undefined)
+      update.realtime_sender_id = b.realtimeSenderId;
+    if (b.realtimeReceiverId !== undefined)
+      update.realtime_receiver_id = b.realtimeReceiverId;
+    if (b.realtimeTimeoutMs !== undefined)
+      update.realtime_timeout_ms = b.realtimeTimeoutMs;
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase
       .schema("resupply")

@@ -114,20 +114,37 @@ CORE-certified for **real-time** 270/271 over an HTTPS web service; when
 that's configured, `verifyEligibility()` POSTs the 270 and parses the 271
 **inline** (seconds), writing the check straight to `status='parsed'`.
 
-This is **fully optional and fail-soft**: set the three env vars below and
-the real-time path activates; leave them unset (or hit a transient
-failure) and the check transparently falls back to the SFTP
-submit-and-poll path. It uses the real-time web-service credentials Office
-Ally issues **separately from the SFTP key**.
+This is **fully optional and fail-soft**: configure it and the real-time
+path activates; leave it unconfigured (or hit a transient failure) and the
+check transparently falls back to the SFTP submit-and-poll path. It uses
+the real-time web-service credentials Office Ally issues **separately from
+the SFTP key**.
 
-| Variable                           | Notes                                           |
-| ---------------------------------- | ----------------------------------------------- |
-| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint                  |
-| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username                  |
-| `OFFICE_ALLY_REALTIME_PASSWORD`    | Real-time web-service password                  |
-| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)          |
-| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`) |
-| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)    |
+### Two ways to configure (same resolution order as the SFTP path)
+
+- **A. Admin console (recommended).** On **Billing → Config →
+  Clearinghouse connection** there is a **Real-time eligibility (270/271)**
+  card: an **Enabled** toggle, endpoint URL, username, CORE sender/receiver
+  IDs, and timeout. These non-secret fields are saved to the
+  `clearinghouse_credentials` row. **The password is NOT entered here** —
+  it stays the `OFFICE_ALLY_REALTIME_PASSWORD` environment secret, exactly
+  like the SSH key file. So enabling real-time = save the card **and** set
+  that one env var.
+- **B. Environment variables** (dev / preview, or no seeded DB row): set
+  all of `OFFICE_ALLY_REALTIME_URL`, `_USERNAME`, `_PASSWORD` (plus the
+  optional `_SENDER_ID` / `_RECEIVER_ID` / `_TIMEOUT_MS`).
+
+The resolver prefers the **DB row's** real-time fields (combined with the
+env password) and falls back to the **fully-env** path.
+
+| Variable                           | Notes                                                             |
+| ---------------------------------- | ----------------------------------------------------------------- |
+| `OFFICE_ALLY_REALTIME_PASSWORD`    | **The one secret — always env.** Required for either config path. |
+| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint (or set in the admin card)         |
+| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username (or set in the admin card)         |
+| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)                            |
+| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`)                   |
+| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)                      |
 
 **Before going live, confirm against Office Ally's real-time companion
 guide:** the exact endpoint URL, the `SOAPAction`/auth placement, the
@@ -137,8 +154,7 @@ spots are marked `CONFIRM(oa-spec)` in
 CORE vC2.2.0 SOAP envelope is the shipped default. The check still records
 the same `eligibility_checks` row and fires the same
 `eligibility.completed` webhook as the SFTP path — only the latency
-differs. (Admin-UI config parity for these fields is a future
-enhancement; today they are env-only.)
+differs.
 
 ## Same-or-Similar (HETS)
 
