@@ -862,3 +862,61 @@ describe("registerBulkCampaignTickJob — queue is created with buildQueueConfig
     );
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SendGrid client is constructed ONCE per tick (perf: was once per recipient)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("processTick — SendGrid client construction", () => {
+  it("builds the SendGrid client once for a multi-recipient batch, not per recipient", async () => {
+    const r1 = makeRecipient({
+      id: "rcpt-1",
+      recipient_email: "a@example.com",
+      recipient_id: "pat-1",
+    });
+    const r2 = makeRecipient({
+      id: "rcpt-2",
+      recipient_email: "b@example.com",
+      recipient_id: "pat-2",
+    });
+    const campaign = makeCampaign({ total_recipients: 2 });
+
+    // 1. campaign select
+    stageDb("bulk_campaigns", "select", { data: campaign });
+    // 1b. stale-'sending' reclaim update (no-op)
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    // 2. pending select — both recipients
+    stageDb("bulk_campaign_recipients", "select", { data: [r1, r2] });
+    // 3. claim update — RETURNING both
+    stageDb("bulk_campaign_recipients", "update", { data: [r1, r2] });
+    // 4. per-recipient opt-out select + status update (×2). Null prefs →
+    //    not opted out → both send.
+    stageDb("patients", "select", { data: null });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    stageDb("patients", "select", { data: null });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    // 5. campaign re-check (still sending)
+    stageDb("bulk_campaigns", "select", { data: { status: "sending" } });
+    // 6. pending count (0 → finalize)
+    stageDb("bulk_campaign_recipients", "select", {
+      data: null,
+      count: 0,
+    } as { data: null; count: number });
+    // 7. mark-sent update
+    stageDb("bulk_campaigns", "update", { data: [{ id: campaign.id }] });
+
+    const boss = makeBoss();
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    // Both recipients are emailed…
+    expect(sendEmailMock).toHaveBeenCalledTimes(2);
+    // …through a SINGLE SendGrid client built for the whole tick. Pre-fix
+    // the client was reconstructed inside the per-recipient loop, i.e.
+    // once per recipient (2 here, up to 600 at max throttle).
+    expect(createSendgridClientMock).toHaveBeenCalledTimes(1);
+  });
+});
