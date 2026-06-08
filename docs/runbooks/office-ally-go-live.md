@@ -141,7 +141,7 @@ endpoint URL and whether the `Authorization` value needs a scheme prefix —
 the API key is sent **verbatim**, so set it exactly as issued (include a
 `Bearer ` prefix in the key itself if Office Ally requires one).
 
-### Two ways to configure (same resolution order as the SFTP path)
+### Where to set it (same resolution order as the SFTP path)
 
 - **A. Admin console (recommended).** On **Billing → Config →
   Clearinghouse connection** there is a **Real-time eligibility (270/271)**
@@ -149,16 +149,28 @@ the API key is sent **verbatim**, so set it exactly as issued (include a
   **API key**. These save to the `clearinghouse_credentials` row. The API
   key is write-only — the saved value is never shown back (GET returns only
   "set / not set"); leave it blank on edit to keep the current key.
-- **B. Environment variables** (dev / preview, or no seeded DB row): set
-  `OFFICE_ALLY_REALTIME_URL` + `OFFICE_ALLY_REALTIME_API_KEY` (optionally
+- **B. System Configuration page** (keep the key with the rest of the API
+  keys, or when there's no clearinghouse row). **Settings → System
+  Configuration** (`/admin/system/configuration`, super-admin only) → the
+  **Clearinghouse (Office Ally)** card lists **Real-time eligibility
+  endpoint URL** + **Real-time eligibility API key**. These overlay the
+  `OFFICE_ALLY_REALTIME_URL` / `OFFICE_ALLY_REALTIME_API_KEY` env vars (saved
+  value wins, applied on the next deploy); the API key is write-only (masked
+  last-4). When a clearinghouse row from **A** is active, that row's endpoint
+  and on/off toggle still win, and this API key is used only if the row
+  stores none of its own.
+- **C. Environment variables** (dev / preview, or a raw Railway/host var):
+  set `OFFICE_ALLY_REALTIME_URL` + `OFFICE_ALLY_REALTIME_API_KEY` (optionally
   `_TIMEOUT_MS`).
 
 The resolver prefers the **DB row's** values; the **API key** uses the DB
 value when set and falls back to `OFFICE_ALLY_REALTIME_API_KEY` (legacy
-alias `OFFICE_ALLY_REALTIME_PASSWORD`). Security note: a DB-stored API key
-is held in **plaintext**, readable by the service-role client — unlike the
-SFTP key, which stays a file path. Prefer the env var if you'd rather keep
-the secret out of the database.
+alias `OFFICE_ALLY_REALTIME_PASSWORD`). Security note: a stored API key is
+held in **plaintext** — whether on the `clearinghouse_credentials` row (**A**)
+or in `resupply.app_config` (**B**) — readable by the service-role client,
+unlike the SFTP key, which stays a file path. Both are service-role-only and
+masked on read; only a raw Railway/host env var (**C**) keeps the secret out
+of the database entirely.
 
 | Variable                          | Notes                                                                      |
 | --------------------------------- | -------------------------------------------------------------------------- |
