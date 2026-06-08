@@ -14,11 +14,17 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { getLinkHmacKey } from "@workspace/resupply-secrets";
 
 interface FaxDocumentPayload {
-  /** physician_fax_outreach row ID (uuid) */
+  /** Document row ID (uuid). For physician outreach this is the
+   *  physician_fax_outreach row; for an appeal it's the
+   *  claim_appeal_letters row. */
   id: string;
+  /** Document kind. Absent on legacy tokens → physician outreach. */
+  k?: FaxDocumentKind;
   /** Expiry as Unix seconds */
   e: number;
 }
+
+export type FaxDocumentKind = "physician_outreach" | "appeal_letter";
 
 const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Twilio fetches immediately
 
@@ -47,14 +53,7 @@ function hmacSign(payloadEncoded: string): Buffer {
     .digest();
 }
 
-export function signFaxDocumentToken(
-  outreachId: string,
-  ttlSeconds = DEFAULT_TTL_SECONDS,
-): string {
-  const payload: FaxDocumentPayload = {
-    id: outreachId,
-    e: Math.floor(Date.now() / 1000) + ttlSeconds,
-  };
+function signToken(payload: FaxDocumentPayload): string {
   const payloadEncoded = base64urlEncode(
     Buffer.from(JSON.stringify(payload), "utf8"),
   );
@@ -62,8 +61,32 @@ export function signFaxDocumentToken(
   return `${payloadEncoded}.${base64urlEncode(sig)}`;
 }
 
+/** Sign a physician-outreach cover-letter token (legacy default kind —
+ *  payload omits `k` so existing token bytes are unchanged). */
+export function signFaxDocumentToken(
+  outreachId: string,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): string {
+  return signToken({
+    id: outreachId,
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  });
+}
+
+/** Sign an appeal-letter fax token (kind=appeal_letter). */
+export function signAppealFaxToken(
+  appealLetterId: string,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): string {
+  return signToken({
+    id: appealLetterId,
+    k: "appeal_letter",
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  });
+}
+
 export type VerifyFaxDocumentTokenResult =
-  | { valid: true; outreachId: string }
+  | { valid: true; outreachId: string; kind: FaxDocumentKind }
   | { valid: false };
 
 export function verifyFaxDocumentToken(
@@ -100,5 +123,8 @@ export function verifyFaxDocumentToken(
 
   if (p.e <= Math.floor(Date.now() / 1000)) return { valid: false };
 
-  return { valid: true, outreachId: p.id };
+  // Legacy tokens (no `k`) are physician-outreach cover letters.
+  const kind: FaxDocumentKind =
+    p.k === "appeal_letter" ? "appeal_letter" : "physician_outreach";
+  return { valid: true, outreachId: p.id, kind };
 }

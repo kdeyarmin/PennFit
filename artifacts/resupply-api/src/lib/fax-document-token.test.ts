@@ -24,9 +24,27 @@ vi.mock("@workspace/resupply-secrets", () => ({
 }));
 
 import {
+  signAppealFaxToken,
   signFaxDocumentToken,
   verifyFaxDocumentToken,
 } from "./fax-document-token";
+
+describe("fax document kind", () => {
+  it("defaults a legacy (physician) token to physician_outreach", () => {
+    const r = verifyFaxDocumentToken(signFaxDocumentToken("outreach-1"));
+    expect(r.valid).toBe(true);
+    if (r.valid) expect(r.kind).toBe("physician_outreach");
+  });
+
+  it("round-trips an appeal-letter token with kind=appeal_letter", () => {
+    const r = verifyFaxDocumentToken(signAppealFaxToken("letter-1"));
+    expect(r.valid).toBe(true);
+    if (r.valid) {
+      expect(r.kind).toBe("appeal_letter");
+      expect(r.outreachId).toBe("letter-1");
+    }
+  });
+});
 
 describe("signFaxDocumentToken / verifyFaxDocumentToken — round-trip", () => {
   it("round-trips a valid token", () => {
