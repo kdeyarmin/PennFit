@@ -1,4 +1,4 @@
--- 0234_clearinghouse_inbound_kind_277 — extend file_kind CHECK to allow '277'.
+-- 0237_clearinghouse_inbound_kind_277 — extend file_kind CHECK to allow '277'.
 --
 -- The 276/277 claim-status flow (biller #B3) lands real 277 (X212)
 -- claim-status responses in clearinghouse_inbound_files with
