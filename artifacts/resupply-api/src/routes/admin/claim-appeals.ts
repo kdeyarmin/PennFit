@@ -320,11 +320,22 @@ router.post(
     // stamped on Twilio's terminal status-callback in a follow-up; for now
     // the accept timestamp records the hand-off.
     const nowIso = new Date().toISOString();
-    await supabase
+    const { error: stampErr } = await supabase
       .schema("resupply")
       .from("claim_appeal_letters")
       .update({ delivery_method: "fax", delivered_at: nowIso })
       .eq("id", letter.id);
+    if (stampErr) {
+      logger.warn(
+        {
+          event: "appeal_fax_db_stamp_failed",
+          appeal_letter_id: letter.id,
+          vendorRef: sid,
+          err: stampErr,
+        },
+        "claim_appeal.fax: fax accepted by Twilio but DB stamp failed",
+      );
+    }
 
     await logAudit({
       action: "claim_appeal.faxed",
