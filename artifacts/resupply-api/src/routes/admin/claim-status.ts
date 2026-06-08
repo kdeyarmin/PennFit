@@ -102,6 +102,21 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
+
+    const { data: claim, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("insurance_claims")
+      .select("id")
+      .eq("id", parsed.data.claimId)
+      .eq("patient_id", parsed.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claim) {
+      res.status(404).json({ error: "claim_not_found" });
+      return;
+    }
+
     const { data } = await supabase
       .schema("resupply")
       .from("claim_status_checks")
@@ -112,7 +127,6 @@ router.get(
       .order("requested_at", { ascending: false })
       .limit(50);
     res.json({ statusChecks: data ?? [] });
-  },
 );
 
 export default router;
