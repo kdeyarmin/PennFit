@@ -131,6 +131,7 @@ import payerProfitabilityRouter from "./admin/payer-profitability.js";
 import denialsWorklistRouter from "./admin/denials-worklist.js";
 import billingActionQueueRouter from "./admin/billing-action-queue.js";
 import patientTherapySnapshotRouter from "./admin/patient-therapy-snapshot.js";
+import paymentPlansRouter from "./admin/payment-plans.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
@@ -420,6 +421,8 @@ router.use(billingActionQueueRouter);
 // /admin/patients/:id/therapy-snapshot — compact recent-adherence
 // snapshot for the CSR/RT patient context panel (CSR C3). patients.read.
 router.use(patientTherapySnapshotRouter);
+// /admin/.../payment-plans — patient installment-plan tracker (biller B7).
+router.use(paymentPlansRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
 // ranked by re-verification urgency (never/terminating/stale) (Biller
 // #31, read-only half). reports.read.
