@@ -394,7 +394,7 @@ function drawForm(doc: PDFKit.PDFDocument, input: PaRequestInput): void {
     .fillColor("#555")
     .text(
       "Qualifying criteria (per Medicare LCD L33718, commonly mirrored by commercial/MA/Medicaid payers): " +
-        "AHI or RDI ≥ 15 events/hr; OR 5–14 events/hr with documented excessive daytime sleepiness, " +
+        "AHI or RDI of at least 15 events/hr; OR 5–14 events/hr with documented excessive daytime sleepiness, " +
         "impaired cognition, mood disorder, insomnia, hypertension, ischemic heart disease, or history of stroke. " +
         "Sleep study must be within 12 months preceding the initial PAP order; an in-person evaluation must precede the test.",
       LEFT,
