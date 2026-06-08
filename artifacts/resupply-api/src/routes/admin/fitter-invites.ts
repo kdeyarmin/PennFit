@@ -453,6 +453,10 @@ router.post(
     }
 
     let targetPatientId: string;
+    // True when this attach built a brand-new chart and enrolled it in
+    // the first-90-day onboarding program (the existing onboarding
+    // flow). Surfaced in the response + audit.
+    let enrolledInOnboarding = false;
     if (parsed.data.patientId) {
       const { data: patient, error: patientErr } = await supabase
         .schema("resupply")
@@ -500,6 +504,44 @@ router.post(
       }
       if (!created) throw new Error("patients insert returned no rows");
       targetPatientId = created.id;
+
+      // Route the new prospect through the EXISTING onboarding flow —
+      // enroll them in the first-90-day adherence-coaching program the
+      // same way POST /admin/patients/:id/onboarding/enroll does, so a
+      // fitter-sourced chart enters the standard pipeline instead of
+      // sitting bare. Best-effort: the chart + fitting attach are the
+      // primary outcome; a journey-insert hiccup must not 500 the
+      // attach. (No active-journey precheck needed — the patient was
+      // just created.)
+      const { error: journeyErr } = await supabase
+        .schema("resupply")
+        .from("patient_onboarding_journeys")
+        .insert({
+          patient_id: targetPatientId,
+          started_at: new Date().toISOString(),
+          enrolled_by_email: req.adminEmail ?? "<unknown>",
+          enrolled_by_user_id: req.adminUserId ?? null,
+        });
+      if (journeyErr) {
+        logger.warn(
+          { err: journeyErr, patient_id: targetPatientId },
+          "fitter-invite attach: onboarding enrollment failed (continuing)",
+        );
+      } else {
+        enrolledInOnboarding = true;
+        await logAudit({
+          action: "patient.onboarding.enroll",
+          adminEmail: req.adminEmail ?? null,
+          adminUserId: req.adminUserId ?? null,
+          targetTable: "patient_onboarding_journeys",
+          targetId: targetPatientId,
+          metadata: { patient_id: targetPatientId, source: "fitter_invite" },
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        }).catch((err) => {
+          logger.warn({ err }, "patient.onboarding.enroll audit write failed");
+        });
+      }
     }
 
     const nowIso = new Date().toISOString();
@@ -525,6 +567,7 @@ router.post(
       metadata: {
         patient_id: targetPatientId,
         created_chart: Boolean(parsed.data.createPatient),
+        enrolled_in_onboarding: enrolledInOnboarding,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -536,6 +579,7 @@ router.post(
       id: idCheck.data,
       patientId: targetPatientId,
       status: "attached",
+      enrolledInOnboarding,
     });
   },
 );

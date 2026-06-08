@@ -110,10 +110,20 @@ export interface AttachFitterInviteBody {
   };
 }
 
+export interface AttachFitterInviteResponse {
+  id: string;
+  patientId: string;
+  status: "attached";
+  /** True when a new chart was built AND enrolled in the first-90-day
+   *  onboarding program. Absent/false when attaching to an existing
+   *  chart. */
+  enrolledInOnboarding?: boolean;
+}
+
 export async function attachFitterInvite(
   id: string,
   body: AttachFitterInviteBody,
-): Promise<{ id: string; patientId: string; status: "attached" }> {
+): Promise<AttachFitterInviteResponse> {
   const url = `${BASE}/${encodeURIComponent(id)}/attach`;
   const res = await fetch(url, {
     method: "POST",
@@ -127,7 +137,7 @@ export async function attachFitterInvite(
   });
   const json = (await res.json()) as unknown;
   if (!res.ok) throw new ApiError(res, json, { method: "POST", url });
-  return json as { id: string; patientId: string; status: "attached" };
+  return json as AttachFitterInviteResponse;
 }
 
 export async function resendFitterInvite(

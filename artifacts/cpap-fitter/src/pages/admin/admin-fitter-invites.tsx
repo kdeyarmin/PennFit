@@ -350,6 +350,10 @@ function AttachControls({
 
       {mode === "new" && (
         <div className="space-y-2">
+          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            Builds a chart from this fitting and enrolls the patient in the
+            first-90-day onboarding program.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label htmlFor={`fn-${invite.id}`}>First name</Label>

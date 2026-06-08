@@ -170,6 +170,47 @@ describe("POST /admin/fitter-invites/:id/attach", () => {
     expect(res.body.patientId).toBe(PATIENT_ID);
   });
 
+  it("builds a new chart and enrolls it in the onboarding flow", async () => {
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "completed",
+        recipient_email: "newprospect@example.com",
+        recipient_phone_e164: "+12155559876",
+      },
+    });
+    stageSupabaseResponse("patients", "insert", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("patient_onboarding_journeys", "insert", {
+      data: null,
+    });
+    stageSupabaseResponse("fitter_invites", "update", { data: null });
+    const res = await request(makeApp())
+      .post(`/resupply-api/admin/fitter-invites/${INVITE_ID}/attach`)
+      .send({
+        createPatient: {
+          legalFirstName: "Sam",
+          legalLastName: "Rivera",
+          dateOfBirth: "1980-04-15",
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("attached");
+    expect(res.body.patientId).toBe(PATIENT_ID);
+    expect(res.body.enrolledInOnboarding).toBe(true);
+
+    const patientWrite = getSupabaseWritePayloads(
+      "patients",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(patientWrite.legal_first_name).toBe("Sam");
+    expect(patientWrite.email).toBe("newprospect@example.com");
+    const journeyWrite = getSupabaseWritePayloads(
+      "patient_onboarding_journeys",
+      "insert",
+    )[0] as Record<string, unknown>;
+    expect(journeyWrite.patient_id).toBe(PATIENT_ID);
+  });
+
   it("409s when the invite is not completed", async () => {
     stageSupabaseResponse("fitter_invites", "select", {
       data: { id: INVITE_ID, status: "sent" },
