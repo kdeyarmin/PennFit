@@ -326,9 +326,10 @@ async function sendDigestEmail(
         await sendgrid.sendEmail({ to, subject, html, text: body });
       } catch (err) {
         logger.warn(
-          { err: err instanceof Error ? err.message : err, to },
+          { err: err instanceof Error ? err : new Error(String(err)), to },
           "owner.weekly-digest: send failed for one recipient",
         );
+      }
       }
     }),
   );
