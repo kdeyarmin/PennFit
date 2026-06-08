@@ -280,6 +280,11 @@ const AdminClosuresPage = lazy(() =>
     default: m.AdminClosuresPage,
   })),
 );
+const AdminCompanyCalendarPage = lazy(() =>
+  import("@/pages/admin/admin-company-calendar").then((m) => ({
+    default: m.AdminCompanyCalendarPage,
+  })),
+);
 const AdminAppointmentRequestsPage = lazy(() =>
   import("@/pages/admin/admin-appointment-requests").then((m) => ({
     default: m.AdminAppointmentRequestsPage,
@@ -948,6 +953,10 @@ function AdminConsole() {
               component={AdminBackordersPage}
             />
             <Route path="/admin/closures" component={AdminClosuresPage} />
+            <Route
+              path="/admin/company-calendar"
+              component={AdminCompanyCalendarPage}
+            />
             <Route
               path="/admin/appointment-requests"
               component={AdminAppointmentRequestsPage}

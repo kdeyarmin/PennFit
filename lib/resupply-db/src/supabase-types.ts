@@ -3392,6 +3392,35 @@ export interface Database {
         >;
         Relationships: [];
       };
+      company_calendar_events: {
+        Row: {
+          id: string;
+          patient_id: string;
+          event_type:
+            | "fitting_virtual"
+            | "fitting_in_person"
+            | "setup_virtual"
+            | "setup_in_person"
+            | "follow_up"
+            | "consultation"
+            | "other";
+          starts_at: string;
+          ends_at: string;
+          location: string | null;
+          notes: string | null;
+          created_by_user_id: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["company_calendar_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["company_calendar_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       csr_shifts: {
         Row: {
           id: string;
