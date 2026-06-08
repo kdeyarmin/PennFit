@@ -105,16 +105,25 @@ router.get(
         .limit(200),
     ]);
 
-    // Filter fulfillments to "no claim yet". A 1-by-1 lookup is fine
-    // at the 200-row cap.
-    const fulfillmentsToBill: typeof recentFulfillments = [];
-    for (const f of recentFulfillments ?? []) {
-      const { count } = await supabase
+    // Filter fulfillments to "no claim yet". One batched lookup of every
+    // fulfillment that already has a claim, instead of a count query per
+    // row (up to 200 round-trips at the cap).
+    const fulfillmentIds = (recentFulfillments ?? []).map((f) => f.id);
+    const billedFulfillmentIds = new Set<string>();
+    if (fulfillmentIds.length > 0) {
+      const { data: claimedRows, error: claimedErr } = await supabase
         .schema("resupply")
         .from("insurance_claims")
-        .select("id", { count: "exact", head: true })
-        .eq("fulfillment_id", f.id);
-      if ((count ?? 0) === 0) fulfillmentsToBill.push(f);
+        .select("fulfillment_id")
+        .in("fulfillment_id", fulfillmentIds);
+      if (claimedErr) throw claimedErr;
+      for (const c of claimedRows ?? []) {
+        if (c.fulfillment_id) billedFulfillmentIds.add(c.fulfillment_id);
+      }
+    }
+    const fulfillmentsToBill: typeof recentFulfillments = [];
+    for (const f of recentFulfillments ?? []) {
+      if (!billedFulfillmentIds.has(f.id)) fulfillmentsToBill.push(f);
       if (fulfillmentsToBill.length >= 25) break;
     }
 
