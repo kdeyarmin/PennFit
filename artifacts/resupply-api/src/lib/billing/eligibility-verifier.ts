@@ -177,7 +177,9 @@ export async function verifyEligibility(
       organizationName: identity.submitter.organizationName,
       npi: identity.billingProvider.npi,
     },
-    receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },
+    // Office Ally's interchange/group receiver id for eligibility is
+    // "OFFALLY" (ISA08 / GS03) per its Real-Time 270/271 companion guide.
+    receiver: { interchangeId: "OFFALLY", organizationName: "OFFICE ALLY" },
     payer: {
       organizationName: payerProfile.payer_legal_name,
       payerId: payerProfile.office_ally_payer_id,

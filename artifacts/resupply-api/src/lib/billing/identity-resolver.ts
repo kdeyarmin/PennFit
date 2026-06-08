@@ -203,28 +203,24 @@ function buildRealtimeConfig(
   if (env.OFFICE_ALLY_STUB === "1") return null;
   if (row) {
     // The row owns the on/off decision; don't fall back to env when it's
-    // disabled or missing the endpoint/username.
-    if (!row.realtime_enabled || !row.realtime_url || !row.realtime_username) {
+    // disabled or missing the endpoint.
+    if (!row.realtime_enabled || !row.realtime_url) {
       return null;
     }
-    // Password precedence: the DB row's stored password wins (used as-is),
-    // with the OFFICE_ALLY_REALTIME_PASSWORD env var as a fallback
+    // API-key precedence: the DB row's stored key wins (the
+    // `realtime_password` column carries the Authorization header value),
+    // with OFFICE_ALLY_REALTIME_API_KEY / _PASSWORD as the env fallback
     // (dev/preview). A blank stored value counts as "unset".
-    const dbPassword = row.realtime_password;
-    const password =
-      dbPassword && dbPassword.trim().length > 0
-        ? dbPassword
-        : env.OFFICE_ALLY_REALTIME_PASSWORD;
-    // CORE SenderID is mandatory; missing one (no override, no ETIN) means
-    // not configured rather than an empty <SenderID> the payer rejects.
-    const senderId = row.realtime_sender_id?.trim() || row.etin || "";
-    if (!password || !senderId) return null;
+    const dbApiKey = row.realtime_password;
+    const apiKey =
+      dbApiKey && dbApiKey.trim().length > 0
+        ? dbApiKey.trim()
+        : env.OFFICE_ALLY_REALTIME_API_KEY?.trim() ||
+          env.OFFICE_ALLY_REALTIME_PASSWORD?.trim();
+    if (!apiKey) return null;
     return {
       url: row.realtime_url,
-      username: row.realtime_username,
-      password,
-      senderId,
-      receiverId: row.realtime_receiver_id?.trim() || "OFFICEALLY",
+      apiKey,
       timeoutMs:
         typeof row.realtime_timeout_ms === "number" &&
         row.realtime_timeout_ms > 0

@@ -80,14 +80,8 @@ const SUBMITTER: FieldDef[] = [
 const REALTIME: FieldDef[] = [
   {
     key: "realtimeUrl",
-    label: "Real-time endpoint URL",
-    placeholder: "https://…",
-  },
-  { key: "realtimeUsername", label: "Real-time username" },
-  { key: "realtimeSenderId", label: "CORE Sender ID (default: ETIN)" },
-  {
-    key: "realtimeReceiverId",
-    label: "CORE Receiver ID (default: OFFICEALLY)",
+    label: "Endpoint URL (Office Ally /v2/eligibility-benefits/x12)",
+    placeholder: "https://edi.officeally.io/v2/eligibility-benefits/x12",
   },
 ];
 
@@ -98,9 +92,6 @@ const NULLABLE = new Set<keyof ClearinghouseBody>([
   "contactPhoneE164",
   "notes",
   "realtimeUrl",
-  "realtimeUsername",
-  "realtimeSenderId",
-  "realtimeReceiverId",
 ]);
 
 const INPUT_STYLE = { borderColor: "hsl(var(--line))" } as const;
@@ -291,12 +282,13 @@ export function AdminBillingConfigClearinghousePage() {
 
       <Card title="Real-time eligibility (270/271)">
         <p className="text-sm mb-3" style={{ color: "hsl(var(--ink-3))" }}>
-          Optional. When enabled, an eligibility check returns the 271 inline
-          (seconds) instead of submitting over SFTP and waiting for the poll
-          (minutes). Enter the password below (stored on the connection) or set{" "}
-          <code>OFFICE_ALLY_REALTIME_PASSWORD</code> — the saved value is never
-          shown back. Confirm the endpoint + auth against Office Ally&rsquo;s
-          real-time companion guide before enabling in production.
+          Optional. When enabled, an eligibility check POSTs the 270 to Office
+          Ally&rsquo;s EDI REST API and returns the 271 inline (seconds) instead
+          of submitting over SFTP and waiting for the poll (minutes). Enter the
+          endpoint and API key below (stored on the connection) or set{" "}
+          <code>OFFICE_ALLY_REALTIME_URL</code> +{" "}
+          <code>OFFICE_ALLY_REALTIME_API_KEY</code> — the saved key is never
+          shown back.
         </p>
         <label className="flex items-center gap-2 text-sm mb-3">
           <input
@@ -340,7 +332,7 @@ export function AdminBillingConfigClearinghousePage() {
           </label>
           <label className="block text-sm">
             <span style={{ color: "hsl(var(--ink-2))" }}>
-              Password{" "}
+              API key{" "}
               {existing?.realtimePasswordSet
                 ? "(saved — leave blank to keep)"
                 : "(or set via env)"}

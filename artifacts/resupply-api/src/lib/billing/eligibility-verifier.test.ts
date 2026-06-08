@@ -102,11 +102,8 @@ const REALTIME_RESOLVED = {
   config: null,
   row: null,
   realtimeConfig: {
-    url: "https://oa.example/rt",
-    username: "u",
-    password: "p",
-    senderId: "ETIN",
-    receiverId: "OFFICEALLY",
+    url: "https://edi.officeally.io/v2/eligibility-benefits/x12",
+    apiKey: "test-api-key",
     timeoutMs: 5000,
   },
   usageIndicator: "T",

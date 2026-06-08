@@ -176,6 +176,8 @@ describe("resolveClearinghouse", () => {
 });
 
 describe("resolveClearinghouse — real-time eligibility config", () => {
+  // The realtime_password column carries the REST API key (sent in the
+  // Authorization header).
   const REALTIME_ROW = {
     id: "ch_1",
     slug: "office_ally",
@@ -188,31 +190,28 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     known_hosts_path: "/kh",
     remote_inbox_dir: "inbound",
     realtime_enabled: true,
-    realtime_url: "https://oa.example/rt",
-    realtime_username: "rtuser",
+    realtime_url: "https://edi.officeally.io/v2/eligibility-benefits/x12",
+    realtime_username: null,
     realtime_sender_id: null,
     realtime_receiver_id: null,
     realtime_timeout_ms: null,
+    realtime_password: null,
   } as const;
 
-  it("builds realtimeConfig from the DB row + env password", async () => {
+  it("builds realtimeConfig from the DB row + env api key", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: REALTIME_ROW,
     });
     const result = await resolveClearinghouse({
-      env: { OFFICE_ALLY_REALTIME_PASSWORD: "secret" },
+      env: { OFFICE_ALLY_REALTIME_API_KEY: "key123" },
     });
     expect(result.realtimeConfig).not.toBeNull();
-    expect(result.realtimeConfig?.url).toBe("https://oa.example/rt");
-    expect(result.realtimeConfig?.username).toBe("rtuser");
-    expect(result.realtimeConfig?.password).toBe("secret");
-    // sender id falls back to the ETIN; receiver to OFFICEALLY; default timeout.
-    expect(result.realtimeConfig?.senderId).toBe("DBETIN");
-    expect(result.realtimeConfig?.receiverId).toBe("OFFICEALLY");
+    expect(result.realtimeConfig?.url).toBe(REALTIME_ROW.realtime_url);
+    expect(result.realtimeConfig?.apiKey).toBe("key123");
     expect(result.realtimeConfig?.timeoutMs).toBe(30000);
   });
 
-  it("returns null realtimeConfig when the password env is absent", async () => {
+  it("returns null realtimeConfig when no api key is available", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: REALTIME_ROW,
     });
@@ -220,12 +219,12 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     expect(result.realtimeConfig).toBeNull();
   });
 
-  it("returns null realtimeConfig in stub mode even with the password set", async () => {
+  it("returns null realtimeConfig in stub mode even with the api key set", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: REALTIME_ROW,
     });
     const result = await resolveClearinghouse({
-      env: { OFFICE_ALLY_REALTIME_PASSWORD: "secret", OFFICE_ALLY_STUB: "1" },
+      env: { OFFICE_ALLY_REALTIME_API_KEY: "key123", OFFICE_ALLY_STUB: "1" },
     });
     expect(result.realtimeConfig).toBeNull();
   });
@@ -238,48 +237,45 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
       env: {
         ...FULL_ENV,
         OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
-        OFFICE_ALLY_REALTIME_USERNAME: "envuser",
-        OFFICE_ALLY_REALTIME_PASSWORD: "envpass",
+        OFFICE_ALLY_REALTIME_API_KEY: "envkey",
       },
     });
     expect(result.source).toBe("env");
     expect(result.realtimeConfig?.url).toBe("https://oa.example/env-rt");
-    expect(result.realtimeConfig?.username).toBe("envuser");
+    expect(result.realtimeConfig?.apiKey).toBe("envkey");
   });
 
-  it("uses the DB row's explicit sender/receiver/timeout when set", async () => {
+  it("uses the DB row's stored api key, and its timeout when set", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
       data: {
         ...REALTIME_ROW,
-        realtime_sender_id: "SND",
-        realtime_receiver_id: "RCV",
+        realtime_password: "dbkey",
         realtime_timeout_ms: 9000,
       },
     });
-    const result = await resolveClearinghouse({
-      env: { OFFICE_ALLY_REALTIME_PASSWORD: "secret" },
-    });
-    expect(result.realtimeConfig?.senderId).toBe("SND");
-    expect(result.realtimeConfig?.receiverId).toBe("RCV");
+    const result = await resolveClearinghouse({ env: {} });
+    expect(result.realtimeConfig?.apiKey).toBe("dbkey");
     expect(result.realtimeConfig?.timeoutMs).toBe(9000);
   });
 
-  it("prefers the DB row's stored password over the env var", async () => {
+  it("prefers the DB row's stored api key over the env var", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
-      data: { ...REALTIME_ROW, realtime_password: "dbsecret" },
+      data: { ...REALTIME_ROW, realtime_password: "dbkey" },
     });
     const result = await resolveClearinghouse({
-      env: { OFFICE_ALLY_REALTIME_PASSWORD: "envsecret" },
+      env: { OFFICE_ALLY_REALTIME_API_KEY: "envkey" },
     });
-    expect(result.realtimeConfig?.password).toBe("dbsecret");
+    expect(result.realtimeConfig?.apiKey).toBe("dbkey");
   });
 
-  it("uses the DB row's stored password when no env password is set", async () => {
+  it("falls back to the legacy OFFICE_ALLY_REALTIME_PASSWORD for the api key", async () => {
     stageSupabaseResponse("clearinghouse_credentials", "select", {
-      data: { ...REALTIME_ROW, realtime_password: "dbsecret" },
+      data: REALTIME_ROW,
     });
-    const result = await resolveClearinghouse({ env: {} });
-    expect(result.realtimeConfig?.password).toBe("dbsecret");
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_PASSWORD: "legacykey" },
+    });
+    expect(result.realtimeConfig?.apiKey).toBe("legacykey");
   });
 
   it("does NOT let env vars re-enable real-time when the DB row has it disabled", async () => {
@@ -290,9 +286,7 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     const result = await resolveClearinghouse({
       env: {
         OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
-        OFFICE_ALLY_REALTIME_USERNAME: "envuser",
-        OFFICE_ALLY_REALTIME_PASSWORD: "envpass",
-        OFFICE_ALLY_ETIN: "ENVETIN",
+        OFFICE_ALLY_REALTIME_API_KEY: "envkey",
       },
     });
     expect(result.realtimeConfig).toBeNull();

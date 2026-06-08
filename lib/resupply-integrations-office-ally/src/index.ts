@@ -108,12 +108,8 @@ export {
   type SftpTransportConfig,
 } from "./transport/sftp";
 export {
-  buildCoreRealTimeRequestEnvelope,
   createRealtimeEligibilityTransport,
-  extract271FromCoreResponse,
-  extractCoreErrorFromResponse,
-  type CoreRealTimeRequestInput,
-  type CoreResponseError,
+  isX12Response271,
   type FetchLike,
   type RealtimeTransportDeps,
 } from "./transport/realtime";
