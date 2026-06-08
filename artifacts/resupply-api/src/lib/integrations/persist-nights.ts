@@ -42,8 +42,8 @@ export async function persistTherapyNights(
   if (!SOURCES.has(source as never)) {
     throw new Error(`persistTherapyNights: unsupported source "${source}"`);
   }
-  let inserted = 0;
   let skipped = 0;
+  const rows: Record<string, unknown>[] = [];
   for (const n of nights) {
     const allNull =
       n.usageMinutes == null &&
@@ -54,26 +54,39 @@ export async function persistTherapyNights(
       skipped += 1;
       continue;
     }
+    rows.push({
+      patient_id: patientId,
+      night_date: n.nightDate,
+      source,
+      source_event_id: `${source}:${n.nightDate}`,
+      usage_minutes: n.usageMinutes,
+      ahi: n.ahi == null ? null : String(n.ahi),
+      leak_rate_l_min: n.leakRateLMin == null ? null : String(n.leakRateLMin),
+      pressure_p95_cmh2o:
+        n.pressureP95Cmh2o == null ? null : String(n.pressureP95Cmh2o),
+    });
+  }
+  // One batched upsert instead of one round-trip per night — a patient
+  // with a full history can carry hundreds of nights per sync source.
+  // Chunked to keep the PostgREST request body bounded.
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const dedupedChunk = [
+      ...new Map(
+        chunk.map((row) => [
+          `${String(row.patient_id)}|${String(row.night_date)}|${String(row.source)}`,
+          row,
+        ]),
+      ).values(),
+    ];
     const { error } = await supabase
       .schema("resupply")
       .from("patient_therapy_nights")
-      .upsert(
-        {
-          patient_id: patientId,
-          night_date: n.nightDate,
-          source,
-          source_event_id: `${source}:${n.nightDate}`,
-          usage_minutes: n.usageMinutes,
-          ahi: n.ahi == null ? null : String(n.ahi),
-          leak_rate_l_min:
-            n.leakRateLMin == null ? null : String(n.leakRateLMin),
-          pressure_p95_cmh2o:
-            n.pressureP95Cmh2o == null ? null : String(n.pressureP95Cmh2o),
-        },
-        { onConflict: "patient_id,night_date,source" },
-      );
+      .upsert(dedupedChunk, {
+        onConflict: "patient_id,night_date,source",
+      });
     if (error) throw error;
-    inserted += 1;
   }
-  return { inserted, skipped };
+  return { inserted: rows.length, skipped };
 }
