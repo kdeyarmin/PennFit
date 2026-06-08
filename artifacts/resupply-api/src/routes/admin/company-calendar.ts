@@ -86,78 +86,83 @@ const listQuery = z.object({
 
 const DAY_MS = 86_400_000;
 
-router.get("/admin/company-calendar", requireAdmin, async (req, res) => {
-  const parsed = listQuery.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_query" });
-    return;
-  }
-  const now = Date.now();
-  const from = parsed.data.from ?? new Date(now - 45 * DAY_MS).toISOString();
-  const to = parsed.data.to ?? new Date(now + 45 * DAY_MS).toISOString();
-
-  const supabase = getSupabaseServiceRoleClient();
-  // Events that OVERLAP the [from, to) window: they start before `to`
-  // AND end after `from`.
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("company_calendar_events")
-    .select(
-      "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, created_at, updated_at",
-    )
-    .lt("starts_at", to)
-    .gt("ends_at", from)
-    .order("starts_at", { ascending: true })
-    .limit(1000);
-  if (error) throw error;
-  const rows = data ?? [];
-
-  // Resolve patient names in a single batched lookup (two-step fetch —
-  // the repo standard; we don't embed PostgREST relations). Resolving at
-  // read time keeps `patients` the single source of truth, so a rename
-  // shows up on the calendar immediately.
-  const patientIds = [...new Set(rows.map((r) => r.patient_id))];
-  const patientsById = new Map<
-    string,
-    { firstName: string; lastName: string }
-  >();
-  if (patientIds.length > 0) {
-    const { data: patients, error: pErr } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id, legal_first_name, legal_last_name")
-      .in("id", patientIds);
-    if (pErr) throw pErr;
-    for (const p of patients ?? []) {
-      patientsById.set(p.id, {
-        firstName: p.legal_first_name,
-        lastName: p.legal_last_name,
-      });
+router.get(
+  "/admin/company-calendar",
+  requireAdmin,
+  adminRateLimit({ name: "company_calendar.list", preset: "query" }),
+  async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
     }
-  }
+    const now = Date.now();
+    const from = parsed.data.from ?? new Date(now - 45 * DAY_MS).toISOString();
+    const to = parsed.data.to ?? new Date(now + 45 * DAY_MS).toISOString();
 
-  res.json({
-    events: rows.map((r) => {
-      const pt = patientsById.get(r.patient_id);
-      return {
-        id: r.id,
-        patientId: r.patient_id,
-        patientFirstName: pt?.firstName ?? null,
-        patientLastName: pt?.lastName ?? null,
-        eventType: r.event_type,
-        status: r.status,
-        startsAt: r.starts_at,
-        endsAt: r.ends_at,
-        location: r.location,
-        notes: r.notes,
-        createdByUserId: r.created_by_user_id,
-        createdByEmail: r.created_by_email,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      };
-    }),
-  });
-});
+    const supabase = getSupabaseServiceRoleClient();
+    // Events that OVERLAP the [from, to) window: they start before `to`
+    // AND end after `from`.
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("company_calendar_events")
+      .select(
+        "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, created_at, updated_at",
+      )
+      .lt("starts_at", to)
+      .gt("ends_at", from)
+      .order("starts_at", { ascending: true })
+      .limit(1000);
+    if (error) throw error;
+    const rows = data ?? [];
+
+    // Resolve patient names in a single batched lookup (two-step fetch —
+    // the repo standard; we don't embed PostgREST relations). Resolving at
+    // read time keeps `patients` the single source of truth, so a rename
+    // shows up on the calendar immediately.
+    const patientIds = [...new Set(rows.map((r) => r.patient_id))];
+    const patientsById = new Map<
+      string,
+      { firstName: string; lastName: string }
+    >();
+    if (patientIds.length > 0) {
+      const { data: patients, error: pErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name")
+        .in("id", patientIds);
+      if (pErr) throw pErr;
+      for (const p of patients ?? []) {
+        patientsById.set(p.id, {
+          firstName: p.legal_first_name,
+          lastName: p.legal_last_name,
+        });
+      }
+    }
+
+    res.json({
+      events: rows.map((r) => {
+        const pt = patientsById.get(r.patient_id);
+        return {
+          id: r.id,
+          patientId: r.patient_id,
+          patientFirstName: pt?.firstName ?? null,
+          patientLastName: pt?.lastName ?? null,
+          eventType: r.event_type,
+          status: r.status,
+          startsAt: r.starts_at,
+          endsAt: r.ends_at,
+          location: r.location,
+          notes: r.notes,
+          createdByUserId: r.created_by_user_id,
+          createdByEmail: r.created_by_email,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        };
+      }),
+    });
+  },
+);
 
 router.post(
   "/admin/company-calendar",
@@ -212,20 +217,33 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    // Cross-field guard: if either end of the range is being changed,
-    // the resulting window must still be non-negative. We only have the
-    // incoming side(s), so re-check only when BOTH are present; a single-
-    // sided change is validated against the stored row below.
-    if (
-      parsed.data.startsAt != null &&
-      parsed.data.endsAt != null &&
-      new Date(parsed.data.endsAt) < new Date(parsed.data.startsAt)
-    ) {
-      res.status(400).json({
-        error: "invalid_body",
-        message: "endsAt must be at or after startsAt",
-      });
-      return;
+    const supabase = getSupabaseServiceRoleClient();
+
+    // When either end of the time range changes, validate the EFFECTIVE
+    // range — the incoming side(s) merged with the stored side — so a
+    // single-sided edit can't slip past the create-time guard and trip the
+    // DB CHECK as an unhandled 500. The fetch doubles as the existence check.
+    if (parsed.data.startsAt != null || parsed.data.endsAt != null) {
+      const { data: existing, error: fetchErr } = await supabase
+        .schema("resupply")
+        .from("company_calendar_events")
+        .select("starts_at, ends_at")
+        .eq("id", params.data.id)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!existing) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const effStart = new Date(parsed.data.startsAt ?? existing.starts_at);
+      const effEnd = new Date(parsed.data.endsAt ?? existing.ends_at);
+      if (effEnd < effStart) {
+        res.status(400).json({
+          error: "invalid_body",
+          message: "endsAt must be at or after startsAt",
+        });
+        return;
+      }
     }
 
     const update: CalendarUpdate = { updated_at: new Date().toISOString() };
@@ -240,7 +258,6 @@ router.patch(
       update.location = parsed.data.location;
     if (parsed.data.notes !== undefined) update.notes = parsed.data.notes;
 
-    const supabase = getSupabaseServiceRoleClient();
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("company_calendar_events")

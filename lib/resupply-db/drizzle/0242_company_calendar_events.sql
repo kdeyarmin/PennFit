@@ -23,10 +23,12 @@ CREATE TABLE IF NOT EXISTS "resupply"."company_calendar_events" (
   "ends_at" timestamp with time zone NOT NULL,
   "location" text,
   "notes" text,
-  -- Who entered the event (auth user id + email for display). Nullable so
-  -- a created-by-less backfill can't fail; not an ownership gate — the
-  -- whole team can edit the shared calendar.
-  "created_by_user_id" uuid,
+  -- Who entered the event (auth user id + email for display). `text`, not
+  -- `uuid`, to match resupply_auth.users.id (text) and every sibling actor
+  -- column (office_closures / csr_shifts created_by_user_id) — a non-UUID-
+  -- shaped legacy id must not break an insert. Nullable so a created-by-less
+  -- backfill can't fail; not an ownership gate — the whole team can edit.
+  "created_by_user_id" text,
   "created_by_email" text,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),

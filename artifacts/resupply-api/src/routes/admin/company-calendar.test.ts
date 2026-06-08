@@ -237,6 +237,51 @@ describe("PATCH /admin/company-calendar/:id", () => {
       .send({ status: "rescheduled" });
     expect(res.status).toBe(400);
   });
+
+  it("400s a single-sided time edit that inverts the stored range", async () => {
+    mockAdmin.current = STAFF;
+    // Only endsAt changes — and it lands before the STORED start. The
+    // route fetches the existing row to validate the effective range.
+    stageSupabaseResponse("company_calendar_events", "select", {
+      data: {
+        starts_at: "2026-06-10T14:00:00.000Z",
+        ends_at: "2026-06-10T15:00:00.000Z",
+      },
+    });
+    const res = await request(makeApp())
+      .patch(`/admin/company-calendar/${EVENT_ID}`)
+      .send({ endsAt: "2026-06-10T13:00:00.000Z" });
+    expect(res.status).toBe(400);
+  });
+
+  it("allows a valid single-sided time edit", async () => {
+    mockAdmin.current = STAFF;
+    stageSupabaseResponse("company_calendar_events", "select", {
+      data: {
+        starts_at: "2026-06-10T14:00:00.000Z",
+        ends_at: "2026-06-10T15:00:00.000Z",
+      },
+    });
+    stageSupabaseResponse("company_calendar_events", "update", {
+      data: { id: EVENT_ID },
+    });
+    const res = await request(makeApp())
+      .patch(`/admin/company-calendar/${EVENT_ID}`)
+      .send({ endsAt: "2026-06-10T16:00:00.000Z" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("404s a single-sided time edit on a missing row", async () => {
+    mockAdmin.current = STAFF;
+    stageSupabaseResponse("company_calendar_events", "select", {
+      data: null,
+    });
+    const res = await request(makeApp())
+      .patch(`/admin/company-calendar/${EVENT_ID}`)
+      .send({ startsAt: "2026-06-10T14:00:00.000Z" });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("DELETE /admin/company-calendar/:id", () => {

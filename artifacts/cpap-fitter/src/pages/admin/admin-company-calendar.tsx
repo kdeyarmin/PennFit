@@ -419,7 +419,6 @@ export function AdminCompanyCalendarPage() {
                 return (
                   <div
                     key={dateKey(day)}
-                    role="gridcell"
                     className={`group relative min-h-[6.5rem] border-b border-r p-1 ${
                       isSelected
                         ? "bg-[hsl(var(--penn-navy)/0.06)] ring-1 ring-inset ring-[hsl(var(--penn-navy)/0.35)]"
@@ -720,12 +719,11 @@ function UpcomingCard({
   onOpen: (ev: CompanyCalendarEvent) => void;
 }) {
   const now = Date.now();
+  // "Upcoming" = still going to happen: scheduled and not yet ended.
+  // Completed / canceled / no-show have all reached a terminal state.
   const upcoming = events
     .filter(
-      (e) =>
-        new Date(e.endsAt).getTime() >= now &&
-        e.status !== "canceled" &&
-        e.status !== "no_show",
+      (e) => e.status === "scheduled" && new Date(e.endsAt).getTime() >= now,
     )
     .slice(0, 12);
   return (
