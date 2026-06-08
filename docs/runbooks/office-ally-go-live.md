@@ -109,54 +109,62 @@ Pin `known_hosts` to Office Ally's published host key — never use blind /
 ## Real-time eligibility (optional — instant 271)
 
 By default an eligibility check submits the 270 over SFTP and the 271
-arrives later via the inbound poll (minutes). Office Ally is CAQH
-CORE-certified for **real-time** 270/271 over an HTTPS web service; when
-that's configured, `verifyEligibility()` POSTs the 270 and parses the 271
+arrives later via the inbound poll (minutes). Office Ally also exposes an
+**EDI REST API** (`edi.officeally.io`) for real-time 270/271; when that's
+configured, `verifyEligibility()` POSTs the 270 and parses the 271
 **inline** (seconds), writing the check straight to `status='parsed'`.
 
 This is **fully optional and fail-soft**: configure it and the real-time
 path activates; leave it unconfigured (or hit a transient failure) and the
 check transparently falls back to the SFTP submit-and-poll path. It uses
-the real-time web-service credentials Office Ally issues **separately from
-the SFTP key**.
+the REST credentials Office Ally issues **separately from the SFTP key**.
+
+### How the call works (verified against the API spec)
+
+The real-time call is a plain HTTPS POST of the raw X12 270 — no SOAP, no
+CORE envelope:
+
+```
+POST <OFFICE_ALLY_REALTIME_URL>      # /v1/realtime-eligibility/x12
+  Authorization: <api key>           # apiKey scheme, header "Authorization"
+  Content-Type:  text/plain          # body is the raw X12 270
+  Accept:        application/EDI-X12
+→ 200 with the raw X12 271 in the body
+```
+
+Source: Office Ally's EDI API spec at `https://edi.officeally.io/swagger`
+(the `/RealTime` tag). `CONFIRM(oa-spec)` for the issued account: the exact
+endpoint URL and whether the `Authorization` value needs a scheme prefix —
+the API key is sent **verbatim**, so set it exactly as issued (include a
+`Bearer ` prefix in the key itself if Office Ally requires one).
 
 ### Two ways to configure (same resolution order as the SFTP path)
 
 - **A. Admin console (recommended).** On **Billing → Config →
   Clearinghouse connection** there is a **Real-time eligibility (270/271)**
-  card: an **Enabled** toggle, endpoint URL, username, CORE sender/receiver
-  IDs, timeout, and **password**. All of these are saved to the
-  `clearinghouse_credentials` row. The password field is write-only — the
-  saved value is never shown back (GET returns only "set / not set"); leave
-  it blank on edit to keep the current password.
+  card: an **Enabled** toggle, the **endpoint URL**, a **timeout**, and the
+  **API key**. These save to the `clearinghouse_credentials` row. The API
+  key is write-only — the saved value is never shown back (GET returns only
+  "set / not set"); leave it blank on edit to keep the current key.
 - **B. Environment variables** (dev / preview, or no seeded DB row): set
-  all of `OFFICE_ALLY_REALTIME_URL`, `_USERNAME`, `_PASSWORD` (plus the
-  optional `_SENDER_ID` / `_RECEIVER_ID` / `_TIMEOUT_MS`).
+  `OFFICE_ALLY_REALTIME_URL` + `OFFICE_ALLY_REALTIME_API_KEY` (optionally
+  `_TIMEOUT_MS`).
 
-The resolver prefers the **DB row's** real-time fields; the **password**
-specifically uses the DB value when set and falls back to
-`OFFICE_ALLY_REALTIME_PASSWORD`. (Security note: a DB-stored password is
-held in **plaintext**, readable by the service-role client — unlike the
+The resolver prefers the **DB row's** values; the **API key** uses the DB
+value when set and falls back to `OFFICE_ALLY_REALTIME_API_KEY` (legacy
+alias `OFFICE_ALLY_REALTIME_PASSWORD`). Security note: a DB-stored API key
+is held in **plaintext**, readable by the service-role client — unlike the
 SFTP key, which stays a file path. Prefer the env var if you'd rather keep
-the secret out of the database.)
+the secret out of the database.
 
-| Variable                           | Notes                                                                       |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `OFFICE_ALLY_REALTIME_PASSWORD`    | Password — DB value wins, this is the fallback. One of the two is required. |
-| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint (or set in the admin card)                   |
-| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username (or set in the admin card)                   |
-| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)                                      |
-| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`)                             |
-| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)                                |
+| Variable                          | Notes                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| `OFFICE_ALLY_REALTIME_URL`        | The `/v1/realtime-eligibility/x12` endpoint (or set in the admin card)     |
+| `OFFICE_ALLY_REALTIME_API_KEY`    | API key for the Authorization header (DB value wins; this is the fallback) |
+| `OFFICE_ALLY_REALTIME_TIMEOUT_MS` | Optional per-request timeout (default 30000)                               |
 
-**Before going live, confirm against Office Ally's real-time companion
-guide:** the exact endpoint URL, the `SOAPAction`/auth placement, the
-`PayloadType` string, and whether the X12 payload is raw or base64. Those
-spots are marked `CONFIRM(oa-spec)` in
-`lib/resupply-integrations-office-ally/src/transport/realtime.ts`; the
-CORE vC2.2.0 SOAP envelope is the shipped default. The check still records
-the same `eligibility_checks` row and fires the same
-`eligibility.completed` webhook as the SFTP path — only the latency
+The check still records the same `eligibility_checks` row and fires the
+same `eligibility.completed` webhook as the SFTP path — only the latency
 differs.
 
 **Diagnosing real-time:** the `eligibility.verify` audit row records

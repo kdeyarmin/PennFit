@@ -123,31 +123,28 @@ export function isOfficeAllyStubMode(
   return env.OFFICE_ALLY_STUB === "1";
 }
 
-// Real-time eligibility (270/271) over Office Ally's HTTPS/SOAP web
-// service. This is a SEPARATE channel from the SFTP batch transport
-// above: SFTP carries 837 claims + the async 271 (picked up by the
-// inbound poll), whereas the real-time service returns the 271 inline
-// in one request. It is fully optional and fail-soft — when its env is
-// absent, `verifyEligibility` falls back to the SFTP submit-and-poll
-// path. The auth/endpoint here are NOT the SFTP key; they are the
-// real-time web-service credentials Office Ally issues separately.
+// Real-time eligibility (270/271) over Office Ally's EDI REST API
+// (edi.officeally.io). A SEPARATE channel from the SFTP batch transport
+// above: SFTP carries 837 claims + the async 271 (picked up by the inbound
+// poll), whereas the real-time service POSTs the raw 270 and returns the
+// 271 inline in one request. Fully optional and fail-soft — when its env
+// is absent, `verifyEligibility` falls back to the SFTP submit-and-poll
+// path. The endpoint + key are NOT the SFTP key; they are the real-time
+// REST credentials Office Ally issues separately.
 //
-//   OFFICE_ALLY_REALTIME_URL          — the real-time eligibility endpoint
-//   OFFICE_ALLY_REALTIME_USERNAME     — real-time web-service username
-//   OFFICE_ALLY_REALTIME_PASSWORD     — real-time web-service password
+//   OFFICE_ALLY_REALTIME_URL          — the /v1/realtime-eligibility/x12
+//                                       endpoint URL
+//   OFFICE_ALLY_REALTIME_API_KEY      — API key, sent verbatim in the
+//                                       Authorization header (legacy alias:
+//                                       OFFICE_ALLY_REALTIME_PASSWORD)
 //
 // Optional:
-//   OFFICE_ALLY_REALTIME_SENDER_ID    — CORE SenderID (default: ETIN)
-//   OFFICE_ALLY_REALTIME_RECEIVER_ID  — CORE ReceiverID (default OFFICEALLY)
 //   OFFICE_ALLY_REALTIME_TIMEOUT_MS   — per-request timeout (default 30000)
 export interface OfficeAllyRealtimeConfig {
+  /** Full real-time eligibility endpoint URL (the /x12 path). */
   url: string;
-  username: string;
-  password: string;
-  /** CORE envelope SenderID — our trading-partner id (defaults to ETIN). */
-  senderId: string;
-  /** CORE envelope ReceiverID — Office Ally's id (default `OFFICEALLY`). */
-  receiverId: string;
+  /** API key, sent verbatim in the Authorization header. */
+  apiKey: string;
   timeoutMs: number;
 }
 
@@ -158,24 +155,15 @@ export function readOfficeAllyRealtimeConfigOrNull(
   // staging/offline preview never reaches out over the real-time path.
   if (env.OFFICE_ALLY_STUB === "1") return null;
   const url = env.OFFICE_ALLY_REALTIME_URL?.trim();
-  const username = env.OFFICE_ALLY_REALTIME_USERNAME;
-  const password = env.OFFICE_ALLY_REALTIME_PASSWORD;
-  // CORE SenderID is mandatory for the envelope; resolve it (explicit var
-  // → ETIN) up front and treat a missing one as "not configured" rather
-  // than emitting an empty <SenderID> that the payer would reject.
-  const senderId =
-    env.OFFICE_ALLY_REALTIME_SENDER_ID?.trim() ||
-    env.OFFICE_ALLY_ETIN?.trim() ||
-    "";
+  const apiKey =
+    env.OFFICE_ALLY_REALTIME_API_KEY?.trim() ||
+    env.OFFICE_ALLY_REALTIME_PASSWORD?.trim();
   // All-or-null, mirroring readOfficeAllyConfigOrNull: a partial config
   // degrades to the SFTP path rather than half-attempting real-time.
-  if (!url || !username || !password || !senderId) return null;
+  if (!url || !apiKey) return null;
   return {
     url,
-    username,
-    password,
-    senderId,
-    receiverId: env.OFFICE_ALLY_REALTIME_RECEIVER_ID?.trim() || "OFFICEALLY",
+    apiKey,
     timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_REALTIME_TIMEOUT_MS),
   };
 }

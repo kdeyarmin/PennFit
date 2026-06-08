@@ -1,10 +1,19 @@
 # Scope — real-time eligibility (270/271) transport for Office Ally
 
-**Status:** Implemented (this PR) behind optional config — the real-time
-transport ships fail-soft, gated on `OFFICE_ALLY_REALTIME_*`. With the env
-unset, behavior is unchanged (SFTP submit-and-poll). The remaining work is
-**vendor-side certification** (see Blockers). This doc records the design;
-the "Proposed design" below is what landed.
+> **Update (post-merge):** the transport was reworked from the CAQH CORE
+> **SOAP** envelope this doc describes to Office Ally's actual **EDI REST
+> API** (`edi.officeally.io`) — `POST /v1/realtime-eligibility/x12` with the
+> raw X12 270 as `text/plain` and an API-key `Authorization` header,
+> returning the raw 271. The transport boundary (`build270` → POST →
+> `parse271`, fail-soft) is unchanged; only the wire protocol differs. The
+> CORE/SOAP details below are historical. See the go-live runbook for the
+> current shape.
+
+**Status:** Implemented behind optional config — the real-time transport
+ships fail-soft, gated on `OFFICE_ALLY_REALTIME_*`. With the env unset,
+behavior is unchanged (SFTP submit-and-poll). The remaining work is
+**vendor-side certification** (see Blockers). This doc records the original
+design; the REST rework is noted above.
 **Audience:** Penn Home Medical Supply operator + reviewers.
 **Date:** 2026-06-08.
 
