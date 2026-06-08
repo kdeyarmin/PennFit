@@ -179,7 +179,7 @@ function TherapySnapshotSection({ patientId }: { patientId: string }) {
   const { data, isPending, isError } = useGetPatientTherapySnapshot(patientId);
   if (isError || isPending || !data || !data.hasData) return null;
   return (
-    <Section title="Recent therapy (last 30d)">
+    <Section title={`Recent therapy (last ${data.windowDays}d)`}>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-700">
         <Metric
           label="Avg usage"
