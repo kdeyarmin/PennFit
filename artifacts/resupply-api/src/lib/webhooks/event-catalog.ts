@@ -188,6 +188,18 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     },
     carriesPatientId: true,
   },
+  {
+    type: "claim_status.completed",
+    description:
+      "A 276/277 claim-status round-trip resolved — the parsed 277 landed on the claim_status_checks row. Lets a subscriber (or the billing queue) react the moment a claim's adjudication status is known instead of polling.",
+    publisher: "worker/jobs/office-ally-inbound-poll.ts dispatch277",
+    payloadFields: {
+      claim_status_check_id: "uuid",
+      claim_id: "uuid",
+      outcome: "string",
+    },
+    carriesPatientId: false,
+  },
   // ── Compliance auto-workflow (Phase 11) ──
   {
     type: "compliance.baa_expiring_soon",

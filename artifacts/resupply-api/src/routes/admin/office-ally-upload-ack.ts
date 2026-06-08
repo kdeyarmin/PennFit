@@ -18,7 +18,7 @@
 //   3. Inserts a clearinghouse_inbound_files row marked with
 //      remote_path='manual:<adminEmail>:<isoTime>' so the audit list
 //      shows where it came from.
-//   4. Calls the appropriate dispatcher (999 / 277CA / 835 / 271)
+//   4. Calls the appropriate dispatcher (999 / 277CA / 277 / 835 / 271)
 //      reused from the poll-worker module, which updates the matched
 //      office_ally_submissions row + per-claim events.
 //
@@ -42,6 +42,7 @@ import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 import {
   dispatch271,
+  dispatch277,
   dispatch277ca,
   dispatch835,
   dispatch999,
@@ -177,6 +178,9 @@ router.post(
           break;
         case "277ca":
           await dispatch277ca(supabase, row.id, content);
+          break;
+        case "277":
+          await dispatch277(supabase, row.id, content);
           break;
         case "835":
           await dispatch835(supabase, row.id, fileName, content);
