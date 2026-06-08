@@ -37,26 +37,39 @@ export async function resolvePrescriptionRequestInputs(
     .maybeSingle();
   if (!packet) return { kind: "not_found" };
 
-  const [{ data: patient }, { data: provider }] = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("patients")
-      .select(
-        "legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
-      )
-      .eq("id", packet.patient_id)
-      .limit(1)
-      .maybeSingle(),
-    packet.provider_id
-      ? supabase
-          .schema("resupply")
-          .from("providers")
-          .select("legal_name, npi, practice_name, fax_e164")
-          .eq("id", packet.provider_id)
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
+  const [{ data: patient }, { data: provider }, { data: coverage }] =
+    await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select(
+          "legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
+        )
+        .eq("id", packet.patient_id)
+        .limit(1)
+        .maybeSingle(),
+      packet.provider_id
+        ? supabase
+            .schema("resupply")
+            .from("providers")
+            .select("legal_name, npi, practice_name, fax_e164")
+            .eq("id", packet.provider_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      // Primary payer on file. "primary" < "secondary" < "tertiary"
+      // alphabetically, so an ascending sort surfaces the primary
+      // coverage first. Missing coverage is non-fatal — the PDF just
+      // omits the Insurance section.
+      supabase
+        .schema("resupply")
+        .from("insurance_coverages")
+        .select("payer_name, member_id, plan_name, rank")
+        .eq("patient_id", packet.patient_id)
+        .order("rank", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
   if (!patient || !provider) {
     return {
@@ -92,6 +105,15 @@ export async function resolvePrescriptionRequestInputs(
       faxE164: supplierFax,
       email: process.env.RESUPPLY_SUPPLIER_RETURN_EMAIL?.trim() || null,
     },
+    coverage: coverage
+      ? {
+          payerName: coverage.payer_name,
+          memberId: coverage.member_id,
+          planName: coverage.plan_name ?? null,
+          rank: coverage.rank ?? null,
+          isMedicare: /medicare/i.test(coverage.payer_name ?? ""),
+        }
+      : null,
     hcpcsLines: parseHcpcsLines(packet.hcpcs_items_json),
     icd10Codes: parseStringArray(packet.icd10_codes_json),
     settings: parseSettings(packet.device_settings_json),

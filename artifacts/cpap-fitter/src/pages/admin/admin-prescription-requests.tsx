@@ -12,15 +12,21 @@
 // because the backend list endpoint is per-patient (a global CSR
 // work-list lands as a follow-up).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "wouter";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   CheckCircle2,
   ExternalLink,
   FileText,
   Loader2,
   Plus,
+  Search,
   Send,
   Trash2,
   XCircle,
@@ -47,6 +53,10 @@ import {
   type PrescriptionRequestSettings,
   type PrescriptionRequestStatus,
 } from "@/lib/admin/prescription-requests-api";
+import {
+  listProviders,
+  type ProviderListItem,
+} from "@/lib/admin/providers-api";
 
 const listKey = (patientId: string) =>
   ["admin", "prescription-requests", "patient", patientId] as const;
@@ -281,7 +291,8 @@ function CreateModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [providerId, setProviderId] = useState("");
+  const [selectedProvider, setSelectedProvider] =
+    useState<ProviderListItem | null>(null);
   const [lines, setLines] = useState<PrescriptionRequestHcpcsLine[]>([
     { hcpcs: "E0601", description: "CPAP device", quantity: 1 },
   ]);
@@ -300,6 +311,10 @@ function CreateModal({
   const [backupRate, setBackupRate] = useState("10");
   const [lon, setLon] = useState("99");
   const [returnFax, setReturnFax] = useState("");
+  // Tracks whether the CSR has hand-edited the return fax. Until they do,
+  // the field follows the selected provider's fax (see ProviderPicker
+  // onSelect); once touched, we stop clobbering their override.
+  const [returnFaxTouched, setReturnFaxTouched] = useState(false);
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -399,12 +414,18 @@ function CreateModal({
       setError("All equipment lines need valid HCPCS, description, qty.");
       return;
     }
-    if (!/^[0-9a-f-]{36}$/i.test(providerId.trim())) {
-      setError("Provider ID must be a UUID.");
+    if (!selectedProvider) {
+      setError("Select a prescribing provider.");
       return;
     }
     if (returnFax.trim() && !/^\+[1-9]\d{6,14}$/.test(returnFax.trim())) {
       setError("Return fax must be E.164 (e.g. +14125550100).");
+      return;
+    }
+    if (!returnFax.trim() && !selectedProvider.faxE164) {
+      setError(
+        "This provider has no fax on file. Enter a return fax, or add the fax in Providers.",
+      );
       return;
     }
     const lonNum = Number(lon);
@@ -413,7 +434,7 @@ function CreateModal({
       return;
     }
     create.mutate({
-      providerId: providerId.trim(),
+      providerId: selectedProvider.id,
       hcpcsLines: cleanedLines,
       icd10Codes,
       settings: buildSettings(),
@@ -426,12 +447,27 @@ function CreateModal({
   return (
     <ModalShell title="Create prescription request" onClose={onClose}>
       <div className="space-y-4">
-        <Field
-          label="Provider ID (UUID)"
-          value={providerId}
-          onChange={setProviderId}
-          placeholder="copy from /admin/providers"
-        />
+        <div className="space-y-1">
+          <label
+            className="text-xs font-semibold block"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            Prescribing provider
+          </label>
+          <ProviderPicker
+            selected={selectedProvider}
+            onSelect={(p) => {
+              setSelectedProvider(p);
+              // Point the return fax at the selected provider's fax on
+              // file unless the CSR has explicitly typed an override.
+              // Without this, selecting provider B after A would keep A's
+              // fax while providerId became B — faxing B's request to A.
+              // Setting "" when the new provider has no fax surfaces the
+              // no-fax guard instead of silently keeping a stale number.
+              if (!returnFaxTouched) setReturnFax(p.faxE164 ?? "");
+            }}
+          />
+        </div>
 
         <div className="space-y-2">
           <label
@@ -634,10 +670,13 @@ function CreateModal({
             type="number"
           />
           <Field
-            label="Return fax (override; E.164)"
+            label="Return fax (where the physician faxes back; E.164)"
             value={returnFax}
-            onChange={setReturnFax}
-            placeholder="defaults to provider.fax_e164"
+            onChange={(v) => {
+              setReturnFaxTouched(true);
+              setReturnFax(v);
+            }}
+            placeholder="defaults to the provider's fax on file"
           />
         </div>
 
@@ -677,6 +716,153 @@ function CreateModal({
         </div>
       </div>
     </ModalShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Provider picker — type-to-search against /admin/providers so the CSR
+// never has to copy a UUID. Searches by physician name (substring) or
+// exact 10-digit NPI; selecting one fills the provider + surfaces the
+// fax the packet will return to.
+// ────────────────────────────────────────────────────────────────────
+
+function ProviderPicker({
+  selected,
+  onSelect,
+}: {
+  selected: ProviderListItem | null;
+  onSelect: (p: ProviderListItem) => void;
+}) {
+  const [open, setOpen] = useState(selected === null);
+  const [q, setQ] = useState("");
+  const [debounced, setDebounced] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const results = useQuery({
+    queryKey: ["admin", "providers", "search", debounced],
+    queryFn: () => listProviders(debounced),
+    enabled: open && debounced.length >= 2,
+    placeholderData: keepPreviousData,
+  });
+
+  if (selected && !open) {
+    return (
+      <div
+        className="rounded border p-3 flex items-start justify-between gap-3"
+        style={{
+          borderColor: "hsl(var(--line-1))",
+          backgroundColor: "hsl(var(--bg-2))",
+        }}
+      >
+        <div className="text-sm">
+          <div className="font-semibold">{selected.legalName}</div>
+          <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            NPI {selected.npi}
+            {selected.practiceName ? ` · ${selected.practiceName}` : ""}
+          </div>
+          <div
+            className="text-xs font-mono"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            Fax: {selected.faxE164 ?? "— none on file"}
+          </div>
+          {!selected.faxE164 && (
+            <div className="text-xs mt-1 text-amber-700">
+              No fax on file for this provider — enter a return fax below or add
+              one in Providers before sending.
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline shrink-0"
+          onClick={() => {
+            setOpen(true);
+            setQ("");
+          }}
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  const providers = results.data?.providers ?? [];
+
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <Search
+          className="h-3.5 w-3.5 absolute left-2 top-2.5 pointer-events-none"
+          style={{ color: "hsl(var(--ink-3))" }}
+        />
+        <Input
+          autoFocus
+          className="pl-7"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by physician name or 10-digit NPI"
+        />
+      </div>
+      {debounced.length >= 2 && (
+        <div
+          className="rounded border max-h-56 overflow-y-auto divide-y"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          {results.isPending ? (
+            <div className="p-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Searching…
+            </div>
+          ) : providers.length === 0 ? (
+            <div className="p-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              No providers match “{debounced}”.{" "}
+              <a
+                href="/admin/providers"
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-[hsl(var(--penn-navy))] hover:underline"
+              >
+                Add a provider →
+              </a>
+            </div>
+          ) : (
+            providers.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="w-full text-left p-2 hover:bg-[hsl(var(--bg-2))]"
+                onClick={() => {
+                  onSelect(p);
+                  setOpen(false);
+                }}
+              >
+                <div className="text-sm font-semibold">{p.legalName}</div>
+                <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                  NPI {p.npi}
+                  {p.practiceName ? ` · ${p.practiceName}` : ""} ·{" "}
+                  {p.faxE164 ? `fax ${p.faxE164}` : "no fax on file"}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        Can&rsquo;t find them?{" "}
+        <a
+          href="/admin/providers"
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-[hsl(var(--penn-navy))] hover:underline"
+        >
+          Add a provider →
+        </a>
+      </p>
+    </div>
   );
 }
 
