@@ -23,6 +23,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -220,6 +221,83 @@ describe("POST /admin/fitter-invites/:id/attach", () => {
       .send({ patientId: PATIENT_ID });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("not_completed");
+  });
+});
+
+describe("holding area + claim/release", () => {
+  it("lists only completed, unattached fittings for ?holding=1", async () => {
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: [{ id: INVITE_ID, status: "completed", patient_id: null }],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/fitter-invites?holding=1",
+    );
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("fitter_invites", "select");
+    // holding maps to status=completed AND patient_id IS NULL.
+    expect(filters).toEqual(
+      expect.arrayContaining([
+        { verb: "eq", args: ["status", "completed"] },
+        { verb: "is", args: ["patient_id", null] },
+      ]),
+    );
+  });
+
+  it("claims an unassigned completed fitting", async () => {
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "completed",
+        patient_id: null,
+        claimed_by_user_id: null,
+        claimed_by_email: null,
+      },
+    });
+    stageSupabaseResponse("fitter_invites", "update", { data: null });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/fitter-invites/${INVITE_ID}/claim`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.claimedByEmail).toBe("ops@penn.example.com");
+    const upd = getSupabaseWritePayloads(
+      "fitter_invites",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(upd.claimed_by_user_id).toBe("u_admin_1");
+  });
+
+  it("409s claiming a fitting already claimed by someone else", async () => {
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "completed",
+        patient_id: null,
+        claimed_by_user_id: "someone_else",
+        claimed_by_email: "other@penn.example.com",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/fitter-invites/${INVITE_ID}/claim`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_claimed");
+    expect(res.body.claimedByEmail).toBe("other@penn.example.com");
+  });
+
+  it("releases a claimed fitting", async () => {
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: { id: INVITE_ID, claimed_by_user_id: "u_admin_1" },
+    });
+    stageSupabaseResponse("fitter_invites", "update", { data: null });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/fitter-invites/${INVITE_ID}/release`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.released).toBe(true);
+    const upd = getSupabaseWritePayloads("fitter_invites", "update").at(
+      -1,
+    ) as Record<string, unknown>;
+    expect(upd.claimed_by_user_id).toBeNull();
   });
 });
 

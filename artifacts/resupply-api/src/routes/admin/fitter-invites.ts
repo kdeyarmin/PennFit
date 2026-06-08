@@ -358,7 +358,17 @@ const listQuery = z.object({
       "expired",
     ])
     .default("all"),
+  // Holding area: completed fittings not yet attached to a chart
+  // (prospects who finished a fitting but aren't patients yet).
+  // When set, overrides the status filter.
+  holding: z
+    .union([z.literal("1"), z.literal("true")])
+    .optional()
+    .transform((v) => v !== undefined),
 });
+
+const INVITE_SELECT =
+  "id, patient_id, recipient_email, recipient_phone_e164, recipient_name, channel, status, invited_by_email, measurements, questionnaire_answers, recommended_mask_id, recommended_mask_name, recommended_mask_type, recommendations, auto_matched, claimed_by_user_id, claimed_by_email, claimed_at, sent_at, opened_at, completed_at, attached_at, expires_at, created_at";
 
 router.get(
   "/admin/fitter-invites",
@@ -374,17 +384,160 @@ router.get(
     let q = supabase
       .schema("resupply")
       .from("fitter_invites")
-      .select(
-        "id, patient_id, recipient_email, recipient_phone_e164, recipient_name, channel, status, invited_by_email, measurements, questionnaire_answers, recommended_mask_id, recommended_mask_name, recommended_mask_type, recommendations, auto_matched, sent_at, opened_at, completed_at, attached_at, expires_at, created_at",
-      )
+      .select(INVITE_SELECT)
       .order("created_at", { ascending: false })
       .limit(200);
-    if (parsed.data.status !== "all") {
+    if (parsed.data.holding) {
+      // Unassigned completed fittings — the holding area.
+      q = q.eq("status", "completed").is("patient_id", null);
+    } else if (parsed.data.status !== "all") {
       q = q.eq("status", parsed.data.status);
     }
     const { data, error } = await q;
     if (error) throw error;
     res.json({ invites: data ?? [] });
+  },
+);
+
+// ---- holding-area claim / release --------------------------------
+//
+// Claim is advisory ownership so two staff don't resolve the same
+// fitting at once. Anyone with the permission can release it (CSRs
+// collaborate); the audit log records who claimed/released.
+
+router.post(
+  "/admin/fitter-invites/:id/claim",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "fitter_invites.claim", preset: "mutation" }),
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "invite_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: invite, error: inviteErr } = await supabase
+      .schema("resupply")
+      .from("fitter_invites")
+      .select("id, status, patient_id, claimed_by_user_id, claimed_by_email")
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (inviteErr) throw inviteErr;
+    if (!invite) {
+      res.status(404).json({ error: "invite_not_found" });
+      return;
+    }
+    // Only unassigned completed fittings live in the holding area.
+    if (invite.status !== "completed" || invite.patient_id) {
+      res.status(409).json({
+        error: "not_in_holding",
+        message: "Only an unassigned completed fitting can be claimed.",
+      });
+      return;
+    }
+    // Already claimed by someone else — surface who so the UI can show it.
+    if (
+      invite.claimed_by_user_id &&
+      invite.claimed_by_user_id !== req.adminUserId
+    ) {
+      res.status(409).json({
+        error: "already_claimed",
+        claimedByEmail: invite.claimed_by_email,
+        message: `Already claimed by ${invite.claimed_by_email ?? "another staff member"}.`,
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("fitter_invites")
+      .update({
+        claimed_by_user_id: req.adminUserId ?? null,
+        claimed_by_email: req.adminEmail ?? null,
+        claimed_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq("id", invite.id);
+    if (updErr) throw updErr;
+
+    await logAudit({
+      action: "fitter.invite.claimed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "fitter_invites",
+      targetId: invite.id,
+      metadata: {},
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "fitter.invite.claimed audit write failed");
+    });
+
+    res.json({
+      id: invite.id,
+      claimedByEmail: req.adminEmail ?? null,
+      claimedAt: nowIso,
+    });
+  },
+);
+
+router.post(
+  "/admin/fitter-invites/:id/release",
+  requirePermission("conversations.manage"),
+  adminRateLimit({ name: "fitter_invites.release", preset: "mutation" }),
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "invite_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: invite, error: inviteErr } = await supabase
+      .schema("resupply")
+      .from("fitter_invites")
+      .select("id, claimed_by_user_id")
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (inviteErr) throw inviteErr;
+    if (!invite) {
+      res.status(404).json({ error: "invite_not_found" });
+      return;
+    }
+    if (!invite.claimed_by_user_id) {
+      res.json({ id: invite.id, released: true, alreadyReleased: true });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("fitter_invites")
+      .update({
+        claimed_by_user_id: null,
+        claimed_by_email: null,
+        claimed_at: null,
+        updated_at: nowIso,
+      })
+      .eq("id", invite.id);
+    if (updErr) throw updErr;
+
+    await logAudit({
+      action: "fitter.invite.released",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "fitter_invites",
+      targetId: invite.id,
+      metadata: {},
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "fitter.invite.released audit write failed");
+    });
+
+    res.json({ id: invite.id, released: true });
   },
 );
 
@@ -553,6 +706,10 @@ router.post(
         status: "attached",
         attached_at: nowIso,
         auto_matched: false,
+        // Resolved — clear the holding-area claim.
+        claimed_by_user_id: null,
+        claimed_by_email: null,
+        claimed_at: null,
         updated_at: nowIso,
       })
       .eq("id", idCheck.data);

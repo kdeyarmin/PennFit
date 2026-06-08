@@ -943,6 +943,10 @@ export interface Database {
           expires_at: string;
           created_at: string;
           updated_at: string;
+          // Mig 0244 — holding-area claim ownership.
+          claimed_by_user_id: string | null;
+          claimed_by_email: string | null;
+          claimed_at: string | null;
         };
         Insert: Partial<
           Database["resupply"]["Tables"]["fitter_invites"]["Row"]

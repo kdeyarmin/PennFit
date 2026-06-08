@@ -21,9 +21,12 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
 import { formatDateTime } from "@/lib/admin/format";
+import { useDashboardIdentity } from "@/lib/admin/identity";
 import {
   attachFitterInvite,
+  claimFitterInvite,
   listFitterInvites,
+  releaseFitterInvite,
   resendFitterInvite,
   revokeFitterInvite,
   type FitterInviteRow,
@@ -32,7 +35,10 @@ import {
 
 const QUERY_KEY = ["admin", "fitter-invites"] as const;
 
-const STATUS_FILTERS: { value: FitterInviteStatus | "all"; label: string }[] = [
+type FilterValue = FitterInviteStatus | "all" | "holding";
+
+const STATUS_FILTERS: { value: FilterValue; label: string }[] = [
+  { value: "holding", label: "Holding area" },
   { value: "all", label: "All" },
   { value: "sent", label: "Sent" },
   { value: "opened", label: "Opened" },
@@ -55,7 +61,10 @@ const STATUS_VARIANT: Record<
 };
 
 export function AdminFitterInvitesPage() {
-  const [status, setStatus] = useState<FitterInviteStatus | "all">("all");
+  // Lead with the holding area — the prospects waiting to be claimed +
+  // assigned are the work; the full invite list is secondary.
+  const [status, setStatus] = useState<FilterValue>("holding");
+  const identity = useDashboardIdentity();
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: [...QUERY_KEY, status],
@@ -78,8 +87,9 @@ export function AdminFitterInvitesPage() {
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
             Invite a prospect or patient to the AI mask fitter. Completed
-            fittings auto-attach when the email/phone matches a chart; resolve
-            the rest below.
+            fittings auto-attach when the email/phone matches a chart; the rest
+            land in the <strong>holding area</strong> — claim one, then assign
+            it to an existing chart or build a new one.
           </p>
         </div>
         <FitterInviteButton
@@ -109,13 +119,20 @@ export function AdminFitterInvitesPage() {
       ) : query.data.length === 0 ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No fitter invites yet.
+            {status === "holding"
+              ? "Holding area is empty — no completed fittings waiting to be assigned. 🎉"
+              : "No fitter invites yet."}
           </p>
         </Card>
       ) : (
         <div className="space-y-3">
           {query.data.map((invite) => (
-            <InviteCard key={invite.id} invite={invite} onChanged={refresh} />
+            <InviteCard
+              key={invite.id}
+              invite={invite}
+              currentUserId={identity.userId}
+              onChanged={refresh}
+            />
           ))}
         </div>
       )}
@@ -125,9 +142,11 @@ export function AdminFitterInvitesPage() {
 
 function InviteCard({
   invite,
+  currentUserId,
   onChanged,
 }: {
   invite: FitterInviteRow;
+  currentUserId: string | null;
   onChanged: () => void;
 }) {
   const resend = useMutation({
@@ -141,6 +160,8 @@ function InviteCard({
 
   const isCompleted =
     invite.status === "completed" || invite.status === "attached";
+  // Holding area = a completed fitting with no chart yet.
+  const inHolding = invite.status === "completed" && !invite.patient_id;
   const recipient =
     invite.recipient_name ||
     invite.recipient_email ||
@@ -214,12 +235,104 @@ function InviteCard({
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
           <RecommendationSummary invite={invite} />
-          {!invite.patient_id && (
-            <AttachControls invite={invite} onChanged={onChanged} />
+          {inHolding && (
+            <HoldingControls
+              invite={invite}
+              currentUserId={currentUserId}
+              onChanged={onChanged}
+            />
           )}
         </div>
       )}
     </Card>
+  );
+}
+
+// Holding-area resolution: claim ownership first, then assign. A
+// fitting claimed by someone else shows who has it; anyone can release
+// to take it over (collaboration, not a hard lock).
+function HoldingControls({
+  invite,
+  currentUserId,
+  onChanged,
+}: {
+  invite: FitterInviteRow;
+  currentUserId: string | null;
+  onChanged: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const claim = useMutation({
+    mutationFn: () => claimFitterInvite(invite.id),
+    onSuccess: () => {
+      setError(null);
+      onChanged();
+    },
+    onError: (err: unknown) => {
+      const data = (err as { data?: { message?: string; error?: string } })
+        .data;
+      setError(data?.message ?? data?.error ?? "Could not claim.");
+    },
+  });
+  const release = useMutation({
+    mutationFn: () => releaseFitterInvite(invite.id),
+    onSuccess: onChanged,
+  });
+
+  const claimedBy = invite.claimed_by_user_id;
+  const claimedByMe =
+    claimedBy !== null && currentUserId !== null && claimedBy === currentUserId;
+  const claimedByOther = claimedBy !== null && !claimedByMe;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="warning">unassigned</Badge>
+        {claimedByMe && <Badge variant="info">claimed by you</Badge>}
+        {claimedByOther && (
+          <Badge variant="muted">
+            claimed by {invite.claimed_by_email ?? "another staff member"}
+          </Badge>
+        )}
+        {!claimedBy && (
+          <Button
+            size="sm"
+            isLoading={claim.isPending}
+            onClick={() => claim.mutate()}
+          >
+            Claim
+          </Button>
+        )}
+        {claimedBy && (
+          <Button
+            size="sm"
+            intent="secondary"
+            isLoading={release.isPending}
+            onClick={() => release.mutate()}
+          >
+            Release
+          </Button>
+        )}
+      </div>
+
+      {!claimedBy && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Claim this fitting to assign it to a chart or build a new one.
+        </p>
+      )}
+      {claimedByOther && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Release it to take over, or leave it for{" "}
+          {invite.claimed_by_email ?? "the current owner"}.
+        </p>
+      )}
+      {claimedByMe && <AttachControls invite={invite} onChanged={onChanged} />}
+
+      {error && (
+        <p className="text-sm" style={{ color: "#991b1b" }} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -303,12 +416,6 @@ function AttachControls({
 
   return (
     <div className="space-y-2">
-      <p
-        className="text-xs uppercase tracking-wider font-semibold"
-        style={{ color: "hsl(var(--penn-gold-deep))" }}
-      >
-        Not attached to a chart
-      </p>
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
