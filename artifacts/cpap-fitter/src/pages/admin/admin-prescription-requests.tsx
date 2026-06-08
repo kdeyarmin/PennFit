@@ -311,6 +311,10 @@ function CreateModal({
   const [backupRate, setBackupRate] = useState("10");
   const [lon, setLon] = useState("99");
   const [returnFax, setReturnFax] = useState("");
+  // Tracks whether the CSR has hand-edited the return fax. Until they do,
+  // the field follows the selected provider's fax (see ProviderPicker
+  // onSelect); once touched, we stop clobbering their override.
+  const [returnFaxTouched, setReturnFaxTouched] = useState(false);
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -454,9 +458,13 @@ function CreateModal({
             selected={selectedProvider}
             onSelect={(p) => {
               setSelectedProvider(p);
-              // Prefill the return fax with the provider's fax on file so
-              // the CSR can see where it'll go; they can still override.
-              if (!returnFax.trim() && p.faxE164) setReturnFax(p.faxE164);
+              // Point the return fax at the selected provider's fax on
+              // file unless the CSR has explicitly typed an override.
+              // Without this, selecting provider B after A would keep A's
+              // fax while providerId became B — faxing B's request to A.
+              // Setting "" when the new provider has no fax surfaces the
+              // no-fax guard instead of silently keeping a stale number.
+              if (!returnFaxTouched) setReturnFax(p.faxE164 ?? "");
             }}
           />
         </div>
@@ -664,7 +672,10 @@ function CreateModal({
           <Field
             label="Return fax (where the physician faxes back; E.164)"
             value={returnFax}
-            onChange={setReturnFax}
+            onChange={(v) => {
+              setReturnFaxTouched(true);
+              setReturnFax(v);
+            }}
             placeholder="defaults to the provider's fax on file"
           />
         </div>
