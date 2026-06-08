@@ -49,7 +49,7 @@ export const DEFAULT_ANTHROPIC_MODEL_CHAT = "claude-sonnet-4-6";
  *  Anthropic deprecates the generic alias. */
 export const DEFAULT_ANTHROPIC_MODEL_CLASSIFY = "claude-haiku-4-5-20251001";
 /** Top-tier Opus model — for clinical reasoning when cost is no object. */
-export const DEFAULT_ANTHROPIC_MODEL_REASONING = "claude-opus-4-7";
+export const DEFAULT_ANTHROPIC_MODEL_REASONING = "claude-opus-4-8";
 
 export type AnthropicRole = "user" | "assistant";
 
