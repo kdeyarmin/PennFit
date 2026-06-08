@@ -430,6 +430,8 @@ export interface Database {
           skills: Json;
           availability: string;
           phone_e164: string | null;
+          /** Multi-location groundwork (mig 0235) — staff home branch, nullable. */
+          location_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -643,6 +645,8 @@ export interface Database {
           legal_first_name: string;
           legal_last_name: string;
           date_of_birth: string;
+          /** Multi-location groundwork (mig 0235) — nullable until branches exist. */
+          location_id: string | null;
           phone_e164: string | null;
           email: string | null;
           address: Json | null;
@@ -1825,6 +1829,27 @@ export interface Database {
         Update: Partial<
           Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
         >;
+        Relationships: [];
+      };
+      locations: {
+        Row: {
+          id: string;
+          name: string;
+          code: string | null;
+          address_line1: string | null;
+          address_line2: string | null;
+          city: string | null;
+          state: string | null;
+          postal_code: string | null;
+          phone_e164: string | null;
+          npi: string | null;
+          is_primary: boolean;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
         Relationships: [];
       };
       gl_account_mappings: {
