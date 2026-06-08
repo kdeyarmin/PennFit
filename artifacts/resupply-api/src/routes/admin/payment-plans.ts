@@ -45,7 +45,16 @@ const createBody = z
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     note: z.string().trim().max(2000).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.totalAmountCents < v.installmentCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "totalAmountCents must be >= installmentCount (min 1¢ per installment)",
+        path: ["totalAmountCents"],
+      });
+    }
+  });
 
 const listByPatientBody = z
   .object({
