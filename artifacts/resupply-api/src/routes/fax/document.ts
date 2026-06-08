@@ -56,8 +56,8 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   const supabase = getSupabaseServiceRoleClient();
 
   // Appeal-letter faxes render the stored appeal PDF (claim_appeal_letters
-  // row) instead of the physician cover letter. Same signed-URL + stream
-  // posture; no PHI in the URL, bytes never logged.
+  // row) instead of the physician cover letter. Same signed-URL posture;
+  // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
     const result = await renderAppealPdfForLetterId(
       supabase,
