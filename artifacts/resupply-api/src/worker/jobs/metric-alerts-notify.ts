@@ -194,8 +194,6 @@ export async function runMetricAlertsNotify(): Promise<MetricAlertsNotifyStats> 
         );
         return false;
       }
-        return false;
-      }
     }),
   );
   const anySent = sendResults.some(Boolean);

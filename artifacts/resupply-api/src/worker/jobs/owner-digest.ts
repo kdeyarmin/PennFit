@@ -330,7 +330,6 @@ async function sendDigestEmail(
           "owner.weekly-digest: send failed for one recipient",
         );
       }
-      }
     }),
   );
 }
