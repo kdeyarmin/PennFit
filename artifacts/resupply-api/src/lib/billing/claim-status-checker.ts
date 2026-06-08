@@ -112,18 +112,37 @@ export async function submitClaimStatusCheck(
   const identity = await resolveBillingIdentity({ supabase });
   const clearinghouse = await resolveClearinghouse({ supabase });
 
-  // Eligibility + claim ISA13s share the office_ally_submissions pool.
-  const { data: priorHigh } = await supabase
-    .schema("resupply")
-    .from("office_ally_submissions")
-    .select("isa_control_number")
-    .order("isa_control_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // ISA13s must be strictly monotonic across all outbound EDI files.
+  // Both office_ally_submissions (837P / 270) and claim_status_checks
+  // (276) write ISA control numbers; take the max across both ledgers
+  // so concurrent or same-second 276 uploads never reuse a number.
+  const [{ data: priorHighSub }, { data: priorHighCsc }] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("isa_control_number")
+      .order("isa_control_number", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("claim_status_checks")
+      .select("isa_control_number")
+      .order("isa_control_number", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const previousHighest = [
+    priorHighSub?.isa_control_number,
+    priorHighCsc?.isa_control_number,
+  ]
+    .filter((v): v is string => v != null)
+    .sort()
+    .at(-1);
   const control = allocateControlNumbers({
     submittedAt: Date.now(),
     sequence: 1,
-    previousHighest: priorHigh?.isa_control_number ?? undefined,
+    previousHighest,
   });
 
   const built = build276({

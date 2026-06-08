@@ -2636,7 +2636,7 @@ export interface Database {
           file_name: string;
           file_sha256: string;
           file_size_bytes: number;
-          file_kind: "999" | "277ca" | "835" | "271" | "unknown";
+          file_kind: "999" | "277ca" | "277" | "835" | "271" | "unknown";
           parse_summary_json: Json;
           dispatch_status:
             | "pending"

@@ -127,6 +127,7 @@ router.get(
       .order("requested_at", { ascending: false })
       .limit(50);
     res.json({ statusChecks: data ?? [] });
+  },
 );
 
 export default router;

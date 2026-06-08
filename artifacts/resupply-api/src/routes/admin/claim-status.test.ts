@@ -6,6 +6,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -61,6 +67,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
+  supabaseMock.reset();
   submitFn.current = vi.fn(async (..._a: unknown[]) => ({
     claimStatusCheckId: "csc_1",
     isaControlNumber: "000000009",
@@ -102,5 +109,61 @@ describe("POST status-check", () => {
     const res = await request(makeApp()).post(url).send({});
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("payer_not_electronic");
+  });
+});
+
+const getUrl = `/admin/patients/${PID}/insurance-claims/${CLAIM_ID}/status-checks`;
+
+describe("GET status-checks", () => {
+  it("401 unauthenticated", async () => {
+    const res = await request(makeApp()).get(getUrl);
+    expect(res.status).toBe(401);
+  });
+
+  it("404 when claim doesn't belong to the patient", async () => {
+    mockAdmin.current = ADMIN;
+    // Supabase returns null — claim not found or wrong patient
+    stageSupabaseResponse("insurance_claims", "select", { data: null });
+    const res = await request(makeApp()).get(getUrl);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("claim_not_found");
+  });
+
+  it("200 with empty list when no checks exist", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID },
+    });
+    stageSupabaseResponse("claim_status_checks", "select", { data: [] });
+    const res = await request(makeApp()).get(getUrl);
+    expect(res.status).toBe(200);
+    expect(res.body.statusChecks).toEqual([]);
+  });
+
+  it("200 with status check rows", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: { id: CLAIM_ID },
+    });
+    const fakeCheck = {
+      id: "csc_99",
+      status: "parsed",
+      outcome: "finalized",
+      category_code: "F1",
+      status_code: "1",
+      total_charge_cents: 10000,
+      total_paid_cents: 8000,
+      requested_at: "2026-01-01T00:00:00Z",
+      responded_at: "2026-01-02T00:00:00Z",
+      error_message: null,
+    };
+    stageSupabaseResponse("claim_status_checks", "select", {
+      data: [fakeCheck],
+    });
+    const res = await request(makeApp()).get(getUrl);
+    expect(res.status).toBe(200);
+    expect(res.body.statusChecks).toHaveLength(1);
+    expect(res.body.statusChecks[0].id).toBe("csc_99");
+    expect(res.body.statusChecks[0].status).toBe("parsed");
   });
 });
