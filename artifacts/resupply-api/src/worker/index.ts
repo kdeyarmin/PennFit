@@ -49,6 +49,7 @@ import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-night
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
+import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
@@ -506,6 +507,13 @@ async function doStartWorker(): Promise<void> {
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
   // (opt-in — it emits outbound patient contact).
   await registerClinicalOutreachBatchJob(boss);
+
+  // SLA auto-escalation (CSR C2). Flags conversations past their SLA
+  // deadline as escalated so they surface in the inbox "escalated" view.
+  // Internal visibility flag only (no patient contact). Queue + worker
+  // always register; the recurring cron only attaches when
+  // RESUPPLY_SLA_ESCALATION_CRON is set.
+  await registerSlaEscalationSweepJob(boss);
 
   // Daily snapshot of the therapy-fleet metrics into
   // therapy_fleet_daily_metrics, 30 min after the nightly sync, so the

@@ -127,6 +127,8 @@ import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
 import payerProfitabilityRouter from "./admin/payer-profitability.js";
 import denialsWorklistRouter from "./admin/denials-worklist.js";
+import billingActionQueueRouter from "./admin/billing-action-queue.js";
+import patientTherapySnapshotRouter from "./admin/patient-therapy-snapshot.js";
 import paymentPlansRouter from "./admin/payment-plans.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
@@ -410,6 +412,13 @@ router.use(payerProfitabilityRouter);
 // /admin/billing/denials-worklist — denied claims ranked by recoverable
 // $ × win-probability (Biller #33). reports.read.
 router.use(denialsWorklistRouter);
+// /admin/billing/action-queue — cross-worklist roll-up: actionable
+// denials grouped by recommended action + secondary-eligible totals
+// (Biller B5). reports.read.
+router.use(billingActionQueueRouter);
+// /admin/patients/:id/therapy-snapshot — compact recent-adherence
+// snapshot for the CSR/RT patient context panel (CSR C3). patients.read.
+router.use(patientTherapySnapshotRouter);
 // /admin/.../payment-plans — patient installment-plan tracker (biller B7).
 router.use(paymentPlansRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
