@@ -305,118 +305,139 @@ export function PatientsPage() {
     }
   }
 
-  const columns: Column<PatientRow>[] = [
-    {
-      key: "select",
-      header: (
-        <HeaderSelectionCheckbox
-          allSelected={allVisibleSelected}
-          someSelected={someVisibleSelected}
-          onToggle={toggleAllVisible}
-        />
-      ),
-      className: "w-10",
-      render: (r) => (
-        <RowSelectionCheckbox
-          ariaLabel={`Select ${r.pacwareId}`}
-          checked={selectedIds.has(r.id)}
-          onToggle={() => toggleOne(r.id)}
-        />
-      ),
-    },
-    {
-      key: "name",
-      header: "Patient",
-      render: (r) => (
-        <div>
-          <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
-            {fullName(r.firstName, r.lastName)}
-          </div>
-          <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            PAC #{r.pacwareId}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (r) => (
-        <Badge variant={patientStatusVariant(r.status)}>
-          {humanizeStatus(r.status)}
-        </Badge>
-      ),
-    },
-    {
-      key: "channels",
-      header: "Channels",
-      render: (r) => (
-        <div className="flex gap-1.5">
-          {r.hasPhone && <Badge variant="info">SMS / Voice</Badge>}
-          {r.hasEmail && <Badge variant="neutral">Email</Badge>}
-          {!r.hasPhone && !r.hasEmail && <Badge variant="muted">None</Badge>}
-        </div>
-      ),
-    },
-    {
-      // Last-contacted column. The triplet (timestamp + direction +
-      // 80-char preview) lets an admin scan the page and immediately
-      // spot patients waiting on a reply. We render the timestamp on
-      // top in the existing muted style, then a one-line clamped
-      // preview underneath prefixed with the direction so an admin
-      // can tell at a glance whether the last touch was outbound
-      // ("we wrote them; awaiting reply") or inbound ("they wrote;
-      // awaiting us"). Patients with no messages yet show a single
-      // dash to keep row heights uniform.
-      key: "lastMessage",
-      header: "Last message",
-      render: (r) => {
-        if (!r.lastMessageAt) {
-          return (
-            <span className="text-xs" style={{ color: "#9ca3af" }}>
-              —
-            </span>
-          );
-        }
-        const isInbound = r.lastMessageDirection === "inbound";
-        return (
-          <div className="flex flex-col gap-0.5" style={{ maxWidth: "22rem" }}>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                {formatDateTime(r.lastMessageAt)}
-              </span>
-              <Badge variant={isInbound ? "warning" : "neutral"}>
-                {isInbound ? "Inbound" : "Outbound"}
-              </Badge>
-            </div>
-            {r.lastMessagePreview ? (
-              <div
-                className="text-xs"
-                style={{
-                  color: "hsl(var(--ink-2))",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={r.lastMessagePreview}
-              >
-                {r.lastMessagePreview}
-              </div>
-            ) : null}
-          </div>
-        );
+  // Memoized so typing in the search box (or any unrelated state change)
+  // doesn't rebuild the column array and every cell's render closure on
+  // each keystroke — only selection/visibility changes invalidate it.
+  const columns: Column<PatientRow>[] = useMemo(
+    () => [
+      {
+        key: "select",
+        header: (
+          <HeaderSelectionCheckbox
+            allSelected={allVisibleSelected}
+            someSelected={someVisibleSelected}
+            onToggle={toggleAllVisible}
+          />
+        ),
+        className: "w-10",
+        render: (r) => (
+          <RowSelectionCheckbox
+            ariaLabel={`Select ${r.pacwareId}`}
+            checked={selectedIds.has(r.id)}
+            onToggle={() => toggleOne(r.id)}
+          />
+        ),
       },
-    },
-    {
-      key: "updatedAt",
-      header: "Updated",
-      render: (r) => (
-        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          {formatDateTime(r.updatedAt)}
-        </span>
-      ),
-    },
-  ];
+      {
+        key: "name",
+        header: "Patient",
+        render: (r) => (
+          <div>
+            <div
+              className="font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              {fullName(r.firstName, r.lastName)}
+            </div>
+            <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              PAC #{r.pacwareId}
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "status",
+        header: "Status",
+        render: (r) => (
+          <Badge variant={patientStatusVariant(r.status)}>
+            {humanizeStatus(r.status)}
+          </Badge>
+        ),
+      },
+      {
+        key: "channels",
+        header: "Channels",
+        render: (r) => (
+          <div className="flex gap-1.5">
+            {r.hasPhone && <Badge variant="info">SMS / Voice</Badge>}
+            {r.hasEmail && <Badge variant="neutral">Email</Badge>}
+            {!r.hasPhone && !r.hasEmail && <Badge variant="muted">None</Badge>}
+          </div>
+        ),
+      },
+      {
+        // Last-contacted column. The triplet (timestamp + direction +
+        // 80-char preview) lets an admin scan the page and immediately
+        // spot patients waiting on a reply. We render the timestamp on
+        // top in the existing muted style, then a one-line clamped
+        // preview underneath prefixed with the direction so an admin
+        // can tell at a glance whether the last touch was outbound
+        // ("we wrote them; awaiting reply") or inbound ("they wrote;
+        // awaiting us"). Patients with no messages yet show a single
+        // dash to keep row heights uniform.
+        key: "lastMessage",
+        header: "Last message",
+        render: (r) => {
+          if (!r.lastMessageAt) {
+            return (
+              <span className="text-xs" style={{ color: "#9ca3af" }}>
+                —
+              </span>
+            );
+          }
+          const isInbound = r.lastMessageDirection === "inbound";
+          return (
+            <div
+              className="flex flex-col gap-0.5"
+              style={{ maxWidth: "22rem" }}
+            >
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="text-xs"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {formatDateTime(r.lastMessageAt)}
+                </span>
+                <Badge variant={isInbound ? "warning" : "neutral"}>
+                  {isInbound ? "Inbound" : "Outbound"}
+                </Badge>
+              </div>
+              {r.lastMessagePreview ? (
+                <div
+                  className="text-xs"
+                  style={{
+                    color: "hsl(var(--ink-2))",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={r.lastMessagePreview}
+                >
+                  {r.lastMessagePreview}
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        key: "updatedAt",
+        header: "Updated",
+        render: (r) => (
+          <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            {formatDateTime(r.updatedAt)}
+          </span>
+        ),
+      },
+    ],
+    [
+      allVisibleSelected,
+      someVisibleSelected,
+      toggleAllVisible,
+      selectedIds,
+      toggleOne,
+    ],
+  );
 
   return (
     <div className="space-y-6 max-w-6xl">

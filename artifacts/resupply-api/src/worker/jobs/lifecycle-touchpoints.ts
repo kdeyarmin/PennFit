@@ -113,10 +113,12 @@ function birthdayPatternsForToday(now: Date = new Date()): string[] {
   return patterns;
 }
 
+type OptInStatus = { optedIn: boolean; hadShopCustomer: boolean };
+
 async function isOptedIn(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   email: string,
-): Promise<{ optedIn: boolean; hadShopCustomer: boolean }> {
+): Promise<OptInStatus> {
   // .eq is exact; .ilike would let an email containing `_` or `%`
   // cross-match other patients' shop_customers rows and resolve
   // the opt-in gate against the wrong row.
@@ -133,6 +135,59 @@ async function isOptedIn(
     optedIn: shouldSendEmail(prefs, "marketing"),
     hadShopCustomer: true,
   };
+}
+
+/**
+ * Batch the per-email opt-in gate into one query per 200 emails, keyed
+ * by lower-cased email. Use when every candidate in a pass needs its
+ * opt-in status anyway — replaces an N+1 of single-row shop_customers
+ * lookups inside the send loop. Same exact-match semantics as
+ * `isOptedIn`.
+ */
+async function loadOptInStatuses(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  emails: readonly string[],
+): Promise<Map<string, OptInStatus>> {
+  const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
+  const byEmail = new Map<string, OptInStatus>();
+  const CHUNK = 200;
+  for (let i = 0; i < lowered.length; i += CHUNK) {
+    const chunk = lowered.slice(i, i + CHUNK);
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower, communication_preferences")
+      .in("email_lower", chunk);
+    if (error) {
+      logger.warn(
+        { err: error, chunkSize: chunk.length },
+        "lifecycle-touchpoints: opt-in batch lookup failed (treating as no shop_customer)",
+      );
+      continue;
+    }
+    const rowCounts = new Map<string, number>();
+    const prefsByEmail = new Map<string, CommunicationPreferences>();
+    for (const r of rows ?? []) {
+      if (!r.email_lower) continue;
+      rowCounts.set(r.email_lower, (rowCounts.get(r.email_lower) ?? 0) + 1);
+      if (!prefsByEmail.has(r.email_lower)) {
+        prefsByEmail.set(
+          r.email_lower,
+          readPrefs(r.communication_preferences ?? null),
+        );
+      }
+    }
+    for (const [email, count] of rowCounts) {
+      if (count !== 1) continue;
+      const prefs = prefsByEmail.get(email);
+      if (!prefs) continue;
+      byEmail.set(email, {
+        optedIn: shouldSendEmail(prefs, "marketing"),
+        hadShopCustomer: true,
+      });
+    }
+  }
+  return byEmail;
 }
 
 export async function runLifecycleTouchpoints(
@@ -181,10 +236,19 @@ export async function runLifecycleTouchpoints(
     .order("id", { ascending: true })
     .limit(PER_KIND_MAX * 2);
   if (bdayErr) throw bdayErr;
+  // Every birthday candidate hits the opt-in gate immediately, so resolve
+  // them all in one batched read instead of a query per candidate.
+  const bdayOptIn = await loadOptInStatuses(
+    supabase,
+    ((bdayRows ?? []) as PatientRow[]).map((r) => r.email),
+  );
   for (const row of (bdayRows ?? []) as PatientRow[]) {
     if (stats.birthdaySent >= PER_KIND_MAX) break;
     stats.birthdayCandidates += 1;
-    const gate = await isOptedIn(supabase, row.email);
+    const gate = bdayOptIn.get(row.email.toLowerCase()) ?? {
+      optedIn: false,
+      hadShopCustomer: false,
+    };
     if (!gate.hadShopCustomer) {
       stats.skippedNoShopCustomer += 1;
       continue;

@@ -180,18 +180,23 @@ export async function runMetricAlertsNotify(): Promise<MetricAlertsNotifyStats> 
   }));
   const { subject, html, text } = renderAlertDigest(alerts);
 
-  let anySent = false;
-  for (const to of recipients) {
-    try {
-      await sendgrid.sendEmail({ to, subject, html, text });
-      anySent = true;
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, to },
-        "metric-alerts-notify: send failed for one recipient",
-      );
-    }
-  }
+  // Fan recipients out concurrently — independent HTTP round-trips, so a
+  // slow/failed send to one address must not serialize the others.
+  const sendResults = await Promise.all(
+    recipients.map(async (to) => {
+      try {
+        await sendgrid.sendEmail({ to, subject, html, text });
+        return true;
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err : new Error(String(err)), to },
+          "metric-alerts-notify: send failed for one recipient",
+        );
+        return false;
+      }
+    }),
+  );
+  const anySent = sendResults.some(Boolean);
   stats.emailSent = anySent;
 
   // Stamp notified_at ONLY on a successful send, so a total send failure
