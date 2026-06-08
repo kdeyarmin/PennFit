@@ -72,6 +72,16 @@ export { build270, type Build270Input, type Built270 } from "./edi/270";
 
 export { parse271, type Parsed271 } from "./edi/parse-271";
 
+export { build276, type Build276Input, type Built276 } from "./edi/276";
+
+export {
+  parse277,
+  deriveOutcome,
+  type Parsed277,
+  type Parsed277ClaimStatus,
+  type Parsed277Outcome,
+} from "./edi/parse-277";
+
 export {
   parseX12,
   parseMoneyToCents,
