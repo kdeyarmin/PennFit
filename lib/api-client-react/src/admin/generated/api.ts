@@ -3224,3 +3224,71 @@ export const useImportPatientsCsv = <
 > => {
   return useMutation(getImportPatientsCsvMutationOptions(options));
 };
+
+// ── Patient therapy snapshot (CSR C3) — hand-added ───────────────────
+// Compact recent-adherence read for the patient context panel. Backed
+// by GET /admin/patients/:id/therapy-snapshot (patients.read).
+
+export interface PatientTherapySnapshot {
+  patientId: string;
+  hasData: boolean;
+  windowDays: number;
+  nightsWithData: number;
+  windowStartDate: string | null;
+  windowEndDate: string | null;
+  lastNightDate: string | null;
+  staleDays: number | null;
+  avgUsageHours: number | null;
+  avgAhi: number | null;
+  avgLeakLMin: number | null;
+  compliantNights: number;
+  complianceRatePct: number | null;
+}
+
+export const getPatientTherapySnapshot = async (
+  patientId: string,
+  options?: RequestInit,
+): Promise<PatientTherapySnapshot> => {
+  return customFetch<PatientTherapySnapshot>(
+    `/resupply-api/admin/patients/${patientId}/therapy-snapshot`,
+    { ...options, method: "GET" },
+  );
+};
+
+export const getGetPatientTherapySnapshotQueryKey = (patientId: string) => {
+  return [
+    `/resupply-api/admin/patients/${patientId}/therapy-snapshot`,
+  ] as const;
+};
+
+export function useGetPatientTherapySnapshot<
+  TData = Awaited<ReturnType<typeof getPatientTherapySnapshot>>,
+  TError = ErrorType<unknown>,
+>(
+  patientId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getPatientTherapySnapshot>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPatientTherapySnapshotQueryKey(patientId);
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPatientTherapySnapshot>>
+  > = ({ signal }) =>
+    getPatientTherapySnapshot(patientId, { signal, ...requestOptions });
+  const query = useQuery({
+    queryKey,
+    queryFn,
+    enabled: !!patientId,
+    ...queryOptions,
+  }) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey };
+}
