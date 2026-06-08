@@ -304,6 +304,7 @@ router.patch(
           parsed.data.status === "paid" ? new Date().toISOString() : null,
         patient_payment_id:
           parsed.data.status === "paid" ? (parsed.data.patientPaymentId ?? null) : null,
+      })
       .eq("id", id.data);
     if (updErr) throw updErr;
 
