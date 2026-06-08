@@ -259,7 +259,7 @@ router.post(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    // The letter must exist AND belong to the claim in the path.
+    // The letter must exist AND belong to the claim + patient in the path.
     const { data: letter } = await supabase
       .schema("resupply")
       .from("claim_appeal_letters")
@@ -269,6 +269,18 @@ router.post(
       .maybeSingle();
     if (!letter || letter.claim_id !== params.data.claimId) {
       res.status(404).json({ error: "appeal_letter_not_found" });
+      return;
+    }
+
+    const { data: claim } = await supabase
+      .schema("resupply")
+      .from("insurance_claims")
+      .select("id, patient_id")
+      .eq("id", params.data.claimId)
+      .limit(1)
+      .maybeSingle();
+    if (!claim || claim.patient_id !== params.data.id) {
+      res.status(404).json({ error: "claim_not_found" });
       return;
     }
 
