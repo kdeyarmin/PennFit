@@ -106,6 +106,40 @@ app server. Railway variables are strings, so use one of:
 Pin `known_hosts` to Office Ally's published host key — never use blind /
 `StrictHostKeyChecking=no` trust.
 
+## Real-time eligibility (optional — instant 271)
+
+By default an eligibility check submits the 270 over SFTP and the 271
+arrives later via the inbound poll (minutes). Office Ally is CAQH
+CORE-certified for **real-time** 270/271 over an HTTPS web service; when
+that's configured, `verifyEligibility()` POSTs the 270 and parses the 271
+**inline** (seconds), writing the check straight to `status='parsed'`.
+
+This is **fully optional and fail-soft**: set the three env vars below and
+the real-time path activates; leave them unset (or hit a transient
+failure) and the check transparently falls back to the SFTP
+submit-and-poll path. It uses the real-time web-service credentials Office
+Ally issues **separately from the SFTP key**.
+
+| Variable                           | Notes                                           |
+| ---------------------------------- | ----------------------------------------------- |
+| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint                  |
+| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username                  |
+| `OFFICE_ALLY_REALTIME_PASSWORD`    | Real-time web-service password                  |
+| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)          |
+| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`) |
+| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)    |
+
+**Before going live, confirm against Office Ally's real-time companion
+guide:** the exact endpoint URL, the `SOAPAction`/auth placement, the
+`PayloadType` string, and whether the X12 payload is raw or base64. Those
+spots are marked `CONFIRM(oa-spec)` in
+`lib/resupply-integrations-office-ally/src/transport/realtime.ts`; the
+CORE vC2.2.0 SOAP envelope is the shipped default. The check still records
+the same `eligibility_checks` row and fires the same
+`eligibility.completed` webhook as the SFTP path — only the latency
+differs. (Admin-UI config parity for these fields is a future
+enhancement; today they are env-only.)
+
 ## Same-or-Similar (HETS)
 
 Medicare Same-or-Similar (`/admin/.../same-or-similar`) is a **manual** CSR

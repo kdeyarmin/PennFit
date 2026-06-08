@@ -93,8 +93,10 @@ export {
 export {
   isOfficeAllyStubMode,
   readOfficeAllyConfigOrNull,
+  readOfficeAllyRealtimeConfigOrNull,
   resolveOutboxDir,
   type OfficeAllyConfig,
+  type OfficeAllyRealtimeConfig,
 } from "./config";
 
 export {
@@ -105,6 +107,14 @@ export {
   createSftpTransport,
   type SftpTransportConfig,
 } from "./transport/sftp";
+export {
+  buildCoreRealTimeRequestEnvelope,
+  createRealtimeEligibilityTransport,
+  extract271FromCoreResponse,
+  type CoreRealTimeRequestInput,
+  type FetchLike,
+  type RealtimeTransportDeps,
+} from "./transport/realtime";
 export {
   classifyEdiPayload,
   downloadFile,
@@ -118,6 +128,11 @@ export {
   type RemoteFile,
 } from "./transport/sftp-inbound";
 export type {
+  EligibilityRealtimeFailure,
+  EligibilityRealtimeOutcome,
+  EligibilityRealtimeResult,
+  EligibilityRealtimeTransport,
+  EligibilityRequest,
   SubmissionTransport,
   SubmissionTransportKind,
   UploadFailure,

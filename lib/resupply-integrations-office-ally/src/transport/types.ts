@@ -39,3 +39,42 @@ export interface SubmissionTransport {
   readonly kind: SubmissionTransportKind;
   upload(req: UploadRequest): Promise<UploadOutcome>;
 }
+
+// ── Real-time eligibility transport ──────────────────────────────────
+//
+// SubmissionTransport.upload() is fire-and-forget: it pushes an EDI file
+// and never returns a response body (the 271 comes back later, async, on
+// the SFTP poll). The real-time eligibility channel is request/response —
+// you send a 270 and get the 271 in the SAME call — so it needs its own
+// contract rather than overloading `upload`.
+
+export interface EligibilityRequest {
+  /** UTF-8 270 EDI payload (from build270). */
+  payload: string;
+}
+
+export interface EligibilityRealtimeResult {
+  ok: true;
+  /** The raw 271 EDI payload extracted from the response envelope. */
+  payload271: string;
+  /** Opaque correlation id (the CORE PayloadID we sent), for support. */
+  sessionId: string | null;
+}
+
+export interface EligibilityRealtimeFailure {
+  ok: false;
+  kind: "auth_failed" | "connect_failed" | "rejected" | "unavailable";
+  /** Caller-safe failure message. Never includes credentials or PHI. */
+  message: string;
+}
+
+export type EligibilityRealtimeOutcome =
+  | EligibilityRealtimeResult
+  | EligibilityRealtimeFailure;
+
+export interface EligibilityRealtimeTransport {
+  readonly kind: "soap" | "https" | "noop";
+  requestEligibility(
+    req: EligibilityRequest,
+  ): Promise<EligibilityRealtimeOutcome>;
+}

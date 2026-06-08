@@ -123,6 +123,59 @@ export function isOfficeAllyStubMode(
   return env.OFFICE_ALLY_STUB === "1";
 }
 
+// Real-time eligibility (270/271) over Office Ally's HTTPS/SOAP web
+// service. This is a SEPARATE channel from the SFTP batch transport
+// above: SFTP carries 837 claims + the async 271 (picked up by the
+// inbound poll), whereas the real-time service returns the 271 inline
+// in one request. It is fully optional and fail-soft — when its env is
+// absent, `verifyEligibility` falls back to the SFTP submit-and-poll
+// path. The auth/endpoint here are NOT the SFTP key; they are the
+// real-time web-service credentials Office Ally issues separately.
+//
+//   OFFICE_ALLY_REALTIME_URL          — the real-time eligibility endpoint
+//   OFFICE_ALLY_REALTIME_USERNAME     — real-time web-service username
+//   OFFICE_ALLY_REALTIME_PASSWORD     — real-time web-service password
+//
+// Optional:
+//   OFFICE_ALLY_REALTIME_SENDER_ID    — CORE SenderID (default: ETIN)
+//   OFFICE_ALLY_REALTIME_RECEIVER_ID  — CORE ReceiverID (default OFFICEALLY)
+//   OFFICE_ALLY_REALTIME_TIMEOUT_MS   — per-request timeout (default 30000)
+export interface OfficeAllyRealtimeConfig {
+  url: string;
+  username: string;
+  password: string;
+  /** CORE envelope SenderID — our trading-partner id (defaults to ETIN). */
+  senderId: string;
+  /** CORE envelope ReceiverID — Office Ally's id (default `OFFICEALLY`). */
+  receiverId: string;
+  timeoutMs: number;
+}
+
+export function readOfficeAllyRealtimeConfigOrNull(
+  env: NodeJS.ProcessEnv = process.env,
+): OfficeAllyRealtimeConfig | null {
+  // Stub mode means "don't transmit anywhere" — honor it here too so
+  // staging/offline preview never reaches out over the real-time path.
+  if (env.OFFICE_ALLY_STUB === "1") return null;
+  const url = env.OFFICE_ALLY_REALTIME_URL?.trim();
+  const username = env.OFFICE_ALLY_REALTIME_USERNAME;
+  const password = env.OFFICE_ALLY_REALTIME_PASSWORD;
+  // All-or-null, mirroring readOfficeAllyConfigOrNull: a partial config
+  // degrades to the SFTP path rather than half-attempting real-time.
+  if (!url || !username || !password) return null;
+  return {
+    url,
+    username,
+    password,
+    senderId:
+      env.OFFICE_ALLY_REALTIME_SENDER_ID?.trim() ||
+      env.OFFICE_ALLY_ETIN?.trim() ||
+      "",
+    receiverId: env.OFFICE_ALLY_REALTIME_RECEIVER_ID?.trim() || "OFFICEALLY",
+    timeoutMs: parseTimeoutMs(env.OFFICE_ALLY_REALTIME_TIMEOUT_MS),
+  };
+}
+
 export function resolveOutboxDir(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.OFFICE_ALLY_FILE_OUTBOX_DIR?.trim();
   return raw ? resolve(raw) : resolve(process.cwd(), "outputs", "office-ally");
@@ -132,5 +185,14 @@ function parsePort(raw: string | undefined): number {
   if (!raw) return 22;
   const n = Number.parseInt(raw, 10);
   if (!Number.isInteger(n) || n <= 0 || n > 65535) return 22;
+  return n;
+}
+
+const DEFAULT_REALTIME_TIMEOUT_MS = 30_000;
+
+function parseTimeoutMs(raw: string | undefined): number {
+  if (!raw) return DEFAULT_REALTIME_TIMEOUT_MS;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isInteger(n) || n <= 0) return DEFAULT_REALTIME_TIMEOUT_MS;
   return n;
 }

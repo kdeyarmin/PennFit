@@ -70,6 +70,10 @@ import {
 } from "@workspace/resupply-integrations-office-ally";
 
 import { analyzeDenial } from "../../lib/billing/ai-denial-analyzer";
+import {
+  eligibilityCompletedEvent,
+  parsed271ToCheckColumns,
+} from "../../lib/billing/eligibility-271";
 import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
@@ -682,16 +686,7 @@ export async function dispatch271(
     .from("eligibility_checks")
     .update({
       status: "parsed",
-      is_active: parsed.isActive,
-      in_network: parsed.inNetwork,
-      deductible_cents: parsed.deductibleCents,
-      deductible_met_cents: parsed.deductibleMetCents,
-      oop_max_cents: parsed.oopMaxCents,
-      oop_met_cents: parsed.oopMetCents,
-      copay_cents: parsed.copayCents,
-      coinsurance_pct: parsed.coinsurancePct,
-      requires_prior_auth: parsed.requiresPriorAuth,
-      parsed_response_json: parsed as unknown as Json,
+      ...parsed271ToCheckColumns(parsed),
       responded_at: new Date().toISOString(),
       applied_to_inbound_file_id: inboundFileId,
     })
@@ -712,16 +707,16 @@ export async function dispatch271(
   // subscribers can react the moment coverage detail lands, instead of
   // polling the eligibility worklist. IDs + flags only, no PHI in the
   // payload (member id, deductible amounts, etc. stay on the row).
-  void publishEvent({
-    eventType: "eligibility.completed",
-    payload: {
-      eligibility_check_id: check.id,
-      patient_id: check.patient_id,
-      insurance_coverage_id: check.insurance_coverage_id,
-      is_active: parsed.isActive,
-      requires_prior_auth: parsed.requiresPriorAuth,
-    },
-  });
+  void publishEvent(
+    eligibilityCompletedEvent(
+      {
+        eligibilityCheckId: check.id,
+        patientId: check.patient_id,
+        insuranceCoverageId: check.insurance_coverage_id,
+      },
+      parsed,
+    ),
+  );
 }
 
 /**

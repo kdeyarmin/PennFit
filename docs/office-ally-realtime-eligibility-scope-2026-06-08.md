@@ -1,10 +1,11 @@
 # Scope — real-time eligibility (270/271) transport for Office Ally
 
-**Status:** Design / scope only — no code in this change. Written to
-answer "what would it take to make eligibility instant instead of
-submit-and-poll?"
-**Audience:** Penn Home Medical Supply operator + whoever implements the
-follow-up PR.
+**Status:** Implemented (this PR) behind optional config — the real-time
+transport ships fail-soft, gated on `OFFICE_ALLY_REALTIME_*`. With the env
+unset, behavior is unchanged (SFTP submit-and-poll). The remaining work is
+**vendor-side certification** (see Blockers). This doc records the design;
+the "Proposed design" below is what landed.
+**Audience:** Penn Home Medical Supply operator + reviewers.
 **Date:** 2026-06-08.
 
 ## TL;DR
