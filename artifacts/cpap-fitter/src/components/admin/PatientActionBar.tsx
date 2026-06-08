@@ -25,6 +25,7 @@ import {
 import { humanizeStatus } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
+import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 /**
@@ -310,6 +311,26 @@ export function PatientActionBar({
               No email on file — email disabled.
             </p>
           )}
+        </div>
+
+        <div>
+          <p
+            className="text-xs uppercase tracking-wider font-semibold mb-2"
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
+          >
+            Mask fitting
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <FitterInviteButton
+              patientId={patient.id}
+              hasEmail={patient.hasEmail}
+              hasPhone={patient.hasPhone}
+            />
+          </div>
+          <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            Sends the patient a link to the AI mask fitter. Results return here
+            for follow-up.
+          </p>
         </div>
 
         <div>

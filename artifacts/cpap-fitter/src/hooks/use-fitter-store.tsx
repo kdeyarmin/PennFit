@@ -24,6 +24,14 @@ interface FitterState {
    */
   email: string | null;
   emailConsent: boolean;
+  /**
+   * Signed token from a staff-initiated AI-fitter invite
+   * (`/fitter-invite?t=…`). When present, the /results page transmits
+   * the full fitting (measurements + answers + recommendation) back to
+   * PennPaps via /shop/fitter-invite/complete so it can be attached to
+   * the patient's chart. Null for the normal public storefront flow.
+   */
+  inviteToken: string | null;
 }
 
 interface FitterContextType extends FitterState {
@@ -32,6 +40,7 @@ interface FitterContextType extends FitterState {
   setCapturedImage: (image: string | null) => void;
   setChosenMask: (mask: ChosenMask | null) => void;
   setEmailConsent: (email: string, consent: boolean) => void;
+  setInviteToken: (token: string | null) => void;
   reset: () => void;
 }
 
@@ -68,6 +77,17 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       return sessionStorage.getItem("fitter_email_consent") === "1";
     } catch {
       return false;
+    }
+  });
+
+  // Staff-invite token. Persisted in sessionStorage so it survives the
+  // multi-page fitter flow (and a mid-flow refresh) and is still
+  // available on /results to transmit the completed fitting.
+  const [inviteToken, setInviteTokenState] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem("fitter_invite_token");
+    } catch {
+      return null;
     }
   });
 
@@ -119,6 +139,19 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setInviteToken = (token: string | null) => {
+    setInviteTokenState(token);
+    try {
+      if (token) {
+        sessionStorage.setItem("fitter_invite_token", token);
+      } else {
+        sessionStorage.removeItem("fitter_invite_token");
+      }
+    } catch (e) {
+      console.error("Failed to persist fitter invite token", e);
+    }
+  };
+
   const reset = () => {
     setMeasurements(null);
     setAnswers({});
@@ -126,10 +159,12 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setChosenMaskState(null);
     setEmail(null);
     setEmailConsentState(false);
+    setInviteTokenState(null);
     sessionStorage.removeItem("fitter_answers");
     sessionStorage.removeItem("fitter_chosen_mask");
     sessionStorage.removeItem("fitter_email");
     sessionStorage.removeItem("fitter_email_consent");
+    sessionStorage.removeItem("fitter_invite_token");
   };
 
   return (
@@ -141,11 +176,13 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         chosenMask,
         email,
         emailConsent,
+        inviteToken,
         setMeasurements,
         updateAnswers,
         setCapturedImage,
         setChosenMask,
         setEmailConsent,
+        setInviteToken,
         reset,
       }}
     >

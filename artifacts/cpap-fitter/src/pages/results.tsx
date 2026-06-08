@@ -25,7 +25,10 @@ import {
   Ruler,
 } from "lucide-react";
 import { track } from "@/lib/track";
-import { submitFitterComplete } from "@/lib/shop-api";
+import {
+  submitFitterComplete,
+  submitFitterInviteComplete,
+} from "@/lib/shop-api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
@@ -36,9 +39,36 @@ export function Results() {
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `measurements` is non-null by the time Results mounts — no local
   // useEffect+redirect dance needed.
-  const { measurements, answers, reset, setChosenMask, email, emailConsent } =
-    useFitterStore();
+  const {
+    measurements,
+    answers,
+    reset,
+    setChosenMask,
+    email,
+    emailConsent,
+    inviteToken,
+  } = useFitterStore();
   const [showMeasurements, setShowMeasurements] = useState(false);
+
+  // Normalize the questionnaire once — used both for the
+  // recommendation request and the staff-invite transmission so the
+  // null/sentinel handling stays in one place.
+  const fullAnswers = React.useMemo<QuestionnaireAnswers>(
+    () => ({
+      mouthBreather: answers.mouthBreather ?? null,
+      claustrophobic: answers.claustrophobic ?? null,
+      sideOrStomachSleeper: answers.sideOrStomachSleeper ?? null,
+      heavyFacialHair: answers.heavyFacialHair ?? null,
+      wearsGlasses: answers.wearsGlasses ?? null,
+      frequentCongestion: answers.frequentCongestion ?? null,
+      priorMaskExperience: answers.priorMaskExperience ?? "none",
+      mobilityLimitations: answers.mobilityLimitations ?? null,
+      sensitiveSkin: answers.sensitiveSkin ?? null,
+      siliconeSensitivity: answers.siliconeSensitivity ?? null,
+      cpapPressureSetting: answers.cpapPressureSetting ?? "unknown",
+    }),
+    [answers],
+  );
 
   useEffect(() => {
     track("results_viewed");
@@ -98,6 +128,41 @@ export function Results() {
     });
   }, [data, email, emailConsent]);
 
+  // Staff-invite transmission. When the patient reached /results via a
+  // staff invite link (/fitter-invite), transmit the COMPLETE fitting
+  // — numeric measurements + questionnaire answers + the ranked
+  // recommendation — back to PennPaps so it can be reviewed and
+  // attached to the patient's chart. (Per the privacy invariant, only
+  // the numeric measurements travel; images never left the device.)
+  // Fires once, best-effort: a failure must never block the patient
+  // from seeing their result.
+  const hasTransmittedInvite = useRef(false);
+  useEffect(() => {
+    if (hasTransmittedInvite.current) return;
+    if (!inviteToken || !measurements || !data) return;
+    const top = data.topRecommendations[0];
+    if (!top) return;
+    hasTransmittedInvite.current = true;
+    submitFitterInviteComplete({
+      token: inviteToken,
+      measurements,
+      answers: fullAnswers,
+      recommendation: {
+        maskId: top.maskId,
+        name: top.name,
+        type: top.type,
+        top: data.topRecommendations.map((m) => ({
+          maskId: m.maskId,
+          name: m.name,
+          type: m.type,
+          confidence: m.confidence,
+        })),
+      },
+    }).catch((err) => {
+      console.warn("fitter-invite transmission failed (continuing)", err);
+    });
+  }, [inviteToken, measurements, data, fullAnswers]);
+
   const { data: catalog } = useListMasks();
   const catalogById = React.useMemo(() => {
     const map = new Map<string, NonNullable<typeof catalog>["masks"][number]>();
@@ -119,31 +184,14 @@ export function Results() {
     if (!hasRequested.current) {
       hasRequested.current = true;
       // P4 — the questionnaire intentionally lets the user skip questions
-      // and offers an explicit "I'm not sure" option. We forward `null`
-      // for un-answered booleans (was: coerced to `false`) so the
-      // recommendation engine can distinguish "the patient said no"
-      // from "the patient declined to answer" and not over-claim a
-      // need in the reasons text. `priorMaskExperience` falls back to
-      // "none" (its own sentinel) and `cpapPressureSetting` to
-      // "unknown" (its own sentinel) since both already have a
-      // third-option value in their enum.
-      const fullAnswers: QuestionnaireAnswers = {
-        mouthBreather: answers.mouthBreather ?? null,
-        claustrophobic: answers.claustrophobic ?? null,
-        sideOrStomachSleeper: answers.sideOrStomachSleeper ?? null,
-        heavyFacialHair: answers.heavyFacialHair ?? null,
-        wearsGlasses: answers.wearsGlasses ?? null,
-        frequentCongestion: answers.frequentCongestion ?? null,
-        priorMaskExperience: answers.priorMaskExperience ?? "none",
-        mobilityLimitations: answers.mobilityLimitations ?? null,
-        sensitiveSkin: answers.sensitiveSkin ?? null,
-        siliconeSensitivity: answers.siliconeSensitivity ?? null,
-        cpapPressureSetting: answers.cpapPressureSetting ?? "unknown",
-      };
-
+      // and offers an explicit "I'm not sure" option. `fullAnswers`
+      // (memoized above) forwards `null` for un-answered booleans so the
+      // recommendation engine can distinguish "the patient said no" from
+      // "the patient declined to answer", with "none"/"unknown"
+      // sentinels for the two enum fields.
       mutate({ data: { measurements, answers: fullAnswers } });
     }
-  }, [measurements, answers, mutate]);
+  }, [measurements, fullAnswers, mutate]);
 
   if (!measurements) return null;
 
