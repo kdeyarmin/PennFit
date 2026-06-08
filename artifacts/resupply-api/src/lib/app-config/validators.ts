@@ -62,6 +62,7 @@ const FORMAT_RULES: Readonly<Record<string, FormatRule>> = {
 
   OFFICE_ALLY_USAGE_INDICATOR: { test: /^[PT]$/, hint: "P or T" },
   OFFICE_ALLY_PORT: { test: /^\d+$/, hint: "a numeric port" },
+  OFFICE_ALLY_REALTIME_URL: URL_RULE,
 
   AIRVIEW_API_BASE_URL: URL_RULE,
   AIRVIEW_OAUTH_TOKEN_URL: URL_RULE,

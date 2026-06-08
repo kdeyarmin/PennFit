@@ -410,6 +410,34 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     description: "P = production, T = test (default T).",
     placeholder: "T",
   },
+  // Real-time eligibility (270/271) over Office Ally's EDI REST API — a
+  // SEPARATE channel from the SFTP batch transport above: it returns the
+  // 271 inline in seconds instead of submit-and-poll over SFTP. Optional
+  // and fail-soft (no key → eligibility falls back to the SFTP path).
+  // Precedence (see buildRealtimeConfig in identity-resolver.ts): a saved
+  // clearinghouse connection row (Billing → Config) owns the on/off toggle
+  // and endpoint, so these act as the dev/preview fallback for the URL and
+  // as the API-key source whenever the row has real-time enabled but no key
+  // of its own.
+  {
+    key: "OFFICE_ALLY_REALTIME_URL",
+    label: "Real-time eligibility endpoint URL",
+    category: CATEGORY_OFFICE_ALLY,
+    secret: false,
+    applyMode: "restart",
+    description:
+      "Office Ally EDI real-time eligibility endpoint (the /v2/eligibility-benefits/x12 path). Enables instant 270/271 instead of the SFTP submit-and-poll. A saved clearinghouse connection row's endpoint takes precedence over this.",
+    placeholder: "https://edi.officeally.io/v2/eligibility-benefits/x12",
+  },
+  {
+    key: "OFFICE_ALLY_REALTIME_API_KEY",
+    label: "Real-time eligibility API key",
+    category: CATEGORY_OFFICE_ALLY,
+    secret: true,
+    applyMode: "restart",
+    description:
+      "API key for Office Ally's real-time eligibility REST API, sent verbatim in the Authorization header. Separate from the SFTP key. Used as the fallback when a saved clearinghouse connection row has no key stored on it.",
+  },
 ];
 
 /** Fast membership set of every writable key. */
