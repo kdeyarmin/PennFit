@@ -37,7 +37,7 @@
 //   │  A7038  Disposable filter                  2   30 d        │
 //   │                                                            │
 //   │ ── Device settings ────────────────────────────────────    │
-//   │  Mode: Auto-CPAP    Pressure: 6–16 cm H₂O                  │
+//   │  Mode: Auto-CPAP    Pressure: 6–16 cm H2O                  │
 //   │  Ramp: 30 min from 4 cm    Humidifier: 3   Heated tube: Y  │
 //   │                                                            │
 //   │ ── Length of need ─────────────────────────────────────    │
@@ -497,7 +497,7 @@ function drawSettings(
 
   // Pressure block — varies by device class.
   if (s.deviceClass === "cpap" && typeof s.pressureCmh2o === "number") {
-    drawLabeledField(doc, "Pressure", `${s.pressureCmh2o} cm H₂O (fixed)`);
+    drawLabeledField(doc, "Pressure", `${s.pressureCmh2o} cm H2O (fixed)`);
   } else if (
     (s.deviceClass === "auto_cpap" || s.deviceClass === "bipap") &&
     typeof s.pressureMinCmh2o === "number" &&
@@ -506,14 +506,14 @@ function drawSettings(
     drawLabeledField(
       doc,
       "Pressure range",
-      `${s.pressureMinCmh2o}–${s.pressureMaxCmh2o} cm H₂O`,
+      `${s.pressureMinCmh2o}–${s.pressureMaxCmh2o} cm H2O`,
     );
   }
   if (typeof s.ipapCmh2o === "number" && typeof s.epapCmh2o === "number") {
     drawLabeledField(
       doc,
       "IPAP / EPAP",
-      `${s.ipapCmh2o} / ${s.epapCmh2o} cm H₂O`,
+      `${s.ipapCmh2o} / ${s.epapCmh2o} cm H2O`,
     );
   }
   if (typeof s.backupRateBpm === "number") {
@@ -522,7 +522,7 @@ function drawSettings(
   if (typeof s.rampMinutes === "number" && s.rampMinutes > 0) {
     const from =
       typeof s.rampStartCmh2o === "number"
-        ? ` from ${s.rampStartCmh2o} cm H₂O`
+        ? ` from ${s.rampStartCmh2o} cm H2O`
         : "";
     drawLabeledField(doc, "Ramp", `${s.rampMinutes} minutes${from}`);
   }
