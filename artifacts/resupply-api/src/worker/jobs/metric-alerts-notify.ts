@@ -189,9 +189,11 @@ export async function runMetricAlertsNotify(): Promise<MetricAlertsNotifyStats> 
         return true;
       } catch (err) {
         logger.warn(
-          { err: err instanceof Error ? err.message : err, to },
+          { err: err instanceof Error ? err : new Error(String(err)), to },
           "metric-alerts-notify: send failed for one recipient",
         );
+        return false;
+      }
         return false;
       }
     }),
