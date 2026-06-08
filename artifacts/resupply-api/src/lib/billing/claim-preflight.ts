@@ -24,9 +24,15 @@ import {
   scoreDenialRiskItems,
   type DenialRiskStat,
 } from "./denial-risk";
+import { getCachedEligibility } from "./eligibility-verifier";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** A parsed 271 older than this no longer counts as "verified" on the
+ *  preflight surface (matches the 45-day window the order/claim eligibility
+ *  gates use). */
+const ELIGIBILITY_FRESHNESS_MS = 45 * MS_PER_DAY;
 
 export type PreflightSeverity = "ok" | "warning" | "error";
 
@@ -366,6 +372,82 @@ export async function preflightClaim(
       detail: "Pick a primary insurance coverage from the patient's record.",
       fixAction: { kind: "open_patient", patientId: claim.patient_id },
     });
+  }
+
+  // ── Eligibility (cached 270/271) ────────────────────────────────
+  // Surface the coverage's most recent parsed 271 right where the CSR
+  // submits. ADVISORY ONLY (warning/ok, never error): the actual hold on
+  // a bad result lives in the toggleable claim precheck
+  // (billing.eligibility_precheck), so the preflight never hard-blocks on
+  // eligibility. Fail-soft: any lookup error just omits the row.
+  if (claim.insurance_coverage_id) {
+    try {
+      const elig = await getCachedEligibility(
+        claim.insurance_coverage_id,
+        ELIGIBILITY_FRESHNESS_MS,
+      );
+      if (!elig) {
+        items.push({
+          key: "eligibility",
+          severity: "warning",
+          label: "Eligibility not verified recently",
+          detail:
+            "No recent 270/271 on file for this coverage — run an eligibility check before submitting.",
+          fixAction: { kind: "open_patient", patientId: claim.patient_id },
+        });
+      } else {
+        const checkedOn = (elig.responded_at ?? elig.requested_at ?? "").slice(
+          0,
+          10,
+        );
+        const checked = checkedOn ? ` (checked ${checkedOn})` : "";
+        if (elig.is_active === false) {
+          items.push({
+            key: "eligibility",
+            severity: "warning",
+            label: "Coverage shows inactive",
+            detail: `The last 270/271${checked} returned an inactive plan — verify before submitting; this claim will likely deny.`,
+            fixAction: { kind: "open_patient", patientId: claim.patient_id },
+          });
+        } else if (elig.requires_prior_auth === true) {
+          items.push({
+            key: "eligibility",
+            severity: "warning",
+            label: "Eligibility flags prior-auth required",
+            detail: `The last 270/271${checked} indicates this plan requires prior authorization.`,
+          });
+        } else if (elig.is_active === true) {
+          const net =
+            elig.in_network === true
+              ? " · in-network"
+              : elig.in_network === false
+                ? " · out-of-network"
+                : "";
+          items.push({
+            key: "eligibility",
+            severity: "ok",
+            label: "Coverage active",
+            detail: `The last 270/271${checked} returned active coverage${net}.`,
+          });
+        } else {
+          items.push({
+            key: "eligibility",
+            severity: "ok",
+            label: "Eligibility on file",
+            detail: `The last 270/271${checked} did not explicitly return a coverage status.`,
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "billing.preflight.eligibility_failed",
+          claimId: claim.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "preflight: eligibility surface skipped (non-fatal)",
+      );
+    }
   }
 
   // ── Patient demographics + address ──────────────────────────────
