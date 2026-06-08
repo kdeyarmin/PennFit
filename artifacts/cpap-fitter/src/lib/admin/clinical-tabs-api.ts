@@ -240,6 +240,12 @@ export interface VerifyEligibilityResponse {
   traceReference: string;
   uploadOk: boolean;
   errorMessage: string | null;
+  /** True when the 271 came back inline via the real-time service. */
+  realtime: boolean;
+  /** Terminal status of the check row. `parsed` = answered now. */
+  status: "parsed" | "submitted" | "transport_failed";
+  /** Real-time round-trip in ms (null for the SFTP submit path). */
+  latencyMs: number | null;
 }
 
 export const verifyEligibility = (
