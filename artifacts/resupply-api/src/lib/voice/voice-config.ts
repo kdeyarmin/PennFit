@@ -86,6 +86,14 @@ export interface VoiceConfig {
    * the tuned conversational default (1.0). Clamped into range.
    */
   elevenLabsSpeed?: number;
+  /**
+   * ElevenLabs TTS transport. `"ws"` (default) uses the stream-input
+   * WebSocket — one connection per agent turn, text fed as the model
+   * generates it, lowest latency + best cross-sentence prosody. `"http"`
+   * uses the per-sentence streaming REST endpoint (the proven fallback).
+   * Any value other than `"http"` resolves to `"ws"`.
+   */
+  elevenLabsTransport: "ws" | "http";
 }
 
 /**
@@ -158,6 +166,12 @@ export function readVoiceConfigOrNull(
     elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
     elevenLabsStability: readBoundedFloatEnv(env.ELEVENLABS_STABILITY, 0, 1),
     elevenLabsSpeed: readBoundedFloatEnv(env.ELEVENLABS_SPEED, 0.7, 1.2),
+    // Default to the streaming WS path; opt back to HTTP only on explicit
+    // `http`. Case/space-insensitive so "HTTP" / " http " still match.
+    elevenLabsTransport:
+      env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
+        ? "http"
+        : "ws",
   };
 }
 

@@ -45,6 +45,9 @@ export {
   type ToolInvocation,
   type TranscriptTurn,
   type TtsSynthesizer,
+  type TtsStreamer,
+  type TtsStreamSession,
+  type TtsStreamHandlers,
 } from "./bridge";
 
 export {
@@ -115,6 +118,14 @@ export {
   type ElevenLabsVoiceSummary,
   type ElevenLabsListVoicesResult,
 } from "./elevenlabs-client";
+
+export {
+  openElevenLabsStream,
+  type ElevenLabsStreamOptions,
+  type ElevenLabsStreamHandlers,
+  type ElevenLabsStreamSession,
+  type ElevenLabsStreamWebSocketLike,
+} from "./elevenlabs-stream";
 
 export {
   TOOL_NAMES,

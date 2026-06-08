@@ -42,6 +42,7 @@ import {
   createDeepgramClient,
   createElevenLabsClient,
   DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
+  openElevenLabsStream,
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
@@ -52,6 +53,7 @@ import {
   type ElevenLabsVoiceSettings,
   type MediaStreamSink,
   type TranscriptTurn,
+  type TtsStreamer,
   type TtsSynthesizer,
 } from "@workspace/resupply-ai";
 import {
@@ -70,7 +72,7 @@ import {
   type TurnForSummary,
 } from "./post-call-summary";
 import { createVoiceToolDispatcher } from "./tools-impl";
-import { readVoiceConfigOrThrow } from "./voice-config";
+import { readVoiceConfigOrThrow, type VoiceConfig } from "./voice-config";
 
 /**
  * Wire one Twilio Media Stream WS to one OpenAI Realtime session.
@@ -156,25 +158,39 @@ export async function handleVoiceWsConnection(
     episodeId: pending.episodeId,
   });
 
-  // Optional ElevenLabs voice. When ELEVENLABS_API_KEY is set,
-  // ElevenLabs becomes the agent's voice: the Realtime session runs in
-  // text-output mode (generateAudio: false) and the bridge synthesises
-  // each agent turn through ElevenLabs. When unset, `tts` stays null and
-  // the bridge forwards OpenAI's built-in `cedar` audio (default).
-  const ttsSynthesizer = config.elevenLabsApiKey
-    ? buildElevenLabsSynthesizer({
-        apiKey: config.elevenLabsApiKey,
-        voiceId: config.elevenLabsVoiceId,
-        modelId: config.elevenLabsModelId,
-        stability: config.elevenLabsStability,
-        speed: config.elevenLabsSpeed,
-        conversationId: pending.conversationId,
-      })
-    : null;
-  if (ttsSynthesizer) {
+  // Optional ElevenLabs voice. When ELEVENLABS_API_KEY is set, ElevenLabs
+  // becomes the agent's voice: the Realtime session runs in text-output
+  // mode (generateAudio: false) and the bridge produces the audio. Two
+  // transports: the streaming WS (default — one connection per turn, text
+  // fed as it's generated, lowest latency + best prosody) or the
+  // per-sentence HTTP path (the proven fallback). When the key is unset,
+  // both stay null and the bridge forwards OpenAI's built-in `cedar`
+  // audio (default).
+  const ttsStreamer =
+    config.elevenLabsApiKey && config.elevenLabsTransport === "ws"
+      ? buildElevenLabsStreamer({
+          apiKey: config.elevenLabsApiKey,
+          voiceId: config.elevenLabsVoiceId,
+          modelId: config.elevenLabsModelId,
+          voiceSettings: resolveElevenLabsVoiceSettings(config),
+        })
+      : null;
+  const ttsSynthesizer =
+    config.elevenLabsApiKey && config.elevenLabsTransport !== "ws"
+      ? buildElevenLabsSynthesizer({
+          apiKey: config.elevenLabsApiKey,
+          voiceId: config.elevenLabsVoiceId,
+          modelId: config.elevenLabsModelId,
+          voiceSettings: resolveElevenLabsVoiceSettings(config),
+          conversationId: pending.conversationId,
+        })
+      : null;
+  const externalVoice = ttsStreamer !== null || ttsSynthesizer !== null;
+  if (externalVoice) {
     logger.info(
       {
         event: "voice_elevenlabs_enabled",
+        transport: config.elevenLabsTransport,
         conversationId: pending.conversationId,
       },
       "voice: ElevenLabs TTS enabled (Realtime running in text-output mode)",
@@ -185,7 +201,7 @@ export async function handleVoiceWsConnection(
     apiKey: config.openaiApiKey,
     // When ElevenLabs owns the voice, the model emits text (not audio)
     // and the bridge synthesises it. Otherwise the model speaks (cedar).
-    generateAudio: ttsSynthesizer === null,
+    generateAudio: !externalVoice,
     instructions: buildSystemPrompt({
       practiceName: config.practiceName ?? "PennPaps",
       // Inbound calls (the reorder IVR) set their own context + greeting
@@ -206,6 +222,7 @@ export async function handleVoiceWsConnection(
     client,
     sink,
     dispatcher,
+    ...(ttsStreamer ? { ttsStreamer } : {}),
     ...(ttsSynthesizer ? { tts: ttsSynthesizer } : {}),
   });
 
@@ -869,18 +886,10 @@ function buildElevenLabsSynthesizer(opts: {
   apiKey: string;
   voiceId?: string;
   modelId?: string;
-  stability?: number;
-  speed?: number;
+  voiceSettings: ElevenLabsVoiceSettings;
   conversationId: string;
 }): TtsSynthesizer {
-  // Start from the tuned conversational defaults and layer any operator
-  // env overrides (stability / speed) on top. Built once per call so we
-  // don't reallocate the object per synthesised sentence.
-  const voiceSettings: ElevenLabsVoiceSettings = {
-    ...DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
-    ...(opts.stability !== undefined ? { stability: opts.stability } : {}),
-    ...(opts.speed !== undefined ? { speed: opts.speed } : {}),
-  };
+  const { voiceSettings } = opts;
   let client: ElevenLabsClient;
   try {
     client = createElevenLabsClient({ apiKey: opts.apiKey });
@@ -938,6 +947,89 @@ function buildElevenLabsSynthesizer(opts: {
           `elevenlabs ${result.errorCode}: ${result.errorMessage}`,
         );
       }
+    },
+  };
+}
+
+/**
+ * Merge the tuned conversational voice settings with any operator env
+ * overrides (stability / speed). Shared by both the streaming and
+ * per-sentence ElevenLabs transports so they sound identical.
+ */
+function resolveElevenLabsVoiceSettings(
+  config: VoiceConfig,
+): ElevenLabsVoiceSettings {
+  return {
+    ...DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
+    ...(config.elevenLabsStability !== undefined
+      ? { stability: config.elevenLabsStability }
+      : {}),
+    ...(config.elevenLabsSpeed !== undefined
+      ? { speed: config.elevenLabsSpeed }
+      : {}),
+  };
+}
+
+/**
+ * Adapt the ElevenLabs stream-input WebSocket to the bridge's
+ * `TtsStreamer` contract. One session per agent turn: the bridge feeds
+ * text in as the model generates it and we stream `ulaw_8000` audio back,
+ * re-framed into 160-byte µ-law frames (same as the HTTP path) so Twilio
+ * plays it cleanly. A vendor/transport error surfaces via `onError` (the
+ * bridge logs a `tts` session error and drops the turn's audio without
+ * ending the call).
+ *
+ * PHI: the synthesised text IS patient-facing speech. We never log the
+ * text or the audio bytes — only structural error info on failure.
+ */
+function buildElevenLabsStreamer(opts: {
+  apiKey: string;
+  voiceId?: string;
+  modelId?: string;
+  voiceSettings: ElevenLabsVoiceSettings;
+}): TtsStreamer {
+  return {
+    openSession(handlers) {
+      // Per-session re-framing buffer: ElevenLabs returns ulaw_8000 in
+      // arbitrary chunk sizes; we hand Twilio uniform 160-byte frames.
+      let carry = Buffer.alloc(0);
+      const session = openElevenLabsStream(
+        {
+          apiKey: opts.apiKey,
+          ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
+          ...(opts.modelId ? { modelId: opts.modelId } : {}),
+          voiceSettings: opts.voiceSettings,
+          outputFormat: "ulaw_8000",
+        },
+        {
+          onAudioBase64: (audioBase64) => {
+            const bytes = Buffer.from(audioBase64, "base64");
+            carry = carry.length === 0 ? bytes : Buffer.concat([carry, bytes]);
+            let offset = 0;
+            while (carry.length - offset >= MULAW_FRAME_BYTES) {
+              handlers.onFrame(
+                carry
+                  .subarray(offset, offset + MULAW_FRAME_BYTES)
+                  .toString("base64"),
+              );
+              offset += MULAW_FRAME_BYTES;
+            }
+            carry = carry.subarray(offset);
+          },
+          onError: (err) =>
+            handlers.onError(new Error(`${err.code}: ${err.message}`)),
+          onClosed: () => {
+            // Flush the trailing partial frame at end-of-turn (Twilio
+            // tolerates a short final frame).
+            if (carry.length > 0) {
+              handlers.onFrame(carry.toString("base64"));
+              carry = Buffer.alloc(0);
+            }
+            handlers.onDone?.();
+          },
+        },
+      );
+      return session;
     },
   };
 }

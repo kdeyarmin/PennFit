@@ -107,6 +107,47 @@ export interface TtsSynthesizer {
   ): Promise<void>;
 }
 
+/**
+ * A single streaming-synthesis session for ONE agent turn (e.g. the
+ * ElevenLabs stream-input WebSocket). Unlike {@link TtsSynthesizer}, which
+ * is handed a complete utterance, a session is fed text INCREMENTALLY as
+ * the model generates it and streams audio back over the whole turn — so a
+ * multi-sentence turn rides one connection with prosody carried across
+ * sentence boundaries, and the caller hears the first words while the model
+ * is still producing the rest.
+ *
+ * Contract:
+ *   - `onFrame` emits base64 µ-law @ 8kHz frames (the sink's format).
+ *   - `onError` is a vendor/transport failure — the bridge logs it as a
+ *     `tts` session error and drops that turn's audio; it does NOT end the
+ *     call.
+ *   - `onDone` fires once when the session has fully finished (all audio
+ *     delivered); the bridge uses it to release the session reference.
+ *   - The returned session ignores `pushText`/`flush`/`end` after `abort`,
+ *     and emits no frames once aborted (barge-in must go silent at once).
+ */
+export interface TtsStreamHandlers {
+  onFrame: (base64Mulaw: string) => void;
+  onError: (err: Error) => void;
+  onDone?: () => void;
+}
+
+export interface TtsStreamSession {
+  /** Append a chunk of the turn's text as the model streams it. */
+  pushText(text: string): void;
+  /** Nudge the engine to synthesise buffered text now (latency). */
+  flush(): void;
+  /** Signal no-more-text; the engine finishes the turn, then completes. */
+  end(): void;
+  /** Tear down immediately (barge-in / call close); go silent at once. */
+  abort(): void;
+}
+
+export interface TtsStreamer {
+  /** Open a streaming session for one agent turn. */
+  openSession(handlers: TtsStreamHandlers): TtsStreamSession;
+}
+
 export interface BridgeEvents {
   "session.opened": () => void;
   "transcript.turn": (turn: TranscriptTurn) => void;
@@ -129,6 +170,15 @@ export interface BridgeOptions {
    * (the default cedar path).
    */
   tts?: TtsSynthesizer;
+  /**
+   * Optional streaming external TTS engine (ElevenLabs stream-input WS).
+   * Takes precedence over `tts` when both are set. Instead of synthesising
+   * each finished sentence as its own request, the bridge opens ONE
+   * session per agent turn and feeds the model's output text into it as it
+   * streams — lowest latency and best cross-sentence prosody. Like `tts`,
+   * it requires the Realtime client to run with `generateAudio: false`.
+   */
+  ttsStreamer?: TtsStreamer;
 }
 
 const KNOWN_TOOL_NAMES = new Set<ToolName>(TOOL_NAMES);
@@ -170,6 +220,7 @@ export class VoiceBridge extends EventEmitter {
   private readonly sink: MediaStreamSink;
   private readonly dispatcher: ToolDispatcher;
   private readonly tts: TtsSynthesizer | null;
+  private readonly ttsStreamer: TtsStreamer | null;
 
   // Buffer for input STT deltas — coalesce until `done` fires so each
   // patient turn becomes ONE messages-table row, not N. Keyed on
@@ -191,12 +242,21 @@ export class VoiceBridge extends EventEmitter {
   // itemId like the transcript buffers above.
   private readonly ttsFlushed = new Map<string, number>();
 
+  // Streaming-TTS session state (only used when `this.ttsStreamer` is set).
+  // One session spans one agent turn; `ttsStreamItemId` pins it to the
+  // output item it's voicing and `ttsStreamPushed` tracks how many chars
+  // of that turn we've already fed in (so we push only the new delta).
+  private ttsStream: TtsStreamSession | null = null;
+  private ttsStreamItemId: string | null = null;
+  private ttsStreamPushed = 0;
+
   constructor(opts: BridgeOptions) {
     super();
     this.client = opts.client;
     this.sink = opts.sink;
     this.dispatcher = opts.dispatcher;
     this.tts = opts.tts ?? null;
+    this.ttsStreamer = opts.ttsStreamer ?? null;
     this.wireRealtimeEvents();
   }
 
@@ -216,6 +276,11 @@ export class VoiceBridge extends EventEmitter {
       this.ttsAbort.abort();
       this.ttsAbort = null;
     }
+    // Tear down any open streaming-TTS session for the same reason.
+    if (this.ttsStream) {
+      this.ttsStream.abort();
+      this.resetTtsStream();
+    }
     this.client.close(1000, reason);
   }
 
@@ -229,7 +294,7 @@ export class VoiceBridge extends EventEmitter {
       // ourselves from the output transcript; ignore any built-in audio
       // the model emits (there should be none — it's in text mode — but
       // this is belt-and-suspenders against a modality config drift).
-      if (this.tts) return;
+      if (this.tts || this.ttsStreamer) return;
       this.sink.writeAudioBase64(delta.audioBase64);
     });
 
@@ -238,24 +303,30 @@ export class VoiceBridge extends EventEmitter {
     // external TTS engine, we must stop feeding + flush queued frames
     // ourselves the instant the caller starts speaking.
     this.client.on("input.speech_started", () => {
-      if (!this.tts) return;
-      this.bargeInTts();
+      if (this.ttsStreamer) this.bargeInStream();
+      else if (this.tts) this.bargeInTts();
     });
 
     this.client.on("transcript.delta", (delta) => {
-      // On the external-TTS path we voice each finalised OUTPUT sentence as
-      // soon as it lands (see flushSpeakableSentences) rather than waiting
-      // for the whole turn — far lower time-to-first-word. Input turns (the
-      // caller) and the built-in cedar path are never synthesised here.
-      const voiceThisTurn = this.tts !== null && delta.source === "output";
+      const isOutput = delta.source === "output";
       const buf = delta.source === "input" ? this.inputBuf : this.outputBuf;
       const key = delta.itemId ?? `__${delta.source}__`;
       const prior = buf.get(key) ?? "";
       const next = delta.done ? delta.text || prior : prior + delta.text;
 
+      // Drive whichever external-voice path is configured as the agent's
+      // text streams. The streaming path (ElevenLabs WS) feeds text into an
+      // open per-turn session; the per-utterance path (ElevenLabs HTTP)
+      // voices each complete sentence as it lands. The built-in cedar path
+      // does neither — it forwards `audio.delta` straight to the sink.
+      if (isOutput && this.ttsStreamer) {
+        this.driveTtsStream(key, next, delta.done);
+      } else if (isOutput && this.tts && !delta.done) {
+        this.flushSpeakableSentences(key, next);
+      }
+
       if (!delta.done) {
         buf.set(key, next);
-        if (voiceThisTurn) this.flushSpeakableSentences(key, next);
         return;
       }
 
@@ -271,11 +342,12 @@ export class VoiceBridge extends EventEmitter {
           itemId: delta.itemId,
         });
       }
-      // External-TTS path: synthesise only the tail we did NOT already
+      // Per-utterance path only: synthesise the tail we did NOT already
       // stream as complete sentences, so an early-flushed sentence is never
       // re-spoken. `next` is the authoritative full turn text; the already-
-      // voiced prefix is exactly its first `flushedLen` characters.
-      if (voiceThisTurn) {
+      // voiced prefix is exactly its first `flushedLen` characters. (The
+      // streaming path ended its session inside driveTtsStream.)
+      if (isOutput && this.tts && !this.ttsStreamer) {
         const remainder = next.slice(flushedLen).trim();
         if (remainder.length > 0) this.enqueueTts(remainder);
       }
@@ -419,7 +491,104 @@ export class VoiceBridge extends EventEmitter {
     }
   }
 
-  // ---- External TTS (ElevenLabs) --------------------------------------
+  // ---- Streaming external TTS (ElevenLabs stream-input WS) ------------
+
+  /**
+   * Feed the agent's streaming output text into a per-turn streaming TTS
+   * session. Opens a session on the first delta of a turn, pushes only the
+   * newly-arrived text (never re-pushing), nudges generation at sentence
+   * boundaries for snappy audio, and ends the session when the turn
+   * finalises. `next` is the turn's accumulated text so far.
+   */
+  private driveTtsStream(key: string, next: string, done: boolean): void {
+    if (!this.ttsStreamer) return;
+    // A new output item means the previous turn is over (turns are
+    // sequential); end its session defensively if it somehow lingered, and
+    // open a fresh one pinned to this item.
+    if (this.ttsStreamItemId !== key) {
+      if (this.ttsStream) this.ttsStream.end();
+      this.openTtsStream(key);
+    }
+    if (!this.ttsStream) return;
+    const newText = next.slice(this.ttsStreamPushed);
+    if (newText.length > 0) {
+      this.ttsStream.pushText(newText);
+      this.ttsStreamPushed = next.length;
+      // A terminator in the just-arrived text means a sentence just
+      // completed — flush so ElevenLabs voices it now instead of waiting
+      // for its chunk schedule to fill.
+      if (/[.!?…]/.test(newText)) this.ttsStream.flush();
+    }
+    if (done && this.ttsStream) {
+      // Signal end-of-text but KEEP the session reference: the engine is
+      // still streaming this turn's audio back. The session releases itself
+      // via `onDone` (see openTtsStream) once the audio is fully delivered.
+      this.ttsStream.end();
+    }
+  }
+
+  /** Open a streaming session for one agent turn and wire its callbacks. */
+  private openTtsStream(itemId: string): void {
+    if (!this.ttsStreamer) return;
+    this.ttsStreamItemId = itemId;
+    this.ttsStreamPushed = 0;
+    const session = this.ttsStreamer.openSession({
+      onFrame: (frame) => {
+        // Drop frames once this session has been replaced or aborted so we
+        // never talk over a newer turn or a barged-in caller.
+        if (this.ttsStream !== session) return;
+        this.sink.writeAudioBase64(frame);
+      },
+      onError: (err) => {
+        // Drop the session but KEEP `ttsStreamItemId` so the rest of this
+        // (now voice-less) turn's deltas are ignored rather than reopening
+        // a fresh session and re-speaking from the top.
+        if (this.ttsStream === session) this.clearTtsStreamRef();
+        // A failed turn loses its audio but must NOT end the call.
+        this.emit("session.error", {
+          source: "tts",
+          code: "tts_stream_failed",
+          message: err.message,
+        });
+      },
+      onDone: () => {
+        // Natural completion — the turn is fully over, so forget the item
+        // id too; the next turn (new id, or the synthetic fallback key)
+        // opens a fresh session.
+        if (this.ttsStream === session) this.resetTtsStream();
+      },
+    });
+    this.ttsStream = session;
+  }
+
+  /** Drop the active session reference but remember which item it voiced. */
+  private clearTtsStreamRef(): void {
+    this.ttsStream = null;
+  }
+
+  /** Drop the session AND forget the item — a turn fully completed. */
+  private resetTtsStream(): void {
+    this.ttsStream = null;
+    this.ttsStreamItemId = null;
+    this.ttsStreamPushed = 0;
+  }
+
+  /**
+   * Caller interrupted while a streaming session was playing: abort it (the
+   * session goes silent immediately) and flush whatever Twilio has buffered
+   * so the agent stops mid-word. Keep `ttsStreamItemId` so any in-flight
+   * deltas for the interrupted turn are ignored — never re-opened and
+   * re-spoken over the caller.
+   */
+  private bargeInStream(): void {
+    if (this.ttsStream) {
+      this.ttsStream.abort();
+      this.clearTtsStreamRef();
+    }
+    this.sink.clearQueuedAudio?.();
+  }
+
+  // ---- Per-utterance external TTS (ElevenLabs HTTP) -------------------
 
   /**
    * Stream complete sentences from an in-progress agent turn to the TTS
