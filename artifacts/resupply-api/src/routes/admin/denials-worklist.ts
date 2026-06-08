@@ -132,6 +132,86 @@ const RESOLVED_REVIEW_STATES = new Set([
   "accepted_written_off",
 ]);
 
+/**
+ * Load + shape the actionable denied-claim inputs (denied claims joined
+ * to their latest denial analysis, minus already-resolved ones). Shared
+ * by the denials worklist route and the billing action-queue roll-up so
+ * both read the same source of truth. Returns a discriminated result so
+ * callers preserve their own error responses.
+ */
+export async function loadDenialInputs(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+): Promise<
+  { ok: true; inputs: DenialClaimInput[] } | { ok: false; message: string }
+> {
+  const { data: claims, error } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select(
+      "id, patient_id, payer_name, total_billed_cents, total_paid_cents, denial_reason, decision_at",
+    )
+    .eq("status", "denied")
+    .order("decision_at", { ascending: false })
+    .limit(500);
+  if (error) return { ok: false, message: error.message };
+  const claimRows = (claims ?? []) as Array<Record<string, unknown>>;
+  const claimIds = claimRows
+    .map((c) => (typeof c.id === "string" ? c.id : null))
+    .filter((v): v is string => v != null);
+
+  // Latest analysis per claim (rows newest-first → first seen wins).
+  const analysisByClaim = new Map<string, Record<string, unknown>>();
+  if (claimIds.length > 0) {
+    const { data: analyses, error: aErr } = await supabase
+      .schema("resupply")
+      .from("claim_denial_analyses")
+      .select(
+        "claim_id, confidence, recommendation, can_auto_resubmit, review_status, created_at",
+      )
+      .in("claim_id", claimIds)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (aErr) return { ok: false, message: aErr.message };
+    for (const a of (analyses ?? []) as Array<Record<string, unknown>>) {
+      const cid = typeof a.claim_id === "string" ? a.claim_id : "";
+      if (cid && !analysisByClaim.has(cid)) analysisByClaim.set(cid, a);
+    }
+  }
+
+  const inputs: DenialClaimInput[] = [];
+  for (const c of claimRows) {
+    const id = typeof c.id === "string" ? c.id : "";
+    if (id === "") continue;
+    const analysis = analysisByClaim.get(id);
+    const reviewStatus = analysis ? String(analysis.review_status ?? "") : "";
+    // Skip denials already resolved (resubmitted / appealed / written off).
+    if (RESOLVED_REVIEW_STATES.has(reviewStatus)) continue;
+
+    const billed =
+      typeof c.total_billed_cents === "number" ? c.total_billed_cents : 0;
+    const paid =
+      typeof c.total_paid_cents === "number" ? c.total_paid_cents : 0;
+    inputs.push({
+      claimId: id,
+      patientId: typeof c.patient_id === "string" ? c.patient_id : "",
+      payerName: typeof c.payer_name === "string" ? c.payer_name : null,
+      recoverableCents: billed - paid,
+      confidence:
+        analysis && typeof analysis.confidence === "number"
+          ? analysis.confidence
+          : null,
+      recommendation: analysis
+        ? ((analysis.recommendation as DenialRecommendation | null) ?? null)
+        : null,
+      canAutoResubmit: analysis ? analysis.can_auto_resubmit === true : false,
+      denialReason:
+        typeof c.denial_reason === "string" ? c.denial_reason : null,
+      decisionAt: typeof c.decision_at === "string" ? c.decision_at : null,
+    });
+  }
+  return { ok: true, inputs };
+}
+
 const querySchema = z
   .object({ limit: z.coerce.number().int().min(1).max(500).optional() })
   .strip();
@@ -146,79 +226,13 @@ router.get(
     const limit = parsed.success ? (parsed.data.limit ?? 200) : 200;
 
     const supabase = getSupabaseServiceRoleClient();
-    const { data: claims, error } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .select(
-        "id, patient_id, payer_name, total_billed_cents, total_paid_cents, denial_reason, decision_at",
-      )
-      .eq("status", "denied")
-      .order("decision_at", { ascending: false })
-      .limit(500);
-    if (error) {
-      res.status(500).json({ error: "query_failed", message: error.message });
+    const loaded = await loadDenialInputs(supabase);
+    if (!loaded.ok) {
+      res.status(500).json({ error: "query_failed", message: loaded.message });
       return;
     }
-    const claimRows = (claims ?? []) as Array<Record<string, unknown>>;
-    const claimIds = claimRows
-      .map((c) => (typeof c.id === "string" ? c.id : null))
-      .filter((v): v is string => v != null);
 
-    // Latest analysis per claim (rows newest-first → first seen wins).
-    const analysisByClaim = new Map<string, Record<string, unknown>>();
-    if (claimIds.length > 0) {
-      const { data: analyses, error: aErr } = await supabase
-        .schema("resupply")
-        .from("claim_denial_analyses")
-        .select(
-          "claim_id, confidence, recommendation, can_auto_resubmit, review_status, created_at",
-        )
-        .in("claim_id", claimIds)
-        .order("created_at", { ascending: false })
-        .limit(2000);
-      if (aErr) {
-        res.status(500).json({ error: "query_failed", message: aErr.message });
-        return;
-      }
-      for (const a of (analyses ?? []) as Array<Record<string, unknown>>) {
-        const cid = typeof a.claim_id === "string" ? a.claim_id : "";
-        if (cid && !analysisByClaim.has(cid)) analysisByClaim.set(cid, a);
-      }
-    }
-
-    const inputs: DenialClaimInput[] = [];
-    for (const c of claimRows) {
-      const id = typeof c.id === "string" ? c.id : "";
-      if (id === "") continue;
-      const analysis = analysisByClaim.get(id);
-      const reviewStatus = analysis ? String(analysis.review_status ?? "") : "";
-      // Skip denials already resolved (resubmitted / appealed / written off).
-      if (RESOLVED_REVIEW_STATES.has(reviewStatus)) continue;
-
-      const billed =
-        typeof c.total_billed_cents === "number" ? c.total_billed_cents : 0;
-      const paid =
-        typeof c.total_paid_cents === "number" ? c.total_paid_cents : 0;
-      inputs.push({
-        claimId: id,
-        patientId: typeof c.patient_id === "string" ? c.patient_id : "",
-        payerName: typeof c.payer_name === "string" ? c.payer_name : null,
-        recoverableCents: billed - paid,
-        confidence:
-          analysis && typeof analysis.confidence === "number"
-            ? analysis.confidence
-            : null,
-        recommendation: analysis
-          ? ((analysis.recommendation as DenialRecommendation | null) ?? null)
-          : null,
-        canAutoResubmit: analysis ? analysis.can_auto_resubmit === true : false,
-        denialReason:
-          typeof c.denial_reason === "string" ? c.denial_reason : null,
-        decisionAt: typeof c.decision_at === "string" ? c.decision_at : null,
-      });
-    }
-
-    const worklist = rankDenialWorklist(inputs);
+    const worklist = rankDenialWorklist(loaded.inputs);
     res.json({
       items: worklist.items.slice(0, limit),
       totals: worklist.totals,
