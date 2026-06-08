@@ -214,46 +214,68 @@ export async function runMaintenanceNudgeSweep(
     fromName: cfg.sendgridFromName,
   });
   const asOfDate = new Date();
-  const cutoff = new Date(Date.now() - QUIET_PERIOD_MS).toISOString();
+
+  // Batch the per-task last-completion read. The prior loop issued one
+  // full `patient_maintenance_log` read per patient (N+1); a naive
+  // `.in()` would instead pull every log row for every patient (years of
+  // history) and risk truncation. The patient_maintenance_latest_by_task
+  // RPC (mig 0232) returns one row per (patient, task) — at most patients
+  // × the small fixed task catalog — so we fetch in chunks of 100
+  // patient_ids and index by patient. Patients already filtered by the
+  // in-memory quiet guard are excluded so we don't fetch logs we'll skip.
+  const eligibleForLog = patients
+    .map((p) => p.id)
+    .filter((id) => !recentlyNudgedIds.has(id));
+  const logByPatient = new Map<string, Map<string, string>>();
+  for (let i = 0; i < eligibleForLog.length; i += 100) {
+    const idChunk = eligibleForLog.slice(i, i + 100);
+    const { data: logRows, error: logBatchErr } = await supabase
+      .schema("resupply")
+      .rpc("patient_maintenance_latest_by_task", { p_patient_ids: idChunk });
+    if (logBatchErr) throw logBatchErr;
+    for (const r of (logRows ?? []) as Array<{
+      patient_id: string;
+      task_key: string;
+      completed_at: string;
+    }>) {
+      if (!r.patient_id || !r.task_key) continue;
+      let m = logByPatient.get(r.patient_id);
+      if (!m) {
+        m = new Map<string, string>();
+        logByPatient.set(r.patient_id, m);
+      }
+      // The RPC already returns the latest row per (patient, task); keep
+      // the first seen as a defensive guard against any duplicate.
+      if (!m.has(r.task_key)) m.set(r.task_key, r.completed_at);
+    }
+  }
 
   for (const patient of patients) {
     stats.scanned += 1;
 
-    // Quiet-period check first — cheapest filter.
-    const { data: lastNudge } = await supabase
-      .schema("resupply")
-      .from("patient_maintenance_nudges")
-      .select("id")
-      .eq("patient_id", patient.id)
-      .gte("sent_at", cutoff)
-      .limit(1)
-      .maybeSingle();
-    if (lastNudge) {
+    // Quiet-period guard, now in-memory. `recentlyNudgedIds` was built
+    // above from the SAME quiet-period cutoff, so the prior per-patient
+    // `patient_maintenance_nudges` read just re-derived a fact we already
+    // hold — a textbook N+1. In the normal path these ids were already
+    // excluded from the candidate query, so this rarely fires; it still
+    // matters in the >5000-recently-nudged escape case, where the
+    // candidate query skips the NOT-IN exclusion (unbounded-URL guard)
+    // and this Set is the only remaining quiet guard.
+    if (recentlyNudgedIds.has(patient.id)) {
       stats.skippedQuiet += 1;
       continue;
     }
 
-    // Per-task last-completion. Same shape as /shop/me/maintenance.
-    const { data: log, error: logErr } = await supabase
-      .schema("resupply")
-      .from("patient_maintenance_log")
-      .select("task_key, completed_at")
-      .eq("patient_id", patient.id)
-      .order("completed_at", { ascending: false });
-    if (logErr) {
-      stats.errors += 1;
-      continue;
-    }
-    const latest = new Map<string, string>();
-    for (const r of log ?? []) {
-      if (!latest.has(r.task_key)) latest.set(r.task_key, r.completed_at);
-    }
+    // Per-task last-completion, from the pre-fetched batch.
+    const latest = logByPatient.get(patient.id) ?? new Map<string, string>();
 
     // Build the overdue list. We only nudge for tasks the patient
     // has STARTED — pure-new patients see the checklist on /account
     // but don't get an email until they've engaged with at least
-    // one task. Avoids "welcome to PennFit, here are 5 chores."
-    const hasEngaged = (log ?? []).length > 0;
+    // one task. Avoids "welcome to PennFit, here are 5 chores." A
+    // patient with no completion rows is absent from the batch (empty
+    // map) → treated as not-yet-engaged, exactly as before.
+    const hasEngaged = latest.size > 0;
     if (!hasEngaged) {
       stats.skippedNoOverdue += 1;
       continue;

@@ -1,6 +1,15 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 import { shiftDateUtc, buildAlertMessage } from "./metric-alerts-evaluator";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(
+  path.join(__dirname, "metric-alerts-evaluator.ts"),
+  "utf8",
+);
 
 describe("shiftDateUtc", () => {
   it("subtracts 7 days across a month boundary", () => {
@@ -57,5 +66,28 @@ describe("buildAlertMessage", () => {
     });
     expect(m).toContain("changed -20.0% week-over-week");
     expect(m).toContain("now $80.00, was $100.00");
+  });
+});
+
+// Source-pinned guard for the latest-snapshot batching (2026-06-05
+// performance review §2 MEDIUM). The prior loop issued one ordered
+// limit-1 read per threshold plus a per-threshold baseline read (N+1).
+// Latest-per-key now comes from the metrics_daily_latest RPC (mig 0232)
+// and the delta baselines come from a single bounded `.in()`.
+describe("runMetricAlertsEvaluator — snapshot reads are batched", () => {
+  it("uses the metrics_daily_latest RPC and reads latest from the map", () => {
+    expect(SRC).toContain('.rpc("metrics_daily_latest"');
+    expect(SRC).toContain("latestByKey.get(metricKey)");
+  });
+
+  it("does not re-introduce a per-threshold latest read inside the loop", () => {
+    expect(SRC).not.toMatch(
+      /\.from\("metrics_daily"\)\s*\.select\("metric_date, metric_value, unit"\)\s*\.eq\("metric_key", metricKey\)/,
+    );
+  });
+
+  it("batches the delta-mode baselines in one .in() over key + date", () => {
+    expect(SRC).toContain('.in("metric_key", Array.from(deltaKeys))');
+    expect(SRC).toContain('.in("metric_date", Array.from(baselineDates))');
   });
 });
