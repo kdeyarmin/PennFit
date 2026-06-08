@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS "resupply"."patient_payment_plan_installments" (
   "paid_at" timestamp with time zone,
   "patient_payment_id" uuid REFERENCES "resupply"."patient_payments"("id"),
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT "ppp_installments_amount_chk" CHECK ("amount_cents" >= 0),
+  CONSTRAINT "ppp_installments_amount_chk" CHECK ("amount_cents" > 0),
   CONSTRAINT "ppp_installments_seq_chk" CHECK ("seq" > 0),
   CONSTRAINT "ppp_installments_status_chk"
     CHECK ("status" IN ('scheduled', 'paid', 'overdue', 'waived')),
