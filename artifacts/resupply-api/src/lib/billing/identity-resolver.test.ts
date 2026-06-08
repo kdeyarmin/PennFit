@@ -263,4 +263,22 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     expect(result.realtimeConfig?.receiverId).toBe("RCV");
     expect(result.realtimeConfig?.timeoutMs).toBe(9000);
   });
+
+  it("prefers the DB row's stored password over the env var", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...REALTIME_ROW, realtime_password: "dbsecret" },
+    });
+    const result = await resolveClearinghouse({
+      env: { OFFICE_ALLY_REALTIME_PASSWORD: "envsecret" },
+    });
+    expect(result.realtimeConfig?.password).toBe("dbsecret");
+  });
+
+  it("uses the DB row's stored password when no env password is set", async () => {
+    stageSupabaseResponse("clearinghouse_credentials", "select", {
+      data: { ...REALTIME_ROW, realtime_password: "dbsecret" },
+    });
+    const result = await resolveClearinghouse({ env: {} });
+    expect(result.realtimeConfig?.password).toBe("dbsecret");
+  });
 });

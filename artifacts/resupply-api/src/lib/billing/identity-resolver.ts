@@ -197,10 +197,15 @@ function buildRealtimeConfig(
   // Stub mode means "don't transmit anywhere" — honor it here too.
   if (env.OFFICE_ALLY_STUB === "1") return null;
   if (row?.realtime_enabled && row.realtime_url && row.realtime_username) {
-    // The password is the one out-of-band secret — never stored in the
-    // DB (mirrors the SFTP key file). Without it real-time can't run, so
-    // fall through to the env path below.
-    const password = env.OFFICE_ALLY_REALTIME_PASSWORD;
+    // Password precedence: the DB row's stored password wins (used as-is),
+    // with the OFFICE_ALLY_REALTIME_PASSWORD env var as a fallback
+    // (dev/preview). A blank stored value counts as "unset". Without
+    // either, real-time can't run, so fall through to the env path.
+    const dbPassword = row.realtime_password;
+    const password =
+      dbPassword && dbPassword.trim().length > 0
+        ? dbPassword
+        : env.OFFICE_ALLY_REALTIME_PASSWORD;
     if (password) {
       return {
         url: row.realtime_url,
@@ -251,7 +256,7 @@ async function loadClearinghouse(
     .schema("resupply")
     .from("clearinghouse_credentials")
     .select(
-      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, created_at, updated_at",
+      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, created_at, updated_at",
     )
     .eq("slug", slug)
     .eq("is_active", true)

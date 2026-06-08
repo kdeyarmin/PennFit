@@ -79,6 +79,10 @@ const upsertBody = z
       .max(120000)
       .nullable()
       .optional(),
+    // Write-only: stored on the row, never echoed back (GET exposes only
+    // `realtimePasswordSet`). On PATCH, a blank/omitted value leaves the
+    // existing password unchanged.
+    realtimePassword: z.string().max(500).nullable().optional(),
   })
   .strict();
 const patchBody = upsertBody.partial();
@@ -111,6 +115,8 @@ function rowToApi(r: Row) {
     realtimeSenderId: r.realtime_sender_id,
     realtimeReceiverId: r.realtime_receiver_id,
     realtimeTimeoutMs: r.realtime_timeout_ms,
+    // Never echo the stored password — only whether one is set.
+    realtimePasswordSet: Boolean(r.realtime_password),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -204,6 +210,7 @@ router.post(
         realtime_sender_id: b.realtimeSenderId ?? null,
         realtime_receiver_id: b.realtimeReceiverId ?? null,
         realtime_timeout_ms: b.realtimeTimeoutMs ?? null,
+        realtime_password: b.realtimePassword || null,
       })
       .select("id")
       .single();
@@ -302,6 +309,9 @@ router.patch(
       update.realtime_receiver_id = b.realtimeReceiverId;
     if (b.realtimeTimeoutMs !== undefined)
       update.realtime_timeout_ms = b.realtimeTimeoutMs;
+    // Only overwrite the password when a non-empty value is supplied;
+    // a blank/omitted field leaves the stored password unchanged.
+    if (b.realtimePassword) update.realtime_password = b.realtimePassword;
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase
       .schema("resupply")

@@ -293,14 +293,10 @@ export function AdminBillingConfigClearinghousePage() {
         <p className="text-sm mb-3" style={{ color: "hsl(var(--ink-3))" }}>
           Optional. When enabled, an eligibility check returns the 271 inline
           (seconds) instead of submitting over SFTP and waiting for the poll
-          (minutes). The{" "}
-          <strong>
-            password is set via the <code>OFFICE_ALLY_REALTIME_PASSWORD</code>{" "}
-            environment variable
-          </strong>{" "}
-          — never stored here, like the SSH key. Confirm the endpoint + auth
-          against Office Ally&rsquo;s real-time companion guide before enabling
-          in production.
+          (minutes). Enter the password below (stored on the connection) or set{" "}
+          <code>OFFICE_ALLY_REALTIME_PASSWORD</code> — the saved value is never
+          shown back. Confirm the endpoint + auth against Office Ally&rsquo;s
+          real-time companion guide before enabling in production.
         </p>
         <label className="flex items-center gap-2 text-sm mb-3">
           <input
@@ -312,7 +308,7 @@ export function AdminBillingConfigClearinghousePage() {
             }}
           />
           <span style={{ color: "hsl(var(--ink-2))" }}>
-            Enabled (use real-time when the password env is set)
+            Enabled (use real-time for eligibility)
           </span>
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -335,6 +331,32 @@ export function AdminBillingConfigClearinghousePage() {
                   ...p,
                   realtimeTimeoutMs:
                     raw === "" || !Number.isFinite(n) ? null : n,
+                }));
+              }}
+            />
+          </label>
+          <label className="block text-sm">
+            <span style={{ color: "hsl(var(--ink-2))" }}>
+              Password{" "}
+              {existing?.realtimePasswordSet
+                ? "(saved — leave blank to keep)"
+                : "(or set via env)"}
+            </span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              className="mt-1 w-full rounded-md border px-2.5 py-1.5 text-sm"
+              style={INPUT_STYLE}
+              value={body.realtimePassword ?? ""}
+              placeholder={
+                existing?.realtimePasswordSet ? "•••••••• (unchanged)" : ""
+              }
+              onChange={(e) => {
+                setSaved(false);
+                const v = e.target.value;
+                setBody((p) => ({
+                  ...p,
+                  realtimePassword: v === "" ? null : v,
                 }));
               }}
             />

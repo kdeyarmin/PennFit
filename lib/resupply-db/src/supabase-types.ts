@@ -2705,6 +2705,7 @@ export interface Database {
           realtime_sender_id: string | null;
           realtime_receiver_id: string | null;
           realtime_timeout_ms: number | null;
+          realtime_password: string | null;
           created_at: string;
           updated_at: string;
         };

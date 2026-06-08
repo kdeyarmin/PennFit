@@ -125,6 +125,7 @@ const fakeRow = {
   realtime_sender_id: null,
   realtime_receiver_id: null,
   realtime_timeout_ms: 30000,
+  realtime_password: "rt_secret",
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
 };
@@ -240,6 +241,10 @@ describe("GET /admin/clearinghouse-credentials — requirePermission('admin.tool
     expect(ch).toHaveProperty("realtimeEnabled", true);
     expect(ch).toHaveProperty("realtimeUrl", "https://oa.example/realtime");
     expect(ch).toHaveProperty("realtimeUsername", "rt_user");
+    // The stored password is surfaced only as a boolean — never echoed.
+    expect(ch).toHaveProperty("realtimePasswordSet", true);
+    expect(ch).not.toHaveProperty("realtimePassword");
+    expect(JSON.stringify(ch)).not.toContain("rt_secret");
   });
 });
 

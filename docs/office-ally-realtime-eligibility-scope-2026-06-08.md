@@ -129,14 +129,15 @@ Extend `readOfficeAllyConfigOrNull()` (or a sibling
 `readOfficeAllyRealtimeConfigOrNull()`) with the same "all-or-null"
 semantics — partial config → null → fall back to SFTP.
 
-**Implemented:** the non-secret fields (URL, username, sender/receiver
-IDs, timeout, on/off) are also stored on `clearinghouse_credentials`
-(migration `0238`) and editable in the admin console (Billing → Config →
-Clearinghouse). `resolveClearinghouse()` returns a `realtimeConfig` built
-from the DB row + the env password, falling back to the fully-env path.
-The **password is never stored in the DB** — it stays
-`OFFICE_ALLY_REALTIME_PASSWORD`, mirroring how the SFTP key bytes are
-provisioned out of band (honors the "no column-level encryption" rule).
+**Implemented:** the real-time fields (URL, username, sender/receiver IDs,
+timeout, on/off, **and password**) are stored on `clearinghouse_credentials`
+(migrations `0238` + `0239`) and editable in the admin console (Billing →
+Config → Clearinghouse). `resolveClearinghouse()` returns a `realtimeConfig`
+built from the DB row, with the password preferring the DB value and falling
+back to `OFFICE_ALLY_REALTIME_PASSWORD`. The password is **write-only over
+the API** (GET exposes only a `realtimePasswordSet` boolean) and never
+logged. Note: a DB-stored password is plaintext (service-role readable) —
+the env var remains available to keep the secret out of the database.
 
 ### 4. Verifier branch (synchronous path)
 

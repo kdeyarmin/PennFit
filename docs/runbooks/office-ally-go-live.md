@@ -125,26 +125,29 @@ the SFTP key**.
 - **A. Admin console (recommended).** On **Billing → Config →
   Clearinghouse connection** there is a **Real-time eligibility (270/271)**
   card: an **Enabled** toggle, endpoint URL, username, CORE sender/receiver
-  IDs, and timeout. These non-secret fields are saved to the
-  `clearinghouse_credentials` row. **The password is NOT entered here** —
-  it stays the `OFFICE_ALLY_REALTIME_PASSWORD` environment secret, exactly
-  like the SSH key file. So enabling real-time = save the card **and** set
-  that one env var.
+  IDs, timeout, and **password**. All of these are saved to the
+  `clearinghouse_credentials` row. The password field is write-only — the
+  saved value is never shown back (GET returns only "set / not set"); leave
+  it blank on edit to keep the current password.
 - **B. Environment variables** (dev / preview, or no seeded DB row): set
   all of `OFFICE_ALLY_REALTIME_URL`, `_USERNAME`, `_PASSWORD` (plus the
   optional `_SENDER_ID` / `_RECEIVER_ID` / `_TIMEOUT_MS`).
 
-The resolver prefers the **DB row's** real-time fields (combined with the
-env password) and falls back to the **fully-env** path.
+The resolver prefers the **DB row's** real-time fields; the **password**
+specifically uses the DB value when set and falls back to
+`OFFICE_ALLY_REALTIME_PASSWORD`. (Security note: a DB-stored password is
+held in **plaintext**, readable by the service-role client — unlike the
+SFTP key, which stays a file path. Prefer the env var if you'd rather keep
+the secret out of the database.)
 
-| Variable                           | Notes                                                             |
-| ---------------------------------- | ----------------------------------------------------------------- |
-| `OFFICE_ALLY_REALTIME_PASSWORD`    | **The one secret — always env.** Required for either config path. |
-| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint (or set in the admin card)         |
-| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username (or set in the admin card)         |
-| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)                            |
-| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`)                   |
-| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)                      |
+| Variable                           | Notes                                                                       |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `OFFICE_ALLY_REALTIME_PASSWORD`    | Password — DB value wins, this is the fallback. One of the two is required. |
+| `OFFICE_ALLY_REALTIME_URL`         | Real-time eligibility endpoint (or set in the admin card)                   |
+| `OFFICE_ALLY_REALTIME_USERNAME`    | Real-time web-service username (or set in the admin card)                   |
+| `OFFICE_ALLY_REALTIME_SENDER_ID`   | Optional CORE SenderID (default: ETIN)                                      |
+| `OFFICE_ALLY_REALTIME_RECEIVER_ID` | Optional CORE ReceiverID (default `OFFICEALLY`)                             |
+| `OFFICE_ALLY_REALTIME_TIMEOUT_MS`  | Optional per-request timeout (default 30000)                                |
 
 **Before going live, confirm against Office Ally's real-time companion
 guide:** the exact endpoint URL, the `SOAPAction`/auth placement, the
