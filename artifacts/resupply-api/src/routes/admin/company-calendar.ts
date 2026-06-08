@@ -43,10 +43,20 @@ const EVENT_TYPES = [
   "other",
 ] as const;
 
+// Lifecycle of an appointment. Kept in lock-step with the DB CHECK
+// constraint in 0242_company_calendar_events.sql.
+const EVENT_STATUSES = [
+  "scheduled",
+  "completed",
+  "canceled",
+  "no_show",
+] as const;
+
 const createBody = z
   .object({
     patientId: z.string().uuid(),
     eventType: z.enum(EVENT_TYPES),
+    status: z.enum(EVENT_STATUSES).optional(),
     startsAt: z.string().datetime(),
     endsAt: z.string().datetime(),
     location: z.string().trim().max(300).optional(),
@@ -61,6 +71,7 @@ const patchBody = z
   .object({
     patientId: z.string().uuid().optional(),
     eventType: z.enum(EVENT_TYPES).optional(),
+    status: z.enum(EVENT_STATUSES).optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
     location: z.string().trim().max(300).nullable().optional(),
@@ -92,7 +103,7 @@ router.get("/admin/company-calendar", requireAdmin, async (req, res) => {
     .schema("resupply")
     .from("company_calendar_events")
     .select(
-      "id, patient_id, event_type, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, created_at, updated_at",
+      "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, created_at, updated_at",
     )
     .lt("starts_at", to)
     .gt("ends_at", from)
@@ -134,6 +145,7 @@ router.get("/admin/company-calendar", requireAdmin, async (req, res) => {
         patientFirstName: pt?.firstName ?? null,
         patientLastName: pt?.lastName ?? null,
         eventType: r.event_type,
+        status: r.status,
         startsAt: r.starts_at,
         endsAt: r.ends_at,
         location: r.location,
@@ -170,6 +182,7 @@ router.post(
       .insert({
         patient_id: parsed.data.patientId,
         event_type: parsed.data.eventType,
+        status: parsed.data.status ?? "scheduled",
         starts_at: parsed.data.startsAt,
         ends_at: parsed.data.endsAt,
         location: parsed.data.location ?? null,
@@ -220,6 +233,7 @@ router.patch(
       update.patient_id = parsed.data.patientId;
     if (parsed.data.eventType != null)
       update.event_type = parsed.data.eventType;
+    if (parsed.data.status != null) update.status = parsed.data.status;
     if (parsed.data.startsAt != null) update.starts_at = parsed.data.startsAt;
     if (parsed.data.endsAt != null) update.ends_at = parsed.data.endsAt;
     if (parsed.data.location !== undefined)

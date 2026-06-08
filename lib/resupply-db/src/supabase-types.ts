@@ -3404,6 +3404,7 @@ export interface Database {
             | "follow_up"
             | "consultation"
             | "other";
+          status: "scheduled" | "completed" | "canceled" | "no_show";
           starts_at: string;
           ends_at: string;
           location: string | null;

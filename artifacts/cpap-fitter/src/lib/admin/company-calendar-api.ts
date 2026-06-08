@@ -13,12 +13,19 @@ export type CalendarEventType =
   | "consultation"
   | "other";
 
+export type CalendarEventStatus =
+  | "scheduled"
+  | "completed"
+  | "canceled"
+  | "no_show";
+
 export interface CompanyCalendarEvent {
   id: string;
   patientId: string;
   patientFirstName: string | null;
   patientLastName: string | null;
   eventType: CalendarEventType;
+  status: CalendarEventStatus;
   startsAt: string;
   endsAt: string;
   location: string | null;
@@ -32,6 +39,7 @@ export interface CompanyCalendarEvent {
 export interface CalendarEventInput {
   patientId: string;
   eventType: CalendarEventType;
+  status?: CalendarEventStatus;
   startsAt: string;
   endsAt: string;
   location?: string | null;

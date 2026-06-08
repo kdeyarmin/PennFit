@@ -2,17 +2,22 @@
 //
 // Any signed-in team member can place patient appointments (virtual /
 // in-person fittings & setups, follow-ups, consultations) on a month grid
-// that the whole company sees. Distinct from /admin/appointment-requests
-// (the inbound, patient-initiated triage queue) — these are the confirmed,
+// that the whole company sees, track each one through its lifecycle
+// (scheduled → completed / canceled / no-show), filter by type or owner,
+// and drill into a day. Distinct from /admin/appointment-requests (the
+// inbound, patient-initiated triage queue) — these are the confirmed,
 // scheduled events.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   MapPin,
+  Pencil,
   Plus,
   Trash2,
   X,
@@ -20,9 +25,11 @@ import {
 
 import {
   getListPatientsQueryKey,
+  useGetAdminMe,
   useListPatients,
 } from "@workspace/api-client-react/admin";
 
+import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Input } from "@/components/admin/Input";
@@ -31,6 +38,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { fullName } from "@/lib/admin/format";
 import {
+  type CalendarEventStatus,
   type CalendarEventType,
   type CompanyCalendarEvent,
   createCalendarEvent,
@@ -93,6 +101,31 @@ const EVENT_TYPE_META: Record<
   },
 };
 
+type BadgeVariant =
+  | "neutral"
+  | "info"
+  | "success"
+  | "warning"
+  | "danger"
+  | "muted";
+
+const STATUS_ORDER: readonly CalendarEventStatus[] = [
+  "scheduled",
+  "completed",
+  "no_show",
+  "canceled",
+];
+
+const STATUS_META: Record<
+  CalendarEventStatus,
+  { label: string; variant: BadgeVariant }
+> = {
+  scheduled: { label: "Scheduled", variant: "info" },
+  completed: { label: "Completed", variant: "success" },
+  no_show: { label: "No-show", variant: "warning" },
+  canceled: { label: "Canceled", variant: "muted" },
+};
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 // ── Date helpers ─────────────────────────────────────────────────
@@ -105,6 +138,10 @@ function dateKey(d: Date): string {
 
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 // A fixed 6-week (42-cell) grid so the layout never jumps month to month.
@@ -141,9 +178,32 @@ function timeLabel(iso: string): string {
   });
 }
 
+function rangeLabel(startIso: string, endIso: string): string {
+  return `${timeLabel(startIso)} – ${timeLabel(endIso)}`;
+}
+
+function durationLabel(startIso: string, endIso: string): string {
+  const min = Math.max(
+    0,
+    Math.round(
+      (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000,
+    ),
+  );
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 const MONTH_FMT = new Intl.DateTimeFormat([], {
   month: "long",
   year: "numeric",
+});
+
+const DAY_FMT = new Intl.DateTimeFormat([], {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
 });
 
 type SelectedPatient = { id: string; firstName: string; lastName: string };
@@ -152,12 +212,24 @@ type EditorState =
   | { mode: "create"; date: Date }
   | { mode: "edit"; event: CompanyCalendarEvent };
 
+const CALENDAR_KEY = ["admin", "company-calendar"] as const;
+
 // ── Page ─────────────────────────────────────────────────────────
 export function AdminCompanyCalendarPage() {
   const [viewDate, setViewDate] = useState<Date>(() =>
     startOfMonth(new Date()),
   );
+  const [selectedDay, setSelectedDay] = useState<Date>(() =>
+    startOfDay(new Date()),
+  );
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [hiddenTypes, setHiddenTypes] = useState<
+    ReadonlySet<CalendarEventType>
+  >(() => new Set());
+  const [onlyMine, setOnlyMine] = useState(false);
+
+  const me = useGetAdminMe();
+  const myUserId = me.data?.userId ?? null;
 
   const grid = useMemo(() => buildMonthGrid(viewDate), [viewDate]);
   const rangeFromIso = grid[0].toISOString();
@@ -168,8 +240,7 @@ export function AdminCompanyCalendarPage() {
   ).toISOString();
 
   const queryKey = [
-    "admin",
-    "company-calendar",
+    ...CALENDAR_KEY,
     viewDate.getFullYear(),
     viewDate.getMonth(),
   ] as const;
@@ -178,19 +249,48 @@ export function AdminCompanyCalendarPage() {
     queryFn: () => listCompanyCalendar(rangeFromIso, rangeToIso),
   });
 
+  const filtered = useMemo(() => {
+    return (data?.events ?? []).filter(
+      (e) =>
+        !hiddenTypes.has(e.eventType) &&
+        (!onlyMine || e.createdByUserId === myUserId),
+    );
+  }, [data, hiddenTypes, onlyMine, myUserId]);
+
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CompanyCalendarEvent[]>();
-    for (const ev of data?.events ?? []) {
+    for (const ev of filtered) {
       const k = dateKey(new Date(ev.startsAt));
       const arr = map.get(k);
       if (arr) arr.push(ev);
       else map.set(k, [ev]);
     }
     return map;
-  }, [data]);
+  }, [filtered]);
 
   const todayKey = dateKey(new Date());
   const viewMonth = viewDate.getMonth();
+  const selectedKey = dateKey(selectedDay);
+  const selectedEvents = eventsByDay.get(selectedKey) ?? [];
+
+  function goToMonth(offset: number) {
+    const next = new Date(viewDate.getFullYear(), viewMonth + offset, 1);
+    setViewDate(next);
+    setSelectedDay(next); // 1st of the new month → panel stays in-window
+  }
+  function goToday() {
+    setViewDate(startOfMonth(new Date()));
+    setSelectedDay(startOfDay(new Date()));
+  }
+
+  function toggleType(t: CalendarEventType) {
+    setHiddenTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  }
 
   return (
     <div className="admin-root p-6 space-y-6 max-w-6xl">
@@ -202,7 +302,8 @@ export function AdminCompanyCalendarPage() {
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
           A shared schedule of patient appointments — virtual &amp; in-person
           fittings and setups, follow-ups, and consultations. Everyone on the
-          team can see and edit it. Click any day to add an appointment.
+          team can see and edit it; mark each one completed, canceled, or a
+          no-show as the day unfolds.
         </p>
       </header>
 
@@ -214,9 +315,7 @@ export function AdminCompanyCalendarPage() {
             aria-label="Previous month"
             className="rounded border p-1.5 hover:bg-slate-50"
             style={{ borderColor: "hsl(var(--line-1))" }}
-            onClick={() =>
-              setViewDate(new Date(viewDate.getFullYear(), viewMonth - 1, 1))
-            }
+            onClick={() => goToMonth(-1)}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -228,36 +327,66 @@ export function AdminCompanyCalendarPage() {
             aria-label="Next month"
             className="rounded border p-1.5 hover:bg-slate-50"
             style={{ borderColor: "hsl(var(--line-1))" }}
-            onClick={() =>
-              setViewDate(new Date(viewDate.getFullYear(), viewMonth + 1, 1))
-            }
+            onClick={() => goToMonth(1)}
           >
             <ChevronRight className="h-4 w-4" />
           </button>
-          <Button
-            intent="secondary"
-            size="sm"
-            onClick={() => setViewDate(startOfMonth(new Date()))}
-          >
+          <Button intent="secondary" size="sm" onClick={goToday}>
             Today
           </Button>
+          <span className="ml-1 text-xs text-muted-foreground">
+            {filtered.length}{" "}
+            {filtered.length === 1 ? "appointment" : "appointments"}
+          </span>
         </div>
-        <Button onClick={() => setEditor({ mode: "create", date: new Date() })}>
-          <Plus className="h-4 w-4 mr-1" />
-          New appointment
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setOnlyMine((v) => !v)}
+            aria-pressed={onlyMine}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              onlyMine
+                ? "bg-[hsl(var(--penn-navy))] text-white"
+                : "hover:bg-slate-50"
+            }`}
+            style={onlyMine ? undefined : { borderColor: "hsl(var(--line-1))" }}
+          >
+            Only mine
+          </button>
+          <Button
+            onClick={() => setEditor({ mode: "create", date: selectedDay })}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            New appointment
+          </Button>
+        </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
-        {EVENT_TYPE_ORDER.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1.5">
-            <span
-              className={`inline-block h-2.5 w-2.5 rounded-full ${EVENT_TYPE_META[t].dot}`}
-            />
-            {EVENT_TYPE_META[t].label}
-          </span>
-        ))}
+      {/* Legend — click a type to show/hide it */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+        {EVENT_TYPE_ORDER.map((t) => {
+          const hidden = hiddenTypes.has(t);
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => toggleType(t)}
+              aria-pressed={!hidden}
+              title={hidden ? "Show this type" : "Hide this type"}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 transition-opacity ${
+                hidden ? "opacity-40" : ""
+              }`}
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full ${EVENT_TYPE_META[t].dot}`}
+              />
+              <span className={hidden ? "line-through" : ""}>
+                {EVENT_TYPE_META[t].label}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {isError ? (
@@ -284,61 +413,71 @@ export function AdminCompanyCalendarPage() {
               {grid.map((day) => {
                 const inMonth = day.getMonth() === viewMonth;
                 const isToday = dateKey(day) === todayKey;
+                const isSelected = dateKey(day) === selectedKey;
+                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                 const dayEvents = eventsByDay.get(dateKey(day)) ?? [];
                 return (
                   <div
                     key={dateKey(day)}
                     role="gridcell"
                     className={`group relative min-h-[6.5rem] border-b border-r p-1 ${
-                      inMonth ? "bg-white" : "bg-slate-50/60"
+                      isSelected
+                        ? "bg-[hsl(var(--penn-navy)/0.06)] ring-1 ring-inset ring-[hsl(var(--penn-navy)/0.35)]"
+                        : inMonth
+                          ? isWeekend
+                            ? "bg-slate-50/40"
+                            : "bg-white"
+                          : "bg-slate-50/70"
                     }`}
                     style={{ borderColor: "hsl(var(--line-2))" }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setEditor({ mode: "create", date: day })}
-                      aria-label={`Add appointment on ${day.toLocaleDateString()}`}
-                      className="flex w-full items-center justify-between rounded px-1 py-0.5 hover:bg-slate-100"
-                    >
-                      <span
-                        className={`inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full text-xs ${
-                          isToday
-                            ? "bg-[hsl(var(--penn-navy))] font-semibold text-white"
-                            : inMonth
-                              ? "text-slate-700"
-                              : "text-slate-400"
-                        }`}
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDay(startOfDay(day))}
+                        aria-label={`View ${day.toLocaleDateString()}`}
+                        aria-current={isSelected ? "date" : undefined}
+                        className="rounded px-1 py-0.5 hover:bg-slate-100"
                       >
-                        {day.getDate()}
-                      </span>
-                      <Plus className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                    </button>
-                    <div className="mt-1 space-y-1">
-                      {dayEvents.slice(0, 3).map((ev) => (
-                        <button
-                          key={ev.id}
-                          type="button"
-                          onClick={() => setEditor({ mode: "edit", event: ev })}
-                          title={`${timeLabel(ev.startsAt)} · ${
-                            EVENT_TYPE_META[ev.eventType].label
-                          } · ${fullName(
-                            ev.patientFirstName,
-                            ev.patientLastName,
-                          )}`}
-                          className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-[11px] ${
-                            EVENT_TYPE_META[ev.eventType].chip
+                        <span
+                          className={`inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full text-xs ${
+                            isToday
+                              ? "bg-[hsl(var(--penn-navy))] font-semibold text-white"
+                              : inMonth
+                                ? "text-slate-700"
+                                : "text-slate-400"
                           }`}
                         >
-                          <span className="font-semibold">
-                            {timeLabel(ev.startsAt)}
-                          </span>{" "}
-                          {fullName(ev.patientFirstName, ev.patientLastName)}
-                        </button>
+                          {day.getDate()}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditor({ mode: "create", date: startOfDay(day) })
+                        }
+                        aria-label={`Add appointment on ${day.toLocaleDateString()}`}
+                        className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-slate-100 focus:opacity-100 group-hover:opacity-100"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="mt-1 space-y-1">
+                      {dayEvents.slice(0, 3).map((ev) => (
+                        <EventChip
+                          key={ev.id}
+                          ev={ev}
+                          onClick={() => setEditor({ mode: "edit", event: ev })}
+                        />
                       ))}
                       {dayEvents.length > 3 && (
-                        <div className="px-1 text-[10px] text-muted-foreground">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDay(startOfDay(day))}
+                          className="px-1 text-[10px] font-medium text-muted-foreground hover:underline"
+                        >
                           +{dayEvents.length - 3} more
-                        </div>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -349,14 +488,224 @@ export function AdminCompanyCalendarPage() {
         </div>
       )}
 
-      <UpcomingCard
-        events={data?.events ?? []}
-        isPending={isPending && !isError}
-        onOpen={(ev) => setEditor({ mode: "edit", event: ev })}
-      />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SelectedDayPanel
+          day={selectedDay}
+          events={selectedEvents}
+          isPending={isPending && !isError}
+          onAdd={() => setEditor({ mode: "create", date: selectedDay })}
+          onEdit={(ev) => setEditor({ mode: "edit", event: ev })}
+        />
+        <UpcomingCard
+          events={filtered}
+          isPending={isPending && !isError}
+          onOpen={(ev) => setEditor({ mode: "edit", event: ev })}
+        />
+      </div>
 
       {editor && <EventEditor state={editor} onClose={() => setEditor(null)} />}
     </div>
+  );
+}
+
+// ── Grid chip ────────────────────────────────────────────────────
+function EventChip({
+  ev,
+  onClick,
+}: {
+  ev: CompanyCalendarEvent;
+  onClick: () => void;
+}) {
+  const inactive = ev.status === "canceled" || ev.status === "no_show";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${rangeLabel(ev.startsAt, ev.endsAt)} · ${
+        EVENT_TYPE_META[ev.eventType].label
+      } · ${fullName(ev.patientFirstName, ev.patientLastName)} · ${
+        STATUS_META[ev.status].label
+      }`}
+      className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-[11px] ${
+        EVENT_TYPE_META[ev.eventType].chip
+      } ${inactive ? "opacity-60" : ""}`}
+    >
+      {ev.status === "completed" && (
+        <Check className="mr-0.5 inline h-3 w-3 align-[-1px]" />
+      )}
+      <span className={`font-semibold ${inactive ? "line-through" : ""}`}>
+        {timeLabel(ev.startsAt)}
+      </span>{" "}
+      <span className={inactive ? "line-through" : ""}>
+        {fullName(ev.patientFirstName, ev.patientLastName)}
+      </span>
+    </button>
+  );
+}
+
+// ── Selected-day detail panel ────────────────────────────────────
+function SelectedDayPanel({
+  day,
+  events,
+  isPending,
+  onAdd,
+  onEdit,
+}: {
+  day: Date;
+  events: CompanyCalendarEvent[];
+  isPending: boolean;
+  onAdd: () => void;
+  onEdit: (ev: CompanyCalendarEvent) => void;
+}) {
+  return (
+    <Card
+      title={
+        <span className="flex w-full items-center justify-between gap-2">
+          <span>{DAY_FMT.format(day)}</span>
+          <Button intent="secondary" size="sm" onClick={onAdd}>
+            <Plus className="mr-1 h-4 w-4" />
+            Add
+          </Button>
+        </span>
+      }
+    >
+      {isPending ? (
+        <Spinner />
+      ) : events.length === 0 ? (
+        <p className="py-2 text-sm text-muted-foreground">
+          No appointments on this day.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {events.map((ev) => (
+            <DayEventRow key={ev.id} ev={ev} onEdit={() => onEdit(ev)} />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function DayEventRow({
+  ev,
+  onEdit,
+}: {
+  ev: CompanyCalendarEvent;
+  onEdit: () => void;
+}) {
+  const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
+  const invalidate = () =>
+    void qc.invalidateQueries({ queryKey: CALENDAR_KEY });
+
+  const setStatus = useMutation({
+    mutationFn: (status: CalendarEventStatus) =>
+      updateCalendarEvent(ev.id, { status }),
+    onSuccess: invalidate,
+  });
+  const del = useMutation({
+    mutationFn: () => deleteCalendarEvent(ev.id),
+    onSuccess: invalidate,
+  });
+
+  const inactive = ev.status === "canceled" || ev.status === "no_show";
+
+  return (
+    <li
+      className="rounded-lg border p-3"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${EVENT_TYPE_META[ev.eventType].dot}`}
+            />
+            <Link
+              href={`/admin/patients/${ev.patientId}`}
+              className={`font-medium hover:underline ${inactive ? "line-through" : ""}`}
+            >
+              {fullName(ev.patientFirstName, ev.patientLastName)}
+            </Link>
+            <Badge variant={STATUS_META[ev.status].variant}>
+              {STATUS_META[ev.status].label}
+            </Badge>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {EVENT_TYPE_META[ev.eventType].label} ·{" "}
+            {rangeLabel(ev.startsAt, ev.endsAt)} (
+            {durationLabel(ev.startsAt, ev.endsAt)})
+          </div>
+          {ev.location && (
+            <div className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="break-all">{ev.location}</span>
+            </div>
+          )}
+          {ev.notes && (
+            <div className="mt-1 whitespace-pre-wrap text-xs text-slate-600">
+              {ev.notes}
+            </div>
+          )}
+          {ev.createdByEmail && (
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              Added by {ev.createdByEmail}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            aria-label="Edit appointment"
+            onClick={onEdit}
+            className="rounded p-1 text-muted-foreground hover:bg-slate-100"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Delete appointment"
+            onClick={async () => {
+              if (
+                !(await confirm({
+                  title: "Delete appointment?",
+                  description:
+                    "Remove this appointment from the company calendar? This can't be undone.",
+                  confirmLabel: "Delete",
+                }))
+              )
+                return;
+              del.mutate();
+            }}
+            className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-700"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Status
+        </label>
+        <select
+          value={ev.status}
+          disabled={setStatus.isPending}
+          onChange={(e) =>
+            setStatus.mutate(e.target.value as CalendarEventStatus)
+          }
+          className="rounded border px-2 py-1 text-xs"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+          aria-label="Set status"
+        >
+          {STATUS_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_META[s].label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {ConfirmDialogEl}
+    </li>
   );
 }
 
@@ -372,14 +721,19 @@ function UpcomingCard({
 }) {
   const now = Date.now();
   const upcoming = events
-    .filter((e) => new Date(e.endsAt).getTime() >= now)
+    .filter(
+      (e) =>
+        new Date(e.endsAt).getTime() >= now &&
+        e.status !== "canceled" &&
+        e.status !== "no_show",
+    )
     .slice(0, 12);
   return (
     <Card title="Upcoming appointments">
       {isPending ? (
         <Spinner />
       ) : upcoming.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-2">
+        <p className="py-2 text-sm text-muted-foreground">
           Nothing scheduled in this window.
         </p>
       ) : (
@@ -392,9 +746,9 @@ function UpcomingCard({
                 className="flex w-full items-center gap-3 py-2 text-left hover:bg-slate-50"
               >
                 <span
-                  className={`mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${EVENT_TYPE_META[ev.eventType].dot}`}
+                  className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${EVENT_TYPE_META[ev.eventType].dot}`}
                 />
-                <span className="flex-1">
+                <span className="min-w-0 flex-1">
                   <span className="font-medium">
                     {fullName(ev.patientFirstName, ev.patientLastName)}
                   </span>
@@ -404,7 +758,9 @@ function UpcomingCard({
                   {ev.location && (
                     <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <MapPin className="h-3 w-3" />
-                      {ev.location}
+                      <span className="max-w-[12rem] truncate">
+                        {ev.location}
+                      </span>
                     </span>
                   )}
                 </span>
@@ -450,6 +806,9 @@ function EventEditor({
   const [eventType, setEventType] = useState<CalendarEventType>(() =>
     state.mode === "edit" ? state.event.eventType : "fitting_in_person",
   );
+  const [status, setStatus] = useState<CalendarEventStatus>(() =>
+    state.mode === "edit" ? state.event.status : "scheduled",
+  );
   const [startsAt, setStartsAt] = useState<string>(() =>
     state.mode === "edit"
       ? fmtLocalInput(new Date(state.event.startsAt))
@@ -483,12 +842,21 @@ function EventEditor({
     state.mode === "edit" ? (state.event.notes ?? "") : "",
   );
 
+  // Esc closes the modal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const invalidate = () =>
-    void qc.invalidateQueries({ queryKey: ["admin", "company-calendar"] });
+    void qc.invalidateQueries({ queryKey: CALENDAR_KEY });
 
   const save = useMutation({
     mutationFn: async () => {
-      const body = {
+      const base = {
         patientId: patient!.id,
         eventType,
         startsAt: new Date(startsAt).toISOString(),
@@ -497,9 +865,9 @@ function EventEditor({
         notes: notes.trim() || null,
       };
       if (state.mode === "edit") {
-        await updateCalendarEvent(state.event.id, body);
+        await updateCalendarEvent(state.event.id, { ...base, status });
       } else {
-        await createCalendarEvent(body);
+        await createCalendarEvent({ ...base, status });
       }
     },
     onSuccess: () => {
@@ -560,23 +928,43 @@ function EventEditor({
             <PatientPicker value={patient} onChange={setPatient} />
           </div>
 
-          <div>
-            <FieldLabel>Appointment type</FieldLabel>
-            <select
-              value={eventType}
-              onChange={(e) =>
-                setEventType(e.target.value as CalendarEventType)
-              }
-              className="w-full rounded border px-2 py-1.5 text-sm"
-              style={{ borderColor: "hsl(var(--line-1))" }}
-              aria-label="Appointment type"
-            >
-              {EVENT_TYPE_ORDER.map((t) => (
-                <option key={t} value={t}>
-                  {EVENT_TYPE_META[t].label}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel>Appointment type</FieldLabel>
+              <select
+                value={eventType}
+                onChange={(e) =>
+                  setEventType(e.target.value as CalendarEventType)
+                }
+                className="w-full rounded border px-2 py-1.5 text-sm"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+                aria-label="Appointment type"
+              >
+                {EVENT_TYPE_ORDER.map((t) => (
+                  <option key={t} value={t}>
+                    {EVENT_TYPE_META[t].label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Status</FieldLabel>
+              <select
+                value={status}
+                onChange={(e) =>
+                  setStatus(e.target.value as CalendarEventStatus)
+                }
+                className="w-full rounded border px-2 py-1.5 text-sm"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+                aria-label="Status"
+              >
+                {STATUS_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_META[s].label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -632,6 +1020,12 @@ function EventEditor({
               aria-label="Notes"
             />
           </div>
+
+          {isEdit && state.event.createdByEmail && (
+            <p className="text-[10px] text-muted-foreground">
+              Added by {state.event.createdByEmail}
+            </p>
+          )}
 
           {save.error instanceof Error && (
             <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
@@ -750,6 +1144,7 @@ function PatientPicker({
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search patient by name…"
         aria-label="Search patient"
+        autoFocus
       />
       {enabled && (
         <div

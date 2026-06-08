@@ -74,6 +74,7 @@ describe("GET /admin/company-calendar", () => {
           id: EVENT_ID,
           patient_id: PATIENT_ID,
           event_type: "fitting_in_person",
+          status: "completed",
           starts_at: "2026-06-10T14:00:00.000Z",
           ends_at: "2026-06-10T14:30:00.000Z",
           location: "Suite 200",
@@ -100,6 +101,7 @@ describe("GET /admin/company-calendar", () => {
       patientFirstName: "Jane",
       patientLastName: "Doe",
       eventType: "fitting_in_person",
+      status: "completed",
       location: "Suite 200",
     });
   });
@@ -179,6 +181,7 @@ describe("POST /admin/company-calendar", () => {
     expect(payload).toMatchObject({
       patient_id: PATIENT_ID,
       event_type: "fitting_virtual",
+      status: "scheduled",
       starts_at: "2026-06-10T14:00:00.000Z",
       ends_at: "2026-06-10T14:30:00.000Z",
       location: "https://meet.example.com/abc",
@@ -207,7 +210,11 @@ describe("PATCH /admin/company-calendar/:id", () => {
     });
     const res = await request(makeApp())
       .patch(`/admin/company-calendar/${EVENT_ID}`)
-      .send({ eventType: "consultation", notes: "bring backup mask" });
+      .send({
+        eventType: "consultation",
+        status: "completed",
+        notes: "bring backup mask",
+      });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
 
@@ -217,9 +224,18 @@ describe("PATCH /admin/company-calendar/:id", () => {
     ) as Array<Record<string, unknown>>;
     expect(payload).toMatchObject({
       event_type: "consultation",
+      status: "completed",
       notes: "bring backup mask",
     });
     expect(typeof payload.updated_at).toBe("string");
+  });
+
+  it("rejects an unknown status", async () => {
+    mockAdmin.current = STAFF;
+    const res = await request(makeApp())
+      .patch(`/admin/company-calendar/${EVENT_ID}`)
+      .send({ status: "rescheduled" });
+    expect(res.status).toBe(400);
   });
 });
 

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS "resupply"."company_calendar_events" (
   "patient_id" uuid NOT NULL
     REFERENCES "resupply"."patients"("id") ON DELETE CASCADE,
   "event_type" text NOT NULL DEFAULT 'other',
+  "status" text NOT NULL DEFAULT 'scheduled',
   "starts_at" timestamp with time zone NOT NULL,
   "ends_at" timestamp with time zone NOT NULL,
   "location" text,
@@ -41,6 +42,9 @@ CREATE TABLE IF NOT EXISTS "resupply"."company_calendar_events" (
       'consultation',
       'other'
     )
+  ),
+  CONSTRAINT "company_calendar_events_status_chk" CHECK (
+    "status" IN ('scheduled', 'completed', 'canceled', 'no_show')
   )
 );
 --> statement-breakpoint
