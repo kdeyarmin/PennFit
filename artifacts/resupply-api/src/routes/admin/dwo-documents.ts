@@ -119,7 +119,7 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { data: row } = await supabase
+    const { data: row, error: dwoErr } = await supabase
       .schema("resupply")
       .from("dwo_documents")
       .select(
@@ -128,7 +128,11 @@ router.get(
       .eq("id", idParsed.data.id)
       .limit(1)
       .maybeSingle();
+    if (dwoErr) throw dwoErr;
     if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
       res.status(404).json({ error: "not_found" });
       return;
     }
