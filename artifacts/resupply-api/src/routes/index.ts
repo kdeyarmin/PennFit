@@ -94,6 +94,8 @@ import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
+import locationsRouter from "./admin/locations.js";
+import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
@@ -127,6 +129,8 @@ import eraIngestRouter from "./admin/era-ingest.js";
 import billingReportsRouter from "./admin/billing-reports.js";
 import payerProfitabilityRouter from "./admin/payer-profitability.js";
 import denialsWorklistRouter from "./admin/denials-worklist.js";
+import billingActionQueueRouter from "./admin/billing-action-queue.js";
+import patientTherapySnapshotRouter from "./admin/patient-therapy-snapshot.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
@@ -409,6 +413,13 @@ router.use(payerProfitabilityRouter);
 // /admin/billing/denials-worklist — denied claims ranked by recoverable
 // $ × win-probability (Biller #33). reports.read.
 router.use(denialsWorklistRouter);
+// /admin/billing/action-queue — cross-worklist roll-up: actionable
+// denials grouped by recommended action + secondary-eligible totals
+// (Biller B5). reports.read.
+router.use(billingActionQueueRouter);
+// /admin/patients/:id/therapy-snapshot — compact recent-adherence
+// snapshot for the CSR/RT patient context panel (CSR C3). patients.read.
+router.use(patientTherapySnapshotRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
 // ranked by re-verification urgency (never/terminating/stale) (Biller
 // #31, read-only half). reports.read.
@@ -836,6 +847,10 @@ router.use(mfaRouter);
 // /admin/reports/* — date-bounded CSV/PDF/QuickBooks exports for ops
 // + finance.
 router.use(reportsRouter);
+// /admin/locations — business-location registry (owner O1 groundwork).
+router.use(locationsRouter);
+// /admin/billing/gl-account-mappings — configurable QuickBooks GL accounts (owner O3).
+router.use(glAccountMappingsRouter);
 // /admin/reports/presets/* — per-user saved report shortcuts
 // (slug + format + date-range preset). Mounted alongside the
 // reports router so the page-level UI only has one base path.

@@ -36,6 +36,13 @@ const SAMPLE: PrescriptionRequestInputs = {
     faxE164: "+18005550100",
     email: "orders@pennpaps.com",
   },
+  coverage: {
+    payerName: "Medicare Part B (Noridian)",
+    memberId: "1EG4TE5MK72",
+    planName: null,
+    rank: "primary",
+    isMedicare: true,
+  },
   hcpcsLines: [
     { hcpcs: "E0601", description: "CPAP device", quantity: 1 },
     {
@@ -211,5 +218,40 @@ describe("renderPrescriptionRequest", () => {
         "Patient reports increased congestion — consider humidifier step up.",
     });
     expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  it("renders without an insurance block when coverage is null", async () => {
+    const pdf = await renderToBytes({ ...SAMPLE, coverage: null });
+    expect(pdf.length).toBeGreaterThan(500);
+    expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  it("renders a commercial (non-Medicare) coverage block", async () => {
+    const pdf = await renderToBytes({
+      ...SAMPLE,
+      coverage: {
+        payerName: "UnitedHealthcare",
+        memberId: "987654321",
+        planName: "Choice Plus",
+        rank: "primary",
+        isMedicare: false,
+      },
+    });
+    expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  it("renders the PAP supporting-documentation note for a device order", async () => {
+    // E0601 present + a settings block → PAP note path exercised.
+    const pdf = await renderToBytes(SAMPLE);
+    expect(pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    // A mask-only refill (no device code, no settings) skips the note.
+    const maskOnly = await renderToBytes({
+      ...SAMPLE,
+      hcpcsLines: [
+        { hcpcs: "A7032", description: "Mask cushion", quantity: 1 },
+      ],
+      settings: null,
+    });
+    expect(maskOnly.subarray(0, 5).toString("ascii")).toBe("%PDF-");
   });
 });

@@ -26,7 +26,7 @@ jobs:
       # Shared toolchain bootstrap (pnpm install via npm — NOT corepack —
       # then setup-node + frozen-lockfile install). The "why not corepack"
       # rationale that used to live inline here is documented in full on
-      # the composite action. The pnpm version pin (11.5.0) is the action's
+      # the composite action. The pnpm version pin (11.5.2) is the action's
       # default and matches packageManager / engines.pnpm in root
       # package.json; installing an older pnpm trips
       # ERR_PNPM_UNSUPPORTED_ENGINE.

@@ -313,6 +313,18 @@ export async function processTick(
   //    address — the UPDATE re-reads from the row and RETURNING gives
   //    us the freshest value. Using `pendingRows` here lost that
   //    update and shipped to the OLD address.
+  // Construct the SendGrid client ONCE per tick, not once per recipient.
+  // The prior per-row `await import(...).then(createSendgridClient)` rebuilt
+  // the client (and re-ran the dynamic import) for every claimed recipient —
+  // up to `batchSizeForThrottle` (600 at max throttle) constructions per
+  // tick. The client is stateless across sends, so a single instance serves
+  // the whole batch. A config error surfaces here (failing the tick so
+  // pg-boss DLQs it and the stale-'sending' recovery reclaims the batch back
+  // to 'pending' on a later tick) instead of burning every recipient to
+  // 'failed' on what is really a one-off misconfiguration.
+  const sendgridClient = await import("@workspace/resupply-email").then((m) =>
+    m.createSendgridClient(),
+  );
   let sent = 0;
   let failed = 0;
   let suppressedAtSend = 0;
@@ -368,10 +380,7 @@ export async function processTick(
       continue;
     }
     try {
-      const client = await import("@workspace/resupply-email").then((m) =>
-        m.createSendgridClient(),
-      );
-      const result = await client.sendEmail({
+      const result = await sendgridClient.sendEmail({
         to: email,
         subject:
           renderable.subject ?? `(no subject for ${campaign.template_key})`,

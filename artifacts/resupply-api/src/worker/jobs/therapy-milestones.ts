@@ -75,6 +75,15 @@ const ADHERENCE_WINDOW_NIGHTS = 30;
 /** Only consider patients whose therapy nights changed recently. */
 const ACTIVITY_LOOKBACK_DAYS = 60;
 
+/** Every milestone kind detectMilestones can emit. A patient who already
+ *  holds a row for all of these has nothing left to earn this run, so the
+ *  evaluate loop can skip their night read entirely (watermark). */
+const ALL_MILESTONE_KINDS: readonly MilestoneKind[] = [
+  "100_nights",
+  "365_nights",
+  "first_adherence_month",
+];
+
 export interface MilestoneStats {
   patientsScanned: number;
   inserted: Record<MilestoneKind, number>;
@@ -234,7 +243,44 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   const uniquePatientIds = Array.from(patientIdSet);
   stats.patientsScanned = uniquePatientIds.length;
 
+  // Batch the existing-milestone lookup instead of one query per patient.
+  // The prior per-patient `.eq("patient_id", …)` read was an N+1 that grew
+  // with the active roster — one serial round-trip per candidate, every
+  // night. Fetch the recorded milestone kinds for the whole candidate set
+  // up front, chunked at 200 patient_ids so the URL stays under PostgREST's
+  // length limit and each chunk returns at most 200 × 3 kinds = 600 rows
+  // (well under the ~1000-row response cap).
+  const existingByPatient = new Map<string, Set<MilestoneKind>>();
+  for (let i = 0; i < uniquePatientIds.length; i += 200) {
+    const idChunk = uniquePatientIds.slice(i, i + 200);
+    const { data: existingRows, error: existingErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_milestones")
+      .select("patient_id, milestone_kind")
+      .in("patient_id", idChunk);
+    if (existingErr) throw existingErr;
+    for (const r of existingRows ?? []) {
+      if (!r.patient_id) continue;
+      let set = existingByPatient.get(r.patient_id);
+      if (!set) {
+        set = new Set<MilestoneKind>();
+        existingByPatient.set(r.patient_id, set);
+      }
+      set.add(r.milestone_kind as MilestoneKind);
+    }
+  }
+
   for (const patientId of uniquePatientIds) {
+    const existingKinds =
+      existingByPatient.get(patientId) ?? new Set<MilestoneKind>();
+    // Watermark: a patient who already holds all three milestone kinds
+    // can't earn a new one, so skip the night read entirely. On a mature
+    // roster this is the vast majority of candidates (milestones are
+    // once-per-patient-ever events), which is what turns the remaining
+    // per-patient night read from "every active patient" into "only
+    // patients still missing a milestone".
+    if (ALL_MILESTONE_KINDS.every((k) => existingKinds.has(k))) continue;
+
     // Pull the patient's full night history (sorted ascending).
     // We cap at 400 to keep the row read bounded — anything past
     // 400 nights has already triggered 100 + 365 + adherence, so
@@ -253,14 +299,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       );
       continue;
     }
-    const { data: existing } = await supabase
-      .schema("resupply")
-      .from("patient_therapy_milestones")
-      .select("milestone_kind")
-      .eq("patient_id", patientId);
-    const existingKinds = new Set(
-      (existing ?? []).map((r) => r.milestone_kind as MilestoneKind),
-    );
     const detected = detectMilestones(nights ?? [], existingKinds);
 
     for (const m of detected) {
@@ -307,7 +345,41 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     .limit(500);
   if (pendErr) throw pendErr;
 
-  for (const row of pending ?? []) {
+  // Batch-resolve recipient email + first name for every pending
+  // milestone up front (one query per 200 patients) instead of a
+  // per-row lookup inside the send loop.
+  const pendingRows = pending ?? [];
+  const pendingPatientIds = [
+    ...new Set(pendingRows.map((r) => r.patient_id).filter(Boolean)),
+  ];
+  const patientById = new Map<
+    string,
+    { email: string | null; legal_first_name: string | null }
+  >();
+  const PATIENT_CHUNK = 200;
+  for (let i = 0; i < pendingPatientIds.length; i += PATIENT_CHUNK) {
+    const chunk = pendingPatientIds.slice(i, i + PATIENT_CHUNK);
+    const { data: patientRows, error: patientsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, email, legal_first_name")
+      .in("id", chunk);
+    if (patientsErr) {
+      logger.error(
+        { err: patientsErr.message, patientCount: chunk.length },
+        "therapy-milestones: batch patient lookup failed",
+      );
+      continue;
+    }
+    for (const p of patientRows ?? []) {
+      patientById.set(p.id, {
+        email: p.email,
+        legal_first_name: p.legal_first_name,
+      });
+    }
+  }
+
+  for (const row of pendingRows) {
     // Claim the row first (atomic stamp). Wins iff still null.
     const claimIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
@@ -344,26 +416,38 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
         .eq("id", claimed.id);
     };
 
-    // Resolve recipient email + first name.
-    const { data: patient, error: patientError } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("email, legal_first_name")
-      .eq("id", claimed.patient_id)
-      .limit(1)
-      .maybeSingle();
-    if (patientError) {
-      await releaseClaim();
-      stats.sendFailed += 1;
-      logger.error(
-        {
-          err: patientError.message,
-          milestoneId: claimed.id,
-          patientId: claimed.patient_id,
-        },
-        "therapy-milestones: patient lookup failed",
-      );
-      continue;
+    // Recipient email + first name, resolved from the batch lookup above.
+    let patient = patientById.get(claimed.patient_id) ?? null;
+    if (!patient) {
+      const { data: fallbackPatient, error: patientError } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("email, legal_first_name")
+        .eq("id", claimed.patient_id)
+        .limit(1)
+        .maybeSingle();
+      if (patientError) {
+        await releaseClaim();
+        stats.sendFailed += 1;
+        logger.error(
+          {
+            err: patientError.message,
+            milestoneId: claimed.id,
+            patientId: claimed.patient_id,
+          },
+          "therapy-milestones: patient lookup failed",
+        );
+        continue;
+      }
+      patient = fallbackPatient
+        ? {
+            email: fallbackPatient.email,
+            legal_first_name: fallbackPatient.legal_first_name,
+          }
+        : null;
+      if (patient) {
+        patientById.set(claimed.patient_id, patient);
+      }
     }
     if (!patient || !patient.email) {
       // No deliverable — leave the stamp so we don't retry every day.
