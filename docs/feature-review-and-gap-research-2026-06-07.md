@@ -30,13 +30,13 @@ implemented**, not scaffolding.
 
 The honest maturity read:
 
-| Surface                  | Verified maturity                | One-line                                                                                                     |
+| Surface | Verified maturity | One-line |
 | ------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Resupply outreach engine | ~95% REAL                        | Cadence, reminders, escalation, smart triggers, win-back — all real; some dormant by flag.                   |
-| Billing / RCM            | ~70% REAL, 20% PARTIAL, 10% STUB | Strong EDI backbone (837P/835/270/PAS); gaps in **outbound fax, 276/277, form PDFs**.                        |
-| Clinical / RT            | ~80% REAL                        | Real ingestion, CMS 90/30, encounters, smart triggers; gaps in **outcome measurement & cohort tools**.       |
-| CSR / conversations      | ~85% REAL                        | Omnichannel inbox, routing, voice AI, macros real; gaps in **real-time alerting & inline clinical context**. |
-| Owner / ops / analytics  | ~75% REAL                        | Excellent financial analytics; **single-tenant**, no PO/payroll/GL-posting.                                  |
+| Resupply outreach engine | ~95% REAL | Cadence, reminders, escalation, smart triggers, win-back — all real; some dormant by flag. |
+| Billing / RCM | ~70% REAL, 20% PARTIAL, 10% STUB | Strong EDI backbone (837P/835/270/PAS); gaps in **outbound fax, 276/277, form PDFs**. |
+| Clinical / RT | ~80% REAL | Real ingestion, CMS 90/30, encounters, smart triggers; gaps in **outcome measurement & cohort tools**. |
+| CSR / conversations | ~85% REAL | Omnichannel inbox, routing, voice AI, macros real; gaps in **real-time alerting & inline clinical context**. |
+| Owner / ops / analytics | ~75% REAL | Excellent financial analytics; **single-tenant**, no PO/payroll/GL-posting. |
 
 **The remaining work is no longer "build the basics."** It is three things:
 
