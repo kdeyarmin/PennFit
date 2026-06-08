@@ -91,29 +91,68 @@ router.get(
     const cutoff = isoDaysAgo(days);
     const supabase = getSupabaseServiceRoleClient();
 
-    // Episodes created in the window → confirmation/fulfillment + unique patients.
-    const { data: episodeRows, error: epErr } = await supabase
-      .schema("resupply")
-      .from("episodes")
-      .select("status, patient_id")
-      .gte("created_at", cutoff);
+    // These reads are independent of one another, so fan them out
+    // concurrently rather than blocking on each in series. (The inbound-
+    // messages read below depends on the conversations result, so it
+    // stays sequential.)
+    const [
+      { data: episodeRows, error: epErr },
+      { data: convRows, error: convErr },
+      { count: activePatientCount, error: patErr },
+      { data: fulfillmentRows, error: fulErr },
+      { data: orderRows, error: ordErr },
+    ] = await Promise.all([
+      // Episodes created in the window → confirmation/fulfillment + unique patients.
+      supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("status, patient_id")
+        .gte("created_at", cutoff),
+      // Episode-linked (resupply) conversations opened in the window =
+      // outreach denominator. episode_id IS NOT NULL excludes in-app
+      // shop threads. Capped for safety on very large windows.
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("id")
+        .not("episode_id", "is", null)
+        .gte("created_at", cutoff)
+        .limit(20000),
+      // Active-patient count for the orders-per-patient denominator.
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "active"),
+      // Fulfillment line items in the window → items per order. Capped for
+      // safety on very large windows.
+      supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select("episode_id")
+        .gte("created_at", cutoff)
+        .limit(50000),
+      // Paid storefront orders in the window → average order value. Resupply
+      // fulfillments bill insurance and carry no cash amount, so AOV is a
+      // storefront-cash metric.
+      supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .select("amount_total_cents")
+        .eq("status", "paid")
+        .gte("created_at", cutoff)
+        .limit(50000),
+    ]);
     if (epErr) throw epErr;
+    if (convErr) throw convErr;
+    if (patErr) throw patErr;
+    if (fulErr) throw fulErr;
+    if (ordErr) throw ordErr;
+
     const episodes: EpisodeKpiRow[] = (episodeRows ?? []).map((r) => ({
       status: r.status,
       patientId: r.patient_id,
     }));
-
-    // Episode-linked (resupply) conversations opened in the window =
-    // outreach denominator. episode_id IS NOT NULL excludes in-app
-    // shop threads. Capped for safety on very large windows.
-    const { data: convRows, error: convErr } = await supabase
-      .schema("resupply")
-      .from("conversations")
-      .select("id")
-      .not("episode_id", "is", null)
-      .gte("created_at", cutoff)
-      .limit(20000);
-    if (convErr) throw convErr;
     const outreachIds = new Set((convRows ?? []).map((r) => r.id));
 
     // Inbound patient messages in the window → which of those
@@ -137,38 +176,10 @@ router.get(
       respondedCount = responded.size;
     }
 
-    // Active-patient count for the orders-per-patient denominator.
-    const { count: activePatientCount, error: patErr } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "active");
-    if (patErr) throw patErr;
-
-    // Fulfillment line items in the window → items per order. Capped for
-    // safety on very large windows.
-    const { data: fulfillmentRows, error: fulErr } = await supabase
-      .schema("resupply")
-      .from("fulfillments")
-      .select("episode_id")
-      .gte("created_at", cutoff)
-      .limit(50000);
-    if (fulErr) throw fulErr;
     const fulfillments = (fulfillmentRows ?? [])
       .filter((r) => r.episode_id)
       .map((r) => ({ episodeId: r.episode_id as string }));
 
-    // Paid storefront orders in the window → average order value. Resupply
-    // fulfillments bill insurance and carry no cash amount, so AOV is a
-    // storefront-cash metric.
-    const { data: orderRows, error: ordErr } = await supabase
-      .schema("resupply")
-      .from("shop_orders")
-      .select("amount_total_cents")
-      .eq("status", "paid")
-      .gte("created_at", cutoff)
-      .limit(50000);
-    if (ordErr) throw ordErr;
     const paidOrderAmountsCents = (orderRows ?? [])
       .map((r) => r.amount_total_cents)
       .filter((c): c is number => typeof c === "number");
