@@ -47,6 +47,12 @@ const createBody = z
   })
   .strict();
 
+const listByPatientBody = z
+  .object({
+    patientId: uuid,
+  })
+  .strict();
+
 router.post(
   "/admin/patients/:patientId/payment-plans",
   requirePermission("patients.update"),
@@ -123,13 +129,13 @@ router.post(
   },
 );
 
-router.get(
-  "/admin/patients/:patientId/payment-plans",
+router.post(
+  "/admin/patients/payment-plans/list",
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
-    const patientId = uuid.safeParse(req.params.patientId);
-    if (!patientId.success) {
+    const parsed = listByPatientBody.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
@@ -140,7 +146,7 @@ router.get(
       .select(
         "id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at",
       )
-      .eq("patient_id", patientId.data)
+      .eq("patient_id", parsed.data.patientId)
       .order("created_at", { ascending: false })
       .limit(200);
     const planIds = (plans ?? []).map((p) => p.id);
