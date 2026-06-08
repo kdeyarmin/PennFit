@@ -137,24 +137,27 @@ router.get(
       return;
     }
 
-    const [{ data: patient }, providerRes] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("patients")
-        .select("legal_first_name, legal_last_name, date_of_birth, address")
-        .eq("id", row.patient_id)
-        .limit(1)
-        .maybeSingle(),
-      row.signing_provider_id
-        ? supabase
-            .schema("resupply")
-            .from("providers")
-            .select("legal_name, npi, practice_name, phone_e164, fax_e164")
-            .eq("id", row.signing_provider_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
+    const [{ data: patient, error: patientErr }, providerRes] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("patients")
+          .select("legal_first_name, legal_last_name, date_of_birth, address")
+          .eq("id", row.patient_id)
+          .limit(1)
+          .maybeSingle(),
+        row.signing_provider_id
+          ? supabase
+              .schema("resupply")
+              .from("providers")
+              .select("legal_name, npi, practice_name, phone_e164, fax_e164")
+              .eq("id", row.signing_provider_id)
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+    if (patientErr) throw patientErr;
+    if (providerRes.error) throw providerRes.error;
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
       return;
