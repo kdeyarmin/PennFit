@@ -23,7 +23,7 @@
  * Parse CSV text into a matrix of string cells. Empty input (or input
  * that is only a BOM / whitespace) yields an empty array. The first
  * returned row is whatever the source put first — header handling is the
- * caller's job (see {@link parsePacwareCsv}).
+ * caller's job (see {@link parsePacwarePatientCsv} in parse.ts).
  */
 export function parseCsv(input: string): string[][] {
   // Strip a leading UTF-8 BOM if present.

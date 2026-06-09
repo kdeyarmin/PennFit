@@ -76,7 +76,6 @@ export interface PacwareImportPreview {
   unmappedHeaders: string[];
   presentFields: string[];
   errors: PacwareRowError[];
-  sample: Array<Record<string, string>>;
 }
 
 export interface PacwareImportCommit {

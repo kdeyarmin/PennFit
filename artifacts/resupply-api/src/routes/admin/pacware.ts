@@ -21,7 +21,7 @@
 // world-readable). Audit rows carry structural counts only. Exports are
 // admin-gated and `Cache-Control: no-store`.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -59,7 +59,6 @@ const router: IRouter = Router();
 const MAX_IMPORT_ROWS = 5000;
 const UPSERT_BATCH = 500;
 const MAX_EXPORT_ROWS = 5000;
-const PREVIEW_SAMPLE = 10;
 
 // ---------------------------------------------------------------------------
 // GET /admin/pacware/status — availability + the report catalog.
@@ -103,8 +102,9 @@ router.get(
 // the demographics system of record).
 //
 //   mode: "preview" — parse + validate only; no DB writes. Returns counts,
-//                     per-row errors, unmapped headers, and a small sample
-//                     so the operator can fix the source file first.
+//                     per-row errors, and unmapped headers (NO patient rows
+//                     — see the PHI note below) so the operator can fix the
+//                     source file first.
 //   mode: "commit"  — preview + upsert the valid rows.
 // ---------------------------------------------------------------------------
 const importBodySchema = z
@@ -127,14 +127,11 @@ const SCALAR_COLUMN: Record<string, string> = {
   email: "email",
   insurancePayer: "insurance_payer",
 };
-const ADDRESS_FIELDS = [
-  "addressLine1",
-  "addressLine2",
-  "city",
-  "state",
-  "postalCode",
-  "country",
-];
+// The fields that make up a complete address. The import only touches the
+// `address` column when one of THESE is present in the report — a report
+// carrying only `address_line2` or `country` must not trigger an address
+// write (assembleAddress would yield null and blank an existing address).
+const CORE_ADDRESS_FIELDS = ["addressLine1", "city", "state", "postalCode"];
 
 router.post(
   "/admin/pacware/import/patients",
@@ -142,6 +139,7 @@ router.post(
   requireAdmin,
   withIdempotency("POST /admin/pacware/import/patients"),
   async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
     const parsed = importBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -164,11 +162,16 @@ router.post(
       return;
     }
 
-    // Always honour no-store: the response carries PHI (sample rows /
-    // re-derived data) on the preview path.
+    // no-store on every response from this route, as defence in depth.
     res.setHeader("Cache-Control", "no-store");
 
     if (mode === "preview") {
+      // Deliberately NO parsed patient rows in the body. The preview is
+      // counts + structural errors (row/field/message — never the bad
+      // value) + which columns mapped. Returning sample rows would put PHI
+      // in the response, and if a caller passed an Idempotency-Key the
+      // idempotency middleware would persist that PHI. Counts/errors are
+      // PHI-free and safe to cache/replay.
       res.status(200).json({
         mode: "preview",
         validCount: result.rows.length,
@@ -177,7 +180,6 @@ router.post(
         unmappedHeaders: result.unmappedHeaders,
         presentFields: result.presentFields,
         errors: result.errors,
-        sample: result.rows.slice(0, PREVIEW_SAMPLE),
       });
       return;
     }
@@ -186,7 +188,7 @@ router.post(
     const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
     const present = new Set(result.presentFields);
-    const includeAddress = ADDRESS_FIELDS.some((f) => present.has(f));
+    const includeAddress = CORE_ADDRESS_FIELDS.some((f) => present.has(f));
 
     // Dedupe within the file (last occurrence wins) so a repeated
     // pacware_id can't trip "ON CONFLICT cannot affect row twice".
@@ -251,7 +253,13 @@ router.post(
       logger.warn({ err }, "patient.pacware_sync audit write failed");
     });
 
-    res.status(200).json({
+    // If any batch failed to write, return a non-2xx. The idempotency
+    // middleware only persists 2xx, so a retry with the same key re-runs
+    // every batch instead of replaying a partial result — and the upsert is
+    // keyed on pacware_id, so re-syncing the rows that already landed is a
+    // no-op. (Full success → 200; nothing written but some failed → 502.)
+    const httpStatus = batchErrors.length > 0 ? 502 : 200;
+    res.status(httpStatus).json({
       mode: "commit",
       synced,
       validCount: result.rows.length,
@@ -282,6 +290,7 @@ router.get(
   adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
     const parsed = exportPatientsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
@@ -393,6 +402,7 @@ router.get(
   adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
     const parsed = exportResupplyQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
@@ -434,7 +444,10 @@ router.get(
     }
 
     await logAudit({
-      action: "patient.pacware_export",
+      // Distinct from the patient-roster export's action: this is
+      // episode-scoped, so a patient-scoped action name would make audit
+      // filtering/alerting ambiguous.
+      action: "resupply.pacware_export",
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "episodes",
@@ -464,6 +477,24 @@ router.get(
     res.status(200).send(buildPacwareResupplyDueCsv(records));
   },
 );
+
+/**
+ * Enforce the PACWARE_EXCHANGE_DISABLED kill switch on the data routes.
+ * Returns true when the surface is enabled; otherwise writes a 503 and
+ * returns false. `/status` is intentionally exempt so it can still report
+ * the disabled state to the admin UI.
+ */
+function ensurePacwareEnabled(res: Response): boolean {
+  if (pacwareAvailability().status === "disabled") {
+    res.status(503).json({
+      error: "pacware_disabled",
+      message:
+        "The PacWare exchange is disabled (PACWARE_EXCHANGE_DISABLED=1).",
+    });
+    return false;
+  }
+  return true;
+}
 
 interface AddressBlob {
   line1?: string;

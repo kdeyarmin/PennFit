@@ -5,7 +5,7 @@
 // uploaded report carried (the data-loss-safety invariant) and that
 // errors never echo the offending cell value (PHI).
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -57,7 +57,12 @@ beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
   logAuditMock.mockClear();
+  delete process.env.PACWARE_EXCHANGE_DISABLED;
   asAdmin();
+});
+
+afterEach(() => {
+  delete process.env.PACWARE_EXCHANGE_DISABLED;
 });
 
 describe("GET /admin/pacware/status", () => {
@@ -103,6 +108,10 @@ describe("POST /admin/pacware/import/patients (preview)", () => {
     expect(res.headers["cache-control"]).toBe("no-store");
     // No DB writes on preview.
     expect(getSupabaseWritePayloads("patients", "upsert")).toHaveLength(0);
+    // The preview body must NOT carry patient rows (PHI) — if it did and a
+    // caller passed an Idempotency-Key, the PHI would be persisted.
+    expect(res.body).not.toHaveProperty("sample");
+    expect(JSON.stringify(res.body)).not.toContain("Jane");
   });
 
   it("never echoes the offending cell value in an error", async () => {
@@ -259,5 +268,68 @@ describe("GET /admin/pacware/export/resupply-due.csv", () => {
       "/resupply-api/admin/pacware/export/resupply-due.csv?status=banana",
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("partial write failure", () => {
+  it("returns 502 (not a cacheable 200) when a batch upsert fails", async () => {
+    stageSupabaseResponse("patients", "upsert", {
+      data: null,
+      error: { message: "db down" },
+    });
+    const csv = [
+      "pacware_id,legal_first_name,legal_last_name,date_of_birth",
+      "PW1,Jane,Doe,1970-05-04",
+    ].join("\n");
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv, mode: "commit" });
+    expect(res.status).toBe(502);
+    expect(res.body.synced).toBe(0);
+    expect(res.body.batchErrors.length).toBe(1);
+  });
+});
+
+describe("address-column safety", () => {
+  it("does not write the address column when only address_line2 is present", async () => {
+    stageSupabaseResponse("patients", "upsert", { data: null, error: null });
+    // Header carries address_line2 but none of line1/city/state/postal.
+    const csv = [
+      "pacware_id,legal_first_name,legal_last_name,date_of_birth,address_line2",
+      "PW1,Jane,Doe,1970-05-04,Apt 4",
+    ].join("\n");
+    await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv, mode: "commit" });
+    const batch = (getSupabaseWritePayloads("patients", "upsert")[0] ??
+      []) as Array<Record<string, unknown>>;
+    expect(batch[0]).not.toHaveProperty("address");
+  });
+});
+
+describe("PACWARE_EXCHANGE_DISABLED kill switch", () => {
+  it("503s the import + export endpoints but still serves status", async () => {
+    process.env.PACWARE_EXCHANGE_DISABLED = "1";
+
+    const status = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/status",
+    );
+    expect(status.status).toBe(200);
+    expect(status.body.availability.status).toBe("disabled");
+
+    const imp = await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv: "pacware_id\nPW1", mode: "preview" });
+    expect(imp.status).toBe(503);
+
+    const roster = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/export/patients.csv",
+    );
+    expect(roster.status).toBe(503);
+
+    const resupply = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/export/resupply-due.csv",
+    );
+    expect(resupply.status).toBe(503);
   });
 });
