@@ -370,7 +370,7 @@ router.post(
     }
     const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
-    const { error: updErr } = await supabase
+    const { data: updated, error: updErr } = await supabase
       .schema("resupply")
       .from("provider_signature_requests")
       .update({
@@ -380,8 +380,15 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", params.data.id)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .select("id")
+      .limit(1)
+      .maybeSingle();
     if (updErr) throw updErr;
+    if (!updated) {
+      res.status(409).json({ error: "not_pending" });
+      return;
+    }
 
     await appendSignatureEvent({
       requestId: params.data.id,
