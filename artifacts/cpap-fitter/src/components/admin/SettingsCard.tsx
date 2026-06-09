@@ -18,9 +18,11 @@
 // the way back to rules / prescription defaults.
 
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   ApiError,
+  useGetAdminMe,
   useUpdatePatient,
   type PatientDetail,
 } from "@workspace/api-client-react/admin";
@@ -29,6 +31,7 @@ import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Input, Label, Select } from "@/components/admin/Input";
+import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 
 type ChannelChoice = "" | "sms" | "email" | "voice";
 
@@ -53,10 +56,35 @@ export function SettingsCard({
   const [channel, setChannel] = useState<ChannelChoice>(
     (patient.channelPreference ?? "") as ChannelChoice,
   );
+  const [locationId, setLocationId] = useState<string>(
+    patient.locationId ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const mutation = useUpdatePatient();
   const isPending = mutation.isPending;
+
+  // The branch picker only appears for multi-branch companies (Control
+  // Center toggle). Single-branch companies never see it and the
+  // locations list isn't fetched.
+  const multiLocationEnabled =
+    useGetAdminMe().data?.multiLocationEnabled ?? false;
+  // Branch options for the location picker. Show active locations plus
+  // the patient's current branch even if it's since been deactivated
+  // (so the dropdown reflects reality and a stale assignment is
+  // visible / clearable).
+  const locationsQuery = useQuery({
+    queryKey: LOCATIONS_QUERY_KEY,
+    queryFn: listLocations,
+    staleTime: 60_000,
+    enabled: multiLocationEnabled,
+  });
+  const locationOptions = (locationsQuery.data?.locations ?? [])
+    .filter((l) => l.isActive || l.id === patient.locationId)
+    .map((l) => ({
+      value: l.id,
+      label: l.isActive ? l.name : `${l.name} (inactive)`,
+    }));
 
   useEffect(() => {
     setInsurancePayer(patient.insurancePayer ?? "");
@@ -66,11 +94,13 @@ export function SettingsCard({
         : "",
     );
     setChannel((patient.channelPreference ?? "") as ChannelChoice);
+    setLocationId(patient.locationId ?? "");
     setError(null);
   }, [
     patient.insurancePayer,
     patient.cadenceOverrideDays,
     patient.channelPreference,
+    patient.locationId,
   ]);
 
   function buildPatch(): {
@@ -107,6 +137,13 @@ export function SettingsCard({
     const chOnServer = patient.channelPreference ?? "";
     if (channel !== chOnServer) {
       body.channelPreference = channel === "" ? null : channel;
+    }
+    // location: empty clears, otherwise the branch uuid. The server
+    // validates it against active locations. Only sent for multi-branch
+    // companies — the picker is hidden otherwise.
+    const locOnServer = patient.locationId ?? "";
+    if (multiLocationEnabled && locationId !== locOnServer) {
+      body.locationId = locationId === "" ? null : locationId;
     }
     return { body, error: null };
   }
@@ -258,6 +295,22 @@ export function SettingsCard({
             Voice is admin-initiated only.
           </p>
         </div>
+        {multiLocationEnabled && (
+          <div>
+            <Label htmlFor="patient-location">Branch / location</Label>
+            <Select
+              id="patient-location"
+              value={locationId}
+              options={locationOptions}
+              emptyOptionLabel="Unassigned"
+              onChange={(e) => setLocationId(e.target.value)}
+              disabled={isPending || locationsQuery.isPending}
+            />
+            <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Servicing branch. Billing is unaffected (shared org identity).
+            </p>
+          </div>
+        )}
       </div>
 
       {error && (

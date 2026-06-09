@@ -10,6 +10,13 @@
 //                            an admin transitions back to `active`.
 //                            `closed` is the lifecycle-terminal value
 //                            (moved off program / declined / deceased).
+//   - location_id            (uuid, or null to clear) — the business
+//                            branch that services this patient
+//                            (multi-location, owner #O1). A non-null id
+//                            must reference an active location, else
+//                            422 `invalid_location`. Billing identity is
+//                            unaffected — claims still use the shared org
+//                            NPI/Tax-ID regardless of branch.
 //
 // All non-status fields accept `null` to explicitly clear an override;
 // `status` does not — there is no "no status" state. A missing key in
@@ -32,6 +39,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { assertAssignableLocation } from "../../lib/locations/assignable";
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -62,6 +70,10 @@ const bodySchema = z
     cadenceOverrideDays: z.number().int().min(1).max(365).nullable().optional(),
     channelPreference: z.enum(["sms", "email", "voice"]).nullable().optional(),
     status: z.enum(["active", "paused", "closed"]).optional(),
+    // Business branch servicing this patient; null clears the
+    // assignment. A concrete id is validated against active locations
+    // below before it lands in the update.
+    locationId: z.string().uuid().nullable().optional(),
     // Optional optimistic-concurrency precondition. When present,
     // the UPDATE is gated on `updated_at = $expected`; if the row
     // moved underneath us we return 409 `stale_patient` so the
@@ -116,8 +128,27 @@ router.patch(
     if ("channelPreference" in body)
       updates.channel_preference = body.channelPreference ?? null;
     if ("status" in body && body.status) updates.status = body.status;
+    if ("locationId" in body) updates.location_id = body.locationId ?? null;
 
     const supabase = getSupabaseServiceRoleClient();
+
+    // A non-null location assignment must reference an active location.
+    // Clearing it (null) is always allowed. Checked before the UPDATE so
+    // a bad id is a clean 422 rather than a FK 500.
+    if (body.locationId) {
+      const check = await assertAssignableLocation(supabase, body.locationId);
+      if (!check.ok) {
+        res.status(422).json({
+          error: "invalid_location",
+          reason: check.reason,
+          message:
+            check.reason === "inactive"
+              ? "That location has been deactivated."
+              : "That location no longer exists.",
+        });
+        return;
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       // Empty body is a no-op rather than an error so dashboards don't

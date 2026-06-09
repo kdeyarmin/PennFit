@@ -460,6 +460,8 @@ export interface Database {
           skills?: Json;
           availability?: string;
           phone_e164?: string | null;
+          /** Multi-location groundwork (mig 0235) — staff home branch, nullable. */
+          location_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -4791,6 +4793,19 @@ export interface Database {
       };
     };
     Functions: {
+      // Mig 0253 — per-branch (location) operational rollup for the
+      // /admin/locations/rollup endpoint. One row per branch plus a
+      // NULL-location_id "unassigned" row. bigint counts serialize as
+      // string over PostgREST.
+      location_rollup: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          location_id: string | null;
+          patient_count: number | string;
+          active_patient_count: number | string;
+          staff_count: number | string;
+        }>;
+      };
       // Mig 0164 — server-side per-payer denial-rate aggregation for
       // the /admin/billing/denial-rate endpoint (replaces a 10k-row
       // JS reduce). bigint columns serialize as string over PostgREST.
