@@ -70,7 +70,8 @@ router.post(
               result.kind === "non_draft_claims_in_batch" ||
               result.kind === "payer_not_electronic" ||
               result.kind === "claim_missing_required_data" ||
-              result.kind === "eligibility_blocked"
+              result.kind === "eligibility_blocked" ||
+              result.kind === "bill_hold"
             ? 409
             : 400;
       res.status(status).json({ error: result.kind, ...result.detail });

@@ -18,6 +18,8 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { listClaimRequirements, outstandingLabels } from "./bill-hold";
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import {
   DENIAL_RISK_WINDOW_DAYS,
@@ -119,6 +121,41 @@ export async function preflightClaim(
           detail: `Status is "${claim.status}"; only draft claims can be submitted.`,
         },
   );
+
+  // ── Bill hold (outstanding signed paperwork) ────────────────────
+  // Blocks submit when the claim still owes a required signed document.
+  // Feature-flagged to match the batch-submit gate exactly. Fail-soft: a
+  // ledger read error just omits the row (the gate still re-checks).
+  if (await isFeatureEnabled("billing.bill_hold")) {
+    try {
+      const reqs = await listClaimRequirements(claim.id, supabase);
+      const missing = outstandingLabels(reqs);
+      if (missing.length > 0) {
+        items.push({
+          key: "bill_hold",
+          severity: "error",
+          label: "On bill hold — signed paperwork outstanding",
+          detail: `Waiting on: ${missing.join(", ")}. The claim cannot be submitted until every required document is back, signed (or waived).`,
+        });
+      } else if (reqs.length > 0) {
+        items.push({
+          key: "bill_hold",
+          severity: "ok",
+          label: "Paperwork on file",
+          detail: "All required signed paperwork is satisfied — not on hold.",
+        });
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "billing.preflight.bill_hold_failed",
+          claimId: claim.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "preflight: bill-hold surface skipped (non-fatal)",
+      );
+    }
+  }
 
   // ── Payer profile ───────────────────────────────────────────────
   if (claim.payer_profile_id) {

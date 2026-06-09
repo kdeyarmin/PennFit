@@ -74,6 +74,8 @@ export const FEATURE_FLAG_KEYS = [
   "patient_packets.autosend_on_delivery",
   "patient_packets.autoremind",
   "orders.require_signed_paperwork",
+  "billing.bill_hold",
+  "billing.bill_hold_auto_remind",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

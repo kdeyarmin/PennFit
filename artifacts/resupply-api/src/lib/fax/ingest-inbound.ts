@@ -31,6 +31,7 @@ import type { Logger } from "pino";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { ObjectStorageService } from "../object-storage/objectStorage";
 
 /** 10 MB cap — fax PDFs are typically 50-500 KB per page; a 10MB cap
@@ -187,6 +188,13 @@ export async function ingestInboundFax(
     logger,
     storageImpl,
   );
+
+  // Step 3: bill-hold auto-match. If this fax came back from a number that
+  // exactly one outstanding paperwork requirement is waiting on, mark it
+  // returned-signed and release the claim. Best-effort + never throws — an
+  // unmatched fax simply stays in the triage queue for a manual link.
+  await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+
   return { kind: "inserted", id: rowId, mediaPersisted };
 }
 
