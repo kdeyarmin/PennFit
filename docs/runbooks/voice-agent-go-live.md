@@ -198,5 +198,3 @@ returns the clean `503`). Neither affects the rest of the API.
   first-launch procedure (voice is an optional add-on to it).
 - `artifacts/resupply-api/src/lib/voice/voice-config.ts` — the single source of
   truth for "is voice configured?".
-  </content>
-  </invoke>

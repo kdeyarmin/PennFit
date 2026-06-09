@@ -889,8 +889,10 @@ function runChecks(): void {
 
   // 9. Voice agent readiness (OpenAI Realtime brain + Twilio Media
   //    Streams). readVoiceConfigOrThrow() in resupply-api gates the
-  //    voice routes on FOUR vars; a PARTIAL set means every inbound call
-  //    503s / hangs up ("voice_not_configured"). Unlike Office Ally we
+  //    voice routes on FOUR vars; a PARTIAL set leaves the voice path
+  //    unservable (a missing auth token 403s Twilio's signature check; a
+  //    missing OpenAI key / base URL returns the disabled response).
+  //    Unlike Office Ally we
   //    do NOT hard-FAIL on a partial set: OPENAI_API_KEY and the Twilio
   //    creds are shared with the storefront chatbot and SMS, so "voice
   //    intentionally off" can't be told apart from "voice misconfigured"
@@ -916,19 +918,19 @@ function runChecks(): void {
       record(
         "VOICE_AGENT",
         "pass",
-        "OpenAI Realtime + Twilio + public base URL all set — the inbound voice agent (POST /resupply-api/voice/inbound-reorder) is live. Wire the Twilio number per docs/runbooks/voice-agent-go-live.md",
+        "OpenAI Realtime + Twilio + public base URL all set — voice env is fully configured. Inbound also requires the voice.agent feature flag (seeded ON). Wire the Twilio number per docs/runbooks/voice-agent-go-live.md",
       );
     } else if (presentVoice.length === 0) {
       record(
         "VOICE_AGENT",
         "pass",
-        "no voice env set — voice agent disabled (inbound calls 503 / hang up). Fine if voice isn't part of this launch.",
+        "no voice env set — voice agent disabled. Fine if voice isn't part of this launch.",
       );
     } else {
       record(
         "VOICE_AGENT",
         "warn",
-        `partially configured (${presentVoice.length}/${voiceVars.length}) — the voice routes 503 until all are set. Missing: ${missingVoice.join(", ")}. Ignore if voice is intentionally off and these vars are only for SMS/chat.`,
+        `partially configured (${presentVoice.length}/${voiceVars.length}) — voice won't serve until all are set (a missing TWILIO_AUTH_TOKEN 403s Twilio's signature check; a missing OPENAI_API_KEY or base URL disables the route). Missing: ${missingVoice.join(", ")}. Ignore if voice is intentionally off and these vars are only for SMS/chat.`,
       );
     }
 
