@@ -6,6 +6,8 @@
 
 import { ApiError } from "@workspace/api-client-react/admin";
 
+import { csrfHeader } from "../csrf";
+
 export interface Location {
   id: string;
   name: string;
@@ -145,7 +147,11 @@ export async function createLocation(
   const res = await fetch(BASE, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw await readError(res, "POST", BASE);
@@ -160,7 +166,11 @@ export async function updateLocation(
   const res = await fetch(url, {
     method: "PATCH",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw await readError(res, "PATCH", url);

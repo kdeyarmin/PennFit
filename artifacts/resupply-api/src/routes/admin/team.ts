@@ -339,7 +339,8 @@ router.post(
           display_name: displayName ?? prior.display_name,
           notes: notes ?? prior.notes,
           // Re-invite keeps the prior branch unless this invite explicitly sets (or clears) one.
-          location_id: locationId !== undefined ? locationId : prior.location_id,
+          location_id:
+            locationId !== undefined ? locationId : prior.location_id,
           invited_by: inviterId,
           invited_at: nowIso,
           revoked_at: null,

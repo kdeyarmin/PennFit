@@ -329,6 +329,11 @@ export function PatientsPage() {
       );
       if (statusFilter) url.searchParams.set("status", statusFilter);
       if (search) url.searchParams.set("search", search);
+      // Keep the export scoped to the same branch the list is showing
+      // (multi-location). Without this the CSV would include every
+      // branch's PHI even when a branch filter is applied on-screen.
+      if (multiLocationEnabled && locationFilter)
+        url.searchParams.set("locationId", locationFilter);
 
       const headers: Record<string, string> = { Accept: "text/csv" };
 
