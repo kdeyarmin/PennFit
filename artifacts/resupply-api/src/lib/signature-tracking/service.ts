@@ -259,6 +259,33 @@ export async function markTrackingReturned(
   if (error) throw error;
 }
 
+/**
+ * Mark a tracking row returned-signed AND advance the source document
+ * where it carries its own signed state (a prescription packet still in
+ * an open status is stamped `signed` so the two views agree). Shared by
+ * the signature-tracking route and the chart-upload "this is the signed
+ * return" path so the cascade is identical. Returns whether the source
+ * was advanced (false when there was nothing to advance / it was already
+ * terminal).
+ */
+export async function markReturnedAndCascade(
+  supabase: SupabaseClient,
+  row: SignatureTrackingRow,
+): Promise<{ cascaded: boolean }> {
+  await markTrackingReturned(supabase, row.documentKind, row.documentId);
+  if (row.documentKind !== "prescription_request") return { cascaded: false };
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("prescription_request_packets")
+    .update({ status: "signed", signed_at: nowIso, updated_at: nowIso })
+    .eq("id", row.documentId)
+    .in("status", ["draft", "sent_fax", "delivered", "failed"])
+    .select("id");
+  if (error) throw error;
+  return { cascaded: (data ?? []).length > 0 };
+}
+
 /** Mark the document's tracking row as canceled. Best-effort. */
 export async function markTrackingCanceled(
   supabase: SupabaseClient,

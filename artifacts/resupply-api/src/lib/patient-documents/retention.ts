@@ -30,8 +30,15 @@ export type DocumentRetentionYears = 2 | 6 | 7 | 10;
 const RETENTION_YEARS_BY_TYPE: Record<string, DocumentRetentionYears> = {
   insurance_card: 2,
   prescription: 7,
+  // Signed delivery tickets / CMNs are DMEPOS billing-support records;
+  // CMS supplier-standard retention is 7 years from the claim.
+  signed_delivery_ticket: 7,
+  cmn: 7,
   sleep_study: 10,
   diagnostic_report: 10,
+  // Compliance / adherence documentation rides the same 10-year payer
+  // audit window as diagnostic reports.
+  compliance_report: 10,
   referral: 6,
   other: 6,
 };

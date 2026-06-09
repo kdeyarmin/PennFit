@@ -44,8 +44,8 @@ import {
   getTrackingById,
   listOutstandingSignatures,
   lookupTrackingByCode,
+  markReturnedAndCascade,
   markTrackingCanceled,
-  markTrackingReturned,
   type SignatureTrackingRow,
 } from "../../lib/signature-tracking/service";
 import {
@@ -153,26 +153,14 @@ router.post(
       return;
     }
 
-    await markTrackingReturned(supabase, row.documentKind, row.documentId);
-
-    // Advance the source document where it has its own signed state. A
-    // prescription packet that is still open is stamped signed so the two
-    // views agree; a manual document has no signed status to advance.
-    if (row.documentKind === "prescription_request") {
-      const nowIso = new Date().toISOString();
-      const { error } = await supabase
-        .schema("resupply")
-        .from("prescription_request_packets")
-        .update({ status: "signed", signed_at: nowIso, updated_at: nowIso })
-        .eq("id", row.documentId)
-        .in("status", ["draft", "sent_fax", "delivered", "failed"]);
-      if (error) {
-        logger.warn(
-          { err: error.message, document_id: row.documentId },
-          "signature_tracking.mark_returned cascade failed",
-        );
-      }
-    }
+    // Mark returned and advance the source document (a prescription
+    // packet still open is stamped signed so the two views agree).
+    await markReturnedAndCascade(supabase, row).catch((err) => {
+      logger.warn(
+        { err, document_id: row.documentId },
+        "signature_tracking.mark_returned cascade failed",
+      );
+    });
 
     await logAudit({
       action: "signature_tracking.returned",

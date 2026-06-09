@@ -9,18 +9,23 @@
 // the queue. The optimistic UI update reflects the assumed-success state
 // regardless; CSRs can re-open the tab if a hard failure is suspected.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
+  ALLOWED_UPLOAD_CONTENT_TYPES,
+  CHART_UPLOAD_DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
+  MAX_UPLOAD_BYTES,
+  SIGNED_RETURN_DOCUMENT_TYPES,
   deletePatientDocument,
   listPatientDocuments,
   markPatientDocumentReviewed,
   patientDocumentDownloadUrl,
+  uploadPatientChartDocument,
   type AdminPatientDocument,
 } from "@/lib/admin/patient-documents-api";
 
@@ -214,6 +219,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
           </span>
         </div>
       </div>
+      <UploadPanel patientId={patientId} onUploaded={() => void load()} />
       {deleteError && (
         <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
           {deleteError}
@@ -384,6 +390,200 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
         </ul>
       )}
       {ConfirmDialogEl}
+    </div>
+  );
+}
+
+/**
+ * Scan-or-upload panel: pick a file (camera on mobile), tag what it is,
+ * optionally mark a pending provider signature returned, and file it to
+ * the chart. Staff uploads are stamped reviewed server-side.
+ */
+function UploadPanel({
+  patientId,
+  onUploaded,
+}: {
+  patientId: string;
+  onUploaded: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [docType, setDocType] = useState("referral");
+  const [markReturned, setMarkReturned] = useState(false);
+  const [trackingCode, setTrackingCode] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    null,
+  );
+
+  function onTypeChange(value: string) {
+    setDocType(value);
+    // Default the "signed copy returning" toggle on for signable kinds.
+    setMarkReturned(SIGNED_RETURN_DOCUMENT_TYPES.has(value));
+  }
+
+  function reset() {
+    setFile(null);
+    setTrackingCode("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function handleUpload() {
+    setMsg(null);
+    if (!file) {
+      setMsg({ kind: "err", text: "Choose or scan a file first." });
+      return;
+    }
+    const contentType = file.type || "application/octet-stream";
+    if (!ALLOWED_UPLOAD_CONTENT_TYPES.has(contentType)) {
+      setMsg({
+        kind: "err",
+        text: "Unsupported file type. Use a PDF or an image (PNG/JPEG/HEIC/WebP).",
+      });
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setMsg({ kind: "err", text: "File is too large (max 10 MB)." });
+      return;
+    }
+    if (markReturned && !trackingCode.trim()) {
+      setMsg({
+        kind: "err",
+        text: "Enter the tracking code from the document to mark it returned.",
+      });
+      return;
+    }
+    setUploading(true);
+    try {
+      const result = await uploadPatientChartDocument(
+        patientId,
+        file,
+        docType,
+        markReturned && trackingCode.trim()
+          ? { signatureTrackingCode: trackingCode.trim() }
+          : undefined,
+      );
+      setMsg({
+        kind: "ok",
+        text: result.signatureMarkedReturned
+          ? "Filed to chart and marked the signature returned & signed."
+          : "Filed to chart.",
+      });
+      reset();
+      onUploaded();
+    } catch (err) {
+      setMsg({
+        kind: "err",
+        text:
+          err instanceof Error
+            ? err.message
+            : "Upload failed. Please try again.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div
+      className="rounded-md border p-3 space-y-3"
+      style={{ borderColor: "hsl(var(--ink-1)/0.15)" }}
+    >
+      <h4 className="text-sm font-semibold">Scan or upload a document</h4>
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div className="space-y-2">
+          <div>
+            <label
+              htmlFor="chart-upload-type"
+              className="block text-xs font-medium mb-0.5"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              What is it?
+            </label>
+            <select
+              id="chart-upload-type"
+              value={docType}
+              onChange={(e) => onTypeChange(e.target.value)}
+              disabled={uploading}
+              className="w-full rounded-md border border-border/60 bg-white px-3 py-1.5 text-sm"
+            >
+              {CHART_UPLOAD_DOCUMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="chart-upload-file"
+              className="block text-xs font-medium mb-0.5"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              File (PDF or photo — your phone camera works for scanning)
+            </label>
+            <input
+              id="chart-upload-file"
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,image/heic,image/heif,image/webp"
+              disabled={uploading}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      <label
+        className="flex items-center gap-2 text-xs"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        <input
+          type="checkbox"
+          checked={markReturned}
+          disabled={uploading}
+          onChange={(e) => setMarkReturned(e.target.checked)}
+        />
+        This is a signed copy coming back — mark its signature returned
+      </label>
+      {markReturned && (
+        <input
+          type="text"
+          value={trackingCode}
+          disabled={uploading}
+          placeholder="Tracking code from the document (PFS-XXXXXXXX)"
+          onChange={(e) => setTrackingCode(e.target.value)}
+          className="block w-full rounded-md border border-border/60 bg-white px-3 py-1.5 text-sm"
+        />
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={uploading || !file}
+          onClick={() => void handleUpload()}
+          className="text-xs font-semibold px-3 py-1.5 rounded-md disabled:opacity-40"
+          style={{
+            background: "hsl(var(--penn-navy))",
+            color: "#fff",
+            border: "none",
+            cursor: uploading || !file ? "not-allowed" : "pointer",
+          }}
+        >
+          {uploading ? "Uploading…" : "Upload to chart"}
+        </button>
+        {msg && (
+          <span
+            className="text-xs"
+            style={{
+              color: msg.kind === "ok" ? "#047857" : "#b91c1c",
+            }}
+          >
+            {msg.text}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
