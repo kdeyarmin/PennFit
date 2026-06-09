@@ -409,7 +409,7 @@ export async function dispatch999(
       .limit(1)
       .maybeSingle();
     if (submission) {
-      await supabase
+      const { error: sub999Err } = await supabase
         .schema("resupply")
         .from("office_ally_submissions")
         .update({
@@ -428,7 +428,13 @@ export async function dispatch999(
               : null,
         })
         .eq("id", submission.id);
-      await supabase
+      if (sub999Err) {
+        logger.warn(
+          { err: sub999Err.message, submissionId: submission.id },
+          "office_ally: 999 ack update failed",
+        );
+      }
+      const { error: file999Err } = await supabase
         .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
@@ -436,6 +442,12 @@ export async function dispatch999(
           parse_summary_json: summarise999(parsed) as unknown as Json,
         })
         .eq("id", inboundFileId);
+      if (file999Err) {
+        logger.warn(
+          { err: file999Err.message, inboundFileId },
+          "office_ally: 999 inbound file link update failed",
+        );
+      }
     }
   }
 }
@@ -470,13 +482,19 @@ export async function dispatch277ca(
         updated_at: new Date().toISOString(),
       };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
-    await supabase
+    const { error: claimUpdateErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update(update)
       .eq("id", claim.id);
+    if (claimUpdateErr) {
+      logger.warn(
+        { err: claimUpdateErr.message, claimId: claim.id },
+        "office_ally: 277CA claim update failed",
+      );
+    }
     // Append an event for the audit trail.
-    await supabase
+    const { error: eventInsertErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -489,6 +507,12 @@ export async function dispatch277ca(
         ),
         actor_email: SYSTEM_ACTOR_EMAIL,
       });
+    if (eventInsertErr) {
+      logger.warn(
+        { err: eventInsertErr.message, claimId: claim.id },
+        "office_ally: 277CA claim event insert failed",
+      );
+    }
     // Accumulate for the per-submission roll-up below.
     if (claim.office_ally_submission_id) {
       submissionHasRejection.set(
@@ -502,7 +526,7 @@ export async function dispatch277ca(
   // Roll-up onto the office_ally_submissions row — any rejected claim
   // marks the whole submission rejected_277ca.
   for (const [submissionId, hasRejection] of submissionHasRejection) {
-    await supabase
+    const { error: sub277Err } = await supabase
       .schema("resupply")
       .from("office_ally_submissions")
       .update({
@@ -511,7 +535,13 @@ export async function dispatch277ca(
         ack_277ca_received_at: new Date().toISOString(),
       })
       .eq("id", submissionId);
-    await supabase
+    if (sub277Err) {
+      logger.warn(
+        { err: sub277Err.message, submissionId },
+        "office_ally: 277CA submission roll-up update failed",
+      );
+    }
+    const { error: file277Err } = await supabase
       .schema("resupply")
       .from("clearinghouse_inbound_files")
       .update({
@@ -519,6 +549,12 @@ export async function dispatch277ca(
         parse_summary_json: summarise277(parsed) as unknown as Json,
       })
       .eq("id", inboundFileId);
+    if (file277Err) {
+      logger.warn(
+        { err: file277Err.message, inboundFileId, submissionId },
+        "office_ally: 277CA inbound file link update failed",
+      );
+    }
   }
 }
 

@@ -288,15 +288,21 @@ async function chargeOneAuthorization(
   });
 
   if (result.outcome === "succeeded") {
-    await supabase
+    const { error: piStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({ stripe_payment_intent_id: result.paymentIntentId })
       .eq("id", payRow.id);
+    if (piStampErr) {
+      logger.warn(
+        { err: piStampErr.message, paymentId: payRow.id },
+        "autopay: failed to stamp payment_intent_id on success — charge already captured",
+      );
+    }
     // Flip to succeeded + apply the allocation (idempotent; the webhook
     // redelivery completes it too if this is interrupted).
     await markPaymentStatus({ paymentId: payRow.id, status: "succeeded" });
-    await supabase
+    const { error: authResetErr } = await supabase
       .schema("resupply")
       .from("patient_autopay_authorizations")
       .update({
@@ -306,6 +312,12 @@ async function chargeOneAuthorization(
         updated_at: now,
       })
       .eq("id", auth.id);
+    if (authResetErr) {
+      logger.warn(
+        { err: authResetErr.message, authId: auth.id },
+        "autopay: failed to reset charge_attempts after success — retry counter may be stale",
+      );
+    }
     stats.charged += 1;
     return;
   }
@@ -314,7 +326,7 @@ async function chargeOneAuthorization(
     result.outcome === "requires_action" ? "requires_action" : "failed";
   const reason =
     result.outcome === "requires_action" ? "requires_action" : result.reason;
-  await supabase
+  const { error: payFailErr } = await supabase
     .schema("resupply")
     .from("patient_payments")
     .update({
@@ -324,7 +336,13 @@ async function chargeOneAuthorization(
       updated_at: now,
     })
     .eq("id", payRow.id);
-  await supabase
+  if (payFailErr) {
+    logger.error(
+      { err: payFailErr.message, paymentId: payRow.id, failureStatus },
+      "autopay: failed to update payment status after charge failure — payment row may be stuck in pending",
+    );
+  }
+  const { error: authFailErr } = await supabase
     .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({
@@ -334,6 +352,12 @@ async function chargeOneAuthorization(
       updated_at: now,
     })
     .eq("id", auth.id);
+  if (authFailErr) {
+    logger.warn(
+      { err: authFailErr.message, authId: auth.id },
+      "autopay: failed to record charge failure on authorization — retry cadence may be incorrect",
+    );
+  }
   if (result.outcome === "requires_action") stats.requiresAction += 1;
   else stats.failed += 1;
 }
