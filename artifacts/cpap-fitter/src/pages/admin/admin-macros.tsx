@@ -136,7 +136,7 @@ function MacroRow({ item, subtle }: { item: CsrMacro; subtle?: boolean }) {
     mutationFn: (body: Parameters<typeof patchMacro>[1]) =>
       patchMacro(item.id, body),
     onSuccess: () => {
-      invalidate();
+      void invalidate();
       setEditing(false);
     },
   });
@@ -235,7 +235,7 @@ function NewMacroCard() {
     mutationFn: (body: Parameters<typeof createMacro>[0]) => createMacro(body),
     onSuccess: () => {
       setOpen(false);
-      qc.invalidateQueries({ queryKey: ["admin-csr-macros"] });
+      void qc.invalidateQueries({ queryKey: ["admin-csr-macros"] });
     },
   });
 

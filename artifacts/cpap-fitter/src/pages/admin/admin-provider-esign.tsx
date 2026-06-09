@@ -279,7 +279,7 @@ function CreateRequestModal({ onClose }: { onClose: () => void }) {
         subjectId: subjectId.trim() || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
       onClose();
     },
   });
@@ -361,7 +361,7 @@ function ReleaseModal({
         note: note.trim() || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
       onClose();
     },
   });

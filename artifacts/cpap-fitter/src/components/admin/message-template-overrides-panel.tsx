@@ -356,7 +356,7 @@ function NewOverrideForm({ userId }: { userId: string }) {
   const create = useMutation({
     mutationFn: (body: CreateOverrideBody) => createOverride(userId, body),
     onSuccess: () => {
-      qc.invalidateQueries({
+      void qc.invalidateQueries({
         queryKey: ["admin-message-template-overrides", userId],
       });
       setTemplateKey("");
