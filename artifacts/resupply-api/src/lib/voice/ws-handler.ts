@@ -759,6 +759,11 @@ export async function handleVoiceDiagnosticWsConnection(
       practiceName: config.practiceName ?? "PennPaps",
       callContext: pending.callContext ?? "Voice connection diagnostic.",
       ...(pending.greeting ? { greeting: pending.greeting } : {}),
+      // Honor the caller kind so an admin test call can hear the
+      // shop-customer persona as well as the patient one. Tools stay
+      // disabled either way (diagnostic mode), so the agent exercises
+      // tone / greeting / scope / handoff without touching real data.
+      ...(pending.callerKind ? { callerKind: pending.callerKind } : {}),
     }),
     // No tools — the agent just converses to confirm two-way audio.
     tools: [],

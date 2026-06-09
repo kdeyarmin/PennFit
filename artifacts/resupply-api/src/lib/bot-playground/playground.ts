@@ -836,3 +836,32 @@ export function getPlaygroundPrompt(
     promptVersion: bot === "voice" ? VOICE_PROMPT_VERSION : undefined,
   };
 }
+
+/**
+ * Resolve the non-PHI grounding context + caller kind for a LIVE voice
+ * test call (the admin dials in / we call them and they actually talk to
+ * the agent). Lets the admin reuse a voice scenario's framing or supply
+ * their own. The call runs in the diagnostic bridge (real persona +
+ * prosody, no account tools), so this only sets how the agent FRAMES the
+ * call, never any patient data.
+ */
+export function resolveVoiceCallSetup(input: {
+  scenarioId?: string;
+  callContext?: string;
+  callerKind?: VoiceCallerKind;
+}): { callContext: string; callerKind: VoiceCallerKind } {
+  const scenario = input.scenarioId
+    ? PLAYGROUND_SCENARIOS.find(
+        (s) => s.id === input.scenarioId && s.bot === "voice",
+      )
+    : undefined;
+  const callContext =
+    input.callContext?.trim() ||
+    scenario?.config?.voice?.callContext ||
+    DEFAULT_VOICE_CONFIG.callContext;
+  const callerKind =
+    input.callerKind ??
+    scenario?.config?.voice?.callerKind ??
+    DEFAULT_VOICE_CONFIG.callerKind;
+  return { callContext, callerKind };
+}

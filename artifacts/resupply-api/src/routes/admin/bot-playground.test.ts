@@ -25,7 +25,19 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
+const placeCallMock = vi.fn();
+vi.mock("@workspace/resupply-telecom", async () => {
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
+  return {
+    ...actual,
+    createTwilioClient: vi.fn(() => ({ placeCall: placeCallMock })),
+  };
+});
+
 import botPlaygroundRouter from "./bot-playground";
+import { __resetPendingSessionsForTests } from "../../lib/voice/pending-sessions";
 
 function makeApp(): Express {
   const app = express();
@@ -40,21 +52,40 @@ const ADMIN: MockAdminCtx = {
   role: "admin",
 };
 
-const originalOpenAi = process.env.OPENAI_API_KEY;
-const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+const VOICE_ENV_KEYS = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_PHONE_NUMBER",
+  "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+] as const;
+const savedEnv: Record<string, string | undefined> = {};
+for (const k of VOICE_ENV_KEYS) savedEnv[k] = process.env[k];
+
+function setVoiceConfigured(): void {
+  process.env.OPENAI_API_KEY = "sk-test";
+  process.env.TWILIO_ACCOUNT_SID = "AC_test";
+  process.env.TWILIO_AUTH_TOKEN = "tok_test";
+  process.env.TWILIO_PHONE_NUMBER = "+18145550000";
+  process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.pennpaps.com";
+}
 
 beforeEach(() => {
   mockAdmin.current = null;
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
+  for (const k of VOICE_ENV_KEYS) delete process.env[k];
+  placeCallMock.mockReset();
   __resetLlmProviderCacheForTests();
+  __resetPendingSessionsForTests();
 });
 
 afterEach(() => {
-  if (originalOpenAi !== undefined) process.env.OPENAI_API_KEY = originalOpenAi;
-  if (originalAnthropic !== undefined)
-    process.env.ANTHROPIC_API_KEY = originalAnthropic;
+  for (const k of VOICE_ENV_KEYS) {
+    if (savedEnv[k] !== undefined) process.env[k] = savedEnv[k];
+    else delete process.env[k];
+  }
   __resetLlmProviderCacheForTests();
+  __resetPendingSessionsForTests();
 });
 
 describe("/admin/bot-playground", () => {
@@ -135,5 +166,76 @@ describe("/admin/bot-playground", () => {
     expect(res.body.offline).toBe(true);
     expect(res.body.provider).toBe("offline");
     expect(typeof res.body.reply).toBe("string");
+  });
+
+  describe("POST /voice-call", () => {
+    it("503s when voice is not configured", async () => {
+      mockAdmin.current = ADMIN;
+      const res = await request(makeApp())
+        .post("/admin/bot-playground/voice-call")
+        .send({ to: "+18145551212" });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toBe("voice_not_configured");
+      expect(placeCallMock).not.toHaveBeenCalled();
+    });
+
+    it("400s on an invalid phone number", async () => {
+      mockAdmin.current = ADMIN;
+      setVoiceConfigured();
+      const res = await request(makeApp())
+        .post("/admin/bot-playground/voice-call")
+        .send({ to: "12" });
+      expect(res.status).toBe(400);
+      expect(placeCallMock).not.toHaveBeenCalled();
+    });
+
+    it("403s without admin.tools.manage", async () => {
+      mockAdmin.current = { ...ADMIN, role: "agent", granularRole: "csr" };
+      setVoiceConfigured();
+      const res = await request(makeApp())
+        .post("/admin/bot-playground/voice-call")
+        .send({ to: "+18145551212" });
+      expect(res.status).toBe(403);
+      expect(placeCallMock).not.toHaveBeenCalled();
+    });
+
+    it("places a diagnostic call and returns the call sid", async () => {
+      mockAdmin.current = ADMIN;
+      setVoiceConfigured();
+      placeCallMock.mockResolvedValueOnce({ sid: "CA_test_123" });
+
+      const res = await request(makeApp())
+        .post("/admin/bot-playground/voice-call")
+        .send({ to: "(814) 555-1212", scenarioId: "voice-shop" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.callSid).toBe("CA_test_123");
+      expect(res.body.callerKind).toBe("shop_customer");
+      expect(typeof res.body.conversationId).toBe("string");
+      expect(placeCallMock).toHaveBeenCalledTimes(1);
+      const arg = placeCallMock.mock.calls[0][0] as {
+        to: string;
+        from: string;
+        url: string;
+      };
+      // Phone normalized to E.164.
+      expect(arg.to).toBe("+18145551212");
+      // TwiML points at the existing connect webhook with our conversationId.
+      expect(arg.url).toContain("/voice/twiml-connect?conversationId=");
+    });
+
+    it("502s when Twilio rejects the call", async () => {
+      mockAdmin.current = ADMIN;
+      setVoiceConfigured();
+      const { TwilioApiError } = await import("@workspace/resupply-telecom");
+      placeCallMock.mockRejectedValueOnce(
+        new TwilioApiError("rejected", 400, 21211),
+      );
+      const res = await request(makeApp())
+        .post("/admin/bot-playground/voice-call")
+        .send({ to: "+18145551212" });
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe("twilio_api_error");
+    });
   });
 });

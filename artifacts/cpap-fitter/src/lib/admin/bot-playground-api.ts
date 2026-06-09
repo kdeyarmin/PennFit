@@ -145,3 +145,26 @@ export const runPlayground = (body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
+export interface VoiceTestCallResult {
+  conversationId: string;
+  callSid: string;
+  callerKind: VoiceCallerKind;
+}
+
+/**
+ * Place a LIVE outbound test call so an admin can actually talk to the
+ * voice agent on the phone. Connects to the production Realtime bridge in
+ * diagnostic mode (real persona, no account tools, no patient data).
+ */
+export const placeVoiceTestCall = (body: {
+  to: string;
+  callerKind?: VoiceCallerKind;
+  scenarioId?: string;
+  callContext?: string;
+}) =>
+  jsonFetch<VoiceTestCallResult>("/admin/bot-playground/voice-call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });

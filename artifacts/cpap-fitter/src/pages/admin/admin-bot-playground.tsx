@@ -18,6 +18,7 @@ import {
   Bot,
   FlaskConical,
   Loader2,
+  Phone,
   RotateCcw,
   Send,
   Wrench,
@@ -32,11 +33,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   getPlaygroundInfo,
   getPlaygroundPrompt,
+  placeVoiceTestCall,
   runPlayground,
   type BotKind,
   type PlaygroundConfig,
@@ -86,6 +89,7 @@ export function AdminBotPlaygroundPage() {
   const [draft, setDraft] = useState("");
   const [scenarioConfig, setScenarioConfig] = useState<PlaygroundConfig>({});
   const [prompt, setPrompt] = useState<PlaygroundPromptInfo | null>(null);
+  const [callPhone, setCallPhone] = useState("");
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const info = useQuery({
@@ -140,6 +144,24 @@ export function AdminBotPlaygroundPage() {
       requestAnimationFrame(() => {
         const el = listRef.current;
         if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+  });
+
+  const callMutation = useMutation({
+    mutationFn: placeVoiceTestCall,
+    onSuccess: () => {
+      toast({
+        title: "Calling you now",
+        description:
+          "Pick up and talk to the voice agent. It runs the real persona; account tools are disabled on test calls.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Couldn't place the call",
+        description: err.message,
+        variant: "destructive",
       });
     },
   });
@@ -303,6 +325,86 @@ export function AdminBotPlaygroundPage() {
             </Button>
           ))}
         </div>
+      )}
+
+      {/* Live test call — actually talk to the voice agent on the phone */}
+      {bot === "voice" && (
+        <Card data-testid="bot-playground-voice-call">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Phone className="h-4 w-4" /> Talk to the voice agent
+            </CardTitle>
+            <CardDescription>
+              We&apos;ll call your phone and connect you to the live voice agent
+              so you can hear its greeting, prosody, turn-taking, and how it
+              handles scope and hand-offs. It runs the real persona for the{" "}
+              <strong>
+                {callerKind === "patient" ? "patient" : "shop customer"}
+              </strong>{" "}
+              kind selected above; account tools (identity, ordering) are
+              disabled on test calls, and no real customer data is touched. The
+              voice agent must be enabled in Control Center.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (callPhone.trim().length === 0) return;
+                callMutation.mutate({
+                  to: callPhone.trim(),
+                  callerKind,
+                  callContext: scenarioConfig.voice?.callContext,
+                });
+              }}
+            >
+              <div className="flex-1 min-w-[12rem]">
+                <label
+                  className="text-xs block mb-1"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                  htmlFor="bot-playground-call-phone"
+                >
+                  Your phone number
+                </label>
+                <Input
+                  id="bot-playground-call-phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="(814) 555-0123"
+                  value={callPhone}
+                  onChange={(e) => setCallPhone(e.target.value)}
+                  disabled={callMutation.isPending}
+                  data-testid="bot-playground-call-phone"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={
+                  callMutation.isPending ||
+                  callPhone.trim().length === 0 ||
+                  info.data?.provider === "offline"
+                }
+                data-testid="bot-playground-call-button"
+              >
+                {callMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Phone className="h-4 w-4 mr-1" />
+                )}
+                Call me
+              </Button>
+            </form>
+            {scenarioConfig.voice?.callContext && (
+              <p
+                className="text-xs mt-2"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Framing the call as: “{scenarioConfig.voice.callContext}”
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid gap-6 md:grid-cols-[2fr_1fr]">
