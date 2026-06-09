@@ -152,7 +152,7 @@ export async function runWebhookDispatcher(
   async function processOne(delivery: Delivery): Promise<void> {
     const sub = subById.get(delivery.subscription_id);
     if (!sub || !sub.is_active) {
-      await supabase
+      const { error: inactiveErr } = await supabase
         .schema("resupply")
         .from("webhook_deliveries")
         .update({
@@ -160,6 +160,12 @@ export async function runWebhookDispatcher(
           last_error: "subscription inactive at dispatch time",
         })
         .eq("id", delivery.id);
+      if (inactiveErr) {
+        logger.warn(
+          { err: inactiveErr.message, deliveryId: delivery.id },
+          "webhook.dispatch: failed to mark inactive delivery exhausted",
+        );
+      }
       stats.exhausted += 1;
       return;
     }
@@ -172,7 +178,7 @@ export async function runWebhookDispatcher(
       parsedUrl = assertSafeOutboundUrlSync(sub.target_url);
     } catch (err) {
       const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
-      await supabase
+      const { error: ssrfErr } = await supabase
         .schema("resupply")
         .from("webhook_deliveries")
         .update({
@@ -180,6 +186,12 @@ export async function runWebhookDispatcher(
           last_error: `target_url rejected: ${reason}`,
         })
         .eq("id", delivery.id);
+      if (ssrfErr) {
+        logger.warn(
+          { err: ssrfErr.message, deliveryId: delivery.id },
+          "webhook.dispatch: failed to mark SSRF-rejected delivery exhausted",
+        );
+      }
       stats.exhausted += 1;
       return;
     }
@@ -188,7 +200,7 @@ export async function runWebhookDispatcher(
       pinnedIp = await assertSafeOutboundHost(parsedUrl.hostname);
     } catch (err) {
       const reason = err instanceof SsrfError ? err.reason : "dns_failed";
-      await supabase
+      const { error: dnsErr } = await supabase
         .schema("resupply")
         .from("webhook_deliveries")
         .update({
@@ -196,6 +208,12 @@ export async function runWebhookDispatcher(
           last_error: `target_url rejected: ${reason}`,
         })
         .eq("id", delivery.id);
+      if (dnsErr) {
+        logger.warn(
+          { err: dnsErr.message, deliveryId: delivery.id },
+          "webhook.dispatch: failed to mark DNS-rejected delivery exhausted",
+        );
+      }
       stats.exhausted += 1;
       return;
     }
@@ -211,7 +229,11 @@ export async function runWebhookDispatcher(
       signature,
     );
     if (attempt.ok) {
-      await supabase
+      // Mark delivered BEFORE incrementing stats. A failure here means
+      // the delivery stays 'queued' (lease expires, re-attempted) — this
+      // risks a duplicate delivery but is safer than marking it delivered
+      // when the DB write failed.
+      const { error: deliveredErr } = await supabase
         .schema("resupply")
         .from("webhook_deliveries")
         .update({
@@ -222,7 +244,16 @@ export async function runWebhookDispatcher(
           delivered_at: new Date().toISOString(),
         })
         .eq("id", delivery.id);
-      await supabase
+      if (deliveredErr) {
+        logger.warn(
+          { err: deliveredErr.message, deliveryId: delivery.id },
+          "webhook.dispatch: failed to mark delivery delivered (will retry)",
+        );
+        return;
+      }
+      // Best-effort subscription metadata stamp — failure here doesn't
+      // affect correctness of the delivery itself.
+      const { error: subStampErr } = await supabase
         .schema("resupply")
         .from("webhook_subscriptions")
         .update({
@@ -230,6 +261,12 @@ export async function runWebhookDispatcher(
           last_delivery_status: "delivered",
         })
         .eq("id", sub.id);
+      if (subStampErr) {
+        logger.warn(
+          { err: subStampErr.message, subscriptionId: sub.id },
+          "webhook.dispatch: failed to stamp subscription last_delivery_at",
+        );
+      }
       stats.delivered += 1;
       return;
     }
@@ -315,7 +352,7 @@ async function applyRetryOrExhaust(
 ): Promise<void> {
   const nextAttempt = delivery.attempt_count + 1;
   if (nextAttempt >= maxRetries) {
-    await supabase
+    const { error: exhaustedErr } = await supabase
       .schema("resupply")
       .from("webhook_deliveries")
       .update({
@@ -325,13 +362,19 @@ async function applyRetryOrExhaust(
         last_error: (errorMessage ?? "unknown").slice(0, 2000),
       })
       .eq("id", delivery.id);
+    if (exhaustedErr) {
+      logger.warn(
+        { err: exhaustedErr.message, deliveryId: delivery.id },
+        "webhook.dispatch: failed to mark delivery exhausted",
+      );
+    }
     stats.exhausted += 1;
     return;
   }
   // Exponential backoff: 2^attempt minutes, capped at 4 hours.
   const backoffMin = Math.min(240, Math.pow(2, nextAttempt));
   const nextAt = new Date(Date.now() + backoffMin * 60 * 1000).toISOString();
-  await supabase
+  const { error: retryErr } = await supabase
     .schema("resupply")
     .from("webhook_deliveries")
     .update({
@@ -341,6 +384,12 @@ async function applyRetryOrExhaust(
       next_attempt_at: nextAt,
     })
     .eq("id", delivery.id);
+  if (retryErr) {
+    logger.warn(
+      { err: retryErr.message, deliveryId: delivery.id },
+      "webhook.dispatch: failed to schedule retry",
+    );
+  }
   stats.retried += 1;
 }
 

@@ -68,17 +68,51 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
+  const DWO_PAGE_SIZE = 1000;
   for (const window of HEADS_UP_DAYS) {
     const target = new Date(today);
     target.setUTCDate(target.getUTCDate() + window);
     const targetIso = target.toISOString().slice(0, 10);
-    const { data: dwos } = await supabase
-      .schema("resupply")
-      .from("dwo_documents")
-      .select("id, patient_id, hcpcs_family, form_type, expires_on")
-      .eq("expires_on", targetIso)
-      .limit(500);
-    for (const row of dwos ?? []) {
+
+    // Keyset-paginate so portfolios with >1000 DWOs expiring on the
+    // same day are processed in full rather than silently truncated.
+    let dwoReadFailed = false;
+    const dwos: Array<{
+      id: string;
+      patient_id: string;
+      hcpcs_family: string;
+      form_type: string;
+      expires_on: string;
+    }> = [];
+    {
+      let cursor = "";
+      for (;;) {
+        let q = supabase
+          .schema("resupply")
+          .from("dwo_documents")
+          .select("id, patient_id, hcpcs_family, form_type, expires_on")
+          .eq("expires_on", targetIso)
+          .order("id", { ascending: true })
+          .limit(DWO_PAGE_SIZE);
+        if (cursor) q = q.gt("id", cursor);
+        const { data: page, error: pageErr } = await q;
+        if (pageErr) {
+          logger.warn(
+            { err: pageErr.message, window },
+            "dwo.expiry-sweep: dwo read failed",
+          );
+          dwoReadFailed = true;
+          break;
+        }
+        if (!page || page.length === 0) break;
+        dwos.push(...page);
+        cursor = page[page.length - 1]!.id;
+        if (page.length < DWO_PAGE_SIZE) break;
+      }
+    }
+    if (dwoReadFailed) continue;
+
+    for (const row of dwos) {
       stats.scanned += 1;
       const { data: existing } = await supabase
         .schema("resupply")
@@ -93,7 +127,7 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       if (existing && existing.length > 0) continue;
       const severity: "warning" | "critical" =
         window <= 7 ? "critical" : "warning";
-      await supabase
+      const { error: insertErr } = await supabase
         .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
@@ -109,6 +143,13 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
             daysOut: window,
           },
         });
+      if (insertErr) {
+        logger.warn(
+          { err: insertErr.message, dwoId: row.id, window },
+          "dwo.expiry-sweep: alert insert failed",
+        );
+        continue;
+      }
       stats.alertsCreated += 1;
       stats.byWindow[window] = (stats.byWindow[window] ?? 0) + 1;
     }
