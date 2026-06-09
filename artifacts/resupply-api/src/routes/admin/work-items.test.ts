@@ -137,5 +137,25 @@ describe("GET /admin/work-items", () => {
       "c1",
     ]);
     expect(res.body.workItems[0].kind).toBe("fax");
+    expect(res.body.degradedSources).toEqual([]);
+  });
+
+  it("degrades a single failing source instead of 500ing the whole queue", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("conversations", "select", {
+      data: [{ id: "c1", created_at: "2026-05-31T10:00:00.000Z" }],
+    });
+    // The fax source errors (transient blip). The queue should still
+    // return the conversation and name `faxes` as degraded.
+    stageSupabaseResponse("inbound_faxes", "select", {
+      data: null,
+      error: { message: "boom" },
+    });
+
+    const res = await request(makeApp()).get("/admin/work-items");
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.workItems[0].refId).toBe("c1");
+    expect(res.body.degradedSources).toEqual(["faxes"]);
   });
 });
