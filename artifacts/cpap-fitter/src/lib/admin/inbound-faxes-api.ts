@@ -1,5 +1,5 @@
 // Hand-rolled fetch wrapper for /admin/inbound-faxes — the CSR
-// triage surface for faxes Twilio delivers to our fax number.
+// triage surface for faxes Telnyx delivers to our fax number.
 
 import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";

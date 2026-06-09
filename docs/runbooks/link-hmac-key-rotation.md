@@ -19,7 +19,7 @@ secret to rotate when something goes wrong).
 | Caller                                                                                                                                                     | TTL    | What in-flight rotation breaks                                                                                                                                                                                                |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lib/resupply-messaging/src/signed-link-tokens.ts` — email CTA tokens (`confirm` / `edit` / `stop` actions on reminder emails)                             | 7 days | Every reminder email sent in the rolling 7-day window: the patient clicking "Confirm order" or "Stop reminders" lands on a "this link is no longer valid" page. They CAN re-request via the storefront.                       |
-| `artifacts/resupply-api/src/lib/fax-document-token.ts` — fax cover-letter document URLs that Twilio fetches when dispatching `physician_fax_outreach` rows | 1 hour | Any `physician_fax_outreach` job scheduled before the rotation but dispatched after will fail to fetch the cover sheet from `/fax/document/:token`. The retry queue surfaces this; the operator re-dispatches after rotation. |
+| `artifacts/resupply-api/src/lib/fax-document-token.ts` — fax cover-letter document URLs that Telnyx fetches when dispatching `physician_fax_outreach` rows | 1 hour | Any `physician_fax_outreach` job scheduled before the rotation but dispatched after will fail to fetch the cover sheet from `/fax/document/:token`. The retry queue surfaces this; the operator re-dispatches after rotation. |
 
 Both readers go through `getLinkHmacKey()` in `lib/resupply-secrets`.
 The function THROWS on missing key (`refusing to sign or verify
@@ -61,9 +61,9 @@ Concretely, at the moment the new key takes effect on a process:
   `routes/email/click.ts`).
 - Any fax outreach job whose cover-letter URL was issued with the
   old key but fetched after rotation gets a 401 from
-  `routes/fax/document/:token`. Twilio retries on 5xx but not 4xx,
-  so the dispatch fails terminally. The pgboss `failed` count
-  ticks up; operator re-dispatches.
+  `routes/fax/document/:token`. Telnyx can't fetch the cover sheet
+  (a 4xx is terminal), so the dispatch fails. The pgboss `failed`
+  count ticks up; operator re-dispatches.
 - Tokens issued by the new process verify normally on every other
   process running the new key.
 

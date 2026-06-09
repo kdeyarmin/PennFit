@@ -688,8 +688,8 @@ router.use(swoRouter);
 // Sliding 30-day window finder lives in
 // lib/compliance-attestation.ts and is unit-tested without pdfkit.
 router.use(complianceAttestationRouter);
-// /admin/inbound-faxes/* — triage queue for faxes Twilio delivers.
-// The webhook lives at /fax/inbound (mounted elsewhere); this is
+// /admin/inbound-faxes/* — triage queue for faxes Telnyx delivers.
+// The webhook lives at /fax/webhook (mounted elsewhere); this is
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
 router.use(inboundFaxesRouter); // /admin/equipment-recalls/* — manufacturer recall registry + the

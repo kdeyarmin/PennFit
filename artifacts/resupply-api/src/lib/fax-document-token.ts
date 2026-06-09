@@ -1,10 +1,10 @@
 // HMAC-SHA256 signed tokens for fax cover-letter document URLs.
 //
-// When the physician-fax-outreach route dispatches via Twilio, it
-// passes a `mediaUrl` pointing to GET /fax/document/:token. Twilio
+// When the physician-fax-outreach route dispatches via Telnyx, it
+// passes a `mediaUrl` pointing to GET /fax/document/:token. Telnyx
 // fetches that URL to retrieve the cover-letter PDF. The token
 // carries the outreach row ID and a short TTL (1 hour), preventing
-// enumeration of PHI without requiring Twilio to send admin credentials.
+// enumeration of PHI without requiring Telnyx to send admin credentials.
 //
 // Uses the same RESUPPLY_LINK_HMAC_KEY as email link tokens — no new
 // secrets required.
@@ -26,7 +26,7 @@ interface FaxDocumentPayload {
 
 export type FaxDocumentKind = "physician_outreach" | "appeal_letter";
 
-const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Twilio fetches immediately
+const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Telnyx fetches immediately
 
 function base64urlEncode(buf: Buffer): string {
   return buf
