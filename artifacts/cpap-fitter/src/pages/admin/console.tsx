@@ -100,6 +100,11 @@ const AdminComplianceRulesPage = lazy(() =>
     default: m.AdminComplianceRulesPage,
   })),
 );
+const AdminLocationsPage = lazy(() =>
+  import("@/pages/admin/admin-locations").then((m) => ({
+    default: m.AdminLocationsPage,
+  })),
+);
 const AdminShopReviewsPage = lazy(() =>
   import("@/pages/admin/admin-shop-reviews").then((m) => ({
     default: m.AdminShopReviewsPage,
@@ -818,6 +823,7 @@ function AdminConsole() {
               path="/admin/compliance-rules"
               component={AdminComplianceRulesPage}
             />
+            <Route path="/admin/locations" component={AdminLocationsPage} />
             <Route
               path="/admin/shop/reviews"
               component={AdminShopReviewsPage}

@@ -660,6 +660,9 @@ export interface PatientListItem {
   status: PatientListItemStatus;
   hasPhone: boolean;
   hasEmail: boolean;
+  /** Business branch (location) servicing this patient. NULL when
+unassigned. */
+  locationId?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Timestamp of the most recent inbound or outbound message
@@ -866,6 +869,14 @@ and the legacy SMS-then-email fallback. NULL means no
 override.
  */
   channelPreference?: PatientDetailChannelPreference;
+  /** Business branch (location) servicing this patient. NULL when
+unassigned. Billing identity is shared at the org level, so this
+is purely an operational anchor.
+ */
+  locationId?: string | null;
+  /** Resolved name of the assigned location, for display. NULL when
+unassigned. */
+  locationName?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Timestamp of the most recent inbound or outbound message
@@ -1268,6 +1279,12 @@ export interface PatientUpdate {
    */
   cadenceOverrideDays?: number | null;
   channelPreference?: PatientUpdateChannelPreference;
+  /** Business branch (location) servicing this patient. A uuid
+assigns the patient to that location (must reference an active
+location, else 422 invalid_location); null clears the
+assignment. Billing identity is unaffected.
+ */
+  locationId?: string | null;
   /** Lifecycle status. `paused` removes the patient from the
 outreach scan; `closed` is terminal (off program). The
 scan suppresses paused/closed patients regardless of
@@ -1932,6 +1949,11 @@ decrypted first/last name.
  * @maxLength 64
  */
   search?: string;
+  /**
+   * Filter to one business branch (location uuid), or the literal
+   * "none" to surface patients with no branch assigned.
+   */
+  locationId?: string;
   /**
    * @minimum 1
    * @maximum 100
