@@ -181,7 +181,7 @@ describe("boot-required variables — exit 1 on failure", () => {
   });
 
   it("fails when DATABASE_URL is missing", () => {
-    const { exitCode, stdout } = run(withEnv({ DATABASE_URL: undefined }));
+    const { exitCode } = run(withEnv({ DATABASE_URL: undefined }));
     expect(exitCode).toBe(1);
   });
 
@@ -1090,7 +1090,7 @@ describe("non-production mode — missing vendor vars warn rather than fail", ()
       TWILIO_MESSAGING_SERVICE_SID: undefined,
       TWILIO_AUTH_TOKEN: undefined,
     });
-    const { exitCode, stdout } = run(env);
+    const { stdout } = run(env);
     // Unset TWILIO_ACCOUNT_SID in production → warn (no SMS/voice),
     // but unset TWILIO_AUTH_TOKEN in production → fail per prodSeverity.
     // So this is actually exit 1 because TWILIO_AUTH_TOKEN is missing in prod.

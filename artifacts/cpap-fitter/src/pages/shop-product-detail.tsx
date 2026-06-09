@@ -1537,7 +1537,3 @@ function WriteReviewForm({
     </form>
   );
 }
-
-// Suppress unused-import warning for memo helper — kept for parity
-// with surrounding shop pages that use it. Remove on next refactor.
-void useMemo;

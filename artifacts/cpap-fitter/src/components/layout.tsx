@@ -257,6 +257,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <img
                 src={pennLogo}
                 alt="PennPaps"
+                // Intrinsic dimensions of the source asset (386×228) so the
+                // browser reserves the right aspect ratio and the sticky
+                // header doesn't shift on first paint (CLS). CSS still drives
+                // the rendered size via h-12/h-14 + w-auto.
+                width={386}
+                height={228}
                 className="h-12 md:h-14 w-auto"
               />
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
@@ -476,6 +482,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <img
                   src={pennLogo}
                   alt="Penn Home Medical Supply"
+                  width={386}
+                  height={228}
                   className="h-9 w-auto rounded-md"
                 />
                 <div className="leading-tight">

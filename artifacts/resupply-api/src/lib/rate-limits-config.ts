@@ -85,6 +85,47 @@ export const RATE_LIMITS = {
   },
 
   /**
+   * POST /api/recommend — public mask-scoring engine. No token cost
+   * and no PHI, but it runs the full recommendation engine on the
+   * single Node process per call, so it's the one hot public POST
+   * left uncapped. Generous per-IP budget (a real fitter session
+   * recomputes a handful of times) that still shuts down a script
+   * hammering the CPU. Bumping it 10x risks event-loop starvation
+   * under a flood, not cost.
+   */
+  storefront_recommend: {
+    windowMs: 60 * 1000,
+    limit: 60,
+    doc: "POST /api/recommend — public mask-scoring engine, CPU-bound (no token cost, no PHI)",
+  },
+
+  /**
+   * POST /api/me/sleep-coach — signed-in patient sleep coach. Every
+   * accepted request burns Anthropic / OpenAI tokens (same cost shape
+   * as /api/chat). Keyed by the signed-in customer id (IP fallback)
+   * so one compromised or scripted session can't run up the vendor
+   * bill. Looser than the public chat budget because the caller is
+   * authenticated, but still bounded.
+   */
+  me_sleep_coach: {
+    windowMs: 5 * 60 * 1000,
+    limit: 30,
+    doc: "POST /api/me/sleep-coach — signed-in LLM endpoint, every request burns vendor tokens",
+  },
+
+  /**
+   * POST /shop/me/chat — signed-in customer support chatbot. Same
+   * token-cost shape as /api/chat and the sleep coach; keyed by the
+   * signed-in customer id (IP fallback). Bounds per-session LLM spend
+   * if a session is scripted or compromised.
+   */
+  me_chat: {
+    windowMs: 5 * 60 * 1000,
+    limit: 40,
+    doc: "POST /shop/me/chat — signed-in LLM endpoint, every request burns vendor tokens",
+  },
+
+  /**
    * POST /api/reminders — reminder signup. Each accepted request
    * inserts a subscription row AND fires a welcome email. Even a
    * legitimate visitor signs up once, maybe twice; tight per-IP

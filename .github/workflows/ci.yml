@@ -36,6 +36,12 @@ jobs:
 
       - run: pnpm lint:resupply
 
+      # Prettier is the formatter of record (.prettierignore scopes it),
+      # but nothing gated it — style drift slipped into PRs and polluted
+      # diffs. `format:check` is non-destructive (it only reports), so a
+      # failure here means "run `pnpm format` and recommit."
+      - run: pnpm format:check
+
       - run: pnpm typecheck
 
   drift:
@@ -590,3 +596,27 @@ jobs:
         run: |
           test -f artifacts/resupply-api/dist/index.mjs && echo "resupply-api dist/index.mjs OK"
           test -f artifacts/cpap-fitter/dist/public/index.html && echo "cpap-fitter SPA OK"
+
+  audit:
+    name: Dependency audit (high)
+    runs-on: ubuntu-latest
+
+    # Surfaces known high-severity transitive CVEs in the dependency
+    # tree. This is a PHI-adjacent app, so a vulnerable transitive dep
+    # is worth knowing about — but advisory churn (a fresh CVE published
+    # against a dep with no patch yet) shouldn't block an unrelated PR,
+    # so it starts SOFT-gated like the integration / a11y jobs. The
+    # signal is visible on every run; flip `continue-on-error` to false
+    # once the tree is reliably clean and the team wants it to block.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          pnpm-version: ${{ env.PNPM_VERSION }}
+          install: "false"
+
+      - name: pnpm audit (high+)
+        run: pnpm audit --audit-level=high

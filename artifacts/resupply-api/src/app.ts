@@ -322,6 +322,24 @@ const storefrontChatLimiter = expressRateLimit({
 });
 app.use("/api/chat", storefrontChatLimiter);
 
+// /api/recommend is the one hot public POST left uncapped: no token
+// cost or PHI, but it runs the full mask-scoring engine on the single
+// Node process per call, so an unthrottled flood is event-loop CPU
+// pressure. Generous per-IP budget — a real fitter session recomputes
+// only a handful of times.
+const storefrontRecommendLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.storefront_recommend.windowMs,
+  limit: RATE_LIMITS.storefront_recommend.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many recommendation requests from this network. Please wait a moment and try again.",
+  },
+});
+app.use("/api/recommend", storefrontRecommendLimiter);
+
 // Reminder subscription + manage routes have different abuse shapes,
 // so they get separate limiters with different keys + budgets:
 //

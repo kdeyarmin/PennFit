@@ -101,7 +101,6 @@ async function main(): Promise<void> {
 
   if (existing) {
     userId = existing.id;
-    finalRole = existing.role as "admin" | "agent";
 
     if (existing.role !== parsed.role && !parsed.force) {
       fail(
