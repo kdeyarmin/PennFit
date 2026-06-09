@@ -628,7 +628,9 @@ describe("POST /admin/shop/orders/:orderId/tracking — paperwork gate", () => {
     stubVerifiedAdmin();
     stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() }); // loadOrder
     stageGatePatient();
-    stageSupabaseResponse("feature_flags", "select", { data: { enabled: true } });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
     stageSupabaseResponse("insurance_coverages", "select", { data: null });
     stageSupabaseResponse("patient_form_acknowledgements", "select", {
       data: [],
@@ -682,7 +684,9 @@ describe("POST /admin/shop/orders/:orderId/tracking — paperwork gate", () => {
     const shippedAtIso = new Date("2026-05-02T09:00:00Z").toISOString();
     stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() }); // loadOrder
     stageGatePatient();
-    stageSupabaseResponse("feature_flags", "select", { data: { enabled: true } });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
     stageSupabaseResponse("insurance_coverages", "select", { data: null });
     stageSupabaseResponse("patient_form_acknowledgements", "select", {
       data: [

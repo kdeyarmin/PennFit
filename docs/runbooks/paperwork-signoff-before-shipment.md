@@ -10,11 +10,11 @@ The same three intake forms the dispense-readiness reviewer already treats
 as required-before-dispense, read from `resupply.patient_form_acknowledgements`
 (any `form_version` counts as signed):
 
-| `form_kind`          | Label                              |
-| -------------------- | ---------------------------------- |
-| `hipaa_npp`          | HIPAA Notice of Privacy Practices  |
-| `aob`                | Assignment of Benefits             |
-| `supplier_standards` | Supplier Standards                 |
+| `form_kind`          | Label                             |
+| -------------------- | --------------------------------- |
+| `hipaa_npp`          | HIPAA Notice of Privacy Practices |
+| `aob`                | Assignment of Benefits            |
+| `supplier_standards` | Supplier Standards                |
 
 Patients sign via the portal sign-and-acknowledge link
 (`/admin/patients/:id/portal-invite`); CSRs can also record a paper scan
