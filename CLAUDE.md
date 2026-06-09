@@ -355,12 +355,13 @@ Partner connectivity is split into one shared contract package plus a
 family of per-vendor adapters. `lib/resupply-integrations` owns the
 unified types, the `IntegrationAdapter` contract, and the Zod schemas;
 every vendor package depends on it and on nothing in the data layer.
-The adapters cover two distinct domains:
+The adapters cover three distinct domains:
 
 | Domain                      | Packages                                                                                      | Direction     |
 | --------------------------- | --------------------------------------------------------------------------------------------- | ------------- |
 | Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)             | pull / ingest |
 | Payer / claims / prior-auth | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth) | outbound      |
+| DME billing system (PacWare) | `-pacware` (legacy desktop billing; **CSV file exchange, no API**)                            | import + export |
 
 Wiring & conventions:
 
@@ -376,6 +377,19 @@ Wiring & conventions:
   job processors (no central registry). Office Ally supports a **stub
   mode** (`OFFICE_ALLY_STUB=1` or missing creds) that writes the 837P to
   `OFFICE_ALLY_FILE_OUTBOX_DIR` instead of SFTP-uploading.
+- **PacWare (`-pacware`)** is a CSV **file exchange**, not an adapter:
+  PacWare is a legacy desktop billing system with no API. The pure package
+  owns the report column catalog + tolerant CSV parser + exporter; the
+  routes (`artifacts/resupply-api/src/routes/admin/pacware.ts`) own DB +
+  audit; the admin UI is `/admin/pacware`. Patient import is a **sync** on
+  `patients.pacware_id` that touches only the columns the uploaded report
+  contained (so a missing column never blanks data). Exports (patient
+  roster, resupply-due worklist) are formula-injection-guarded and the
+  importer reverses the guard for lossless round-trips. PacWare is the
+  billing/warehouse system of record; PennFit is the resupply engine. See
+  [`docs/integrations/pacware.md`](./docs/integrations/pacware.md) and the
+  operator manual
+  [`docs/runbooks/pacware-import-export.md`](./docs/runbooks/pacware-import-export.md).
 - **Feature-gated, fail-soft.** Each package exposes a
   `read…ConfigOrNull()` helper; missing env → `availability` reports
   `"unavailable"` (the admin UI shows a badge without leaking which var

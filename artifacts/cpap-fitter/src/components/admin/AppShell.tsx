@@ -970,6 +970,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Therapy-cloud vendor connections and nightly sync status",
           },
           {
+            href: "/admin/pacware",
+            label: "PacWare",
+            icon: Boxes,
+            matchPrefix: "/admin/pacware",
+            requiredPermission: "admin.tools.manage",
+            hint: "PacWare (DME billing) CSV import & export",
+          },
+          {
             href: "/admin/delivery-failures",
             label: "Delivery Failures",
             icon: TruckIcon,

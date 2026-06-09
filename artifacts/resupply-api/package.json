@@ -24,6 +24,7 @@
     "@workspace/resupply-integrations-care-orchestrator": "workspace:*",
     "@workspace/resupply-integrations-davinci-pas": "workspace:*",
     "@workspace/resupply-integrations-office-ally": "workspace:*",
+    "@workspace/resupply-integrations-pacware": "workspace:*",
     "@workspace/resupply-integrations-react-health": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
