@@ -165,9 +165,24 @@ export function validateSwoInputs(inputs: SwoInputs): SwoValidationError[] {
  */
 export function describeHcpcs(hcpcs: string | null, sku: string): string {
   if (!hcpcs) return sku;
-  const trimmed = hcpcs.toUpperCase().split("-")[0]!; // strip modifiers
-  const description = HCPCS_DESCRIPTIONS[trimmed];
+  const description = describeHcpcsPlain(hcpcs);
   return description ? `${description} — SKU ${sku}` : `${hcpcs} — SKU ${sku}`;
+}
+
+/**
+ * Bare plain-English narrative for a HCPCS code, with NO SKU suffix —
+ * or `null` when the code isn't in our small static catalog.
+ *
+ * `describeHcpcs()` (above) appends `— SKU <sku>` because a printed
+ * SWO benefits from carrying the order-against identifier next to the
+ * narrative. Conversational surfaces (the voice agent, the chatbot)
+ * want the opposite: a phrase that reads naturally aloud, so they call
+ * this and fall back to the raw SKU themselves when it returns null.
+ */
+export function describeHcpcsPlain(hcpcs: string | null): string | null {
+  if (!hcpcs) return null;
+  const trimmed = hcpcs.toUpperCase().split("-")[0]!; // strip modifiers
+  return HCPCS_DESCRIPTIONS[trimmed] ?? null;
 }
 
 // Common HCPCS Level II codes for CPAP/RAD therapy. Used to build
