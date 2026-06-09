@@ -24,7 +24,10 @@ interface FaxDocumentPayload {
   e: number;
 }
 
-export type FaxDocumentKind = "physician_outreach" | "appeal_letter";
+export type FaxDocumentKind =
+  | "physician_outreach"
+  | "appeal_letter"
+  | "manual_document";
 
 const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Telnyx fetches immediately
 
@@ -85,6 +88,18 @@ export function signAppealFaxToken(
   });
 }
 
+/** Sign a manual-document fax token (kind=manual_document). */
+export function signManualDocumentFaxToken(
+  manualDocumentId: string,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): string {
+  return signToken({
+    id: manualDocumentId,
+    k: "manual_document",
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  });
+}
+
 export type VerifyFaxDocumentTokenResult =
   | { valid: true; outreachId: string; kind: FaxDocumentKind }
   | { valid: false };
@@ -125,6 +140,10 @@ export function verifyFaxDocumentToken(
 
   // Legacy tokens (no `k`) are physician-outreach cover letters.
   const kind: FaxDocumentKind =
-    p.k === "appeal_letter" ? "appeal_letter" : "physician_outreach";
+    p.k === "appeal_letter"
+      ? "appeal_letter"
+      : p.k === "manual_document"
+        ? "manual_document"
+        : "physician_outreach";
   return { valid: true, outreachId: p.id, kind };
 }

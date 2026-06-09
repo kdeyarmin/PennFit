@@ -21,6 +21,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
+import { renderManualDocumentForFax } from "../../lib/manual-documents/render-for-fax.js";
 
 const router: IRouter = Router();
 
@@ -75,6 +76,22 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     );
     res.setHeader("Cache-Control", "no-store");
     res.end(result.pdf);
+    return;
+  }
+
+  // Manual-document faxes render the staff-authored document (see
+  // routes/admin/manual-documents.ts). Same signed-URL posture; no PHI
+  // in the URL, and the PDF bytes are never logged.
+  if (verified.kind === "manual_document") {
+    const pdf = await renderManualDocumentForFax(supabase, verified.outreachId);
+    if (!pdf) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="document.pdf"');
+    res.setHeader("Cache-Control", "no-store");
+    res.end(pdf);
     return;
   }
 

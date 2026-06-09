@@ -26,6 +26,7 @@ vi.mock("@workspace/resupply-secrets", () => ({
 import {
   signAppealFaxToken,
   signFaxDocumentToken,
+  signManualDocumentFaxToken,
   verifyFaxDocumentToken,
 } from "./fax-document-token";
 
@@ -42,6 +43,15 @@ describe("fax document kind", () => {
     if (r.valid) {
       expect(r.kind).toBe("appeal_letter");
       expect(r.outreachId).toBe("letter-1");
+    }
+  });
+
+  it("round-trips a manual-document token with kind=manual_document", () => {
+    const r = verifyFaxDocumentToken(signManualDocumentFaxToken("doc-1"));
+    expect(r.valid).toBe(true);
+    if (r.valid) {
+      expect(r.kind).toBe("manual_document");
+      expect(r.outreachId).toBe("doc-1");
     }
   });
 });

@@ -176,6 +176,7 @@ import pacwareRouter from "./admin/pacware.js";
 import connectionTestsRouter from "./admin/connection-tests.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
+import manualDocumentsAdminRouter from "./admin/manual-documents.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
 import conversationsRouter from "./conversations/index.js";
@@ -574,6 +575,10 @@ router.use(documentationPacketsRouter);
 // /admin/patient-packets, /admin/patients/:id/packets, /admin/packets/:id*
 // — electronic new-patient document packets (e-sign).
 router.use(patientPacketsAdminRouter);
+// /admin/manual-documents* — staff-authored, manually-typed PDF
+// documents (CMN, prescription, agreement, delivery ticket, fax cover,
+// or free-form). Download / email / fax / file-to-chart.
+router.use(manualDocumentsAdminRouter);
 // /admin/webhook-deliveries/:id/retry-now — manual re-queue of an
 // exhausted/failed delivery.
 router.use(webhookDeliveryRetryRouter);
