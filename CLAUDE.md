@@ -307,7 +307,7 @@ hard gate), and never sends silently. Recipients resolve from active
 to `RESUPPLY_ADMIN_EMAILS`; email funnels through the shared
 `createSendgridClient()`. Same Claude-first / OpenAI-fallback / offline
 posture as the chatbots, gated behind the `admin.assistant` feature flag
-(seeded ON, migration 0254). It takes no other actions in the app and
+(seeded ON, migration 0256). It takes no other actions in the app and
 never echoes patient PHI.
 
 **Inbound email auto-reply** (`artifacts/resupply-api/src/lib/messaging/email-auto-reply.ts`)

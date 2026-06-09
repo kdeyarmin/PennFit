@@ -6,7 +6,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { sendEmailMock, createSendgridImpl } = vi.hoisted(() => ({
-  sendEmailMock: vi.fn(async () => ({ messageId: "sg_test" })),
+  // Typed input param so `.mock.calls[0][0]` is inspectable in the
+  // assertions below (an arg-less mock infers an empty-tuple call type,
+  // which tsc rejects when we index the recorded call).
+  sendEmailMock: vi.fn(async (_input: Record<string, unknown>) => ({
+    messageId: "sg_test",
+  })),
   // A box the tests flip to make createSendgridClient throw (unconfigured).
   createSendgridImpl: { current: null as null | (() => unknown) },
 }));
