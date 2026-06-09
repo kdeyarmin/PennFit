@@ -480,4 +480,22 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
       patient_id: null,
     });
   });
+
+  it("returns a 500 hangup when caller resolution hits a DB error (no silent mis-route)", async () => {
+    // The patients lookup errors → resolveCallerByPhone throws → the route
+    // must surface it as a retryable failure, NOT silently route as
+    // unidentified. No session row should be written.
+    stageSupabaseResponse("patients", "select", {
+      error: { message: "db down" },
+    });
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155551212", CallSid: "CA_db_err" });
+
+    expect(res.status).toBe(500);
+    expect(res.text).toContain("Hangup");
+    expect(supabaseMock.callCount("voice_reorder_sessions", "insert")).toBe(0);
+  });
 });

@@ -17,6 +17,13 @@
 // PHI posture: the phone number is PHI. This module logs nothing; callers
 // decide what (if anything) to record, and the existing callers log only
 // digit-counts.
+//
+// Error posture: a lookup query that ERRORS is thrown, not swallowed.
+// Treating a DB failure as "no match" would silently mis-route the caller
+// (and hide the outage); the caller is responsible for handling the throw
+// (the inbound IVR returns a "please try again" hangup, matching how it
+// already treats a session-insert DB failure). Mirrors the voice tool
+// dispatcher, which also throws on Supabase read errors.
 
 import { type ResupplySupabaseClient } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
@@ -42,12 +49,13 @@ export async function resolveCallerByPhone(
   //    number: multiple patients on one phone (a family/household plan)
   //    can't be safely auto-bound to a patient-scoped agent, so we treat
   //    it as ambiguous and let the caller route to a human.
-  const { data: patientRows } = await supabase
+  const { data: patientRows, error: patientErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("phone_e164", normalised)
     .limit(2);
+  if (patientErr) throw patientErr;
   const patients = patientRows ?? [];
   if (patients.length > 1) return { kind: "ambiguous" };
   const patient = patients[0];
@@ -55,12 +63,13 @@ export async function resolveCallerByPhone(
 
   // 2. Only if no patient matched, try the cash-pay storefront. Same
   //    shared-number guard.
-  const { data: shopRows } = await supabase
+  const { data: shopRows, error: shopErr } = await supabase
     .schema("resupply")
     .from("shop_customers")
     .select("customer_id")
     .eq("phone_e164", normalised)
     .limit(2);
+  if (shopErr) throw shopErr;
   const shopCustomers = shopRows ?? [];
   if (shopCustomers.length > 1) return { kind: "ambiguous" };
   const shopCustomer = shopCustomers[0];

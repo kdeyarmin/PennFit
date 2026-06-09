@@ -110,12 +110,39 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   const { From, CallSid } = parsed.data;
   const supabase = getSupabaseServiceRoleClient();
 
-  // 1. Identify the caller (best-effort).
+  // 1. Identify the caller. A DB failure here must NOT be silently treated
+  // as "unidentified" — that would mask an outage and mis-route the caller.
+  // Surface it and ask the caller to retry (same posture as the session-
+  // insert failure below); log only the digit-count to keep PHI out.
   const callerE164 = From ?? parsed.data.Caller ?? "";
-  const { patientId, shopCustomerId, ambiguous } = await identifyCaller(
-    supabase,
-    callerE164,
-  );
+  let patientId: string | null;
+  let shopCustomerId: string | null;
+  let ambiguous: boolean;
+  try {
+    ({ patientId, shopCustomerId, ambiguous } = await identifyCaller(
+      supabase,
+      callerE164,
+    ));
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice.inbound-reorder.identify_failed",
+        callSid: CallSid,
+        fromDigits: callerE164.replace(/\D+/g, "").length,
+        err: err instanceof Error ? err.message : "unknown",
+      },
+      "voice.inbound-reorder: caller identification failed",
+    );
+    res
+      .status(500)
+      .type("text/xml")
+      .send(
+        buildHangupTwiml(
+          "We're having trouble taking your call. Please try again in a few minutes.",
+        ),
+      );
+    return;
+  }
 
   // 2. Persist session row.
   const sessionStatus = patientId ? "in_progress" : "patient_not_identified";

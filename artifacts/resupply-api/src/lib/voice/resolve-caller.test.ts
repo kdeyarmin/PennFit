@@ -107,4 +107,25 @@ describe("resolveCallerByPhone", () => {
     expect(res).toEqual({ kind: "none" });
     expect(supabaseMock.callCount("patients", "select")).toBe(0);
   });
+
+  it("throws when the patients lookup errors (does not mask a DB outage)", async () => {
+    stageSupabaseResponse("patients", "select", {
+      error: { message: "db down" },
+    });
+
+    await expect(resolveCallerByPhone(sb(), "+12155550001")).rejects.toEqual({
+      message: "db down",
+    });
+  });
+
+  it("throws when the storefront lookup errors", async () => {
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("shop_customers", "select", {
+      error: { message: "db down" },
+    });
+
+    await expect(resolveCallerByPhone(sb(), "+12155550002")).rejects.toEqual({
+      message: "db down",
+    });
+  });
 });
