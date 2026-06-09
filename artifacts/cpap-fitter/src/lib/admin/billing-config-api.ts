@@ -123,6 +123,7 @@ export interface PayerProfile {
   claimFormat: PayerClaimFormat;
   paperOnly: boolean;
   requiresPriorAuthDme: boolean;
+  requiresSignedPaperwork: boolean;
   priorAuthPhoneE164: string | null;
   claimStatusPhoneE164: string | null;
   providerPortalUrl: string | null;
@@ -163,6 +164,7 @@ export interface PayerProfileUpsert {
   claimFormat?: PayerClaimFormat;
   paperOnly?: boolean;
   requiresPriorAuthDme?: boolean;
+  requiresSignedPaperwork?: boolean;
   priorAuthPhoneE164?: string | null;
   claimStatusPhoneE164?: string | null;
   providerPortalUrl?: string | null;

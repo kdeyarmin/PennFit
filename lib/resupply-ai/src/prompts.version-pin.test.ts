@@ -78,6 +78,12 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // changes too.
   "2026-06-09.v7":
     "0cb704a6d0cf881cad2fbf4290b868cbf128d6116d0c15eaa7fec7cee2705c92",
+  // v8 adds personality guidance to the shared "How to speak" block —
+  // small-talk handling, changing tactics after a repeated mishearing,
+  // and warm call bookends. Shared block, so the shop variant hash moves
+  // too.
+  "2026-06-09.v8":
+    "71961b3b5eab3baa82f406f93a6fcc5a012c231510af38e5f91adcec35e82529",
 };
 
 function renderCanonicalPrompt(): string {
@@ -104,7 +110,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "b1171faf123fc4207f7c653e1fda06099b23c1b8c2564fae714aa515bf93b239";
+  "e2d9c7ad6fe44263a5e4d7ee630f6a61a7d32d7b3f0ee05d1791c3d754356195";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

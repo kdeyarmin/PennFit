@@ -1,10 +1,11 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   VoiceBridge,
   type MediaStreamSink,
   type SessionError,
+  type ToolCallFillerConfig,
   type ToolInvocation,
   type TranscriptTurn,
   type TtsStreamer,
@@ -288,7 +289,10 @@ describe("VoiceBridge", () => {
 // turn, with caller barge-in aborting the in-flight synthesis.
 // ---------------------------------------------------------------------------
 
-function buildBridgeWithTts(tts: TtsSynthesizer): {
+function buildBridgeWithTts(
+  tts: TtsSynthesizer,
+  filler?: ToolCallFillerConfig,
+): {
   bridge: VoiceBridge;
   fake: FakeRealtimeClient;
   sink: ReturnType<typeof buildSink>;
@@ -301,6 +305,7 @@ function buildBridgeWithTts(tts: TtsSynthesizer): {
     sink,
     dispatcher,
     tts,
+    ...(filler ? { filler } : {}),
   });
   return { bridge, fake, sink };
 }
@@ -496,7 +501,7 @@ interface FakeStreamRecord {
   handlers: TtsStreamHandlers;
 }
 
-function buildBridgeWithStreamer(): {
+function buildBridgeWithStreamer(filler?: ToolCallFillerConfig): {
   bridge: VoiceBridge;
   fake: FakeRealtimeClient;
   sink: ReturnType<typeof buildSink>;
@@ -535,6 +540,7 @@ function buildBridgeWithStreamer(): {
     sink,
     dispatcher,
     ttsStreamer: streamer,
+    ...(filler ? { filler } : {}),
   });
   return { bridge, fake, sink, sessions };
 }
@@ -688,5 +694,149 @@ describe("VoiceBridge — streaming TTS path", () => {
     // audio we'd discard) — but the CALL itself continues.
     expect(sessions[0]!.aborted).toBe(true);
     expect(fake.close).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tool-call dead-air filler: while a tool is in flight the agent is silent
+// for the DB round-trip + the model composing its reply. On the external-TTS
+// path the bridge speaks a short filler if that gap runs long — UNLESS the
+// agent is already talking or just spoke (the model said "let me check"
+// itself). These tests drive the timing with fake timers.
+// ---------------------------------------------------------------------------
+
+describe("VoiceBridge — tool-call dead-air filler", () => {
+  // Single phrase so the spoken text is deterministic; small windows so the
+  // tests advance virtual time in obvious steps.
+  const FILLER: ToolCallFillerConfig = {
+    phrases: ["One moment."],
+    delayMs: 500,
+    graceMs: 1000,
+  };
+  const someTool = (name = "lookup_resupply_inventory") => ({
+    callId: "c1",
+    name,
+    argumentsJson: "{}",
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Push virtual "now" well past graceMs so a bridge that has never seen
+    // an output turn (lastOutputAt = 0) treats the agent as long-silent.
+    vi.setSystemTime(10_000);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("speaks a filler through the streamer when a tool call stays in flight past the delay", () => {
+    const { fake, sessions } = buildBridgeWithStreamer(FILLER);
+    fake.emit("tool.call", someTool());
+    // Before the delay elapses: nothing spoken yet.
+    vi.advanceTimersByTime(499);
+    expect(sessions).toHaveLength(0);
+    // After the delay: one filler session, with the phrase pushed + ended.
+    vi.advanceTimersByTime(1);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.pushed).toEqual(["One moment."]);
+    expect(sessions[0]!.ended).toBe(true);
+  });
+
+  it("does NOT speak a filler if the agent's real reply starts before the delay", () => {
+    const { fake, sessions } = buildBridgeWithStreamer(FILLER);
+    fake.emit("tool.call", someTool());
+    // The model begins its turn (its own audio) before the timer fires.
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "Okay, you're all set.",
+      done: false,
+      itemId: "o1",
+    });
+    const sessionsAfterReply = sessions.length; // the reply opened one
+    vi.advanceTimersByTime(1000);
+    // No EXTRA session — the pending filler was cancelled by the reply.
+    expect(sessions).toHaveLength(sessionsAfterReply);
+  });
+
+  it("does NOT speak a filler if the agent just finished speaking (within graceMs)", () => {
+    const { fake, sessions } = buildBridgeWithStreamer(FILLER);
+    // Agent finishes a turn at t=10_000 (the model acknowledged the caller).
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "Sure, let me check that.",
+      done: true,
+      itemId: "o1",
+    });
+    // Simulate the engine finishing that turn's audio so the bridge is no
+    // longer "speaking" — this isolates the grace window as the real gate
+    // (rather than the is-speaking guard) for this assertion.
+    sessions[0]!.handlers.onDone?.();
+    const baseline = sessions.length;
+    // Tool call right after; advance past the delay but stay within graceMs
+    // of that last output.
+    fake.emit("tool.call", someTool());
+    vi.advanceTimersByTime(500);
+    expect(sessions).toHaveLength(baseline); // grace suppressed the filler
+  });
+
+  it("never fires for end_call", () => {
+    const { fake, sessions } = buildBridgeWithStreamer(FILLER);
+    fake.emit("tool.call", someTool("end_call"));
+    vi.advanceTimersByTime(1000);
+    expect(sessions).toHaveLength(0);
+  });
+
+  it("a caller barge-in cancels a pending filler", () => {
+    const { fake, sessions } = buildBridgeWithStreamer(FILLER);
+    fake.emit("tool.call", someTool());
+    vi.advanceTimersByTime(300);
+    // Caller starts talking before the filler would fire.
+    fake.emit("input.speech_started");
+    vi.advanceTimersByTime(1000);
+    expect(sessions).toHaveLength(0);
+  });
+
+  it("closing the bridge cancels a pending filler", () => {
+    const { bridge, fake, sessions } = buildBridgeWithStreamer(FILLER);
+    fake.emit("tool.call", someTool());
+    vi.advanceTimersByTime(300);
+    bridge.close("done");
+    vi.advanceTimersByTime(1000);
+    expect(sessions).toHaveLength(0);
+  });
+
+  it("speaks the filler through the per-utterance (HTTP) TTS path too", async () => {
+    const spoken: string[] = [];
+    const tts: TtsSynthesizer = {
+      async synthesize(text, onFrame) {
+        spoken.push(text);
+        onFrame(`f:${text}`);
+      },
+    };
+    const { fake } = buildBridgeWithTts(tts, FILLER);
+    fake.emit("tool.call", someTool());
+    vi.advanceTimersByTime(500);
+    // The synth queue drains on a microtask — let it run.
+    await vi.runAllTimersAsync();
+    expect(spoken).toEqual(["One moment."]);
+  });
+
+  it("does nothing on the built-in cedar path (no external TTS engine)", () => {
+    // A filler is configured but no tts/ttsStreamer — the model owns the
+    // audio, so there's nothing for the bridge to synthesise through.
+    const dispatcher: ToolDispatcher = { dispatch: vi.fn() };
+    const fake = new FakeRealtimeClient();
+    const sink = buildSink();
+    const bridge = new VoiceBridge({
+      client: fake as unknown as RealtimeClient,
+      sink,
+      dispatcher,
+      filler: FILLER,
+    });
+    expect(bridge).toBeDefined();
+    fake.emit("tool.call", someTool());
+    vi.advanceTimersByTime(1000);
+    // Nothing was written to the sink (no synthesised filler audio).
+    expect(sink.written).toEqual([]);
   });
 });

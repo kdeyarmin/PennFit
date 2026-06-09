@@ -187,6 +187,7 @@ const SAMPLE_PAYER = {
   claimFormat: "electronic",
   paperOnly: false,
   requiresPriorAuthDme: true,
+  requiresSignedPaperwork: false,
   priorAuthPhoneE164: "+18005551234",
   claimStatusPhoneE164: null,
   providerPortalUrl: null,

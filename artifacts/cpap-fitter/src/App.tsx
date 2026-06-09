@@ -492,7 +492,19 @@ function RouteFallback() {
   );
 }
 
-const queryClient = new QueryClient();
+// Sensible client-wide defaults so the shop catalog, fitter recommendation,
+// and mask lists don't refetch on every tab focus / remount. The shop catalog
+// is already server-cached ~60s, so a 60s client staleTime keeps the two in
+// lockstep; one retry absorbs a transient blip without hammering the API.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -727,6 +739,7 @@ function GuardedOrderSuccess() {
 }
 
 function PatientRouter() {
+  const [location] = useLocation();
   return (
     <Layout>
       {/*
@@ -738,180 +751,204 @@ function PatientRouter() {
       */}
       <CartSnapshotSync />
       {/*
+        Inline error boundary INSIDE the Layout so a crash in any single
+        page falls back to a recoverable card while the header/nav/footer
+        stay usable — the customer keeps navigation instead of losing the
+        whole site (the top-level boundary in App() still catches crashes
+        in the Layout chrome itself). Keyed on `location` so navigating to
+        another route remounts it and clears a stuck error state.
+
         Single Suspense boundary above the Switch. Wouter swaps the
         active <Route>'s component on navigation; if the new component
         is lazy and not yet loaded, React suspends and we render the
         fallback in place of the page content (header/footer stay).
       */}
-      <Suspense fallback={<RouteFallback />}>
-        <Switch>
-          <Route path="/" component={Home} />
-          <Route path="/consent" component={Consent} />
-          <Route path="/fitter-invite" component={FitterInvite} />
-          <Route path="/capture" component={GuardedCapture} />
-          <Route path="/masks" component={Masks} />
-          <Route path="/cpap-masks" component={CpapMasks} />
-          <Route
-            path="/cpap-masks/react-health"
-            component={CpapMasksReactHealth}
-          />
-          <Route path="/cpap-masks/resmed" component={CpapMasksResmed} />
-          <Route
-            path="/cpap-masks/fisher-paykel"
-            component={CpapMasksFisherPaykel}
-          />
-          <Route path="/how-it-works" component={HowItWorks} />
-          <Route path="/faq" component={Faq} />
-          {/* Help Center — specific /help/* guides registered before the
+      <ErrorBoundary variant="inline" key={location}>
+        <Suspense fallback={<RouteFallback />}>
+          <Switch>
+            <Route path="/" component={Home} />
+            <Route path="/consent" component={Consent} />
+            <Route path="/fitter-invite" component={FitterInvite} />
+            <Route path="/capture" component={GuardedCapture} />
+            <Route path="/masks" component={Masks} />
+            <Route path="/cpap-masks" component={CpapMasks} />
+            <Route
+              path="/cpap-masks/react-health"
+              component={CpapMasksReactHealth}
+            />
+            <Route path="/cpap-masks/resmed" component={CpapMasksResmed} />
+            <Route
+              path="/cpap-masks/fisher-paykel"
+              component={CpapMasksFisherPaykel}
+            />
+            <Route path="/how-it-works" component={HowItWorks} />
+            <Route path="/faq" component={Faq} />
+            {/* Help Center — specific /help/* guides registered before the
               /help hub so wouter's <Switch> matches them first. */}
-          <Route path="/help/find-your-mask" component={HelpFindYourMask} />
-          <Route path="/help/place-an-order" component={HelpPlaceAnOrder} />
-          <Route
-            path="/help/shop-and-checkout"
-            component={HelpShopAndCheckout}
-          />
-          <Route path="/help/track-your-order" component={HelpTrackYourOrder} />
-          <Route
-            path="/help/create-an-account"
-            component={HelpCreateAnAccount}
-          />
-          <Route
-            path="/help/resupply-reminders"
-            component={HelpResupplyReminders}
-          />
-          <Route
-            path="/help/insurance-estimate"
-            component={HelpInsuranceEstimate}
-          />
-          <Route
-            path="/help/returns-and-refunds"
-            component={HelpReturnsAndRefunds}
-          />
-          <Route path="/help/reset-password" component={HelpResetPassword} />
-          <Route path="/help/save-to-wishlist" component={HelpSaveToWishlist} />
-          <Route path="/help" component={Help} />
-          <Route path="/learn" component={Learn} />
-          <Route path="/learn/videos" component={LearnVideos} />
-          <Route
-            path="/learn/replacement-schedule"
-            component={ReplacementSchedule}
-          />
-          <Route path="/learn/device-setup" component={DeviceSetup} />
-          <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
-          <Route
-            path="/learn/sleep-apnea-explained"
-            component={LearnSleepApneaExplained}
-          />
-          <Route path="/learn/health-risks" component={LearnHealthRisks} />
-          <Route
-            path="/learn/pap-therapy-benefits"
-            component={LearnPapTherapyBenefits}
-          />
-          <Route path="/learn/how-pap-works" component={LearnHowPapWorks} />
-          <Route path="/learn/therapy-types" component={LearnTherapyTypes} />
-          <Route
-            path="/learn/sleep-apnea-heart-health"
-            component={LearnSleepApneaHeartHealth}
-          />
-          <Route path="/learn/first-two-weeks" component={LearnFirstTwoWeeks} />
-          <Route
-            path="/learn/traveling-with-cpap"
-            component={LearnTravelingWithCpap}
-          />
-          <Route
-            path="/learn/cleaning-routine"
-            component={LearnCleaningRoutine}
-          />
-          <Route path="/learn/myths-debunked" component={LearnMythsDebunked} />
-          <Route path="/learn/glossary" component={LearnGlossary} />
-          <Route
-            path="/learn/insurance-guide"
-            component={LearnInsuranceGuide}
-          />
-          <Route path="/sleep-apnea-101" component={SleepApnea101} />
-          <Route
-            path="/learn/sleep-apnea-women"
-            component={LearnSleepApneaWomen}
-          />
-          <Route
-            path="/learn/sleep-apnea-diabetes"
-            component={LearnSleepApneaDiabetes}
-          />
-          <Route
-            path="/learn/sleep-apnea-mental-health"
-            component={LearnSleepApneaMentalHealth}
-          />
-          <Route
-            path="/learn/pediatric-sleep-apnea"
-            component={LearnPediatricSleepApnea}
-          />
-          <Route
-            path="/learn/sleep-apnea-seniors"
-            component={LearnSleepApneaSeniors}
-          />
-          <Route path="/learn/partner-guide" component={LearnPartnerGuide} />
-          <Route
-            path="/learn/talking-to-a-loved-one"
-            component={LearnTalkingToALovedOne}
-          />
-          <Route path="/learn/dry-mouth" component={LearnDryMouth} />
-          <Route path="/learn/cpap-bloating" component={LearnCpapBloating} />
-          <Route path="/learn/mask-leaks" component={LearnMaskLeaks} />
-          <Route
-            path="/learn/cpap-claustrophobia"
-            component={LearnCpapClaustrophobia}
-          />
-          <Route
-            path="/learn/nasal-congestion"
-            component={LearnNasalCongestion}
-          />
-          <Route path="/stories" component={Stories} />
-          <Route
-            path="/learn/reading-your-sleep-report"
-            component={LearnReadingYourSleepReport}
-          />
-          <Route path="/learn/sleep-hygiene" component={LearnSleepHygiene} />
-          <Route
-            path="/learn/cpap-and-weight-loss"
-            component={LearnCpapAndWeightLoss}
-          />
-          <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
-          <Route path="/insurance" component={Insurance} />
-          <Route path="/insurance/estimate" component={InsuranceEstimate} />
-          <Route path="/track-order" component={TrackOrder} />
-          <Route path="/nps" component={NpsLanding} />
-          <Route path="/mask-fit" component={MaskFitLanding} />
-          <Route path="/shop" component={Shop} />
-          <Route path="/shop/p/:productId">
-            {(params) => <ShopProductDetail productId={params.productId} />}
-          </Route>
-          <Route path="/shop/cart" component={ShopCart} />
-          <Route
-            path="/shop/checkout-success"
-            component={ShopCheckoutSuccess}
-          />
-          <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
-          <Route path="/shop/orders" component={GuardedShopOrders} />
-          <Route path="/shop/wishlist" component={ShopWishlist} />
-          <Route path="/account" component={GuardedAccount} />
-          <Route path="/account/billing" component={GuardedAccountBilling} />
-          <Route path="/reminders" component={Reminders} />
-          <Route path="/reminders/manage" component={RemindersManage} />
-          <Route path="/patient-packet-sign" component={PatientPacketSign} />
-          <Route path="/privacy" component={Privacy} />
-          <Route path="/terms" component={Terms} />
-          <Route path="/returns" component={ReturnsPage} />
+            <Route path="/help/find-your-mask" component={HelpFindYourMask} />
+            <Route path="/help/place-an-order" component={HelpPlaceAnOrder} />
+            <Route
+              path="/help/shop-and-checkout"
+              component={HelpShopAndCheckout}
+            />
+            <Route
+              path="/help/track-your-order"
+              component={HelpTrackYourOrder}
+            />
+            <Route
+              path="/help/create-an-account"
+              component={HelpCreateAnAccount}
+            />
+            <Route
+              path="/help/resupply-reminders"
+              component={HelpResupplyReminders}
+            />
+            <Route
+              path="/help/insurance-estimate"
+              component={HelpInsuranceEstimate}
+            />
+            <Route
+              path="/help/returns-and-refunds"
+              component={HelpReturnsAndRefunds}
+            />
+            <Route path="/help/reset-password" component={HelpResetPassword} />
+            <Route
+              path="/help/save-to-wishlist"
+              component={HelpSaveToWishlist}
+            />
+            <Route path="/help" component={Help} />
+            <Route path="/learn" component={Learn} />
+            <Route path="/learn/videos" component={LearnVideos} />
+            <Route
+              path="/learn/replacement-schedule"
+              component={ReplacementSchedule}
+            />
+            <Route path="/learn/device-setup" component={DeviceSetup} />
+            <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
+            <Route
+              path="/learn/sleep-apnea-explained"
+              component={LearnSleepApneaExplained}
+            />
+            <Route path="/learn/health-risks" component={LearnHealthRisks} />
+            <Route
+              path="/learn/pap-therapy-benefits"
+              component={LearnPapTherapyBenefits}
+            />
+            <Route path="/learn/how-pap-works" component={LearnHowPapWorks} />
+            <Route path="/learn/therapy-types" component={LearnTherapyTypes} />
+            <Route
+              path="/learn/sleep-apnea-heart-health"
+              component={LearnSleepApneaHeartHealth}
+            />
+            <Route
+              path="/learn/first-two-weeks"
+              component={LearnFirstTwoWeeks}
+            />
+            <Route
+              path="/learn/traveling-with-cpap"
+              component={LearnTravelingWithCpap}
+            />
+            <Route
+              path="/learn/cleaning-routine"
+              component={LearnCleaningRoutine}
+            />
+            <Route
+              path="/learn/myths-debunked"
+              component={LearnMythsDebunked}
+            />
+            <Route path="/learn/glossary" component={LearnGlossary} />
+            <Route
+              path="/learn/insurance-guide"
+              component={LearnInsuranceGuide}
+            />
+            <Route path="/sleep-apnea-101" component={SleepApnea101} />
+            <Route
+              path="/learn/sleep-apnea-women"
+              component={LearnSleepApneaWomen}
+            />
+            <Route
+              path="/learn/sleep-apnea-diabetes"
+              component={LearnSleepApneaDiabetes}
+            />
+            <Route
+              path="/learn/sleep-apnea-mental-health"
+              component={LearnSleepApneaMentalHealth}
+            />
+            <Route
+              path="/learn/pediatric-sleep-apnea"
+              component={LearnPediatricSleepApnea}
+            />
+            <Route
+              path="/learn/sleep-apnea-seniors"
+              component={LearnSleepApneaSeniors}
+            />
+            <Route path="/learn/partner-guide" component={LearnPartnerGuide} />
+            <Route
+              path="/learn/talking-to-a-loved-one"
+              component={LearnTalkingToALovedOne}
+            />
+            <Route path="/learn/dry-mouth" component={LearnDryMouth} />
+            <Route path="/learn/cpap-bloating" component={LearnCpapBloating} />
+            <Route path="/learn/mask-leaks" component={LearnMaskLeaks} />
+            <Route
+              path="/learn/cpap-claustrophobia"
+              component={LearnCpapClaustrophobia}
+            />
+            <Route
+              path="/learn/nasal-congestion"
+              component={LearnNasalCongestion}
+            />
+            <Route path="/stories" component={Stories} />
+            <Route
+              path="/learn/reading-your-sleep-report"
+              component={LearnReadingYourSleepReport}
+            />
+            <Route path="/learn/sleep-hygiene" component={LearnSleepHygiene} />
+            <Route
+              path="/learn/cpap-and-weight-loss"
+              component={LearnCpapAndWeightLoss}
+            />
+            <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
+            <Route path="/insurance" component={Insurance} />
+            <Route path="/insurance/estimate" component={InsuranceEstimate} />
+            <Route path="/track-order" component={TrackOrder} />
+            <Route path="/nps" component={NpsLanding} />
+            <Route path="/mask-fit" component={MaskFitLanding} />
+            <Route path="/shop" component={Shop} />
+            <Route path="/shop/p/:productId">
+              {(params) => <ShopProductDetail productId={params.productId} />}
+            </Route>
+            <Route path="/shop/cart" component={ShopCart} />
+            <Route
+              path="/shop/checkout-success"
+              component={ShopCheckoutSuccess}
+            />
+            <Route
+              path="/shop/checkout-cancel"
+              component={ShopCheckoutCancel}
+            />
+            <Route path="/shop/orders" component={GuardedShopOrders} />
+            <Route path="/shop/wishlist" component={ShopWishlist} />
+            <Route path="/account" component={GuardedAccount} />
+            <Route path="/account/billing" component={GuardedAccountBilling} />
+            <Route path="/reminders" component={Reminders} />
+            <Route path="/reminders/manage" component={RemindersManage} />
+            <Route path="/patient-packet-sign" component={PatientPacketSign} />
+            <Route path="/privacy" component={Privacy} />
+            <Route path="/terms" component={Terms} />
+            <Route path="/returns" component={ReturnsPage} />
 
-          {/* Guarded routes — see GuardedXxx components above. */}
-          <Route path="/measure" component={GuardedMeasure} />
-          <Route path="/questionnaire" component={GuardedQuestionnaire} />
-          <Route path="/results" component={GuardedResults} />
-          <Route path="/order" component={GuardedOrder} />
-          <Route path="/order-success" component={GuardedOrderSuccess} />
+            {/* Guarded routes — see GuardedXxx components above. */}
+            <Route path="/measure" component={GuardedMeasure} />
+            <Route path="/questionnaire" component={GuardedQuestionnaire} />
+            <Route path="/results" component={GuardedResults} />
+            <Route path="/order" component={GuardedOrder} />
+            <Route path="/order-success" component={GuardedOrderSuccess} />
 
-          <Route component={NotFound} />
-        </Switch>
-      </Suspense>
+            <Route component={NotFound} />
+          </Switch>
+        </Suspense>
+      </ErrorBoundary>
     </Layout>
   );
 }

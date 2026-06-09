@@ -1735,6 +1735,10 @@ export interface Database {
           claim_format: "837p" | "837i" | "paper_1500";
           paper_only: boolean;
           requires_prior_auth_dme: boolean;
+          // When true, a patient whose primary coverage maps to this
+          // payer must have signed intake paperwork on file before any
+          // of their orders can be marked shipped (migration 0248).
+          requires_signed_paperwork: boolean;
           prior_auth_phone_e164: string | null;
           claim_status_phone_e164: string | null;
           provider_portal_url: string | null;
