@@ -33,15 +33,25 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { isChartDocumentType } from "../../lib/patient-documents/chart-document-types";
+import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
+import {
+  lookupTrackingByCode,
+  markReturnedAndCascade,
+} from "../../lib/signature-tracking/service";
 import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 
 type PatientDocumentUpdate =
   Database["resupply"]["Tables"]["patient_documents"]["Update"];
@@ -58,6 +68,72 @@ const reviewedBody = z
     note: z.string().trim().max(500).optional(),
   })
   .strict();
+
+// ── Scan / upload to chart ─────────────────────────────────────────
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Same allowlist as the patient portal (routes/shop/me-documents.ts):
+// scanned pages come back as images, generated paperwork as PDF.
+const ALLOWED_CONTENT_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/heic",
+  "image/heif",
+  "image/webp",
+]);
+
+const uploadUrlBody = z
+  .object({
+    documentType: z.string().trim().min(1).max(64),
+    filename: z.string().trim().min(1).max(255),
+    contentType: z.string().trim().min(1).max(120),
+    sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
+  })
+  .strict();
+
+const finalizeBody = z
+  .object({
+    documentType: z.string().trim().min(1).max(64),
+    objectPath: z.string().trim().min(1).max(2048),
+    filename: z.string().trim().min(1).max(255),
+    contentType: z.string().trim().min(1).max(120),
+    sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
+    // When the scan IS a signed copy coming back, the CSR can pass the
+    // tracking code printed (as a barcode) on the document we sent out;
+    // we mark that signature returned and advance its source document.
+    signatureTrackingCode: z.string().trim().min(3).max(64).optional(),
+  })
+  .strict();
+
+function invalidDocType(res: import("express").Response): void {
+  res.status(400).json({
+    error: "invalid_body",
+    issues: [{ path: "documentType", message: "unsupported document type" }],
+  });
+}
+
+function invalidContentType(res: import("express").Response, ct: string): void {
+  res.status(400).json({
+    error: "invalid_body",
+    issues: [
+      { path: "contentType", message: `unsupported content type: ${ct}` },
+    ],
+  });
+}
+
+async function patientExists(id: string): Promise<boolean> {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
 
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
@@ -145,6 +221,231 @@ router.get(
         reviewNote: r.review_note,
       })),
     });
+  },
+);
+
+// Step 1 of a chart upload: hand the browser a short-lived presigned PUT
+// URL. The SPA PUTs the file straight to object storage, then calls the
+// finalize endpoint below. Mirrors the patient-portal upload contract
+// (routes/shop/me-documents.ts) but admin-gated and patient-targeted.
+router.post(
+  "/patients/:id/documents/upload-url",
+  adminWriteRateLimiter,
+  requirePermission("patients.update"),
+  async (req, res) => {
+    const param = patientIdParam.safeParse(req.params);
+    if (!param.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const body = uploadUrlBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: body.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    if (!isChartDocumentType(body.data.documentType)) {
+      invalidDocType(res);
+      return;
+    }
+    if (!ALLOWED_CONTENT_TYPES.has(body.data.contentType)) {
+      invalidContentType(res, body.data.contentType);
+      return;
+    }
+    if (!(await patientExists(param.data.id))) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    try {
+      const uploadURL = await objectStorage.getObjectEntityUploadURL();
+      const objectPath = objectStorage.normalizeObjectEntityPath(uploadURL);
+      await logAudit({
+        action: "patient.document.admin_upload_url_issued",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "patient_documents",
+        targetId: param.data.id,
+        metadata: {
+          patient_id: param.data.id,
+          document_type: body.data.documentType,
+          declared_content_type: body.data.contentType,
+          declared_size_bytes: body.data.sizeBytes,
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      }).catch((err) => {
+        logger.warn({ err }, "patient.document.admin_upload_url audit failed");
+      });
+      res.json({ uploadURL, objectPath });
+    } catch (err) {
+      req.log.error({ err }, "admin_patient_document_upload_url_failed");
+      res.status(500).json({ error: "upload_url_failed" });
+    }
+  },
+);
+
+// Step 2 of a chart upload: claim the uploaded object for the patient,
+// validate its real size/type, insert the patient_documents row (tagged
+// + retention-stamped), and — when a signature tracking code is supplied
+// — mark that outstanding signature returned & signed.
+router.post(
+  "/patients/:id/documents",
+  adminWriteRateLimiter,
+  requirePermission("patients.update"),
+  async (req, res) => {
+    const param = patientIdParam.safeParse(req.params);
+    if (!param.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const body = finalizeBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: body.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    if (!isChartDocumentType(body.data.documentType)) {
+      invalidDocType(res);
+      return;
+    }
+    if (!ALLOWED_CONTENT_TYPES.has(body.data.contentType)) {
+      invalidContentType(res, body.data.contentType);
+      return;
+    }
+    if (!(await patientExists(param.data.id))) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    let normalizedPath: string;
+    try {
+      normalizedPath = await objectStorage.trySetObjectEntityAclPolicy(
+        body.data.objectPath,
+        { owner: param.data.id, visibility: "private" },
+      );
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        res.status(400).json({ error: "object_missing" });
+        return;
+      }
+      if (err instanceof ObjectAlreadyOwnedError) {
+        res.status(403).json({ error: "object_already_claimed" });
+        return;
+      }
+      req.log.warn({ err }, "admin_patient_document_finalize_acl_failed");
+      res.status(500).json({ error: "finalize_failed" });
+      return;
+    }
+
+    let actualSize: number;
+    let actualContentType: string;
+    try {
+      const objectFile =
+        await objectStorage.getObjectEntityFile(normalizedPath);
+      const [meta] = await objectFile.getMetadata();
+      actualSize =
+        typeof meta.size === "string"
+          ? Number.parseInt(meta.size, 10)
+          : Number(meta.size ?? 0);
+      actualContentType =
+        typeof meta.contentType === "string" ? meta.contentType : "";
+      if (
+        !Number.isFinite(actualSize) ||
+        actualSize <= 0 ||
+        actualSize > MAX_DOCUMENT_BYTES
+      ) {
+        await objectFile.delete().catch(() => undefined);
+        res.status(400).json({ error: "object_too_large" });
+        return;
+      }
+      if (!ALLOWED_CONTENT_TYPES.has(actualContentType)) {
+        await objectFile.delete().catch(() => undefined);
+        res.status(400).json({ error: "object_invalid_content_type" });
+        return;
+      }
+    } catch (err) {
+      req.log.error({ err }, "admin_patient_document_finalize_metadata_failed");
+      res.status(500).json({ error: "finalize_failed" });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const retentionUntilAt = computeRetentionUntilAt({
+      createdAt: new Date(nowIso),
+      documentType: body.data.documentType,
+    }).toISOString();
+    const { data: insertedRow, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .insert({
+        patient_id: param.data.id,
+        object_key: normalizedPath,
+        document_type: body.data.documentType,
+        filename: body.data.filename,
+        content_type: actualContentType,
+        size_bytes: actualSize,
+        // Staff-uploaded documents are reviewed by definition — the CSR
+        // is looking at it as they file it — so stamp them reviewed to
+        // keep them out of the unreviewed queue.
+        reviewed_at: nowIso,
+        reviewed_by_admin_id: req.adminUserId ?? null,
+        retention_until_at: retentionUntilAt,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) throw insertErr;
+    const docId = insertedRow?.id ?? "unknown";
+
+    // Optional: this scan is the signed return for a tracked document.
+    let signatureMarkedReturned = false;
+    if (body.data.signatureTrackingCode) {
+      const tracking = await lookupTrackingByCode(
+        supabase,
+        body.data.signatureTrackingCode,
+      ).catch(() => null);
+      if (tracking && tracking.status === "awaiting_signature") {
+        await markReturnedAndCascade(supabase, tracking).catch((err) => {
+          logger.warn({ err }, "admin_patient_document.mark_returned failed");
+        });
+        signatureMarkedReturned = true;
+      }
+    }
+
+    await logAudit({
+      action: "patient.document.admin_upload",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_documents",
+      targetId: docId,
+      metadata: {
+        patient_id: param.data.id,
+        document_type: body.data.documentType,
+        content_type: actualContentType,
+        size_bytes: actualSize,
+        signature_marked_returned: signatureMarkedReturned,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.document.admin_upload audit write failed");
+    });
+
+    res.status(201).json({ ok: true, id: docId, signatureMarkedReturned });
   },
 );
 

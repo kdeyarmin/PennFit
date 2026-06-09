@@ -72,6 +72,7 @@ import {
   Layers,
   Wind,
   FileCheck2,
+  FileSignature,
   FileLock2,
   Send,
   PlayCircle,
@@ -352,6 +353,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/documents",
         matchPrefix: "/admin/documents",
         hint: "Type out a CMN, prescription, agreement, or fax cover by hand",
+      },
+      {
+        label: "Awaiting signatures",
+        icon: FileSignature,
+        href: "/admin/signature-tracking",
+        matchPrefix: "/admin/signature-tracking",
+        hint: "Track documents out for a provider signature; scan returned faxes to file them",
       },
       {
         label: "Duplicate review",

@@ -14,6 +14,7 @@
 import PDFDocument from "pdfkit";
 import type PDFKit from "pdfkit";
 
+import { drawSignatureTrackingStamp } from "../barcode/tracking-stamp";
 import {
   getManualDocumentTypeDef,
   normalizeManualDocumentFields,
@@ -40,6 +41,12 @@ export interface ManualDocumentPdfInput {
   supplierName: string;
   /** Passed in (not derived) so tests are deterministic. */
   generatedOn: Date;
+  /**
+   * Signature-tracking code (migration 0253). When set, printed as a
+   * Code 128 barcode top-right so a signed copy faxed back can be scanned
+   * and filed. Only signable document kinds carry one.
+   */
+  trackingCode?: string | null;
 }
 
 /** Render the manual document to a Buffer (same pattern as dwo-pdf). */
@@ -66,6 +73,10 @@ function drawManualDocument(
   input: ManualDocumentPdfInput,
 ): void {
   const def = getManualDocumentTypeDef(input.documentType);
+
+  // Top-right signature-tracking barcode (absolute-positioned in the top
+  // margin; no-op when there's no code).
+  drawSignatureTrackingStamp(doc, input.trackingCode);
 
   if (def.phi) {
     doc

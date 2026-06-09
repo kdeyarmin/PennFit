@@ -198,6 +198,7 @@ import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
 import rxRequestDocumentRouter from "./rx-request-document.js";
 import prescriptionRequestsRouter from "./admin/prescription-requests.js";
+import signatureTrackingRouter from "./admin/signature-tracking.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -311,6 +312,11 @@ router.use(physicianFaxOutreachRouter);
 // pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
 router.use(prescriptionRequestsRouter);
+// /admin/signature-tracking — unified "still out for a provider
+// signature" dashboard + the barcode-lookup hook that files a signed fax
+// when it comes back. Reads resupply.signature_tracking, which the
+// prescription-request and manual-document send paths register into.
+router.use(signatureTrackingRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.

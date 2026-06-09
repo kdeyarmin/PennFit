@@ -2503,6 +2503,37 @@ export interface Database {
         >;
         Relationships: [];
       };
+      signature_tracking: {
+        Row: {
+          id: string;
+          tracking_code: string;
+          document_kind: "prescription_request" | "manual_document";
+          document_id: string;
+          patient_id: string | null;
+          provider_id: string | null;
+          patient_label: string | null;
+          provider_label: string | null;
+          practice_name: string | null;
+          title: string;
+          status: "awaiting_signature" | "returned_signed" | "canceled";
+          delivery_channel: "none" | "fax" | "email" | "hand_delivery";
+          return_fax_e164: string | null;
+          sent_count: number;
+          last_sent_at: string | null;
+          returned_at: string | null;
+          canceled_at: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["signature_tracking"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["signature_tracking"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0253: per-claim signed-paperwork ledger backing the
       // bill hold. One row per document a claim needs back signed.
       claim_paperwork_requirements: {
