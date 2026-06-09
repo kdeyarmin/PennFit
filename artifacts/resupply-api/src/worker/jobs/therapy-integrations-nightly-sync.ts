@@ -35,6 +35,10 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options.js";
+import {
+  recordIntegrationSuccess,
+  recordIntegrationFailure,
+} from "../lib/integration-health.js";
 
 export const THERAPY_NIGHTLY_SYNC_JOB = "therapy-integrations.nightly-sync";
 
@@ -307,6 +311,23 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
   }).catch((err) => {
     logger.warn({ err }, "nightly_sync completion audit failed");
   });
+
+  // Sustained-failure alerting (W2). A run where every patient failed
+  // is indistinguishable from the vendor being down; alert ops after
+  // ALERT_THRESHOLD such runs so silence doesn't hide an outage.
+  const HIGH_FAILURE_RATE = 0.8;
+  const totalFailureRun =
+    result.scanned > 0 && result.failed / result.scanned >= HIGH_FAILURE_RATE;
+  if (totalFailureRun) {
+    await recordIntegrationFailure(
+      THERAPY_NIGHTLY_SYNC_JOB,
+      `${result.failed}/${result.scanned} links failed (${Math.round((result.failed / result.scanned) * 100)}%)`,
+    ).catch(() => undefined);
+  } else if (result.scanned > 0) {
+    await recordIntegrationSuccess(THERAPY_NIGHTLY_SYNC_JOB).catch(
+      () => undefined,
+    );
+  }
 
   return result;
 }
