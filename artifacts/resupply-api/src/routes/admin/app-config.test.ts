@@ -205,6 +205,10 @@ describe("GET /admin/system/config — telephony webhook reference", () => {
     expect(w.baseUrlKey).toBe(BASE_KEY);
     expect(w.pendingRestart).toBe(false);
 
+    // Back-compat alias for admin SPA bundles cached before the
+    // twilioWebhooks → webhookReference rename.
+    expect(res.body.twilioWebhooks).toEqual(w);
+
     const urls: Record<string, string> = Object.fromEntries(
       (w.endpoints as Array<{ id: string; url: string }>).map((e) => [
         e.id,

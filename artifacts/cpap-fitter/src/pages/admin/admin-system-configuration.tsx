@@ -197,10 +197,11 @@ function PendingRestartNote() {
       />
       <span>
         A new base URL has been saved but takes effect on the next deploy. Until
-        the service restarts it still signs and emits webhooks from its current
-        origin, so the URLs below reflect that live configuration — keep your
-        telephony vendors (Twilio, Telnyx) pointed at them until you redeploy,
-        then update each vendor to match.
+        the service restarts it still emits outbound callbacks from its current
+        origin (and verifies inbound Twilio signatures against it), so the URLs
+        below reflect that live configuration — keep your telephony vendors
+        (Twilio, Telnyx) pointed at them until you redeploy, then update each
+        vendor to match.
       </span>
     </div>
   );
@@ -255,9 +256,9 @@ function WebhookReferenceCard({
               >
                 {webhooks.baseUrl}
               </span>{" "}
-              ({baseUrlSourceLabel(webhooks.baseUrlSource)}). Each vendor signs
-              the exact URL you configure — re-enter them whenever the base URL
-              changes.
+              ({baseUrlSourceLabel(webhooks.baseUrlSource)}). Re-enter these in
+              each vendor portal whenever the base URL changes (Twilio also
+              validates inbound signatures against the exact URL).
             </p>
             <ul className="space-y-3">
               {webhooks.endpoints.map((e) => (

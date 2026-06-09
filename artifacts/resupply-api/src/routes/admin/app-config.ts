@@ -319,6 +319,11 @@ router.get(
       byCategory.get(setting.category)!.push(view);
     }
 
+    // Read-only: the full telephony webhook URLs to paste into each vendor
+    // portal (Twilio Console for voice/SMS, Telnyx for fax), derived from
+    // the (editable) public base URL above.
+    const webhookReference = buildWebhookReference(dbState);
+
     res.json({
       categories: order.map((category) => ({
         category,
@@ -327,10 +332,12 @@ router.get(
       overlayDisabled:
         process.env.APP_CONFIG_OVERLAY_DISABLED === "1" ||
         process.env.APP_CONFIG_OVERLAY_DISABLED === "true",
-      // Read-only: the full telephony webhook URLs to paste into each
-      // vendor portal (Twilio Console for voice/SMS, Telnyx for fax),
-      // derived from the (editable) public base URL above.
-      webhookReference: buildWebhookReference(dbState),
+      webhookReference,
+      // Back-compat alias for admin SPA bundles cached from before the
+      // twilioWebhooks → webhookReference rename: an old bundle reads
+      // `twilioWebhooks` and would otherwise hide the webhook card until the
+      // operator reloads. Same object; remove once no stale clients remain.
+      twilioWebhooks: webhookReference,
     });
   },
 );
