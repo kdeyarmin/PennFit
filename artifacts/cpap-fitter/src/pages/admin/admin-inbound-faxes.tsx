@@ -45,7 +45,7 @@ import { useUrlState } from "@/hooks/use-url-state";
 
 // How each barcode auto-file outcome reads to a CSR, and how loud it
 // should be. `filed` is the only success; the rest explain why a fax was
-// left for manual triage. See migration 0256 / lib/fax/auto-file-signed.
+// left for manual triage. See migration 0258 / lib/fax/auto-file-signed.
 const AUTO_FILE_TEXT: Record<
   AutoFileStatus,
   { tone: "ok" | "warn" | "muted"; label: string }

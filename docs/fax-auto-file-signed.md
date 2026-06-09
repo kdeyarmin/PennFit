@@ -61,7 +61,7 @@ matched rows and a banner in the triage modal explaining the outcome.
 
 ## Posture
 
-- **Opt-in, seeded OFF** (`fax.auto_file_signed`, migration 0256) — filing
+- **Opt-in, seeded OFF** (`fax.auto_file_signed`, migration 0258) — filing
   a clinical document and marking it signed is consequential, so it
   mirrors the `email.auto_reply` opt-in. With the flag off, faxes are
   triaged by hand exactly as before and the new columns stay `NULL`. Flip

@@ -43,7 +43,7 @@ import {
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 /** Outcome enum — mirrors the inbound_faxes.auto_file_status CHECK
- *  constraint (migration 0256). */
+ *  constraint (migration 0258). */
 export type AutoFileStatus =
   | "filed"
   | "no_code"

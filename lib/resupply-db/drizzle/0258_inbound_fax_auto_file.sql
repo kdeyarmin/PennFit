@@ -1,4 +1,4 @@
--- 0256_inbound_fax_auto_file — automatic barcode filing for inbound faxes.
+-- 0258_inbound_fax_auto_file — automatic barcode filing for inbound faxes.
 --
 -- Why
 -- ---

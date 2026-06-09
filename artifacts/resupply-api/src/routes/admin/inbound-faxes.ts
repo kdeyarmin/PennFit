@@ -148,7 +148,7 @@ router.get(
         notes: r.notes,
         createdAt: r.created_at,
         triagedAt: r.triaged_at,
-        // Barcode auto-file outcome (migration 0256). Null when the
+        // Barcode auto-file outcome (migration 0258). Null when the
         // `fax.auto_file_signed` flag is off or no scan ran.
         trackingCodeDetected: r.tracking_code_detected,
         autoFileStatus: r.auto_file_status,
@@ -205,7 +205,7 @@ router.get(
       ocrStatus: row.ocr_status,
       ocrExtraction: row.ocr_extraction,
       ocrExtractedAt: row.ocr_extracted_at,
-      // Barcode auto-file outcome (migration 0256).
+      // Barcode auto-file outcome (migration 0258).
       trackingCodeDetected: row.tracking_code_detected,
       autoFileStatus: row.auto_file_status,
       autoFiledAt: row.auto_filed_at,
