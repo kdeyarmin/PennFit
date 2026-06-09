@@ -3,6 +3,8 @@ import express from "express";
 import request from "supertest";
 
 import chatRouter, { __setChatFetchForTests } from "./chat";
+import { __resetLlmBreakersForTests } from "../../lib/llm-circuit-breaker";
+import { __resetRateLimitsForTests } from "../../middlewares/rate-limit";
 
 function makeApp(): express.Express {
   const app = express();
@@ -16,6 +18,12 @@ describe("POST /chat", () => {
 
   beforeEach(() => {
     process.env.OPENAI_API_KEY = "test-openai-key";
+    // The OpenAI circuit breaker is a module-level singleton; clear it so
+    // failure-path tests don't trip it and short-circuit later cases.
+    __resetLlmBreakersForTests();
+    // Likewise the per-IP chat rate limiter — reset it so the request
+    // count from one test doesn't exhaust the shared 20/min budget.
+    __resetRateLimitsForTests();
   });
 
   afterEach(() => {
@@ -122,6 +130,60 @@ describe("POST /chat", () => {
       role: "user",
       content: "What mask styles do you carry?",
     });
+  });
+
+  it("retries a transient 500 once and then returns the reply", async () => {
+    const fetchMock = vi
+      .fn()
+      // First attempt: a transient 500 that should be retried.
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: async () => "upstream blip",
+      })
+      // Retry: success.
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "Back online." } }],
+        }),
+        text: async () => "",
+      });
+    __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+    const res = await request(makeApp())
+      .post("/chat")
+      .send({ messages: [{ role: "user", content: "Hi" }] });
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toBe("Back online.");
+    expect(res.body.degraded).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens the circuit after repeated failures and stops calling upstream", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: async () => "down",
+    });
+    __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+    // Five consecutive failed requests trip the breaker (threshold 5).
+    for (let i = 0; i < 5; i++) {
+      const res = await request(makeApp())
+        .post("/chat")
+        .send({ messages: [{ role: "user", content: "Hi" }] });
+      expect(res.body.degraded).toBe(true);
+    }
+    const callsBeforeOpen = fetchMock.mock.calls.length;
+
+    // The next request short-circuits: degraded WITHOUT touching upstream.
+    const res = await request(makeApp())
+      .post("/chat")
+      .send({ messages: [{ role: "user", content: "Hi" }] });
+    expect(res.body.degraded).toBe(true);
+    expect(fetchMock.mock.calls.length).toBe(callsBeforeOpen);
   });
 
   it("returns the degraded fallback when upstream HTTP fails", async () => {

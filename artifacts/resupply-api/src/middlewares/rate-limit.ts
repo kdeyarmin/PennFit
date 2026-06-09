@@ -59,8 +59,24 @@ export interface RateLimitOptions {
  *               If `keyFn` returns a falsy value the key becomes `"unknown"`.
  * @returns An Express `RequestHandler` that enforces the configured fixed-window rate limit and either calls `next()` or responds with HTTP 429 when the limit is exceeded.
  */
+// Registry of every limiter instance's bucket map, so tests can clear
+// all in-memory windows between cases. Each limiter is created once at
+// module load and lives for the process, so holding a reference here
+// adds no leak beyond what already exists.
+const allBucketMaps: Array<Map<string, Bucket>> = [];
+
+/**
+ * Clear every limiter's in-memory windows. Test-only — the limiters are
+ * module-level singletons keyed by IP, so without this a request-heavy
+ * test file can exhaust a shared budget and 429 later, unrelated cases.
+ */
+export function __resetRateLimitsForTests(): void {
+  for (const b of allBucketMaps) b.clear();
+}
+
 export function rateLimit(opts: RateLimitOptions): RequestHandler {
   const buckets = new Map<string, Bucket>();
+  allBucketMaps.push(buckets);
 
   return (req, res, next) => {
     const now = Date.now();

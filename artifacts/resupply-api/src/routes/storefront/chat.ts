@@ -58,6 +58,8 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { withRetry } from "../../lib/with-retry.js";
+import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
   buildChatSystemPrompt,
@@ -97,6 +99,31 @@ const chatRateLimit = rateLimit({
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT_MS = 15_000;
+
+// A transient OpenAI HTTP status worth one retry: explicit rate limit
+// (429) or any 5xx. 4xx (bad request / key / model) is permanent and
+// must not be replayed.
+const isRetriableOpenAiStatus = (status: number): boolean =>
+  status === 429 || (status >= 500 && status < 600);
+
+// Tagged error so `withRetry`'s predicate can tell a retriable upstream
+// HTTP failure from a permanent one without re-reading the response.
+class RetriableUpstreamError extends Error {
+  constructor(readonly status: number) {
+    super(`openai upstream ${status}`);
+    this.name = "RetriableUpstreamError";
+  }
+}
+
+// A thrown fetch error is a transient network blip worth a retry UNLESS
+// it's an abort: the shared AbortController fires on the request timeout
+// or the client disconnecting, and replaying after that is pointless
+// (the signal is already aborted, so a retry fetch aborts immediately).
+function isTransientNetworkError(err: unknown): boolean {
+  if (err instanceof RetriableUpstreamError) return true;
+  if (err instanceof Error && err.name === "AbortError") return false;
+  return err instanceof Error; // TypeError from fetch, socket reset, DNS, …
+}
 
 const DEGRADED_FALLBACK_REPLY =
   "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.";
@@ -423,28 +450,85 @@ async function handleJson(
   apiKey: string,
   turns: number,
 ): Promise<void> {
+  // Circuit breaker: during a SUSTAINED OpenAI outage, skip the upstream
+  // entirely and degrade instantly rather than making every request wait
+  // out the timeout + retry backoff (which piles latency onto the single
+  // event loop). Fail-open: only short-circuits while the breaker is
+  // open; a half-open trial probes recovery.
+  const breaker = getLlmBreaker("openai");
+  if (!breaker.canAttempt()) {
+    logger.warn(
+      { event: "chat_openai_circuit_open" },
+      "chat: openai circuit open — returning degraded fallback without calling upstream",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    return;
+  }
+
   const fetchImpl = fetchImplOverride ?? fetch;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
   let messages = initialMessages;
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-      const upstream = await fetchImpl(OPENAI_API_URL, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: DEFAULT_MODEL,
-          temperature: 0.2,
-          max_tokens: 500,
-          tools: CHAT_TOOLS,
-          tool_choice: "auto",
-          messages,
-        }),
-      });
+      let upstream: Awaited<ReturnType<typeof fetchImpl>>;
+      try {
+        // Retry one transient blip (429 / 5xx / network) before degrading
+        // — non-streaming, so a replay is safe. The shared AbortController
+        // caps total wall-clock across attempts at DEFAULT_TIMEOUT_MS, so
+        // an aborted call (client gone / budget exceeded) is NOT retried.
+        upstream = await withRetry(
+          async () => {
+            const r = await fetchImpl(OPENAI_API_URL, {
+              method: "POST",
+              signal: ctrl.signal,
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: DEFAULT_MODEL,
+                temperature: 0.2,
+                max_tokens: 500,
+                tools: CHAT_TOOLS,
+                tool_choice: "auto",
+                messages,
+              }),
+            });
+            if (!r.ok && isRetriableOpenAiStatus(r.status)) {
+              // Drain so the socket is freed before the retry, then tag.
+              await r.text().catch(() => "");
+              throw new RetriableUpstreamError(r.status);
+            }
+            return r;
+          },
+          {
+            attempts: 2,
+            baseDelayMs: 150,
+            isRetriable: (e) =>
+              e instanceof RetriableUpstreamError || isTransientNetworkError(e),
+            onRetry: (attempt, _e, delayMs) =>
+              logger.warn(
+                { event: "chat_openai_retry", attempt, delayMs },
+                "chat: retrying openai after a transient failure",
+              ),
+          },
+        );
+      } catch (fetchErr) {
+        // Retries exhausted (or a non-retriable network error). This is a
+        // genuine vendor-reachability failure → feed the breaker.
+        breaker.recordFailure();
+        const status =
+          fetchErr instanceof RetriableUpstreamError ? fetchErr.status : null;
+        logger.warn(
+          { event: "chat_openai_http_error", status },
+          "chat: openai HTTP error (returning degraded fallback)",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+      // The vendor responded (even a 4xx is "reachable") → reset the breaker.
+      breaker.recordSuccess();
       if (!upstream.ok) {
         const detail = await upstream.text().catch(() => "");
         logger.warn(

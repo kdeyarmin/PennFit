@@ -26,6 +26,7 @@ import {
   getAnthropicClient,
   getResponseText,
   selectLlmProvider,
+  sendWithRetry,
 } from "../llm-provider";
 
 /** The slice of a `messages` row this drafter needs. */
@@ -165,7 +166,10 @@ export async function draftConversationReply(
     return { ok: false, reason: "offline", redactions: prompt.redactions };
   }
 
-  const result = await client.send({
+  // sendWithRetry absorbs a transient 429 / 5xx / network blip before
+  // we surface model_error to the CSR — a single retry makes most of
+  // those invisible (non-streaming, so a replay is safe).
+  const result = await sendWithRetry(client, {
     model: DEFAULT_ANTHROPIC_MODEL_CHAT,
     max_tokens: 600,
     temperature: 0.5,
