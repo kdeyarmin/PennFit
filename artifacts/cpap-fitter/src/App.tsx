@@ -15,23 +15,58 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
-// Eagerly imported pages — small, public, and likely entry points.
-// Splitting them out of the initial chunk would only add latency to
-// first paint without meaningful payload savings.
+// The landing page is the ONE eagerly-imported route. It's the most
+// common entry point, so keeping it in the initial chunk avoids a
+// load waterfall on first paint / LCP. Every other route is
+// code-split into its own on-demand chunk (the lazyWithRetry block
+// below) so its page code never weighs down the initial bundle.
 import { Home } from "@/pages/home";
-import { Shop } from "@/pages/shop";
-import { Masks } from "@/pages/masks";
-import { HowItWorks } from "@/pages/how-it-works";
-import { Faq } from "@/pages/faq";
-import { Learn } from "@/pages/learn";
-import { Privacy } from "@/pages/privacy";
-import { Terms } from "@/pages/terms";
-import { Insurance } from "@/pages/insurance";
-import { InsuranceEstimate } from "@/pages/insurance-estimate";
-import { TrackOrder } from "@/pages/track-order";
-import { NpsLanding } from "@/pages/nps";
-import { MaskFitLanding } from "@/pages/mask-fit";
-import { LearnVideos } from "@/pages/learn-videos";
+
+// Formerly-eager public pages, now code-split. Each becomes its own
+// chunk, loaded on demand under the shared <Suspense> boundary in
+// PatientRouter. They had grown large (shop/learn/faq are 800–1200+
+// lines) and were the bulk of the >400 kB initial chunk.
+const Shop = lazyWithRetry(() =>
+  import("@/pages/shop").then((m) => ({ default: m.Shop })),
+);
+const Masks = lazyWithRetry(() =>
+  import("@/pages/masks").then((m) => ({ default: m.Masks })),
+);
+const HowItWorks = lazyWithRetry(() =>
+  import("@/pages/how-it-works").then((m) => ({ default: m.HowItWorks })),
+);
+const Faq = lazyWithRetry(() =>
+  import("@/pages/faq").then((m) => ({ default: m.Faq })),
+);
+const Learn = lazyWithRetry(() =>
+  import("@/pages/learn").then((m) => ({ default: m.Learn })),
+);
+const Privacy = lazyWithRetry(() =>
+  import("@/pages/privacy").then((m) => ({ default: m.Privacy })),
+);
+const Terms = lazyWithRetry(() =>
+  import("@/pages/terms").then((m) => ({ default: m.Terms })),
+);
+const Insurance = lazyWithRetry(() =>
+  import("@/pages/insurance").then((m) => ({ default: m.Insurance })),
+);
+const InsuranceEstimate = lazyWithRetry(() =>
+  import("@/pages/insurance-estimate").then((m) => ({
+    default: m.InsuranceEstimate,
+  })),
+);
+const TrackOrder = lazyWithRetry(() =>
+  import("@/pages/track-order").then((m) => ({ default: m.TrackOrder })),
+);
+const NpsLanding = lazyWithRetry(() =>
+  import("@/pages/nps").then((m) => ({ default: m.NpsLanding })),
+);
+const MaskFitLanding = lazyWithRetry(() =>
+  import("@/pages/mask-fit").then((m) => ({ default: m.MaskFitLanding })),
+);
+const LearnVideos = lazyWithRetry(() =>
+  import("@/pages/learn-videos").then((m) => ({ default: m.LearnVideos })),
+);
 
 // Lazy-loaded pages. Each is its own webpack/Rollup chunk so the
 // heavy dependencies they pull in (e.g. @mediapipe/tasks-vision in

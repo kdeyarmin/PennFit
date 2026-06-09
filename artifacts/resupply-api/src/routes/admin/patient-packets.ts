@@ -21,7 +21,10 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient, type Json } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
