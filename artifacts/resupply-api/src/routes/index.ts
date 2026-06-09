@@ -43,6 +43,7 @@ import opsStatusRouter from "./admin/ops-status.js";
 import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
+import emailInboxRouter from "./admin/email-inbox.js";
 import todayRouter from "./admin/today.js";
 import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
@@ -753,6 +754,9 @@ router.use(conversationRoutingRouter);
 router.use(conversationCoachingNotesRouter);
 // Conversation triage (Wave 1): snooze / tags / claim.
 router.use(conversationTriageRouter);
+// /admin/email-inbox — email conversations split into needs-response
+// vs responded mailboxes for the Email Inbox page.
+router.use(emailInboxRouter);
 // Patient address change history.
 router.use(patientAddressHistoryRouter);
 // Patient timeline — unified chronological feed across episodes,

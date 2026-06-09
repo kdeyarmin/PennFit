@@ -219,6 +219,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             badgeKey: "awaitingReplyConversations",
           },
           {
+            href: "/admin/email-inbox",
+            label: "Email Inbox",
+            icon: Mail,
+            matchPrefix: "/admin/email-inbox",
+            hint: "Inbound patient emails — needs-response vs already-answered mailboxes",
+          },
+          {
             href: "/admin/cases",
             label: "Cases",
             icon: FolderKanban,

@@ -79,6 +79,11 @@ const ConversationDetailPage = lazy(() =>
     default: m.ConversationDetailPage,
   })),
 );
+const EmailInboxPage = lazy(() =>
+  import("@/pages/admin/email-inbox").then((m) => ({
+    default: m.EmailInboxPage,
+  })),
+);
 const EpisodesPage = lazy(() =>
   import("@/pages/admin/episodes").then((m) => ({ default: m.EpisodesPage })),
 );
@@ -790,6 +795,7 @@ function AdminConsole() {
             <Route path="/admin/conversations/:id">
               {(params) => <ConversationDetailPage id={params.id} />}
             </Route>
+            <Route path="/admin/email-inbox" component={EmailInboxPage} />
             <Route path="/admin/episodes" component={EpisodesPage} />
             <Route path="/admin/rules" component={RulesPage} />
             <Route
