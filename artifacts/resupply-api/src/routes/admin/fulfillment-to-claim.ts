@@ -17,10 +17,12 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold";
 import {
   buildClaimFromFulfillment,
   buildClaimLineRows,
 } from "../../lib/billing/claim-builder";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -162,6 +164,24 @@ router.post(
         "insurance_claim.create_from_fulfillment audit write failed",
       );
     });
+
+    // Seed the default signed-paperwork requirement set so the new claim is
+    // held until its prescription / POD / AOB are on file. Best-effort +
+    // gated by the bill_hold flag so turning the gate off stops new holds.
+    // Never fails claim creation.
+    if (await isFeatureEnabled("billing.bill_hold")) {
+      try {
+        await seedDefaultRequirementsForClaim(claimRow.id, {
+          supabase,
+          createdByEmail: req.adminEmail ?? null,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, claimId: claimRow.id },
+          "fulfillment-to-claim: bill-hold seed failed (non-fatal)",
+        );
+      }
+    }
 
     res.status(201).json({
       id: claimRow.id,

@@ -72,6 +72,8 @@ import {
   Layers,
   Wind,
   FileCheck2,
+  FileSignature,
+  FileLock2,
   Send,
   PlayCircle,
 } from "lucide-react";
@@ -86,6 +88,7 @@ import { useDashboardIdentity } from "@/lib/admin/identity";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { GlobalLookup } from "./GlobalLookup";
+import { AdminAssistantWidget } from "./AdminAssistantWidget";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
 import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
 
@@ -351,6 +354,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin/documents",
         matchPrefix: "/admin/documents",
         hint: "Type out a CMN, prescription, agreement, or fax cover by hand",
+      },
+      {
+        label: "Awaiting signatures",
+        icon: FileSignature,
+        href: "/admin/signature-tracking",
+        matchPrefix: "/admin/signature-tracking",
+        hint: "Track documents out for a provider signature; scan returned faxes to file them",
       },
       {
         label: "Duplicate review",
@@ -695,6 +705,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "reports.read",
             hint: "Draft Certificates of Medical Necessity awaiting completion",
           },
+          {
+            href: "/admin/billing/bill-hold",
+            label: "Bill hold",
+            icon: FileLock2,
+            matchPrefix: "/admin/billing/bill-hold",
+            requiredPermission: "reports.read",
+            hint: "Claims held from billing until their signed paperwork is back",
+          },
         ],
       },
       {
@@ -839,6 +857,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/analytics/outreach-attribution",
             requiredPermission: "reports.read",
             hint: "Share of contacted patients who ordered, by outreach channel",
+          },
+          {
+            href: "/admin/analytics/acquisition-funnel",
+            label: "Acquisition funnel",
+            icon: ListFilter,
+            matchPrefix: "/admin/analytics/acquisition-funnel",
+            requiredPermission: "reports.read",
+            hint: "Where anonymous visitors drop out of the fitter and shop checkout flows",
           },
           {
             href: "/admin/analytics/revenue-by-source",
@@ -2029,6 +2055,15 @@ export function AppShell({
           </main>
         </div>
         <BrandFooter />
+        {/*
+        PennPilot — the in-app tech-support / program-manager assistant.
+        Floating launcher, available on every admin page. Only rendered
+        for a confirmed admin session (adminEmail set) so it never shows
+        during the signed-out access-check window. Server-side it's gated
+        by requireAdmin + the `admin.assistant` feature flag, so a missing
+        AI key or a disabled flag degrades it gracefully.
+      */}
+        {adminEmail ? <AdminAssistantWidget /> : null}
       </div>
     </RoleProvider>
   );

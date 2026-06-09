@@ -28,6 +28,7 @@ import {
 
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
+import { PaymentPlansSection } from "@/components/admin/PaymentPlansSection";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   listInsuranceCoverages,
@@ -870,6 +871,8 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
           </ul>
         )}
       </Card>
+
+      <PaymentPlansSection patientId={patientId} />
     </div>
   );
 }

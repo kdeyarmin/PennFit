@@ -8,6 +8,7 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { getTrackingCodeForDocument } from "../signature-tracking/service";
 import { isManualDocumentType, type ManualDocumentType } from "./catalog";
 import { renderManualDocumentPdf, type ManualDocumentPdfInput } from "./pdf";
 
@@ -69,11 +70,22 @@ export async function loadManualDocumentRow(
   return row;
 }
 
-/** Render a loaded row to a PDF Buffer. */
-export function renderManualDocumentRowToPdf(
+/**
+ * Render a loaded row to a PDF Buffer. Fetches the document's
+ * signature-tracking code (if any) so the rendered PDF carries the
+ * top-right tracking barcode — keeping every channel (download, email,
+ * fax, chart copy) byte-identical.
+ */
+export async function renderManualDocumentRowToPdf(
+  supabase: SupabaseClient,
   row: ManualDocumentRow,
   generatedOn: Date = new Date(),
 ): Promise<Buffer> {
+  const trackingCode = await getTrackingCodeForDocument(
+    supabase,
+    "manual_document",
+    row.id,
+  );
   const input: ManualDocumentPdfInput = {
     documentType: row.document_type,
     title: row.title,
@@ -87,6 +99,7 @@ export function renderManualDocumentRowToPdf(
     body: row.body,
     supplierName: manualDocumentSupplierName(),
     generatedOn,
+    trackingCode,
   };
   return renderManualDocumentPdf(input);
 }

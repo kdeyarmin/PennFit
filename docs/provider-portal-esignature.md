@@ -9,7 +9,7 @@ printable, tamper-evident **signature log** (per document or per
 provider) can be generated for Medicare / insurer audit.
 
 Shipped behind the `provider.portal_enabled` feature flag (seeded **OFF**
-in migration `0253`).
+in migration `0257`).
 
 > This is distinct from the older, public, token-gated read-only view at
 > `GET /provider-portal/:token` (which only lists a provider's active
@@ -99,7 +99,7 @@ authorization complete and clears the item for the team. It does **not**
 flip `insurance_claims` state — actual 837P transmission stays in the
 existing billing pipeline (no risk of corrupting claim state).
 
-## Schema (migration 0253)
+## Schema (migration 0257)
 
 - `provider_portal_accounts` — auth-user ↔ provider link + status.
 - `provider_mfa_secrets`, `provider_mfa_recovery_codes` — provider TOTP.

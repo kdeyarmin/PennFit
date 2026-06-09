@@ -18,14 +18,30 @@ export type AudienceKind =
   | "all_active_shop_customers"
   | "all_active_patients"
   | "by_patient_payer"
+  | "by_therapy_cohort"
   | "manual_list";
 
 export interface FetchCandidatesInput {
   audienceKind: AudienceKind;
+  /** For by_patient_payer this is the payer name; for by_therapy_cohort
+   *  it carries the cohort key (see THERAPY_COHORT_ALERT_TYPES). */
   audiencePayer?: string | null;
   manualShopCustomerIds?: string[];
   manualPatientIds?: string[];
 }
+
+/**
+ * Maps an RT therapy-cohort key to the `csr_compliance_alerts.alert_type`
+ * values that define it. A patient is in the cohort when they have at least
+ * one OPEN alert of a matching type. These alerts are written by the daily
+ * compliance scanner from device-cloud therapy nights (low_usage =
+ * sub-threshold adherence; no_response = no reply after a check-in).
+ */
+export const THERAPY_COHORT_ALERT_TYPES: Record<string, string[]> = {
+  low_adherence: ["low_usage"],
+  no_checkin_response: ["no_response"],
+  at_risk: ["low_usage", "no_response"],
+};
 
 export interface FetchCandidatesResult {
   shopCandidates: ShopCustomerCandidate[];
@@ -129,6 +145,49 @@ export async function fetchAudienceCandidates(
         });
       }
       if (data.length < BATCH) break;
+    }
+  } else if (input.audienceKind === "by_therapy_cohort") {
+    // Resolve the cohort to a distinct set of patient ids via the open
+    // compliance-alert queue, then load those patients. The cohort key
+    // arrives in `audiencePayer` (see FetchCandidatesInput).
+    const alertTypes =
+      THERAPY_COHORT_ALERT_TYPES[(input.audiencePayer ?? "").trim()] ?? [];
+    if (alertTypes.length > 0) {
+      const patientIds = new Set<string>();
+      for (let from = 0; ; from += BATCH) {
+        const { data, error } = await supabase
+          .schema("resupply")
+          .from("csr_compliance_alerts")
+          .select("patient_id")
+          .eq("status", "open")
+          .in("alert_type", alertTypes)
+          .order("patient_id", { ascending: true })
+          .range(from, from + BATCH - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const r of data) {
+          if (r.patient_id) patientIds.add(r.patient_id);
+        }
+        if (data.length < BATCH) break;
+      }
+      const ids = [...patientIds];
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const slice = ids.slice(i, i + BATCH);
+        const { data, error } = await supabase
+          .schema("resupply")
+          .from("patients")
+          .select("id, email, status, insurance_payer")
+          .in("id", slice);
+        if (error) throw error;
+        for (const r of data ?? []) {
+          patientCandidates.push({
+            id: r.id,
+            email: r.email,
+            status: r.status,
+            insurancePayer: r.insurance_payer,
+          });
+        }
+      }
     }
   } else if (input.audienceKind === "manual_list") {
     const shopIds = input.manualShopCustomerIds ?? [];

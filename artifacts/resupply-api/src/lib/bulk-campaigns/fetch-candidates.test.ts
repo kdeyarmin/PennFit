@@ -368,3 +368,99 @@ describe("fetchAudienceCandidates — manual_list", () => {
     expect(result.patientCandidates).toHaveLength(1);
   });
 });
+
+// ── by_therapy_cohort (C-R1) ─────────────────────────────────────────────────
+
+describe("fetchAudienceCandidates — by_therapy_cohort", () => {
+  // Two-query flow: (1) csr_compliance_alerts for the cohort's patient ids,
+  // then (2) patients .in() those ids. callCount switches the staged result.
+  function makeCohortMock(opts: {
+    capture?: Call[];
+    alertRows: Array<{ patient_id: string | null }>;
+    patientRows: Array<{
+      id: string;
+      email: string | null;
+      status: string;
+      insurance_payer: string | null;
+    }>;
+  }) {
+    let call = 0;
+    const builder = {
+      schema: (_s: string) => builder,
+      from: (_t: string) => builder,
+      select: (_cols: string) => builder,
+      eq: (col: string, val: unknown) => {
+        opts.capture?.push({ method: "eq", args: [col, val] });
+        return builder;
+      },
+      in: (col: string, vals: unknown[]) => {
+        opts.capture?.push({ method: "in", args: [col, vals] });
+        return builder;
+      },
+      order: (_col: string, _opts?: unknown) => builder,
+      range: (_from: number, _to: number) => builder,
+      then: (resolve: (r: QueryResult) => unknown) => {
+        call++;
+        const data = call === 1 ? opts.alertRows : opts.patientRows;
+        return Promise.resolve(resolve({ data, error: null }));
+      },
+    } as unknown as ReturnType<
+      () => ReturnType<
+        typeof import("@workspace/resupply-db").getSupabaseServiceRoleClient
+      >
+    >;
+    return builder;
+  }
+
+  it("resolves the at_risk cohort to its patients via open alerts", async () => {
+    const capture: Call[] = [];
+    const supabase = makeCohortMock({
+      capture,
+      // duplicate patient_id across alerts is de-duped before the patient load
+      alertRows: [
+        { patient_id: "pat_low" },
+        { patient_id: "pat_nr" },
+        { patient_id: "pat_low" },
+      ],
+      patientRows: [
+        {
+          id: "pat_low",
+          email: "low@example.test",
+          status: "active",
+          insurance_payer: "BCBS",
+        },
+        {
+          id: "pat_nr",
+          email: "nr@example.test",
+          status: "active",
+          insurance_payer: null,
+        },
+      ],
+    });
+
+    const result = await fetchAudienceCandidates(supabase, {
+      audienceKind: "by_therapy_cohort",
+      audiencePayer: "at_risk",
+    });
+
+    expect(result.patientCandidates).toHaveLength(2);
+    // at_risk targets BOTH low_usage and no_response alert types.
+    const alertTypeIn = capture.find(
+      (c) => c.method === "in" && c.args[0] === "alert_type",
+    );
+    expect(alertTypeIn?.args[1]).toEqual(["low_usage", "no_response"]);
+    // only OPEN alerts feed the cohort
+    expect(
+      capture.some((c) => c.method === "eq" && c.args[0] === "status"),
+    ).toBe(true);
+  });
+
+  it("returns no candidates for an unknown cohort key", async () => {
+    const supabase = makeCohortMock({ alertRows: [], patientRows: [] });
+    const result = await fetchAudienceCandidates(supabase, {
+      audienceKind: "by_therapy_cohort",
+      audiencePayer: "not_a_cohort",
+    });
+    expect(result.patientCandidates).toHaveLength(0);
+  });
+});

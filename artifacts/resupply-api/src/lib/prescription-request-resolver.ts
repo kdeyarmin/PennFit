@@ -13,6 +13,8 @@ import type {
   DeviceClass,
 } from "./prescription-request-pdf";
 
+import { getTrackingCodeForDocument } from "./signature-tracking/service";
+
 import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -37,39 +39,46 @@ export async function resolvePrescriptionRequestInputs(
     .maybeSingle();
   if (!packet) return { kind: "not_found" };
 
-  const [{ data: patient }, { data: provider }, { data: coverage }] =
-    await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("patients")
-        .select(
-          "legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
-        )
-        .eq("id", packet.patient_id)
-        .limit(1)
-        .maybeSingle(),
-      packet.provider_id
-        ? supabase
-            .schema("resupply")
-            .from("providers")
-            .select("legal_name, npi, practice_name, fax_e164")
-            .eq("id", packet.provider_id)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      // Primary payer on file. "primary" < "secondary" < "tertiary"
-      // alphabetically, so an ascending sort surfaces the primary
-      // coverage first. Missing coverage is non-fatal — the PDF just
-      // omits the Insurance section.
-      supabase
-        .schema("resupply")
-        .from("insurance_coverages")
-        .select("payer_name, member_id, plan_name, rank")
-        .eq("patient_id", packet.patient_id)
-        .order("rank", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [
+    { data: patient },
+    { data: provider },
+    { data: coverage },
+    trackingCode,
+  ] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
+      )
+      .eq("id", packet.patient_id)
+      .limit(1)
+      .maybeSingle(),
+    packet.provider_id
+      ? supabase
+          .schema("resupply")
+          .from("providers")
+          .select("legal_name, npi, practice_name, fax_e164")
+          .eq("id", packet.provider_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    // Primary payer on file. "primary" < "secondary" < "tertiary"
+    // alphabetically, so an ascending sort surfaces the primary
+    // coverage first. Missing coverage is non-fatal — the PDF just
+    // omits the Insurance section.
+    supabase
+      .schema("resupply")
+      .from("insurance_coverages")
+      .select("payer_name, member_id, plan_name, rank")
+      .eq("patient_id", packet.patient_id)
+      .order("rank", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    // Signature-tracking code (for the top-right barcode). Null when the
+    // packet predates the tracking feature or has no row yet.
+    getTrackingCodeForDocument(supabase, "prescription_request", packet.id),
+  ]);
 
   if (!patient || !provider) {
     return {
@@ -120,6 +129,7 @@ export async function resolvePrescriptionRequestInputs(
     lengthOfNeedMonths: packet.length_of_need_months ?? 99,
     clinicalNotes: packet.clinical_notes ?? null,
     generatedOn: new Date(),
+    trackingCode: trackingCode ?? null,
   };
 
   return { kind: "ok", inputs };

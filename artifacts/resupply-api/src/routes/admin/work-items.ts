@@ -35,7 +35,8 @@ export type WorkItemKind =
   | "review"
   | "patient_document"
   | "followup"
-  | "fax";
+  | "fax"
+  | "paperwork";
 
 export interface WorkItem {
   kind: WorkItemKind;
@@ -58,6 +59,7 @@ export interface WorkItemSources {
   shopFollowups: RawRow[];
   patientFollowups: RawRow[];
   faxes: RawRow[];
+  paperwork: RawRow[];
 }
 
 /**
@@ -95,6 +97,7 @@ export function buildWorkItems(
   add("followup", sources.shopFollowups, true);
   add("followup", sources.patientFollowups, true);
   add("fax", sources.faxes, false);
+  add("paperwork", sources.paperwork, false);
 
   items.sort((a, b) => Date.parse(a.sortAt) - Date.parse(b.sortAt));
   return items;
@@ -160,6 +163,16 @@ router.get(
         .eq("status", "new")
         .order("created_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
+      // Outstanding required signed paperwork holding a claim from billing.
+      // These are the "chase the doc" tasks the team works to release holds.
+      supabase
+        .schema("resupply")
+        .from("claim_paperwork_requirements")
+        .select("id, created_at")
+        .eq("status", "outstanding")
+        .eq("required", true)
+        .order("created_at", { ascending: true })
+        .limit(PER_SOURCE_LIMIT),
     ]);
     // Degrade per-source instead of failing the whole queue. The CSR
     // work queue aggregates 7 independent sources; if one (e.g. a
@@ -175,6 +188,7 @@ router.get(
       "shopFollowups",
       "patientFollowups",
       "faxes",
+      "paperwork",
     ] as const;
     const degradedSources: string[] = [];
     const rows = results.map((r, i) => {
@@ -198,6 +212,7 @@ router.get(
         shopFollowups: rows[4] ?? [],
         patientFollowups: rows[5] ?? [],
         faxes: rows[6] ?? [],
+        paperwork: rows[7] ?? [],
       },
       nowIso,
     );
