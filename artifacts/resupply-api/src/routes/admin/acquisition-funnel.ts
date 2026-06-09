@@ -21,6 +21,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -122,6 +123,9 @@ export function buildFunnel(
 
 router.get(
   "/admin/analytics/acquisition-funnel",
+  // Rate-limited so CodeQL's js/missing-rate-limiting gate is satisfied
+  // and the DB-backed analytics read can't be hammered.
+  adminReadRateLimiter,
   requirePermission("reports.read"),
   async (req, res) => {
     const parsed = querySchema.safeParse(req.query);
