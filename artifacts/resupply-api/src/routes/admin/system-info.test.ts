@@ -109,6 +109,20 @@ describe("vendor presence", () => {
     expect(res.body.vendors.sendgrid.fromEmailConfigured).toBe(true);
   });
 
+  it("reports sendgrid.fromEmailConfigured false when SendGrid is not configured (no API key)", async () => {
+    asAdmin();
+    // No SENDGRID_API_KEY → email sending is off. The From-address sub-flag
+    // is gated on the API key so it can't read "configured" while the
+    // integration itself is off, even though the platform default constant
+    // (info@pennpaps.com) always exists.
+    mockGetEffectiveEnv.mockResolvedValue({});
+
+    const res = await request(makeApp()).get("/admin/system-info");
+    expect(res.status).toBe(200);
+    expect(res.body.vendors.sendgrid.configured).toBe(false);
+    expect(res.body.vendors.sendgrid.fromEmailConfigured).toBe(false);
+  });
+
   it("reflects other vendor flags straight from the effective env", async () => {
     asAdmin();
     mockGetEffectiveEnv.mockResolvedValue({
