@@ -313,4 +313,15 @@ describe("DELETE /admin/fitter-invites/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("revoked");
   });
+
+  it("409s revoking a completed fitting", async () => {
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: { id: INVITE_ID, status: "completed" },
+    });
+    const res = await request(makeApp()).delete(
+      `/resupply-api/admin/fitter-invites/${INVITE_ID}`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("cannot_revoke_completed");
+  });
 });

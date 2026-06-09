@@ -853,6 +853,17 @@ router.delete(
       res.json({ id: invite.id, status: "revoked", alreadyRevoked: true });
       return;
     }
+    // Revoke is for outstanding invites only. A completed/attached
+    // fitting has captured measurements; revoking it would drop it from
+    // the completed/holding worklists and hide that data was collected.
+    if (invite.status === "completed" || invite.status === "attached") {
+      res.status(409).json({
+        error: "cannot_revoke_completed",
+        message:
+          "This fitting is already completed — revoke is only for invites that haven't been used yet.",
+      });
+      return;
+    }
 
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase

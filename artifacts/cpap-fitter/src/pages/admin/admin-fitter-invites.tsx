@@ -216,7 +216,12 @@ function InviteCard({
               Resend
             </Button>
           )}
-          {invite.status !== "revoked" && (
+          {/* Revoke only outstanding invites — a completed/attached
+              fitting holds captured measurements and must stay in the
+              worklists. */}
+          {(invite.status === "sent" ||
+            invite.status === "opened" ||
+            invite.status === "expired") && (
             <Button
               size="sm"
               intent="secondary"

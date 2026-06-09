@@ -88,6 +88,18 @@ describe("GET /shop/fitter-invite/resolve", () => {
     expect(res.body.valid).toBe(false);
   });
 
+  it("fails soft (200, valid:false) when the lookup errors", async () => {
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      error: { message: "db down" },
+    });
+    const res = await request(makeApp()).get(
+      `/resupply-api/shop/fitter-invite/resolve?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ valid: false, reason: "error" });
+  });
+
   it("returns valid:false reason:revoked", async () => {
     const token = signFitterInviteToken(INVITE_ID);
     stageSupabaseResponse("fitter_invites", "select", {
@@ -162,6 +174,45 @@ describe("POST /shop/fitter-invite/complete", () => {
       "update",
     )[0] as Record<string, unknown>;
     expect(upd.patient_id).toBeUndefined();
+  });
+
+  it("keeps an already-attached fitting attached on re-submit", async () => {
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      data: {
+        id: INVITE_ID,
+        status: "attached",
+        patient_id: PATIENT_ID,
+        recipient_email: "p@example.com",
+        recipient_phone_e164: null,
+        opened_at: "2026-01-01T00:00:00.000Z",
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    stageSupabaseResponse("fitter_invites", "update", { data: null });
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({ t: token, measurements, answers, recommendation });
+    expect(res.status).toBe(200);
+    const upd = getSupabaseWritePayloads(
+      "fitter_invites",
+      "update",
+    )[0] as Record<string, unknown>;
+    // Terminal state stays sticky; the true first-open is preserved.
+    expect(upd.status).toBe("attached");
+    expect(upd.opened_at).toBeUndefined();
+  });
+
+  it("fails soft (200) when the invite lookup errors", async () => {
+    const token = signFitterInviteToken(INVITE_ID);
+    stageSupabaseResponse("fitter_invites", "select", {
+      error: { message: "db down" },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-invite/complete")
+      .send({ t: token, measurements, answers, recommendation });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, matched: false });
   });
 
   it("401s on an invalid token", async () => {

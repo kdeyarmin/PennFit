@@ -66,7 +66,16 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
     .eq("id", verified.inviteId)
     .limit(1)
     .maybeSingle();
-  if (error) throw error;
+  // Fail soft — a DB hiccup must not 500 the patient. Surface a
+  // friendly "couldn't open" dead-end instead.
+  if (error) {
+    logger.warn(
+      { err: error, inviteId: verified.inviteId },
+      "fitter-invite: resolve lookup failed",
+    );
+    res.status(200).json({ valid: false, reason: "error" });
+    return;
+  }
   if (!invite) {
     res.status(200).json({ valid: false, reason: "not_found" });
     return;
@@ -215,12 +224,21 @@ router.post(
       .schema("resupply")
       .from("fitter_invites")
       .select(
-        "id, status, patient_id, recipient_email, recipient_phone_e164, expires_at",
+        "id, status, patient_id, recipient_email, recipient_phone_e164, opened_at, expires_at",
       )
       .eq("id", verified.inviteId)
       .limit(1)
       .maybeSingle();
-    if (error) throw error;
+    // Fail soft on a DB hiccup — the patient already sees their result;
+    // losing the best-effort transmission must not 500 them.
+    if (error) {
+      logger.warn(
+        { err: error, inviteId: verified.inviteId },
+        "fitter-invite: completion lookup failed",
+      );
+      res.json({ ok: true, matched: false });
+      return;
+    }
     if (!invite) {
       res.status(404).json({ error: "invite_not_found" });
       return;
@@ -257,9 +275,15 @@ router.post(
     }
 
     const update: FitterInvitesUpdate = {
-      status: "completed",
+      // Don't downgrade an already-attached fitting on a re-submit —
+      // resolve allows reopening an attached invite, and rewriting it
+      // to "completed" would orphan patient_id/attached_at and pull it
+      // back into the holding worklist. Keep terminal states sticky.
+      status: invite.status === "attached" ? "attached" : "completed",
       completed_at: nowIso,
-      opened_at: nowIso, // ensure set even if resolve was skipped
+      // Preserve the true first-open timestamp; only backfill it when
+      // resolve was skipped (still in 'sent').
+      ...(invite.opened_at ? {} : { opened_at: nowIso }),
       // Zod's passthrough/record widen these to `unknown`-valued shapes
       // that don't structurally satisfy the generated `Json` type even
       // though they are valid JSON at runtime. Cast at the storage edge.
@@ -285,7 +309,15 @@ router.post(
       .from("fitter_invites")
       .update(update)
       .eq("id", invite.id);
-    if (updErr) throw updErr;
+    // Best-effort: a transient write failure must not 500 the patient.
+    if (updErr) {
+      logger.warn(
+        { err: updErr, inviteId: invite.id },
+        "fitter-invite: completion write failed",
+      );
+      res.json({ ok: true, matched: false });
+      return;
+    }
 
     // Counts/flags only — never the measurements or recipient PHI.
     req.log?.info?.(
