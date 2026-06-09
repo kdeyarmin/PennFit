@@ -96,7 +96,19 @@ function rowToApi(r: Row) {
     slug: r.slug,
     displayName: r.display_name,
     description: r.description,
-    lines: r.lines_json.lines,
+    // The line shape is stored in `lines_json` with the DB-internal field
+    // names (`hcpcs`, `modifiers`, `units`, `billed_cents`). Map them to the
+    // camelCased wire contract the admin client reads (`hcpcsCode`,
+    // `modifier`, `quantity`, `chargeCents`) — same convention as the
+    // top-level fields above and the sibling payer-config types. An empty
+    // modifier CSV becomes null so the UI shows "—" (mirrors apply-template).
+    lines: (r.lines_json?.lines ?? []).map((l) => ({
+      hcpcsCode: l.hcpcs,
+      modifier: l.modifiers || null,
+      description: l.description ?? null,
+      quantity: l.units,
+      chargeCents: l.billed_cents,
+    })),
     defaultDiagnosisCodes: r.default_diagnosis_codes,
     scopedPayerProfileId: r.scoped_payer_profile_id,
     isActive: r.is_active,
