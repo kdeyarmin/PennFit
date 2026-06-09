@@ -33,12 +33,13 @@ Do this whenever you add patients in PacWare, or on a regular cadence
 3. Choose **Export → CSV** (or "Export to file → Comma-delimited"). Save it
    somewhere you can find it, e.g. `Desktop\pacware-patients.csv`.
 
-> **Tip — only the columns you include are synced.** If you export a report
-> that has the name and account number but no phone column, PennFit will
-> update names and **leave existing phone numbers untouched**. If a column
-> _is_ in the report but a cell is blank, PennFit treats that as "cleared".
-> So: include every column you want to keep authoritative, and omit columns
-> you don't want to overwrite.
+> **Tip — the import never overwrites existing data.** It only **fills in
+> blanks**. A brand-new patient is created with everything in the report.
+> For a patient who already exists, PennFit fills only the fields that are
+> currently **empty** — any value already in PennFit is left exactly as it
+> is, even if your report has a different value. So you can re-run a roster
+> as often as you like; it can only ever add missing data, never change or
+> erase what's there.
 
 ### 1.2 Required and optional columns
 
@@ -76,10 +77,13 @@ spaces, and underscores don't matter, and common aliases are accepted
 ### 1.4 Commit
 
 1. If the valid count looks right, click **Import N patients**.
-2. PennFit creates new patients and updates existing ones (matched on
-   `pacware_id`) and shows **Synced N patients**.
+2. PennFit shows a result like **"X created · Y updated (blanks filled) · Z
+   unchanged."** "updated" means an existing patient had one or more empty
+   fields filled in; "unchanged" means they already had everything in the
+   report.
 3. Rows with errors are skipped. Fix them in PacWare (or in the CSV) and
-   re-upload — re-running is safe; it updates rather than duplicates.
+   re-upload — re-running is always safe (fill-only, matched on
+   `pacware_id`): it never duplicates and never overwrites.
 
 ### 1.5 Fixing the two most common errors
 
@@ -96,10 +100,26 @@ spaces, and underscores don't matter, and common aliases are accepted
 
 ---
 
-## Part 2 — Export PennFit data for PacWare
+## Part 2 — Sync PennFit data to PacWare
 
-PennFit produces two CSVs from **Operations → PacWare → Export for
-PacWare**. Both download straight to your computer.
+Under **Operations → PacWare → Sync to PacWare** there are two buttons:
+**Sync patient roster** and **Sync resupply due**. Each one first shows a
+**verify** window so you can check exactly what's about to be sent:
+
+1. Click the button.
+2. A window opens showing the **total count** and a **sample of the actual
+   rows** that will be included.
+3. If it looks right, click **Confirm & download CSV**. The file downloads
+   to your computer. (Click **Cancel** to back out — nothing is sent.)
+4. Import the downloaded CSV into PacWare (see each report below).
+
+> **Automatic notices (optional).** The **Automatic notices** checkbox at
+> the top of the card is a per-practice setting. Turn it on and the page
+> shows a "ready to sync" banner with the current pending counts (confirmed
+> resupply orders + roster size) so you don't have to go looking. PacWare
+> has no API, so **nothing is ever sent automatically** — even with notices
+> on, you always verify and download. Leave it off for purely on-demand
+> syncing.
 
 ### 2.1 Patient roster (`pacware-patient-roster-<date>.csv`)
 
@@ -147,18 +167,18 @@ into the order note → ship & bill in PacWare as usual.
 
 ## Part 3 — Recommended cadence
 
-| Cadence | Action                                                                                     |
-| ------- | ------------------------------------------------------------------------------------------ |
-| Daily   | Export **Resupply due (confirmed)** → enter orders in PacWare.                             |
-| Weekly  | Import the **Patient List** from PacWare → keeps PennFit demographics + insurance current. |
-| Ad hoc  | After a bulk add/edit in either system, run the matching import/export to reconcile.       |
+| Cadence | Action                                                                               |
+| ------- | ------------------------------------------------------------------------------------ |
+| Daily   | **Sync resupply due (confirmed)** → enter the orders in PacWare.                     |
+| Weekly  | Import the **Patient List** from PacWare → backfills any blank PennFit demographics. |
+| Ad hoc  | After a bulk add/edit in either system, run the matching import/sync to reconcile.   |
 
 ## Troubleshooting
 
-| Symptom                                   | Cause / fix                                                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| "Ignored columns" warning on import       | Headers PennFit doesn't recognize (e.g. `balance_due`). Harmless — confirm it's the right report.                  |
-| All rows error with "Pacware ID required" | The account-number column isn't recognized. Rename its header to `pacware_id` (or `Account Number`) and re-export. |
-| Export button says session expired (401)  | Your sign-in lapsed. Refresh the page and sign in again.                                                           |
-| Export capped at 5,000 rows               | Narrow the filter (status for resupply; patient `status` for the roster) and export again.                         |
-| A patient updated unexpectedly            | The import is a **sync** — a present, blank cell clears that field. Omit columns you don't want to overwrite.      |
+| Symptom                                   | Cause / fix                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| "Ignored columns" warning on import       | Headers PennFit doesn't recognize (e.g. `balance_due`). Harmless — confirm it's the right report.                            |
+| All rows error with "Pacware ID required" | The account-number column isn't recognized. Rename its header to `pacware_id` (or `Account Number`) and re-export.           |
+| Sync button says session expired (401)    | Your sign-in lapsed. Refresh the page and sign in again.                                                                     |
+| Export capped at 5,000 rows               | Narrow the filter (status for resupply; patient `status` for the roster) and sync again.                                     |
+| An import didn't change a patient         | Expected — the import only **fills blanks** and never overwrites. To correct an existing value, edit it in PennFit directly. |

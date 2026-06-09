@@ -57,8 +57,15 @@ const router: IRouter = Router();
 // row cap keeps a single sync request bounded well under the request
 // timeout. Larger rosters are split by the operator (the manual says so).
 const MAX_IMPORT_ROWS = 5000;
-const UPSERT_BATCH = 500;
+// Rows per existing-patient lookup chunk. Bounded so the `.in(pacware_id,…)`
+// query URL stays well under PostgREST/proxy limits.
+const READ_CHUNK = 200;
 const MAX_EXPORT_ROWS = 5000;
+// Columns read to decide which fields are already populated (fill-only sync).
+const EXISTING_SELECT =
+  "id, pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, insurance_payer, address";
+// Sample size returned by the sync verify endpoints.
+const VERIFY_SAMPLE = 25;
 
 // ---------------------------------------------------------------------------
 // GET /admin/pacware/status — availability + the report catalog.
@@ -185,50 +192,109 @@ router.post(
     }
 
     // commit ---------------------------------------------------------------
+    // "Never overwrite": a sync FILLS blank PennFit fields from the report
+    // but never changes a field that already holds a value. New patients are
+    // inserted in full; existing patients only get their currently-empty
+    // optional fields filled. Required fields (name, DOB) are NOT NULL on
+    // existing rows, so they are never touched.
     const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
     const present = new Set(result.presentFields);
     const includeAddress = CORE_ADDRESS_FIELDS.some((f) => present.has(f));
 
-    // Dedupe within the file (last occurrence wins) so a repeated
-    // pacware_id can't trip "ON CONFLICT cannot affect row twice".
+    // Dedupe within the file (last occurrence wins).
     const byId = new Map<string, PacwarePatientRow>();
     for (const row of result.rows) byId.set(row.pacwareId, row);
     const deduped = [...byId.values()];
 
-    const payload = deduped.map((row) => {
-      const obj: Record<string, unknown> = {
-        pacware_id: row.pacwareId,
-        updated_at: nowIso,
-      };
-      for (const [field, column] of Object.entries(SCALAR_COLUMN)) {
-        if (field === "pacwareId") continue;
-        if (present.has(field)) {
-          obj[column] = (row as Record<string, unknown>)[field] ?? null;
-        }
-      }
-      if (includeAddress) obj.address = assembleAddress(row);
-      return obj;
-    });
-
-    let synced = 0;
+    let created = 0;
+    let updated = 0;
+    let unchanged = 0;
     const batchErrors: string[] = [];
-    for (let i = 0; i < payload.length; i += UPSERT_BATCH) {
-      const batch = payload.slice(i, i + UPSERT_BATCH);
-      const { error } = await supabase
+
+    for (let i = 0; i < deduped.length; i += READ_CHUNK) {
+      const chunk = deduped.slice(i, i + READ_CHUNK);
+      const ids = chunk.map((r) => r.pacwareId);
+
+      // Read which of these already exist + their current values, so we can
+      // fill only the blanks.
+      const { data: existingRows, error: lookupErr } = await supabase
         .schema("resupply")
         .from("patients")
-        .upsert(batch, { onConflict: "pacware_id" });
-      if (error) {
+        .select(EXISTING_SELECT)
+        .in("pacware_id", ids);
+      if (lookupErr) {
         logger.warn(
-          { err: error, batch_start: i, batch_size: batch.length },
-          "pacware/import: batch upsert failed",
+          { err: lookupErr, chunk_start: i, chunk_size: chunk.length },
+          "pacware/import: existing-lookup failed",
         );
         batchErrors.push(
-          `Rows ${i + 1}-${i + batch.length} failed to write (database error).`,
+          `Rows ${i + 1}-${i + chunk.length} could not be checked (database error).`,
         );
-      } else {
-        synced += batch.length;
+        continue;
+      }
+      const existingById = new Map<string, Record<string, unknown>>();
+      for (const r of existingRows ?? []) {
+        existingById.set(
+          (r as { pacware_id: string }).pacware_id,
+          r as Record<string, unknown>,
+        );
+      }
+
+      const inserts: Record<string, unknown>[] = [];
+      const fillUpdates: { id: string; patch: Record<string, unknown> }[] = [];
+      for (const row of chunk) {
+        const existing = existingById.get(row.pacwareId);
+        if (!existing) {
+          inserts.push(buildInsert(row, present, includeAddress, nowIso));
+          continue;
+        }
+        const patch = buildFillPatch(row, existing, present, includeAddress);
+        if (Object.keys(patch).length === 0) {
+          unchanged += 1;
+        } else {
+          patch.updated_at = nowIso;
+          fillUpdates.push({ id: existing.id as string, patch });
+        }
+      }
+
+      // Insert all new patients in this chunk in one call.
+      if (inserts.length > 0) {
+        const { error: insErr } = await supabase
+          .schema("resupply")
+          .from("patients")
+          .insert(inserts);
+        if (insErr) {
+          logger.warn(
+            { err: insErr, chunk_start: i, insert_count: inserts.length },
+            "pacware/import: insert failed",
+          );
+          batchErrors.push(
+            `${inserts.length} new patient(s) near row ${i + 1} failed to write (database error).`,
+          );
+        } else {
+          created += inserts.length;
+        }
+      }
+
+      // Fill existing patients one at a time (only their blank fields — rare
+      // once a roster has synced once). Independent writes so one failure
+      // doesn't abort the rest.
+      for (const u of fillUpdates) {
+        const { error: updErr } = await supabase
+          .schema("resupply")
+          .from("patients")
+          .update(u.patch)
+          .eq("id", u.id);
+        if (updErr) {
+          logger.warn(
+            { err: updErr, patient_id: u.id },
+            "pacware/import: fill-update failed",
+          );
+          batchErrors.push("A patient fill-update failed (database error).");
+        } else {
+          updated += 1;
+        }
       }
     }
 
@@ -242,7 +308,9 @@ router.post(
         total_data_rows: result.totalDataRows,
         valid_rows: result.rows.length,
         deduped_rows: deduped.length,
-        synced,
+        created,
+        updated,
+        unchanged,
         validation_errors: result.errors.length,
         batch_errors: batchErrors.length,
         unmapped_header_count: result.unmappedHeaders.length,
@@ -253,15 +321,16 @@ router.post(
       logger.warn({ err }, "patient.pacware_sync audit write failed");
     });
 
-    // If any batch failed to write, return a non-2xx. The idempotency
-    // middleware only persists 2xx, so a retry with the same key re-runs
-    // every batch instead of replaying a partial result — and the upsert is
-    // keyed on pacware_id, so re-syncing the rows that already landed is a
-    // no-op. (Full success → 200; nothing written but some failed → 502.)
+    // If any write failed, return a non-2xx. The idempotency middleware only
+    // persists 2xx, so a retry with the same key re-runs the sync instead of
+    // replaying a partial result — and the sync is fill-only + keyed on
+    // pacware_id, so re-running over rows that already landed is a no-op.
     const httpStatus = batchErrors.length > 0 ? 502 : 200;
     res.status(httpStatus).json({
       mode: "commit",
-      synced,
+      created,
+      updated,
+      unchanged,
       validCount: result.rows.length,
       errorCount: result.errors.length,
       totalDataRows: result.totalDataRows,
@@ -312,24 +381,9 @@ router.get(
     const truncated = (rows?.length ?? 0) > MAX_EXPORT_ROWS;
     const slice = truncated ? rows!.slice(0, MAX_EXPORT_ROWS) : (rows ?? []);
 
-    const records: PacwarePatientExportRecord[] = slice.map((r) => {
-      const addr = (r.address ?? null) as AddressBlob | null;
-      return {
-        pacwareId: r.pacware_id,
-        legalFirstName: r.legal_first_name,
-        legalLastName: r.legal_last_name,
-        dateOfBirth: r.date_of_birth,
-        phoneE164: r.phone_e164,
-        email: r.email,
-        addressLine1: addr?.line1 ?? null,
-        addressLine2: addr?.line2 ?? null,
-        city: addr?.city ?? null,
-        state: addr?.state ?? null,
-        postalCode: addr?.postalCode ?? null,
-        country: addr?.country ?? null,
-        insurancePayer: r.insurance_payer,
-      };
-    });
+    const records: PacwarePatientExportRecord[] = slice.map(
+      toPatientExportRecord,
+    );
 
     await logAudit({
       action: "patient.pacware_export",
@@ -425,23 +479,7 @@ router.get(
     const truncated = list.length > MAX_EXPORT_ROWS;
     const slice = truncated ? list.slice(0, MAX_EXPORT_ROWS) : list;
 
-    const records: PacwareResupplyDueRecord[] = [];
-    for (const ep of slice) {
-      const rx = first(ep.prescriptions);
-      const pt = first(ep.patients);
-      if (!rx || !pt) continue;
-      records.push({
-        pacwareId: pt.pacware_id,
-        legalLastName: pt.legal_last_name,
-        legalFirstName: pt.legal_first_name,
-        itemSku: rx.item_sku,
-        quantity: 1,
-        dueDate: ep.due_at.slice(0, 10),
-        episodeStatus: ep.status,
-        insurancePayer: pt.insurance_payer,
-        episodeId: ep.id,
-      });
-    }
+    const records = toResupplyRecords(slice);
 
     await logAudit({
       // Distinct from the patient-roster export's action: this is
@@ -478,6 +516,172 @@ router.get(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Verify-before-sync previews. The "Sync to PacWare" buttons call these to
+// show the admin exactly WHAT will be synced (a count + a sample of the
+// actual rows) before they download the CSV. PHI sample → no-store, admin-
+// gated. No idempotency wrapping (GET), so the PHI sample is never persisted.
+// ---------------------------------------------------------------------------
+router.get(
+  "/admin/pacware/sync/patients/preview",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
+    const parsed = exportPatientsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    let countQ = supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id", { count: "exact", head: true });
+    if (parsed.data.status) countQ = countQ.eq("status", parsed.data.status);
+    const { count, error: countErr } = await countQ;
+    if (countErr) throw countErr;
+
+    let sampleQ = supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address, insurance_payer",
+      )
+      .order("created_at", { ascending: true })
+      .limit(VERIFY_SAMPLE);
+    if (parsed.data.status) sampleQ = sampleQ.eq("status", parsed.data.status);
+    const { data: rows, error } = await sampleQ;
+    if (error) throw error;
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      target: "patient_roster",
+      count: count ?? 0,
+      sample: (rows ?? []).map(toPatientExportRecord),
+    });
+  },
+);
+
+router.get(
+  "/admin/pacware/sync/resupply-due/preview",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
+    const parsed = exportResupplyQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { status } = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
+    const { count, error: countErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescriptions!inner(id), patients!inner(id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("status", status);
+    if (countErr) throw countErr;
+
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select(
+        "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
+      )
+      .eq("status", status)
+      .order("due_at", { ascending: true })
+      .limit(VERIFY_SAMPLE);
+    if (error) throw error;
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      target: "resupply_due",
+      status,
+      count: count ?? 0,
+      sample: toResupplyRecords((rows ?? []) as unknown as EpisodeJoinRow[]),
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Sync mode settings + live pending counts.
+//
+//   GET  → { autoSync, pending: { resupplyDue, patients } }.
+//   PUT  → set autoSync (auto = the page proactively shows a "ready to sync"
+//          notice; manual = sync only when an admin clicks). The toggle is
+//          stored in app_config under a non-catalog key, so it never leaks
+//          into the env overlay.
+//
+// PacWare has no API and the server FS is ephemeral, so "auto" never pushes
+// PHI anywhere on its own — it only surfaces the pending counts so an admin
+// can verify + download. The counts are computed live here.
+// ---------------------------------------------------------------------------
+const settingsBodySchema = z.object({ autoSync: z.boolean() }).strict();
+
+router.get(
+  "/admin/pacware/settings",
+  adminReadRateLimiter,
+  requirePermission("admin.tools.manage"),
+  async (_req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
+    const supabase = getSupabaseServiceRoleClient();
+    const [autoSync, pending] = await Promise.all([
+      readPacwareAutoSync(supabase),
+      getPendingCounts(supabase),
+    ]);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ autoSync, pending, generatedAt: new Date().toISOString() });
+  },
+);
+
+router.put(
+  "/admin/pacware/settings",
+  adminWriteRateLimiter,
+  requirePermission("admin.tools.manage"),
+  async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
+    const parsed = settingsBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("app_config")
+      .upsert(
+        {
+          key: AUTO_SYNC_KEY,
+          value: parsed.data.autoSync ? "true" : "false",
+          updated_by_user_id: req.adminUserId ?? null,
+          updated_by_email: req.adminEmail ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" },
+      );
+    if (error) throw error;
+
+    await logAudit({
+      action: "pacware.settings_update",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "app_config",
+      targetId: null,
+      metadata: { auto_sync: parsed.data.autoSync },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "pacware.settings_update audit write failed");
+    });
+
+    res.json({ autoSync: parsed.data.autoSync });
+  },
+);
+
 /**
  * Enforce the PACWARE_EXCHANGE_DISABLED kill switch on the data routes.
  * Returns true when the surface is enabled; otherwise writes a 503 and
@@ -505,6 +709,65 @@ interface AddressBlob {
   country?: string;
 }
 
+function isBlank(v: unknown): boolean {
+  return v === null || v === undefined || v === "";
+}
+
+/**
+ * Build the INSERT row for a brand-new patient: every present field (empty
+ * optionals become null), plus updated_at. `status`/`created_at` fall to
+ * DB defaults.
+ */
+function buildInsert(
+  row: PacwarePatientRow,
+  present: Set<string>,
+  includeAddress: boolean,
+  nowIso: string,
+): Record<string, unknown> {
+  const obj: Record<string, unknown> = {
+    pacware_id: row.pacwareId,
+    updated_at: nowIso,
+  };
+  for (const [field, column] of Object.entries(SCALAR_COLUMN)) {
+    if (field === "pacwareId") continue;
+    if (present.has(field)) {
+      obj[column] = (row as Record<string, unknown>)[field] ?? null;
+    }
+  }
+  if (includeAddress) obj.address = assembleAddress(row);
+  return obj;
+}
+
+/**
+ * Build a FILL-ONLY patch for an existing patient: include a column only
+ * when the report carries a non-empty value AND the patient's current value
+ * is blank. Never overwrites a populated field. Returns {} when there's
+ * nothing to fill.
+ */
+function buildFillPatch(
+  row: PacwarePatientRow,
+  existing: Record<string, unknown>,
+  present: Set<string>,
+  includeAddress: boolean,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const [field, column] of Object.entries(SCALAR_COLUMN)) {
+    if (field === "pacwareId") continue;
+    if (!present.has(field)) continue;
+    const incoming = (row as Record<string, unknown>)[field];
+    if (isBlank(incoming)) continue; // nothing in the report to fill with
+    if (!isBlank(existing[column])) continue; // already populated — leave it
+    patch[column] = incoming;
+  }
+  // Address is a single JSON column: only fill it when it's currently blank
+  // and the report carries a complete address.
+  if (includeAddress && isBlank(existing.address)) {
+    const addr = assembleAddress(row);
+    if (addr !== null) patch.address = addr;
+  }
+  return patch;
+}
+
 function assembleAddress(row: PacwarePatientRow): Json | null {
   if (row.addressLine1 && row.city && row.state && row.postalCode) {
     return {
@@ -523,6 +786,98 @@ function assembleAddress(row: PacwarePatientRow): Json | null {
 function first<T>(v: T | T[] | null): T | null {
   if (v === null) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
+/** Map a patients row to the export record. Shared by export + verify so
+ *  the "what you'll sync" preview can never diverge from the downloaded file. */
+function toPatientExportRecord(
+  r: Record<string, unknown>,
+): PacwarePatientExportRecord {
+  const addr = (r.address ?? null) as AddressBlob | null;
+  return {
+    pacwareId: r.pacware_id as string,
+    legalFirstName: r.legal_first_name as string,
+    legalLastName: r.legal_last_name as string,
+    dateOfBirth: r.date_of_birth as string,
+    phoneE164: (r.phone_e164 as string | null) ?? null,
+    email: (r.email as string | null) ?? null,
+    addressLine1: addr?.line1 ?? null,
+    addressLine2: addr?.line2 ?? null,
+    city: addr?.city ?? null,
+    state: addr?.state ?? null,
+    postalCode: addr?.postalCode ?? null,
+    country: addr?.country ?? null,
+    insurancePayer: (r.insurance_payer as string | null) ?? null,
+  };
+}
+
+/** Flatten episode⋈prescription⋈patient rows into resupply-due records.
+ *  Shared by export + verify. */
+function toResupplyRecords(list: EpisodeJoinRow[]): PacwareResupplyDueRecord[] {
+  const out: PacwareResupplyDueRecord[] = [];
+  for (const ep of list) {
+    const rx = first(ep.prescriptions);
+    const pt = first(ep.patients);
+    if (!rx || !pt) continue;
+    out.push({
+      pacwareId: pt.pacware_id,
+      legalLastName: pt.legal_last_name,
+      legalFirstName: pt.legal_first_name,
+      itemSku: rx.item_sku,
+      quantity: 1,
+      dueDate: ep.due_at.slice(0, 10),
+      episodeStatus: ep.status,
+      insurancePayer: pt.insurance_payer,
+      episodeId: ep.id,
+    });
+  }
+  return out;
+}
+
+// Non-catalog app_config key — stored as a plain row, ignored by the env
+// overlay (loadOverridesFromDb filters to catalog keys).
+const AUTO_SYNC_KEY = "pacware.auto_sync";
+
+type SupabaseSr = ReturnType<typeof getSupabaseServiceRoleClient>;
+
+/** Read the auto-sync toggle. Fail-soft to false (manual) on any error. */
+async function readPacwareAutoSync(supabase: SupabaseSr): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("app_config")
+    .select("value")
+    .eq("key", AUTO_SYNC_KEY)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn({ err: error }, "pacware: auto_sync read failed");
+    return false;
+  }
+  return (data as { value?: string } | null)?.value === "true";
+}
+
+/** Live "ready to sync" counts for the in-app notice. */
+async function getPendingCounts(
+  supabase: SupabaseSr,
+): Promise<{ resupplyDue: number; patients: number }> {
+  const [resupply, patients] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescriptions!inner(id), patients!inner(id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("status", "confirmed"),
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id", { count: "exact", head: true }),
+  ]);
+  return {
+    resupplyDue: resupply.count ?? 0,
+    patients: patients.count ?? 0,
+  };
 }
 
 export default router;
