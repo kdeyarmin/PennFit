@@ -22,6 +22,7 @@ const supabaseMock = installSupabaseMock();
 // takes the client via context, but in-app-conversation pulls nothing
 // global — we just pass the mocked client in.)
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { IN_APP_MESSAGE_BODY_MAX } from "../messaging/in-app-conversation";
 import {
   executeCustomerChatTool,
   serializeCustomerToolResult,
@@ -137,8 +138,8 @@ describe("escalate_to_human", () => {
     supabaseMock.stage("messages", "insert", { data: { id: "msg_3" } });
 
     // 1500 chars is the schema max; the prefix pushes the body a little
-    // past it, so the tool clamps to IN_APP_MESSAGE_BODY_MAX (4000) —
-    // here we just confirm the message persists and stays a string.
+    // past it, so the tool clamps to IN_APP_MESSAGE_BODY_MAX — here we
+    // just confirm the message persists and stays within the cap.
     const longSummary = "x".repeat(1500);
     const result = await executeCustomerChatTool(
       "escalate_to_human",
@@ -151,7 +152,7 @@ describe("escalate_to_human", () => {
       getSupabaseWritePayloads("messages", "insert")[0] as { body: string }
     ).body;
     expect(typeof body).toBe("string");
-    expect(body.length).toBeLessThanOrEqual(4000);
+    expect(body.length).toBeLessThanOrEqual(IN_APP_MESSAGE_BODY_MAX);
   });
 
   it("serializes the escalation result as compact JSON for the model", () => {

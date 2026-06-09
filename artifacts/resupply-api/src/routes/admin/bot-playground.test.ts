@@ -25,6 +25,15 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
+// Control the voice.agent feature flag the voice-call route checks
+// before dialing. Defaults to enabled; the disabled test flips it.
+const { voiceAgentEnabled } = vi.hoisted(() => ({
+  voiceAgentEnabled: { value: true },
+}));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => voiceAgentEnabled.value),
+}));
+
 const placeCallMock = vi.fn();
 vi.mock("@workspace/resupply-telecom", async () => {
   const actual = await vi.importActual<
@@ -73,6 +82,7 @@ function setVoiceConfigured(): void {
 
 beforeEach(() => {
   mockAdmin.current = null;
+  voiceAgentEnabled.value = true;
   for (const k of VOICE_ENV_KEYS) delete process.env[k];
   placeCallMock.mockReset();
   __resetLlmProviderCacheForTests();
@@ -199,6 +209,19 @@ describe("/admin/bot-playground", () => {
       expect(placeCallMock).not.toHaveBeenCalled();
     });
 
+    it("503s when the voice agent is disabled in Control Center", async () => {
+      mockAdmin.current = ADMIN;
+      setVoiceConfigured();
+      voiceAgentEnabled.value = false;
+      const res = await request(makeApp())
+        .post("/admin/bot-playground/voice-call")
+        .send({ to: "+18145551212" });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toBe("voice_agent_disabled");
+      // Must NOT place (and bill) a call when the agent is off.
+      expect(placeCallMock).not.toHaveBeenCalled();
+    });
+
     it("places a diagnostic call and returns the call sid", async () => {
       mockAdmin.current = ADMIN;
       setVoiceConfigured();
@@ -217,11 +240,14 @@ describe("/admin/bot-playground", () => {
         to: string;
         from: string;
         url: string;
+        statusCallbackUrl?: string;
       };
       // Phone normalized to E.164.
       expect(arg.to).toBe("+18145551212");
       // TwiML points at the existing connect webhook with our conversationId.
       expect(arg.url).toContain("/voice/twiml-connect?conversationId=");
+      // No status callback on a diagnostic call (no conversations row → FK).
+      expect(arg.statusCallbackUrl).toBeUndefined();
     });
 
     it("502s when Twilio rejects the call", async () => {

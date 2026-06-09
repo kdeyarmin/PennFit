@@ -36,6 +36,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
@@ -288,6 +289,20 @@ router.post(
       return;
     }
 
+    // Gate on the Control Center voice.agent flag BEFORE dialing. The
+    // /voice/twiml-connect webhook also checks it (and would hang the
+    // call up), but by then we'd have already placed — and billed — a
+    // real outbound call. Failing here means "Call me" never rings when
+    // the agent is off, matching what the UI tells the admin.
+    if (!(await isFeatureEnabled("voice.agent"))) {
+      res.status(503).json({
+        error: "voice_agent_disabled",
+        message:
+          "The voice agent is turned off in Control Center. Enable it before placing a live test call.",
+      });
+      return;
+    }
+
     const { callContext, callerKind } = resolveVoiceCallSetup({
       scenarioId: parsed.data.scenarioId,
       callContext: parsed.data.callContext,
@@ -311,9 +326,11 @@ router.post(
     const twimlUrl = `${base}/resupply-api/voice/twiml-connect?conversationId=${encodeURIComponent(
       conversationId,
     )}`;
-    const statusCallbackUrl = `${base}/resupply-api/voice/status-callback?conversationId=${encodeURIComponent(
-      conversationId,
-    )}`;
+    // No statusCallbackUrl on purpose: this is a DIAGNOSTIC call with no
+    // `conversations` row, so /voice/status-callback's voice_calls insert
+    // (conversation_id FK → conversations.id) would fail and spam
+    // voice_call_record_failed warnings. The diagnostic bridge already
+    // caps + tears the call down on its own.
 
     let callSid: string;
     try {
@@ -325,7 +342,6 @@ router.post(
         to,
         from: config.twilioPhoneNumber,
         url: twimlUrl,
-        statusCallbackUrl,
       });
       callSid = result.sid;
     } catch (err) {

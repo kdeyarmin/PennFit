@@ -81,12 +81,19 @@ const nowIso = new Date().toISOString();
 function daysAgo(n: number): string {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
 }
+function daysFromNow(n: number): string {
+  return new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+}
 
 // ── Sample dataset (fixed ids → idempotent upserts) ─────────────────
 
 interface SampleCustomer {
   customerId: string;
-  authUserId: string;
+  // Set only after a login is successfully created (ensureLogin). Stays
+  // null otherwise — shop_customers.auth_user_id is an FK to
+  // resupply_auth.users(id), so a placeholder/dangling id would fail the
+  // FK and abort the seed.
+  authUserId: string | null;
   email: string;
   displayName: string;
   phoneE164: string;
@@ -108,7 +115,7 @@ interface SampleCustomer {
 const CUSTOMERS: SampleCustomer[] = [
   {
     customerId: "sample-cust-alex",
-    authUserId: "5a3b1e00-0000-4000-8000-000000000001",
+    authUserId: null,
     email: "sample.alex@example.com",
     displayName: "Alex Sample (test)",
     phoneE164: "+18145550101",
@@ -128,7 +135,7 @@ const CUSTOMERS: SampleCustomer[] = [
   },
   {
     customerId: "sample-cust-jordan",
-    authUserId: "5a3b1e00-0000-4000-8000-000000000002",
+    authUserId: null,
     email: "sample.jordan@example.com",
     displayName: "Jordan Sample (test)",
     phoneE164: "+18145550102",
@@ -148,7 +155,7 @@ const CUSTOMERS: SampleCustomer[] = [
   },
   {
     customerId: "sample-cust-casey",
-    authUserId: "5a3b1e00-0000-4000-8000-000000000003",
+    authUserId: null,
     email: "sample.casey@example.com",
     displayName: "Casey Sample (test)",
     phoneE164: "+18145550103",
@@ -272,7 +279,7 @@ const SUBSCRIPTIONS: SampleSubscription[] = [
     customerId: "sample-cust-alex",
     stripeSubscriptionId: "sub_sample_alex_1",
     status: "active",
-    currentPeriodEnd: daysAgo(-50),
+    currentPeriodEnd: daysFromNow(50),
     cancelAtPeriodEnd: false,
     items: [
       {
@@ -289,7 +296,7 @@ const SUBSCRIPTIONS: SampleSubscription[] = [
     customerId: "sample-cust-jordan",
     stripeSubscriptionId: "sub_sample_jordan_1",
     status: "paused",
-    currentPeriodEnd: daysAgo(-12),
+    currentPeriodEnd: daysFromNow(12),
     cancelAtPeriodEnd: false,
     items: [
       {
@@ -515,6 +522,10 @@ async function runSeed(): Promise<void> {
       try {
         await ensureLogin(c);
       } catch (err) {
+        // Login failed — make sure we don't leave a dangling auth_user_id
+        // on the shop_customers upsert (it's an FK). Fall back to a
+        // data-only customer (no sign-in) rather than aborting the seed.
+        c.authUserId = null;
         process.stderr.write(
           `${TAG} WARN: could not create login for ${c.email}: ${
             err instanceof Error ? err.message : String(err)
@@ -536,7 +547,8 @@ async function runSeed(): Promise<void> {
         phone_e164: c.phoneE164,
         shipping_address_json: c.shipping,
         cpap_device_json: c.device,
-        auth_user_id: withLogins ? c.authUserId : null,
+        // Non-null only when a login was successfully created above.
+        auth_user_id: c.authUserId,
         created_at: daysAgo(120),
         updated_at: nowIso,
       });
