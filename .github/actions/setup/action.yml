@@ -67,7 +67,14 @@ runs:
     - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "pnpm"
+        # Only enable the pnpm store cache when we actually install. A
+        # toolchain-only job (install: false — e.g. the dependency audit)
+        # never populates the store, so on a cache MISS (any lockfile
+        # change) setup-node's save post-step fails the job with
+        # "Path Validation Error: Path(s) specified ... do(es) not exist".
+        # Disabling the cache for those jobs avoids that and costs nothing
+        # (they don't install). install: true jobs are unchanged ("pnpm").
+        cache: ${{ inputs.install == 'true' && 'pnpm' || '' }}
         cache-dependency-path: pnpm-lock.yaml
 
     - name: Install dependencies
