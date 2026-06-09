@@ -12,6 +12,7 @@
 
 import { Router, type IRouter } from "express";
 
+import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import { applyEnvAliases, hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { getEffectiveEnv } from "../../lib/app-config/store";
@@ -98,7 +99,22 @@ router.get(
       vendors: {
         sendgrid: {
           configured: Boolean(vendorEnv.SENDGRID_API_KEY),
-          fromEmailConfigured: Boolean(vendorEnv.SENDGRID_FROM_EMAIL),
+          // The From address is a fixed platform constant: createSendgridClient
+          // defaults it to DEFAULT_SENDGRID_FROM_EMAIL (info@pennpaps.com) when
+          // SENDGRID_FROM_EMAIL is unset, so a deploy with only the API key
+          // still sends from the canonical address (override-or-default,
+          // mirroring createSendgridClient's own resolution) — this is why
+          // checking the raw SENDGRID_FROM_EMAIL alone read "not configured"
+          // even though every email sends from info@pennpaps.com. Gate it on
+          // the API key so this sub-flag can't read "configured" while SendGrid
+          // itself is off: it describes the From address email WILL send from,
+          // which only has meaning once sending is enabled.
+          fromEmailConfigured:
+            Boolean(vendorEnv.SENDGRID_API_KEY) &&
+            Boolean(
+              (vendorEnv.SENDGRID_FROM_EMAIL ?? "").trim() ||
+              DEFAULT_SENDGRID_FROM_EMAIL,
+            ),
         },
         twilio: {
           accountSidConfigured: Boolean(vendorEnv.TWILIO_ACCOUNT_SID),
