@@ -154,11 +154,15 @@ function RulesTable({
     {
       key: "priority",
       header: "Pri",
+      sortable: true,
+      sortValue: (r) => r.priority,
       render: (r) => <span className="font-mono text-xs">{r.priority}</span>,
     },
     {
       key: "name",
       header: "Name",
+      sortable: true,
+      sortValue: (r) => r.name,
       render: (r) => (
         <div>
           <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
@@ -183,6 +187,8 @@ function RulesTable({
     {
       key: "cadence",
       header: "Cadence",
+      sortable: true,
+      sortValue: (r) => r.cadenceDays,
       render: (r) => `${r.cadenceDays} d`,
     },
     {
@@ -198,6 +204,8 @@ function RulesTable({
     {
       key: "active",
       header: "Active",
+      sortable: true,
+      sortValue: (r) => (r.active ? 1 : 0),
       render: (r) => (
         <Badge variant={r.active ? "success" : "muted"}>
           {r.active ? "On" : "Off"}
@@ -207,6 +215,9 @@ function RulesTable({
     {
       key: "updated",
       header: "Updated",
+      sortable: true,
+      // ISO 8601 timestamps sort chronologically as plain strings.
+      sortValue: (r) => r.updatedAt,
       render: (r) => (
         <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {formatDateTime(r.updatedAt)}
