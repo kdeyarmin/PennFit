@@ -81,6 +81,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-immutability.sh
 
+      # Block NEW "readFileSync my own source and grep it" tests (they
+      # pass on broken logic + break on refactors). Only fires on files
+      # ADDED in the PR, so the ~98 legacy offenders don't block anyone;
+      # an inline `allow-source-read` comment opts a file out. PR-only —
+      # a push to main has no base to diff.
+      - name: Source-grep test guard
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-no-source-grep-tests.sh
+
       - uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -127,6 +138,9 @@ jobs:
 
       - name: Migration-immutability checker self-test
         run: scripts/check-resupply-migration-immutability.sh --self-test
+
+      - name: Source-grep test guard self-test
+        run: bash scripts/check-no-source-grep-tests.sh --self-test
 
       # Self-test for the pre-commit staged-snapshot library (the helper
       # that makes the hook's checks see the staged index, not the live
