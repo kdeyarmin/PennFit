@@ -460,6 +460,8 @@ export interface Database {
           skills?: Json;
           availability?: string;
           phone_e164?: string | null;
+          /** Multi-location groundwork (mig 0235) — staff home branch, nullable. */
+          location_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
