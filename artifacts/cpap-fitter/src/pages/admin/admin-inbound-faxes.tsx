@@ -22,6 +22,7 @@ import {
   FileText,
   Inbox,
   Loader2,
+  ScanBarcode,
   Sparkles,
 } from "lucide-react";
 
@@ -31,10 +32,12 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import {
+  autoFileInboundFax,
   inboundFaxMediaUrl,
   listInboundFaxes,
   patchInboundFax,
   runFaxOcr,
+  type AutoFileFaxResponse,
   type AutoFileStatus,
   type FaxOcrFields,
   type InboundFaxListItem,
@@ -125,6 +128,88 @@ function AutoFileBanner({ fax }: { fax: InboundFaxListItem | null }) {
   );
 }
 
+// In-modal action: run the barcode auto-file on this fax on demand — the
+// same routine the ingest runs on arrival. On a confident match it files
+// the fax to the patient chart + marks the signature returned, then closes
+// the modal; otherwise it shows why it couldn't (no_code / no_match / …).
+function BarcodeAutoFilePanel({
+  faxId,
+  onFiled,
+}: {
+  faxId: string;
+  onFiled: () => void;
+}) {
+  const [result, setResult] = useState<AutoFileFaxResponse | null>(null);
+  const run = useMutation({
+    mutationFn: () => autoFileInboundFax(faxId),
+    onSuccess: (r) => {
+      setResult(r);
+      if (r.status === "filed") onFiled();
+    },
+  });
+  const meta = result ? AUTO_FILE_TEXT[result.status] : null;
+  return (
+    <div
+      className="rounded border p-3 space-y-2"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--bg-2))",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="text-xs font-semibold flex items-center gap-1"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          <ScanBarcode className="h-3.5 w-3.5" />
+          Barcode auto-file
+        </span>
+        <Button
+          intent="ghost"
+          size="sm"
+          isLoading={run.isPending}
+          onClick={() => {
+            setResult(null);
+            run.mutate();
+          }}
+        >
+          Scan barcode &amp; file
+        </Button>
+      </div>
+      <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        Reads the PennFit tracking barcode and, on a match, files this fax to
+        the patient chart and marks the signature returned.
+      </p>
+      {run.isError && (
+        <p className="text-xs text-rose-700">
+          Couldn&apos;t run the scan. Try again.
+        </p>
+      )}
+      {meta && result?.status !== "filed" && (
+        <p
+          className="text-xs"
+          style={{
+            color: meta.tone === "warn" ? "#92400e" : "hsl(var(--ink-2))",
+          }}
+        >
+          {meta.label}
+          {result?.trackingCode ? ` (${result.trackingCode})` : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Auto-file outcomes a CSR should act on: a code was read/attempted but the
+// fax couldn't be fully filed. Surfaced as a "Needs review" chip + filter.
+const NEEDS_REVIEW_STATUSES: ReadonlySet<AutoFileStatus> = new Set([
+  "no_match",
+  "no_patient",
+  "failed",
+]);
+const needsReview = (s: AutoFileStatus | null): boolean =>
+  s !== null && NEEDS_REVIEW_STATUSES.has(s);
+
 type Filter = "open" | "new" | "triaged" | "attached" | "archived";
 
 const FILTER_IDS: ReadonlySet<string> = new Set<Filter>([
@@ -145,10 +230,16 @@ export function AdminInboundFaxesPage() {
     isAllowed: isFilter,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: queryKey(filter),
     queryFn: () => listInboundFaxes(filter),
   });
+
+  const rows = data?.faxes ?? [];
+  const visibleRows = needsReviewOnly
+    ? rows.filter((f) => needsReview(f.autoFileStatus))
+    : rows;
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -165,7 +256,7 @@ export function AdminInboundFaxesPage() {
         </p>
       </header>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {(["open", "new", "triaged", "attached", "archived"] as const).map(
           (f) => (
             <FilterChip
@@ -180,6 +271,17 @@ export function AdminInboundFaxesPage() {
             />
           ),
         )}
+        <label
+          className="ml-auto flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          <input
+            type="checkbox"
+            checked={needsReviewOnly}
+            onChange={(e) => setNeedsReviewOnly(e.target.checked)}
+          />
+          Needs review only
+        </label>
       </div>
 
       <Card>
@@ -187,12 +289,14 @@ export function AdminInboundFaxesPage() {
           <Spinner />
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
-        ) : data.faxes.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No faxes in this view.
+            {needsReviewOnly
+              ? "Nothing needs review in this view."
+              : "No faxes in this view."}
           </p>
         ) : (
-          <FaxTable rows={data.faxes} onSelect={setSelectedId} />
+          <FaxTable rows={visibleRows} onSelect={setSelectedId} />
         )}
       </Card>
 
@@ -303,6 +407,18 @@ function FaxTable({
                     }
                   >
                     <CheckCircle2 className="h-3 w-3" /> Auto-filed
+                  </span>
+                )}
+                {needsReview(r.autoFileStatus) && (
+                  <span
+                    className="ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900"
+                    title={
+                      r.autoFileStatus
+                        ? AUTO_FILE_TEXT[r.autoFileStatus].label
+                        : undefined
+                    }
+                  >
+                    Needs review
                   </span>
                 )}
               </td>
@@ -463,6 +579,18 @@ function TriageModal({
 
             {/* Triage form */}
             <div className="space-y-3">
+              {fax?.hasMedia && fax.autoFileStatus !== "filed" && (
+                <BarcodeAutoFilePanel
+                  faxId={faxId}
+                  onFiled={() => {
+                    void qc.invalidateQueries({ queryKey: queryKey(filter) });
+                    void qc.invalidateQueries({
+                      queryKey: ["admin-inbox-counts"],
+                    });
+                    onClose();
+                  }}
+                />
+              )}
               {fax?.hasMedia && (
                 <OcrPanel
                   running={runOcr.isPending}

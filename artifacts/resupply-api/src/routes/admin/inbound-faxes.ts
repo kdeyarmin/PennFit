@@ -34,6 +34,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { autoFileSignedFax } from "../../lib/fax/auto-file-signed";
 import { extractFaxFields } from "../../lib/inbound-fax/ocr";
 import {
   ObjectNotFoundError,
@@ -386,6 +387,103 @@ router.post(
       id: row.id,
       status: result.status,
       fields: result.status === "extracted" ? result.fields : null,
+    });
+  },
+);
+
+// POST /admin/inbound-faxes/:id/auto-file — manually run the barcode
+// auto-file on a fax's stored media: the SAME routine the ingest runs on
+// arrival when `fax.auto_file_signed` is on (read the PennFit tracking
+// code, file to the patient chart, mark the signature returned, release
+// the bill hold). Lets a CSR process the backlog after enabling the flag,
+// retry a transient failure, or file a fax that arrived while the flag was
+// off. This is an explicit, audited human action, so it is NOT gated by
+// the feature flag — but it IS gated by `patients.update` (it files to a
+// chart + marks a signature signed, same bar as the chart-upload and
+// signature mark-returned routes). Idempotent on an already-filed fax.
+router.post(
+  "/admin/inbound-faxes/:id/auto-file",
+  requirePermission("patients.update"),
+  adminRateLimit({ name: "inbound_faxes.auto_file", preset: "mutation" }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select(
+        "id, media_object_key, media_content_type, auto_file_status, twilio_fax_sid",
+      )
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (!row.media_object_key) {
+      res.status(404).json({ error: "media_not_persisted" });
+      return;
+    }
+    // Already auto-filed — don't re-file (avoid a duplicate chart document).
+    if (row.auto_file_status === "filed") {
+      res.status(200).json({ id: row.id, status: "filed", alreadyFiled: true });
+      return;
+    }
+
+    let bytes: Buffer;
+    try {
+      const file = await objectStorage.getObjectEntityFile(
+        row.media_object_key,
+      );
+      const response = await objectStorage.downloadObject(file, 0);
+      bytes = Buffer.from(await response.arrayBuffer());
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: "media_not_found" });
+        return;
+      }
+      throw err;
+    }
+
+    // autoFileSignedFax records the outcome on the row + audits a
+    // fax.auto_filed_signed event on success; it never throws.
+    const outcome = await autoFileSignedFax({
+      faxId: row.id,
+      bytes,
+      // Faxes are PDF by default; fall back to that if the type is unknown.
+      contentType: row.media_content_type ?? "application/pdf",
+    });
+
+    await logAudit({
+      action: "fax.inbound.manual_auto_file",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "inbound_faxes",
+      targetId: row.id,
+      metadata: {
+        // PHI-safe: outcome + the opaque tracking code (an internal handle,
+        // also logged by the signature-tracking route) + sid prefix.
+        auto_file_status: outcome.status,
+        tracking_code: outcome.trackingCode,
+        twilio_fax_sid: row.twilio_fax_sid,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "fax.inbound.manual_auto_file audit failed");
+    });
+
+    res.json({
+      id: row.id,
+      status: outcome.status,
+      trackingCode: outcome.trackingCode,
+      chartDocumentId: outcome.chartDocumentId,
     });
   },
 );
