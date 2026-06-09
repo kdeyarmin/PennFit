@@ -42,8 +42,8 @@ export interface AppConfigCategory {
   settings: AppConfigSettingView[];
 }
 
-/** One Twilio webhook URL the operator pastes into the Twilio Console. */
-export interface TwilioWebhookEndpoint {
+/** One telephony webhook URL the operator pastes into the vendor portal. */
+export interface WebhookEndpoint {
   id: string;
   label: string;
   description: string;
@@ -52,10 +52,11 @@ export interface TwilioWebhookEndpoint {
 }
 
 /**
- * Read-only Twilio webhook reference, derived server-side from the
- * editable "Public webhook base URL" (RESUPPLY_VOICE_PUBLIC_BASE_URL).
+ * Read-only telephony webhook reference (Twilio voice/SMS + Telnyx fax),
+ * derived server-side from the editable "Public webhook base URL"
+ * (RESUPPLY_VOICE_PUBLIC_BASE_URL).
  */
-export interface TwilioWebhooksView {
+export interface WebhookReferenceView {
   /**
    * The LIVE public origin the running process uses (env / Railway host),
    * or null when none is configured. Mirrors the runtime readers, NOT a
@@ -73,14 +74,14 @@ export interface TwilioWebhooksView {
    */
   pendingRestart: boolean;
   /** Full webhook URLs (empty when baseUrl is null). */
-  endpoints: TwilioWebhookEndpoint[];
+  endpoints: WebhookEndpoint[];
 }
 
 export interface SystemConfigResponse {
   categories: AppConfigCategory[];
   overlayDisabled: boolean;
   /** Optional for resilience against older API shapes. */
-  twilioWebhooks?: TwilioWebhooksView;
+  webhookReference?: WebhookReferenceView;
 }
 
 export interface AppConfigActivity {

@@ -130,7 +130,8 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_TWILIO,
     secret: true,
     applyMode: "restart",
-    description: "Authorizes outbound SMS, voice, and fax API calls.",
+    description:
+      "Authorizes outbound SMS and voice API calls. (Fax runs on Telnyx — see the Fax section.)",
   },
   {
     key: "TWILIO_PHONE_NUMBER",
@@ -191,20 +192,23 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     placeholder: "base64…",
   },
   {
-    // KEY === ENV VAR NAME. This is the single public origin every Twilio
-    // webhook callback is built from (voice/SMS/fax inbound + delivery
-    // status), read by readVoicePublicBaseUrlOrNull / readSmsConfigOrNull.
-    // It is also reused for email click-through links. When unset the
-    // runtime falls back to https://${RAILWAY_PUBLIC_DOMAIN}. The exact
-    // full URLs to paste into the Twilio Console are surfaced read-only
-    // on /admin/system/configuration (see the route's twilioWebhooks).
+    // KEY === ENV VAR NAME. This is the single public origin every
+    // telephony webhook callback is built from — Twilio voice/SMS inbound
+    // + delivery status AND the Telnyx fax webhook — read by
+    // readVoicePublicBaseUrlOrNull / readSmsConfigOrNull (and passed to
+    // Telnyx as the per-fax webhook_url). It is also reused for email
+    // click-through links. When unset the runtime falls back to
+    // https://${RAILWAY_PUBLIC_DOMAIN}. The exact full URLs to paste into
+    // the Twilio Console (voice/SMS) and the Telnyx portal (fax) are
+    // surfaced read-only on /admin/system/configuration (see the route's
+    // webhookReference).
     key: "RESUPPLY_VOICE_PUBLIC_BASE_URL",
     label: "Public webhook base URL",
     category: CATEGORY_TWILIO,
     secret: false,
     applyMode: "restart",
     description:
-      "Public HTTPS origin Twilio calls back into for inbound voice, SMS, and fax webhooks and delivery callbacks (also reused for email links). Leave unset to use the Railway domain. The full webhook URLs to enter in the Twilio Console are listed below.",
+      "Public HTTPS origin telephony webhooks are built from — Twilio voice & SMS (inbound + delivery callbacks) and the Telnyx fax webhook (also reused for email links). Leave unset to use the Railway domain. The full webhook URLs are listed below.",
     placeholder: "https://pennfit.up.railway.app",
   },
 
