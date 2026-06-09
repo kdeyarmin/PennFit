@@ -111,7 +111,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
                   className="text-2xl font-semibold mb-1"
                   style={{ color: "hsl(var(--ink-1))" }}
                 >
-                  {data.channel === "in_app" && data.customerId ? (
+                  {data.customerId ? (
                     /*
                       In-app threads: header links to the
                       customer-360 page where the CSR can see saved
@@ -147,7 +147,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
                     "Unknown subject"
                   )}
                 </h1>
-                {data.channel === "in_app" && data.customerEmail && (
+                {data.customerId != null && data.customerEmail && (
                   <p
                     className="text-xs mb-1"
                     style={{ color: "hsl(var(--ink-3))" }}
@@ -324,7 +324,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
             so the CSR can answer most questions without leaving this
             page.
           */}
-          {data.channel === "in_app" && data.customerId ? (
+          {data.customerId ? (
             <Customer360Panel
               customerId={data.customerId}
               displayName={data.customerDisplayName ?? null}

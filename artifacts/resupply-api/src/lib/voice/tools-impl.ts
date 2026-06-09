@@ -25,6 +25,7 @@ import {
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
+import { PATIENT_TOOL_NAMES, SHOP_TOOL_NAMES } from "@workspace/resupply-ai";
 import type {
   DispatchToolCall,
   DispatchToolResult,
@@ -75,6 +76,11 @@ function identityRequiredResultFor<K extends ToolName>(
         matched: false,
         attempts_remaining: 0,
       } as DispatchToolResult<K>["result"];
+    case "verify_shop_customer_identity":
+      return {
+        matched: false,
+        attempts_remaining: 0,
+      } as DispatchToolResult<K>["result"];
     case "lookup_resupply_inventory":
       return { items: [] } as unknown as DispatchToolResult<K>["result"];
     case "get_customer_chart":
@@ -111,17 +117,34 @@ function identityRequiredResultFor<K extends ToolName>(
 
 const IDENTITY_EXEMPT: ReadonlySet<ToolName> = new Set([
   "verify_patient_identity",
+  "verify_shop_customer_identity",
   "request_human_handoff",
   "end_call",
 ]);
+
+// Per-caller-kind dispatch allowlists (defense in depth — the WS handler
+// already offers the model only the right subset). Anything outside the
+// caller's set gets the same identity_required stub as an unverified call.
+const PATIENT_DISPATCH_TOOLS: ReadonlySet<ToolName> = new Set(
+  PATIENT_TOOL_NAMES,
+);
+const SHOP_DISPATCH_TOOLS: ReadonlySet<ToolName> = new Set(SHOP_TOOL_NAMES);
 
 export interface VoiceToolDispatcherDeps {
   /** Optional Supabase client. Tests inject a stub; production callers
    *  pass nothing and the dispatcher resolves the singleton at construct. */
   supabase?: ResupplySupabaseClient;
-  patientId: string;
+  /** "patient" (default) runs the full resupply flow and verifies by date
+   *  of birth; "shop_customer" verifies by the last four of the card on
+   *  file and is limited to reading their account or reaching a human. */
+  callerKind?: "patient" | "shop_customer";
+  /** Set for patient callers — the bound clinical patient. */
+  patientId?: string;
   conversationId: string;
-  episodeId: string;
+  /** Set for patient callers — the actionable episode. */
+  episodeId?: string;
+  /** Set for shop_customer callers — the storefront customer id. */
+  shopCustomerId?: string;
 }
 
 export interface VoiceToolDispatcher extends ToolDispatcher {
@@ -147,9 +170,47 @@ class Impl implements VoiceToolDispatcher {
     return this.verified;
   }
 
+  /** The bound patient id, asserted present. Only the patient-flow tools
+   *  call this, and the per-kind dispatch gate guarantees they only run
+   *  for a patient caller — so a missing id is a programming error. */
+  private requirePatientId(): string {
+    const id = this.deps.patientId;
+    if (!id) throw new Error("patientId is required for patient-flow tools");
+    return id;
+  }
+
+  private requireEpisodeId(): string {
+    const id = this.deps.episodeId;
+    if (!id) throw new Error("episodeId is required for place_resupply_order");
+    return id;
+  }
+
+  private requireShopCustomerId(): string {
+    const id = this.deps.shopCustomerId;
+    if (!id) throw new Error("shopCustomerId is required for shop-flow tools");
+    return id;
+  }
+
   async dispatch<K extends ToolName>(
     call: DispatchToolCall<K>,
   ): Promise<DispatchToolResult<K>> {
+    // Per-caller-kind scoping (defense in depth): a shop_customer caller
+    // can only verify-by-card, read their chart, hand off, or hang up; a
+    // patient caller cannot use the shop verify tool. Anything outside the
+    // caller's set returns the same stub an unverified side-effect call
+    // would, nudging the model back to the tools it's allowed.
+    const callerKind = this.deps.callerKind ?? "patient";
+    const allowedForKind =
+      callerKind === "shop_customer"
+        ? SHOP_DISPATCH_TOOLS
+        : PATIENT_DISPATCH_TOOLS;
+    if (!allowedForKind.has(call.name)) {
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: identityRequiredResultFor(call.name),
+      };
+    }
     // Hard lockout: once MAX_VERIFY_ATTEMPTS DOB checks have failed
     // without success, the only escape paths are human handoff or
     // ending the call. This includes refusing further
@@ -179,6 +240,10 @@ class Impl implements VoiceToolDispatcher {
       case "verify_patient_identity":
         return (await this.verifyIdentity(
           call as DispatchToolCall<"verify_patient_identity">,
+        )) as DispatchToolResult<K>;
+      case "verify_shop_customer_identity":
+        return (await this.verifyShopCustomerIdentity(
+          call as DispatchToolCall<"verify_shop_customer_identity">,
         )) as DispatchToolResult<K>;
       case "lookup_resupply_inventory":
         return (await this.lookupInventory(
@@ -227,7 +292,7 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("patients")
       .select("date_of_birth, legal_first_name")
-      .eq("id", this.deps.patientId)
+      .eq("id", this.requirePatientId())
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -274,6 +339,62 @@ class Impl implements VoiceToolDispatcher {
     };
   }
 
+  private async verifyShopCustomerIdentity(
+    call: DispatchToolCall<"verify_shop_customer_identity">,
+  ): Promise<DispatchToolResult<"verify_shop_customer_identity">> {
+    // Storefront callers have no DOB on file; we verify against the last
+    // four of the card on file — a low-sensitivity factor gating only the
+    // deliberately low-sensitivity shop chart. Read it FIRST so a customer
+    // with no saved card doesn't burn an attempt (the prompt then hands
+    // off). Compared in Node with timingSafeEqual.
+    const { data: row, error } = await this.supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("default_payment_method_last4, display_name")
+      .eq("customer_id", this.requireShopCustomerId())
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+
+    const last4OnFile = row?.default_payment_method_last4 ?? null;
+    if (!last4OnFile) {
+      // No card on file → verification can NEVER succeed. Signal a terminal
+      // state (attempts_remaining: 0) so the model stops asking for digits
+      // and hands off, per the prompt's "no card on file" rule. We don't
+      // increment the counter — there was nothing to compare.
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: { matched: false, attempts_remaining: 0 },
+      };
+    }
+
+    this.verifyAttempts += 1;
+    const attemptsRemaining = Math.max(
+      0,
+      MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
+    );
+
+    const matched = constantTimeStringEquals(call.args.last_four, last4OnFile);
+    if (matched) {
+      this.verified = true;
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: {
+          matched: true,
+          first_name: firstNameFromDisplayName(row?.display_name ?? null),
+          attempts_remaining: attemptsRemaining,
+        },
+      };
+    }
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: { matched: false, attempts_remaining: attemptsRemaining },
+    };
+  }
+
   private async lookupInventory(
     call: DispatchToolCall<"lookup_resupply_inventory">,
   ): Promise<DispatchToolResult<"lookup_resupply_inventory">> {
@@ -281,7 +402,7 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("prescriptions")
       .select("item_sku, cadence_days")
-      .eq("patient_id", this.deps.patientId)
+      .eq("patient_id", this.requirePatientId())
       .eq("status", "active");
     if (error) throw error;
 
@@ -313,9 +434,12 @@ class Impl implements VoiceToolDispatcher {
     // caller: first name + supplies due + latest order date + an
     // open-followup flag. We never return addresses, order contents,
     // DOB, phone, email, or any identifier (the model never sees the
-    // bound patientId). The agent prompt also forbids reading full PHI
-    // aloud — this is defense in depth.
-    const patientId = this.deps.patientId;
+    // bound patient/customer id). The agent prompt also forbids reading
+    // full PHI aloud — this is defense in depth.
+    if ((this.deps.callerKind ?? "patient") === "shop_customer") {
+      return this.getShopCustomerChart(call);
+    }
+    const patientId = this.requirePatientId();
     const [patientRes, rxRes, fulfillmentRes, followupRes] = await Promise.all([
       this.supabase
         .schema("resupply")
@@ -381,6 +505,71 @@ class Impl implements VoiceToolDispatcher {
     };
   }
 
+  private async getShopCustomerChart(
+    call: DispatchToolCall<"get_customer_chart">,
+  ): Promise<DispatchToolResult<"get_customer_chart">> {
+    // Storefront snapshot: first name + last order date + active-
+    // subscription flag + open-followup flag. No supplies_due (cash-pay
+    // customers have no clinical prescriptions). Dates + booleans only —
+    // never order contents, addresses, payment details, or email.
+    const customerId = this.requireShopCustomerId();
+    const [customerRes, orderRes, subRes, followupRes] = await Promise.all([
+      this.supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("display_name")
+        .eq("customer_id", customerId)
+        .limit(1)
+        .maybeSingle(),
+      this.supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .select("paid_at, created_at")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      this.supabase
+        .schema("resupply")
+        .from("shop_subscriptions")
+        .select("status")
+        .eq("customer_id", customerId)
+        .in("status", ["active", "trialing"])
+        .limit(1),
+      this.supabase
+        .schema("resupply")
+        .from("shop_customer_followups")
+        .select("id")
+        .eq("customer_id", customerId)
+        .is("completed_at", null)
+        .limit(1),
+    ]);
+    if (customerRes.error) throw customerRes.error;
+    if (orderRes.error) throw orderRes.error;
+    if (subRes.error) throw subRes.error;
+    if (followupRes.error) throw followupRes.error;
+
+    const lastOrderAt =
+      orderRes.data?.paid_at ?? orderRes.data?.created_at ?? null;
+
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: {
+        kind: "shop_customer",
+        first_name: firstNameFromDisplayName(
+          customerRes.data?.display_name ?? null,
+        ),
+        supplies_due: [],
+        recent_order_summary: {
+          last_order_at: lastOrderAt,
+          open_subscription: (subRes.data ?? []).length > 0,
+        },
+        has_open_followups: (followupRes.data ?? []).length > 0,
+      },
+    };
+  }
+
   private async getShippingAddress(
     call: DispatchToolCall<"get_shipping_address">,
   ): Promise<DispatchToolResult<"get_shipping_address">> {
@@ -388,7 +577,7 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("patients")
       .select("address")
-      .eq("id", this.deps.patientId)
+      .eq("id", this.requirePatientId())
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -441,7 +630,7 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("patients")
       .update({ address: newAddress as unknown as Json })
-      .eq("id", this.deps.patientId);
+      .eq("id", this.requirePatientId());
     if (error) throw error;
 
     return {
@@ -477,7 +666,7 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("prescriptions")
       .select("item_sku")
-      .eq("patient_id", this.deps.patientId)
+      .eq("patient_id", this.requirePatientId())
       .eq("status", "active");
     if (rxErr) throw rxErr;
     const normalizeSku = (sku: string): string => sku.trim().toUpperCase();
@@ -503,7 +692,7 @@ class Impl implements VoiceToolDispatcher {
       .schema("resupply")
       .from("episodes")
       .update({ status: "confirmed", updated_at: nowIso })
-      .eq("id", this.deps.episodeId)
+      .eq("id", this.requireEpisodeId())
       .eq("status", "pending")
       .select("id");
     if (error) throw error;
@@ -564,6 +753,17 @@ class Impl implements VoiceToolDispatcher {
       result: { ok: true },
     };
   }
+}
+
+/** Best-effort first name from a free-form display name ("Jane Doe" ->
+ *  "Jane"). The storefront has no structured name; we only ever voice the
+ *  first token, and return undefined when there's nothing usable. */
+function firstNameFromDisplayName(
+  displayName: string | null,
+): string | undefined {
+  if (!displayName) return undefined;
+  const first = displayName.trim().split(/\s+/)[0];
+  return first || undefined;
 }
 
 /**

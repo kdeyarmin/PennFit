@@ -48,7 +48,8 @@ import {
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
-  TOOL_NAMES,
+  PATIENT_TOOL_NAMES,
+  SHOP_TOOL_NAMES,
   VoiceBridge,
   type DeepgramLiveSession,
   type ElevenLabsClient,
@@ -155,11 +156,16 @@ export async function handleVoiceWsConnection(
     },
   };
 
+  const callerKind = pending.callerKind ?? "patient";
   const dispatcher = createVoiceToolDispatcher({
     supabase,
-    patientId: pending.patientId,
+    callerKind,
     conversationId: pending.conversationId,
-    episodeId: pending.episodeId,
+    ...(pending.patientId ? { patientId: pending.patientId } : {}),
+    ...(pending.episodeId ? { episodeId: pending.episodeId } : {}),
+    ...(pending.shopCustomerId
+      ? { shopCustomerId: pending.shopCustomerId }
+      : {}),
   });
 
   // Optional ElevenLabs voice. When ELEVENLABS_API_KEY is set, ElevenLabs
@@ -227,6 +233,7 @@ export async function handleVoiceWsConnection(
     generateAudio: !externalVoice,
     instructions: buildSystemPrompt({
       practiceName: config.practiceName ?? "PennPaps",
+      callerKind,
       // Inbound calls (the reorder IVR) set their own context + greeting
       // on the pending entry so the agent doesn't tell a caller who
       // dialed in that we're calling them. Outbound (place-call) leaves
@@ -238,7 +245,9 @@ export async function handleVoiceWsConnection(
       ...(pending.greeting ? { greeting: pending.greeting } : {}),
     }),
     tools: OPENAI_TOOL_DESCRIPTORS,
-    allowedToolNames: new Set(TOOL_NAMES),
+    allowedToolNames: new Set(
+      callerKind === "shop_customer" ? SHOP_TOOL_NAMES : PATIENT_TOOL_NAMES,
+    ),
   });
 
   const bridge = new VoiceBridge({

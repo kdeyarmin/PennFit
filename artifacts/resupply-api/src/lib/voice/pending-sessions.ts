@@ -47,6 +47,15 @@ export interface PendingSessionEntry {
    */
   greeting?: string;
   /**
+   * Caller kind for the voice tool dispatcher + system prompt. Defaults to
+   * "patient" when unset (outbound + inbound patient flows). The inbound
+   * reorder IVR sets "shop_customer" for a matched storefront caller — in
+   * which case `shopCustomerId` is set and `patientId`/`episodeId` are "".
+   */
+  callerKind?: "patient" | "shop_customer";
+  /** Storefront customer id — set only for callerKind "shop_customer". */
+  shopCustomerId?: string;
+  /**
    * Diagnostic ("connection test") session — no patient, no DB, no tools.
    * Set by the `/voice/realtime-diagnostic` route so the WS upgrade routes
    * to the isolated diagnostic bridge handler instead of the production
@@ -106,6 +115,8 @@ export class PendingSessions {
     callContext?: string;
     greeting?: string;
     diagnostic?: boolean;
+    callerKind?: "patient" | "shop_customer";
+    shopCustomerId?: string;
   }): PendingSessionEntry {
     this.sweep();
     const t = this.now();
@@ -116,6 +127,8 @@ export class PendingSessions {
       ...(args.callContext ? { callContext: args.callContext } : {}),
       ...(args.greeting ? { greeting: args.greeting } : {}),
       ...(args.diagnostic ? { diagnostic: true } : {}),
+      ...(args.callerKind ? { callerKind: args.callerKind } : {}),
+      ...(args.shopCustomerId ? { shopCustomerId: args.shopCustomerId } : {}),
       createdAt: t,
       expiresAt: t + this.ttlMs,
     };

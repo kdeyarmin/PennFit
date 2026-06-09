@@ -29,6 +29,7 @@ import { z } from "zod";
 
 export const TOOL_NAMES = [
   "verify_patient_identity",
+  "verify_shop_customer_identity",
   "lookup_resupply_inventory",
   "get_customer_chart",
   "get_shipping_address",
@@ -39,6 +40,30 @@ export const TOOL_NAMES = [
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+// Per-caller-kind tool availability. The voice WS handler offers the model
+// only the subset for the resolved caller kind, and the dispatcher enforces
+// the same split server-side (defense in depth). A clinical patient verifies
+// by date of birth and can run the full resupply flow; a cash-pay storefront
+// caller verifies by the last four of the card on file and can only review
+// their account (read-only) or reach a human.
+export const PATIENT_TOOL_NAMES = [
+  "verify_patient_identity",
+  "lookup_resupply_inventory",
+  "get_customer_chart",
+  "get_shipping_address",
+  "update_shipping_address",
+  "place_resupply_order",
+  "request_human_handoff",
+  "end_call",
+] as const satisfies readonly ToolName[];
+
+export const SHOP_TOOL_NAMES = [
+  "verify_shop_customer_identity",
+  "get_customer_chart",
+  "request_human_handoff",
+  "end_call",
+] as const satisfies readonly ToolName[];
 
 // ---- Arg schemas ----------------------------------------------------------
 
@@ -53,6 +78,15 @@ const isoDateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
 export const verifyPatientIdentityArgs = z
   .object({
     date_of_birth: isoDateString,
+  })
+  .strict();
+
+export const verifyShopCustomerIdentityArgs = z
+  .object({
+    last_four: z
+      .string()
+      .trim()
+      .regex(/^\d{4}$/, "Expected the last four digits of the card on file."),
   })
   .strict();
 
@@ -125,6 +159,7 @@ export const endCallArgs = z
 // tool".
 export const TOOL_ARG_SCHEMAS = {
   verify_patient_identity: verifyPatientIdentityArgs,
+  verify_shop_customer_identity: verifyShopCustomerIdentityArgs,
   lookup_resupply_inventory: lookupResupplyInventoryArgs,
   get_customer_chart: getCustomerChartArgs,
   get_shipping_address: getShippingAddressArgs,
@@ -147,6 +182,13 @@ export const TOOL_ARG_SCHEMAS = {
 // follow-up tool call.
 
 export interface VerifyPatientIdentityResult {
+  matched: boolean;
+  first_name?: string;
+  /** Number of attempts remaining before the agent should hand off. */
+  attempts_remaining: number;
+}
+
+export interface VerifyShopCustomerIdentityResult {
   matched: boolean;
   first_name?: string;
   /** Number of attempts remaining before the agent should hand off. */
@@ -211,6 +253,7 @@ export interface EndCallResult {
 
 export interface ToolResultByName {
   verify_patient_identity: VerifyPatientIdentityResult;
+  verify_shop_customer_identity: VerifyShopCustomerIdentityResult;
   lookup_resupply_inventory: LookupResupplyInventoryResult;
   get_customer_chart: CustomerChartResult;
   get_shipping_address: ShippingAddressResult;
@@ -258,6 +301,24 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
         },
       },
       required: ["date_of_birth"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "verify_shop_customer_identity",
+    description:
+      "Verify a storefront (cash-pay) caller's identity by matching the last four digits of the card on file. MUST be called and succeed before any other tool for a storefront caller. If no card is on file, or it fails three times, hand off to a human.",
+    parameters: {
+      type: "object",
+      properties: {
+        last_four: {
+          type: "string",
+          description:
+            "The last four digits of the caller's payment card (exactly four digits, e.g. 4242).",
+        },
+      },
+      required: ["last_four"],
       additionalProperties: false,
     },
   },
@@ -466,6 +527,8 @@ export function summarizeToolArgsForAudit(
   switch (name) {
     case "verify_patient_identity":
       return { name, has_dob: typeof a.date_of_birth === "string" };
+    case "verify_shop_customer_identity":
+      return { name, has_last_four: typeof a.last_four === "string" };
     case "lookup_resupply_inventory":
     case "get_shipping_address":
     case "get_customer_chart":

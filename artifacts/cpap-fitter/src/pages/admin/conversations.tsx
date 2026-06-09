@@ -137,10 +137,11 @@ export function ConversationsPage() {
       // depending on the row's channel.
       header: "Patient / Customer",
       render: (r) => {
-        // In-app threads use the shop_customer subject (added in
-        // PR #53). Surface the customer's display name (or email
-        // fallback) so the inbox stays readable for both flows.
-        if (r.channel === "in_app") {
+        // Customer-subject rows (in-app web chat OR a storefront voice
+        // call) carry a shop_customer instead of a patient. Surface the
+        // customer's display name (or email fallback) whenever a
+        // customerId is present, regardless of channel.
+        if (r.customerId != null) {
           return (
             <div
               className="font-semibold"
