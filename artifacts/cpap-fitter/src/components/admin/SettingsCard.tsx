@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   ApiError,
+  useGetAdminMe,
   useUpdatePatient,
   type PatientDetail,
 } from "@workspace/api-client-react/admin";
@@ -63,6 +64,11 @@ export function SettingsCard({
   const mutation = useUpdatePatient();
   const isPending = mutation.isPending;
 
+  // The branch picker only appears for multi-branch companies (Control
+  // Center toggle). Single-branch companies never see it and the
+  // locations list isn't fetched.
+  const multiLocationEnabled =
+    useGetAdminMe().data?.multiLocationEnabled ?? false;
   // Branch options for the location picker. Show active locations plus
   // the patient's current branch even if it's since been deactivated
   // (so the dropdown reflects reality and a stale assignment is
@@ -71,6 +77,7 @@ export function SettingsCard({
     queryKey: LOCATIONS_QUERY_KEY,
     queryFn: listLocations,
     staleTime: 60_000,
+    enabled: multiLocationEnabled,
   });
   const locationOptions = (locationsQuery.data?.locations ?? [])
     .filter((l) => l.isActive || l.id === patient.locationId)
@@ -132,9 +139,10 @@ export function SettingsCard({
       body.channelPreference = channel === "" ? null : channel;
     }
     // location: empty clears, otherwise the branch uuid. The server
-    // validates it against active locations.
+    // validates it against active locations. Only sent for multi-branch
+    // companies — the picker is hidden otherwise.
     const locOnServer = patient.locationId ?? "";
-    if (locationId !== locOnServer) {
+    if (multiLocationEnabled && locationId !== locOnServer) {
       body.locationId = locationId === "" ? null : locationId;
     }
     return { body, error: null };
@@ -287,20 +295,22 @@ export function SettingsCard({
             Voice is admin-initiated only.
           </p>
         </div>
-        <div>
-          <Label htmlFor="patient-location">Branch / location</Label>
-          <Select
-            id="patient-location"
-            value={locationId}
-            options={locationOptions}
-            emptyOptionLabel="Unassigned"
-            onChange={(e) => setLocationId(e.target.value)}
-            disabled={isPending || locationsQuery.isPending}
-          />
-          <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Servicing branch. Billing is unaffected (shared org identity).
-          </p>
-        </div>
+        {multiLocationEnabled && (
+          <div>
+            <Label htmlFor="patient-location">Branch / location</Label>
+            <Select
+              id="patient-location"
+              value={locationId}
+              options={locationOptions}
+              emptyOptionLabel="Unassigned"
+              onChange={(e) => setLocationId(e.target.value)}
+              disabled={isPending || locationsQuery.isPending}
+            />
+            <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Servicing branch. Billing is unaffected (shared org identity).
+            </p>
+          </div>
+        )}
       </div>
 
       {error && (

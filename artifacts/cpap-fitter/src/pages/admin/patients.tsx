@@ -161,12 +161,16 @@ export function PatientsPage() {
   // branch or "All branches" — this is a convenience default, not an
   // access gate (the server enforces nothing; unassigned staff see all).
   const meQuery = useGetAdminMe();
+  // Whole branch UI (filter + soft default) is gated on the multi-branch
+  // company toggle. Off (single-branch) = no branch filter, no default.
+  const multiLocationEnabled = meQuery.data?.multiLocationEnabled ?? false;
   const urlSeededLocation = useMemo(
     () => initialPatientFilters().locationId !== "",
     [],
   );
   const appliedHomeBranchRef = useRef(false);
   useEffect(() => {
+    if (!multiLocationEnabled) return;
     if (appliedHomeBranchRef.current) return;
     if (urlSeededLocation) {
       appliedHomeBranchRef.current = true;
@@ -177,7 +181,12 @@ export function PatientsPage() {
       setFilter("locationId", homeBranch);
       appliedHomeBranchRef.current = true;
     }
-  }, [meQuery.data?.locationId, urlSeededLocation, setFilter]);
+  }, [
+    multiLocationEnabled,
+    meQuery.data?.locationId,
+    urlSeededLocation,
+    setFilter,
+  ]);
 
   useEffect(() => {
     const trimmed = searchInput.trim();
@@ -550,16 +559,18 @@ export function PatientsPage() {
               onChange={(e) => setFilter("status", e.target.value)}
             />
           </div>
-          <div>
-            <Label htmlFor="patients-location">Branch</Label>
-            <Select
-              id="patients-location"
-              value={locationFilter}
-              emptyOptionLabel="All branches"
-              options={locationFilterOptions}
-              onChange={(e) => setFilter("locationId", e.target.value)}
-            />
-          </div>
+          {multiLocationEnabled && (
+            <div>
+              <Label htmlFor="patients-location">Branch</Label>
+              <Select
+                id="patients-location"
+                value={locationFilter}
+                emptyOptionLabel="All branches"
+                options={locationFilterOptions}
+                onChange={(e) => setFilter("locationId", e.target.value)}
+              />
+            </div>
+          )}
           <div className="flex items-end">
             <Button
               intent="ghost"

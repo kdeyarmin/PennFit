@@ -74,6 +74,7 @@ export const FEATURE_FLAG_KEYS = [
   "patient_packets.autosend_on_delivery",
   "patient_packets.autoremind",
   "orders.require_signed_paperwork",
+  "multi_location.enabled",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

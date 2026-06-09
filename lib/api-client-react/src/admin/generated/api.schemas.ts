@@ -101,6 +101,13 @@ configured, NODE_ENV=development) returns `admin`.
    * restriction). Not an access gate — purely a UX default.
    */
   locationId?: string | null;
+  /**
+   * Whether the multi-branch feature is enabled for this company
+   * (Control Center flag `multi_location.enabled`, seeded OFF). When
+   * false/absent the SPA hides all branch UI (Locations page, branch
+   * pickers, patients-list branch filter) and behaves single-branch.
+   */
+  multiLocationEnabled?: boolean;
 }
 
 /**

@@ -37,6 +37,7 @@ import {
   type TeamStatus,
 } from "@/lib/admin/admin-team-api";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
+import { useGetAdminMe } from "@workspace/api-client-react/admin";
 
 // Display labels for every DB-persisted role. Legacy values map onto
 // one of the 3 effective buckets so the UI shows a consistent
@@ -252,12 +253,16 @@ function MemberRow({
     mutationFn: (next: TeamRole) => patchMember(member.id, { role: next }),
     onSuccess: invalidate,
   });
-  // Home-branch assignment (multi-location). Shared, react-query-cached
-  // locations list (one fetch regardless of how many rows render).
+  // Home-branch assignment (multi-location) — only for multi-branch
+  // companies (Control Center toggle). The locations list isn't fetched
+  // and the per-row branch picker is hidden for single-branch companies.
+  const multiLocationEnabled =
+    useGetAdminMe().data?.multiLocationEnabled ?? false;
   const locationsQuery = useQuery({
     queryKey: LOCATIONS_QUERY_KEY,
     queryFn: listLocations,
     staleTime: 60_000,
+    enabled: multiLocationEnabled,
   });
   const changeLocation = useMutation({
     mutationFn: (locId: string | null) =>
@@ -345,7 +350,7 @@ function MemberRow({
               {resend.isPending ? "Resending…" : "Resend invite"}
             </button>
           )}
-          {member.status === "active" && (
+          {member.status === "active" && multiLocationEnabled && (
             <select
               value={member.locationId ?? ""}
               onChange={(e) => {

@@ -23,6 +23,10 @@ vi.mock("../middlewares/admin-rate-limit", () => ({
     next: import("express").NextFunction,
   ) => next(),
 }));
+const { flagState } = vi.hoisted(() => ({ flagState: { enabled: false } }));
+vi.mock("../lib/feature-flags", () => ({
+  isFeatureEnabled: async () => flagState.enabled,
+}));
 
 import meRouter from "./me";
 
@@ -37,6 +41,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
+  flagState.enabled = false;
 });
 
 describe("GET /me — location", () => {
@@ -66,5 +71,19 @@ describe("GET /me — location", () => {
     const res = await request(makeApp()).get("/me");
     expect(res.status).toBe(200);
     expect(res.body.locationId).toBeNull();
+  });
+
+  it("reflects the multi_location.enabled flag (off by default)", async () => {
+    mockAdmin.current = {
+      userId: "u_3",
+      email: "admin@penn.example.com",
+      role: "admin",
+    };
+    const off = await request(makeApp()).get("/me");
+    expect(off.body.multiLocationEnabled).toBe(false);
+
+    flagState.enabled = true;
+    const on = await request(makeApp()).get("/me");
+    expect(on.body.multiLocationEnabled).toBe(true);
   });
 });
