@@ -236,7 +236,20 @@ export async function runDeductibleResetPush(
       }
       stats.sent += 1;
     } catch (err) {
-      await releaseClaim();
+      try {
+        await releaseClaim();
+      } catch (releaseErr) {
+        logger.error(
+          {
+            err:
+              releaseErr instanceof Error
+                ? releaseErr.message
+                : String(releaseErr),
+            customerId: row.customer_id,
+          },
+          "shop-customers.deductible-reset: releaseClaim failed — deductible_reset_year may remain claimed",
+        );
+      }
       stats.failed += 1;
       logger.error(
         {
