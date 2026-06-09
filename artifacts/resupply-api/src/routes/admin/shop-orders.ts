@@ -62,6 +62,8 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
+import { sendReadyForPickupEmail } from "../../lib/order-emails/send-ready-for-pickup-email";
+import { getPickupLocationsByIds } from "../../lib/pickup/locations";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
 import { autoSendPatientPacketOnDelivery } from "../../lib/patient-packet/auto-send-on-delivery";
@@ -163,10 +165,15 @@ interface OrderRow {
   deliveredAt: string | null;
   shippingEmailSentAt: string | null;
   customerEmail: string | null;
+  fulfillmentMethod: "ship" | "pickup";
+  pickupLocationId: string | null;
+  readyForPickupAt: string | null;
+  pickedUpAt: string | null;
+  readyForPickupEmailSentAt: string | null;
 }
 
 const ORDER_COLUMNS =
-  "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_email_sent_at, customer_email";
+  "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_email_sent_at, customer_email, fulfillment_method, pickup_location_id, ready_for_pickup_at, picked_up_at, ready_for_pickup_email_sent_at";
 
 function rowToOrderRow(row: {
   id: string;
@@ -185,6 +192,11 @@ function rowToOrderRow(row: {
   delivered_at: string | null;
   shipping_email_sent_at: string | null;
   customer_email: string | null;
+  fulfillment_method: "ship" | "pickup";
+  pickup_location_id: string | null;
+  ready_for_pickup_at: string | null;
+  picked_up_at: string | null;
+  ready_for_pickup_email_sent_at: string | null;
 }): OrderRow {
   return {
     id: row.id,
@@ -204,6 +216,11 @@ function rowToOrderRow(row: {
     deliveredAt: row.delivered_at,
     shippingEmailSentAt: row.shipping_email_sent_at,
     customerEmail: row.customer_email,
+    fulfillmentMethod: row.fulfillment_method ?? "ship",
+    pickupLocationId: row.pickup_location_id,
+    readyForPickupAt: row.ready_for_pickup_at,
+    pickedUpAt: row.picked_up_at,
+    readyForPickupEmailSentAt: row.ready_for_pickup_email_sent_at,
   };
 }
 
@@ -534,6 +551,10 @@ function projectOrder(row: OrderRow) {
     trackingNumber: row.trackingNumber,
     shippedAt: row.shippedAt,
     deliveredAt: row.deliveredAt,
+    fulfillmentMethod: row.fulfillmentMethod,
+    pickupLocationId: row.pickupLocationId,
+    readyForPickupAt: row.readyForPickupAt,
+    pickedUpAt: row.pickedUpAt,
   };
 }
 
@@ -583,6 +604,13 @@ router.post(
         error: "order_not_paid",
         currentStatus: existing.status,
       });
+      return;
+    }
+    if (existing.fulfillmentMethod === "pickup") {
+      // An in-store pickup order has no carrier/tracking — it uses the
+      // ready-for-pickup / picked-up lifecycle. Refuse cleanly so the
+      // admin UI steers staff to the pickup actions instead.
+      res.status(409).json({ error: "order_is_pickup" });
       return;
     }
 
@@ -782,6 +810,332 @@ router.post(
     res.json({ order: projectOrder(rowToOrderRow(row)) });
   },
 );
+
+// ---------------------------------------------------------------------
+// POST /admin/shop/orders/:orderId/ready-for-pickup
+// ---------------------------------------------------------------------
+// The pickup analogue of /tracking: stamps ready_for_pickup_at=now()
+// and emails the customer "your order is ready to pick up". Only valid
+// for paid pickup orders. Idempotent on the timestamp (re-firing keeps
+// the original ready_for_pickup_at), and the email is sent at most once
+// via an atomic claim on ready_for_pickup_email_sent_at.
+router.post(
+  "/admin/shop/orders/:orderId/ready-for-pickup",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const existing = await loadOrder(orderId);
+    if (!existing) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    if (existing.status !== "paid") {
+      res.status(409).json({
+        error: "order_not_paid",
+        currentStatus: existing.status,
+      });
+      return;
+    }
+    if (existing.fulfillmentMethod !== "pickup") {
+      // A ship order has no pickup lifecycle — steer staff to /tracking.
+      res.status(409).json({ error: "order_is_ship" });
+      return;
+    }
+
+    // Verification stop: required intake paperwork must be signed before
+    // a patient-linked order is released — for pickup as well as
+    // shipment. Same gate as the /tracking handler (global flag and/or
+    // per-payer requirement); guest / non-clinical orders pass through.
+    const paperworkGate = await evaluatePaperworkGateForCustomer(
+      existing.customerId,
+    );
+    if (paperworkGate.required && !paperworkGate.satisfied) {
+      req.log?.info?.(
+        {
+          orderId,
+          adminEmail: req.adminEmail,
+          requirementSources: paperworkGate.sources,
+          missingCount: paperworkGate.missingForms.length,
+        },
+        "admin/shop/orders: pickup blocked — required paperwork unsigned",
+      );
+      res.status(409).json({
+        error: "order_requires_signed_paperwork",
+        message:
+          "Required intake paperwork is not signed yet. The following form(s) must be signed before this order can be released for pickup: " +
+          paperworkGate.missingForms.join(", ") +
+          ".",
+        missingForms: paperworkGate.missingForms,
+        requirementSources: paperworkGate.sources,
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    // Idempotent stamp: only set ready_for_pickup_at if it's currently
+    // NULL, so an accidental double-click doesn't drift the date.
+    const { error: stampErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({ ready_for_pickup_at: nowIso, updated_at: nowIso })
+      .eq("id", orderId)
+      .is("ready_for_pickup_at", null);
+    if (stampErr) throw stampErr;
+
+    req.log?.info?.(
+      { orderId, adminEmail: req.adminEmail },
+      "admin/shop/orders: marked ready for pickup",
+    );
+
+    // Best-effort "ready for pickup" email. The state transition has
+    // already succeeded; a SendGrid hiccup must NOT 500 the route.
+    try {
+      await sendReadyForPickupNotificationIfNew({ orderId, log: req.log });
+    } catch (emailErr) {
+      req.log?.warn?.(
+        {
+          orderId,
+          err: emailErr instanceof Error ? emailErr.message : String(emailErr),
+        },
+        "admin/shop/orders: ready-for-pickup notification failed (non-fatal)",
+      );
+    }
+
+    const current = await loadOrder(orderId);
+    res.json({ order: projectOrder(current ?? existing) });
+  },
+);
+
+// ---------------------------------------------------------------------
+// POST /admin/shop/orders/:orderId/picked-up
+// ---------------------------------------------------------------------
+// The pickup analogue of /delivered: stamps picked_up_at=now() once the
+// customer has collected. Requires ready_for_pickup_at to be set first.
+// Idempotent — re-firing keeps the original picked_up_at.
+router.post(
+  "/admin/shop/orders/:orderId/picked-up",
+  requirePermission("returns.manage"),
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const existing = await loadOrder(orderId);
+    if (!existing) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    if (existing.fulfillmentMethod !== "pickup") {
+      res.status(409).json({ error: "order_is_ship" });
+      return;
+    }
+    if (!existing.readyForPickupAt) {
+      res.status(409).json({ error: "order_not_ready_for_pickup" });
+      return;
+    }
+    if (existing.pickedUpAt) {
+      // Idempotent — don't bump the timestamp.
+      res.json({ order: projectOrder(existing) });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({ picked_up_at: nowIso, updated_at: nowIso })
+      .eq("id", orderId)
+      .is("picked_up_at", null)
+      .select(ORDER_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) {
+      const current = await loadOrder(orderId);
+      if (!current) {
+        res.status(404).json({ error: "order_not_found" });
+        return;
+      }
+      res.json({ order: projectOrder(current) });
+      return;
+    }
+    req.log?.info?.(
+      { orderId, adminEmail: req.adminEmail },
+      "admin/shop/orders: marked picked up",
+    );
+
+    // Reuse the delivery-time patient-packet auto-send: collecting in
+    // store is the pickup equivalent of delivery, so the same
+    // feature-flag-gated, one-time packet send applies.
+    try {
+      await autoSendPatientPacketOnDelivery({ orderId });
+    } catch (packetErr) {
+      req.log?.warn?.(
+        {
+          orderId,
+          err:
+            packetErr instanceof Error
+              ? packetErr
+              : new Error(String(packetErr)),
+        },
+        "admin/shop/orders: auto-send patient packet failed (non-fatal)",
+      );
+    }
+
+    res.json({ order: projectOrder(rowToOrderRow(row)) });
+  },
+);
+
+/**
+ * Send the "ready for pickup" email at most once, concurrency-safe.
+ * Mirrors sendShippingNotificationIfNew: atomic claim on
+ * ready_for_pickup_email_sent_at, release on any failure so a retry can
+ * re-send. Never throws back a hard error that would 500 the route.
+ */
+async function sendReadyForPickupNotificationIfNew(args: {
+  orderId: string;
+  log:
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
+    | undefined;
+}): Promise<
+  { skipped: true; reason: string } | { skipped: false; delivered: boolean }
+> {
+  const { orderId, log } = args;
+  const supabase = getSupabaseServiceRoleClient();
+
+  const claimIso = new Date().toISOString();
+  const { data: claimedRow, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update({
+      ready_for_pickup_email_sent_at: claimIso,
+      updated_at: claimIso,
+    })
+    .eq("id", orderId)
+    .is("ready_for_pickup_email_sent_at", null)
+    .select(
+      "id, stripe_session_id, customer_id, pickup_location_id, customer_email",
+    )
+    .limit(1)
+    .maybeSingle();
+  if (claimErr) throw claimErr;
+  if (!claimedRow) {
+    return { skipped: true, reason: "already_sent_or_missing" };
+  }
+
+  const releaseClaim = async (): Promise<void> => {
+    const { error: releaseErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({
+        ready_for_pickup_email_sent_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", claimedRow.id);
+    if (releaseErr) {
+      log?.warn?.(
+        { orderId: claimedRow.id, err: releaseErr },
+        "ready-for-pickup email claim release failed",
+      );
+    }
+  };
+
+  try {
+    // Resolve the pickup location (by id, including a since-deactivated
+    // branch) so the email can render where to collect.
+    const location = claimedRow.pickup_location_id
+      ? (await getPickupLocationsByIds([claimedRow.pickup_location_id])).get(
+          claimedRow.pickup_location_id,
+        )
+      : undefined;
+    if (!location) {
+      await releaseClaim();
+      return { skipped: true, reason: "no_location_on_file" };
+    }
+
+    // Recipient: linked customer email → persisted customer_email → skip.
+    let toEmail: string | null = null;
+    if (claimedRow.customer_id) {
+      const { data: cust, error: custErr } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("email_lower")
+        .eq("customer_id", claimedRow.customer_id)
+        .limit(1)
+        .maybeSingle();
+      if (custErr) throw custErr;
+      if (cust?.email_lower) toEmail = cust.email_lower;
+    }
+    if (!toEmail && claimedRow.customer_email) {
+      toEmail = claimedRow.customer_email;
+    }
+    if (!toEmail) {
+      await releaseClaim();
+      return { skipped: true, reason: "no_email_on_file" };
+    }
+
+    const result = await sendReadyForPickupEmail({
+      toEmail,
+      stripeSessionId: claimedRow.stripe_session_id,
+      location: {
+        name: location.name,
+        addressLine1: location.addressLine1,
+        addressLine2: location.addressLine2,
+        city: location.city,
+        state: location.state,
+        postalCode: location.postalCode,
+        phoneE164: location.phoneE164,
+      },
+    });
+    if (!result.configured) {
+      await releaseClaim();
+      return { skipped: true, reason: "not_configured" };
+    }
+    if (!result.delivered) {
+      await releaseClaim();
+      log?.warn?.(
+        { orderId: claimedRow.id, error: result.error },
+        "ready-for-pickup email send failed (non-fatal, claim released)",
+      );
+      return { skipped: false, delivered: false };
+    }
+
+    // Best-effort push fan-out — same news, separate channel.
+    if (claimedRow.customer_id) {
+      try {
+        await sendPushToCustomer(claimedRow.customer_id, {
+          title: "Your PennPaps order is ready for pickup",
+          body: `Ready to collect at ${location.name}`,
+          url: `/account/orders`,
+          tag: `shop_order_ready_for_pickup:${claimedRow.id}`,
+        });
+      } catch (err) {
+        log?.warn?.(
+          {
+            orderId: claimedRow.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "ready-for-pickup push send threw (non-fatal)",
+        );
+      }
+    }
+
+    return { skipped: false, delivered: true };
+  } catch (err) {
+    await releaseClaim();
+    throw err;
+  }
+}
 
 // ---------------------------------------------------------------------
 // PATCH /admin/shop/orders/:orderId/shipping-address

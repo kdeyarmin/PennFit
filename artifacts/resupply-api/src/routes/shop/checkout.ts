@@ -36,6 +36,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -83,6 +84,16 @@ const checkoutBody = z
       .max(200)
       .default("/shop/checkout-success"),
     cancelPath: z.string().startsWith("/").max(200).default("/shop/cart"),
+    /**
+     * Fulfillment choice. "ship" (default) collects a shipping address
+     * at Stripe and runs the carrier/tracking lifecycle. "pickup" skips
+     * the shipping address and the order is collected in store at
+     * `pickupLocationId`. Pickup is gated on the `storefront.pickup`
+     * feature flag and is only valid for one-time orders.
+     */
+    fulfillmentMethod: z.enum(["ship", "pickup"]).default("ship"),
+    /** Required when fulfillmentMethod === "pickup": an active location. */
+    pickupLocationId: z.string().uuid().nullish(),
   })
   .strict();
 
@@ -144,7 +155,7 @@ router.post(
       });
       return;
     }
-    const { items, successPath, cancelPath } = parsed.data;
+    const { items, successPath, cancelPath, fulfillmentMethod } = parsed.data;
 
     // Subscription mode is enabled if ANY item carries mode:
     // "subscription". Stripe will charge any sibling one-time items on
@@ -159,6 +170,44 @@ router.post(
           "You'll need to sign in before subscribing — auto-ship is tied to your PennPaps account so you can pause or cancel anytime.",
       });
       return;
+    }
+
+    // In-store pickup validation. Resolve the chosen location to an
+    // active row up front so a stale / tampered id can't be persisted
+    // onto the order, and so we can refuse cleanly before reserving a
+    // Stripe Session.
+    const isPickup = fulfillmentMethod === "pickup";
+    let pickupLocationId: string | null = null;
+    if (isPickup) {
+      // Auto-ship is inherently a recurring-shipping relationship —
+      // pickup doesn't apply. Keep the subscription branch ship-only.
+      if (isSubscription) {
+        res.status(400).json({
+          error: "pickup_not_for_subscription",
+          message:
+            "In-store pickup isn't available for Subscribe & Save orders. Choose shipping, or place this as a one-time order.",
+        });
+        return;
+      }
+      if (!(await isFeatureEnabled("storefront.pickup"))) {
+        res.status(400).json({
+          error: "pickup_unavailable",
+          message: "In-store pickup isn't available right now.",
+        });
+        return;
+      }
+      const location = parsed.data.pickupLocationId
+        ? await getActivePickupLocationById(parsed.data.pickupLocationId)
+        : null;
+      if (!location) {
+        res.status(400).json({
+          error: "pickup_location_invalid",
+          message:
+            "Choose a valid pickup location before continuing to checkout.",
+        });
+        return;
+      }
+      pickupLocationId = location.id;
     }
 
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
@@ -245,11 +294,15 @@ router.post(
       }
     }
 
-    // Common metadata for both payment + subscription flows.
+    // Common metadata for both payment + subscription flows. The
+    // fulfillment fields are read back by the Stripe webhook
+    // (markPaid) and persisted onto the shop_orders row.
     const sessionMetadata: Record<string, string> = {
       source: "pennpaps-shop",
       cart_hash: cartHash,
       flow: isSubscription ? "subscription" : "standard",
+      fulfillment_method: fulfillmentMethod,
+      ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
       ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
     };
 
@@ -334,9 +387,16 @@ router.post(
             })),
             success_url: successUrl,
             cancel_url: cancelUrl,
-            shipping_address_collection: {
-              allowed_countries: ["US"],
-            },
+            // In-store pickup orders are collected at a location — Stripe
+            // must NOT prompt for a shipping address (the snapshot stays
+            // null and the order runs the pickup lifecycle instead).
+            ...(isPickup
+              ? {}
+              : {
+                  shipping_address_collection: {
+                    allowed_countries: ["US"],
+                  },
+                }),
             phone_number_collection: { enabled: true },
             metadata: sessionMetadata,
             // PennPaps cash-pay shop never collects sales tax in v1 —
@@ -389,6 +449,8 @@ router.post(
           stripe_session_id: session.id,
           status: "pending",
           cart_hash: cartHash,
+          fulfillment_method: fulfillmentMethod,
+          ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
           ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
           updated_at: new Date().toISOString(),
         },

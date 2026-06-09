@@ -34,6 +34,8 @@ export function demoOrderHistory(): OrderHistoryResponse {
         deliveredAt: daysAgo(8),
         podUploadedAt: daysAgo(8),
         canEditAddress: false,
+        fulfillmentMethod: "ship",
+        pickup: null,
         items: [
           {
             productId: "demo-prod-resupply-bundle",
@@ -69,6 +71,8 @@ export function demoOrderHistory(): OrderHistoryResponse {
         deliveredAt: daysAgo(70),
         podUploadedAt: null,
         canEditAddress: false,
+        fulfillmentMethod: "ship",
+        pickup: null,
         items: [
           {
             productId: "demo-prod-n20-cushion",

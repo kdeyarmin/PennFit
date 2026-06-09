@@ -9,6 +9,7 @@ import { Router, type IRouter } from "express";
 
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
+import pickupLocationsRouter from "./pickup-locations";
 import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
 import fitterCompleteRouter from "./fitter-complete";
@@ -61,6 +62,10 @@ import meWalletPassRouter from "./me-wallet-pass";
 const router: IRouter = Router();
 router.use(productsRouter);
 router.use(checkoutRouter);
+// /shop/pickup-locations — public list of in-store pickup options +
+// an `enabled` flag (gated by the storefront.pickup feature flag and
+// the presence of at least one active location).
+router.use(pickupLocationsRouter);
 router.use(orderRouter);
 router.use(orderPodRouter);
 // /shop/me/* — auth-aware patient account endpoints. Mounted

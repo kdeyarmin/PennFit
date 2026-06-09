@@ -330,8 +330,10 @@ ORDERS AND SHIPPING (1-25)
       require signature; high-value orders may. Carrier discretion.
   19. Are your packages discreet? -> Yes - plain box, no medical
       branding on the outside.
-  20. Can I pick up at your office? -> No, we ship-only at this
-      time.
+  20. Can I pick up at your office? -> In-store pickup may be offered
+      at checkout when available - if you see a "Pick up in store"
+      option in your cart, choose it and we'll email you when your
+      order is ready to collect. Otherwise we ship to you.
   21. When will it arrive at my P.O. Box? -> USPS handles P.O.
       Boxes; tracking link will show estimated delivery.
   22. Why did my order arrive in two boxes? -> We split-ship from

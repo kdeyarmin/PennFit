@@ -771,6 +771,18 @@ async function markPaid(
   // sequencing issue, etc.).
   const customerId = readCustomerIdFromMetadata(session.metadata);
 
+  // Fulfillment method + pickup location, set by routes/shop/checkout.ts
+  // into the session metadata. Default to 'ship' for any older session
+  // (pre-pickup) or one missing the field. A 'pickup' order never
+  // collected a shipping address (checkout omits the prompt), so the
+  // snapshot below stays null and the order runs the pickup lifecycle.
+  const fulfillmentMethod =
+    session.metadata?.fulfillment_method === "pickup" ? "pickup" : "ship";
+  const pickupLocationId =
+    fulfillmentMethod === "pickup"
+      ? (session.metadata?.pickup_location_id ?? null)
+      : null;
+
   // Per-order shipping address snapshot (W3 T-C7). Reading from the
   // session at paid-time captures the address-as-shipped, which is
   // the right semantics for the customer-facing order history and
@@ -796,8 +808,13 @@ async function markPaid(
     currency: session.currency ?? null,
     paid_at: nowIso,
     updated_at: nowIso,
+    fulfillment_method: fulfillmentMethod,
   };
   if (customerId) update.customer_id = customerId;
+  // Persist the pickup location for pickup orders. Leave the column
+  // untouched on ship orders so a webhook re-delivery can't null out a
+  // value (the checkout route already wrote it on the pending row).
+  if (pickupLocationId) update.pickup_location_id = pickupLocationId;
   // Only write the snapshot if Stripe actually gave us one. Skipping
   // the key on null preserves any later admin edit on a Stripe
   // re-delivery (charge.refunded → no shipping_details).
