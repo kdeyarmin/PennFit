@@ -84,9 +84,12 @@ async function loadChannelEngagement(cutoff: string) {
     supabase
       .schema("resupply")
       .from("voice_calls")
-      .select("status, direction, duration_seconds, initiated_at, answered_at", {
-        count: "exact",
-      })
+      .select(
+        "status, direction, duration_seconds, initiated_at, answered_at",
+        {
+          count: "exact",
+        },
+      )
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),

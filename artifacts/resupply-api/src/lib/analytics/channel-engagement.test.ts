@@ -82,11 +82,23 @@ describe("aggregateChannelEngagement", () => {
     ];
     const messages: MessageRow[] = [
       // sms: 2 out (1 delivered, 1 failed), 1 in
-      msg({ conversationId: "sms1", direction: "outbound", deliveryStatus: "delivered" }),
-      msg({ conversationId: "sms1", direction: "outbound", deliveryStatus: "failed" }),
+      msg({
+        conversationId: "sms1",
+        direction: "outbound",
+        deliveryStatus: "delivered",
+      }),
+      msg({
+        conversationId: "sms1",
+        direction: "outbound",
+        deliveryStatus: "failed",
+      }),
       msg({ conversationId: "sms1", direction: "inbound" }),
       // email: 1 out (sent), 2 in
-      msg({ conversationId: "em1", direction: "outbound", deliveryStatus: "sent" }),
+      msg({
+        conversationId: "em1",
+        direction: "outbound",
+        deliveryStatus: "sent",
+      }),
       msg({ conversationId: "em1", direction: "inbound" }),
       msg({ conversationId: "em1", direction: "inbound" }),
       // chat: 1 out, 0 in
@@ -144,9 +156,20 @@ describe("aggregateChannelEngagement", () => {
       conversations: [],
       messages: [],
       voiceCalls: [
-        call({ direction: "inbound", status: "completed", answeredAt: "2026-06-01T00:00:10.000Z", initiatedAt: "2026-06-01T00:00:00.000Z", durationSeconds: 60 }),
+        call({
+          direction: "inbound",
+          status: "completed",
+          answeredAt: "2026-06-01T00:00:10.000Z",
+          initiatedAt: "2026-06-01T00:00:00.000Z",
+          durationSeconds: 60,
+        }),
         call({ direction: "inbound", status: "no-answer" }),
-        call({ direction: "outbound", status: "completed", answeredAt: "2026-06-01T00:00:05.000Z", durationSeconds: 30 }),
+        call({
+          direction: "outbound",
+          status: "completed",
+          answeredAt: "2026-06-01T00:00:05.000Z",
+          durationSeconds: 30,
+        }),
       ],
       orders: [],
     });

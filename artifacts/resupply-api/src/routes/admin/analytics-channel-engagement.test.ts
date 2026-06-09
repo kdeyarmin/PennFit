@@ -52,9 +52,21 @@ function stageFullWindow() {
   });
   stageSupabaseResponse("messages", "select", {
     data: [
-      { conversation_id: "sms1", direction: "outbound", delivery_status: "delivered" },
-      { conversation_id: "sms1", direction: "inbound", delivery_status: "received" },
-      { conversation_id: "em1", direction: "outbound", delivery_status: "bounced" },
+      {
+        conversation_id: "sms1",
+        direction: "outbound",
+        delivery_status: "delivered",
+      },
+      {
+        conversation_id: "sms1",
+        direction: "inbound",
+        delivery_status: "received",
+      },
+      {
+        conversation_id: "em1",
+        direction: "outbound",
+        delivery_status: "bounced",
+      },
     ],
     count: 3,
   });

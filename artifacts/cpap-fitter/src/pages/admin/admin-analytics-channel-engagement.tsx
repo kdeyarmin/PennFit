@@ -94,10 +94,10 @@ export function AdminAnalyticsChannelEngagementPage() {
             Channel engagement
           </h1>
           <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            How the automated outreach system is performing across every
-            channel — messages sent and replies received over SMS, email, and
-            chat; calls answered vs missed on the AI phone agent — paired with
-            the purchases that engagement drives.
+            How the automated outreach system is performing across every channel
+            — messages sent and replies received over SMS, email, and chat;
+            calls answered vs missed on the AI phone agent — paired with the
+            purchases that engagement drives.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -206,7 +206,10 @@ function MessagingTable({ rows }: { rows: MessagingChannelStats[] }) {
   );
   return (
     <section className="space-y-2">
-      <h2 className="text-sm font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+      <h2
+        className="text-sm font-semibold"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
         Messaging channels
       </h2>
       {allEmpty ? (

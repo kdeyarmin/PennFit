@@ -116,7 +116,11 @@ export interface ChannelEngagementInput {
   orders: readonly OrderRow[];
 }
 
-const MESSAGING_CHANNELS: readonly MessagingChannel[] = ["sms", "email", "chat"];
+const MESSAGING_CHANNELS: readonly MessagingChannel[] = [
+  "sms",
+  "email",
+  "chat",
+];
 
 const CHANNEL_LABELS: Record<MessagingChannel, string> = {
   sms: "SMS",
