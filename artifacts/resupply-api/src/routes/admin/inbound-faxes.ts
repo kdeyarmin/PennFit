@@ -117,7 +117,7 @@ router.get(
       .schema("resupply")
       .from("inbound_faxes")
       .select(
-        "id, twilio_fax_sid, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at",
+        "id, twilio_fax_sid, from_e164, to_e164, received_at, num_pages, media_object_key, media_content_type, media_size_bytes, status, attached_patient_id, attached_provider_id, attached_prescription_id, attached_document_type, assigned_admin_user_id, triaged_at, notes, created_at, tracking_code_detected, auto_file_status, auto_filed_at, signature_tracking_id, chart_document_id",
       )
       .order("received_at", { ascending: false })
       .limit(q.data.limit);
@@ -148,6 +148,13 @@ router.get(
         notes: r.notes,
         createdAt: r.created_at,
         triagedAt: r.triaged_at,
+        // Barcode auto-file outcome (migration 0256). Null when the
+        // `fax.auto_file_signed` flag is off or no scan ran.
+        trackingCodeDetected: r.tracking_code_detected,
+        autoFileStatus: r.auto_file_status,
+        autoFiledAt: r.auto_filed_at,
+        signatureTrackingId: r.signature_tracking_id,
+        chartDocumentId: r.chart_document_id,
       })),
     });
   },
@@ -198,6 +205,12 @@ router.get(
       ocrStatus: row.ocr_status,
       ocrExtraction: row.ocr_extraction,
       ocrExtractedAt: row.ocr_extracted_at,
+      // Barcode auto-file outcome (migration 0256).
+      trackingCodeDetected: row.tracking_code_detected,
+      autoFileStatus: row.auto_file_status,
+      autoFiledAt: row.auto_filed_at,
+      signatureTrackingId: row.signature_tracking_id,
+      chartDocumentId: row.chart_document_id,
     });
   },
 );

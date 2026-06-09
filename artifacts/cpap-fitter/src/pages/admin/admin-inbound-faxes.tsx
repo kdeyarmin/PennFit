@@ -16,7 +16,14 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FileText, Inbox, Loader2, Sparkles } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  FileText,
+  Inbox,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -28,12 +35,95 @@ import {
   listInboundFaxes,
   patchInboundFax,
   runFaxOcr,
+  type AutoFileStatus,
   type FaxOcrFields,
   type InboundFaxListItem,
   type InboundFaxStatus,
   type RunFaxOcrResponse,
 } from "@/lib/admin/inbound-faxes-api";
 import { useUrlState } from "@/hooks/use-url-state";
+
+// How each barcode auto-file outcome reads to a CSR, and how loud it
+// should be. `filed` is the only success; the rest explain why a fax was
+// left for manual triage. See migration 0256 / lib/fax/auto-file-signed.
+const AUTO_FILE_TEXT: Record<
+  AutoFileStatus,
+  { tone: "ok" | "warn" | "muted"; label: string }
+> = {
+  filed: {
+    tone: "ok",
+    label: "Auto-filed to the patient chart and marked returned & signed.",
+  },
+  already_returned: {
+    tone: "muted",
+    label: "Matched a signature that was already returned — no action taken.",
+  },
+  no_match: {
+    tone: "warn",
+    label:
+      "A tracking code was read, but no matching outstanding signature was found.",
+  },
+  no_patient: {
+    tone: "warn",
+    label:
+      "Matched a signature with no linked patient — marked returned, but not filed to a chart.",
+  },
+  no_code: {
+    tone: "muted",
+    label: "No PennFit tracking barcode was found on this fax.",
+  },
+  failed: {
+    tone: "warn",
+    label:
+      "Couldn't auto-file this fax (scan or filing error). Triage by hand.",
+  },
+  unsupported: {
+    tone: "muted",
+    label: "This fax type can't be scanned for a tracking barcode.",
+  },
+  offline: {
+    tone: "muted",
+    label: "Barcode auto-file is offline (no AI key configured).",
+  },
+};
+
+// Banner shown in the triage modal summarizing the auto-file attempt.
+function AutoFileBanner({ fax }: { fax: InboundFaxListItem | null }) {
+  if (!fax?.autoFileStatus) return null;
+  const meta = AUTO_FILE_TEXT[fax.autoFileStatus];
+  const palette =
+    meta.tone === "ok"
+      ? { bg: "#ecfdf5", border: "#a7f3d0", fg: "#065f46" }
+      : meta.tone === "warn"
+        ? { bg: "#fffbeb", border: "#fde68a", fg: "#92400e" }
+        : {
+            bg: "hsl(var(--bg-2))",
+            border: "hsl(var(--line-1))",
+            fg: "hsl(var(--ink-2))",
+          };
+  return (
+    <div
+      className="rounded border p-3 text-xs flex items-start gap-2"
+      style={{
+        backgroundColor: palette.bg,
+        borderColor: palette.border,
+        color: palette.fg,
+      }}
+    >
+      {meta.tone === "ok" ? (
+        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+      ) : (
+        <Sparkles className="h-4 w-4 mt-0.5 shrink-0" />
+      )}
+      <div>
+        <span className="font-semibold">{meta.label}</span>
+        {fax.trackingCodeDetected && (
+          <span className="ml-1 font-mono">({fax.trackingCodeDetected})</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type Filter = "open" | "new" | "triaged" | "attached" | "archived";
 
@@ -203,6 +293,18 @@ function FaxTable({
                 >
                   {r.status}
                 </span>
+                {r.autoFileStatus === "filed" && (
+                  <span
+                    className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-900"
+                    title={
+                      r.trackingCodeDetected
+                        ? `Auto-filed from barcode ${r.trackingCodeDetected}`
+                        : "Auto-filed from barcode"
+                    }
+                  >
+                    <CheckCircle2 className="h-3 w-3" /> Auto-filed
+                  </span>
+                )}
               </td>
               <td className="py-2 text-right">
                 {r.hasMedia ? (
@@ -336,6 +438,8 @@ function TriageModal({
               </a>
             )}
           </div>
+
+          <AutoFileBanner fax={fax} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* PDF preview pane */}

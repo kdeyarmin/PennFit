@@ -7,6 +7,7 @@ import {
 
 import {
   generateTrackingCode,
+  isWellFormedTrackingCode,
   listOutstandingSignatures,
   normalizeTrackingCode,
   registerSignatureTracking,
@@ -32,6 +33,28 @@ describe("normalizeTrackingCode", () => {
     expect(normalizeTrackingCode("PFS 7F3K2Q9X")).toBe("PFS-7F3K2Q9X");
     // Body only (prefix dropped on the fax) still resolves.
     expect(normalizeTrackingCode("7f3k2q9x")).toBe("PFS-7F3K2Q9X");
+  });
+});
+
+describe("isWellFormedTrackingCode", () => {
+  it("accepts a freshly minted code (round-trips with the generator)", () => {
+    for (let i = 0; i < 25; i += 1) {
+      expect(isWellFormedTrackingCode(generateTrackingCode())).toBe(true);
+    }
+  });
+
+  it("accepts a normalizable code (lowercase / spaced / no prefix)", () => {
+    expect(isWellFormedTrackingCode("pfs-7f3k2q9x")).toBe(true);
+    expect(isWellFormedTrackingCode("PFS 7F3K2Q9X")).toBe(true);
+    expect(isWellFormedTrackingCode("7f3k2q9x")).toBe(true);
+  });
+
+  it("rejects forbidden glyphs (0/O/1/I/L), wrong length, and junk", () => {
+    expect(isWellFormedTrackingCode("PFS-0O1ILABC")).toBe(false); // forbidden
+    expect(isWellFormedTrackingCode("PFS-ABC")).toBe(false); // too short
+    expect(isWellFormedTrackingCode("PFS-ABCD23456")).toBe(false); // too long
+    expect(isWellFormedTrackingCode("hello world")).toBe(false);
+    expect(isWellFormedTrackingCode("")).toBe(false);
   });
 });
 
