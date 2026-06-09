@@ -40,6 +40,10 @@ import {
   type SignatureLogItem,
 } from "../../lib/provider-portal/signature-log-pdf";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -55,6 +59,7 @@ function practiceName(): string {
 
 router.get(
   "/admin/provider-portal/accounts",
+  adminReadRateLimiter,
   requirePermission("provider_portal.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
@@ -188,6 +193,7 @@ async function inviteProviderUser(
 
 router.post(
   "/admin/provider-portal/accounts/invite",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const parsed = inviteBody.safeParse(req.body);
@@ -268,6 +274,7 @@ const accountIdParam = z.object({ id: z.string().uuid() });
 
 router.post(
   "/admin/provider-portal/accounts/:id/disable",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const params = accountIdParam.safeParse(req.params);
@@ -307,6 +314,7 @@ router.post(
 
 router.post(
   "/admin/provider-portal/accounts/:id/enable",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const params = accountIdParam.safeParse(req.params);
@@ -354,6 +362,7 @@ const listQuery = z.object({
 
 router.get(
   "/admin/provider-portal/signature-requests",
+  adminReadRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const parsed = listQuery.safeParse(req.query);
@@ -431,6 +440,7 @@ const createBody = z
 
 router.post(
   "/admin/provider-portal/signature-requests",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
@@ -555,6 +565,7 @@ async function loadEvents(
 
 router.get(
   "/admin/provider-portal/signature-requests/:id",
+  adminReadRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const params = reqIdParam.safeParse(req.params);
@@ -646,6 +657,7 @@ async function stampAction(
 
 router.post(
   "/admin/provider-portal/signature-requests/:id/void",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     await stampAction(req, res, {
@@ -658,6 +670,7 @@ router.post(
 
 router.post(
   "/admin/provider-portal/signature-requests/:id/ready-to-print",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     await stampAction(req, res, {
@@ -673,6 +686,7 @@ router.post(
 
 router.post(
   "/admin/provider-portal/signature-requests/:id/returned-signed",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     await stampAction(req, res, {
@@ -688,6 +702,7 @@ router.post(
 
 router.post(
   "/admin/provider-portal/signature-requests/:id/attach-to-chart",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     await stampAction(req, res, {
@@ -710,6 +725,7 @@ const releaseBody = z
 
 router.post(
   "/admin/provider-portal/signature-requests/:id/release",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const parsed = releaseBody.safeParse(req.body);
@@ -736,6 +752,7 @@ router.post(
 
 router.post(
   "/admin/provider-portal/signature-requests/:id/remind",
+  adminWriteRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const params = reqIdParam.safeParse(req.params);
@@ -841,6 +858,7 @@ async function buildLogItem(
 
 router.get(
   "/admin/provider-portal/signature-requests/:id/certificate.pdf",
+  adminReadRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const params = reqIdParam.safeParse(req.params);
@@ -891,6 +909,7 @@ const providerIdParam = z.object({ providerId: z.string().uuid() });
 
 router.get(
   "/admin/provider-portal/providers/:providerId/signature-log.pdf",
+  adminReadRateLimiter,
   requirePermission("provider_portal.manage"),
   async (req, res) => {
     const params = providerIdParam.safeParse(req.params);
