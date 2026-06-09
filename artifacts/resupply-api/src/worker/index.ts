@@ -72,6 +72,7 @@ import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-pol
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
+import { registerPaymentPlanAutochargeJob } from "./jobs/payment-plan-autocharge.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
@@ -642,6 +643,12 @@ async function doStartWorker(): Promise<void> {
   // cycle past the next anniversary, generates a draft monthly
   // claim with the correct KH/KI/KX modifier rotation.
   await registerCappedRentalAdvanceJob(boss);
+
+  // Auto-charge due patient payment-plan installments off-session
+  // (mig 0254). Triple-gated: opt-in cron (BILLING_PAYMENT_PLAN_
+  // AUTOCHARGE_CRON), the seeded-OFF billing.payment_plan_autocharge
+  // flag, and per-plan patient authorization. Inert by default.
+  await registerPaymentPlanAutochargeJob(boss);
 
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.

@@ -56,6 +56,7 @@ export const FEATURE_FLAG_KEYS = [
   "billing.eligibility_precheck",
   "billing.eligibility_precheck_refresh",
   "billing.line_ordering_provider",
+  "billing.payment_plan_autocharge",
   "smart_triggers.dispatcher",
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
