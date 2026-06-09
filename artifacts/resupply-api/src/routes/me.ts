@@ -61,8 +61,8 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
   // (Control Center flag, seeded OFF). The SPA reads this to show/hide
   // the entire branch UI — Locations page, branch pickers, list filter.
   // Cached ~5s in isFeatureEnabled; a flip in the Control Center reaches
-  // the console on the next /me refetch. Fail-soft: a lookup blip yields
-  // the flag's default (OFF), i.e. branch UI stays hidden.
+  // the console on the next /me refetch. In production the lookup fails closed
+  // (returns false) on DB errors, so branch UI stays hidden during outages.
   const multiLocationEnabled = await isFeatureEnabled("multi_location.enabled");
   res.json({
     userId: req.adminUserId ?? "",
