@@ -7,9 +7,7 @@
 //   * POST sync: 503 when adapter unconfigured; 502 on adapter
 //     throw; happy-path imports + audits with non-PHI envelope.
 //
-// PR change (adminRateLimit removal):
-//   * POST /admin/patients/:id/therapy-nights/sync had adminRateLimit
-//     removed. Verify the spy is never called and no 429 is returned.
+// Coverage includes route registration with adminRateLimit.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -41,9 +39,7 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-// ── adminRateLimit spy — verifies it is NOT called ───────────────────────────
-// adminRateLimit was removed from this route in this PR. Mock the module so we
-// can assert the factory is never invoked.
+// ── adminRateLimit spy — captures route registration opts ─────────────────────
 const adminRateLimitSpy = vi.hoisted(() =>
   vi.fn(
     (_opts: { name: string; preset?: string }) =>
@@ -139,32 +135,17 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   supabaseMock.reset();
-  adminRateLimitSpy.mockClear();
   logAuditMock.mockClear();
   adapterState.availability = "configured";
   adapterState.fetch = async () => snapshotFromNights([]);
 });
 
-// ── PR change: verify adminRateLimit is NOT invoked ─────────────────────────
-
-describe("POST /admin/patients/:id/therapy-nights/sync — adminRateLimit removed", () => {
-  it("adminRateLimit is NOT called (middleware was removed from this route)", async () => {
-    // Send any request through the router; the spy should remain uncalled
-    // because the route file no longer imports or registers adminRateLimit.
-    await request(makeApp())
-      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
-      .send({ source: "resmed_airview", partnerPatientId: "abc" });
-    expect(adminRateLimitSpy).not.toHaveBeenCalled();
-  });
-
-  it("does NOT return 429 when authenticated (no rate limiter present)", async () => {
-    mockAdmin.current = ADMIN;
-    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
-    adapterState.fetch = async () => snapshotFromNights([]);
-    const res = await request(makeApp())
-      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
-      .send({ source: "resmed_airview", partnerPatientId: "abc" });
-    expect(res.status).not.toBe(429);
+describe("POST /admin/patients/:id/therapy-nights/sync — middleware wiring", () => {
+  it("registers adminRateLimit with the mutation preset", () => {
+    expect(adminRateLimitSpy).toHaveBeenCalledWith({
+      name: "patient_therapy.sync",
+      preset: "mutation",
+    });
   });
 });
 
