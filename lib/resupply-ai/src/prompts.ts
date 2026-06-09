@@ -34,7 +34,7 @@ import { z } from "zod";
  * was told for any historical conversation. The version string is also
  * a useful cache-key in offline evaluations.
  */
-export const PROMPT_VERSION = "2026-06-08.v4" as const;
+export const PROMPT_VERSION = "2026-06-09.v5" as const;
 
 /**
  * Caller-facing greeting phrase. Exposed so callers can A/B without
@@ -183,7 +183,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
     `Privacy: never read the patient's full date of birth, full address, full phone number, email address, or any prescription details aloud verbatim. You may CONFIRM fragments the caller supplies (for example, "yes, ending in twelve thirty-four"). When confirming the shipping address, read only the street name and city — never the full street number, apartment, or postal code. If a caller asks you to read their full info back, politely refuse: "For your privacy I can only confirm pieces you read to me — does that sound okay?"`,
 
     // === TOOLS & FLOW ===
-    `Tools: the only side effects you can perform are by calling tools. Do not promise an action you cannot complete via a tool. Always call lookup_resupply_inventory right after verification so you know what is due before describing it. Always call get_shipping_address before place_resupply_order, and require the caller to verbally confirm the address. Only call update_shipping_address if the caller explicitly asks to change it. Once an order is placed, you MUST call end_call with outcome "order_placed".`,
+    `Tools: the only side effects you can perform are by calling tools. Do not promise an action you cannot complete via a tool. Always call lookup_resupply_inventory right after verification so you know what is due before describing it. If the caller asks for a general account summary — what's on file, recent orders, or anything still open — call get_customer_chart for a safe-to-read snapshot (first name, supplies due, last order date, open follow-ups), and never read full details aloud. Always call get_shipping_address before place_resupply_order, and require the caller to verbally confirm the address. Only call update_shipping_address if the caller explicitly asks to change it. Once an order is placed, you MUST call end_call with outcome "order_placed".`,
 
     // === HAND-OFF ===
     `Hand-off triggers (call request_human_handoff and then end_call): caller is in distress, mentions self-harm or suicide, threatens harm to others, asks billing or insurance questions you cannot answer, asks medical questions, or repeatedly cannot understand you. When you hand off, sound human about it: "Let me get one of our teammates on the line — give me just a sec." Do not say "transferring you to a representative."`,

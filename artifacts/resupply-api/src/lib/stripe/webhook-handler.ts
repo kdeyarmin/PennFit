@@ -41,6 +41,7 @@ import {
 } from "@workspace/resupply-db";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
+import { normalizeE164 } from "@workspace/resupply-domain";
 
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 type ShopOrderItemInsert =
@@ -999,7 +1000,7 @@ async function upsertOrderItemsFromSession(
  *      have one (don't clobber an explicit /shop/me edit with an
  *      auto-collected one).
  */
-async function syncCustomerAfterCheckout(
+export async function syncCustomerAfterCheckout(
   config: StripeConfig,
   session: Stripe.Checkout.Session,
   log:
@@ -1020,13 +1021,18 @@ async function syncCustomerAfterCheckout(
 
   const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
   const shippingAddress = extractShippingAddressFromSession(session);
+  // Stripe collects the phone at Checkout (phone_number_collection); it
+  // arrives on the completed session's customer_details. Persist it so an
+  // inbound voice caller can be matched to this storefront account.
+  const phoneRaw = session.customer_details?.phone ?? null;
+  const phoneE164 = phoneRaw ? normalizeE164(phoneRaw) : null;
 
-  // Read existing row to decide whether to backfill the shipping
-  // address (only when empty — never overwrite a deliberate edit).
+  // Read existing row to decide whether to backfill the shipping address
+  // and phone (only when empty — never overwrite a deliberate edit).
   const { data: existing, error: selectErr } = await supabase
     .schema("resupply")
     .from("shop_customers")
-    .select("shipping_address_json, stripe_customer_id")
+    .select("shipping_address_json, stripe_customer_id, phone_e164")
     .eq("customer_id", customerId)
     .maybeSingle();
   if (selectErr) throw selectErr;
@@ -1034,6 +1040,8 @@ async function syncCustomerAfterCheckout(
   const shouldSetShipping =
     shippingAddress !== null &&
     (existing?.shipping_address_json ?? null) === null;
+  const shouldSetPhone =
+    phoneE164 !== null && (existing?.phone_e164 ?? null) === null;
 
   const nowIso = new Date().toISOString();
 
@@ -1052,6 +1060,7 @@ async function syncCustomerAfterCheckout(
       shipping_address_json: shippingAddress
         ? (shippingAddress as unknown as Json)
         : null,
+      phone_e164: phoneE164,
       updated_at: nowIso,
     };
     const { error: insertErr } = await supabase
@@ -1077,6 +1086,9 @@ async function syncCustomerAfterCheckout(
     if (shouldSetShipping && shippingAddress) {
       updates.shipping_address_json = shippingAddress as unknown as Json;
     }
+    if (shouldSetPhone && phoneE164) {
+      updates.phone_e164 = phoneE164;
+    }
     const { error: updateErr } = await supabase
       .schema("resupply")
       .from("shop_customers")
@@ -1090,6 +1102,7 @@ async function syncCustomerAfterCheckout(
       customerId,
       hasCard: !!dpm,
       savedShipping: shouldSetShipping,
+      savedPhone: shouldSetPhone,
     },
     "shop customer synced after checkout",
   );

@@ -449,3 +449,53 @@ describe("POST /voice/inbound-reorder — identified caller → realtime bridge"
     expect(getPendingSessions().peek(CONVERSATION_ID)).toBeNull();
   });
 });
+
+describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
+  beforeEach(() => setVoiceEnv());
+
+  it("records the matched storefront customer id on the session when only a shop_customer matches", async () => {
+    // No patient on this number, but a cash-pay storefront customer is.
+    // The resolver falls through to shop_customers; the session row must
+    // capture the match (shop_customer_id) with patient_id left null.
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [{ customer_id: "cust_store_1" }],
+    });
+    stageSupabaseResponse("voice_reorder_sessions", "insert", {
+      data: { id: SESSION_ID },
+    });
+
+    await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155557777", CallSid: "CA_shop" });
+
+    const inserts = supabaseMock.writePayloads(
+      "voice_reorder_sessions",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      shop_customer_id: "cust_store_1",
+      patient_id: null,
+    });
+  });
+
+  it("returns a 500 hangup when caller resolution hits a DB error (no silent mis-route)", async () => {
+    // The patients lookup errors → resolveCallerByPhone throws → the route
+    // must surface it as a retryable failure, NOT silently route as
+    // unidentified. No session row should be written.
+    stageSupabaseResponse("patients", "select", {
+      error: { message: "db down" },
+    });
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155551212", CallSid: "CA_db_err" });
+
+    expect(res.status).toBe(500);
+    expect(res.text).toContain("Hangup");
+    expect(supabaseMock.callCount("voice_reorder_sessions", "insert")).toBe(0);
+  });
+});
