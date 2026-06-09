@@ -147,3 +147,25 @@ export async function runFaxOcr(id: string): Promise<RunFaxOcrResponse> {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+export interface AutoFileFaxResponse {
+  id: string;
+  status: AutoFileStatus;
+  trackingCode: string | null;
+  chartDocumentId: string | null;
+  /** Set when the fax was already auto-filed (no-op re-run). */
+  alreadyFiled?: boolean;
+}
+
+/** Manually run the barcode auto-file on a fax's stored media — the same
+ *  routine the ingest runs on arrival. On a confident match it files the
+ *  fax into the patient chart and marks the signature returned; otherwise
+ *  it returns the outcome (no_code / no_match / …) for manual triage. */
+export async function autoFileInboundFax(
+  id: string,
+): Promise<AutoFileFaxResponse> {
+  return jsonFetch(`/admin/inbound-faxes/${encodeURIComponent(id)}/auto-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+}
