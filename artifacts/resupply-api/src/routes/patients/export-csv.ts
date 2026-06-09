@@ -46,6 +46,11 @@ const querySchema = z
   .object({
     status: z.enum(["active", "paused", "closed"]).optional(),
     search: z.string().trim().min(1).max(64).optional(),
+    // Branch filter (multi-location), mirroring GET /patients: a uuid
+    // scopes to one location; the literal "none" scopes to the
+    // unassigned backlog. Without this the export would dump every
+    // branch's PHI even when the on-screen list is branch-filtered.
+    locationId: z.union([z.string().uuid(), z.literal("none")]).optional(),
   })
   .strict();
 
@@ -99,7 +104,7 @@ router.get(
       return;
     }
 
-    const { status, search } = parsed.data;
+    const { status, search, locationId } = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
     // Mirror GET /patients' behavior:
@@ -119,6 +124,8 @@ router.get(
       // without a separate COUNT(*) query.
       .limit(MAX_ROWS + 1);
     if (status) query = query.eq("status", status);
+    if (locationId === "none") query = query.is("location_id", null);
+    else if (locationId) query = query.eq("location_id", locationId);
     if (search) {
       // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
       // Escape commas/parentheses/quotes in the search value to
@@ -166,6 +173,8 @@ router.get(
           row_count: exportRows.length,
           truncated,
           status_filter: status ?? null,
+          // Branch filter scope (a uuid or "none") — non-PHI.
+          location_filter: locationId ?? null,
           // We deliberately store whether a search was used (boolean)
           // rather than the search string itself — search terms can
           // be PHI ("Smith", a partial DOB, etc.).

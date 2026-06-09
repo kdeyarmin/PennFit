@@ -48,6 +48,7 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { buildInviteHelpAttachments } from "../../lib/help-docs";
+import { assertAssignableLocation } from "../../lib/locations/assignable";
 import { logger } from "../../lib/logger";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
@@ -148,6 +149,9 @@ const inviteBody = z
     // the password to the user out-of-band (in person, secure
     // chat, etc.). Min length matches sign-in.ts / change-password.
     initialPassword: z.string().min(12).max(1024).optional().nullable(),
+    // Home branch (location). Optional at invite; a uuid must reference
+    // an active location, null/absent leaves the member unassigned.
+    locationId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
@@ -156,8 +160,38 @@ const patchBody = z
     role: z.enum(ROLE_VALUES as [AdminRole, ...AdminRole[]]).optional(),
     displayName: z.string().trim().min(1).max(120).nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
+    // Home branch (location); uuid assigns (validated against active
+    // locations -> 422 invalid_location), null clears it.
+    locationId: z.string().uuid().nullable().optional(),
   })
   .strict();
+
+/**
+ * Validate an optional location assignment from a team request body.
+ * Returns true to proceed; writes the 422 and returns false when a
+ * concrete id doesn't reference an active location. A null/absent id is
+ * always allowed (clearing / not setting the assignment).
+ */
+async function checkLocationOr422(
+  supabase: ResupplySupabaseClient,
+  locationId: string | null | undefined,
+  res: import("express").Response,
+): Promise<boolean> {
+  if (!locationId) return true;
+  const check = await assertAssignableLocation(supabase, locationId);
+  if (!check.ok) {
+    res.status(422).json({
+      error: "invalid_location",
+      reason: check.reason,
+      message:
+        check.reason === "inactive"
+          ? "That location has been deactivated."
+          : "That location no longer exists.",
+    });
+    return false;
+  }
+  return true;
+}
 
 // Effective status returned to the team UI is computed from
 // admin_users.status PLUS the linked resupply_auth.users row:
@@ -183,7 +217,7 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
     .schema("resupply")
     .from("admin_users")
     .select(
-      "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+      "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
     )
     .order("invited_at", { ascending: false });
   if (error) throw error;
@@ -221,12 +255,15 @@ router.post(
       });
       return;
     }
-    const { email, role, displayName, notes, initialPassword } = parsed.data;
+    const { email, role, displayName, notes, initialPassword, locationId } =
+      parsed.data;
     const useInitialPassword =
       typeof initialPassword === "string" && initialPassword.length >= 12;
     const inviterId = req.adminUserId ?? null;
     const supabase = getSupabaseServiceRoleClient();
     const deps = getAuthDeps();
+
+    if (!(await checkLocationOr422(supabase, locationId, res))) return;
 
     // Reuse logic — three legitimate cases:
     //   * pending  → invite expired or was lost; resend.
@@ -238,7 +275,7 @@ router.post(
       .schema("resupply")
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .eq("email_lower", email)
       .limit(1)
@@ -301,6 +338,9 @@ router.post(
           auth_user_id: invite.authUserId,
           display_name: displayName ?? prior.display_name,
           notes: notes ?? prior.notes,
+          // Re-invite keeps the prior branch unless this invite explicitly sets (or clears) one.
+          location_id:
+            locationId !== undefined ? locationId : prior.location_id,
           invited_by: inviterId,
           invited_at: nowIso,
           revoked_at: null,
@@ -310,7 +350,7 @@ router.post(
         })
         .eq("id", prior.id)
         .select(
-          "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+          "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
         )
         .limit(1)
         .maybeSingle();
@@ -335,13 +375,14 @@ router.post(
         auth_user_id: invite.authUserId,
         display_name: displayName ?? null,
         notes: notes ?? null,
+        location_id: locationId ?? null,
         invited_by: inviterId,
         invited_at: nowIso,
         accepted_at: memberAcceptedAt,
         updated_at: nowIso,
       })
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .limit(1)
       .maybeSingle();
@@ -371,7 +412,7 @@ router.post(
       .schema("resupply")
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .eq("id", id)
       .limit(1)
@@ -411,7 +452,7 @@ router.post(
       })
       .eq("id", id)
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .limit(1)
       .maybeSingle();
@@ -440,7 +481,7 @@ router.post(
       .schema("resupply")
       .from("admin_users")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .eq("id", id)
       .limit(1)
@@ -508,7 +549,7 @@ router.post(
       .eq("id", id)
       .neq("status", "revoked")
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .limit(1)
       .maybeSingle();
@@ -580,6 +621,8 @@ router.patch(
         }
       }
     }
+    if (!(await checkLocationOr422(supabase, parsed.data.locationId, res)))
+      return;
     const updateValues: Database["resupply"]["Tables"]["admin_users"]["Update"] =
       {
         updated_at: new Date().toISOString(),
@@ -588,13 +631,15 @@ router.patch(
     if (parsed.data.displayName !== undefined)
       updateValues.display_name = parsed.data.displayName;
     if (parsed.data.notes !== undefined) updateValues.notes = parsed.data.notes;
+    if ("locationId" in parsed.data)
+      updateValues.location_id = parsed.data.locationId ?? null;
     const { data: updated, error: updateErr } = await supabase
       .schema("resupply")
       .from("admin_users")
       .update(updateValues)
       .eq("id", id)
       .select(
-        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at",
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
       )
       .limit(1)
       .maybeSingle();
@@ -632,6 +677,7 @@ type AdminListRow = Pick<
   | "revoked_at"
   | "revoked_by"
   | "last_login_at"
+  | "location_id"
 >;
 
 interface InviteCredentialStamps {
@@ -679,6 +725,7 @@ function serialize(
     revokedAt: row.revoked_at,
     revokedBy: row.revoked_by,
     lastLoginAt: row.last_login_at,
+    locationId: row.location_id,
     expiryReminderSentAt: freshStamp(fresh?.expiryReminderSentAt ?? null),
     expiredNoticeSentAt: freshStamp(fresh?.expiredNoticeSentAt ?? null),
   };
