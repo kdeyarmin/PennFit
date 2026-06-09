@@ -5,15 +5,19 @@
 // `fax.auto_file_signed` feature flag is on (the ingest checks the flag;
 // this module assumes it's enabled). It:
 //
-//   1. Scans the fax for the PennFit signature-tracking code (PFS-XXXXXXXX)
-//      via the BAA-covered Claude vision path (lib/inbound-fax/tracking-scan).
+//   1. Reads the PennFit signature-tracking code (PFS-XXXXXXXX) off the
+//      page. A deterministic Code 128 decode (lib/inbound-fax/barcode-decode)
+//      runs FIRST — free + instant; on a miss it falls back to the
+//      BAA-covered Claude vision scan (lib/inbound-fax/tracking-scan).
 //   2. Looks the code up in signature_tracking. On an exact match to an
 //      OUTSTANDING (awaiting_signature) row that carries a patient, it:
 //        a. copies the fax bytes into a NEW object and files them into the
 //           patient's chart (a patient_documents row, retention-stamped,
 //           marked reviewed — a verified barcode match needs no human ack);
 //        b. marks the signature returned & signed, cascading to the source
-//           prescription packet (markReturnedAndCascade);
+//           prescription packet (markReturnedAndCascade); a failure here
+//           aborts to `failed` so we never release a hold while the
+//           signature still reads awaiting;
 //        c. satisfies any outstanding claim paperwork requirement the
 //           tracked document was sent to clear (releasing the bill hold);
 //        d. attaches the inbound_faxes row to the patient and records the
@@ -22,7 +26,8 @@
 // Never throws — a failure leaves the fax in the triage queue for a manual
 // link exactly as before, with auto_file_status recording why. PHI: the
 // chart document + fax bytes live under their own object-storage ACL; this
-// module logs only the opaque tracking code + ids, never patient text.
+// module logs only the opaque tracking code + ids, never patient text, and
+// passes caught errors as objects so the logger's redaction paths apply.
 
 import type { Logger } from "pino";
 
@@ -30,6 +35,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { satisfyRequirement } from "../billing/bill-hold";
+import { tryDecodeTrackingBarcode } from "../inbound-fax/barcode-decode";
 import { scanFaxForTrackingCode } from "../inbound-fax/tracking-scan";
 import { logger as defaultLogger } from "../logger";
 import { ObjectStorageService } from "../object-storage/objectStorage";
@@ -54,6 +60,9 @@ export type AutoFileStatus =
   | "unsupported"
   | "offline";
 
+/** How the tracking code was read — for logs/audit only. */
+type ScanMethod = "barcode" | "vision";
+
 export interface AutoFileSignedFaxInput {
   /** The inbound_faxes row id. */
   faxId: string;
@@ -66,7 +75,9 @@ export interface AutoFileSignedFaxInput {
 export interface AutoFileSignedFaxDeps {
   supabase?: SupabaseClient;
   logger?: Logger;
-  /** Injectable for tests; defaults to the real vision scan. */
+  /** Deterministic decode fast-path; injectable for tests. */
+  decode?: typeof tryDecodeTrackingBarcode;
+  /** AI vision scan fallback; injectable for tests. */
   scan?: typeof scanFaxForTrackingCode;
   /** Injectable for tests; defaults to a fresh ObjectStorageService. */
   storage?: ObjectStorageService;
@@ -109,10 +120,59 @@ async function recordOutcome(
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", faxId);
   if (error) {
+    // Pass the error OBJECT under `err` so the logger redacts err.message
+    // & friends; the PG SQLSTATE `code` is a safe, useful triage label.
     log.warn(
-      { err: error.message, fax_id_first8: faxId.slice(0, 8) },
+      {
+        err: error,
+        code: (error as { code?: string }).code,
+        fax_id_first8: faxId.slice(0, 8),
+      },
       "fax_auto_file_outcome_patch_failed",
     );
+  }
+}
+
+/** Read the tracking code off the fax: deterministic decode first, then the
+ *  vision scan. Returns the code + how it was read, or a terminal miss
+ *  status that should be recorded as-is. */
+async function resolveTrackingCode(
+  input: AutoFileSignedFaxInput,
+  decode: typeof tryDecodeTrackingBarcode,
+  scan: typeof scanFaxForTrackingCode,
+): Promise<
+  | { kind: "found"; code: string; method: ScanMethod }
+  | {
+      kind: "miss";
+      status: Extract<
+        AutoFileStatus,
+        "no_code" | "unsupported" | "failed" | "offline"
+      >;
+    }
+> {
+  // Fast path: free, deterministic, no model cost. Never throws.
+  const decoded = await decode({
+    bytes: input.bytes,
+    contentType: input.contentType,
+  });
+  if (decoded) return { kind: "found", code: decoded, method: "barcode" };
+
+  // Fallback: AI vision scan.
+  const scanResult = await scan({
+    bytes: input.bytes,
+    contentType: input.contentType,
+  });
+  switch (scanResult.status) {
+    case "found":
+      return { kind: "found", code: scanResult.code, method: "vision" };
+    case "not_found":
+      return { kind: "miss", status: "no_code" };
+    case "unsupported":
+      return { kind: "miss", status: "unsupported" };
+    case "offline":
+      return { kind: "miss", status: "offline" };
+    case "failed":
+      return { kind: "miss", status: "failed" };
   }
 }
 
@@ -127,6 +187,7 @@ export async function autoFileSignedFax(
 ): Promise<AutoFileOutcome> {
   const supabase = deps.supabase ?? getSupabaseServiceRoleClient();
   const log = deps.logger ?? defaultLogger;
+  const decode = deps.decode ?? tryDecodeTrackingBarcode;
   const scan = deps.scan ?? scanFaxForTrackingCode;
 
   const fail = async (
@@ -143,23 +204,24 @@ export async function autoFileSignedFax(
   };
 
   try {
-    // 1. Read the tracking code off the page.
-    const scanResult = await scan({
-      bytes: input.bytes,
-      contentType: input.contentType,
-    });
-    if (scanResult.status === "offline") return fail("offline", null, null);
-    if (scanResult.status === "unsupported")
-      return fail("unsupported", null, null);
-    if (scanResult.status === "failed") return fail("failed", null, null);
-    if (scanResult.status === "not_found") return fail("no_code", null, null);
+    // 1. Read the tracking code (deterministic decode, then vision).
+    const resolved = await resolveTrackingCode(input, decode, scan);
+    if (resolved.kind === "miss") return fail(resolved.status, null, null);
+    const { code, method } = resolved;
 
-    const code = scanResult.code;
-
-    // 2. Resolve the code to a tracked document.
-    const tracking = await lookupTrackingByCode(supabase, code).catch(
-      () => null,
-    );
+    // 2. Resolve the code to a tracked document. A thrown error here is a
+    //    real failure (DB/query), NOT a "no match" — record it as failed so
+    //    it shows up for triage instead of looking like a clean no-match.
+    let tracking: Awaited<ReturnType<typeof lookupTrackingByCode>>;
+    try {
+      tracking = await lookupTrackingByCode(supabase, code);
+    } catch (err) {
+      log.warn(
+        { err, fax_id_first8: input.faxId.slice(0, 8) },
+        "fax_auto_file_lookup_failed",
+      );
+      return fail("failed", code, null);
+    }
     if (!tracking) return fail("no_match", code, null);
     if (tracking.status !== "awaiting_signature") {
       // The signed copy is back, but the row was already cleared (a CSR
@@ -169,9 +231,15 @@ export async function autoFileSignedFax(
     if (!tracking.patientId) {
       // We can mark the signature returned (it genuinely came back) but
       // there's no patient to file it under — leave it for manual triage.
-      await markReturnedAndCascade(supabase, tracking).catch((err) => {
-        log.warn({ err }, "fax_auto_file_mark_returned_failed");
-      });
+      try {
+        await markReturnedAndCascade(supabase, tracking);
+      } catch (err) {
+        log.warn(
+          { err, fax_id_first8: input.faxId.slice(0, 8) },
+          "fax_auto_file_mark_returned_failed",
+        );
+        return fail("failed", code, tracking.id);
+      }
       return fail("no_patient", code, tracking.id);
     }
 
@@ -229,7 +297,11 @@ export async function autoFileSignedFax(
       .maybeSingle();
     if (docErr || !insertedDoc) {
       log.warn(
-        { err: docErr?.message, fax_id_first8: input.faxId.slice(0, 8) },
+        {
+          err: docErr ?? undefined,
+          code: (docErr as { code?: string } | null)?.code,
+          fax_id_first8: input.faxId.slice(0, 8),
+        },
         "fax_auto_file_chart_insert_failed",
       );
       return fail("failed", code, tracking.id);
@@ -237,14 +309,23 @@ export async function autoFileSignedFax(
     const chartDocumentId = insertedDoc.id as string;
 
     // 4. Mark the signature returned & signed (cascades to the source
-    //    prescription packet).
-    await markReturnedAndCascade(supabase, tracking).catch((err) => {
-      log.warn({ err }, "fax_auto_file_mark_returned_failed");
-    });
+    //    prescription packet). A failure here MUST abort to `failed` — we
+    //    have not yet released any hold, so the worst case is a filed chart
+    //    document with the signature still outstanding (recoverable by a
+    //    CSR), never a released hold with an unsigned packet.
+    try {
+      await markReturnedAndCascade(supabase, tracking);
+    } catch (err) {
+      log.warn(
+        { err, fax_id_first8: input.faxId.slice(0, 8) },
+        "fax_auto_file_mark_returned_failed",
+      );
+      return fail("failed", code, tracking.id);
+    }
 
     // 5. Satisfy any outstanding claim paperwork requirement this exact
-    //    document was sent to clear — releasing the bill hold. The source
-    //    soft pointer matches the tracked document kind.
+    //    document was sent to clear — releasing the bill hold. Reached only
+    //    after the signature is confirmed returned.
     const requirementsSatisfied = await satisfyMatchingRequirements(
       supabase,
       log,
@@ -276,6 +357,7 @@ export async function autoFileSignedFax(
         // tracking_code is an opaque handle (not PHI) — the
         // signature-tracking route logs it too.
         tracking_code: code,
+        scan_method: method,
         signature_tracking_id: tracking.id,
         document_kind: tracking.documentKind,
         chart_document_filed: true,
@@ -293,12 +375,8 @@ export async function autoFileSignedFax(
     };
   } catch (err) {
     log.warn(
-      {
-        event: "fax_auto_file_unexpected_error",
-        err: err instanceof Error ? err.message : String(err),
-        fax_id_first8: input.faxId.slice(0, 8),
-      },
-      "fax auto-file: unexpected error (non-fatal)",
+      { err, fax_id_first8: input.faxId.slice(0, 8) },
+      "fax_auto_file_unexpected_error",
     );
     await recordOutcome(supabase, log, input.faxId, {
       auto_file_status: "failed",
@@ -353,10 +431,7 @@ async function satisfyMatchingRequirements(
     }
     return satisfied;
   } catch (err) {
-    log.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      "fax_auto_file_satisfy_requirements_failed",
-    );
+    log.warn({ err }, "fax_auto_file_satisfy_requirements_failed");
     return 0;
   }
 }

@@ -17,11 +17,12 @@ Telnyx delivers the fax → `POST /fax/inbound` →
 `ingestInboundFax()` mirrors the bytes to private object storage. Then,
 **only when the `fax.auto_file_signed` feature flag is ON**:
 
-1. **Scan** — `lib/inbound-fax/tracking-scan.ts` reads the page for the
-   `PFS-XXXXXXXX` code via the existing BAA-covered Claude vision path
-   (the same path the on-demand fax OCR uses). It asks the model for _only_
-   the opaque code — never patient text — and validates the shape before
-   trusting it.
+1. **Read the code** — a deterministic Code 128 decode
+   (`lib/inbound-fax/barcode-decode.ts`) runs first (free, instant, no model
+   cost). On a miss it falls back to the BAA-covered Claude vision scan
+   (`lib/inbound-fax/tracking-scan.ts`), which asks the model for _only_ the
+   opaque `PFS-XXXXXXXX` code — never patient text. Either reader's result is
+   validated (`isWellFormedTrackingCode`) before it's trusted.
 2. **Match** — the code is looked up in `signature_tracking`. The fax is
    auto-filed only on an exact match to an **outstanding**
    (`awaiting_signature`) row that carries a patient.
@@ -69,19 +70,70 @@ matched rows and a banner in the triage modal explaining the outcome.
 - **Fail-soft** — degrades to manual triage whenever no AI key is set, the
   scan finds no code, or anything errors.
 - **Two complementary auto-matches.** The barcode match (precise,
-  per-document) runs first; the older fax-number match
-  (`autoMatchInboundFaxToPaperwork`, by `expected_return_fax_e164`) still
-  runs after it for non-barcoded returns and is a no-op once the barcode
-  step has satisfied the requirement.
+  per-document) runs first. The older fax-number match
+  (`autoMatchInboundFaxToPaperwork`, by `expected_return_fax_e164`) runs
+  only as a fallback and is **skipped entirely when the barcode step already
+  filed the fax** — otherwise it could auto-satisfy an unrelated
+  same-fax-number requirement with a fax the barcode already matched.
 - **PHI** — the fax bytes and chart document live under their own
   object-storage ACL; logs and audit rows carry only the opaque tracking
   code + ids, never patient text or image bytes.
 
-## Why vision, not a barcode decoder
+## Reading the code: deterministic decode, then vision
 
-Received faxes are low-resolution raster (~200 dpi), where decoding a
-Code 128 barcode is unreliable — which is exactly why the stamp also
-prints the code as plain text beside the bars. Reading that text with the
-already-wired Claude vision path is robust and adds no new dependency or
-vendor. A deterministic decoder could be slotted in front of the vision
-scan later without changing the rest of the flow.
+Two readers run in front of each other, both validated against
+`isWellFormedTrackingCode`:
+
+1. **Deterministic Code 128 decode** — `lib/barcode/code128-decode.ts` (the
+   inverse of the encoder, sharing its symbol tables so the two can't drift);
+   `lib/inbound-fax/barcode-decode.ts` rasterizes the fax and scans rows.
+   Free, instant, no model cost. It needs pixels, so it covers **raster
+   (TIFF / image) faxes** via an _optional_ `sharp` import — there is no hard
+   dependency, and when `sharp` isn't installed it simply returns null.
+   **PDF faxes (Telnyx's default) are not rasterized here** — the prebuilt
+   `sharp` binary can't render PDF — so they fall through to vision.
+2. **Vision scan** — `lib/inbound-fax/tracking-scan.ts`, the robust fallback.
+   Received faxes are low-resolution raster (~200 dpi) where 1D barcode
+   decoding is unreliable, which is exactly why the stamp also prints the
+   code as plain text beside the bars; the vision model reads that text.
+
+**Extending the fast-path to PDFs** is a drop-in: wire a PDF→bitmap
+rasterizer (e.g. `pdfjs-dist` + a canvas) behind the same null-returning
+boundary in `barcode-decode.ts` and feed its grayscale rows to
+`scanGrayscaleForCode`. It was deliberately left out here because it adds a
+heavier native dependency and wants validation against real fax samples.
+
+## Enabling & validating (operator)
+
+The feature ships **OFF**. To turn it on safely:
+
+1. **Deploy the migration.** On the next deploy the migrator applies
+   `0258_inbound_fax_auto_file.sql` (adds the `inbound_faxes` columns + seeds
+   the flag OFF). Confirm:
+   `select key, enabled from resupply.feature_flags where key = 'fax.auto_file_signed';`
+   → one row, `enabled = false`.
+2. **Confirm the AI key.** The vision fallback needs `ANTHROPIC_API_KEY`
+   (already set per the AI stack). Without it the scan is `offline` and every
+   fax falls to manual triage — safe, just inert.
+3. **Flip the flag on** in Admin → Feature flags → `fax.auto_file_signed`.
+   Takes effect within ~5s (the flag is process-cached).
+4. **Validate one real round-trip:**
+   - Create + **fax** a prescription request for a test patient; note the
+     `PFS-XXXXXXXX` printed top-right.
+   - **Sign and fax it back** to the PennFit fax number.
+   - Within a minute, open **`/admin/inbound-faxes`** → the fax shows an
+     **Auto-filed** badge; the triage modal banner reads "Auto-filed to the
+     patient chart…".
+   - Confirm the downstream effects: **`/admin/signature-tracking`** shows
+     the item as **Returned signed**; the patient chart has a new
+     **Prescription** document; and if it gated a claim,
+     **`/admin/billing/bill-hold-worklist`** shows the hold released.
+5. **Watch the outcomes.** Faxes that did not auto-file record why in
+   `inbound_faxes.auto_file_status` (see the table above) and stay in the
+   triage queue — nothing is lost. A run of `no_code` on faxes you expected
+   to match usually means the printed code was unreadable; re-fax at higher
+   quality or file by hand with the signature-tracking **lookup** box (still
+   available).
+
+**Rolling back** is just flipping the flag OFF: faxes already auto-filed
+stay filed, and new faxes return to manual triage.

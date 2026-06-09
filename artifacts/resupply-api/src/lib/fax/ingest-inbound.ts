@@ -194,10 +194,11 @@ export async function ingestInboundFax(
   // fax-number match below so the precise per-document match takes
   // precedence. Best-effort — never throws; an unmatched fax just stays
   // for manual triage. Skipped entirely when no media was persisted.
+  let barcodeFiled = false;
   if (media.persisted && media.bytes && media.contentType) {
     try {
       if (await isFeatureEnabled("fax.auto_file_signed")) {
-        await autoFileSignedFax(
+        const outcome = await autoFileSignedFax(
           {
             faxId: rowId,
             bytes: Buffer.from(media.bytes),
@@ -205,6 +206,7 @@ export async function ingestInboundFax(
           },
           { supabase, logger, storage: storageImpl },
         );
+        barcodeFiled = outcome.status === "filed";
       }
     } catch (err) {
       logger.warn(
@@ -214,12 +216,15 @@ export async function ingestInboundFax(
     }
   }
 
-  // Step 4: bill-hold auto-match by return fax number. If this fax came
-  // back from a number that exactly one outstanding paperwork requirement
-  // is waiting on, mark it returned-signed and release the claim. A no-op
-  // when the barcode step above already satisfied the requirement.
-  // Best-effort + never throws.
-  await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+  // Step 4: bill-hold auto-match by return fax number — the fallback for a
+  // fax with no scannable barcode. SKIPPED when the barcode step already
+  // filed this fax: the number matcher auto-satisfies on the single
+  // remaining requirement for a shared provider fax number, so letting it
+  // run after a barcode match could release an UNRELATED requirement's hold
+  // with the same fax. Best-effort + never throws.
+  if (!barcodeFiled) {
+    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+  }
 
   return { kind: "inserted", id: rowId, mediaPersisted: media.persisted };
 }
