@@ -687,8 +687,17 @@ export function ShopCart() {
                     <div className="inline-flex items-center rounded-lg border border-border/60 overflow-hidden">
                       <button
                         type="button"
-                        onClick={() => setQuantity(it.priceId, it.quantity - 1)}
-                        className="px-2 py-1.5 text-muted-foreground hover:bg-secondary/40 transition-colors"
+                        // Floor the stepper at 1. Decrementing from 1 would
+                        // pass qty 0, which setQuantity treats as "remove the
+                        // line" — a silent delete with no Undo on this path.
+                        // Deletion stays the job of the explicit Remove button
+                        // (which fires the Undo toast); disabling here signals
+                        // the boundary instead of vanishing the item.
+                        onClick={() =>
+                          setQuantity(it.priceId, Math.max(1, it.quantity - 1))
+                        }
+                        disabled={it.quantity <= 1}
+                        className="px-2 py-1.5 text-muted-foreground hover:bg-secondary/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                         aria-label={`Decrease quantity of ${it.name}`}
                         data-testid={`cart-decr-${it.priceId}`}
                       >
