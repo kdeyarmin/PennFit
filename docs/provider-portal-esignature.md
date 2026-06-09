@@ -76,12 +76,12 @@ consent), the signing timestamp + IP, and the chain-integrity verdict.
 
 ## Surfaces
 
-| Surface | Where | Notes |
-| --- | --- | --- |
-| Provider sign-in / MFA / queue / signing | SPA `/provider/*` (`artifacts/cpap-fitter/src/pages/provider/`) | Own lazy chunk; gated against `/api/provider/me` |
-| Provider API | `/api/provider/*` (`routes/provider/`) | `requireProvider` (+ `requireProviderMfaEnrolled` for PHI) |
-| Employee console | SPA `/admin/provider-portal` | Invite/manage accounts, stage docs, track + release, print logs |
-| Employee API | `/admin/provider-portal/*` (`routes/admin/provider-esign.ts`) | `requirePermission("provider_portal.manage")` (admins + CSRs) |
+| Surface                                  | Where                                                           | Notes                                                           |
+| ---------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| Provider sign-in / MFA / queue / signing | SPA `/provider/*` (`artifacts/cpap-fitter/src/pages/provider/`) | Own lazy chunk; gated against `/api/provider/me`                |
+| Provider API                             | `/api/provider/*` (`routes/provider/`)                          | `requireProvider` (+ `requireProviderMfaEnrolled` for PHI)      |
+| Employee console                         | SPA `/admin/provider-portal`                                    | Invite/manage accounts, stage docs, track + release, print logs |
+| Employee API                             | `/admin/provider-portal/*` (`routes/admin/provider-esign.ts`)   | `requirePermission("provider_portal.manage")` (admins + CSRs)   |
 
 ## Document lifecycle
 

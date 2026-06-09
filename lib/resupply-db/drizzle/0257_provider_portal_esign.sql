@@ -39,8 +39,10 @@ CREATE TABLE IF NOT EXISTS "resupply"."provider_portal_accounts" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   -- The in-house auth user the provider signs in as. Cross-schema FK
   -- into resupply_auth.users; ON DELETE CASCADE so removing the auth
-  -- user tears down the portal link.
-  "auth_user_id" uuid NOT NULL
+  -- user tears down the portal link. NOTE: resupply_auth.users.id is
+  -- TEXT (a text-typed UUID), so this column must be text too — a uuid
+  -- column cannot FK to a text primary key.
+  "auth_user_id" text NOT NULL
     REFERENCES "resupply_auth"."users"("id") ON DELETE CASCADE,
   -- The clinical provider this account acts for.
   "provider_id" uuid NOT NULL
