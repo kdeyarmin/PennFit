@@ -44,7 +44,7 @@
  *     the route.
  */
 
-import { Router, type IRouter, type Response } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import {
@@ -81,8 +81,35 @@ import {
   type AnthropicTool,
 } from "../../lib/llm-provider.js";
 import { requireSignedIn } from "../../middlewares/requireSignedIn.js";
+import { RATE_LIMITS } from "../../lib/rate-limits-config.js";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 const router: IRouter = Router();
+
+// Per-customer LLM-spend limiter. Sits AFTER `requireSignedIn`, so
+// `req.userCustomerId` is always populated and the key is the customer
+// id (IP fallback only for the defensive case where auth somehow let a
+// request through without one). Every accepted request burns Anthropic
+// / OpenAI tokens — this bounds a scripted or compromised session.
+const meChatLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.me_chat.windowMs,
+  limit: RATE_LIMITS.me_chat.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const customerId = (req as unknown as { userCustomerId?: string })
+      .userCustomerId;
+    if (typeof customerId === "string" && customerId.length > 0) {
+      return `me-chat:${customerId}`;
+    }
+    return ipKeyGenerator(req.ip ?? "0.0.0.0");
+  },
+  message: {
+    reply:
+      "You're sending messages too quickly. Please wait a minute and try again, or call (814) 471-0627 for immediate help.",
+    rateLimited: true,
+  },
+});
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
@@ -368,141 +395,146 @@ async function applyToolCalls(
   return next;
 }
 
-router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
-  const customerId = req.userCustomerId;
-  if (!customerId) {
-    res.status(401).json({ error: "auth_required" });
-    return;
-  }
+router.post(
+  "/shop/me/chat",
+  requireSignedIn,
+  meChatLimiter,
+  async (req, res) => {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
+      res.status(401).json({ error: "auth_required" });
+      return;
+    }
 
-  const parseResult = chatBodySchema.safeParse(req.body);
-  if (!parseResult.success) {
-    res.status(400).json({
-      error: "Invalid input",
-      details: parseResult.error.issues.map(
-        (i) => `${i.path.join(".")}: ${i.message}`,
-      ),
-    });
-    return;
-  }
-
-  const bodyStr = JSON.stringify(req.body);
-  const base64Pattern = /data:[a-z]+\/[a-z]+;base64,/i;
-  const longStringPattern = /[A-Za-z0-9+/]{1500,}/;
-  if (base64Pattern.test(bodyStr) || longStringPattern.test(bodyStr)) {
-    res.status(400).json({
-      error:
-        "Request body contains unexpected binary or encoded data. Send plain text only.",
-    });
-    return;
-  }
-
-  const { messages } = parseResult.data;
-  const lastMessage = messages.at(-1);
-  if (!lastMessage || lastMessage.role !== "user") {
-    res.status(400).json({
-      error: "The last message must be from the user.",
-    });
-    return;
-  }
-
-  const streaming = wantsStreaming(req.get("Accept"));
-  const selection = selectLlmProvider();
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (selection.provider === "offline") {
-    logger.info(
-      {
-        event: "customer_chat_llm_unconfigured",
-        turns: messages.length,
-        streaming,
-      },
-      "customer chat: neither ANTHROPIC_API_KEY nor OPENAI_API_KEY set, returning offline fallback",
-    );
-    if (streaming) {
-      startSseHeaders(res);
-      writeSseEvent(res, {
-        type: "chunk",
-        text: CUSTOMER_OFFLINE_FALLBACK_REPLY,
+    const parseResult = chatBodySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({
+        error: "Invalid input",
+        details: parseResult.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`,
+        ),
       });
-      writeSseEvent(res, { type: "done", offline: true });
-      res.end();
-    } else {
-      res.json({ reply: CUSTOMER_OFFLINE_FALLBACK_REPLY, offline: true });
+      return;
     }
-    return;
-  }
 
-  const accountCtx = await loadAccountContext(
-    customerId,
-    req.shopCustomerDisplayName ?? null,
-  );
-  const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
-
-  const supabase = getSupabaseServiceRoleClient();
-
-  const { messages: initial, redactionCounts } = buildInitialMessages(
-    systemPrompt,
-    messages,
-  );
-  if (Object.keys(redactionCounts).length > 0) {
-    logger.info(
-      { event: "customer_chat_pii_redacted", counts: redactionCounts },
-      "customer chat: scrubbed PII patterns from outbound user message(s)",
-    );
-  }
-
-  const toolCtx: CustomerChatToolContext = {
-    supabase,
-    customerId,
-    // Non-PHI label used only by escalate_to_human to tag the
-    // CSR-inbox notification — same label the admin inbox already shows.
-    customerDisplayName: req.shopCustomerDisplayName ?? null,
-    customerEmail: req.shopCustomerEmail ?? null,
-  };
-
-  // Claude path — preferred when Anthropic is configured. Sonnet 4.6
-  // writes noticeably warmer patient-facing copy than gpt-4o-mini and
-  // is at least as strong on tool selection. This brings the signed-in
-  // account assistant in line with the storefront chatbot + sleep
-  // coach, which already go Claude-first. (Previously this route read
-  // OPENAI_API_KEY directly, so a deployment configured per the docs —
-  // ANTHROPIC_API_KEY only — left the account assistant silently
-  // offline while the storefront bot worked.)
-  if (selection.provider === "anthropic") {
-    const client = getAnthropicClient();
-    if (client) {
-      return streaming
-        ? handleAnthropicStreaming(
-            res,
-            initial,
-            client,
-            toolCtx,
-            messages.length,
-          )
-        : handleAnthropicJson(res, initial, client, toolCtx, messages.length);
-    }
-  }
-
-  if (!apiKey || apiKey.trim() === "") {
-    if (streaming) {
-      startSseHeaders(res);
-      writeSseEvent(res, {
-        type: "chunk",
-        text: CUSTOMER_OFFLINE_FALLBACK_REPLY,
+    const bodyStr = JSON.stringify(req.body);
+    const base64Pattern = /data:[a-z]+\/[a-z]+;base64,/i;
+    const longStringPattern = /[A-Za-z0-9+/]{1500,}/;
+    if (base64Pattern.test(bodyStr) || longStringPattern.test(bodyStr)) {
+      res.status(400).json({
+        error:
+          "Request body contains unexpected binary or encoded data. Send plain text only.",
       });
-      writeSseEvent(res, { type: "done", offline: true });
-      res.end();
-    } else {
-      res.json({ reply: CUSTOMER_OFFLINE_FALLBACK_REPLY, offline: true });
+      return;
     }
-    return;
-  }
 
-  return streaming
-    ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
-    : handleJson(res, initial, apiKey, toolCtx, messages.length);
-});
+    const { messages } = parseResult.data;
+    const lastMessage = messages.at(-1);
+    if (!lastMessage || lastMessage.role !== "user") {
+      res.status(400).json({
+        error: "The last message must be from the user.",
+      });
+      return;
+    }
+
+    const streaming = wantsStreaming(req.get("Accept"));
+    const selection = selectLlmProvider();
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    if (selection.provider === "offline") {
+      logger.info(
+        {
+          event: "customer_chat_llm_unconfigured",
+          turns: messages.length,
+          streaming,
+        },
+        "customer chat: neither ANTHROPIC_API_KEY nor OPENAI_API_KEY set, returning offline fallback",
+      );
+      if (streaming) {
+        startSseHeaders(res);
+        writeSseEvent(res, {
+          type: "chunk",
+          text: CUSTOMER_OFFLINE_FALLBACK_REPLY,
+        });
+        writeSseEvent(res, { type: "done", offline: true });
+        res.end();
+      } else {
+        res.json({ reply: CUSTOMER_OFFLINE_FALLBACK_REPLY, offline: true });
+      }
+      return;
+    }
+
+    const accountCtx = await loadAccountContext(
+      customerId,
+      req.shopCustomerDisplayName ?? null,
+    );
+    const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { messages: initial, redactionCounts } = buildInitialMessages(
+      systemPrompt,
+      messages,
+    );
+    if (Object.keys(redactionCounts).length > 0) {
+      logger.info(
+        { event: "customer_chat_pii_redacted", counts: redactionCounts },
+        "customer chat: scrubbed PII patterns from outbound user message(s)",
+      );
+    }
+
+    const toolCtx: CustomerChatToolContext = {
+      supabase,
+      customerId,
+      // Non-PHI label used only by escalate_to_human to tag the
+      // CSR-inbox notification — same label the admin inbox already shows.
+      customerDisplayName: req.shopCustomerDisplayName ?? null,
+      customerEmail: req.shopCustomerEmail ?? null,
+    };
+
+    // Claude path — preferred when Anthropic is configured. Sonnet 4.6
+    // writes noticeably warmer patient-facing copy than gpt-4o-mini and
+    // is at least as strong on tool selection. This brings the signed-in
+    // account assistant in line with the storefront chatbot + sleep
+    // coach, which already go Claude-first. (Previously this route read
+    // OPENAI_API_KEY directly, so a deployment configured per the docs —
+    // ANTHROPIC_API_KEY only — left the account assistant silently
+    // offline while the storefront bot worked.)
+    if (selection.provider === "anthropic") {
+      const client = getAnthropicClient();
+      if (client) {
+        return streaming
+          ? handleAnthropicStreaming(
+              res,
+              initial,
+              client,
+              toolCtx,
+              messages.length,
+            )
+          : handleAnthropicJson(res, initial, client, toolCtx, messages.length);
+      }
+    }
+
+    if (!apiKey || apiKey.trim() === "") {
+      if (streaming) {
+        startSseHeaders(res);
+        writeSseEvent(res, {
+          type: "chunk",
+          text: CUSTOMER_OFFLINE_FALLBACK_REPLY,
+        });
+        writeSseEvent(res, { type: "done", offline: true });
+        res.end();
+      } else {
+        res.json({ reply: CUSTOMER_OFFLINE_FALLBACK_REPLY, offline: true });
+      }
+      return;
+    }
+
+    return streaming
+      ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
+      : handleJson(res, initial, apiKey, toolCtx, messages.length);
+  },
+);
 
 async function handleJson(
   res: Response,

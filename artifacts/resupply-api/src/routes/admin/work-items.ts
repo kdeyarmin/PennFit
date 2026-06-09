@@ -16,6 +16,7 @@ import rateLimit from "express-rate-limit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
 
@@ -160,10 +161,33 @@ router.get(
         .order("created_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
     ]);
-    for (const r of results) {
-      if (r.error) throw r.error;
-    }
-    const rows = results.map((r) => (r.data ?? []) as RawRow[]);
+    // Degrade per-source instead of failing the whole queue. The CSR
+    // work queue aggregates 7 independent sources; if one (e.g. a
+    // transient `inbound_faxes` blip) errors we treat it as empty and
+    // name it in `degradedSources` so the operator still gets the other
+    // six and the SPA can show "fax queue temporarily unavailable"
+    // rather than a blank 500 that hides everything.
+    const SOURCE_NAMES = [
+      "conversations",
+      "returns",
+      "reviews",
+      "documents",
+      "shopFollowups",
+      "patientFollowups",
+      "faxes",
+    ] as const;
+    const degradedSources: string[] = [];
+    const rows = results.map((r, i) => {
+      if (r.error) {
+        degradedSources.push(SOURCE_NAMES[i]!);
+        logger.warn(
+          { source: SOURCE_NAMES[i], err: r.error.message },
+          "work-items: source query failed, degrading",
+        );
+        return [] as RawRow[];
+      }
+      return (r.data ?? []) as RawRow[];
+    });
 
     const workItems = buildWorkItems(
       {
@@ -178,7 +202,12 @@ router.get(
       nowIso,
     );
 
-    res.json({ workItems, count: workItems.length, serverTime: nowIso });
+    res.json({
+      workItems,
+      count: workItems.length,
+      serverTime: nowIso,
+      degradedSources,
+    });
   },
 );
 

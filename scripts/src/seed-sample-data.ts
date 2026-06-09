@@ -45,6 +45,7 @@ import {
   hashPassword,
   normalizeEmail,
   supabaseAuthRepository,
+  writeUserChosenPassword,
 } from "@workspace/resupply-auth";
 
 const TAG = "[seed:sample]";
@@ -483,11 +484,11 @@ async function ensureLogin(c: SampleCustomer): Promise<void> {
   }
   await repo.markEmailVerified(userId, new Date());
   const passwordHash = await hashPassword(password);
-  await repo.upsertCredential({
-    userId,
-    passwordHash,
-    setByAdminAt: new Date(),
-  });
+  // Seed it as a user-chosen password (mustChange=false, no
+  // set_by_admin_at) so the sample login works immediately without a
+  // forced reset on first sign-in. Routed through the shared helper per
+  // the no-direct-upsertCredential lint rule.
+  await writeUserChosenPassword(repo, { userId, passwordHash });
   // Bind the login to the shop customer so the customerIdResolver maps
   // this auth user → our stable customer_id at sign-in time.
   c.authUserId = userId;

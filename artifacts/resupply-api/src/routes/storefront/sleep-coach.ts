@@ -4,19 +4,47 @@
 // be logged in (the storefront auth session resolves a customer_id
 // which we map to a patient via the email-link in shop_customers).
 //
-// Per-IP rate limit applied at the storefront router level keeps
-// abuse from running up the OpenAI bill. PHI containment posture +
-// prompt details live in lib/clinical/sleep-coach.ts.
+// Per-customer rate limit (defined below, IP fallback) keeps a
+// compromised or scripted session from running up the vendor bill —
+// every accepted request burns Anthropic / OpenAI tokens. PHI
+// containment posture + prompt details live in
+// lib/clinical/sleep-coach.ts.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { askSleepCoach } from "../../lib/clinical/sleep-coach";
+import { RATE_LIMITS } from "../../lib/rate-limits-config";
 import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
+
+// Keyed by the signed-in customer id when present (so one session
+// can't burn the whole IP's quota for everyone behind shared NAT),
+// falling back to IP for unauthenticated callers — who get 401'd in
+// the handler anyway, so the fallback only matters as a flood shield.
+const sleepCoachLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.me_sleep_coach.windowMs,
+  limit: RATE_LIMITS.me_sleep_coach.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const customerId = (req as unknown as { shopCustomerId?: string })
+      .shopCustomerId;
+    if (typeof customerId === "string" && customerId.length > 0) {
+      return `sleep-coach:${customerId}`;
+    }
+    return ipKeyGenerator(req.ip ?? "0.0.0.0");
+  },
+  message: {
+    error: "coach_rate_limited",
+    message:
+      "You're sending messages too quickly. Please wait a minute and try again.",
+  },
+});
 
 const body = z
   .object({
@@ -33,7 +61,7 @@ const body = z
   })
   .strict();
 
-router.post("/me/sleep-coach", async (req, res) => {
+router.post("/me/sleep-coach", sleepCoachLimiter, async (req, res) => {
   // The storefront `attachSignedIn` middleware (mounted up-tree in
   // routes/storefront/index.ts) sets req.shopCustomerId from the
   // pf_session cookie; if the request isn't signed in it's absent, so

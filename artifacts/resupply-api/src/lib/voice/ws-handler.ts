@@ -49,6 +49,7 @@ import {
   PROMPT_VERSION,
   RealtimeClient,
   PATIENT_TOOL_NAMES,
+  DEFAULT_TOOL_CALL_FILLER_PHRASES,
   SHOP_TOOL_NAMES,
   VoiceBridge,
   type DeepgramLiveSession,
@@ -256,6 +257,13 @@ export async function handleVoiceWsConnection(
     dispatcher,
     ...(ttsStreamer ? { ttsStreamer } : {}),
     ...(ttsSynthesizer ? { tts: ttsSynthesizer } : {}),
+    // Cover the dead air while a tool runs (identity/inventory/address
+    // lookups) on the ElevenLabs path so the caller isn't met with
+    // silence mid-call. No-op on the cedar path (the model owns its own
+    // audio there) — the bridge guards on the external-voice path itself.
+    ...(externalVoice
+      ? { filler: { phrases: DEFAULT_TOOL_CALL_FILLER_PHRASES } }
+      : {}),
   });
 
   // Hoisted force-cleanup timer (assignment happens further down in

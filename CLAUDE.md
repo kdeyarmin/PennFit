@@ -340,8 +340,10 @@ fire-and-forget after `voice.call.completed` — a flaky model call
 NEVER delays hangup.
 
 Voice agent prompt: `lib/resupply-ai/src/prompts.ts` (version
-`2026-05-22.v2`). Tuned for natural prosody — contractions,
-backchannels, brief empathy, name-pronunciation guidance. The Realtime
+`2026-06-09.v7`). Tuned for natural prosody — contractions,
+backchannels, brief empathy, natural hesitations, reacting before moving
+on, varied openers, one question at a time, and conversational
+(non-list) read-back. The Realtime
 session uses `semantic_vad` with `eagerness: "low"` and `temperature:
 0.8` for natural turn-taking and phrasing variation (see
 `lib/resupply-ai/src/realtime-client.ts`). The agent's voice is

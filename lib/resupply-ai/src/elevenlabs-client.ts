@@ -90,8 +90,14 @@ export interface ElevenLabsVoiceSettings {
  *     conversational read toward theatrical.
  *   - `use_speaker_boost: true` — a touch more clarity, which matters for
  *     the elderly / hard-of-hearing skew of the CPAP demographic.
- *   - `speed: 1.0` — natural pace. Nudge toward ~0.95 (via the voice
- *     bridge's ELEVENLABS_SPEED override) for an older patient base.
+ *   - `speed: 0.96` — a hair under natural pace. The CPAP demographic
+ *     skews 50+ and includes hard-of-hearing callers, so a slightly
+ *     unhurried read lands as warm and considerate rather than slow —
+ *     and gives the caller room to keep up without ever feeling talked
+ *     down to. This is the codebase's own long-standing recommendation
+ *     for an older patient base, now the default; nudge back toward 1.0
+ *     via the voice bridge's ELEVENLABS_SPEED override for a younger
+ *     cash-pay storefront line.
  * Every field is overridable per call.
  */
 export const DEFAULT_CONVERSATIONAL_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
@@ -99,7 +105,7 @@ export const DEFAULT_CONVERSATIONAL_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   similarity_boost: 0.8,
   style: 0,
   use_speaker_boost: true,
-  speed: 1.0,
+  speed: 0.96,
 };
 
 export interface ElevenLabsTtsInput {

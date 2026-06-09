@@ -1,9 +1,18 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
+import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact";
 
 interface Props {
   children: React.ReactNode;
+  /**
+   * `fullscreen` (default) centers the fallback in the whole viewport — use it
+   * at the top of the app where a crash means the entire tree is gone.
+   * `inline` renders a non-full-height card that sits inside surrounding chrome
+   * (header/nav/footer), so a single page crash doesn't strand the user without
+   * navigation.
+   */
+  variant?: "fullscreen" | "inline";
 }
 
 interface State {
@@ -12,14 +21,17 @@ interface State {
 }
 
 /**
- * Top-level React error boundary.
+ * React error boundary.
  *
  * Without this, a thrown render error anywhere in the tree leaves the user
  * staring at a blank white page with no way to recover except hitting the
- * browser back button. We wrap the entire patient-facing app so that any
- * runtime crash falls back to a recoverable, on-brand "something went wrong"
- * screen with two clear actions: reload the current page, or jump to the home
- * route. The full error is logged to the console for diagnosis.
+ * browser back button. The top-level instance wraps the entire patient-facing
+ * app; a second `inline` instance nested inside the patient Layout isolates
+ * per-page crashes so the header/nav/footer stay usable and the customer can
+ * navigate away (the inline boundary is re-keyed on route change so moving to
+ * another page clears the error). Both fall back to a recoverable, on-brand
+ * "something went wrong" card with clear actions: reload, jump home, or call
+ * support. The full error is logged to the console for diagnosis.
  *
  * This is a class component because React still requires class components for
  * `getDerivedStateFromError` / `componentDidCatch` — the function-component
@@ -45,11 +57,17 @@ export class ErrorBoundary extends React.Component<Props, State> {
       return this.props.children;
     }
 
+    const inline = this.props.variant === "inline";
+
     return (
       <div
         role="alert"
         aria-live="assertive"
-        className="min-h-[100dvh] flex items-center justify-center bg-background p-6"
+        className={
+          inline
+            ? "flex items-center justify-center px-6 py-16"
+            : "min-h-[100dvh] flex items-center justify-center bg-background p-6"
+        }
         data-testid="error-boundary-fallback"
       >
         <div className="glass-card rounded-2xl p-8 max-w-lg text-center">
@@ -62,8 +80,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <h1 className="text-2xl font-semibold mb-2">Something went wrong</h1>
           <p className="text-muted-foreground mb-6">
             The page hit an unexpected error. Reloading usually fixes it. If
-            this keeps happening, please call us at Penn Home Medical Supply and
-            we'll help you finish what you were doing.
+            this keeps happening, please call us at Penn Home Medical Supply at{" "}
+            <a
+              href={`tel:${SUPPORT_PHONE_E164}`}
+              className="font-medium text-foreground underline underline-offset-2"
+            >
+              {SUPPORT_PHONE_DISPLAY}
+            </a>{" "}
+            and we'll help you finish what you were doing.
           </p>
           {/*
             Development-only diagnostic. We print the thrown error's message
