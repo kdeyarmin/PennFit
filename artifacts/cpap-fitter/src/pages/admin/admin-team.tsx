@@ -36,6 +36,8 @@ import {
   type TeamRole,
   type TeamStatus,
 } from "@/lib/admin/admin-team-api";
+import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
+import { useGetAdminMe } from "@workspace/api-client-react/admin";
 
 // Display labels for every DB-persisted role. Legacy values map onto
 // one of the 3 effective buckets so the UI shows a consistent
@@ -251,6 +253,25 @@ function MemberRow({
     mutationFn: (next: TeamRole) => patchMember(member.id, { role: next }),
     onSuccess: invalidate,
   });
+  // Home-branch assignment (multi-location) — only for multi-branch
+  // companies (Control Center toggle). The locations list isn't fetched
+  // and the per-row branch picker is hidden for single-branch companies.
+  const multiLocationEnabled =
+    useGetAdminMe().data?.multiLocationEnabled ?? false;
+  const locationsQuery = useQuery({
+    queryKey: LOCATIONS_QUERY_KEY,
+    queryFn: listLocations,
+    staleTime: 60_000,
+    enabled: multiLocationEnabled,
+  });
+  const changeLocation = useMutation({
+    mutationFn: (locId: string | null) =>
+      patchMember(member.id, { locationId: locId }),
+    onSuccess: invalidate,
+  });
+  const branchOptions = (locationsQuery.data?.locations ?? []).filter(
+    (l) => l.isActive || l.id === member.locationId,
+  );
 
   const errorMessage =
     resend.error instanceof Error
@@ -263,7 +284,9 @@ function MemberRow({
             ? demote.error.message
             : changeRole.error instanceof Error
               ? changeRole.error.message
-              : null;
+              : changeLocation.error instanceof Error
+                ? changeLocation.error.message
+                : null;
 
   return (
     <li
@@ -326,6 +349,28 @@ function MemberRow({
             >
               {resend.isPending ? "Resending…" : "Resend invite"}
             </button>
+          )}
+          {member.status === "active" && multiLocationEnabled && (
+            <select
+              value={member.locationId ?? ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                const next = val === "" ? null : val;
+                if (next === (member.locationId ?? null)) return;
+                changeLocation.mutate(next);
+              }}
+              disabled={changeLocation.isPending || locationsQuery.isPending}
+              className="rounded border border-slate-300 px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-60"
+              aria-label="Assign branch"
+              data-testid={`team-member-${member.id}-branch-select`}
+            >
+              <option value="">Unassigned</option>
+              {branchOptions.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.isActive ? l.name : `${l.name} (inactive)`}
+                </option>
+              ))}
+            </select>
           )}
           {member.status === "active" && member.role !== "admin" && (
             <>

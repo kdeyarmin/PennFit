@@ -60,6 +60,13 @@ declare global {
        * permission decisions via `requirePermission(perm)`.
        */
       adminGranularRole?: AdminRole;
+      /**
+       * Home branch (location) of the signed-in staff member, from
+       * `admin_users.location_id` (multi-location #O1). Null when
+       * unassigned. Drives the soft default branch filter in the SPA;
+       * NOT an access gate (unassigned staff see everything).
+       */
+      adminLocationId?: string | null;
     }
   }
 }
@@ -75,6 +82,9 @@ interface ResolvedAdmin {
    * (admin → admin, agent → agent), preserving backwards-compat.
    */
   granularRole: AdminRole;
+  /** Home branch from admin_users.location_id; null when unassigned
+   *  or the lookup fails (treated as org-wide / no restriction). */
+  locationId: string | null;
 }
 
 /**
@@ -118,18 +128,20 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     // staff-or-not above, so the fallback is the same access the
     // user had before Phase A.
     let granularRole: AdminRole = user.role;
+    let locationId: string | null = null;
     try {
       const supabase = getSupabaseServiceRoleClient();
       const { data } = await supabase
         .schema("resupply")
         .from("admin_users")
-        .select("role")
+        .select("role, location_id")
         .eq("auth_user_id", user.id)
         .limit(1)
         .maybeSingle();
       if (data?.role) {
         granularRole = data.role as AdminRole;
       }
+      locationId = data?.location_id ?? null;
     } catch (err) {
       logger.warn(
         {
@@ -145,6 +157,7 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
       userId: user.id,
       role: user.role,
       granularRole,
+      locationId,
     };
   } catch (err) {
     logger.warn(
@@ -192,6 +205,7 @@ export async function requireAdmin(
   req.adminUserId = admin.userId;
   req.adminRole = admin.role;
   req.adminGranularRole = admin.granularRole;
+  req.adminLocationId = admin.locationId;
   next();
 }
 

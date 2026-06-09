@@ -49,6 +49,7 @@ import {
   UsersRound,
   ScanFace,
   Settings,
+  MapPin,
   Plug,
   Webhook,
   Target,
@@ -85,7 +86,13 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useDashboardIdentity } from "@/lib/admin/identity";
+import { useGetAdminMe } from "@workspace/api-client-react/admin";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
+
+// Client-side nav-visibility token (NOT a server permission) gating the
+// Locations entry. Injected into the nav permission set when /me reports
+// the multi-branch feature is enabled; the entry stays hidden otherwise.
+const MULTI_LOCATION_NAV_TOKEN = "feature:multi_location";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { GlobalLookup } from "./GlobalLookup";
 import { AdminAssistantWidget } from "./AdminAssistantWidget";
@@ -1106,6 +1113,19 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/team",
             hint: "Manage admin & agent accounts",
           },
+          {
+            href: "/admin/locations",
+            label: "Locations",
+            icon: MapPin,
+            matchPrefix: "/admin/locations",
+            hint: "Business branches that service patients (assign patients from their detail page)",
+            // Only shown when the multi-branch feature is enabled. The
+            // AppShell injects this pseudo-permission token into the nav
+            // permission set when /me reports multiLocationEnabled — see
+            // navPermissions below. (Not a server permission; purely a
+            // nav-visibility key, like the rest of requiredPermission.)
+            requiredPermission: MULTI_LOCATION_NAV_TOKEN,
+          },
         ],
       },
       {
@@ -1832,10 +1852,15 @@ export function AppShell({
   adminPermissions?: string[];
   children: ReactNode;
 }) {
-  const navPermissions = useMemo(
-    () => new Set(adminPermissions ?? []),
-    [adminPermissions],
-  );
+  // The multi-branch feature toggle (Control Center). When on, inject the
+  // nav-visibility token so the Locations entry appears; when off it's
+  // hidden along with the rest of the branch UI.
+  const { data: adminMe } = useGetAdminMe();
+  const navPermissions = useMemo(() => {
+    const set = new Set(adminPermissions ?? []);
+    if (adminMe?.multiLocationEnabled) set.add(MULTI_LOCATION_NAV_TOKEN);
+    return set;
+  }, [adminPermissions, adminMe?.multiLocationEnabled]);
   const [location] = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 

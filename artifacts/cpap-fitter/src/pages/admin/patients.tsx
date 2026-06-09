@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Papa from "papaparse";
 import {
   ApiError,
@@ -8,6 +12,7 @@ import {
   ListPatientsStatus,
   useBulkUpdatePatientStatus,
   useCreatePatient,
+  useGetAdminMe,
   useImportPatientsCsv,
   useListPatients,
 } from "@workspace/api-client-react/admin";
@@ -39,6 +44,7 @@ import {
 } from "@/components/admin/SelectionCheckbox";
 import { useBulkSelection } from "@/hooks/use-bulk-selection";
 import { useFilteredList } from "@/hooks/use-filtered-list";
+import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 import { fullName, formatDateTime } from "@/lib/admin/format";
 
 const PAGE_SIZE = 25;
@@ -54,14 +60,20 @@ const STATUS_OPTIONS = Object.values(ListPatientsStatus).map((v) => ({
  * against the known statuses so a junk value is ignored). Read once at
  * mount — the filters become local state thereafter.
  */
-function initialPatientFilters(): { status: string; search: string } {
-  if (typeof window === "undefined") return { status: "", search: "" };
+function initialPatientFilters(): {
+  status: string;
+  search: string;
+  locationId: string;
+} {
+  if (typeof window === "undefined")
+    return { status: "", search: "", locationId: "" };
   const params = new URLSearchParams(window.location.search);
   const statusRaw = params.get("status") ?? "";
   const validStatuses = Object.values(ListPatientsStatus) as string[];
   return {
     status: validStatuses.includes(statusRaw) ? statusRaw : "",
     search: params.get("search") ?? "",
+    locationId: params.get("locationId") ?? "",
   };
 }
 
@@ -107,7 +119,7 @@ export function PatientsPage() {
   // jump from a customer record) lands pre-filtered.
   const { filters, setFilter, setFilters, offset, setOffset, pageSize } =
     useFilteredList(initialPatientFilters(), { pageSize: PAGE_SIZE });
-  const { status: statusFilter, search } = filters;
+  const { status: statusFilter, search, locationId: locationFilter } = filters;
   // Search-input is debounced into filters.search so we don't hammer
   // the API while the admin is mid-type. The input value is pure UI
   // state; the committed string is what drives the query params.
@@ -128,6 +140,54 @@ export function PatientsPage() {
 
   const bulkMut = useBulkUpdatePatientStatus();
 
+  // Branch options for the location filter. Only active locations are
+  // offered (plus the "Unassigned" sentinel); historical/inactive
+  // branches aren't useful as a live filter.
+  const locationsQuery = useQuery({
+    queryKey: LOCATIONS_QUERY_KEY,
+    queryFn: listLocations,
+    staleTime: 60_000,
+  });
+  const locationFilterOptions = [
+    { value: "none", label: "Unassigned" },
+    ...(locationsQuery.data?.locations ?? [])
+      .filter((l) => l.isActive)
+      .map((l) => ({ value: l.id, label: l.name })),
+  ];
+
+  // Soft branch default (multi-location #O1, phase 3): when the signed-in
+  // staff member has a home branch AND the URL didn't already pin a
+  // branch, pre-select their branch once. They can still switch to any
+  // branch or "All branches" — this is a convenience default, not an
+  // access gate (the server enforces nothing; unassigned staff see all).
+  const meQuery = useGetAdminMe();
+  // Whole branch UI (filter + soft default) is gated on the multi-branch
+  // company toggle. Off (single-branch) = no branch filter, no default.
+  const multiLocationEnabled = meQuery.data?.multiLocationEnabled ?? false;
+  const urlSeededLocation = useMemo(
+    () => initialPatientFilters().locationId !== "",
+    [],
+  );
+  const appliedHomeBranchRef = useRef(false);
+  useEffect(() => {
+    if (!multiLocationEnabled) return;
+    if (appliedHomeBranchRef.current) return;
+    if (urlSeededLocation) {
+      appliedHomeBranchRef.current = true;
+      return;
+    }
+    const homeBranch = meQuery.data?.locationId;
+    if (homeBranch) {
+      setFilter("locationId", homeBranch);
+      appliedHomeBranchRef.current = true;
+    }
+  }, [
+    multiLocationEnabled,
+    meQuery.data?.locationId,
+    urlSeededLocation,
+    setFilter,
+  ]);
+
   useEffect(() => {
     const trimmed = searchInput.trim();
     const t = setTimeout(() => {
@@ -142,10 +202,11 @@ export function PatientsPage() {
         ? { status: statusFilter as keyof typeof ListPatientsStatus }
         : {}),
       ...(search ? { search } : {}),
+      ...(locationFilter ? { locationId: locationFilter } : {}),
       limit: pageSize,
       offset,
     }),
-    [statusFilter, search, offset, pageSize],
+    [statusFilter, search, locationFilter, offset, pageSize],
   );
 
   const { data, isPending, isError, error, isFetching, refetch } =
@@ -268,6 +329,11 @@ export function PatientsPage() {
       );
       if (statusFilter) url.searchParams.set("status", statusFilter);
       if (search) url.searchParams.set("search", search);
+      // Keep the export scoped to the same branch the list is showing
+      // (multi-location). Without this the CSV would include every
+      // branch's PHI even when a branch filter is applied on-screen.
+      if (multiLocationEnabled && locationFilter)
+        url.searchParams.set("locationId", locationFilter);
 
       const headers: Record<string, string> = { Accept: "text/csv" };
 
@@ -498,6 +564,18 @@ export function PatientsPage() {
               onChange={(e) => setFilter("status", e.target.value)}
             />
           </div>
+          {multiLocationEnabled && (
+            <div>
+              <Label htmlFor="patients-location">Branch</Label>
+              <Select
+                id="patients-location"
+                value={locationFilter}
+                emptyOptionLabel="All branches"
+                options={locationFilterOptions}
+                onChange={(e) => setFilter("locationId", e.target.value)}
+              />
+            </div>
+          )}
           <div className="flex items-end">
             <Button
               intent="ghost"
@@ -505,11 +583,12 @@ export function PatientsPage() {
               onClick={() => {
                 // Reset to true-blank defaults, not the hook's captured
                 // initial filters — those are now seeded from the URL
-                // (?status=, ?search=), so clearFilters() would restore
-                // the deep-linked status instead of clearing it. Also
-                // reset the un-debounced input so the box clears at once.
+                // (?status=, ?search=, ?locationId=), so clearFilters()
+                // would restore the deep-linked values instead of
+                // clearing them. Also reset the un-debounced input so the
+                // box clears at once.
                 setSearchInput("");
-                setFilters({ status: "", search: "" });
+                setFilters({ status: "", search: "", locationId: "" });
               }}
             >
               Clear filters

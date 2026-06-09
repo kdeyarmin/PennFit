@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 
 import { permissionsForRole } from "@workspace/resupply-auth";
 
+import { isFeatureEnabled } from "../lib/feature-flags";
 import { adminReadRateLimiter } from "../middlewares/admin-rate-limit";
 import { requireAdmin } from "../middlewares/requireAdmin";
 
@@ -48,7 +49,7 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/me", adminReadRateLimiter, requireAdmin, (req, res) => {
+router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
   // All fields are guaranteed to be set by requireAdmin on the success
   // path; the `??` is a belt-and-braces guard so a future refactor that
   // breaks that contract surfaces as an empty string / "admin" default
@@ -56,11 +57,24 @@ router.get("/me", adminReadRateLimiter, requireAdmin, (req, res) => {
   // and a safe default in the role case) rather than as `undefined`
   // serialized to `null`.
   const role = req.adminGranularRole ?? req.adminRole ?? "admin";
+  // Whether the multi-branch feature is turned on for this company
+  // (Control Center flag, seeded OFF). The SPA reads this to show/hide
+  // the entire branch UI — Locations page, branch pickers, list filter.
+  // Cached ~5s in isFeatureEnabled; a flip in the Control Center reaches
+  // the console on the next /me refetch. In production the lookup fails closed
+  // (returns false) on DB errors, so branch UI stays hidden during outages.
+  const multiLocationEnabled = await isFeatureEnabled("multi_location.enabled");
   res.json({
     userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
     role: req.adminRole ?? "admin",
     permissions: permissionsForRole(role),
+    // Home branch (multi-location #O1). Drives the SPA's soft default
+    // branch filter; null = unassigned (treated as org-wide, no
+    // restriction). Not an access gate — the server enforces nothing on
+    // this value.
+    locationId: req.adminLocationId ?? null,
+    multiLocationEnabled,
   });
 });
 

@@ -47,6 +47,12 @@ export interface MockAdminCtx {
    * the legacy mirror set.
    */
   granularRole?: AdminRole;
+  /**
+   * Optional home branch (multi-location #O1). When set, the mock
+   * attaches it as `req.adminLocationId` (mirrors requireAdmin). Omit
+   * for the common "unassigned" case.
+   */
+  locationId?: string | null;
 }
 
 export interface MockAdminRef {
@@ -87,6 +93,7 @@ export function makeRequireAdminMock(ref: MockAdminRef): {
     req.adminEmail = ctx.email;
     req.adminRole = ctx.role;
     req.adminGranularRole = ctx.granularRole ?? ctx.role;
+    req.adminLocationId = ctx.locationId ?? null;
   };
   return {
     requireAdmin: (req, res, next) => {

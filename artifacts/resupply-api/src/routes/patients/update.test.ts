@@ -13,6 +13,7 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -173,5 +174,82 @@ describe("PATCH /patients/:id (optimistic concurrency)", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
+  });
+});
+
+describe("PATCH /patients/:id — location assignment (multi-location)", () => {
+  const LOCATION = "99999999-9999-4999-8999-999999999999";
+
+  beforeEach(() => {
+    process.env.NODE_ENV = "test";
+    mockAdmin.current = null;
+    supabaseMock.reset();
+    stubVerifiedAdmin();
+  });
+
+  it("assigns an active location and writes location_id", async () => {
+    // Validation lookup: an active location.
+    stageSupabaseResponse("locations", "select", {
+      data: { id: LOCATION, name: "Pittsburgh", is_active: true },
+    });
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT, updated_at: "2026-05-01T00:00:00.000Z" }],
+    });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ locationId: LOCATION });
+
+    expect(res.status).toBe(200);
+    expect(res.body.changed).toContain("location_id");
+    const writes = getSupabaseWritePayloads("patients", "update");
+    expect(writes[0]).toMatchObject({ location_id: LOCATION });
+  });
+
+  it("422s when the location is deactivated", async () => {
+    stageSupabaseResponse("locations", "select", {
+      data: { id: LOCATION, name: "Old Branch", is_active: false },
+    });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ locationId: LOCATION });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({
+      error: "invalid_location",
+      reason: "inactive",
+    });
+    // No patient write happened.
+    expect(getSupabaseWritePayloads("patients", "update")).toEqual([]);
+  });
+
+  it("422s when the location does not exist", async () => {
+    stageSupabaseResponse("locations", "select", { data: null });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ locationId: LOCATION });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({
+      error: "invalid_location",
+      reason: "not_found",
+    });
+  });
+
+  it("clears the assignment with null (no location lookup)", async () => {
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT, updated_at: "2026-05-01T00:00:00.000Z" }],
+    });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ locationId: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body.changed).toContain("location_id");
+    const writes = getSupabaseWritePayloads("patients", "update");
+    expect(writes[0]).toMatchObject({ location_id: null });
   });
 });
