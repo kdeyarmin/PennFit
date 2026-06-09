@@ -39,6 +39,10 @@ const listQuery = z
   .object({
     status: z.enum(["active", "paused", "closed"]).optional(),
     search: z.string().min(1).max(64).optional(),
+    // Filter to one business branch (multi-location, owner #O1). The
+    // literal "none" surfaces patients with no branch assigned yet, so
+    // operators can triage the unassigned backlog.
+    locationId: z.union([z.string().uuid(), z.literal("none")]).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
   })
@@ -62,20 +66,22 @@ router.get(
       });
       return;
     }
-    const { status, search, limit, offset } = parsed.data;
+    const { status, search, locationId, limit, offset } = parsed.data;
 
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase
       .schema("resupply")
       .from("patients")
       .select(
-        "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, created_at, updated_at",
+        "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, location_id, created_at, updated_at",
         { count: "exact" },
       )
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (status) query = query.eq("status", status);
+    if (locationId === "none") query = query.is("location_id", null);
+    else if (locationId) query = query.eq("location_id", locationId);
     if (search) {
       // Phone-shaped input → exact-match against the indexed
       // `phone_e164` column. We try this BEFORE the ILIKE branch so
@@ -145,6 +151,7 @@ router.get(
           status: r.status,
           hasPhone: r.phone_e164 != null,
           hasEmail: r.email != null,
+          locationId: r.location_id,
           createdAt: r.created_at,
           updatedAt: r.updated_at,
           lastMessageAt: latest?.last_message_at ?? null,
