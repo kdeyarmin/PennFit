@@ -254,7 +254,7 @@ async function recomputeTotals(
     }),
     { billed: 0, allowed: 0, paid: 0 },
   );
-  await supabase
+  const { error: totalsErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .update({
@@ -264,6 +264,10 @@ async function recomputeTotals(
       updated_at: new Date().toISOString(),
     })
     .eq("id", claimId);
+  // Throw rather than leave the cached totals silently stale relative
+  // to the line items the caller just wrote — worklists and the claim
+  // header render from these columns.
+  if (totalsErr) throw totalsErr;
 }
 
 // ── LIST ────────────────────────────────────────────────────────────
@@ -564,7 +568,7 @@ router.patch(
                   : b.status === "closed"
                     ? "closed"
                     : "note";
-      await supabase
+      const { error: eventErr } = await supabase
         .schema("resupply")
         .from("insurance_claim_events")
         .insert({
@@ -573,6 +577,9 @@ router.patch(
           note: b.denialReason ?? null,
           actor_email: req.adminEmail ?? "unknown",
         });
+      // The history event IS the claim's canonical state-machine
+      // record (the comment above) — don't drop it silently.
+      if (eventErr) throw eventErr;
     }
 
     await logAudit({
