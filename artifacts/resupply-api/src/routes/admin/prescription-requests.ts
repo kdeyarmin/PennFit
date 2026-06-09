@@ -451,13 +451,14 @@ async function dispatchPacketFax(
       .from("prescription_request_packets")
       .update(update)
       .eq("id", packet.id);
-    if (stampErr) {
       logger.warn(
         {
           packet_id: packet.id,
           vendor_ref: result.id,
-          err: stampErr.message,
+          err: stampErr,
         },
+        "prescription_request.send.db_stamp_failed",
+      );
         "prescription_request.send.db_stamp_failed",
       );
     }
