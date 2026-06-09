@@ -25,11 +25,14 @@ import { Input, Label } from "@/components/admin/Input";
 import { formatDateTime } from "@/lib/admin/format";
 import {
   LOCATIONS_QUERY_KEY,
+  LOCATION_ROLLUP_QUERY_KEY,
   createLocation,
   describeLocationError,
+  getLocationRollup,
   listLocations,
   updateLocation,
   type Location,
+  type LocationCounts,
   type LocationCreate,
 } from "@/lib/admin/locations-api";
 
@@ -67,6 +70,23 @@ export function AdminLocationsPage() {
     queryFn: listLocations,
     staleTime: 30_000,
   });
+  // Per-branch counts (patients + staff). Best-effort: if it fails the
+  // table still renders, just without the count columns.
+  const rollupQuery = useQuery({
+    queryKey: LOCATION_ROLLUP_QUERY_KEY,
+    queryFn: getLocationRollup,
+    staleTime: 30_000,
+  });
+  const countsById = new Map<string, LocationCounts>(
+    (rollupQuery.data?.branches ?? []).map((b) => [
+      b.locationId,
+      {
+        patientCount: b.patientCount,
+        activePatientCount: b.activePatientCount,
+        staffCount: b.staffCount,
+      },
+    ]),
+  );
   const [editing, setEditing] = useState<Location | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -92,9 +112,20 @@ export function AdminLocationsPage() {
               hint="Add your branches here, then assign patients to a branch from their detail page."
             />
           ) : (
-            <LocationsTable locations={data.locations} onEdit={setEditing} />
+            <LocationsTable
+              locations={data.locations}
+              counts={countsById}
+              onEdit={setEditing}
+            />
           )}
         </Card>
+      )}
+      {rollupQuery.data && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Unassigned: {rollupQuery.data.unassigned.patientCount} patient
+          {rollupQuery.data.unassigned.patientCount === 1 ? "" : "s"} ·{" "}
+          {rollupQuery.data.unassigned.staffCount} staff with no branch set.
+        </p>
       )}
       {creating && (
         <LocationFormModal
@@ -144,9 +175,11 @@ function cityLine(l: Location): string {
 
 function LocationsTable({
   locations,
+  counts,
   onEdit,
 }: {
   locations: Location[];
+  counts: Map<string, LocationCounts>;
   onEdit: (l: Location) => void;
 }) {
   const cols: Column<Location>[] = [
@@ -189,6 +222,30 @@ function LocationsTable({
           {l.phoneE164 ?? "—"}
         </span>
       ),
+    },
+    {
+      key: "patients",
+      header: "Patients",
+      render: (l) => {
+        const c = counts.get(l.id);
+        return (
+          <span className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+            {c ? `${c.patientCount} (${c.activePatientCount} active)` : "—"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "staff",
+      header: "Staff",
+      render: (l) => {
+        const c = counts.get(l.id);
+        return (
+          <span className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+            {c ? c.staffCount : "—"}
+          </span>
+        );
+      },
     },
     {
       key: "active",

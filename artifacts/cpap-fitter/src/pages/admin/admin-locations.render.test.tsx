@@ -9,15 +9,23 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 import type { Location } from "@/lib/admin/locations-api";
 
-const { queryState } = vi.hoisted(() => ({
+const { queryState, rollupState } = vi.hoisted(() => ({
   queryState: { current: null as unknown },
+  rollupState: { current: null as unknown },
 }));
 
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual("@tanstack/react-query");
   return {
     ...actual,
-    useQuery: () => queryState.current,
+    // Discriminate the page's two queries by key: the rollup query's
+    // key ends with "rollup"; everything else is the locations list.
+    useQuery: (opts: { queryKey?: readonly unknown[] }) => {
+      const key = opts?.queryKey ?? [];
+      return key[key.length - 1] === "rollup"
+        ? rollupState.current
+        : queryState.current;
+    },
     useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
     useQueryClient: () => ({ invalidateQueries: vi.fn() }),
   };
@@ -25,7 +33,9 @@ vi.mock("@tanstack/react-query", async () => {
 
 vi.mock("@/lib/admin/locations-api", () => ({
   LOCATIONS_QUERY_KEY: ["admin", "locations"],
+  LOCATION_ROLLUP_QUERY_KEY: ["admin", "locations", "rollup"],
   listLocations: vi.fn(),
+  getLocationRollup: vi.fn(),
   createLocation: vi.fn(),
   updateLocation: vi.fn(),
   describeLocationError: (e: unknown) => String(e),
@@ -36,6 +46,39 @@ import { AdminLocationsPage } from "./admin-locations";
 function withLocations(locations: Location[]): void {
   queryState.current = {
     data: { locations, primaryId: locations.find((l) => l.isPrimary)?.id ?? null },
+    isPending: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  };
+  // Default: rollup not loaded (count columns show "—", no unassigned
+  // line). Individual tests can override via withRollup().
+  rollupState.current = {
+    data: undefined,
+    isPending: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  };
+}
+
+function withRollup(
+  branches: Array<{
+    locationId: string;
+    name: string;
+    isActive: boolean;
+    patientCount: number;
+    activePatientCount: number;
+    staffCount: number;
+  }>,
+  unassigned: {
+    patientCount: number;
+    activePatientCount: number;
+    staffCount: number;
+  },
+): void {
+  rollupState.current = {
+    data: { branches, unassigned },
     isPending: false,
     isError: false,
     error: null,
@@ -99,5 +142,25 @@ describe("AdminLocationsPage", () => {
     withLocations([makeLocation({})]);
     const { container } = render(<AdminLocationsPage />);
     expect(container.querySelector(".admin-root")).toBeTruthy();
+  });
+
+  it("renders per-branch counts and the unassigned summary from the rollup", () => {
+    withLocations([makeLocation({})]);
+    withRollup(
+      [
+        {
+          locationId: "loc-1",
+          name: "Pittsburgh",
+          isActive: true,
+          patientCount: 12,
+          activePatientCount: 9,
+          staffCount: 3,
+        },
+      ],
+      { patientCount: 5, activePatientCount: 4, staffCount: 1 },
+    );
+    render(<AdminLocationsPage />);
+    expect(screen.getByText("12 (9 active)")).toBeTruthy();
+    expect(screen.getByText(/Unassigned: 5 patients · 1 staff/)).toBeTruthy();
   });
 });

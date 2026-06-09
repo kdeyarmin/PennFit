@@ -39,6 +39,28 @@ export interface LocationCreate {
 export type LocationUpdate = Partial<LocationCreate> & { isActive?: boolean };
 
 export const LOCATIONS_QUERY_KEY = ["admin", "locations"] as const;
+export const LOCATION_ROLLUP_QUERY_KEY = [
+  "admin",
+  "locations",
+  "rollup",
+] as const;
+
+/** Per-branch counts. `branches` keyed by location; `unassigned` is the
+ *  bucket of patients/staff with no branch set. */
+export interface LocationCounts {
+  patientCount: number;
+  activePatientCount: number;
+  staffCount: number;
+}
+export interface LocationRollupRow extends LocationCounts {
+  locationId: string;
+  name: string;
+  isActive: boolean;
+}
+export interface LocationRollup {
+  branches: LocationRollupRow[];
+  unassigned: LocationCounts;
+}
 
 const BASE = "/resupply-api/admin/locations";
 
@@ -105,6 +127,16 @@ export async function listLocations(): Promise<{
     locations: (body.locations ?? []).map(mapLocation),
     primaryId: body.primaryId ?? null,
   };
+}
+
+export async function getLocationRollup(): Promise<LocationRollup> {
+  const url = `${BASE}/rollup`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await readError(res, "GET", url);
+  return (await res.json()) as LocationRollup;
 }
 
 export async function createLocation(

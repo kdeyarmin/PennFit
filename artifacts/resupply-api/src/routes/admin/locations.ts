@@ -91,6 +91,59 @@ router.get(
   },
 );
 
+// Per-branch operational rollup (multi-location #O1 phase 4): patient +
+// staff counts per location, plus an `unassigned` bucket (the RPC's
+// NULL-location_id row). Names are merged in from `locations` so the
+// page can render counts beside each branch without a second client
+// call. Counts only — no PHI.
+router.get(
+  "/admin/locations/rollup",
+  requirePermission("reports.read"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const [{ data: locs, error: locErr }, { data: roll, error: rollErr }] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("locations")
+          .select("id, name, is_active")
+          .order("name", { ascending: true })
+          .limit(500),
+        supabase.schema("resupply").rpc("location_rollup"),
+      ]);
+    if (locErr) throw locErr;
+    if (rollErr) throw rollErr;
+
+    type RollRow = {
+      location_id: string | null;
+      patient_count: number | string;
+      active_patient_count: number | string;
+      staff_count: number | string;
+    };
+    const byId = new Map<string | null, RollRow>();
+    for (const r of (roll ?? []) as RollRow[]) byId.set(r.location_id, r);
+    const counts = (id: string | null) => {
+      const r = byId.get(id);
+      return {
+        patientCount: Number(r?.patient_count ?? 0),
+        activePatientCount: Number(r?.active_patient_count ?? 0),
+        staffCount: Number(r?.staff_count ?? 0),
+      };
+    };
+
+    res.json({
+      branches: (locs ?? []).map((l) => ({
+        locationId: l.id,
+        name: l.name,
+        isActive: l.is_active,
+        ...counts(l.id),
+      })),
+      // Patients/staff with no branch assigned (RPC's NULL row).
+      unassigned: counts(null),
+    });
+  },
+);
+
 router.post(
   "/admin/locations",
   requireAdminOnly,
