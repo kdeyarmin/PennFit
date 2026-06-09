@@ -456,6 +456,15 @@ const AdminConsoleRoute = lazyWithRetry(() =>
   import("@/pages/admin/console").then((m) => ({ default: m.ConsoleRoute })),
 );
 
+// Provider e-signature portal — its own on-demand chunk (sign-in, MFA
+// enrollment, document queue, signing). Gated internally against
+// /api/provider/me; not part of the admin or storefront bundles.
+const ProviderPortalRoute = lazyWithRetry(() =>
+  import("@/pages/provider/ProviderPortalRoute").then((m) => ({
+    default: m.ProviderPortalRoute,
+  })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1018,6 +1027,16 @@ function TopRouter() {
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
         <Route path="/admin" component={AdminConsoleRoute} />
         <Route path="/admin/*" component={AdminConsoleRoute} />
+
+        {/*
+          Provider e-signature portal. Self-contained surface where
+          credentialed physicians/NPs sign in (MFA-protected) and e-sign
+          outstanding documents. The route component owns its own
+          sign-in + gating, so it's mounted ungated here like the auth
+          pages above.
+        */}
+        <Route path="/provider" component={ProviderPortalRoute} />
+        <Route path="/provider/*" component={ProviderPortalRoute} />
 
         {/* Everything else falls through to the patient experience. */}
         <Route component={PatientRouter} />

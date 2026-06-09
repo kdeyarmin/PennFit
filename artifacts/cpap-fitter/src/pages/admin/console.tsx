@@ -130,6 +130,11 @@ const AdminProvidersPage = lazy(() =>
     default: m.AdminProvidersPage,
   })),
 );
+const AdminProviderEsignPage = lazy(() =>
+  import("@/pages/admin/admin-provider-esign").then((m) => ({
+    default: m.AdminProviderEsignPage,
+  })),
+);
 const AdminInboundFaxesPage = lazy(() =>
   import("@/pages/admin/admin-inbound-faxes").then((m) => ({
     default: m.AdminInboundFaxesPage,
@@ -884,6 +889,10 @@ function AdminConsole() {
             </Route>
             <Route path="/admin/cases" component={AdminCasesPage} />
             <Route path="/admin/providers" component={AdminProvidersPage} />
+            <Route
+              path="/admin/provider-portal"
+              component={AdminProviderEsignPage}
+            />
             <Route
               path="/admin/inbound-faxes"
               component={AdminInboundFaxesPage}

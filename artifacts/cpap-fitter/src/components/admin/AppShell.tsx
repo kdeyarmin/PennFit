@@ -469,6 +469,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Central physician/NP registry — NPPES-backed",
           },
           {
+            href: "/admin/provider-portal",
+            label: "E-signature portal",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/provider-portal",
+            hint: "Provider e-signatures — stage docs, track signed items, print the audit log",
+          },
+          {
             href: "/admin/inbound-faxes",
             label: "Inbound faxes",
             icon: Inbox,

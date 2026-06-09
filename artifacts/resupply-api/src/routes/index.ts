@@ -46,6 +46,7 @@ import inboxCountsRouter from "./admin/inbox-counts.js";
 import emailInboxRouter from "./admin/email-inbox.js";
 import todayRouter from "./admin/today.js";
 import providersRouter from "./admin/providers.js";
+import adminProviderEsignRouter from "./admin/provider-esign.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
@@ -690,6 +691,13 @@ router.use(todayRouter);
 // NPI registry so CSRs autofill provider records instead of
 // re-keying.
 router.use(providersRouter);
+// /admin/provider-portal/* — employee console for the secure provider
+// e-signature portal: invite/manage provider accounts, stage documents
+// for signature, track the post-signature fulfillment lifecycle
+// (ready-to-print → returned-signed → attached-to-chart → released),
+// and print the hash-chained signature audit log (per document or per
+// provider) for Medicare / insurer review.
+router.use(adminProviderEsignRouter);
 // /admin/patients/:id/prescriptions/:rxId/swo — render the
 // CMS-standardized Standard Written Order as a streaming PDF.
 // Consumes the providers FK + sleep_studies ICD-10 introduced in

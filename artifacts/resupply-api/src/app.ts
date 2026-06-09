@@ -13,6 +13,7 @@ import { registerAuditRequestIdResolver } from "@workspace/resupply-audit";
 import { applyEnvAliases } from "@workspace/resupply-secrets";
 import router from "./routes";
 import storefrontRouter from "./routes/storefront";
+import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
@@ -274,6 +275,39 @@ app.use(
 logger.info(
   { event: "auth_in_house_storefront_mounted" },
   "in-house auth routes mounted at /api/auth (storefront, allowSignUp=true)",
+);
+
+// Third mount of the same auth router for the provider e-signature
+// portal, at /api/provider/auth. Reuses the shared AuthDeps — crucially
+// including the UNIFIED MFA probe (lib/auth-deps.ts), so an enrolled
+// provider is challenged for a TOTP code here exactly as on the other
+// mounts. allowSignUp stays false (providers are invited by staff);
+// password-reset / verify-email links land on the storefront pages
+// (uiPathPrefix unset) which work for any auth.users row. Mounted
+// BEFORE the provider data router below so /api/provider/auth/* resolves
+// to the auth handlers.
+const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
+app.use(
+  "/api/provider/auth",
+  makeAuthRouter(providerAuthDeps, {
+    productName: "PennFit Provider Portal",
+  }),
+);
+logger.info(
+  { event: "auth_in_house_provider_mounted" },
+  "in-house auth routes mounted at /api/provider/auth (provider portal)",
+);
+
+// Provider e-signature portal data routes (/api/provider/*). Mounted at
+// the app root because the route files carry their own /api/provider/*
+// prefix; mounted AFTER the provider /auth router so the auth endpoints
+// win. Each route gates itself via requireProvider (+ MFA for PHI
+// routes); the provider tree is NOT covered by the app-level admin/shop
+// CSRF gates, so requireProvider enforces CSRF on its own mutations.
+app.use(providerPortalRouter);
+logger.info(
+  { event: "provider_portal_mounted" },
+  "provider e-signature portal routes mounted at /api/provider",
 );
 
 // Storefront-specific rate limits (lifted from the deleted
