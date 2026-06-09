@@ -38,6 +38,7 @@ import { logger } from "../../lib/logger";
 import {
   adminRateLimit,
   adminReadRateLimiter,
+  adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -157,6 +158,7 @@ function fireAssignmentEmail(args: {
 
 router.get(
   "/admin/company-calendar",
+  adminReadRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "company_calendar.list", preset: "query" }),
   async (req, res) => {
@@ -258,6 +260,7 @@ router.get(
 
 router.post(
   "/admin/company-calendar",
+  adminWriteRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "company_calendar.create", preset: "mutation" }),
   async (req, res) => {
@@ -328,6 +331,7 @@ router.post(
 
 router.patch(
   "/admin/company-calendar/:id",
+  adminWriteRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "company_calendar.update", preset: "mutation" }),
   async (req, res) => {
@@ -478,6 +482,7 @@ router.patch(
 
 router.delete(
   "/admin/company-calendar/:id",
+  adminWriteRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "company_calendar.delete", preset: "mutation" }),
   async (req, res) => {
