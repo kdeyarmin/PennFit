@@ -150,16 +150,18 @@ function buildSettingView(
   };
 }
 
-// ── Twilio webhook URL reference ────────────────────────────────────
-// The fixed webhook route paths Twilio is pointed at. Every telephony
-// router is mounted under /resupply-api with no extra sub-prefix (see
-// app.ts → app.use("/resupply-api", router); voice/index.ts etc.), so
-// the full URL an operator pastes into the Twilio Console is just
-// `${publicBaseUrl}${path}`. Status-callback paths are set on outbound
-// calls/messages automatically (the app appends ?conversationId=…); the
-// bare path is shown for completeness + the Console fields that accept
-// one. Keep this list in sync with the actual route definitions.
-const TWILIO_WEBHOOK_ENDPOINTS: ReadonlyArray<{
+// ── Telephony webhook URL reference ─────────────────────────────────
+// The fixed webhook route paths each telephony vendor is pointed at —
+// Twilio for voice/SMS, Telnyx for fax. Every telephony router is mounted
+// under /resupply-api with no extra sub-prefix (see app.ts →
+// app.use("/resupply-api", router); voice/index.ts etc.), so the full URL
+// an operator pastes into the vendor portal is just `${publicBaseUrl}${path}`.
+// Status-callback paths are set on outbound calls/messages/faxes
+// automatically (voice/SMS append ?conversationId=…; fax sets the per-fax
+// webhook_url); the bare path is shown for completeness + the portal
+// fields that accept one. Keep this list in sync with the actual route
+// definitions.
+const WEBHOOK_ENDPOINTS: ReadonlyArray<{
   id: string;
   label: string;
   description: string;
@@ -207,16 +209,16 @@ function stripTrailingSlash(s: string): string {
 }
 
 /**
- * Resolve the public origin Twilio webhooks are built from, mirroring the
- * runtime readers EXACTLY (readVoicePublicBaseUrlOrNull / readSmsConfigOrNull):
- * the LIVE process.env value — an explicit RESUPPLY_VOICE_PUBLIC_BASE_URL,
- * else the Railway host.
+ * Resolve the public origin telephony webhooks are built from, mirroring
+ * the runtime readers EXACTLY (readVoicePublicBaseUrlOrNull /
+ * readSmsConfigOrNull): the LIVE process.env value — an explicit
+ * RESUPPLY_VOICE_PUBLIC_BASE_URL, else the Railway host.
  *
  * We deliberately do NOT prefer a just-saved DB value here. This is a
- * "restart" setting: the running process keeps signing inbound Twilio
+ * "restart" setting: the running process keeps verifying inbound webhook
  * signatures and building outbound callbacks from process.env until the
  * boot overlay folds a saved value in on the next deploy. Showing the
- * not-yet-live value would have an operator point Twilio at URLs the
+ * not-yet-live value would have an operator point a vendor at URLs the
  * current process can't verify (signature failures / mismatched
  * callbacks). The saved-but-pending value is surfaced separately as
  * `pendingRestart` so the UI can flag that window instead.
@@ -251,12 +253,13 @@ function resolveVoicePublicBaseUrl(dbState: Map<string, DbState>): {
 }
 
 /**
- * The read-only Twilio-webhook reference surfaced on the config page so a
- * super-admin can copy the exact callback URLs into the Twilio Console.
- * Built from the LIVE base URL the running process actually uses (see
+ * The read-only telephony-webhook reference surfaced on the config page so
+ * a super-admin can copy the exact callback URLs into each vendor portal
+ * (Twilio Console for voice/SMS, Telnyx portal for fax). Built from the
+ * LIVE base URL the running process actually uses (see
  * resolveVoicePublicBaseUrl) + the fixed route paths; no secret.
  */
-function buildTwilioWebhooks(dbState: Map<string, DbState>) {
+function buildWebhookReference(dbState: Map<string, DbState>) {
   const { baseUrl, source, pendingRestart } =
     resolveVoicePublicBaseUrl(dbState);
   return {
@@ -265,7 +268,7 @@ function buildTwilioWebhooks(dbState: Map<string, DbState>) {
     baseUrlKey: "RESUPPLY_VOICE_PUBLIC_BASE_URL",
     pendingRestart,
     endpoints: baseUrl
-      ? TWILIO_WEBHOOK_ENDPOINTS.map((e) => ({
+      ? WEBHOOK_ENDPOINTS.map((e) => ({
           id: e.id,
           label: e.label,
           description: e.description,
@@ -316,6 +319,11 @@ router.get(
       byCategory.get(setting.category)!.push(view);
     }
 
+    // Read-only: the full telephony webhook URLs to paste into each vendor
+    // portal (Twilio Console for voice/SMS, Telnyx for fax), derived from
+    // the (editable) public base URL above.
+    const webhookReference = buildWebhookReference(dbState);
+
     res.json({
       categories: order.map((category) => ({
         category,
@@ -324,9 +332,12 @@ router.get(
       overlayDisabled:
         process.env.APP_CONFIG_OVERLAY_DISABLED === "1" ||
         process.env.APP_CONFIG_OVERLAY_DISABLED === "true",
-      // Read-only: the full Twilio webhook URLs to paste into the Twilio
-      // Console, derived from the (editable) public base URL above.
-      twilioWebhooks: buildTwilioWebhooks(dbState),
+      webhookReference,
+      // Back-compat alias for admin SPA bundles cached from before the
+      // twilioWebhooks → webhookReference rename: an old bundle reads
+      // `twilioWebhooks` and would otherwise hide the webhook card until the
+      // operator reloads. Same object; remove once no stale clients remain.
+      twilioWebhooks: webhookReference,
     });
   },
 );

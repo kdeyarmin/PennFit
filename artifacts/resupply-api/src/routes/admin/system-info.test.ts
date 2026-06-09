@@ -92,6 +92,37 @@ describe("vendor presence", () => {
     expect(res.body.vendors.twilio.voicePhoneConfigured).toBe(false);
   });
 
+  it("reports sendgrid.fromEmailConfigured true when only the API key is set (From defaults to the platform constant)", async () => {
+    asAdmin();
+    // SENDGRID_FROM_EMAIL is deliberately absent — the From address is a
+    // fixed platform constant that createSendgridClient defaults to
+    // (info@pennpaps.com), so email still sends and this row must read
+    // "configured". Reading the raw env var alone reported a misleading
+    // "not configured" for every deploy that relied on the default.
+    mockGetEffectiveEnv.mockResolvedValue({
+      SENDGRID_API_KEY: "SG.xxx",
+    });
+
+    const res = await request(makeApp()).get("/admin/system-info");
+    expect(res.status).toBe(200);
+    expect(res.body.vendors.sendgrid.configured).toBe(true);
+    expect(res.body.vendors.sendgrid.fromEmailConfigured).toBe(true);
+  });
+
+  it("reports sendgrid.fromEmailConfigured false when SendGrid is not configured (no API key)", async () => {
+    asAdmin();
+    // No SENDGRID_API_KEY → email sending is off. The From-address sub-flag
+    // is gated on the API key so it can't read "configured" while the
+    // integration itself is off, even though the platform default constant
+    // (info@pennpaps.com) always exists.
+    mockGetEffectiveEnv.mockResolvedValue({});
+
+    const res = await request(makeApp()).get("/admin/system-info");
+    expect(res.status).toBe(200);
+    expect(res.body.vendors.sendgrid.configured).toBe(false);
+    expect(res.body.vendors.sendgrid.fromEmailConfigured).toBe(false);
+  });
+
   it("reflects other vendor flags straight from the effective env", async () => {
     asAdmin();
     mockGetEffectiveEnv.mockResolvedValue({
