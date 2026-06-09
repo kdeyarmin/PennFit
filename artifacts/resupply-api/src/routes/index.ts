@@ -140,6 +140,7 @@ import claimStatusRouter from "./admin/claim-status.js";
 import billingActionQueueRouter from "./admin/billing-action-queue.js";
 import patientTherapySnapshotRouter from "./admin/patient-therapy-snapshot.js";
 import paymentPlansRouter from "./admin/payment-plans.js";
+import patientPaymentLinkRouter from "./admin/patient-payment-link.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
@@ -452,6 +453,10 @@ router.use(billingActionQueueRouter);
 router.use(patientTherapySnapshotRouter);
 // /admin/.../payment-plans — patient installment-plan tracker (biller B7).
 router.use(paymentPlansRouter);
+// POST /admin/patients/:id/payment-link — email/SMS a patient a hosted
+// Stripe Checkout link to collect a payment (copay / cash-pay balance).
+// patients.update.
+router.use(patientPaymentLinkRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
 // ranked by re-verification urgency (never/terminating/stale) (Biller
 // #31, read-only half). reports.read.
