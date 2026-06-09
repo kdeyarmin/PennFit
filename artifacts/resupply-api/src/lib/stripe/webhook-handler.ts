@@ -364,9 +364,8 @@ export const stripeWebhookHandler: RequestHandler = async (
           session.mode === "setup" &&
           session.metadata?.purpose === "patient_autopay_setup"
         ) {
-          const { recordAutopayAuthorization } = await import(
-            "../billing/patient-autopay.js"
-          );
+          const { recordAutopayAuthorization } =
+            await import("../billing/patient-autopay.js");
           await recordAutopayAuthorization(config, session, log);
           break;
         }
@@ -632,9 +631,8 @@ export const stripeWebhookHandler: RequestHandler = async (
           // removed via Stripe's own Customer Portal. Best-effort — a
           // failure here must not 500 the webhook.
           try {
-            const { clearAutopayByPaymentMethod } = await import(
-              "../billing/patient-autopay.js"
-            );
+            const { clearAutopayByPaymentMethod } =
+              await import("../billing/patient-autopay.js");
             await clearAutopayByPaymentMethod(pm.id, log);
           } catch (autopayErr) {
             log?.warn?.(
