@@ -1029,6 +1029,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
           },
           {
+            href: "/admin/bot-playground",
+            label: "Bot playground",
+            icon: FlaskConical,
+            matchPrefix: "/admin/bot-playground",
+            requiredPermission: "admin.tools.manage",
+            hint: "Rehearse the chat & voice bots against scripted situations (synthetic data, simulated tools) to tune their prompts",
+          },
+          {
             href: "/admin/system/configuration",
             label: "Configuration & tests",
             icon: SlidersHorizontal,
