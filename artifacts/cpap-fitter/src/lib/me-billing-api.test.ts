@@ -10,8 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
+  createAutopaySetupSession,
   createPaymentCheckoutSession,
+  fetchClaimDetail,
+  fetchClaims,
+  fetchPaymentMethods,
   formatMoneyCents,
+  removePaymentMethod,
+  setAutopayEnabled,
 } from "./me-billing-api";
 
 // ── fetch mock ──────────────────────────────────────────────────────────────
@@ -234,5 +240,103 @@ describe("formatMoneyCents", () => {
 
   it("formats zero", () => {
     expect(formatMoneyCents(0)).toBe("$0.00");
+  });
+});
+
+// ── payment methods + autopay ───────────────────────────────────────────────
+
+describe("fetchPaymentMethods", () => {
+  it("GETs /api/me/payment-methods with credentials", async () => {
+    const body = {
+      hasCard: true,
+      autopayEnabled: false,
+      card: null,
+      authorizedAt: null,
+    };
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => body });
+    const result = await fetchPaymentMethods();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/me/payment-methods");
+    expect(init.credentials).toBe("include");
+    expect(result).toEqual(body);
+  });
+});
+
+describe("createAutopaySetupSession", () => {
+  it("POSTs the enableAutopay flag to setup-session", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ url: "https://checkout.stripe.com/setup" }),
+    });
+    const result = await createAutopaySetupSession({ enableAutopay: true });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/me/payment-methods/setup-session");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ enableAutopay: true });
+    expect(result.url).toBe("https://checkout.stripe.com/setup");
+  });
+
+  it("surfaces the server error message on failure", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: "stripe_not_configured" }),
+    });
+    await expect(
+      createAutopaySetupSession({ enableAutopay: false }),
+    ).rejects.toThrow("stripe_not_configured");
+  });
+});
+
+describe("setAutopayEnabled", () => {
+  it("PATCHes the enabled flag to /autopay", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true, autopayEnabled: false }),
+    });
+    await setAutopayEnabled(false);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/me/payment-methods/autopay");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: false });
+  });
+});
+
+describe("removePaymentMethod", () => {
+  it("DELETEs /api/me/payment-methods without a body", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await removePaymentMethod();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/me/payment-methods");
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+  });
+});
+
+// ── claims (charges & credits) ───────────────────────────────────────────────
+
+describe("fetchClaims / fetchClaimDetail", () => {
+  it("GETs the claims list", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ claims: [] }),
+    });
+    await fetchClaims();
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/me/claims");
+  });
+
+  it("GETs a single claim's detail by id", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ claim: {}, lineItems: [], events: [] }),
+    });
+    await fetchClaimDetail("claim-123");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/me/claims/claim-123");
+    expect(init.credentials).toBe("include");
   });
 });

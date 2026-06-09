@@ -86,6 +86,38 @@ function csrfHeader(): Record<string, string> {
   return token ? { "X-PF-CSRF": decodeURIComponent(token) } : {};
 }
 
+/** Shared POST/PATCH/DELETE helper for the signed-in /api/me/* mutations.
+ *  Carries the session cookie + the conditional-CSRF header and surfaces
+ *  the server's `message`/`error` field on failure (mirrors
+ *  createPaymentCheckoutSession's error contract). */
+async function meSend<T>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const json = (await res.json()) as { message?: string; error?: string };
+      detail = json.message ?? json.error ?? "";
+    } catch {
+      // ignore
+    }
+    throw new Error(detail || `${method} /api${path} failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
 export function fetchBillingBalance(): Promise<BillingBalanceResponse> {
   return meGet<BillingBalanceResponse>("/me/billing-balance");
 }
@@ -226,4 +258,103 @@ export async function fetchPersonalEstimate(): Promise<PersonalEstimateResponse>
   } catch {
     return { available: false };
   }
+}
+
+// ─── Payment methods + autopay (card on file) ───────────────────────
+
+export interface SavedCard {
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+}
+
+export interface PaymentMethodStatus {
+  hasCard: boolean;
+  autopayEnabled: boolean;
+  card: SavedCard | null;
+  authorizedAt: string | null;
+}
+
+/** The signed-in patient's saved card + autopay toggle state. */
+export function fetchPaymentMethods(): Promise<PaymentMethodStatus> {
+  return meGet<PaymentMethodStatus>("/me/payment-methods");
+}
+
+/** Start a Stripe Checkout *setup* session to save a card. The caller
+ *  navigates the browser to the returned URL; the saved card lands via
+ *  the setup webhook. `enableAutopay` flips autopay ON the moment the
+ *  card is saved (otherwise it stays OFF and the patient toggles later). */
+export function createAutopaySetupSession(input: {
+  enableAutopay: boolean;
+}): Promise<{ url: string }> {
+  return meSend<{ url: string }>(
+    "/me/payment-methods/setup-session",
+    "POST",
+    input,
+  );
+}
+
+/** Toggle autopay. Requires a card on file (409 otherwise). */
+export function setAutopayEnabled(
+  enabled: boolean,
+): Promise<{ ok: boolean; autopayEnabled: boolean }> {
+  return meSend("/me/payment-methods/autopay", "PATCH", { enabled });
+}
+
+/** Remove the saved card (detaches it at Stripe + revokes autopay). */
+export function removePaymentMethod(): Promise<{ ok: boolean }> {
+  return meSend("/me/payment-methods", "DELETE");
+}
+
+// ─── Claims (charges & credits) ─────────────────────────────────────
+
+export interface MeClaimSummary {
+  id: string;
+  payerName: string | null;
+  dateOfService: string | null;
+  status: string;
+  totalBilledCents: number | null;
+  totalPaidCents: number | null;
+  patientResponsibilityCents: number;
+  submittedAt: string | null;
+  decisionAt: string | null;
+  paidAt: string | null;
+}
+
+export interface MeClaimLineItem {
+  hcpcsCode: string | null;
+  modifier: string | null;
+  description: string | null;
+  quantity: number;
+  billedCents: number;
+  allowedCents: number;
+  paidCents: number;
+  status: string;
+}
+
+export interface MeClaimEvent {
+  eventType: string;
+  amountCents: number | null;
+  payerRef: string | null;
+  note: string | null;
+  occurredAt: string;
+}
+
+export interface MeClaimDetail {
+  claim: MeClaimSummary & { denialReason: string | null };
+  lineItems: MeClaimLineItem[];
+  events: MeClaimEvent[];
+}
+
+/** The signed-in patient's claims — each claim is the unit a charge +
+ *  its credits hang off of. */
+export function fetchClaims(): Promise<{ claims: MeClaimSummary[] }> {
+  return meGet<{ claims: MeClaimSummary[] }>("/me/claims");
+}
+
+/** Charge/credit detail for one claim: billed line items (charges) +
+ *  the claim event log (payer payments, adjustments = credits). */
+export function fetchClaimDetail(claimId: string): Promise<MeClaimDetail> {
+  return meGet<MeClaimDetail>(`/me/claims/${encodeURIComponent(claimId)}`);
 }

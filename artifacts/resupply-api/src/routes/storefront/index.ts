@@ -11,6 +11,7 @@ import chatRouter from "./chat.js";
 import sleepCoachRouter from "./sleep-coach.js";
 import meClaimsRouter from "./me-claims.js";
 import mePaymentsRouter from "./me-payments.js";
+import mePaymentMethodsRouter from "./me-payment-methods.js";
 import meBillingRouter from "./me-billing.js";
 import meInsuranceEstimateRouter from "./me-insurance-estimate.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
@@ -48,6 +49,10 @@ router.use(meClaimsRouter);
 // list. The intent's success is processed via the existing
 // /resupply-api/stripe/webhook handler (payment_intent.* cases).
 router.use(mePaymentsRouter);
+// /api/me/payment-methods — patient-controlled card-on-file + autopay
+// toggle. Saving a card never charges; the worker (gated by the
+// seeded-OFF billing.patient_autopay flag + an env cron) does.
+router.use(mePaymentMethodsRouter);
 // /api/me/billing-statements — the patient's own statement history
 // + on-demand PDF re-render (no PDF persistence — the line_items_json
 // snapshot is the source of truth).
