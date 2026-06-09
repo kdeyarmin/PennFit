@@ -1,4 +1,4 @@
--- 0253_admin_assistant_flag — Control Center toggle for PennPilot, the
+-- 0254_admin_assistant_flag — Control Center toggle for PennPilot, the
 -- in-app admin program-manager / tech-support assistant.
 --
 -- Adds the `admin.assistant` feature flag. When ENABLED (and an LLM
