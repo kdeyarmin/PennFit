@@ -4,10 +4,12 @@
  * "manufacturer cadence" recommendations — they match the table on
  * /learn/replacement-schedule.
  *
- * The SKU strings MUST stay in sync with the OpenAPI spec
- * (`SubscribeReminderRequest.items[].sku`). If you add a new SKU,
- * update both here and in `lib/api-spec/openapi.yaml` and re-run
- * `pnpm --filter @workspace/api-spec run codegen`.
+ * The SKU strings MUST stay in sync with the API's reminder SKU enum
+ * (`SubscribeReminderRequest.items[].sku`) — the hand-maintained
+ * `@workspace/api-zod` storefront schema and the api-client types. If
+ * you add a new SKU, update it in those places too. (The OpenAPI/orval
+ * codegen pipeline was retired in Task #37; those types are hand-edited
+ * now.)
  */
 export type ReminderSku =
   | "maskCushion"
