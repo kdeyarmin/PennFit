@@ -241,8 +241,11 @@ export async function registerPaymentPlanAutochargeJob(
   const cron = process.env.BILLING_PAYMENT_PLAN_AUTOCHARGE_CRON?.trim();
   if (cron) {
     await boss.schedule(PAYMENT_PLAN_AUTOCHARGE_JOB, cron);
+    // Don't log the raw cron string — it's read straight from the
+    // environment and CodeQL flags logging env values as clear-text
+    // logging of sensitive information. The boolean is all ops needs.
     logger.info(
-      { queue: PAYMENT_PLAN_AUTOCHARGE_JOB, cron },
+      { queue: PAYMENT_PLAN_AUTOCHARGE_JOB, scheduled: true },
       "payment-plan-autocharge scheduled",
     );
   } else {
