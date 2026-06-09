@@ -127,26 +127,24 @@ router.get("/me/claims/:claimId", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const [
-    { data: lines, error: linesErr },
-    { data: events, error: eventsErr },
-  ] = await Promise.all([
-    supabase
-      .schema("resupply")
-      .from("insurance_claim_line_items")
-      .select(
-        "hcpcs_code, modifier, description, quantity, billed_cents, allowed_cents, paid_cents, status",
-      )
-      .eq("claim_id", claim.id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .schema("resupply")
-      .from("insurance_claim_events")
-      .select("event_type, amount_cents, payer_ref, note, occurred_at")
-      .eq("claim_id", claim.id)
-      .order("occurred_at", { ascending: false })
-      .limit(30),
-  ]);
+  const [{ data: lines, error: linesErr }, { data: events, error: eventsErr }] =
+    await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("insurance_claim_line_items")
+        .select(
+          "hcpcs_code, modifier, description, quantity, billed_cents, allowed_cents, paid_cents, status",
+        )
+        .eq("claim_id", claim.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .schema("resupply")
+        .from("insurance_claim_events")
+        .select("event_type, amount_cents, payer_ref, note, occurred_at")
+        .eq("claim_id", claim.id)
+        .order("occurred_at", { ascending: false })
+        .limit(30),
+    ]);
   if (linesErr) throw linesErr;
   if (eventsErr) throw eventsErr;
   // Strip the actor_email from events — patient doesn't need our
