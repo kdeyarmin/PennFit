@@ -42,6 +42,7 @@ import { logger } from "./logger";
 export const FEATURE_FLAG_KEYS = [
   "sms.reminders",
   "email.reminders",
+  "email.auto_reply",
   "voice.agent",
   "storefront.chatbot",
   "storefront.checkout",

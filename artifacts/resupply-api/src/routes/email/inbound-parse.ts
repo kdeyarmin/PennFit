@@ -24,13 +24,20 @@
 //      every parsed attachment through the shared
 //      `persistInboundAttachment` helper — same allowlist + 5MB cap
 //      + private-GCS ACL the MMS path uses.
-//   5. Marks the conversation `awaiting_admin` so a team member sees
-//      the new evidence in the inbox. We deliberately do NOT run the
-//      keyword router or AI fallback on free-text email replies —
-//      the ADR (013-messaging-sms-email-architecture.md §"Why no
-//      inbound email parser") explains that confirmation/decline
-//      decisions on email come from the click-through link, not the
-//      patient's free-text reply.
+//   5. Optionally lets the storefront chatbot draft and send a reply
+//      (opt-in via the `email.auto_reply` feature flag — OFF by
+//      default). When the flag is on AND an LLM provider is configured,
+//      the same knowledge base that powers the `/api/chat` widget reads
+//      the patient's message and either answers it by email
+//      (conversation → `awaiting_patient`) or HANDS OFF anything
+//      order/account/clinical-specific or low-confidence. When the flag
+//      is off, or the bot hands off, the conversation is marked
+//      `awaiting_admin` so a teammate sees it in the inbox — the
+//      historical default. We still do NOT run the keyword router on
+//      email: confirmation/decline decisions come from the
+//      click-through link (ADR 013-messaging-sms-email-architecture.md
+//      §"Why no inbound email parser"), not free-text parsing; the
+//      chatbot reply is informational support, not an action dispatcher.
 //
 // Why we always return 200 on application errors:
 //   SendGrid retries 5xx aggressively (up to 72h). A duplicated
@@ -47,9 +54,18 @@ import {
   getSupabaseServiceRoleClient,
   tryUpsertPatientLatestMessageSb,
   type Json,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
+import {
+  createSendgridClient,
+  EmailApiError,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { isFeatureEnabled } from "../../lib/feature-flags";
+import { selectLlmProvider } from "../../lib/llm-provider";
+import { generateEmailReply } from "../../lib/messaging/email-auto-reply";
 import {
   MAX_BYTES,
   persistInboundAttachment,
@@ -396,9 +412,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     });
   }
 
-  // 8. Refresh latest-message projection (best-effort) + flip the
-  // conversation to awaiting_admin so a teammate sees the reply in
-  // the inbox.
+  // 8. Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessageSb(
     supabase,
     {
@@ -409,12 +423,63 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     },
     req.log,
   );
-  const { error: awaitingErr } = await supabase
+
+  // 8b. Chatbot email auto-reply (opt-in via the `email.auto_reply`
+  // feature flag). When enabled AND an LLM provider is configured, the
+  // storefront chatbot brain drafts a reply to the patient's message and
+  // we send it back by email — turning "the reply landed in the inbox"
+  // into an answered conversation. The model HANDS OFF (and we fall
+  // through to the awaiting_admin path) for anything order/account/
+  // clinical specific, or when it isn't confident — see
+  // `lib/messaging/email-auto-reply.ts`. A failure here NEVER breaks the
+  // webhook: worst case the thread simply waits for a human, exactly as
+  // it did before this feature existed. The cheap provider check runs
+  // first so dev/preview environments with no LLM key skip the flag read
+  // and thread fetch entirely.
+  let autoReplied = false;
+  if (selectLlmProvider().provider !== "offline") {
+    try {
+      if (await isFeatureEnabled("email.auto_reply")) {
+        autoReplied = await attemptEmailAutoReply({
+          supabase,
+          conversationId,
+          patientId,
+          toEmail: fromEmail,
+          inboundSubject: subject,
+          inboundBody: body,
+          inboundMessageId,
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        });
+      }
+    } catch (err) {
+      // Belt-and-braces: attemptEmailAutoReply is written to swallow its
+      // own failures, but a programming error must not 5xx the webhook
+      // (SendGrid would retry → duplicate inbound rows). Degrade to the
+      // human-handoff path.
+      logger.error(
+        {
+          event: "email_auto_reply_crashed",
+          err: serializeErr(err),
+          conversation_id: conversationId,
+        },
+        "email.inbound-parse: auto-reply crashed (falling back to human handoff)",
+      );
+      autoReplied = false;
+    }
+  }
+
+  // 9. Set the conversation status. If the bot answered, the ball is back
+  // in the patient's court (awaiting_patient) — the auto-reply already
+  // persisted its own outbound message + audit row. Otherwise flip to
+  // awaiting_admin so a teammate sees the reply in the inbox.
+  const nextStatus = autoReplied ? "awaiting_patient" : "awaiting_admin";
+  const { error: statusErr } = await supabase
     .schema("resupply")
     .from("conversations")
-    .update({ status: "awaiting_admin", updated_at: inboundIso })
+    .update({ status: nextStatus, updated_at: inboundIso })
     .eq("id", conversationId);
-  if (awaitingErr) throw awaitingErr;
+  if (statusErr) throw statusErr;
 
   await safeAudit({
     action: "messaging.inbound.received",
@@ -429,6 +494,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       outcome: "matched_patient",
       sendgrid_message_id: sendgridMessageId,
       attachment_count: counts.attempted,
+      auto_replied: autoReplied,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -436,6 +502,231 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 
   res.status(200).json({ ok: true });
 });
+
+// ---------------------------------------------------------------------------
+// Email auto-reply
+// ---------------------------------------------------------------------------
+
+interface AttemptEmailAutoReplyInput {
+  supabase: ResupplySupabaseClient;
+  conversationId: string;
+  patientId: string;
+  /** Patient's email address (the inbound `From`) — where the reply goes. */
+  toEmail: string;
+  inboundSubject: string | null;
+  inboundBody: string;
+  /** Id of the inbound row we just inserted, so it's excluded from context. */
+  inboundMessageId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+}
+
+/**
+ * Draft a reply with the chatbot brain and, if it's confident enough to
+ * answer, send it back by email and persist the outbound message. Returns
+ * `true` only when a reply was actually sent to the patient.
+ *
+ * Expected failure modes (model hand-off, missing SendGrid config, vendor
+ * API error) return `false` so the caller leaves the thread for a human.
+ * Unexpected errors (a DB read failure, a non-vendor exception) are
+ * allowed to throw; the caller wraps this in try/catch and degrades to the
+ * same `false` (awaiting_admin) path, so the webhook never 5xxs either way.
+ */
+async function attemptEmailAutoReply(
+  input: AttemptEmailAutoReplyInput,
+): Promise<boolean> {
+  const {
+    supabase,
+    conversationId,
+    patientId,
+    toEmail,
+    inboundSubject,
+    inboundBody,
+    inboundMessageId,
+  } = input;
+
+  // Pull a short window of prior turns for context, excluding the inbound
+  // row we just inserted (its body is passed separately as the message to
+  // reply to). Oldest-first after the reverse.
+  const { data: recent, error: recentErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .select("id, direction, body, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(7);
+  if (recentErr) throw recentErr;
+  const thread = (recent ?? [])
+    .slice()
+    .reverse()
+    .filter((m) => m.id !== inboundMessageId && m.body !== null)
+    .map((m) => ({
+      role:
+        m.direction === "inbound" ? ("patient" as const) : ("agent" as const),
+      body: (m.body as string) ?? "",
+    }));
+
+  const drafted = await generateEmailReply({
+    body: inboundBody,
+    subject: inboundSubject,
+    thread,
+  });
+  if (drafted.kind !== "reply") return false;
+
+  const cfg = readEmailConfigOrNull();
+  if (!cfg) return false;
+
+  let sg;
+  try {
+    sg = createSendgridClient({
+      apiKey: cfg.sendgridApiKey,
+      fromEmail: cfg.sendgridFromEmail,
+      fromName: cfg.sendgridFromName,
+    });
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      logger.warn(
+        {
+          event: "email_auto_reply_config_error",
+          conversation_id: conversationId,
+        },
+        "email.inbound-parse: SendGrid not configured — handing off",
+      );
+      return false;
+    }
+    throw err;
+  }
+
+  const subjectLine = buildReplySubject(inboundSubject);
+  let vendorRef: string;
+  try {
+    const r = await sg.sendEmail({
+      to: toEmail,
+      subject: subjectLine,
+      text: drafted.reply,
+      html: renderAutoReplyHtml(drafted.reply),
+      customArgs: {
+        conversation_id: conversationId,
+        patient_id: patientId,
+        kind: "email_auto_reply",
+      },
+    });
+    vendorRef = r.messageId;
+  } catch (err) {
+    if (err instanceof EmailApiError || err instanceof EmailConfigError) {
+      logger.warn(
+        {
+          event: "email_auto_reply_send_failed",
+          conversation_id: conversationId,
+          status: err instanceof EmailApiError ? (err.status ?? null) : null,
+        },
+        "email.inbound-parse: SendGrid send failed — handing off",
+      );
+      return false;
+    }
+    throw err;
+  }
+
+  // Persist the outbound reply (best-effort). The email is already out;
+  // a DB hiccup here must NOT make us report failure (which would leave
+  // the thread awaiting_admin AND have sent a reply — confusing). Log
+  // loud so ops can reconcile the missing row by vendorRef.
+  const sentAt = new Date();
+  const sentIso = sentAt.toISOString();
+  let outboundMessageId: string | null = null;
+  const { data: outMsg, error: outErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_role: "agent",
+      body: drafted.reply,
+      delivery_status: "queued",
+      vendor_metadata: {
+        sendgrid_message_id: vendorRef,
+        auto_reply: true,
+      } as unknown as Json,
+      sent_at: sentIso,
+    })
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (outErr) {
+    logger.error(
+      {
+        event: "email_auto_reply_persist_failed",
+        err: serializeErr(outErr),
+        conversation_id: conversationId,
+        vendor_ref: vendorRef,
+      },
+      "email.inbound-parse: auto-reply sent but messages row not written — manual reconciliation required",
+    );
+  } else {
+    outboundMessageId = outMsg?.id ?? null;
+  }
+
+  // Refresh the latest-message projection for the outbound (best-effort).
+  await tryUpsertPatientLatestMessageSb(supabase, {
+    conversationId,
+    body: drafted.reply,
+    direction: "outbound",
+    messageAt: sentAt,
+  });
+
+  await safeAudit({
+    action: "messaging.reply.sent",
+    adminEmail: null,
+    adminUserId: null,
+    targetTable: "conversations",
+    targetId: conversationId,
+    metadata: {
+      channel: "email",
+      conversation_id: conversationId,
+      patient_id: patientId,
+      message_id: outboundMessageId,
+      status: "ok",
+      auto_reply: true,
+      body_length: drafted.reply.length,
+      vendor_ref: vendorRef,
+    },
+    ip: input.ip,
+    userAgent: input.userAgent,
+  });
+
+  return true;
+}
+
+/**
+ * Build the reply subject. Re-uses the inbound subject with a single
+ * `Re:` prefix (so the patient's mail client threads it) and strips
+ * CR/LF — the SendGrid client rejects header newlines, but failing here
+ * would lose the reply rather than just losing the prefix.
+ */
+function buildReplySubject(subject: string | null): string {
+  const base = (subject ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 200);
+  if (!base) return "Re: Your message to PennPaps";
+  return /^re:/i.test(base) ? base : `Re: ${base}`;
+}
+
+/** Render the plain-text reply as a minimally-styled HTML body. */
+function renderAutoReplyHtml(reply: string): string {
+  return `<div style="white-space: pre-wrap; font-family: -apple-system, system-ui, sans-serif; line-height: 1.5; color: #1f2937">${escapeHtml(
+    reply,
+  )}</div>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
