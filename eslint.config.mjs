@@ -99,6 +99,15 @@ export default [
       // that should be validated. Types are shim'd via
       // src/types/capacitor-cli.d.ts when @capacitor/cli isn't installed.
       "artifacts/cpap-fitter/capacitor.config.ts",
+      // Operator-critical CLI entrypoints (preflight-prod-env,
+      // verify-deploy, auth-bootstrap-admin, auth-set-admin-password,
+      // seed-stripe-products, …) and the Playwright e2e suite. These had
+      // ZERO static analysis beyond typecheck; a lint-class bug here
+      // (unused var masking a typo, etc.) has outsized blast radius
+      // because scripts/src touches prod-env validation and admin
+      // password setting.
+      "scripts/src/**/*.ts",
+      "e2e/**/*.ts",
     ],
     languageOptions: {
       ecmaVersion: 2024,
@@ -208,6 +217,40 @@ export default [
     ],
     rules: {
       "no-restricted-syntax": ["error", RESTRICT_UPSERT_CREDENTIAL],
+    },
+  },
+
+  // Type-aware overlay for the async-heavy voice + worker layers.
+  //
+  // The base config above is the non-type-aware `recommended` set, so the
+  // highest-value TS rules for THIS codebase — the ones that need the type
+  // checker — are off everywhere. The voice bridge and the pg-boss worker
+  // jobs are where unhandled async bugs actually bite: a dropped `await`
+  // or a fire-and-forget without its own `.catch` becomes an unhandled
+  // rejection that can crash the process (the exact failure mode the
+  // "a flaky model call NEVER delays hangup" invariant guards against —
+  // voice summaries are deliberately `void`-ed with internal error
+  // swallowing, and this rule keeps that contract honest).
+  //
+  // Scoped to these two dirs (not the whole API) to keep the type-aware
+  // pass — which is slower and stricter — tractable; widening it is a
+  // follow-up. Test files are excluded: they intentionally float promises
+  // and assert on rejections.
+  {
+    files: [
+      "artifacts/resupply-api/src/lib/voice/**/*.ts",
+      "artifacts/resupply-api/src/worker/**/*.ts",
+    ],
+    ignores: ["**/*.test.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
     },
   },
 ];

@@ -8,7 +8,7 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "lint": "pnpm run lint:resupply",
-    "lint:resupply": "eslint --max-warnings 0 \"lib/resupply-*/src/**/*.{ts,tsx}\" \"artifacts/resupply-api/src/**/*.ts\" \"artifacts/cpap-fitter/src/**/*.{ts,tsx}\"",
+    "lint:resupply": "eslint --max-warnings 0 \"lib/resupply-*/src/**/*.{ts,tsx}\" \"artifacts/resupply-api/src/**/*.ts\" \"artifacts/cpap-fitter/src/**/*.{ts,tsx}\" \"scripts/src/**/*.ts\" \"e2e/**/*.ts\"",
     "verify": "pnpm run lint:resupply && pnpm run typecheck && scripts/check-resupply-architecture.sh && scripts/check-admin-route-gates.sh && pnpm run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
