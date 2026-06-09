@@ -149,6 +149,10 @@ const patchLineBody = z
     allowedCents: z.number().int().min(0).optional(),
     paidCents: z.number().int().min(0).optional(),
     denialReason: z.string().trim().max(2000).nullable().optional(),
+    // 837P loop-2400 NTE narrative (migration 0248). Capped at the X12
+    // NTE02 80-char limit; the EDI builder truncates too, but reject
+    // overflow at the boundary so the operator sees it. Payer-facing.
+    narrative: z.string().trim().max(80).nullable().optional(),
   })
   .strict();
 
@@ -750,6 +754,7 @@ router.patch(
     if (b.allowedCents !== undefined) update.allowed_cents = b.allowedCents;
     if (b.paidCents !== undefined) update.paid_cents = b.paidCents;
     if (b.denialReason !== undefined) update.denial_reason = b.denialReason;
+    if (b.narrative !== undefined) update.narrative = b.narrative;
 
     const { error } = await supabase
       .schema("resupply")

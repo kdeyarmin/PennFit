@@ -498,7 +498,7 @@ export async function buildOneDetail(
     supabase
       .schema("resupply")
       .from("insurance_claim_line_items")
-      .select("hcpcs_code, modifier, billed_cents, quantity")
+      .select("hcpcs_code, modifier, billed_cents, quantity, narrative")
       .eq("claim_id", claim.id)
       .order("created_at", { ascending: true }),
     supabase
@@ -643,6 +643,10 @@ export async function buildOneDetail(
       units: l.quantity,
       serviceDate: claim.date_of_service,
       diagnosisPointers: [1],
+      // Loop 2400 NTE*ADD — Medicare DME requires a narrative (item
+      // description + MSRP) on miscellaneous/NOC HCPCS lines. The builder
+      // emits the NTE only when this is set; null → no NTE.
+      note: (l.narrative as string | null) ?? null,
     })),
     renderingProvider: renderingProvider
       ? {

@@ -1672,6 +1672,12 @@ export interface Database {
           unit_cost_cents: number | null;
           cost_source: string | null;
           cost_captured_at: string | null;
+          // Migration 0248: payer-facing 837P line narrative (loop 2400
+          // NTE*ADD). Required by Medicare DME for miscellaneous/NOC HCPCS
+          // (item description + MSRP). null = no NTE emitted. Distinct from
+          // `description` (internal label) and the claim `notes` (internal,
+          // never transmitted). Capped at 80 chars (X12 NTE02).
+          narrative: string | null;
           status: "pending" | "accepted" | "denied" | "paid";
           denial_reason: string | null;
           created_at: string;

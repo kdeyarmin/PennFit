@@ -12,7 +12,7 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { preflightClaim } from "./claim-preflight";
+import { isNocHcpcs, preflightClaim } from "./claim-preflight";
 
 const CLAIM_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PATIENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -469,6 +469,27 @@ describe("preflightClaim", () => {
       kind: "set_referring_provider",
       claimId: CLAIM_ID,
     });
+  });
+});
+
+describe("isNocHcpcs", () => {
+  it("flags miscellaneous / not-otherwise-classified DME codes", () => {
+    for (const code of ["E1399", "A9999", "K0108", "A4649", "E1699"]) {
+      expect(isNocHcpcs(code)).toBe(true);
+    }
+  });
+  it("is case-insensitive and trims", () => {
+    expect(isNocHcpcs("  e1399 ")).toBe(true);
+  });
+  it("does not flag standard CPAP/supply codes", () => {
+    for (const code of ["E0601", "A7030", "A7034", "A7038", "E0562"]) {
+      expect(isNocHcpcs(code)).toBe(false);
+    }
+  });
+  it("handles null/undefined/empty", () => {
+    expect(isNocHcpcs(null)).toBe(false);
+    expect(isNocHcpcs(undefined)).toBe(false);
+    expect(isNocHcpcs("")).toBe(false);
   });
 });
 
