@@ -11,7 +11,8 @@
 // who hasn't set up two-factor is bounced to enrollment first. /me is
 // reachable without MFA so the SPA can decide where to route.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -23,6 +24,22 @@ import {
 } from "../../middlewares/requireProvider";
 
 const router: IRouter = Router();
+
+// IP-keyed rate limiter in front of every provider data route. The
+// /api/provider tree is not covered by the app-level admin/shop limiters,
+// so this is its defence-in-depth cap (and the gate static analysis
+// recognises — CodeQL js/missing-rate-limiting only credits
+// express-rate-limit, not the custom session/CSRF middleware). 300/15min
+// per IP is well above any honest provider session but well below a
+// scripted flood.
+const providerPortalRateLimiter = expressRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 const SUBJECT_LABELS: Record<string, string> = {
   prescription: "Prescription",
@@ -46,54 +63,60 @@ function esignStatement(name: string, npi: string | null): string {
   );
 }
 
-router.get("/api/provider/me", ...requireProvider, async (req, res) => {
-  const account = req.providerAccount!;
-  const supabase = getSupabaseServiceRoleClient();
+router.get(
+  "/api/provider/me",
+  providerPortalRateLimiter,
+  ...requireProvider,
+  async (req, res) => {
+    const account = req.providerAccount!;
+    const supabase = getSupabaseServiceRoleClient();
 
-  // Best-effort last-login stamp.
-  await supabase
-    .schema("resupply")
-    .from("provider_portal_accounts")
-    .update({ last_login_at: new Date().toISOString() })
-    .eq("id", account.id);
+    // Best-effort last-login stamp.
+    await supabase
+      .schema("resupply")
+      .from("provider_portal_accounts")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("id", account.id);
 
-  const { data: provider, error: pErr } = await supabase
-    .schema("resupply")
-    .from("providers")
-    .select("id, npi, legal_name, practice_name")
-    .eq("id", account.providerId)
-    .limit(1)
-    .maybeSingle();
-  if (pErr) throw pErr;
+    const { data: provider, error: pErr } = await supabase
+      .schema("resupply")
+      .from("providers")
+      .select("id, npi, legal_name, practice_name")
+      .eq("id", account.providerId)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw pErr;
 
-  const { count: pendingCount } = await supabase
-    .schema("resupply")
-    .from("provider_signature_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("provider_id", account.providerId)
-    .eq("status", "pending");
+    const { count: pendingCount } = await supabase
+      .schema("resupply")
+      .from("provider_signature_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("provider_id", account.providerId)
+      .eq("status", "pending");
 
-  res.json({
-    account: {
-      id: account.id,
-      email: account.emailLower,
-      status: account.status,
-      mfaEnrolled: account.mfaEnrolledAt != null,
-    },
-    provider: provider
-      ? {
-          id: provider.id,
-          npi: provider.npi,
-          legalName: provider.legal_name,
-          practiceName: provider.practice_name,
-        }
-      : null,
-    pendingCount: pendingCount ?? 0,
-  });
-});
+    res.json({
+      account: {
+        id: account.id,
+        email: account.emailLower,
+        status: account.status,
+        mfaEnrolled: account.mfaEnrolledAt != null,
+      },
+      provider: provider
+        ? {
+            id: provider.id,
+            npi: provider.npi,
+            legalName: provider.legal_name,
+            practiceName: provider.practice_name,
+          }
+        : null,
+      pendingCount: pendingCount ?? 0,
+    });
+  },
+);
 
 router.get(
   "/api/provider/queue",
+  providerPortalRateLimiter,
   ...requireProvider,
   requireProviderMfaEnrolled,
   async (req, res) => {
@@ -155,6 +178,7 @@ async function loadOwnRequest(
 
 router.get(
   "/api/provider/queue/:id",
+  providerPortalRateLimiter,
   ...requireProvider,
   requireProviderMfaEnrolled,
   async (req, res) => {
@@ -210,6 +234,7 @@ const signBody = z
 
 router.post(
   "/api/provider/queue/:id/sign",
+  providerPortalRateLimiter,
   ...requireProvider,
   requireProviderMfaEnrolled,
   async (req, res) => {
@@ -309,6 +334,7 @@ const declineBody = z
 
 router.post(
   "/api/provider/queue/:id/decline",
+  providerPortalRateLimiter,
   ...requireProvider,
   requireProviderMfaEnrolled,
   async (req, res) => {
