@@ -677,7 +677,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                     </span>
                     {p.approvedThrough && (
                       <span style={{ color: "hsl(var(--ink-3))" }}>
-                        thru {new Date(p.approvedThrough).toLocaleDateString()}
+                        thru {formatDateOnly(p.approvedThrough)}
                       </span>
                     )}
                   </div>
