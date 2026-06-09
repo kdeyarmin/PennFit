@@ -32,6 +32,9 @@
 //   400 invalid_body / invalid_order_id    — input validation
 //   404 order_not_found                    — id matched no row
 //   409 order_not_paid                     — status != 'paid'
+//   409 order_requires_signed_paperwork    — required intake paperwork
+//                                            unsigned (global or per-payer
+//                                            requirement); ship blocked
 //   409 order_not_shipped                  — delivered without shipped_at
 //   409 order_already_refunded             — refund attempt on refunded
 //   409 order_no_payment_intent            — refund attempt with no PI
@@ -62,6 +65,7 @@ import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipp
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
 import { autoSendPatientPacketOnDelivery } from "../../lib/patient-packet/auto-send-on-delivery";
+import { evaluatePaperworkGateForCustomer } from "../../lib/paperwork/require-signed-paperwork";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -578,6 +582,38 @@ router.post(
       res.status(409).json({
         error: "order_not_paid",
         currentStatus: existing.status,
+      });
+      return;
+    }
+
+    // Verification stop: required intake paperwork must be signed before
+    // a patient-linked order can be marked shipped. Gated globally (the
+    // `orders.require_signed_paperwork` flag) and/or per-payer
+    // (payer_profiles.requires_signed_paperwork). Guest / non-clinical
+    // orders resolve to no patient and pass straight through. We block
+    // BEFORE stamping shipped_at so a refused ship leaves the order
+    // untouched. See lib/paperwork/require-signed-paperwork.ts.
+    const paperworkGate = await evaluatePaperworkGateForCustomer(
+      existing.customerId,
+    );
+    if (paperworkGate.required && !paperworkGate.satisfied) {
+      req.log?.info?.(
+        {
+          orderId,
+          adminEmail: req.adminEmail,
+          requirementSources: paperworkGate.sources,
+          missingCount: paperworkGate.missingForms.length,
+        },
+        "admin/shop/orders: shipment blocked — required paperwork unsigned",
+      );
+      res.status(409).json({
+        error: "order_requires_signed_paperwork",
+        message:
+          "Required intake paperwork is not signed yet. The following form(s) must be signed before this order can ship: " +
+          paperworkGate.missingForms.join(", ") +
+          ".",
+        missingForms: paperworkGate.missingForms,
+        requirementSources: paperworkGate.sources,
       });
       return;
     }
