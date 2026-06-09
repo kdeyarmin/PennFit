@@ -25,16 +25,20 @@ const pickupLocationsLimiter = rateLimit({
   name: "shop_pickup_locations",
 });
 
-router.get("/shop/pickup-locations", pickupLocationsLimiter, async (_req, res) => {
-  if (!(await isFeatureEnabled("storefront.pickup"))) {
-    res.json({ enabled: false, locations: [] });
-    return;
-  }
-  const locations = await listActivePickupLocations();
-  // Even with the flag on, pickup is only actually offerable when at
-  // least one active location exists — report `enabled` accordingly so
-  // the storefront doesn't render an empty picker.
-  res.json({ enabled: locations.length > 0, locations });
-});
+router.get(
+  "/shop/pickup-locations",
+  pickupLocationsLimiter,
+  async (_req, res) => {
+    if (!(await isFeatureEnabled("storefront.pickup"))) {
+      res.json({ enabled: false, locations: [] });
+      return;
+    }
+    const locations = await listActivePickupLocations();
+    // Even with the flag on, pickup is only actually offerable when at
+    // least one active location exists — report `enabled` accordingly so
+    // the storefront doesn't render an empty picker.
+    res.json({ enabled: locations.length > 0, locations });
+  },
+);
 
 export default router;

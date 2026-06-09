@@ -1078,7 +1078,9 @@ export function ShopCart() {
                           Pickup location
                           <select
                             value={pickupLocationId ?? ""}
-                            onChange={(e) => setPickupLocationId(e.target.value)}
+                            onChange={(e) =>
+                              setPickupLocationId(e.target.value)
+                            }
                             className="mt-1 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-foreground"
                             data-testid="cart-pickup-location-select"
                           >

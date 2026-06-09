@@ -669,8 +669,7 @@ function PickupSection({ order }: { order: OrderHistoryItem }) {
               {loc.city ? (
                 <>
                   , {loc.city}
-                  {loc.state ? `, ${loc.state}` : ""}{" "}
-                  {loc.postalCode ?? ""}
+                  {loc.state ? `, ${loc.state}` : ""} {loc.postalCode ?? ""}
                 </>
               ) : null}
             </div>

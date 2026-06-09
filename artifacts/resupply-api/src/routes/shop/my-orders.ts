@@ -273,8 +273,7 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
       // to "ship" for older orders (pre-migration-0249). For pickup
       // orders the UI renders the pickup lifecycle (ready / collected)
       // and the store address instead of carrier tracking.
-      fulfillmentMethod:
-        o.fulfillment_method === "pickup" ? "pickup" : "ship",
+      fulfillmentMethod: o.fulfillment_method === "pickup" ? "pickup" : "ship",
       pickup:
         o.fulfillment_method === "pickup"
           ? {
