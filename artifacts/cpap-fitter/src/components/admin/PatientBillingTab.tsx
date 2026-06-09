@@ -36,6 +36,7 @@ import {
   verifyEligibility,
 } from "@/lib/admin/clinical-tabs-api";
 import { csrfHeader } from "@/lib/csrf";
+import { formatDateOnly } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -450,9 +451,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
                   DOS{" "}
-                  {c.date_of_service
-                    ? new Date(c.date_of_service).toLocaleDateString()
-                    : "—"}
+                  {c.date_of_service ? formatDateOnly(c.date_of_service) : "—"}
                   {c.patient_responsibility_cents != null &&
                   c.patient_responsibility_cents > 0 ? (
                     <>
