@@ -311,7 +311,8 @@ router.post(
     if (!updated) {
       res.status(409).json({
         error: "not_pending",
-        message: "This document is no longer awaiting signature. Please refresh and try again.",
+        message:
+          "This document is no longer awaiting signature. Please refresh and try again.",
       });
       return;
     }

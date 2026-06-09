@@ -323,7 +323,10 @@ const providerPortalFeatureGate = async (
     next();
     return;
   }
-  if (req.path === "/api/provider/auth" || req.path.startsWith("/api/provider/auth/")) {
+  if (
+    req.path === "/api/provider/auth" ||
+    req.path.startsWith("/api/provider/auth/")
+  ) {
     next();
     return;
   }
