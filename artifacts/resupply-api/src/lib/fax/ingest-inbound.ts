@@ -32,7 +32,10 @@ import type { Logger } from "pino";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
+import { isFeatureEnabled } from "../feature-flags";
 import { ObjectStorageService } from "../object-storage/objectStorage";
+
+import { autoFileSignedFax } from "./auto-file-signed";
 
 /** 10 MB cap — fax PDFs are typically 50-500 KB per page; a 10MB cap
  *  comfortably handles a 50-page chart-note fax with room to spare. */
@@ -182,20 +185,43 @@ export async function ingestInboundFax(
   rowId = insertRes.data.id;
 
   // Step 2: try to download the media bytes. Best-effort.
-  const mediaPersisted = await tryPersistMedia(
-    input,
-    rowId,
-    logger,
-    storageImpl,
-  );
+  const media = await tryPersistMedia(input, rowId, logger, storageImpl);
 
-  // Step 3: bill-hold auto-match. If this fax came back from a number that
-  // exactly one outstanding paperwork requirement is waiting on, mark it
-  // returned-signed and release the claim. Best-effort + never throws — an
-  // unmatched fax simply stays in the triage queue for a manual link.
+  // Step 3: barcode auto-file (opt-in). When `fax.auto_file_signed` is on
+  // and this is a signed copy of a document we sent out, read the printed
+  // PennFit tracking code, file the fax into the patient's chart, mark the
+  // signature returned, and release the bill hold. Runs BEFORE the
+  // fax-number match below so the precise per-document match takes
+  // precedence. Best-effort — never throws; an unmatched fax just stays
+  // for manual triage. Skipped entirely when no media was persisted.
+  if (media.persisted && media.bytes && media.contentType) {
+    try {
+      if (await isFeatureEnabled("fax.auto_file_signed")) {
+        await autoFileSignedFax(
+          {
+            faxId: rowId,
+            bytes: Buffer.from(media.bytes),
+            contentType: media.contentType,
+          },
+          { supabase, logger, storage: storageImpl },
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err, fax_id_first8: rowId.slice(0, 8) },
+        "fax_inbound_auto_file_failed",
+      );
+    }
+  }
+
+  // Step 4: bill-hold auto-match by return fax number. If this fax came
+  // back from a number that exactly one outstanding paperwork requirement
+  // is waiting on, mark it returned-signed and release the claim. A no-op
+  // when the barcode step above already satisfied the requirement.
+  // Best-effort + never throws.
   await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
 
-  return { kind: "inserted", id: rowId, mediaPersisted };
+  return { kind: "inserted", id: rowId, mediaPersisted: media.persisted };
 }
 
 /** Sniff a PDF/TIFF magic-byte signature. S3 pre-signed URLs sometimes
@@ -229,14 +255,32 @@ function sniffDocumentType(bytes: Uint8Array): string | null {
   return null;
 }
 
+/** Result of the media-download step. On success it carries the resolved
+ *  object key, content type, and the downloaded bytes so the caller can
+ *  feed them straight into the barcode auto-file step without a second
+ *  fetch. On any failure `persisted` is false and the rest are null. */
+interface PersistMediaResult {
+  persisted: boolean;
+  objectKey: string | null;
+  contentType: string | null;
+  bytes: Uint8Array | null;
+}
+
+const MEDIA_NOT_PERSISTED: PersistMediaResult = {
+  persisted: false,
+  objectKey: null,
+  contentType: null,
+  bytes: null,
+};
+
 async function tryPersistMedia(
   input: IngestInboundFaxInput,
   rowId: string,
   logger: Logger,
   storageImpl?: ObjectStorageService,
-): Promise<boolean> {
+): Promise<PersistMediaResult> {
   if (!input.mediaUrl) {
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
 
   // Validate the Telnyx media URL host to keep an attacker from coaxing
@@ -250,7 +294,7 @@ async function tryPersistMedia(
       { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
       "fax_inbound_media_url_malformed",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
   if (parsed.protocol !== "https:" || !isAllowedMediaHost(parsed.hostname)) {
     logger.warn(
@@ -260,7 +304,7 @@ async function tryPersistMedia(
       },
       "fax_inbound_media_url_host_rejected",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
 
   // No Authorization header — the S3 pre-signed URL carries its own
@@ -280,7 +324,7 @@ async function tryPersistMedia(
       },
       "fax_inbound_media_fetch_failed",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
   clearTimeout(timer);
   if (!resp) {
@@ -290,7 +334,7 @@ async function tryPersistMedia(
       { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
       "fax_inbound_media_redirect_rejected",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
   if (!resp.ok) {
     logger.warn(
@@ -300,7 +344,7 @@ async function tryPersistMedia(
       },
       "fax_inbound_media_non_2xx",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
 
   const headerContentType = (resp.headers.get("content-type") ?? "")
@@ -318,7 +362,7 @@ async function tryPersistMedia(
       },
       "fax_inbound_media_size_rejected",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
 
   // Resolve the content type from the bytes first (S3 often serves a
@@ -335,7 +379,7 @@ async function tryPersistMedia(
       },
       "fax_inbound_media_content_type_rejected",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
 
   // Upload to object storage, normalize ACL, then patch the row with the
@@ -357,13 +401,13 @@ async function tryPersistMedia(
         },
         "fax_inbound_gcs_put_non_2xx",
       );
-      return false;
+      return MEDIA_NOT_PERSISTED;
     }
     const normalised = await storage.trySetObjectEntityAclPolicy(uploadUrl, {
       owner: "fax-inbound",
       visibility: "private",
     });
-    if (!normalised) return false;
+    if (!normalised) return MEDIA_NOT_PERSISTED;
     objectKey = normalised;
   } catch (err) {
     logger.warn(
@@ -373,7 +417,7 @@ async function tryPersistMedia(
       },
       "fax_inbound_gcs_upload_failed",
     );
-    return false;
+    return MEDIA_NOT_PERSISTED;
   }
 
   const supabase = getSupabaseServiceRoleClient();
@@ -395,9 +439,9 @@ async function tryPersistMedia(
       "fax_inbound_db_patch_failed",
     );
     // The object-storage bytes are now an orphan that the storage sweep
-    // job (when one exists for fax orphans) will reap. Returning false
-    // signals the caller to log media_persisted=false in the audit.
-    return false;
+    // job (when one exists for fax orphans) will reap. Returning a
+    // not-persisted result signals the caller to log media_persisted=false.
+    return MEDIA_NOT_PERSISTED;
   }
-  return true;
+  return { persisted: true, objectKey, contentType, bytes };
 }

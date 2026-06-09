@@ -45,6 +45,7 @@ export const FEATURE_FLAG_KEYS = [
   "email.auto_reply",
   "voice.agent",
   "storefront.chatbot",
+  "admin.assistant",
   "storefront.checkout",
   "storefront.pickup",
   "storefront.reviews_collection",
@@ -78,6 +79,7 @@ export const FEATURE_FLAG_KEYS = [
   "orders.require_signed_paperwork",
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
+  "fax.auto_file_signed",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

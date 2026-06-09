@@ -65,6 +65,23 @@ export function normalizeTrackingCode(raw: string): string {
   return `${CODE_PREFIX}${body}`;
 }
 
+// Canonical shape: PFS- + 8 chars from the unambiguous alphabet. Built
+// from the same constants `generateTrackingCode` mints from so the two
+// can never drift.
+const WELL_FORMED_CODE_RE = new RegExp(
+  `^${CODE_PREFIX}[${CODE_ALPHABET}]{${CODE_BODY_LENGTH}}$`,
+);
+
+/**
+ * True when `raw` (after {@link normalizeTrackingCode}) is a syntactically
+ * valid PennFit tracking code. Used to reject a hallucinated / misread
+ * code from the fax barcode scan BEFORE it hits the database — a value
+ * that can't be one of ours never warrants a lookup.
+ */
+export function isWellFormedTrackingCode(raw: string): boolean {
+  return WELL_FORMED_CODE_RE.test(normalizeTrackingCode(raw));
+}
+
 export interface RegisterSignatureTrackingInput {
   kind: SignatureDocumentKind;
   documentId: string;

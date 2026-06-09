@@ -39,6 +39,7 @@ import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
+import adminAssistantChatRouter from "./admin/assistant-chat.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
@@ -139,6 +140,7 @@ import claimStatusRouter from "./admin/claim-status.js";
 import billingActionQueueRouter from "./admin/billing-action-queue.js";
 import patientTherapySnapshotRouter from "./admin/patient-therapy-snapshot.js";
 import paymentPlansRouter from "./admin/payment-plans.js";
+import patientPaymentLinkRouter from "./admin/patient-payment-link.js";
 import eligibilityVerificationWorklistRouter from "./admin/eligibility-verification-worklist.js";
 import priorAuthRenewalRouter from "./admin/prior-auth-renewal.js";
 import manualClaimRouter from "./admin/manual-claim.js";
@@ -451,6 +453,10 @@ router.use(billingActionQueueRouter);
 router.use(patientTherapySnapshotRouter);
 // /admin/.../payment-plans — patient installment-plan tracker (biller B7).
 router.use(paymentPlansRouter);
+// POST /admin/patients/:id/payment-link — email/SMS a patient a hosted
+// Stripe Checkout link to collect a payment (copay / cash-pay balance).
+// patients.update.
+router.use(patientPaymentLinkRouter);
 // /admin/billing/eligibility-verification-worklist — active coverages
 // ranked by re-verification urgency (never/terminating/stale) (Biller
 // #31, read-only half). reports.read.
@@ -675,6 +681,11 @@ router.use(shopReviewRequestsRouter);
 // (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
 // see middlewares/requireAdmin.ts for the resolution order.
 router.use(teamRouter);
+// /admin/assistant/chat — PennPilot, the in-app program-manager /
+// tech-support chatbot for staff. Answers "how does the app work"
+// questions and can email feature suggestions to the super-admins.
+// requireAdmin gate is on the router itself.
+router.use(adminAssistantChatRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
