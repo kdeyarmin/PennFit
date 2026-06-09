@@ -1,8 +1,10 @@
-// Tests for components/layout.tsx — navigation structure changes in this PR
+// Tests for components/layout.tsx — primary navigation structure.
 //
-// This PR added a "/stories" Patient stories link to the footer's
-// "Learn & Resources" column. We also verify the primary navLinks
-// array (the desktop + mobile header nav) is unchanged.
+// The header nav groups the three mask-discovery surfaces (Mask
+// Catalog + the brand landings) under one "Masks" dropdown, keeps
+// Virtual Mask Fitter and Shop as their own items, and nests FAQ
+// under the /help hub (so it's no longer a top-level bar item). The
+// footer still carries the "/stories" Patient stories link.
 //
 // We test the source file statically (same approach as AppShell.nav.test.ts)
 // because the node Vitest environment has no DOM and React components cannot
@@ -30,12 +32,12 @@ describe("layout.tsx — primary navLinks array", () => {
     expect(SRC).toContain("Virtual Mask Fitter");
   });
 
-  it("includes /masks with label 'Mask Catalog'", () => {
+  it("includes /masks with label 'Mask Catalog' (under Masks group)", () => {
     expect(SRC).toContain('href: "/masks"');
     expect(SRC).toContain("Mask Catalog");
   });
 
-  it("includes /cpap-masks with label 'Brands'", () => {
+  it("includes /cpap-masks with label 'Brands' (under Masks group)", () => {
     expect(SRC).toContain('href: "/cpap-masks"');
     expect(SRC).toContain('"Brands"');
   });
@@ -50,9 +52,22 @@ describe("layout.tsx — primary navLinks array", () => {
     expect(SRC).toContain('"Learn"');
   });
 
-  it("includes /faq with label 'FAQ'", () => {
-    expect(SRC).toContain('href: "/faq"');
-    expect(SRC).toContain('"FAQ"');
+  it("includes /help with label 'Help'", () => {
+    expect(SRC).toContain('href: "/help"');
+    expect(SRC).toContain('"Help"');
+  });
+
+  // FAQ was removed from the primary nav and nested under the /help
+  // hub (which carries a prominent "Browse the FAQ" card) plus the
+  // mobile "Talk to us" bar — so the top bar has one support entry.
+  it("does NOT include FAQ in the primary navLinks (nested under Help)", () => {
+    const navStart = SRC.indexOf("const navLinks");
+    const navEnd = SRC.indexOf("];", navStart);
+    expect(navStart).toBeGreaterThanOrEqual(0);
+    expect(navEnd).toBeGreaterThan(navStart);
+    const navLinksBlock = SRC.slice(navStart, navEnd + 2);
+    expect(navLinksBlock).not.toContain('"/faq"');
+    expect(navLinksBlock).not.toContain('label: "FAQ"');
   });
 
   it("does NOT include /stories in the primary navLinks (footer-only link)", () => {
@@ -64,6 +79,38 @@ describe("layout.tsx — primary navLinks array", () => {
     expect(navEnd).toBeGreaterThan(navStart);
     const navLinksBlock = SRC.slice(navStart, navEnd + 2);
     expect(navLinksBlock).not.toContain('"/stories"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Masks dropdown — the three mask-discovery surfaces (spec catalog +
+// brand landings) are grouped under one "Masks" menu, and the brand
+// sub-pages are surfaced in it so they're reachable from the nav (not
+// only by clicking through /cpap-masks).
+// ---------------------------------------------------------------------------
+
+describe("layout.tsx — Masks dropdown group", () => {
+  it("defines a 'Masks' group label", () => {
+    expect(SRC).toContain('label: "Masks"');
+  });
+
+  it("surfaces the three brand sub-pages in the dropdown", () => {
+    expect(SRC).toContain('href: "/cpap-masks/resmed"');
+    expect(SRC).toContain('href: "/cpap-masks/react-health"');
+    expect(SRC).toContain('href: "/cpap-masks/fisher-paykel"');
+  });
+
+  it("renders the dropdown trigger with data-testid='nav-masks-menu'", () => {
+    expect(SRC).toContain('data-testid="nav-masks-menu"');
+  });
+
+  it("the dropdown trigger is a menu button (aria-haspopup='menu')", () => {
+    expect(SRC).toContain('aria-haspopup="menu"');
+  });
+
+  it("renders grouped entries via a NavDropdown / isNavGroup branch", () => {
+    expect(SRC).toContain("NavDropdown");
+    expect(SRC).toContain("isNavGroup");
   });
 });
 
