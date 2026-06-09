@@ -16,7 +16,7 @@
 //     the worker uses.
 //
 // One ACTIVE (revoked_at IS NULL) authorization per patient, enforced by
-// a partial unique index (migration 0256). Adding a card updates the
+// a partial unique index (migration 0259). Adding a card updates the
 // active row in place; removing it stamps revoked_at.
 
 import {

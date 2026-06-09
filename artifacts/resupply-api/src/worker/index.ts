@@ -660,7 +660,7 @@ async function doStartWorker(): Promise<void> {
   await registerPaymentPlanAutochargeJob(boss);
 
   // Auto-charge a patient's outstanding balance off-session against the
-  // card they saved + authorized in the portal (mig 0256). Triple-gated:
+  // card they saved + authorized in the portal (mig 0259). Triple-gated:
   // opt-in cron (BILLING_PATIENT_AUTOPAY_CRON), the seeded-OFF
   // billing.patient_autopay flag, and the per-patient autopay toggle.
   // Inert by default.

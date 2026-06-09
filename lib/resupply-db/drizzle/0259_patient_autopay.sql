@@ -1,4 +1,4 @@
--- 0256_patient_autopay — patient-controlled card-on-file + autopay.
+-- 0259_patient_autopay — patient-controlled card-on-file + autopay.
 --
 -- Lets a signed-in patient save a card in the portal ("add a card for
 -- future charges") and, separately and optionally, switch ON autopay so

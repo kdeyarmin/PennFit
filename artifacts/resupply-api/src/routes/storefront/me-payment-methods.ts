@@ -136,22 +136,31 @@ function resolveTrustedBaseOrigin(
   return null;
 }
 
-router.get("/me/payment-methods", async (req, res) => {
-  const customerId = req.shopCustomerId ?? null;
-  if (!customerId) {
-    res.status(401).json({ error: "sign_in_required" });
-    return;
-  }
-  const link = await resolvePatientForCustomer(customerId);
-  if (!link) {
-    // No linked patient → nothing to manage; report an empty state rather
-    // than a hard error so the portal section renders cleanly.
-    res.json(toAutopayStatusView(null));
-    return;
-  }
-  const row = await getActiveAutopayAuthorization(link.patientId);
-  res.json(toAutopayStatusView(row));
-});
+router.get(
+  "/me/payment-methods",
+  rateLimit({
+    windowMs: 5 * 60_000,
+    max: 60,
+    name: "me_autopay_status",
+    keyFn: customerKeyFn,
+  }),
+  async (req, res) => {
+    const customerId = req.shopCustomerId ?? null;
+    if (!customerId) {
+      res.status(401).json({ error: "sign_in_required" });
+      return;
+    }
+    const link = await resolvePatientForCustomer(customerId);
+    if (!link) {
+      // No linked patient → nothing to manage; report an empty state rather
+      // than a hard error so the portal section renders cleanly.
+      res.json(toAutopayStatusView(null));
+      return;
+    }
+    const row = await getActiveAutopayAuthorization(link.patientId);
+    res.json(toAutopayStatusView(row));
+  },
+);
 
 router.post(
   "/me/payment-methods/setup-session",
