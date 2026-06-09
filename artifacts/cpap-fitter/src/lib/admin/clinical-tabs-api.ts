@@ -282,6 +282,26 @@ export const createPriorAuthorization = (
     },
   );
 
+/**
+ * Fax the auto-populated PA request form to the payer. With no faxNumber
+ * the server uses the payer profile's published prior_auth_fax_e164;
+ * pass faxNumber to override. Throws ApiError on 409 (no_fax_destination),
+ * 503 (fax_not_configured), or 502 (dispatch failed).
+ */
+export const faxPriorAuthRequestForm = (
+  patientId: string,
+  paId: string,
+  faxNumber?: string,
+) =>
+  jsonFetch<{ ok: true; vendorRef: string }>(
+    `/admin/patients/${encodeURIComponent(patientId)}/prior-authorizations/${encodeURIComponent(paId)}/fax`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(faxNumber ? { faxNumber } : {}),
+    },
+  );
+
 // ── Insurance claims ───────────────────────────────────────────────
 
 export type InsuranceClaimStatus =

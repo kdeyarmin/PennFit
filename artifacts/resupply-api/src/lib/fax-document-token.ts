@@ -16,7 +16,8 @@ import { getLinkHmacKey } from "@workspace/resupply-secrets";
 interface FaxDocumentPayload {
   /** Document row ID (uuid). For physician outreach this is the
    *  physician_fax_outreach row; for an appeal it's the
-   *  claim_appeal_letters row. */
+   *  claim_appeal_letters row. For a PA request form it's the composite
+   *  `${patientId}:${paId}` (the PA render is scoped to its patient). */
   id: string;
   /** Document kind. Absent on legacy tokens → physician outreach. */
   k?: FaxDocumentKind;
@@ -24,7 +25,10 @@ interface FaxDocumentPayload {
   e: number;
 }
 
-export type FaxDocumentKind = "physician_outreach" | "appeal_letter";
+export type FaxDocumentKind =
+  | "physician_outreach"
+  | "appeal_letter"
+  | "pa_request";
 
 const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Telnyx fetches immediately
 
@@ -85,6 +89,20 @@ export function signAppealFaxToken(
   });
 }
 
+/** Sign a PA-request-form fax token (kind=pa_request). The id is the
+ *  composite `${patientId}:${paId}` so the render stays patient-scoped. */
+export function signPaRequestFaxToken(
+  patientId: string,
+  paId: string,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): string {
+  return signToken({
+    id: `${patientId}:${paId}`,
+    k: "pa_request",
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  });
+}
+
 export type VerifyFaxDocumentTokenResult =
   | { valid: true; outreachId: string; kind: FaxDocumentKind }
   | { valid: false };
@@ -125,6 +143,10 @@ export function verifyFaxDocumentToken(
 
   // Legacy tokens (no `k`) are physician-outreach cover letters.
   const kind: FaxDocumentKind =
-    p.k === "appeal_letter" ? "appeal_letter" : "physician_outreach";
+    p.k === "appeal_letter"
+      ? "appeal_letter"
+      : p.k === "pa_request"
+        ? "pa_request"
+        : "physician_outreach";
   return { valid: true, outreachId: p.id, kind };
 }

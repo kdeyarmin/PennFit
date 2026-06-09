@@ -20,6 +20,7 @@ import PDFDocument from "pdfkit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
+import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 
 const router: IRouter = Router();
@@ -73,6 +74,29 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
       "Content-Disposition",
       'inline; filename="appeal-letter.pdf"',
     );
+    res.setHeader("Cache-Control", "no-store");
+    res.end(result.pdf);
+    return;
+  }
+
+  // PA-request-form faxes re-render the form on demand from the composite
+  // `${patientId}:${paId}` id. Deterministic projection of the PA record,
+  // so re-rendering matches the CSR's download byte-for-byte.
+  if (verified.kind === "pa_request") {
+    const sep = verified.outreachId.indexOf(":");
+    if (sep <= 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const patientId = verified.outreachId.slice(0, sep);
+    const paId = verified.outreachId.slice(sep + 1);
+    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    if (!result) {
+      res.status(404).json({ error: "prior_auth_not_found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="pa-request.pdf"');
     res.setHeader("Cache-Control", "no-store");
     res.end(result.pdf);
     return;
