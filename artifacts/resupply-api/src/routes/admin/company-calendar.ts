@@ -35,7 +35,10 @@ import {
   resolveAssignableStaff,
 } from "../../lib/calendar/assignable-staff";
 import { logger } from "../../lib/logger";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 type CalendarUpdate =
@@ -237,13 +240,15 @@ router.get(
 // requireAdmin (same as the rest of the calendar) so AGENTS — who can edit the
 // calendar but are blocked from the admin-only /admin/team — can still
 // populate the assignee picker. Returns minimal directory fields only.
+//
+// Uses the direct express-rate-limit instance (adminReadRateLimiter) BEFORE
+// the auth gate: CodeQL's js/missing-rate-limiting query only recognises the
+// upstream middleware at the call site, not the adminRateLimit() wrapper, and
+// the limiter must precede requireAdmin's DB session lookup.
 router.get(
   "/admin/company-calendar/assignable-staff",
+  adminReadRateLimiter,
   requireAdmin,
-  adminRateLimit({
-    name: "company_calendar.assignable_staff",
-    preset: "query",
-  }),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const staff = await listAssignableStaff(supabase);
