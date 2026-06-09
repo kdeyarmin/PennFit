@@ -699,7 +699,7 @@ function ClaimDrawerContent({
               >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium uppercase tracking-wide">
-                    {e.eventType.replace("_", " ")}
+                    {e.eventType.replace(/_/g, " ")}
                   </span>
                   <span style={{ color: "hsl(var(--ink-3))" }}>
                     {new Date(e.occurredAt).toLocaleString()}

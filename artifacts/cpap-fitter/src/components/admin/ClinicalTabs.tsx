@@ -444,7 +444,7 @@ function CoverageLatestCheck({ check }: { check: EligibilityCheck }) {
             className="inline-block px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider"
             style={{ color: tone.color, backgroundColor: tone.bg }}
           >
-            {check.status.replace("_", " ")}
+            {check.status.replace(/_/g, " ")}
           </span>
           {check.is_active === true && (
             <span style={{ color: "#15803d" }}>

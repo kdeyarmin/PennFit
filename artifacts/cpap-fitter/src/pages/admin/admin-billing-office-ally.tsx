@@ -466,7 +466,7 @@ function EnrollmentEntry({ p }: { p: EnrollmentWatchlistEntry }) {
           color: p.ediEnrollmentStatus === "pending" ? "#b45309" : "#be123c",
         }}
       >
-        {p.ediEnrollmentStatus.replace("_", " ")}
+        {p.ediEnrollmentStatus.replace(/_/g, " ")}
       </span>
       <span style={{ color: "hsl(var(--ink-1))" }}>{p.displayName}</span>
       <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>

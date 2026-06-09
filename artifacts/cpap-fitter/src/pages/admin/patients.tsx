@@ -276,7 +276,7 @@ export function PatientsPage() {
         reasonCounts.set(f.error, (reasonCounts.get(f.error) ?? 0) + 1);
       }
       const reasonStr = Array.from(reasonCounts.entries())
-        .map(([reason, n]) => `${n} ${reason.replace("_", " ")}`)
+        .map(([reason, n]) => `${n} ${reason.replace(/_/g, " ")}`)
         .join(", ");
       const text =
         failedCount === 0

@@ -905,6 +905,12 @@ function StatementDeliveryCard({ patientId }: { patientId: string }) {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!savedAt) return;
+    const t = setTimeout(() => setSavedAt(null), 4000);
+    return () => clearTimeout(t);
+  }, [savedAt]);
+
+  useEffect(() => {
     if (pref.data) {
       setMethod(pref.data.statementDeliveryMethod);
       setEmail(pref.data.email ?? "");
@@ -1139,7 +1145,7 @@ function EligibilityStatusBadge({ status }: { status: string }) {
         className="inline h-3 w-3 mr-0.5 -mt-0.5"
         style={{ color: tone.color }}
       />
-      {status.replace("_", " ")}
+      {status.replace(/_/g, " ")}
     </span>
   );
 }

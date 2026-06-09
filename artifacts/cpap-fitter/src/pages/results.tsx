@@ -239,7 +239,7 @@ export function Results() {
   );
   const topMaskTypeLabel = (
     data.topRecommendations[0]?.type ?? "recommended"
-  ).replace("_", " ");
+  ).replace(/_/g, " ");
   const confidenceBand =
     topConfidencePct >= 85
       ? "strong"

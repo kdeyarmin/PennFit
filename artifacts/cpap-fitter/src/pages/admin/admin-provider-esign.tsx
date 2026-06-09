@@ -197,7 +197,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: (r) => {
       setResult({ emailSent: r.emailSent, inviteLink: r.inviteLink });
-      qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] });
     },
   });
   return (

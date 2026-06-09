@@ -191,7 +191,7 @@ function PacketTable({
               <span
                 className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${STATUS_COLOR[r.status]}`}
               >
-                {r.status.replace("_", " ")}
+                {r.status.replace(/_/g, " ")}
               </span>
             </td>
             <td className="py-2 text-xs font-mono">
@@ -963,7 +963,7 @@ function Header({ packet }: { packet: PrescriptionRequestDetail }) {
           <span
             className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${STATUS_COLOR[packet.status]}`}
           >
-            {packet.status.replace("_", " ")}
+            {packet.status.replace(/_/g, " ")}
           </span>
         </p>
       </div>
