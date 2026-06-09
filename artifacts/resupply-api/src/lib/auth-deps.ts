@@ -251,7 +251,9 @@ function makeMfaProbe(): MfaProbe {
           secretBase32: r.secret_base32,
           lastUsedCounter: r.last_used_counter,
         }));
-        if (adminSecrets.length > 0) return adminSecrets;
+        if (adminSecrets.length > 0) {
+          return adminSecrets;
+        }
       }
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return [];

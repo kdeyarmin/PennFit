@@ -293,6 +293,13 @@ logger.info(
 // BEFORE the provider data router below so /api/provider/auth/* resolves
 // to the auth handlers.
 const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
+app.use("/api/provider", async (_req, res, next) => {
+  if (await isFeatureEnabled("provider.portal_enabled")) {
+    next();
+    return;
+  }
+  res.status(404).json({ error: "not_found" });
+});
 app.use(
   "/api/provider/auth",
   makeAuthRouter(providerAuthDeps, {
