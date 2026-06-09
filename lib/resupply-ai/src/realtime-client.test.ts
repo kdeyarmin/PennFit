@@ -149,6 +149,108 @@ describe("RealtimeClient", () => {
     expect(sent.session.turn_detection.type).toBe("semantic_vad");
   });
 
+  // --- GA session schema (gpt-realtime-2 spike, feature-flagged) ----------
+
+  it("GA schema: omits the realtime=v1 beta header and emits the nested audio.input/output session", () => {
+    const fake = new FakeWebSocket();
+    let capturedHeaders: Record<string, string> = {};
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "do the thing",
+      sessionSchema: "ga",
+      model: "gpt-realtime-2",
+      transcriptionModel: "gpt-realtime-whisper",
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: (_url, headers) => {
+        capturedHeaders = headers;
+        return fake;
+      },
+    });
+    // GA reaches the GA schema WITHOUT the beta marker.
+    expect(capturedHeaders["OpenAI-Beta"]).toBeUndefined();
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    expect(sent.session.type).toBe("realtime");
+    expect(sent.session.model).toBe("gpt-realtime-2");
+    expect(sent.session.output_modalities).toEqual(["audio"]);
+    // µ-law nested under audio.input/output (default token: audio/pcmu).
+    expect(sent.session.audio.input.format).toEqual({ type: "audio/pcmu" });
+    expect(sent.session.audio.output.format).toEqual({ type: "audio/pcmu" });
+    expect(sent.session.audio.output.voice).toBe("cedar");
+    expect(sent.session.audio.input.transcription.model).toBe(
+      "gpt-realtime-whisper",
+    );
+    expect(sent.session.audio.input.turn_detection.type).toBe("semantic_vad");
+    // Reasoning model: depth via effort, not temperature.
+    expect(sent.session.reasoning.effort).toBe("low");
+    expect(sent.session.temperature).toBeUndefined();
+    expect(sent.session.tools).toHaveLength(TOOL_NAMES.length);
+  });
+
+  it("GA schema with external TTS (generateAudio:false): text-only output, no audio.output, input STT intact", () => {
+    const fake = new FakeWebSocket();
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      sessionSchema: "ga",
+      generateAudio: false,
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: () => fake,
+    });
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    expect(sent.session.output_modalities).toEqual(["text"]);
+    expect(sent.session.audio.output).toBeUndefined();
+    // The model still hears the caller (input audio + STT unchanged).
+    expect(sent.session.audio.input.format).toEqual({ type: "audio/pcmu" });
+    expect(sent.session.audio.input.turn_detection.type).toBe("semantic_vad");
+  });
+
+  it("GA schema: audioFormat override corrects the µ-law token (preview-validation hook)", () => {
+    const fake = new FakeWebSocket();
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      sessionSchema: "ga",
+      audioFormat: "g711_ulaw",
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: () => fake,
+    });
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    expect(sent.session.audio.input.format).toEqual({ type: "g711_ulaw" });
+  });
+
+  it("GA schema with no overrides defaults to the COHERENT GA pair (gpt-realtime-2 + gpt-realtime-whisper)", () => {
+    const fake = new FakeWebSocket();
+    let capturedUrl = "";
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      sessionSchema: "ga",
+      // No model / transcriptionModel override.
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: (url) => {
+        capturedUrl = url;
+        return fake;
+      },
+    });
+    // GA mode alone never pairs the GA wire shape with the beta model/STT.
+    expect(capturedUrl).toBe(
+      "wss://api.openai.com/v1/realtime?model=gpt-realtime-2",
+    );
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    expect(sent.session.model).toBe("gpt-realtime-2");
+    expect(sent.session.audio.input.transcription.model).toBe(
+      "gpt-realtime-whisper",
+    );
+  });
+
   it("maps text-output events onto output transcript turns (text-mode)", () => {
     const fake = new FakeWebSocket();
     const client = new RealtimeClient({

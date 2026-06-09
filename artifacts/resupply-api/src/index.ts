@@ -18,7 +18,10 @@ import app from "./app";
 import { applyAppConfigOverlayToEnv } from "./lib/app-config/store";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
-import { handleVoiceWsConnection } from "./lib/voice/ws-handler";
+import {
+  handleVoiceDiagnosticWsConnection,
+  handleVoiceWsConnection,
+} from "./lib/voice/ws-handler";
 import { readVoiceConfigOrNull } from "./lib/voice/voice-config";
 import { startWorker, stopWorker } from "./worker/index.js";
 
@@ -109,7 +112,12 @@ httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
   }
 
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-    void handleVoiceWsConnection(ws, pending).catch((err) => {
+    // Diagnostic ("connection test") sessions run the isolated, no-patient
+    // bridge so a test affordance never touches the production PHI path.
+    const handle = pending.diagnostic
+      ? handleVoiceDiagnosticWsConnection
+      : handleVoiceWsConnection;
+    void handle(ws, pending).catch((err) => {
       logger.error(
         {
           err: serializeErr(err),

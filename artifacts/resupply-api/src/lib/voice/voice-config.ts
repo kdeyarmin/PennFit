@@ -73,6 +73,55 @@ export interface VoiceConfig {
   elevenLabsVoiceId?: string;
   /** Optional ElevenLabs model id override (defaults to the client's). */
   elevenLabsModelId?: string;
+  /**
+   * Optional ElevenLabs stability override (0..1). Lower = more
+   * expressive prosody variation; higher = more consistent/flat. When
+   * unset, the bridge uses the tuned conversational default (0.45).
+   * Clamped into range so a fat-fingered value can't push the voice into
+   * an unstable register mid-call.
+   */
+  elevenLabsStability?: number;
+  /**
+   * Optional ElevenLabs speaking-rate override (0.7..1.2, 1.0 = natural).
+   * Nudge to ~0.95 for an older patient base. When unset, the bridge uses
+   * the tuned conversational default (1.0). Clamped into range.
+   */
+  elevenLabsSpeed?: number;
+  /**
+   * ElevenLabs TTS transport. `"ws"` (default) uses the stream-input
+   * WebSocket — one connection per agent turn, text fed as the model
+   * generates it, lowest latency + best cross-sentence prosody. `"http"`
+   * uses the per-sentence streaming REST endpoint (the proven fallback).
+   * Any value other than `"http"` resolves to `"ws"`.
+   */
+  elevenLabsTransport: "ws" | "http";
+  /**
+   * OpenAI Realtime session schema. `"beta"` (default, production) runs the
+   * proven `realtime=v1` flat schema on gpt-realtime. `"ga"` is the
+   * gpt-realtime-2 spike on OpenAI's GA nested session shape — setting it
+   * also switches the model to gpt-realtime-2 and the input STT to
+   * gpt-realtime-whisper unless overridden below. Validate on a preview
+   * with a real test call before production
+   * (docs/runbooks/realtime-ga-migration.md).
+   */
+  realtimeSchema: "beta" | "ga";
+  /** Realtime model override (e.g. pin a snapshot). */
+  realtimeModel?: string;
+  /** Realtime reasoning effort, GA only (default "low" in the client). */
+  realtimeReasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /** Realtime input-transcription model override. */
+  realtimeTranscribeModel?: string;
+  /** Realtime wire audio-format token override (GA µ-law correction). */
+  realtimeAudioFormat?: string;
+  /**
+   * When true, the `/voice/realtime-diagnostic` route is live — a no-patient
+   * "connection test" that opens the Realtime bridge so an operator can dial
+   * in and validate the voice path (e.g. the gpt-realtime-2 GA spike)
+   * without a patient record. OFF by default; a real Realtime session costs
+   * money, so this faucet must be explicitly opened (and is intended for
+   * previews, not production). Env: OPENAI_REALTIME_DIAGNOSTIC_ENABLED.
+   */
+  realtimeDiagnosticEnabled: boolean;
 }
 
 /**
@@ -143,7 +192,70 @@ export function readVoiceConfigOrNull(
     elevenLabsApiKey: env.ELEVENLABS_API_KEY?.trim() || undefined,
     elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID?.trim() || undefined,
     elevenLabsModelId: env.ELEVENLABS_MODEL_ID?.trim() || undefined,
+    elevenLabsStability: readBoundedFloatEnv(env.ELEVENLABS_STABILITY, 0, 1),
+    elevenLabsSpeed: readBoundedFloatEnv(env.ELEVENLABS_SPEED, 0.7, 1.2),
+    // Default to the streaming WS path; opt back to HTTP only on explicit
+    // `http`. Case/space-insensitive so "HTTP" / " http " still match.
+    elevenLabsTransport:
+      env.ELEVENLABS_TTS_TRANSPORT?.trim().toLowerCase() === "http"
+        ? "http"
+        : "ws",
+    // Realtime stays on the proven beta schema unless explicitly set to
+    // `ga` (the gpt-realtime-2 spike). The ws-handler fills in coherent GA
+    // model/STT defaults when the schema is `ga`.
+    realtimeSchema:
+      env.OPENAI_REALTIME_SCHEMA?.trim().toLowerCase() === "ga" ? "ga" : "beta",
+    realtimeModel: env.OPENAI_REALTIME_MODEL?.trim() || undefined,
+    realtimeReasoningEffort: parseReasoningEffort(
+      env.OPENAI_REALTIME_REASONING_EFFORT,
+    ),
+    realtimeTranscribeModel:
+      env.OPENAI_REALTIME_TRANSCRIBE_MODEL?.trim() || undefined,
+    realtimeAudioFormat: env.OPENAI_REALTIME_AUDIO_FORMAT?.trim() || undefined,
+    realtimeDiagnosticEnabled: isTruthyEnv(
+      env.OPENAI_REALTIME_DIAGNOSTIC_ENABLED,
+    ),
   };
+}
+
+/** True for "1", "true", "yes", "on" (case/space-insensitive); else false. */
+function isTruthyEnv(raw: string | undefined): boolean {
+  const v = raw?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/**
+ * Parse the optional realtime reasoning-effort env var. Returns undefined
+ * (client default applies) when unset or not one of the allowed values, so
+ * a typo degrades to the default rather than sending an invalid value.
+ */
+function parseReasoningEffort(
+  raw: string | undefined,
+): "minimal" | "low" | "medium" | "high" | undefined {
+  const v = raw?.trim().toLowerCase();
+  return v === "minimal" || v === "low" || v === "medium" || v === "high"
+    ? v
+    : undefined;
+}
+
+/**
+ * Parse a bounded float env var. Returns undefined when unset, blank, or
+ * unparseable (the caller falls back to the tuned default), and clamps a
+ * valid number into [min, max] so an out-of-range value degrades to the
+ * nearest sane bound instead of handing ElevenLabs something it rejects
+ * mid-call.
+ */
+function readBoundedFloatEnv(
+  raw: string | undefined,
+  min: number,
+  max: number,
+): number | undefined {
+  if (raw == null) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(max, Math.max(min, n));
 }
 
 /**
