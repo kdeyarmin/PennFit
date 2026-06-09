@@ -61,3 +61,45 @@ export const endClosureNow = (id: string) =>
   jsonFetch<{ ok: true }>(`/admin/office-closures/${id}/end-now`, {
     method: "POST",
   });
+
+// ── Recurring (weekly) closures ──────────────────────────────────
+// e.g. "every Saturday" / "every Sunday" for a standing weekend blackout.
+// day_of_week: 0=Sun … 6=Sat; times are UTC "HH:MM:SS".
+
+export interface RecurringClosure {
+  id: string;
+  label: string;
+  dayOfWeek: number;
+  startTimeUtc: string;
+  endTimeUtc: string;
+  autoReplyMessage: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const listRecurringClosures = () =>
+  jsonFetch<{ rules: RecurringClosure[] }>("/admin/office-closures/recurring");
+
+export const createRecurringClosure = (body: {
+  label: string;
+  dayOfWeek: number;
+  startTimeUtc: string;
+  endTimeUtc: string;
+  autoReplyMessage: string;
+}) =>
+  jsonFetch<{ id: string }>("/admin/office-closures/recurring", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+export const patchRecurringClosure = (
+  id: string,
+  body: { active?: boolean; autoReplyMessage?: string },
+) =>
+  jsonFetch<{ ok: true }>(`/admin/office-closures/recurring/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });

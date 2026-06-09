@@ -3457,6 +3457,8 @@ export interface Database {
           notes: string | null;
           created_by_user_id: string | null;
           created_by_email: string | null;
+          assigned_to_user_id: string | null;
+          assigned_to_email: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3683,6 +3685,21 @@ export interface Database {
         Update: Partial<
           Database["resupply"]["Tables"]["office_recurring_closures"]["Row"]
         >;
+        Relationships: [];
+      };
+      office_hours: {
+        Row: {
+          id: string;
+          day_of_week: number;
+          open_time_utc: string;
+          close_time_utc: string;
+          active: number;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["office_hours"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["office_hours"]["Row"]>;
         Relationships: [];
       };
       patient_coaching_plans: {

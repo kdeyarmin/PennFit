@@ -12,6 +12,12 @@
 // agent) can both VIEW and EDIT the shared calendar — it is a company-wide
 // schedule, not a per-user one. Distinct from /admin/appointment-requests
 // (the inbound, patient-initiated triage queue).
+//
+// Assignment: an appointment can be assigned to another staff member
+// (`assigned_to_user_id` / `assigned_to_email`, distinct from the created_by
+// actor). On a new assignment the assignee gets a PHI-light email and the
+// event surfaces on their /admin/today worklist. The email send is
+// fire-and-forget — a SendGrid hiccup never fails the calendar write.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -21,8 +27,13 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { getAuthDeps } from "../../lib/auth-deps";
+import { sendAppointmentAssignedEmail } from "../../lib/calendar/appointment-assigned-email";
+import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 type CalendarUpdate =
   Database["resupply"]["Tables"]["company_calendar_events"]["Update"];
@@ -61,6 +72,10 @@ const createBody = z
     endsAt: z.string().datetime(),
     location: z.string().trim().max(300).optional(),
     notes: z.string().trim().max(2000).optional(),
+    // The auth-user id (resupply_auth.users.id) of the staff member this
+    // appointment is assigned to. Validated against the active staff roster
+    // server-side; never trust a client-supplied email.
+    assignedToUserId: z.string().uuid().nullable().optional(),
   })
   .strict()
   .refine((b) => new Date(b.endsAt) >= new Date(b.startsAt), {
@@ -76,6 +91,7 @@ const patchBody = z
     endsAt: z.string().datetime().optional(),
     location: z.string().trim().max(300).nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
+    assignedToUserId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
@@ -85,6 +101,84 @@ const listQuery = z.object({
 });
 
 const DAY_MS = 86_400_000;
+
+interface ResolvedAssignee {
+  userId: string;
+  email: string;
+  displayName: string | null;
+}
+
+/**
+ * Resolve an assignee's email + display name from the active staff roster
+ * by their auth-user id. Returns null when there is no active `admin_users`
+ * row for that id (unknown / pending / revoked) so the route can reject the
+ * assignment rather than email an arbitrary address.
+ */
+async function resolveAssignee(
+  supabase: SupabaseClient,
+  authUserId: string,
+): Promise<ResolvedAssignee | null> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("admin_users")
+    .select("auth_user_id, email_lower, display_name, status")
+    .eq("auth_user_id", authUserId)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || !data.auth_user_id) return null;
+  return {
+    userId: data.auth_user_id,
+    email: data.email_lower,
+    displayName: data.display_name,
+  };
+}
+
+/** Absolute URL to the company calendar for the notification email. */
+function calendarDashboardUrl(): string {
+  return `${getAuthDeps().publicBaseUrl}/admin/company-calendar`;
+}
+
+/** Fire-and-forget the assignment email; never throws into the request. */
+function fireAssignmentEmail(args: {
+  assignee: ResolvedAssignee;
+  startsAt: string;
+  endsAt: string;
+  eventType: string;
+  location: string | null;
+  assignedByEmail: string | null;
+}): void {
+  void sendAppointmentAssignedEmail({
+    toEmail: args.assignee.email,
+    assigneeName: args.assignee.displayName,
+    startsAt: args.startsAt,
+    endsAt: args.endsAt,
+    eventType: args.eventType,
+    location: args.location,
+    assignedByEmail: args.assignedByEmail,
+    dashboardUrl: calendarDashboardUrl(),
+  })
+    .then((r) => {
+      if (!r.delivered) {
+        // Metadata only — no patient data, no recipient address in the log.
+        logger.warn(
+          {
+            event: "appointment_assigned_email_undelivered",
+            configured: r.configured,
+            err: r.error,
+          },
+          "appointment-assigned email not delivered",
+        );
+      }
+    })
+    .catch((err) => {
+      logger.warn(
+        { event: "appointment_assigned_email_threw", err },
+        "appointment-assigned email threw",
+      );
+    });
+}
 
 router.get(
   "/admin/company-calendar",
@@ -107,7 +201,7 @@ router.get(
       .schema("resupply")
       .from("company_calendar_events")
       .select(
-        "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, created_at, updated_at",
+        "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, assigned_to_user_id, assigned_to_email, created_at, updated_at",
       )
       .lt("starts_at", to)
       .gt("ends_at", from)
@@ -156,6 +250,8 @@ router.get(
           notes: r.notes,
           createdByUserId: r.created_by_user_id,
           createdByEmail: r.created_by_email,
+          assignedToUserId: r.assigned_to_user_id,
+          assignedToEmail: r.assigned_to_email,
           createdAt: r.created_at,
           updatedAt: r.updated_at,
         };
@@ -181,6 +277,18 @@ router.post(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
+
+    // Validate the assignee (if any) against the active roster before the
+    // insert, so an unknown id is a clean 400 rather than a dangling column.
+    let assignee: ResolvedAssignee | null = null;
+    if (parsed.data.assignedToUserId) {
+      assignee = await resolveAssignee(supabase, parsed.data.assignedToUserId);
+      if (!assignee) {
+        res.status(400).json({ error: "invalid_assignee" });
+        return;
+      }
+    }
+
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("company_calendar_events")
@@ -194,10 +302,26 @@ router.post(
         notes: parsed.data.notes ?? null,
         created_by_user_id: req.adminUserId ?? null,
         created_by_email: req.adminEmail ?? null,
+        assigned_to_user_id: assignee?.userId ?? null,
+        assigned_to_email: assignee?.email ?? null,
       })
       .select("id")
       .single();
     if (error) throw error;
+
+    // Notify the assignee — but not when someone assigns an appointment to
+    // themselves (no point emailing your own action).
+    if (assignee && assignee.userId !== req.adminUserId) {
+      fireAssignmentEmail({
+        assignee,
+        startsAt: parsed.data.startsAt,
+        endsAt: parsed.data.endsAt,
+        eventType: parsed.data.eventType,
+        location: parsed.data.location ?? null,
+        assignedByEmail: req.adminEmail ?? null,
+      });
+    }
+
     res.status(201).json({ id: row.id });
   },
 );
@@ -219,22 +343,42 @@ router.patch(
     }
     const supabase = getSupabaseServiceRoleClient();
 
-    // When either end of the time range changes, validate the EFFECTIVE
-    // range — the incoming side(s) merged with the stored side — so a
-    // single-sided edit can't slip past the create-time guard and trip the
-    // DB CHECK as an unhandled 500. The fetch doubles as the existence check.
-    if (parsed.data.startsAt != null || parsed.data.endsAt != null) {
-      const { data: existing, error: fetchErr } = await supabase
+    // Fetch the existing row when we need its prior state: to validate the
+    // EFFECTIVE time range on a single-sided edit, and/or to detect whether
+    // an assignment is actually NEW (so we don't re-email on an unrelated
+    // edit). The fetch doubles as the existence check.
+    const needsExisting =
+      parsed.data.startsAt != null ||
+      parsed.data.endsAt != null ||
+      parsed.data.assignedToUserId !== undefined;
+    let existing: {
+      event_type: string;
+      starts_at: string;
+      ends_at: string;
+      location: string | null;
+      assigned_to_user_id: string | null;
+    } | null = null;
+    if (needsExisting) {
+      const { data, error: fetchErr } = await supabase
         .schema("resupply")
         .from("company_calendar_events")
-        .select("starts_at, ends_at")
+        .select("event_type, starts_at, ends_at, location, assigned_to_user_id")
         .eq("id", params.data.id)
         .maybeSingle();
       if (fetchErr) throw fetchErr;
-      if (!existing) {
+      if (!data) {
         res.status(404).json({ error: "not_found" });
         return;
       }
+      existing = data;
+    }
+
+    // Validate the effective time range (incoming side(s) merged with the
+    // stored side) so a single-sided edit can't trip the DB CHECK as a 500.
+    if (
+      (parsed.data.startsAt != null || parsed.data.endsAt != null) &&
+      existing
+    ) {
       const effStart = new Date(parsed.data.startsAt ?? existing.starts_at);
       const effEnd = new Date(parsed.data.endsAt ?? existing.ends_at);
       if (effEnd < effStart) {
@@ -258,6 +402,52 @@ router.patch(
       update.location = parsed.data.location;
     if (parsed.data.notes !== undefined) update.notes = parsed.data.notes;
 
+    // Assignment changes. null clears it (no email); a new non-null assignee
+    // is validated, stored, and (if it actually changed and isn't a
+    // self-assign) emailed after the write succeeds.
+    let emailPlan: {
+      assignee: ResolvedAssignee;
+      eventType: string;
+      startsAt: string;
+      endsAt: string;
+      location: string | null;
+    } | null = null;
+    if (parsed.data.assignedToUserId !== undefined && existing) {
+      if (parsed.data.assignedToUserId === null) {
+        update.assigned_to_user_id = null;
+        update.assigned_to_email = null;
+      } else if (
+        parsed.data.assignedToUserId === existing.assigned_to_user_id
+      ) {
+        // Unchanged — skip re-validation (tolerates an assignee who has since
+        // left the active roster) and don't re-email.
+      } else {
+        const assignee = await resolveAssignee(
+          supabase,
+          parsed.data.assignedToUserId,
+        );
+        if (!assignee) {
+          res.status(400).json({ error: "invalid_assignee" });
+          return;
+        }
+        update.assigned_to_user_id = assignee.userId;
+        update.assigned_to_email = assignee.email;
+        // Email only on a genuine new assignee, and not a self-assign.
+        if (assignee.userId !== req.adminUserId) {
+          emailPlan = {
+            assignee,
+            eventType: parsed.data.eventType ?? existing.event_type,
+            startsAt: parsed.data.startsAt ?? existing.starts_at,
+            endsAt: parsed.data.endsAt ?? existing.ends_at,
+            location:
+              parsed.data.location !== undefined
+                ? parsed.data.location
+                : existing.location,
+          };
+        }
+      }
+    }
+
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("company_calendar_events")
@@ -270,6 +460,18 @@ router.patch(
       res.status(404).json({ error: "not_found" });
       return;
     }
+
+    if (emailPlan) {
+      fireAssignmentEmail({
+        assignee: emailPlan.assignee,
+        startsAt: emailPlan.startsAt,
+        endsAt: emailPlan.endsAt,
+        eventType: emailPlan.eventType,
+        location: emailPlan.location,
+        assignedByEmail: req.adminEmail ?? null,
+      });
+    }
+
     res.json({ ok: true });
   },
 );

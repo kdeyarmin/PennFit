@@ -107,12 +107,25 @@ interface InboundFaxRow {
   received_at: string;
 }
 
+interface AssignedAppointmentRow {
+  id: string;
+  patient_id: string;
+  event_type: string;
+  starts_at: string;
+  ends_at: string;
+  location: string | null;
+}
+
 router.get(
   "/admin/today",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
+  async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
+    // requireAdmin guarantees an auth-user id; the `?? ""` only satisfies the
+    // type — an empty string matches no uuid, so the worklist is simply empty
+    // in the impossible case it's missing.
+    const myUserId = req.adminUserId ?? "";
     const nowIso = new Date().toISOString();
     const horizon = new Date();
     horizon.setUTCDate(horizon.getUTCDate() + 30);
@@ -130,6 +143,7 @@ router.get(
       rxRes,
       docsRes,
       faxesRes,
+      assignedApptRes,
     ] = await Promise.all([
       supabase
         .schema("resupply")
@@ -210,6 +224,18 @@ router.get(
         .eq("status", "new")
         .order("received_at", { ascending: true })
         .limit(PER_QUEUE_LIMIT),
+      // Appointments assigned to me — upcoming + still scheduled. PHI
+      // posture: ids + type + time + location only; no patient name (the
+      // CSR clicks through to the calendar). Mirrors every other queue here.
+      supabase
+        .schema("resupply")
+        .from("company_calendar_events")
+        .select("id, patient_id, event_type, starts_at, ends_at, location")
+        .eq("assigned_to_user_id", myUserId)
+        .eq("status", "scheduled")
+        .gte("starts_at", nowIso)
+        .order("starts_at", { ascending: true })
+        .limit(PER_QUEUE_LIMIT),
     ]);
 
     // Surface any read error to the client as 503 — partial worklists
@@ -224,6 +250,11 @@ router.get(
       rxRes,
       docsRes,
       faxesRes,
+      // assignedApptRes is intentionally NOT in this strict set: it reads
+      // the new company_calendar_events.assigned_to_* columns, so if a deploy
+      // lands before the migration (or in a preview without migrations) we
+      // degrade that one section to empty rather than 503-ing the whole
+      // worklist. Forward-deploy-safe, matching the repo's posture.
     ]) {
       if (r.error) {
         logger.error(
@@ -279,6 +310,13 @@ router.get(
       })
       .slice(0, PER_QUEUE_LIMIT);
 
+    if (assignedApptRes.error) {
+      logger.debug(
+        { err: assignedApptRes.error.message },
+        "admin.today: assigned-appointments read failed (degrading to empty)",
+      );
+    }
+
     res.json({
       serverTime: nowIso,
       conversationsAwaitingReply: (convRes.data ?? []) as ConversationRow[],
@@ -288,6 +326,8 @@ router.get(
       rxRenewalsDue: (rxRes.data ?? []) as RxRenewalRow[],
       documentsToReview: (docsRes.data ?? []) as DocumentRow[],
       inboundFaxes: (faxesRes.data ?? []) as InboundFaxRow[],
+      appointmentsAssignedToMe: (assignedApptRes.data ??
+        []) as AssignedAppointmentRow[],
     });
   },
 );

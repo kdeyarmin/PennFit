@@ -61,6 +61,7 @@ import staffingLiveRouter from "./admin/staffing-live.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
 import officeClosuresRouter from "./admin/office-closures.js";
+import officeHoursRouter from "./admin/office-hours.js";
 import companyCalendarRouter from "./admin/company-calendar.js";
 import coachingPlansRouter from "./admin/coaching-plans.js";
 import conversationRoutingRouter from "./admin/conversation-routing.js";
@@ -747,6 +748,9 @@ router.use(shopBackordersRouter);
 // /admin/office-closures — CSR-managed closure windows; inbound
 // SMS during an active window gets the closure auto-reply.
 router.use(officeClosuresRouter);
+// /admin/office-hours — the practice's standard weekly open hours
+// (the "open by default" baseline the company calendar shades against).
+router.use(officeHoursRouter);
 // /admin/company-calendar — shared, staff-wide appointment calendar
 // (patient fittings/setups/follow-ups). Any signed-in staff member can
 // view and edit; distinct from the patient-initiated appointment_requests

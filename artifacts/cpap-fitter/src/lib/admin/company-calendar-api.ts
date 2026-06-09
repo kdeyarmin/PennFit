@@ -32,6 +32,10 @@ export interface CompanyCalendarEvent {
   notes: string | null;
   createdByUserId: string | null;
   createdByEmail: string | null;
+  /** Auth-user id of the staff member this appointment is assigned to. */
+  assignedToUserId: string | null;
+  /** Assignee email (denormalised for display). */
+  assignedToEmail: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +48,8 @@ export interface CalendarEventInput {
   endsAt: string;
   location?: string | null;
   notes?: string | null;
+  /** Auth-user id to assign to, or null to clear the assignment. */
+  assignedToUserId?: string | null;
 }
 
 async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {

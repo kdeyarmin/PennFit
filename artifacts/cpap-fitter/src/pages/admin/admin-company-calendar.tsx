@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   CalendarDays,
+  CalendarOff,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -46,6 +47,13 @@ import {
   listCompanyCalendar,
   updateCalendarEvent,
 } from "@/lib/admin/company-calendar-api";
+import { listTeam } from "@/lib/admin/admin-team-api";
+import {
+  createClosure,
+  listOfficeClosures,
+  listRecurringClosures,
+} from "@/lib/admin/office-closures-api";
+import { getOfficeHours } from "@/lib/admin/office-hours-api";
 
 // ── Appointment-type metadata ────────────────────────────────────
 // Order matters: drives the legend + the <select> order. Keep the keys
@@ -273,6 +281,64 @@ export function AdminCompanyCalendarPage() {
   const selectedKey = dateKey(selectedDay);
   const selectedEvents = eventsByDay.get(selectedKey) ?? [];
 
+  // ── Blackouts / office-hours overlay ───────────────────────────
+  // Pulled from the closures + office-hours admin surfaces so the calendar
+  // visibly marks days the practice is closed. Shared query keys reuse the
+  // closures-page cache; "Block this day" invalidates them.
+  const closuresQuery = useQuery({
+    queryKey: ["admin", "closures", "list"] as const,
+    queryFn: listOfficeClosures,
+    staleTime: 60_000,
+  });
+  const recurringQuery = useQuery({
+    queryKey: ["admin", "closures", "recurring"] as const,
+    queryFn: listRecurringClosures,
+    staleTime: 60_000,
+  });
+  const officeHoursQuery = useQuery({
+    queryKey: ["admin", "office-hours"] as const,
+    queryFn: getOfficeHours,
+    staleTime: 60_000,
+  });
+
+  const officeHoursWeekdays = useMemo(
+    () =>
+      new Set((officeHoursQuery.data?.windows ?? []).map((w) => w.dayOfWeek)),
+    [officeHoursQuery.data],
+  );
+  const officeHoursConfigured =
+    (officeHoursQuery.data?.windows ?? []).length > 0;
+  const recurringClosedWeekdays = useMemo(() => {
+    const s = new Set<number>();
+    for (const r of recurringQuery.data?.rules ?? []) {
+      // An "all day" recurring rule closes the whole weekday.
+      if (
+        r.active &&
+        r.startTimeUtc <= "00:30:00" &&
+        r.endTimeUtc >= "23:00:00"
+      )
+        s.add(r.dayOfWeek);
+    }
+    return s;
+  }, [recurringQuery.data]);
+
+  // Short label when a calendar day is closed (one-off closure overlapping
+  // the day, a recurring all-day rule, or — once office hours are set — a
+  // weekday with no open window). Null when the day is open.
+  function dayClosedLabel(day: Date): string | null {
+    const dayStart = startOfDay(day).getTime();
+    const dayEnd = dayStart + 86_400_000;
+    for (const c of closuresQuery.data?.closures ?? []) {
+      const s = new Date(c.startsAt).getTime();
+      const e = new Date(c.endsAt).getTime();
+      if (s < dayEnd && e > dayStart) return c.label || "Closed";
+    }
+    const dow = day.getDay();
+    if (recurringClosedWeekdays.has(dow)) return "Closed";
+    if (officeHoursConfigured && !officeHoursWeekdays.has(dow)) return "Closed";
+    return null;
+  }
+
   function goToMonth(offset: number) {
     const next = new Date(viewDate.getFullYear(), viewMonth + offset, 1);
     setViewDate(next);
@@ -416,18 +482,20 @@ export function AdminCompanyCalendarPage() {
                 const isSelected = dateKey(day) === selectedKey;
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                 const dayEvents = eventsByDay.get(dateKey(day)) ?? [];
+                const closedLabel = inMonth ? dayClosedLabel(day) : null;
+                const cellBg = isSelected
+                  ? "bg-[hsl(var(--penn-navy)/0.06)] ring-1 ring-inset ring-[hsl(var(--penn-navy)/0.35)]"
+                  : !inMonth
+                    ? "bg-slate-50/70"
+                    : closedLabel
+                      ? "bg-rose-50/40"
+                      : isWeekend
+                        ? "bg-slate-50/40"
+                        : "bg-white";
                 return (
                   <div
                     key={dateKey(day)}
-                    className={`group relative min-h-[6.5rem] border-b border-r p-1 ${
-                      isSelected
-                        ? "bg-[hsl(var(--penn-navy)/0.06)] ring-1 ring-inset ring-[hsl(var(--penn-navy)/0.35)]"
-                        : inMonth
-                          ? isWeekend
-                            ? "bg-slate-50/40"
-                            : "bg-white"
-                          : "bg-slate-50/70"
-                    }`}
+                    className={`group relative min-h-[6.5rem] border-b border-r p-1 ${cellBg}`}
                     style={{ borderColor: "hsl(var(--line-2))" }}
                   >
                     <div className="flex items-center justify-between">
@@ -461,6 +529,14 @@ export function AdminCompanyCalendarPage() {
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                     </div>
+                    {closedLabel && (
+                      <div
+                        className="mt-0.5 truncate rounded bg-rose-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-rose-700"
+                        title={closedLabel}
+                      >
+                        {closedLabel}
+                      </div>
+                    )}
                     <div className="mt-1 space-y-1">
                       {dayEvents.slice(0, 3).map((ev) => (
                         <EventChip
@@ -492,6 +568,7 @@ export function AdminCompanyCalendarPage() {
           day={selectedDay}
           events={selectedEvents}
           isPending={isPending && !isError}
+          closedLabel={dayClosedLabel(selectedDay)}
           onAdd={() => setEditor({ mode: "create", date: selectedDay })}
           onEdit={(ev) => setEditor({ mode: "edit", event: ev })}
         />
@@ -502,7 +579,13 @@ export function AdminCompanyCalendarPage() {
         />
       </div>
 
-      {editor && <EventEditor state={editor} onClose={() => setEditor(null)} />}
+      {editor && (
+        <EventEditor
+          state={editor}
+          closedLabelForDate={dayClosedLabel}
+          onClose={() => setEditor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -547,27 +630,86 @@ function SelectedDayPanel({
   day,
   events,
   isPending,
+  closedLabel,
   onAdd,
   onEdit,
 }: {
   day: Date;
   events: CompanyCalendarEvent[];
   isPending: boolean;
+  closedLabel: string | null;
   onAdd: () => void;
   onEdit: (ev: CompanyCalendarEvent) => void;
 }) {
+  const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
+  const blockDay = useMutation({
+    mutationFn: () => {
+      const s = startOfDay(day);
+      const e = new Date(
+        s.getFullYear(),
+        s.getMonth(),
+        s.getDate(),
+        23,
+        59,
+        59,
+      );
+      return createClosure({
+        label: `Closed ${s.toLocaleDateString()}`,
+        startsAt: s.toISOString(),
+        endsAt: e.toISOString(),
+        autoReplyMessage:
+          "Our office is closed today. We'll reply when we reopen. Reply STOP to opt out.",
+      });
+    },
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["admin", "closures"] }),
+  });
+
   return (
     <Card
       title={
         <span className="flex w-full items-center justify-between gap-2">
           <span>{DAY_FMT.format(day)}</span>
-          <Button intent="secondary" size="sm" onClick={onAdd}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add
-          </Button>
+          <span className="flex items-center gap-2">
+            <Button
+              intent="ghost"
+              size="sm"
+              isLoading={blockDay.isPending}
+              onClick={async () => {
+                if (
+                  !(await confirm({
+                    title: "Block this day?",
+                    description:
+                      "Mark this whole day closed? Inbound SMS gets the office-closed auto-reply and the day shows as closed on the calendar. You can undo it from Office closures.",
+                    confirmLabel: "Block day",
+                  }))
+                )
+                  return;
+                blockDay.mutate();
+              }}
+            >
+              <CalendarOff className="mr-1 h-4 w-4" />
+              Block day
+            </Button>
+            <Button intent="secondary" size="sm" onClick={onAdd}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add
+            </Button>
+          </span>
         </span>
       }
     >
+      {closedLabel && (
+        <div className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+          This day is marked closed ({closedLabel}).
+        </div>
+      )}
+      {blockDay.error instanceof Error && (
+        <div className="mb-3 text-xs text-rose-700">
+          {blockDay.error.message}
+        </div>
+      )}
       {isPending ? (
         <Spinner />
       ) : events.length === 0 ? (
@@ -581,6 +723,7 @@ function SelectedDayPanel({
           ))}
         </ul>
       )}
+      {ConfirmDialogEl}
     </Card>
   );
 }
@@ -783,9 +926,11 @@ function UpcomingCard({
 // ── Create / edit modal ──────────────────────────────────────────
 function EventEditor({
   state,
+  closedLabelForDate,
   onClose,
 }: {
   state: EditorState;
+  closedLabelForDate: (d: Date) => string | null;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -839,6 +984,32 @@ function EventEditor({
   const [notes, setNotes] = useState<string>(() =>
     state.mode === "edit" ? (state.event.notes ?? "") : "",
   );
+  const [assignedToUserId, setAssignedToUserId] = useState<string>(() =>
+    state.mode === "edit" ? (state.event.assignedToUserId ?? "") : "",
+  );
+
+  // Staff roster for the "Assign to" picker — active members with a usable
+  // auth-user id (pending invites have none, so they can't be assigned).
+  const teamQuery = useQuery({
+    queryKey: ["admin", "team"] as const,
+    queryFn: listTeam,
+    staleTime: 60_000,
+  });
+  const assignableMembers = useMemo(
+    () =>
+      (teamQuery.data?.members ?? []).filter(
+        (m) => m.status === "active" && m.authUserId,
+      ),
+    [teamQuery.data],
+  );
+  // If the current assignee isn't in the active roster (revoked, or not yet
+  // loaded), keep them selectable so editing doesn't silently drop them.
+  const currentAssigneeMissing =
+    state.mode === "edit" &&
+    !!state.event.assignedToUserId &&
+    !assignableMembers.some(
+      (m) => m.authUserId === state.event.assignedToUserId,
+    );
 
   // Esc closes the modal.
   useEffect(() => {
@@ -861,6 +1032,7 @@ function EventEditor({
         endsAt: new Date(endsAt).toISOString(),
         location: location.trim() || null,
         notes: notes.trim() || null,
+        assignedToUserId: assignedToUserId || null,
       };
       if (state.mode === "edit") {
         await updateCalendarEvent(state.event.id, { ...base, status });
@@ -888,6 +1060,11 @@ function EventEditor({
     startsAt !== "" &&
     endsAt !== "" &&
     new Date(endsAt) >= new Date(startsAt);
+
+  // Non-blocking heads-up if the chosen start lands on a closed day.
+  const startClosedLabel = startsAt
+    ? closedLabelForDate(new Date(startsAt))
+    : null;
 
   return (
     <div
@@ -997,6 +1174,12 @@ function EventEditor({
             </div>
           </div>
 
+          {startClosedLabel && (
+            <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+              Heads up — this falls on a day marked closed ({startClosedLabel}).
+            </div>
+          )}
+
           <div>
             <FieldLabel>Location / video link (optional)</FieldLabel>
             <Input
@@ -1017,6 +1200,38 @@ function EventEditor({
               style={{ borderColor: "hsl(var(--line-1))" }}
               aria-label="Notes"
             />
+          </div>
+
+          <div>
+            <FieldLabel>Assign to (optional)</FieldLabel>
+            <select
+              value={assignedToUserId}
+              onChange={(e) => setAssignedToUserId(e.target.value)}
+              className="w-full rounded border px-2 py-1.5 text-sm"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              aria-label="Assign to"
+            >
+              <option value="">Unassigned</option>
+              {assignableMembers.map((m) => (
+                <option key={m.authUserId!} value={m.authUserId!}>
+                  {m.displayName ?? m.email}
+                </option>
+              ))}
+              {state.mode === "edit" && currentAssigneeMissing && (
+                <option value={state.event.assignedToUserId ?? ""}>
+                  {state.event.assignedToEmail ?? "Current assignee"}
+                </option>
+              )}
+            </select>
+            {assignedToUserId &&
+              assignedToUserId !==
+                (state.mode === "edit"
+                  ? (state.event.assignedToUserId ?? "")
+                  : "") && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  They&apos;ll get an email and see it on their dashboard.
+                </p>
+              )}
           </div>
 
           {isEdit && state.event.createdByEmail && (
