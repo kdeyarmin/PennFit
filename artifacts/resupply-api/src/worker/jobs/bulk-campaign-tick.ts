@@ -179,17 +179,27 @@ export async function processTick(
   const staleSendingBefore = new Date(
     Date.now() - SENDING_LEASE_MS,
   ).toISOString();
-  const { error: reclaimErr } = await supabase
+  const { data: reclaimedRows, error: reclaimErr } = await supabase
     .schema("resupply")
     .from("bulk_campaign_recipients")
     .update({ status: "pending" })
     .eq("campaign_id", campaign.id)
     .eq("status", "sending")
-    .lt("updated_at", staleSendingBefore);
+    .lt("updated_at", staleSendingBefore)
+    .select("id");
   if (reclaimErr) {
     log.warn(
       { err: reclaimErr, campaignId: campaign.id },
       "bulk_campaigns.tick: stale 'sending' reclaim failed (continuing)",
+    );
+  } else if ((reclaimedRows ?? []).length > 0) {
+    // Every reclaimed row means a prior tick died mid-batch (crash,
+    // SIGKILL, job expiry). The recovery itself is routine; the SIGNAL is
+    // not — recurring reclaims indicate workers being killed under load,
+    // which ops can't diagnose if recovery happens silently.
+    log.warn(
+      { campaignId: campaign.id, reclaimedCount: reclaimedRows!.length },
+      "bulk_campaigns.tick: reclaimed stale 'sending' recipients — a prior tick crashed or was killed mid-batch",
     );
   }
 

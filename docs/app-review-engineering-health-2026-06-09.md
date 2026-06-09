@@ -91,12 +91,12 @@ handlers with log flush. Remaining hardening, highest-confidence first:
 | #   | Finding                                                                                                                                                                                                                                                                       | Effort | Anchor                                                                                                            |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
 | S1  | **IDOR source-check tests for the 40+ signed-in `shop/me/*` routes.** They scope by `req.userCustomerId`, but unlike the patient AI routes there is no test asserting every `me-*.ts` filters on the session customer id. One missed `.eq()` is a silent cross-customer leak. | S      | `routes/shop/me-*.ts`; pattern exists in `routes/patients/insurance-claims-ai-idor.test.ts`                       |
-| S2  | **Zod-validate TwiML callback query params.** `checkin-twiml.ts` / `alert-twiml.ts` coerce `req.query` (`ref`, `day`, `patientId`) with `.toString()` instead of a schema; values flow toward `<Say>` content and lookups.                                                    | S      | `routes/voice/checkin-twiml.ts:71`, `routes/voice/alert-twiml.ts:63`                                              |
+| S2  | ~~Zod-validate TwiML callback query params~~ — **withdrawn on implementation review** (§7): `day` is allowlisted, `patientId` is UUID-checked at the press callback, `ref` is an opaque server-side store key, and all output is XML-escaped behind Twilio signature checks.  | —      | `routes/voice/checkin-twiml.ts:58-74,131`, `routes/voice/alert-twiml.ts:63-77`                                    |
 | S3  | **Centralize signed-link token TTLs.** Patient-packet (30d), fax-document, fitter-invite, and mask-fit tokens each hard-code their own TTL; a single config point (env-overridable) prevents one long-TTL outlier extending a leaked-link window.                             | S      | `lib/patient-packet-token.ts`, `lib/fax-document-token.ts`, `lib/fitter-invite-token.ts`, `lib/mask-fit-token.ts` |
-| S4  | **Verify delegated webhook signature checks are timing-safe.** SendGrid event + fax-webhook verification live in `@workspace/resupply-email` / `@workspace/resupply-telecom`; confirm both use `crypto.timingSafeEqual` (Stripe/Twilio paths verified; these two were not).   | XS–S   | `routes/email/sendgrid-events.ts:42`, `routes/fax/webhooks.ts`                                                    |
+| S4  | ✅ **Verified (this PR): delegated webhook signature checks are timing-safe.** SendGrid uses ECDSA `crypto.verify`, Telnyx fax uses Ed25519 `crypto.verify`, Twilio uses `timingSafeEqual` — all constant-time by construction. No change needed.                             | done   | `lib/resupply-email/src/signature.ts:137`, `lib/resupply-telecom/src/{telnyx-signature.ts:110,signature.ts:35}`   |
 | S5  | **`.strict()` sweep on admin mutation schemas.** 258 `safeParse` calls across 167 files — adoption is broad, but older schemas without `.strict()` silently accept extra fields. A lint rule or source-grep CI check closes it permanently.                                   | M      | `routes/admin/**` (pattern check, like `check-admin-route-gates.sh`)                                              |
 | S6  | **Reject unknown webhook `eventType`s with 400** instead of `.passthrough()` persistence in the partner integrations webhook.                                                                                                                                                 | S      | `routes/integrations-webhooks.ts:116`                                                                             |
-| S7  | **Measure the graceful-shutdown drain.** The 25s budget (HTTP 20s + worker 5s) is close to Railway's 30s grace; log actual drain time per deploy and trim if it runs hot.                                                                                                     | S      | `artifacts/resupply-api/src/index.ts:247`                                                                         |
+| S7  | ✅ **Implemented (this PR): measure the graceful-shutdown drain.** The `shutdown: complete` log now carries `httpDrainMs` / `httpClosedInTime` / `workerStopMs` / `totalMs` / `budgetMs` so ops can see when the 25s budget runs hot against Railway's 30s grace.             | done   | `artifacts/resupply-api/src/index.ts` (`shutdown()`)                                                              |
 
 ---
 
@@ -109,15 +109,15 @@ queues configured per job. pg-boss `schedule()` dedupes cron fires
 internally and Railway runs a single replica, so cron double-fire is **not**
 a current risk (revisit only if replicas scale). Real gaps:
 
-| #   | Finding                                                                                                                                                                                                                                                                                      | Effort | Anchor                                                                                |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
-| W1  | **Re-check opt-out immediately before SMS/email vendor call.** Comm-prefs are checked at candidate selection; a STOP arriving between enqueue and send still leaks one message. Cheap re-query + `user_opted_out` abort closes the TCPA edge.                                                | S      | `lib/resupply-reminders/src/send-sms.ts` (no prefs re-check), `send-email.ts`         |
-| W2  | **Sustained-failure alerting on integration crons.** Therapy nightly sync and the Office Ally poller log "unavailable, skipping" but return ok — three days of vendor downtime looks like 72 green runs. Track consecutive-failure count and surface it on `/admin/operations` after N≥3.    | M      | `worker/jobs/therapy-integrations-nightly-sync.ts`, `office-ally-inbound-poll.ts`     |
-| W3  | **DLQ visibility in the admin console.** Dead-letter inspection currently requires raw SQL against `pgboss_resupply.job`. A small `/admin/operations` panel (per-queue DLQ counts + sample payload + requeue) makes on-call diagnosable without DB access.                                   | M      | `worker/lib/queue-options.ts:38` (documents the SQL)                                  |
-| W4  | **Auto-disable persistently failing webhook subscriptions.** Outbound webhook dispatch retries 8× with backoff per delivery; a permanently-broken subscriber URL consumes delivery slots forever. After N consecutive terminal failures, set `is_active=false` with a reason and surface it. | M      | `worker/jobs/webhook-dispatcher.ts:282`                                               |
-| W5  | **Timeout/abort on LLM + RPC calls inside jobs.** The AI denial analyzer and chunked-RPC jobs have per-call timeouts in places but no consistent abort posture; a hung vendor call burns the job's wall clock. Standardize `AbortSignal.timeout()` per external call in job context.         | M      | `lib/billing/ai-denial-analyzer.ts:173`, `worker/jobs/deductible-reset-push.ts:145`   |
-| W6  | **Respect `Retry-After` on SendGrid 429 in bulk-campaign ticks** instead of generic exponential backoff.                                                                                                                                                                                     | M      | `worker/jobs/bulk-campaign-tick.ts:96`                                                |
-| W7  | **Log stale-`sending` reclaims + cron-overlap warnings.** Reclaims happen silently (each one implies a crashed/killed worker); and a cron still running when its next tick fires deserves a structured warning. Both are observability one-liners on existing mechanisms.                    | S      | `worker/jobs/bulk-campaign-tick.ts:169`, `worker/index.ts` (monitor-states heartbeat) |
+| #   | Finding                                                                                                                                                                                                                                                                                               | Effort | Anchor                                                                                       |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------- |
+| W1  | ~~Re-check opt-out immediately before SMS/email vendor call~~ — **withdrawn on implementation review** (§7): STOP pauses the patient (`status='paused'`) and both send helpers re-fetch the patient row and reject non-active status _inside_ the send function, milliseconds before the vendor call. | —      | `send-sms.ts:53-64`, `send-email.ts:53-61`; STOP → `pausePatient` in `routes/sms/inbound.ts` |
+| W2  | **Sustained-failure alerting on integration crons.** Therapy nightly sync and the Office Ally poller log "unavailable, skipping" but return ok — three days of vendor downtime looks like 72 green runs. Track consecutive-failure count and surface it on `/admin/operations` after N≥3.             | M      | `worker/jobs/therapy-integrations-nightly-sync.ts`, `office-ally-inbound-poll.ts`            |
+| W3  | **DLQ visibility in the admin console.** Dead-letter inspection currently requires raw SQL against `pgboss_resupply.job`. A small `/admin/operations` panel (per-queue DLQ counts + sample payload + requeue) makes on-call diagnosable without DB access.                                            | M      | `worker/lib/queue-options.ts:38` (documents the SQL)                                         |
+| W4  | **Auto-disable persistently failing webhook subscriptions.** Outbound webhook dispatch retries 8× with backoff per delivery; a permanently-broken subscriber URL consumes delivery slots forever. After N consecutive terminal failures, set `is_active=false` with a reason and surface it.          | M      | `worker/jobs/webhook-dispatcher.ts:282`                                                      |
+| W5  | **Timeout/abort on LLM + RPC calls inside jobs.** The AI denial analyzer and chunked-RPC jobs have per-call timeouts in places but no consistent abort posture; a hung vendor call burns the job's wall clock. Standardize `AbortSignal.timeout()` per external call in job context.                  | M      | `lib/billing/ai-denial-analyzer.ts:173`, `worker/jobs/deductible-reset-push.ts:145`          |
+| W6  | **Respect `Retry-After` on SendGrid 429 in bulk-campaign ticks** instead of generic exponential backoff.                                                                                                                                                                                              | M      | `worker/jobs/bulk-campaign-tick.ts:96`                                                       |
+| W7  | ✅ **Implemented (this PR), reclaim half: stale-`sending` reclaims now log a warn with `reclaimedCount`** (each reclaim implies a crashed/killed prior tick). The cron-overlap warning half is folded into W2's observability work — it needs the same per-job run-state tracking.                    | done/M | `worker/jobs/bulk-campaign-tick.ts` (reclaim block); overlap → W2                            |
 
 Carried over from [`performance-review-2026-06-05.md`](./performance-review-2026-06-05.md)
 (still open, not re-derived): `count:'exact'`→`'estimated'` on hot dashboards,
@@ -132,17 +132,17 @@ Verified handled-well: route-level code splitting with lazy-retry recovery,
 error boundaries, React Query data layer, eager-Home-only LCP strategy,
 near-strict TS (`noImplicitAny` + `strictNullChecks` on). Gaps:
 
-| #   | Finding                                                                                                                                                                                                                                                           | Effort | Anchor                                                              |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------- |
-| F1  | **Generate the sitemap from the route map.** `public/sitemap.xml` is hand-written: 13 URLs total, only 3 of the 30 `learn-*` pages listed. The SEO content investment is invisible to crawlers. Build-step generation from `App.tsx` routes fixes it permanently. | S      | `artifacts/cpap-fitter/public/sitemap.xml`                          |
-| F2  | **JSON-LD `Product` schema on `/shop/p/:id` + `FAQPage` on `/faq`.** Only the homepage has structured data; product rich snippets (price/availability) are free conversion surface.                                                                               | M      | `index.html:117`, `hooks/use-document-meta.ts`                      |
-| F3  | **Web-Vitals RUM.** No LCP/CLS/INP field data is collected; regressions on the fitter or checkout are invisible until a customer complains. The `usage_events` pipe is a natural sink (no new vendor needed).                                                     | M      | `src/App.tsx`, `lib/track.ts`                                       |
-| F4  | **Expand the axe e2e beyond 5 public routes** to a few high-traffic `learn-*` pages and 1–2 admin surfaces (sign-in is covered; dashboards are not).                                                                                                              | M      | `e2e/tests/a11y.spec.ts:23`                                         |
-| F5  | **Focus reset on route change.** No `<main>` focus management after lazy navigation; screen-reader focus stays in the previous page.                                                                                                                              | XS     | `src/App.tsx:776`                                                   |
-| F6  | **MediaPipe model download progress.** The ~5.5MB `face_landmarker.task` loads on `/measure` entry with no progress indicator — on slow connections the fitter looks frozen at its highest-intent moment.                                                         | M      | `public/mediapipe/models/face_landmarker.task`, measure page loader |
-| F7  | **Hide unpublished video cards.** The learn video library renders "Coming soon" placeholder cards to customers when `youtubeId` is null; filter them out.                                                                                                         | XS     | `components/learn-video-library.tsx:49`                             |
-| F8  | **Distinguish transient vs permanent failure on `/results`.** Both render the same generic error; a Retry button on 5xx/timeout keeps the patient in-funnel at the most expensive drop-off point.                                                                 | S      | `pages/results.tsx:200`                                             |
-| F9  | **Consolidate query `staleTime` policy.** Admin pages mix 30s/60s ad hoc; one documented default per surface removes confusing tab-to-tab inconsistency.                                                                                                          | S      | `components/admin/*.tsx`                                            |
+| #   | Finding                                                                                                                                                                                                                                                                                                                                                   | Effort | Anchor                                                              |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------- |
+| F1  | ✅ **Implemented (this PR).** Was: hand-written sitemap with 13 URLs, only 3 of 30 `learn-*` pages. Now lists all 62 public content routes, and a drift test (`sitemap.drift.test.ts`) fails CI when a public route in `App.tsx` is missing from the sitemap (or vice versa) — chosen over a build step to keep `public/` static and the diff reviewable. | done   | `public/sitemap.xml`, `src/sitemap.drift.test.ts`                   |
+| F2  | **JSON-LD `Product` schema on `/shop/p/:id` + `FAQPage` on `/faq`.** Only the homepage has structured data; product rich snippets (price/availability) are free conversion surface.                                                                                                                                                                       | M      | `index.html:117`, `hooks/use-document-meta.ts`                      |
+| F3  | **Web-Vitals RUM.** No LCP/CLS/INP field data is collected; regressions on the fitter or checkout are invisible until a customer complains. The `usage_events` pipe is a natural sink (no new vendor needed).                                                                                                                                             | M      | `src/App.tsx`, `lib/track.ts`                                       |
+| F4  | **Expand the axe e2e beyond 5 public routes** to a few high-traffic `learn-*` pages and 1–2 admin surfaces (sign-in is covered; dashboards are not).                                                                                                                                                                                                      | M      | `e2e/tests/a11y.spec.ts:23`                                         |
+| F5  | ✅ **Implemented (this PR).** `ScrollToTop` now also moves focus to the `#main-content` landmark on every client-side navigation (skipping initial load); the landmark already had `tabIndex={-1}` + focus-visible-only outline, so pointer users see no change.                                                                                          | done   | `components/layout.tsx` (`ScrollToTop`)                             |
+| F6  | **MediaPipe model download progress.** The ~5.5MB `face_landmarker.task` loads on `/measure` entry with no progress indicator — on slow connections the fitter looks frozen at its highest-intent moment.                                                                                                                                                 | M      | `public/mediapipe/models/face_landmarker.task`, measure page loader |
+| F7  | ~~Hide unpublished video cards~~ — **withdrawn on implementation review** (§7): empty-id videos are already filtered out (and the whole section hides when none are publishable); the "Coming soon" branch is unreachable defensive code.                                                                                                                 | —      | `components/learn-video-library.tsx:35-39`                          |
+| F8  | **Distinguish transient vs permanent failure on `/results`.** Both render the same generic error; a Retry button on 5xx/timeout keeps the patient in-funnel at the most expensive drop-off point.                                                                                                                                                         | S      | `pages/results.tsx:200`                                             |
+| F9  | **Consolidate query `staleTime` policy.** Admin pages mix 30s/60s ad hoc; one documented default per surface removes confusing tab-to-tab inconsistency.                                                                                                                                                                                                  | S      | `components/admin/*.tsx`                                            |
 
 Deferred (real but L-effort, defer until justified): SSR/prerender for link
 unfurls (OG tags are client-injected), offline/workbox caching for the
@@ -157,7 +157,7 @@ smoke, axe on 5 routes, results resilience); worker jobs **44/55 tested
 (~80%)**; route files **217/343 with tests (~63%)**; 10-job CI pipeline with
 required lint/typecheck/drift/test/migrations/smoke/railway-build and
 soft-gated integration/a11y/e2e-dev/audit. No coverage gate; `pnpm audit`
-high-CVE check is non-blocking.
+high-CVE check was non-blocking (now blocking — item 3 below).
 
 Targeted asks (not a coverage program):
 
@@ -168,8 +168,10 @@ Targeted asks (not a coverage program):
    jobs, prioritize `office-ally-inbound-poll.ts` (claims ingest),
    `capped-rental-advance.ts`, `dwo-expiry-sweep.ts`, and
    `lapsed-customer-winback.ts`. (S each)
-3. **Promote the CVE audit job to blocking** once the current high-severity
-   set is triaged. (XS)
+3. ✅ **Implemented (this PR): the CVE audit job is now blocking.**
+   `pnpm audit --audit-level=high` reports a clean tree, so
+   `continue-on-error` was flipped to `false`; the job comment documents
+   the `ignoreCves` escape hatch for unpatchable advisory churn.
 4. S1's IDOR source-check test doubles as the shop-route test seed. (S)
 
 ---
@@ -190,6 +192,27 @@ Recorded because future sweeps will likely re-surface them:
   failures to audit) — **disallowed by the hard rules**; the audit package is
   a no-op stub by design.
 
+Found during Wave-1 implementation (same PR):
+
+- **S2 "TwiML query params unvalidated"** — `day` is allowlist-validated with
+  a safe fallback, `patientId` is Zod-UUID-checked before any DB write,
+  `alert-twiml`'s `ref` is an opaque in-process store key that claims a
+  server-side script (a miss renders a neutral hangup), and every
+  interpolation goes through `escapeXmlText`/`escapeXmlAttr` behind Twilio
+  signature verification.
+- **W1 "STOP race between enqueue and send"** — STOP sets
+  `patients.status='paused'`, and `sendReminderSms`/`sendReminderEmail`
+  re-fetch the patient row and reject non-active status inside the send
+  function itself; the only remaining window is the milliseconds between that
+  select and the vendor call, which no application-level check can close.
+- **F7 "Coming-soon video cards shown to customers"** — `LearnVideoLibrary`
+  filters empty-id videos at line 35 and hides the entire section when none
+  are publishable; the per-card placeholder branch is unreachable defensive
+  code (its own header comment says exactly this).
+- **S4 resolved as "already handled"** — all three delegated signature checks
+  are constant-time by construction (ECDSA / Ed25519 `crypto.verify`,
+  `timingSafeEqual` for the Twilio HMAC).
+
 ---
 
 ## 8. Recommended sequencing
@@ -199,11 +222,11 @@ enrollment consent, cart-abandonment/escalation cron flips, ResMed/Philips
 BAAs. Now also: the **autopay/installment activation decisions** that #634
 shipped inert.
 
-**Wave 1 — quick wins (XS–S):**
-F1 sitemap generation · F5 focus reset · F7 hide placeholder cards ·
-W1 send-time opt-out re-check · W7 reclaim/overlap logging · S2 TwiML Zod ·
-S4 timing-safe verification audit · S7 shutdown drain logging ·
-CI item 3 (blocking CVE audit).
+**Wave 1 — quick wins (XS–S): ✅ done in this PR.**
+Implemented: F1 sitemap + drift test · F5 focus reset · W7 reclaim logging ·
+S7 shutdown drain timings · CI item 3 (blocking CVE audit).
+Resolved without code: S4 (verified timing-safe) · S2, W1, F7 (withdrawn as
+false positives — see §7).
 
 **Wave 2 — high-leverage S–M:**
 S1 shop/me IDOR tests + CI item 1 (checkout/fitter e2e) — both protect the
@@ -219,4 +242,6 @@ clinical comms timeline (C-R2) · then the owner-scale product items
 
 ---
 
-_Review only — this document changes no application behavior._
+_The PR that introduces this document also ships its Wave 1: the full
+sitemap + drift test, route-change focus reset, bulk-campaign reclaim
+logging, shutdown drain timings, and the blocking CVE audit gate._

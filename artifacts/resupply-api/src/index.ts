@@ -276,20 +276,40 @@ async function shutdown(signal: string): Promise<void> {
   const httpTimeout = new Promise<void>((resolve) =>
     setTimeout(resolve, httpDeadlineMs),
   );
-  await Promise.race([httpClosed, httpTimeout]);
+  const httpClosedInTime = await Promise.race([
+    httpClosed.then(() => true),
+    httpTimeout.then(() => false),
+  ]);
+  const httpDrainMs = Date.now() - startedAt;
 
   // Stop pg-boss — owns its own node-postgres pool and drains any
   // in-flight job handlers gracefully on `boss.stop()`. Pass it the
   // remaining time budget so the total wall clock stays inside
   // TOTAL_BUDGET_MS.
   const remainingMs = Math.max(1_000, deadline - Date.now());
+  const workerStopStartedAt = Date.now();
   try {
     await stopWorker(remainingMs);
   } catch (err) {
     logger.warn({ err: serializeErr(err) }, "shutdown: worker stop errored");
   }
 
-  logger.info({ signal }, "shutdown: complete");
+  // Phase timings let ops verify the budget isn't running hot against the
+  // orchestrator's grace period (30s on Railway): a recurring
+  // httpClosedInTime=false, or totalMs creeping toward TOTAL_BUDGET_MS,
+  // means in-flight work is being cut off on every deploy rollover and the
+  // budgets need retuning.
+  logger.info(
+    {
+      signal,
+      httpDrainMs,
+      httpClosedInTime,
+      workerStopMs: Date.now() - workerStopStartedAt,
+      totalMs: Date.now() - startedAt,
+      budgetMs: TOTAL_BUDGET_MS,
+    },
+    "shutdown: complete",
+  );
   await flushLogsAndExit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
