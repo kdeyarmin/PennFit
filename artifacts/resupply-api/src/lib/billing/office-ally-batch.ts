@@ -23,6 +23,7 @@ import {
   createOfficeAllyAdapter,
   type ClaimDetail,
   type OtherSubscriberDetail,
+  type ProviderRef,
 } from "@workspace/resupply-integrations-office-ally";
 
 import {
@@ -523,7 +524,7 @@ export async function buildOneDetail(
       ? supabase
           .schema("resupply")
           .from("providers")
-          .select("legal_name, npi")
+          .select("legal_name, npi, practice_address")
           .eq("id", claim.referring_provider_id)
           .limit(1)
           .maybeSingle()
@@ -607,6 +608,24 @@ export async function buildOneDetail(
     };
   }
 
+  // A2 — line-level ordering-provider loop (2420E NM1*DK). DMEPOS-strict
+  // placement of the ordering physician (the prescriber, == our referring
+  // provider) so Medicare's PECOS edit binds at the line. Gated behind a
+  // seeded-OFF feature flag: this CHANGES the live 837P (adds a loop), so
+  // it stays off until a live 277CA test cycle confirms the payer accepts
+  // it. When off → byte-identical output. Additive to the existing 2310D
+  // referring loop, not a replacement.
+  const orderingProvider: ProviderRef | null =
+    referringProvider &&
+    (await isFeatureEnabled("billing.line_ordering_provider"))
+      ? {
+          npi: referringProvider.npi,
+          firstName: splitFirstName(referringProvider.legal_name),
+          lastName: splitLastName(referringProvider.legal_name),
+          address: jsonToPostalAddress(referringProvider.practice_address),
+        }
+      : null;
+
   return {
     internalClaimId: claim.id.slice(0, 38),
     totalBilledCents: claim.total_billed_cents,
@@ -647,6 +666,8 @@ export async function buildOneDetail(
       // description + MSRP) on miscellaneous/NOC HCPCS lines. The builder
       // emits the NTE only when this is set; null → no NTE.
       note: (l.narrative as string | null) ?? null,
+      // Loop 2420E NM1*DK — flag-gated line-level ordering provider (A2).
+      orderingProvider,
     })),
     renderingProvider: renderingProvider
       ? {
@@ -783,4 +804,26 @@ function splitLastName(name: string): string {
   if (trimmed.includes(",")) return trimmed.split(",", 2)[0]!.trim();
   const parts = trimmed.split(/\s+/);
   return parts.length > 1 ? parts[parts.length - 1]! : trimmed;
+}
+
+/**
+ * Coerce a provider's `practice_address` jsonb into the 837P PostalAddress
+ * shape (loop 2420E N3/N4). Accepts the `zip` / `postalCode` / `postal_code`
+ * key variants the address blobs use. Returns null unless line1/city/state/
+ * zip are all present — the builder then emits NM1*DK without N3/N4 rather
+ * than a malformed partial address.
+ */
+function jsonToPostalAddress(
+  raw: unknown,
+): { line1: string; city: string; state: string; zip: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const a = raw as Record<string, unknown>;
+  const str = (v: unknown): string =>
+    typeof v === "string" ? v.trim() : "";
+  const line1 = str(a.line1);
+  const city = str(a.city);
+  const state = str(a.state);
+  const zip = str(a.zip) || str(a.postalCode) || str(a.postal_code);
+  if (!line1 || !city || !state || !zip) return null;
+  return { line1, city, state, zip };
 }

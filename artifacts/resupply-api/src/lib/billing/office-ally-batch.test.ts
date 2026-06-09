@@ -32,8 +32,10 @@ vi.mock("../feature-flags", () => ({
   ),
 }));
 
+import { build837P } from "@workspace/resupply-integrations-office-ally";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { isFeatureEnabled } from "../feature-flags";
 import {
   buildOneDetail,
   executeOfficeAllyBatchSubmit,
@@ -274,6 +276,98 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 // ---------------------------------------------------------------------------
 // Coordination of benefits (Biller #28 slice 2)
 // ---------------------------------------------------------------------------
+
+describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () => {
+  it("attaches the referring provider as a 2420E ordering provider when the flag is ON", async () => {
+    stageMinimalDetail([
+      { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+    ]);
+    // Referring (prescribing) provider — the source of the line ordering provider.
+    stageSupabaseResponse("providers", "select", {
+      data: {
+        legal_name: "Rivera, Alex",
+        npi: "1700987654",
+        practice_address: {
+          line1: "55 Clinic Way",
+          city: "Hershey",
+          state: "PA",
+          zip: "17033",
+        },
+      },
+      error: null,
+    });
+    // Flag ON for this single buildOneDetail call.
+    vi.mocked(isFeatureEnabled).mockImplementationOnce(
+      async (key: string) => key === "billing.line_ordering_provider",
+    );
+
+    const claim = makeClaimRow({
+      referring_provider_id: "prov-rx-001",
+      total_billed_cents: 24999,
+    });
+    const detail = await buildOneDetail(
+      getSupabaseServiceRoleClient(),
+      claim as never,
+      "Aetna",
+      "60054",
+    );
+    expect(detail).not.toBeNull();
+    const op = detail!.serviceLines[0]!.orderingProvider;
+    expect(op?.npi).toBe("1700987654");
+    expect(op?.lastName).toBe("Rivera");
+    expect(op?.address?.zip).toBe("17033");
+
+    // And it actually serializes as loop 2420E NM1*DK in the 837P.
+    const { payload } = build837P({
+      submitter: {
+        etin: "E1",
+        organizationName: "PENNPAPS",
+        contactName: "BILLING",
+        contactPhoneE164: "+18145551234",
+      },
+      receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },
+      billingProvider: {
+        organizationName: "PENNPAPS",
+        npi: "1234567893",
+        taxId: "123456789",
+        address: { line1: "1 A St", city: "STATE COLLEGE", state: "PA", zip: "16801" },
+      },
+      claims: [detail!],
+      control: {
+        interchangeControlNumber: "1",
+        groupControlNumber: "1",
+        transactionSetControlNumber: "1",
+        builtAt: Date.UTC(2026, 5, 1),
+      },
+      usageIndicator: "T",
+    });
+    expect(payload).toMatch(/~NM1\*DK\*1\*Rivera\*Alex\*[^~]*XX\*1700987654~/);
+    expect(payload).toContain("~N4*Hershey*PA*17033~");
+  });
+
+  it("does NOT attach an ordering provider when the flag is OFF (default)", async () => {
+    stageMinimalDetail([
+      { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+    ]);
+    stageSupabaseResponse("providers", "select", {
+      data: {
+        legal_name: "Rivera, Alex",
+        npi: "1700987654",
+        practice_address: null,
+      },
+      error: null,
+    });
+    // Default mock impl returns false for billing.line_ordering_provider.
+    const claim = makeClaimRow({ referring_provider_id: "prov-rx-001" });
+    const detail = await buildOneDetail(
+      getSupabaseServiceRoleClient(),
+      claim as never,
+      "Aetna",
+      "60054",
+    );
+    expect(detail!.serviceLines[0]!.orderingProvider ?? null).toBeNull();
+  });
+});
 
 describe("buildOneDetail — coordination of benefits", () => {
   it("secondary claim → payerResponsibility S, discloses primary with snapshot prior-paid", async () => {

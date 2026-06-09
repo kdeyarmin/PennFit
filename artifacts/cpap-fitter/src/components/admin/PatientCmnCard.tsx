@@ -192,11 +192,26 @@ function CmnRow({
             </span>
           )}
         </span>
-        {doc.status === "draft" && form && (
-          <Button size="sm" intent="ghost" onClick={() => setOpen((o) => !o)}>
-            {open ? "Close" : "Edit"}
-          </Button>
-        )}
+        <span className="flex items-center gap-2">
+          {/* Answered clinical-questionnaire PDF (A5). Same-origin GET
+              carries the admin session cookie; opens in a new tab. */}
+          <a
+            href={`/resupply-api/admin/cmn-documents/${encodeURIComponent(
+              doc.id,
+            )}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-primary hover:underline"
+            title="Open the answered CMN clinical questionnaire (PDF) to print or fax"
+          >
+            PDF
+          </a>
+          {doc.status === "draft" && form && (
+            <Button size="sm" intent="ghost" onClick={() => setOpen((o) => !o)}>
+              {open ? "Close" : "Edit"}
+            </Button>
+          )}
+        </span>
       </div>
 
       {open && form && (
