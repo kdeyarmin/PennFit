@@ -127,11 +127,16 @@ function MailQueueSection() {
     staleTime: 30_000,
   });
 
+  // Mark ONLY the statements that the print batch actually rendered (the
+  // oldest `printCap`). Marking the full queue here would record bills as
+  // mailed that were never in the printed PDF when the backlog exceeds the
+  // cap — they'd leave the queue unmailed.
+  const printCap = query.data?.printCap ?? 0;
+  const printBatchIds = (query.data?.queued ?? [])
+    .slice(0, printCap || undefined)
+    .map((s) => s.statementId);
   const markAll = useMutation({
-    mutationFn: () =>
-      markStatementsMailed(
-        (query.data?.queued ?? []).map((s) => s.statementId),
-      ),
+    mutationFn: () => markStatementsMailed(printBatchIds),
     onSuccess: () => void qc.invalidateQueries({ queryKey: MAIL_QUEUE_KEY }),
   });
 
@@ -173,7 +178,9 @@ function MailQueueSection() {
               isLoading={markAll.isPending}
               onClick={() => markAll.mutate()}
             >
-              Mark all as mailed
+              {query.data.count > query.data.printCap
+                ? `Mark printed batch as mailed (oldest ${query.data.printCap})`
+                : "Mark all as mailed"}
             </Button>
           </div>
           {markAll.data && (

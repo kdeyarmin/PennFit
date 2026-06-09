@@ -528,9 +528,11 @@ export async function runStatementBatchSend(
     .select("id, total_patient_responsibility_cents")
     .eq("delivery_status", "pending")
     .gt("total_patient_responsibility_cents", 0)
-    // Electronic only — exclude mail-preference rows (and legacy sms /
-    // in_person), keeping null (pre-0257) on the electronic path.
-    .or("delivery_method.is.null,delivery_method.eq.email")
+    // Electronic = everything EXCEPT mail-preference. Excluding only
+    // 'mail' keeps null (pre-0257) AND any legacy sms/in_person rows on
+    // the electronic path (handled by pickStatementChannel) rather than
+    // orphaning them off both queues.
+    .or("delivery_method.is.null,delivery_method.neq.mail")
     .order("created_at", { ascending: true })
     .limit(Math.max(1, cap));
   if (error) throw error;

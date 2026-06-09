@@ -75,9 +75,11 @@ router.get(
       .select("id, patient_id, total_patient_responsibility_cents, created_at")
       .eq("delivery_status", "pending")
       .gt("total_patient_responsibility_cents", 0)
-      // Electronic worklist only — mailed-preference statements have their
-      // own queue (/mail-queue) and must not show here as "awaiting send".
-      .or("delivery_method.is.null,delivery_method.eq.email")
+      // Electronic worklist = everything EXCEPT mailed-preference (which
+      // has its own /mail-queue). Excluding only 'mail' keeps null (legacy)
+      // plus any sms/in_person rows visible here rather than orphaning them
+      // between the two queues.
+      .or("delivery_method.is.null,delivery_method.neq.mail")
       .order("created_at", { ascending: true })
       .limit(500);
     if (error) {
