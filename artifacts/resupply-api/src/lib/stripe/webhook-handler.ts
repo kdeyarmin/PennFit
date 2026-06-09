@@ -340,6 +340,22 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
+        // Payment-plan autopay authorization (mode=setup). Capture the
+        // mandated payment method and flip the plan to 'authorized'.
+        // This is a distinct flow from a paid order — handle and return.
+        if (
+          session.mode === "setup" &&
+          session.metadata?.purpose === "payment_plan_autopay"
+        ) {
+          // Let any failure propagate to the outer catch, which deletes
+          // the dedupe record and returns 500 so Stripe RETRIES. Stripe
+          // won't re-fire this event on its own, and swallowing here
+          // would strand the plan in 'pending' after the patient already
+          // completed the setup — so this must be retryable, not
+          // best-effort.
+          await authorizePaymentPlanAutopay(config, session, log);
+          break;
+        }
         const paidRow = await markPaid(session, log);
         // Best-effort: mirror the session's line items into
         // shop_order_items so the verified-purchaser badge and the
@@ -748,6 +764,68 @@ export const stripeWebhookHandler: RequestHandler = async (
 
   res.status(200).json({ received: true });
 };
+
+/**
+ * Complete a payment-plan autopay authorization (mode=setup Checkout).
+ * Stores the Stripe customer + the mandated payment method on the plan
+ * and flips autopay_status='authorized'. The payment method is read from
+ * the session's SetupIntent. Idempotent — re-delivery re-writes the same
+ * values. Storing a card off-session here is what later lets the
+ * autocharge worker debit it (still gated by the seeded-OFF flag + cron).
+ */
+async function authorizePaymentPlanAutopay(
+  config: StripeConfig,
+  session: Stripe.Checkout.Session,
+  log: { info?: (...args: unknown[]) => void } | undefined,
+): Promise<void> {
+  const planId = session.metadata?.payment_plan_id;
+  if (!planId) return;
+  const customerId =
+    typeof session.customer === "string"
+      ? session.customer
+      : (session.customer?.id ?? null);
+
+  // Resolve the payment method from the SetupIntent.
+  const stripe = getStripeClient(config);
+  const setupIntentId =
+    typeof session.setup_intent === "string"
+      ? session.setup_intent
+      : (session.setup_intent?.id ?? null);
+  let paymentMethodId: string | null = null;
+  if (setupIntentId) {
+    const si = await stripe.setupIntents.retrieve(setupIntentId);
+    paymentMethodId =
+      typeof si.payment_method === "string"
+        ? si.payment_method
+        : (si.payment_method?.id ?? null);
+  }
+  if (!customerId || !paymentMethodId) {
+    log?.info?.(
+      {
+        planId,
+        hasCustomer: Boolean(customerId),
+        hasPm: Boolean(paymentMethodId),
+      },
+      "stripe webhook: autopay setup completed but customer/PM missing — not authorizing",
+    );
+    return;
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("patient_payment_plans")
+    .update({
+      autopay_status: "authorized",
+      stripe_customer_id: customerId,
+      stripe_payment_method_id: paymentMethodId,
+      autopay_authorized_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", planId);
+  if (error) throw error;
+  log?.info?.({ planId }, "stripe webhook: payment-plan autopay authorized");
+}
 
 interface PaidOrderRow {
   id: string;

@@ -14,17 +14,39 @@ import { logger } from "../../lib/logger.js";
 
 const router = Router();
 
+// Must stay in sync with the client-side `TrackStep` union in
+// artifacts/cpap-fitter/src/lib/track.ts. The ingest silently drops
+// (204) any step not in this list, so a step the client emits but the
+// server doesn't allow-list is never persisted — which is exactly how
+// the shop-checkout and fitter-invite steps went unrecorded until they
+// were added here. The `step` column is free text, so widening this list
+// needs no migration.
 const KNOWN_STEPS = [
+  // Fitter funnel
   "home_view",
   "consent_given",
   "capture_started",
   "capture_taken",
   "measurements_extracted",
+  "measurement_error",
   "questionnaire_completed",
   "results_viewed",
   "mask_chosen",
   "order_started",
   "order_submitted_success",
+  "capture_blocked",
+  "results_retake_requested",
+  // Shop / checkout funnel
+  "cart_items_dropped",
+  "checkout_started",
+  "checkout_step_viewed",
+  "checkout_error",
+  "checkout_completed",
+  "reorder_prefill_applied",
+  // Fitter-invite (staff-initiated) funnel
+  "fitter_invite_opened",
+  "fitter_invite_started",
+  "fitter_lead_submit_failed",
   // PennBot chat surface (anonymous, no PHI). Helps the team see if
   // the chatbot is being used and which response paths fire.
   "chat_opened",

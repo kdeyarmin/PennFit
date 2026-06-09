@@ -80,6 +80,7 @@ import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
 import referralsAttributeRouter from "./admin/referrals-attribute.js";
 import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
 import resupplyFunnelRouter from "./admin/resupply-funnel.js";
+import acquisitionFunnelRouter from "./admin/acquisition-funnel.js";
 import therapyUsageReportRouter from "./admin/therapy-usage-report.js";
 import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-manual.js";
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
@@ -812,6 +813,9 @@ router.use(patientMaintenanceLogRouter);
 // /admin/analytics/resupply-funnel — episode-stage rollup with
 // confirm + fulfillment rates over a configurable window.
 router.use(resupplyFunnelRouter);
+// /admin/analytics/acquisition-funnel — storefront/fitter funnel
+// drop-off from the anonymous usage_events stream (Growth #G1).
+router.use(acquisitionFunnelRouter);
 router.use(therapyUsageReportRouter);
 // /admin/patients/:id/therapy-nights — manual entry path for nights
 // not delivered via the partner integration.

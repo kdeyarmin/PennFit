@@ -27,6 +27,10 @@ import {
 } from "../../lib/billing/payment-plan";
 import { logger } from "../../lib/logger";
 import {
+  getStripeClient,
+  readStripeConfigOrNull,
+} from "../../lib/stripe/config";
+import {
   adminRateLimit,
   adminReadRateLimiter,
 } from "../../middlewares/admin-rate-limit";
@@ -162,7 +166,7 @@ router.post(
       .schema("resupply")
       .from("patient_payment_plans")
       .select(
-        "id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at",
+        "id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, autopay_status, autopay_authorized_at",
       )
       .eq("patient_id", parsed.data.patientId)
       .order("created_at", { ascending: false })
@@ -193,7 +197,7 @@ router.get(
       .schema("resupply")
       .from("patient_payment_plans")
       .select(
-        "id, patient_id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, updated_at",
+        "id, patient_id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, updated_at, autopay_status, autopay_authorized_at",
       )
       .eq("id", id.data)
       .limit(1)
@@ -394,5 +398,149 @@ async function audit(
     logger.warn({ err, action }, "payment-plan audit write failed");
   });
 }
+
+// POST /admin/payment-plans/:id/authorize-autopay — start the off-session
+// mandate flow. Creates a Stripe *setup* Checkout session (which captures
+// Stripe's standard recurring-charge mandate consent) for the plan's
+// patient and returns the hosted URL for the CSR to send / the patient to
+// complete. On completion the webhook stores the customer + payment method
+// and flips autopay_status='authorized' (see stripe/webhook-handler.ts).
+//
+// Charging itself stays gated behind the seeded-OFF
+// billing.payment_plan_autocharge flag + the worker cron — authorizing a
+// plan never charges anything on its own.
+const authorizeBody = z
+  .object({
+    successUrl: z.string().url().max(2000),
+    cancelUrl: z.string().url().max(2000),
+  })
+  .strict();
+
+router.post(
+  "/admin/payment-plans/:id/authorize-autopay",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "payment_plans.authorize_autopay",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const idCheck = uuid.safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = authorizeBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({
+        error: "stripe_not_configured",
+        message: "Stripe is not configured; cannot authorize autopay.",
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: plan, error } = await supabase
+      .schema("resupply")
+      .from("patient_payment_plans")
+      .select("id, patient_id, status, stripe_customer_id")
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!plan) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (plan.status !== "active") {
+      res.status(409).json({
+        error: "plan_not_active",
+        message: "Only an active plan can be authorized for autopay.",
+      });
+      return;
+    }
+
+    const stripe = getStripeClient(config);
+    // Reuse the plan's customer if one was already minted; otherwise let
+    // Checkout create one (customer_creation='always' in setup mode).
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create(
+        {
+          mode: "setup",
+          payment_method_types: ["card"],
+          ...(plan.stripe_customer_id
+            ? { customer: plan.stripe_customer_id }
+            : {}),
+          success_url: parsed.data.successUrl,
+          cancel_url: parsed.data.cancelUrl,
+          // The webhook keys off these to find the plan + store the PM.
+          metadata: {
+            payment_plan_id: plan.id,
+            patient_id: plan.patient_id,
+            purpose: "payment_plan_autopay",
+          },
+          setup_intent_data: {
+            metadata: {
+              payment_plan_id: plan.id,
+              patient_id: plan.patient_id,
+              purpose: "payment_plan_autopay",
+            },
+          },
+        },
+        { idempotencyKey: `pennpaps-autopay-setup-${plan.id}` },
+      );
+    } catch (err) {
+      // Log the Error object so pino's serializer redacts message/stack
+      // (a raw string field bypasses that redaction).
+      logger.warn(
+        { err },
+        "payment-plan authorize-autopay: stripe session create failed",
+      );
+      res.status(502).json({ error: "stripe_error" });
+      return;
+    }
+    if (!session.url) {
+      res.status(502).json({ error: "stripe_no_url" });
+      return;
+    }
+
+    // Mark the plan as pending authorization (not yet authorized — that
+    // only happens when the webhook confirms the completed setup). If this
+    // write fails the plan stays in its prior state; the setup session is
+    // already live and the webhook flips it to 'authorized' on completion
+    // regardless, so we don't fail the request — but we surface the error
+    // so a stuck 'off' status is debuggable rather than silent.
+    const { error: pendingErr } = await supabase
+      .schema("resupply")
+      .from("patient_payment_plans")
+      .update({
+        autopay_status: "pending",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", plan.id);
+    if (pendingErr) {
+      logger.warn(
+        { err: pendingErr, planId: plan.id },
+        "payment-plan authorize-autopay: failed to mark plan pending",
+      );
+    }
+
+    await audit(
+      req,
+      "payment_plan.autopay.authorize_started",
+      "patient_payment_plans",
+      plan.id,
+      {
+        session_id: session.id,
+      },
+    );
+
+    res.json({ url: session.url });
+  },
+);
 
 export default router;
