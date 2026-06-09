@@ -54,6 +54,8 @@ import {
   type ElevenLabsClient,
   type ElevenLabsVoiceSettings,
   type MediaStreamSink,
+  type ToolDispatcher,
+  type ToolName,
   type TranscriptTurn,
   type TtsStreamer,
   type TtsSynthesizer,
@@ -200,23 +202,17 @@ export async function handleVoiceWsConnection(
   }
 
   // Realtime session schema. Default "beta" (production). When an operator
-  // flips OPENAI_REALTIME_SCHEMA=ga on a preview, fill in coherent GA
-  // defaults — gpt-realtime-2 + gpt-realtime-whisper — unless overridden,
-  // so the whole upgrade is reachable from one env var. The µ-law token
-  // (audio/pcmu) and reasoning effort ("low") default inside RealtimeClient.
-  const realtimeIsGa = config.realtimeSchema === "ga";
-  const realtimeModel =
-    config.realtimeModel ??
-    (realtimeIsGa ? DEFAULT_REALTIME_GA_MODEL : undefined);
-  const realtimeTranscribeModel =
-    config.realtimeTranscribeModel ??
-    (realtimeIsGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined);
-  if (realtimeIsGa) {
+  // flips OPENAI_REALTIME_SCHEMA=ga on a preview, the resolver fills in
+  // coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper); the µ-law
+  // token (audio/pcmu) and reasoning effort ("low") default inside
+  // RealtimeClient.
+  const realtime = resolveRealtimeClientOptions(config);
+  if (config.realtimeSchema === "ga") {
     logger.info(
       {
         event: "voice_realtime_ga_schema",
-        model: realtimeModel,
-        transcribe: realtimeTranscribeModel,
+        model: realtime.model,
+        transcribe: realtime.transcriptionModel,
         conversationId: pending.conversationId,
       },
       "voice: OpenAI Realtime GA schema enabled (gpt-realtime-2 spike)",
@@ -225,17 +221,7 @@ export async function handleVoiceWsConnection(
 
   const client = new RealtimeClient({
     apiKey: config.openaiApiKey,
-    sessionSchema: config.realtimeSchema,
-    ...(realtimeModel ? { model: realtimeModel } : {}),
-    ...(realtimeTranscribeModel
-      ? { transcriptionModel: realtimeTranscribeModel }
-      : {}),
-    ...(config.realtimeReasoningEffort
-      ? { reasoningEffort: config.realtimeReasoningEffort }
-      : {}),
-    ...(config.realtimeAudioFormat
-      ? { audioFormat: config.realtimeAudioFormat }
-      : {}),
+    ...realtime,
     // When ElevenLabs owns the voice, the model emits text (not audio)
     // and the bridge synthesises it. Otherwise the model speaks (cedar).
     generateAudio: !externalVoice,
@@ -668,6 +654,200 @@ export async function handleVoiceWsConnection(
     // Defensive: if teardown somehow already completed before we wired
     // the resolver (handlers fire async after this point, so this is
     // not expected), resolve immediately to avoid hanging.
+    if (closed) resolve();
+  });
+}
+
+/**
+ * Map the voice config's realtime knobs to RealtimeClient options, applying
+ * coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper) when the
+ * schema is "ga". Shared by the production and diagnostic handlers so a
+ * diagnostic call exercises the exact Realtime config production runs.
+ * Undefined fields fall through to RealtimeClient's own defaults.
+ */
+function resolveRealtimeClientOptions(config: VoiceConfig): {
+  sessionSchema: "beta" | "ga";
+  model: string | undefined;
+  transcriptionModel: string | undefined;
+  reasoningEffort: "minimal" | "low" | "medium" | "high" | undefined;
+  audioFormat: string | undefined;
+} {
+  const isGa = config.realtimeSchema === "ga";
+  return {
+    sessionSchema: config.realtimeSchema,
+    model:
+      config.realtimeModel ?? (isGa ? DEFAULT_REALTIME_GA_MODEL : undefined),
+    transcriptionModel:
+      config.realtimeTranscribeModel ??
+      (isGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined),
+    reasoningEffort: config.realtimeReasoningEffort,
+    audioFormat: config.realtimeAudioFormat,
+  };
+}
+
+/**
+ * Isolated diagnostic bridge — a no-patient "connection test" for the AI
+ * voice path. Opens the SAME RealtimeClient + VoiceBridge production uses
+ * (so it validates the live Realtime config, e.g. the gpt-realtime-2 GA
+ * spike) but with NO patient, NO tools, and NO DB / Deepgram / summary
+ * work. Reached only via the env-gated `/voice/realtime-diagnostic` route,
+ * which flags the pending session `diagnostic: true`; the WS upgrade
+ * handler routes those here instead of {@link handleVoiceWsConnection}.
+ *
+ * Kept deliberately separate from the production handler so a test
+ * affordance can never regress the real PHI voice path.
+ */
+export async function handleVoiceDiagnosticWsConnection(
+  ws: WebSocket,
+  pending: PendingSessionEntry,
+): Promise<void> {
+  const config = readVoiceConfigOrThrow();
+  let streamSid: string | null = null;
+  let closed = false;
+  let resolveClosed: (() => void) | null = null;
+  // Diagnostic calls are short; cap hard so a wedged test can't burn
+  // Realtime minutes.
+  const MAX_DIAGNOSTIC_MS = 5 * 60 * 1000;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const sink: MediaStreamSink = {
+    writeAudioBase64(b64: string): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeMediaFrame(streamSid, b64));
+      } catch (err) {
+        logger.warn(
+          { event: "voice_diag_ws_send_failed", err: serializeErr(err) },
+          "voice diagnostic: ws send failed",
+        );
+      }
+    },
+    clearQueuedAudio(): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeClearFrame(streamSid));
+      } catch {
+        // best-effort; barge-in clears are not load-bearing
+      }
+    },
+  };
+
+  // Diagnostic mode exposes no tools, so the dispatcher is never invoked;
+  // it exists only to satisfy the bridge contract.
+  const dispatcher: ToolDispatcher = {
+    dispatch: () =>
+      Promise.reject(new Error("tools are disabled in diagnostic mode")),
+  };
+
+  const realtime = resolveRealtimeClientOptions(config);
+  const client = new RealtimeClient({
+    apiKey: config.openaiApiKey,
+    ...realtime,
+    // The model produces the audio (cedar / gpt-realtime-2) so the
+    // diagnostic exercises µ-law OUTPUT, not just the input side.
+    generateAudio: true,
+    instructions: buildSystemPrompt({
+      practiceName: config.practiceName ?? "PennPaps",
+      callContext: pending.callContext ?? "Voice connection diagnostic.",
+      ...(pending.greeting ? { greeting: pending.greeting } : {}),
+    }),
+    // No tools — the agent just converses to confirm two-way audio.
+    tools: [],
+    allowedToolNames: new Set<ToolName>(),
+  });
+
+  const bridge = new VoiceBridge({ client, sink, dispatcher });
+
+  logger.info(
+    {
+      event: "voice_realtime_diagnostic_opened",
+      schema: config.realtimeSchema,
+      model: realtime.model,
+      conversationId: pending.conversationId,
+    },
+    "voice diagnostic: Realtime bridge opening",
+  );
+
+  const cleanup = (reason: string): void => {
+    if (closed) return;
+    closed = true;
+    if (maxTimer !== null) {
+      clearTimeout(maxTimer);
+      maxTimer = null;
+    }
+    logger.info(
+      { event: "voice_realtime_diagnostic_closed", reason },
+      "voice diagnostic: closed",
+    );
+    bridge.close(reason);
+    try {
+      ws.close(1000, "diagnostic-closed");
+    } catch {
+      // already closed
+    }
+    if (resolveClosed) {
+      const resolve = resolveClosed;
+      resolveClosed = null;
+      resolve();
+    }
+  };
+
+  bridge.on("session.opened", () =>
+    logger.info(
+      { event: "voice_session_opened", conversationId: pending.conversationId },
+      "voice diagnostic: session opened",
+    ),
+  );
+  // Surface OpenAI session rejections (bad audio format, unknown field) as
+  // the SAME `voice_session_error` event the validator watches for.
+  bridge.on("session.error", (err) =>
+    logger.warn(
+      {
+        event: "voice_session_error",
+        err,
+        conversationId: pending.conversationId,
+      },
+      "voice diagnostic: session error",
+    ),
+  );
+  bridge.on("session.closed", (info) =>
+    cleanup(info.reason || "session-closed"),
+  );
+
+  maxTimer = setTimeout(
+    () => cleanup("max-duration-exceeded"),
+    MAX_DIAGNOSTIC_MS,
+  );
+  maxTimer.unref?.();
+
+  ws.on("message", (raw) => {
+    const frame = parseTwilioFrame(raw as Buffer | string);
+    if (!frame) return;
+    switch (frame.event) {
+      case "start":
+        streamSid = frame.start.streamSid;
+        return;
+      case "media":
+        bridge.forwardCallerAudio(frame.media.payload);
+        return;
+      case "stop":
+        cleanup("twilio-stop");
+        return;
+      default:
+        return;
+    }
+  });
+  ws.on("close", () => cleanup("twilio-ws-closed"));
+  ws.on("error", (err) => {
+    logger.warn(
+      { event: "voice_diag_ws_error", err: serializeErr(err) },
+      "voice diagnostic: ws error",
+    );
+    cleanup("twilio-ws-error");
+  });
+
+  await new Promise<void>((resolve) => {
+    resolveClosed = resolve;
     if (closed) resolve();
   });
 }

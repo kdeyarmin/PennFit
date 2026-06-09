@@ -16,6 +16,7 @@ import checkinTwimlRouter from "./checkin-twiml";
 import connectionTestTwimlRouter from "./connection-test-twiml";
 import inboundReorderRouter from "./inbound-reorder";
 import placeCallRouter from "./place-call";
+import realtimeDiagnosticRouter from "./realtime-diagnostic";
 import statusCallbackRouter from "./status-callback";
 import twimlConnectRouter from "./twiml-connect";
 import clickToDialTwimlRouter from "./click-to-dial-twiml";
@@ -43,5 +44,10 @@ router.use(inboundReorderRouter);
 // /voice/connection-test-twiml — static Say + Hangup served to Twilio
 // for the super-admin "test voice connection" diagnostic call.
 router.use(connectionTestTwimlRouter);
+// /voice/realtime-diagnostic — no-patient AI-bridge connection test. Dial
+// in to validate the live Realtime voice path (e.g. the gpt-realtime-2 GA
+// spike) without a patient record. Gated by OPENAI_REALTIME_DIAGNOSTIC_ENABLED
+// (off by default) + Twilio signature.
+router.use(realtimeDiagnosticRouter);
 
 export default router;

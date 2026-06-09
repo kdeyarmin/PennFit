@@ -52,6 +52,35 @@ checklist. Overrides for correcting wire values during validation:
 **Rollback is instant:** unset `OPENAI_REALTIME_SCHEMA` → back to
 beta/`gpt-realtime`. No deploy needed beyond the env change.
 
+## Placing the test call — the no‑patient diagnostic line
+
+You don't need a patient record. Set **`OPENAI_REALTIME_DIAGNOSTIC_ENABLED=1`**
+(alongside `OPENAI_REALTIME_SCHEMA=ga`), then point a **spare** Twilio
+number's "A call comes in" voice webhook (POST) at:
+
+```
+https://<preview-host>/resupply-api/voice/realtime-diagnostic
+```
+
+Dial that number from any phone. The AI agent answers in a **tools‑off
+sandbox** (no patient lookup, no DB writes, no identity questions) and just
+chats to confirm two‑way audio — so it exercises the exact Realtime config
+(gpt‑realtime‑2 when the GA flag is on) end to end. Hang up when done; put
+the number's webhook back.
+
+Notes:
+
+- The diagnostic line is **off unless `OPENAI_REALTIME_DIAGNOSTIC_ENABLED`
+  is truthy** — a misconfigured number just hears a polite hangup, never an
+  open (billable) session. Keep it **off in production**.
+- It runs an **isolated** WS handler (`handleVoiceDiagnosticWsConnection`);
+  the production path is untouched.
+- To validate the GA µ‑law **output**, leave `ELEVENLABS_API_KEY` unset on
+  the preview so the OpenAI model (not ElevenLabs) produces the audio.
+
+(The outbound `place-call` flow with a real patient still works too — but the
+diagnostic line is the one‑dial path.)
+
 ## Validation checklist (confirm each against a real test call)
 
 Watch the app logs for `voice_realtime_ga_schema` (confirms GA is active)

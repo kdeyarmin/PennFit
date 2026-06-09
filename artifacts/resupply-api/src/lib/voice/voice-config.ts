@@ -112,6 +112,15 @@ export interface VoiceConfig {
   realtimeTranscribeModel?: string;
   /** Realtime wire audio-format token override (GA µ-law correction). */
   realtimeAudioFormat?: string;
+  /**
+   * When true, the `/voice/realtime-diagnostic` route is live — a no-patient
+   * "connection test" that opens the Realtime bridge so an operator can dial
+   * in and validate the voice path (e.g. the gpt-realtime-2 GA spike)
+   * without a patient record. OFF by default; a real Realtime session costs
+   * money, so this faucet must be explicitly opened (and is intended for
+   * previews, not production). Env: OPENAI_REALTIME_DIAGNOSTIC_ENABLED.
+   */
+  realtimeDiagnosticEnabled: boolean;
 }
 
 /**
@@ -202,7 +211,16 @@ export function readVoiceConfigOrNull(
     realtimeTranscribeModel:
       env.OPENAI_REALTIME_TRANSCRIBE_MODEL?.trim() || undefined,
     realtimeAudioFormat: env.OPENAI_REALTIME_AUDIO_FORMAT?.trim() || undefined,
+    realtimeDiagnosticEnabled: isTruthyEnv(
+      env.OPENAI_REALTIME_DIAGNOSTIC_ENABLED,
+    ),
   };
+}
+
+/** True for "1", "true", "yes", "on" (case/space-insensitive); else false. */
+function isTruthyEnv(raw: string | undefined): boolean {
+  const v = raw?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
 /**
