@@ -107,7 +107,15 @@ router.post(
     // dashboard; the LLM gets a wider context budget for borderline
     // claims (probability >= 0.25 covers ~the top quartile in the
     // first prod batch we saw).
-    void scoreAndPersist(claim.id);
+    // .catch is load-bearing: index.ts exits the process on any
+    // unhandledRejection, so a bare void-discarded rejection here
+    // would take the whole site down from one POST.
+    void scoreAndPersist(claim.id).catch((err) => {
+      logger.warn(
+        { err, claimId: claim.id },
+        "heuristic denial scoring failed (non-blocking)",
+      );
+    });
 
     const output = await scrubClaim({ claimId: claim.id });
 

@@ -182,7 +182,13 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
       });
       const fetchedAtIso = new Date().toISOString();
       if (!fetched.ok) {
-        await supabase
+        // Writes must be error-checked: a silently failed
+        // `last_synced_at` stamp keeps this link sorting to the front
+        // of every night's MAX_LINKS_PER_RUN page, starving the rest
+        // of the population — the exact failure mode the ordering
+        // above was added to fix. Throw into the per-link catch so it
+        // is logged and counted as failed.
+        const { error: errSnapErr } = await supabase
           .schema("resupply")
           .from("patient_integration_snapshots")
           .upsert(
@@ -204,7 +210,8 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
             },
             { onConflict: "patient_id,source" },
           );
-        await supabase
+        if (errSnapErr) throw errSnapErr;
+        const { error: errStampErr } = await supabase
           .schema("resupply")
           .from("patient_therapy_links")
           .update({
@@ -213,6 +220,7 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
             last_sync_error: fetched.error,
           })
           .eq("id", link.id);
+        if (errStampErr) throw errStampErr;
         result.failed += 1;
         await sleep(THROTTLE_MS);
         continue;
@@ -240,7 +248,9 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
         continue;
       }
 
-      await supabase
+      // Same as the error branch above: a dropped write here both
+      // over-reports `refreshed` and (for the stamp) starves rotation.
+      const { error: okSnapErr } = await supabase
         .schema("resupply")
         .from("patient_integration_snapshots")
         .upsert(
@@ -255,7 +265,8 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
           },
           { onConflict: "patient_id,source" },
         );
-      await supabase
+      if (okSnapErr) throw okSnapErr;
+      const { error: okStampErr } = await supabase
         .schema("resupply")
         .from("patient_therapy_links")
         .update({
@@ -264,6 +275,7 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
           last_sync_error: null,
         })
         .eq("id", link.id);
+      if (okStampErr) throw okStampErr;
 
       try {
         const r = await persistTherapyNights(
@@ -283,7 +295,7 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
     } catch (err) {
       logger.warn(
         { err, link_id: link.id, source },
-        "nightly-sync: adapter fetch threw",
+        "nightly-sync: link sync failed (adapter fetch or persistence write threw)",
       );
       result.failed += 1;
     }

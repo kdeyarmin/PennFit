@@ -20,6 +20,7 @@ import {
   stageSupabaseResponse,
   getSupabaseCallCount,
   getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -168,6 +169,40 @@ describe("POST /email/sendgrid-events", () => {
     expect(updates[0]?.delivery_status).toBe("delivered");
     // The 'delivered' branch also bumps delivered_at as an ISO string.
     expect(typeof updates[0]?.delivered_at).toBe("string");
+  });
+
+  it("matches messages on the bare X-Message-Id (first dot-segment of sg_message_id)", async () => {
+    // The send paths store SendGrid's bare X-Message-Id response
+    // header; the Event Webhook appends filter-routing segments
+    // ("<X-Message-Id>.filterNNNN.0"). The update must filter on the
+    // first dot-segment or it never matches a real production event.
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+    stageMessageUpdates(1);
+
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = JSON.stringify([
+      {
+        event: "delivered",
+        sg_message_id: "X9bGhsWmTR2hcrxNJ1IqDA.filterdrecv-1234-abcdef-1.0",
+      },
+    ]);
+    const sig = signBody(privateKeyPem, ts, body);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("messages", "update");
+    const idFilter = filters.find(
+      (f) => f.args[0] === "vendor_metadata->>sendgrid_message_id",
+    );
+    expect(idFilter?.args[2]).toBe("X9bGhsWmTR2hcrxNJ1IqDA");
   });
 
   it.each([

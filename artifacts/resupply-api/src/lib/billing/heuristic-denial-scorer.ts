@@ -25,6 +25,8 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { logger } from "../logger";
+
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export interface ScoringFactor {
@@ -309,7 +311,7 @@ export async function scoreAndPersist(
   const score = await scoreClaim(claimId);
   if (!score) return null;
   const supabase = getSupabaseServiceRoleClient();
-  await supabase
+  const { error } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .update({
@@ -319,6 +321,15 @@ export async function scoreAndPersist(
       updated_at: new Date().toISOString(),
     })
     .eq("id", claimId);
+  if (error) {
+    // Don't fail the caller (the score is advisory), but a silently
+    // dropped persist would leave the dashboard showing a stale or
+    // missing probability with no trace.
+    logger.warn(
+      { err: error.message, claimId },
+      "heuristic-denial-scorer: persist failed",
+    );
+  }
   return score;
 }
 

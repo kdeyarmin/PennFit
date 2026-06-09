@@ -405,7 +405,7 @@ export async function processTick(
         text: renderable.bodyText,
         customArgs: customArgsFor(campaign.id, row.id),
       });
-      await supabase
+      const { error: finalizeErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
@@ -414,6 +414,43 @@ export async function processTick(
           vendor_message_id: result.messageId,
         })
         .eq("id", row.id);
+      if (finalizeErr) {
+        // SendGrid already accepted this email. If the row stays in
+        // 'sending', the tick-entry stale-lease reclaim flips it back
+        // to 'pending' and a later tick RE-SENDS to the patient. Park
+        // it in the terminal 'failed' state with the vendor id so an
+        // operator can reconcile, never re-send.
+        log.error(
+          {
+            err: finalizeErr.message,
+            recipientId: row.id,
+            campaignId: campaign.id,
+            vendorMessageId: result.messageId,
+            event: "bulk_campaign_finalize_failed_after_vendor_accept",
+          },
+          "bulk_campaigns.tick: 'sent' finalize failed after vendor accept — parking recipient as failed to prevent duplicate send",
+        );
+        const { error: parkErr } = await supabase
+          .schema("resupply")
+          .from("bulk_campaign_recipients")
+          .update({
+            status: "failed",
+            error:
+              `db_finalize_failed_after_vendor_accept: ${finalizeErr.message}`.slice(
+                0,
+                500,
+              ),
+          })
+          .eq("id", row.id);
+        if (parkErr) {
+          log.error(
+            { err: parkErr.message, recipientId: row.id },
+            "bulk_campaigns.tick: park-as-failed also failed — recipient may be re-sent after lease expiry",
+          );
+        }
+        failed += 1;
+        continue;
+      }
       sent += 1;
     } catch (err) {
       const message =
@@ -558,7 +595,20 @@ async function finalizeOrReschedule(
     return;
   }
   if (!remaining || remaining === 0) {
-    await markCampaignSent(supabase, campaignId);
+    const finalized = await markCampaignSent(supabase, campaignId);
+    if (!finalized) {
+      // The status UPDATE failed transiently. Without a reschedule the
+      // tick chain dies here and the campaign is wedged in 'sending'
+      // forever (no cron re-driver exists; recovery would need a
+      // manual pause→resume). Re-tick so the next drain check retries
+      // the finalize.
+      log.error(
+        { campaignId },
+        "bulk_campaigns.tick: campaign finalize failed — rescheduling",
+      );
+      await enqueueNextTick(boss, campaignId);
+      return;
+    }
     log.info(
       { campaignId },
       "bulk_campaigns.tick: drained — campaign marked sent",
@@ -625,21 +675,34 @@ async function isRecipientOptedOut(
   }
 }
 
+/**
+ * Returns false when the status UPDATE itself errored (caller must
+ * reschedule so the finalize is retried); true when it succeeded —
+ * including the zero-row case where the campaign was paused/cancelled
+ * mid-tick, which needs no retry.
+ */
 async function markCampaignSent(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   campaignId: string,
-): Promise<void> {
+): Promise<boolean> {
   const update: CampaignUpdate = {
     status: "sent",
     completed_at: new Date().toISOString(),
   };
-  const { data: updated } = await supabase
+  const { data: updated, error } = await supabase
     .schema("resupply")
     .from("bulk_campaigns")
     .update(update)
     .eq("id", campaignId)
     .eq("status", "sending")
     .select("id");
+  if (error) {
+    logger.error(
+      { err: error.message, campaignId },
+      "bulk_campaigns.tick: markCampaignSent update failed",
+    );
+    return false;
+  }
   // Only audit if the update actually happened (i.e., campaign was
   // still in 'sending' state). If it was paused/cancelled during
   // the final tick, skip the completion audit.
@@ -657,6 +720,7 @@ async function markCampaignSent(
       logger.warn({ err }, "bulk_campaign.completed audit failed");
     });
   }
+  return true;
 }
 
 export async function enqueueNextTick(

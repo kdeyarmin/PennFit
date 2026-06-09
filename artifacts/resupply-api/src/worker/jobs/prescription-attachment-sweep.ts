@@ -374,25 +374,43 @@ export function buildProductionSweepDeps(
       // and row counts are O(thousands) per table at production
       // scale. A key present in BOTH tables is correctly counted
       // once thanks to Set semantics.
+      // Both SELECTs MUST be paginated: PostgREST caps each response
+      // at ~1000 rows, and at "O(thousands) per table" an unpaginated
+      // read silently drops the overflow — every attachment whose key
+      // fell off the page would be misclassified as an orphan, leaving
+      // the per-candidate isStillReferenced() recheck (a narrow
+      // race-window guard) as the only thing between a referenced
+      // prescription scan and an irreversible PHI delete.
+      const PAGE_SIZE = 1000;
       const set = new Set<string>();
-      const [presRes, msgRes] = await Promise.all([
-        supabase
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
           .schema("resupply")
           .from("prescriptions")
-          .select("attachment_object_key")
-          .not("attachment_object_key", "is", null),
-        supabase
+          .select("id, attachment_object_key")
+          .not("attachment_object_key", "is", null)
+          .order("id", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const r of data) {
+          if (r.attachment_object_key) set.add(r.attachment_object_key);
+        }
+        if (data.length < PAGE_SIZE) break;
+      }
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
           .schema("resupply")
           .from("message_attachments")
-          .select("object_key"),
-      ]);
-      if (presRes.error) throw presRes.error;
-      if (msgRes.error) throw msgRes.error;
-      for (const r of presRes.data ?? []) {
-        if (r.attachment_object_key) set.add(r.attachment_object_key);
-      }
-      for (const r of msgRes.data ?? []) {
-        if (r.object_key) set.add(r.object_key);
+          .select("id, object_key")
+          .order("id", { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const r of data) {
+          if (r.object_key) set.add(r.object_key);
+        }
+        if (data.length < PAGE_SIZE) break;
       }
       return set;
     },
