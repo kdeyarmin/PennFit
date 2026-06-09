@@ -211,11 +211,17 @@ router.post(
       });
       callSid = result.sid;
     } catch (err) {
-      await supabase
+      const { error: failOutcomeErr } = await supabase
         .schema("resupply")
         .from("call_dispositions")
         .update({ outcome: "failed", updated_at: new Date().toISOString() })
         .eq("id", dispositionId);
+      if (failOutcomeErr) {
+        logger.error(
+          { err: failOutcomeErr.message, dispositionId },
+          "click-to-dial: failed to stamp outcome=failed on disposition",
+        );
+      }
       if (err instanceof TwilioConfigError) {
         res.status(503).json({ error: "twilio_config_error" });
         return;
@@ -242,7 +248,7 @@ router.post(
       throw err;
     }
 
-    await supabase
+    const { error: sidUpdateErr } = await supabase
       .schema("resupply")
       .from("call_dispositions")
       .update({
@@ -250,6 +256,12 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", dispositionId);
+    if (sidUpdateErr) {
+      logger.error(
+        { err: sidUpdateErr.message, dispositionId, callSid },
+        "click-to-dial: failed to stamp twilio_call_sid on disposition",
+      );
+    }
 
     logger.info(
       {
