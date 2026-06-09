@@ -106,7 +106,7 @@ export function AdminCasesPage() {
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              {s.replace("_", " ")}
+              {s.replace(/_/g, " ")}
             </button>
           ),
         )}
@@ -119,7 +119,7 @@ export function AdminCasesPage() {
       ) : query.data.cases.length === 0 ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No {filter === "all" ? "" : `${filter.replace("_", " ")} `}cases.
+            No {filter === "all" ? "" : `${filter.replace(/_/g, " ")} `}cases.
           </p>
         </Card>
       ) : (
@@ -208,7 +208,7 @@ function CaseRowItem({ caseRow }: { caseRow: CaseRow }) {
       >
         <span className="flex items-center gap-2 min-w-0">
           <Badge variant={STATUS_VARIANT[caseRow.status]}>
-            {caseRow.status.replace("_", " ")}
+            {caseRow.status.replace(/_/g, " ")}
           </Badge>
           <Badge variant={PRIORITY_VARIANT[caseRow.priority]}>
             {caseRow.priority}
@@ -277,7 +277,7 @@ function CaseDetail({
         >
           {STATUSES.map((s) => (
             <option key={s} value={s}>
-              {s.replace("_", " ")}
+              {s.replace(/_/g, " ")}
             </option>
           ))}
         </select>
@@ -309,7 +309,7 @@ function CaseDetail({
                   >
                     <Link2 className="h-3 w-3 text-slate-400" />
                     <span className="uppercase tracking-wider text-slate-500">
-                      {l.linkKind.replace("_", " ")}
+                      {l.linkKind.replace(/_/g, " ")}
                     </span>
                     <span className="font-mono">{l.refId}</span>
                     {l.note && (
@@ -330,7 +330,7 @@ function CaseDetail({
             >
               {LINK_KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {k.replace("_", " ")}
+                  {k.replace(/_/g, " ")}
                 </option>
               ))}
             </select>

@@ -201,9 +201,10 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
         <div className="flex items-center gap-2 flex-wrap">
           <Input
             value={code}
-            onChange={(e) =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-            }
+            onChange={(e) => {
+              setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+              setError(null);
+            }}
             placeholder="123456"
             maxLength={6}
             inputMode="numeric"

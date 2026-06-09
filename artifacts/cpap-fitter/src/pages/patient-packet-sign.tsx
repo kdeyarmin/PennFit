@@ -223,7 +223,8 @@ export function PatientPacketSign() {
     signerName.trim().length >= 2 &&
     consent &&
     (!isRepresentative || signerReason.trim().length > 0) &&
-    (!requiresDateReceived || dateReceived.length > 0);
+    (!requiresDateReceived || dateReceived.length > 0) &&
+    (sigMode !== "draw" || !drawnEmpty);
 
   // Pre-fill the signer's name from the packet recipient so the
   // signature is ready the moment the page loads — one less thing for
