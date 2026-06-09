@@ -33,12 +33,19 @@ vi.mock("../../lib/logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn() },
 }));
 
+type IngestOutcome = {
+  kind: "inserted";
+  id: string;
+  mediaPersisted: boolean;
+};
 const ingestInboundFaxMock = vi.hoisted(() =>
-  vi.fn(async () => ({
-    kind: "inserted" as const,
-    id: "row-1",
-    mediaPersisted: false,
-  })),
+  vi.fn<(input: Record<string, unknown>) => Promise<IngestOutcome>>(
+    async () => ({
+      kind: "inserted",
+      id: "row-1",
+      mediaPersisted: false,
+    }),
+  ),
 );
 vi.mock("../../lib/fax/ingest-inbound.js", () => ({
   ingestInboundFax: ingestInboundFaxMock,
