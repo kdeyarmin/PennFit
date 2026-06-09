@@ -231,10 +231,7 @@ app.use("/api/patient-packets/sign", express.json({ limit: "1mb" }));
 // ({ csv: "..." }), which exceeds the default 100 KB cap. Parse it with a
 // larger limit BEFORE the global parser (the route + Zod also cap the
 // payload). Once parsed, express.json below is a no-op for this request.
-app.use(
-  "/resupply-api/admin/pacware/import",
-  express.json({ limit: "12mb" }),
-);
+app.use("/resupply-api/admin/pacware/import", express.json({ limit: "12mb" }));
 
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));

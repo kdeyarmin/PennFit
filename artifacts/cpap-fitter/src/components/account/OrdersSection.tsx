@@ -14,6 +14,7 @@ import { Loader2, RefreshCw, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart, type CartItem } from "@/hooks/use-cart";
 import { AccountApiError, type ShopRecentOrder } from "@/lib/account-api";
+import { reportLostShipment } from "@/lib/account/self-service-api";
 import { fetchOrderSummary, formatMoneyCents } from "@/lib/shop-api";
 
 // sessionStorage breadcrumb shape. /shop/cart reads this once on
@@ -231,8 +232,6 @@ function ReportLostLink({ orderId }: { orderId: string }) {
     setSubmitting(true);
     setResult(null);
     try {
-      const { reportLostShipment } =
-        await import("@/lib/account/self-service-api");
       await reportLostShipment(orderId, note.trim());
       setResult({ kind: "ok" });
     } catch (err) {

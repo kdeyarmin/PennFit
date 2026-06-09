@@ -142,9 +142,7 @@ export function PacketEditForm({
                 className="mt-1"
                 checked={t.required || Boolean(keys[t.key])}
                 disabled={t.required}
-                onChange={() =>
-                  setKeys((k) => ({ ...k, [t.key]: !k[t.key] }))
-                }
+                onChange={() => setKeys((k) => ({ ...k, [t.key]: !k[t.key] }))}
               />
               <span>
                 <span
