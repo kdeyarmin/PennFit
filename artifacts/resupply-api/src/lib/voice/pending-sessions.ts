@@ -46,6 +46,13 @@ export interface PendingSessionEntry {
    * in that we're calling them.
    */
   greeting?: string;
+  /**
+   * Diagnostic ("connection test") session — no patient, no DB, no tools.
+   * Set by the `/voice/realtime-diagnostic` route so the WS upgrade routes
+   * to the isolated diagnostic bridge handler instead of the production
+   * one. `patientId`/`episodeId` are empty for these.
+   */
+  diagnostic?: boolean;
   createdAt: number;
   expiresAt: number;
 }
@@ -98,6 +105,7 @@ export class PendingSessions {
     episodeId: string;
     callContext?: string;
     greeting?: string;
+    diagnostic?: boolean;
   }): PendingSessionEntry {
     this.sweep();
     const t = this.now();
@@ -107,6 +115,7 @@ export class PendingSessions {
       episodeId: args.episodeId,
       ...(args.callContext ? { callContext: args.callContext } : {}),
       ...(args.greeting ? { greeting: args.greeting } : {}),
+      ...(args.diagnostic ? { diagnostic: true } : {}),
       createdAt: t,
       expiresAt: t + this.ttlMs,
     };

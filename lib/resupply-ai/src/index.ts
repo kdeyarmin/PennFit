@@ -26,6 +26,9 @@
 export {
   RealtimeClient,
   DEFAULT_REALTIME_MODEL,
+  DEFAULT_REALTIME_GA_MODEL,
+  DEFAULT_REALTIME_TRANSCRIBE_MODEL,
+  DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL,
   DEFAULT_REALTIME_VOICE,
   type RealtimeClientOptions,
   type RealtimeAudioDelta,
@@ -45,6 +48,9 @@ export {
   type ToolInvocation,
   type TranscriptTurn,
   type TtsSynthesizer,
+  type TtsStreamer,
+  type TtsStreamSession,
+  type TtsStreamHandlers,
 } from "./bridge";
 
 export {
@@ -104,6 +110,7 @@ export {
   createElevenLabsClient,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
   type ElevenLabsClient,
   type ElevenLabsClientOptions,
   type ElevenLabsTtsInput,
@@ -114,6 +121,14 @@ export {
   type ElevenLabsVoiceSummary,
   type ElevenLabsListVoicesResult,
 } from "./elevenlabs-client";
+
+export {
+  openElevenLabsStream,
+  type ElevenLabsStreamOptions,
+  type ElevenLabsStreamHandlers,
+  type ElevenLabsStreamSession,
+  type ElevenLabsStreamWebSocketLike,
+} from "./elevenlabs-stream";
 
 export {
   TOOL_NAMES,

@@ -301,20 +301,33 @@ Vendor clients live in `lib/resupply-ai/src/`:
   transcripts, and writes a `voice.call.deepgram_transcript` audit
   row on hangup. The OpenAI Realtime model still drives the
   conversation — Deepgram is the audit-grade backup transcript.
-- `elevenlabs-client.ts` — TTS (REST + streaming + voice list).
-  `createElevenLabsClient()`. **Wired into the live voice path**: when
+- `elevenlabs-client.ts` (REST) + `elevenlabs-stream.ts` (stream-input
+  WebSocket) — TTS. **Wired into the live voice path**: when
   `ELEVENLABS_API_KEY` is set, ElevenLabs becomes the agent's voice —
   the `RealtimeClient` is constructed with `generateAudio: false`
-  (text-output mode), and `VoiceBridge`'s `TtsSynthesizer` synthesises
-  each finalised agent turn through ElevenLabs (`ulaw_8000`, re-framed
-  to 160-byte µ-law frames) and streams it to Twilio. Caller barge-in
-  (`input.speech_started`) aborts the in-flight synthesis and flushes
-  the sink. When the key is **unset**, the bridge forwards OpenAI's
-  built-in `cedar` audio unchanged (the historical default) — so a
-  missing key degrades gracefully, never breaks the call. A mid-call
-  ElevenLabs failure drops that one utterance's audio (logged as a
-  `tts` session error) but does NOT end the call. **PHI:** synthesised
-  text is patient-facing speech, covered by the executed ElevenLabs BAA.
+  (text-output mode) and the bridge produces the audio through ElevenLabs
+  (`ulaw_8000`, re-framed to 160-byte µ-law frames) and streams it to
+  Twilio. Two transports, selected by `ELEVENLABS_TTS_TRANSPORT`:
+  - **`ws` (default)** — `VoiceBridge`'s `TtsStreamer` opens ONE
+    stream-input WS per agent turn (`openElevenLabsStream`) and feeds the
+    model's output text in as it's generated; audio streams back over the
+    whole turn. Lowest time-to-first-word and best cross-sentence prosody.
+  - **`http`** — `VoiceBridge`'s `TtsSynthesizer` voices each complete
+    **sentence** as it lands via the REST streaming endpoint (the turn's
+    `done` flushes only the un-spoken tail). The proven fallback.
+
+  ElevenLabs uses `DEFAULT_CONVERSATIONAL_VOICE_SETTINGS` (warm
+  conversational tuning) and defaults to the low-latency
+  `eleven_flash_v2_5` model; voice, model, stability, speed, and transport
+  are all env-overridable (`ELEVENLABS_VOICE_ID` / `_MODEL_ID` /
+  `_STABILITY` / `_SPEED` / `_TTS_TRANSPORT`). Caller barge-in
+  (`input.speech_started`) aborts the in-flight session/synthesis and
+  flushes the sink. When the key is **unset**, the bridge forwards
+  OpenAI's built-in `cedar` audio unchanged (the historical default) — so
+  a missing key degrades gracefully, never breaks the call. A mid-call
+  ElevenLabs failure drops that one turn's audio (logged as a `tts`
+  session error) but does NOT end the call. **PHI:** synthesised text is
+  patient-facing speech, covered by the executed ElevenLabs BAA.
 
 **Post-call summarization** (`artifacts/resupply-api/src/lib/voice/post-call-summary.ts`)
 runs Claude Sonnet 4.6 on the accumulated transcript turns after every

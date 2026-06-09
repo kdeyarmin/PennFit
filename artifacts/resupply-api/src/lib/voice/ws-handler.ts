@@ -41,6 +41,10 @@ import {
   buildSystemPrompt,
   createDeepgramClient,
   createElevenLabsClient,
+  DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
+  DEFAULT_REALTIME_GA_MODEL,
+  DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL,
+  openElevenLabsStream,
   OPENAI_TOOL_DESCRIPTORS,
   PROMPT_VERSION,
   RealtimeClient,
@@ -48,8 +52,12 @@ import {
   VoiceBridge,
   type DeepgramLiveSession,
   type ElevenLabsClient,
+  type ElevenLabsVoiceSettings,
   type MediaStreamSink,
+  type ToolDispatcher,
+  type ToolName,
   type TranscriptTurn,
+  type TtsStreamer,
   type TtsSynthesizer,
 } from "@workspace/resupply-ai";
 import {
@@ -68,7 +76,7 @@ import {
   type TurnForSummary,
 } from "./post-call-summary";
 import { createVoiceToolDispatcher } from "./tools-impl";
-import { readVoiceConfigOrThrow } from "./voice-config";
+import { readVoiceConfigOrThrow, type VoiceConfig } from "./voice-config";
 
 /**
  * Wire one Twilio Media Stream WS to one OpenAI Realtime session.
@@ -154,34 +162,69 @@ export async function handleVoiceWsConnection(
     episodeId: pending.episodeId,
   });
 
-  // Optional ElevenLabs voice. When ELEVENLABS_API_KEY is set,
-  // ElevenLabs becomes the agent's voice: the Realtime session runs in
-  // text-output mode (generateAudio: false) and the bridge synthesises
-  // each agent turn through ElevenLabs. When unset, `tts` stays null and
-  // the bridge forwards OpenAI's built-in `cedar` audio (default).
-  const ttsSynthesizer = config.elevenLabsApiKey
-    ? buildElevenLabsSynthesizer({
-        apiKey: config.elevenLabsApiKey,
-        voiceId: config.elevenLabsVoiceId,
-        modelId: config.elevenLabsModelId,
-        conversationId: pending.conversationId,
-      })
-    : null;
-  if (ttsSynthesizer) {
+  // Optional ElevenLabs voice. When ELEVENLABS_API_KEY is set, ElevenLabs
+  // becomes the agent's voice: the Realtime session runs in text-output
+  // mode (generateAudio: false) and the bridge produces the audio. Two
+  // transports: the streaming WS (default — one connection per turn, text
+  // fed as it's generated, lowest latency + best prosody) or the
+  // per-sentence HTTP path (the proven fallback). When the key is unset,
+  // both stay null and the bridge forwards OpenAI's built-in `cedar`
+  // audio (default).
+  const ttsStreamer =
+    config.elevenLabsApiKey && config.elevenLabsTransport === "ws"
+      ? buildElevenLabsStreamer({
+          apiKey: config.elevenLabsApiKey,
+          voiceId: config.elevenLabsVoiceId,
+          modelId: config.elevenLabsModelId,
+          voiceSettings: resolveElevenLabsVoiceSettings(config),
+        })
+      : null;
+  const ttsSynthesizer =
+    config.elevenLabsApiKey && config.elevenLabsTransport !== "ws"
+      ? buildElevenLabsSynthesizer({
+          apiKey: config.elevenLabsApiKey,
+          voiceId: config.elevenLabsVoiceId,
+          modelId: config.elevenLabsModelId,
+          voiceSettings: resolveElevenLabsVoiceSettings(config),
+          conversationId: pending.conversationId,
+        })
+      : null;
+  const externalVoice = ttsStreamer !== null || ttsSynthesizer !== null;
+  if (externalVoice) {
     logger.info(
       {
         event: "voice_elevenlabs_enabled",
+        transport: config.elevenLabsTransport,
         conversationId: pending.conversationId,
       },
       "voice: ElevenLabs TTS enabled (Realtime running in text-output mode)",
     );
   }
 
+  // Realtime session schema. Default "beta" (production). When an operator
+  // flips OPENAI_REALTIME_SCHEMA=ga on a preview, the resolver fills in
+  // coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper); the µ-law
+  // token (audio/pcmu) and reasoning effort ("low") default inside
+  // RealtimeClient.
+  const realtime = resolveRealtimeClientOptions(config);
+  if (config.realtimeSchema === "ga") {
+    logger.info(
+      {
+        event: "voice_realtime_ga_schema",
+        model: realtime.model,
+        transcribe: realtime.transcriptionModel,
+        conversationId: pending.conversationId,
+      },
+      "voice: OpenAI Realtime GA schema enabled (gpt-realtime-2 spike)",
+    );
+  }
+
   const client = new RealtimeClient({
     apiKey: config.openaiApiKey,
+    ...realtime,
     // When ElevenLabs owns the voice, the model emits text (not audio)
     // and the bridge synthesises it. Otherwise the model speaks (cedar).
-    generateAudio: ttsSynthesizer === null,
+    generateAudio: !externalVoice,
     instructions: buildSystemPrompt({
       practiceName: config.practiceName ?? "PennPaps",
       // Inbound calls (the reorder IVR) set their own context + greeting
@@ -202,6 +245,7 @@ export async function handleVoiceWsConnection(
     client,
     sink,
     dispatcher,
+    ...(ttsStreamer ? { ttsStreamer } : {}),
     ...(ttsSynthesizer ? { tts: ttsSynthesizer } : {}),
   });
 
@@ -614,6 +658,200 @@ export async function handleVoiceWsConnection(
   });
 }
 
+/**
+ * Map the voice config's realtime knobs to RealtimeClient options, applying
+ * coherent GA defaults (gpt-realtime-2 + gpt-realtime-whisper) when the
+ * schema is "ga". Shared by the production and diagnostic handlers so a
+ * diagnostic call exercises the exact Realtime config production runs.
+ * Undefined fields fall through to RealtimeClient's own defaults.
+ */
+function resolveRealtimeClientOptions(config: VoiceConfig): {
+  sessionSchema: "beta" | "ga";
+  model: string | undefined;
+  transcriptionModel: string | undefined;
+  reasoningEffort: "minimal" | "low" | "medium" | "high" | undefined;
+  audioFormat: string | undefined;
+} {
+  const isGa = config.realtimeSchema === "ga";
+  return {
+    sessionSchema: config.realtimeSchema,
+    model:
+      config.realtimeModel ?? (isGa ? DEFAULT_REALTIME_GA_MODEL : undefined),
+    transcriptionModel:
+      config.realtimeTranscribeModel ??
+      (isGa ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL : undefined),
+    reasoningEffort: config.realtimeReasoningEffort,
+    audioFormat: config.realtimeAudioFormat,
+  };
+}
+
+/**
+ * Isolated diagnostic bridge — a no-patient "connection test" for the AI
+ * voice path. Opens the SAME RealtimeClient + VoiceBridge production uses
+ * (so it validates the live Realtime config, e.g. the gpt-realtime-2 GA
+ * spike) but with NO patient, NO tools, and NO DB / Deepgram / summary
+ * work. Reached only via the env-gated `/voice/realtime-diagnostic` route,
+ * which flags the pending session `diagnostic: true`; the WS upgrade
+ * handler routes those here instead of {@link handleVoiceWsConnection}.
+ *
+ * Kept deliberately separate from the production handler so a test
+ * affordance can never regress the real PHI voice path.
+ */
+export async function handleVoiceDiagnosticWsConnection(
+  ws: WebSocket,
+  pending: PendingSessionEntry,
+): Promise<void> {
+  const config = readVoiceConfigOrThrow();
+  let streamSid: string | null = null;
+  let closed = false;
+  let resolveClosed: (() => void) | null = null;
+  // Diagnostic calls are short; cap hard so a wedged test can't burn
+  // Realtime minutes.
+  const MAX_DIAGNOSTIC_MS = 5 * 60 * 1000;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const sink: MediaStreamSink = {
+    writeAudioBase64(b64: string): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeMediaFrame(streamSid, b64));
+      } catch (err) {
+        logger.warn(
+          { event: "voice_diag_ws_send_failed", err: serializeErr(err) },
+          "voice diagnostic: ws send failed",
+        );
+      }
+    },
+    clearQueuedAudio(): void {
+      if (closed || !streamSid) return;
+      try {
+        ws.send(encodeClearFrame(streamSid));
+      } catch {
+        // best-effort; barge-in clears are not load-bearing
+      }
+    },
+  };
+
+  // Diagnostic mode exposes no tools, so the dispatcher is never invoked;
+  // it exists only to satisfy the bridge contract.
+  const dispatcher: ToolDispatcher = {
+    dispatch: () =>
+      Promise.reject(new Error("tools are disabled in diagnostic mode")),
+  };
+
+  const realtime = resolveRealtimeClientOptions(config);
+  const client = new RealtimeClient({
+    apiKey: config.openaiApiKey,
+    ...realtime,
+    // The model produces the audio (cedar / gpt-realtime-2) so the
+    // diagnostic exercises µ-law OUTPUT, not just the input side.
+    generateAudio: true,
+    instructions: buildSystemPrompt({
+      practiceName: config.practiceName ?? "PennPaps",
+      callContext: pending.callContext ?? "Voice connection diagnostic.",
+      ...(pending.greeting ? { greeting: pending.greeting } : {}),
+    }),
+    // No tools — the agent just converses to confirm two-way audio.
+    tools: [],
+    allowedToolNames: new Set<ToolName>(),
+  });
+
+  const bridge = new VoiceBridge({ client, sink, dispatcher });
+
+  logger.info(
+    {
+      event: "voice_realtime_diagnostic_opened",
+      schema: config.realtimeSchema,
+      model: realtime.model,
+      conversationId: pending.conversationId,
+    },
+    "voice diagnostic: Realtime bridge opening",
+  );
+
+  const cleanup = (reason: string): void => {
+    if (closed) return;
+    closed = true;
+    if (maxTimer !== null) {
+      clearTimeout(maxTimer);
+      maxTimer = null;
+    }
+    logger.info(
+      { event: "voice_realtime_diagnostic_closed", reason },
+      "voice diagnostic: closed",
+    );
+    bridge.close(reason);
+    try {
+      ws.close(1000, "diagnostic-closed");
+    } catch {
+      // already closed
+    }
+    if (resolveClosed) {
+      const resolve = resolveClosed;
+      resolveClosed = null;
+      resolve();
+    }
+  };
+
+  bridge.on("session.opened", () =>
+    logger.info(
+      { event: "voice_session_opened", conversationId: pending.conversationId },
+      "voice diagnostic: session opened",
+    ),
+  );
+  // Surface OpenAI session rejections (bad audio format, unknown field) as
+  // the SAME `voice_session_error` event the validator watches for.
+  bridge.on("session.error", (err) =>
+    logger.warn(
+      {
+        event: "voice_session_error",
+        err,
+        conversationId: pending.conversationId,
+      },
+      "voice diagnostic: session error",
+    ),
+  );
+  bridge.on("session.closed", (info) =>
+    cleanup(info.reason || "session-closed"),
+  );
+
+  maxTimer = setTimeout(
+    () => cleanup("max-duration-exceeded"),
+    MAX_DIAGNOSTIC_MS,
+  );
+  maxTimer.unref?.();
+
+  ws.on("message", (raw) => {
+    const frame = parseTwilioFrame(raw as Buffer | string);
+    if (!frame) return;
+    switch (frame.event) {
+      case "start":
+        streamSid = frame.start.streamSid;
+        return;
+      case "media":
+        bridge.forwardCallerAudio(frame.media.payload);
+        return;
+      case "stop":
+        cleanup("twilio-stop");
+        return;
+      default:
+        return;
+    }
+  });
+  ws.on("close", () => cleanup("twilio-ws-closed"));
+  ws.on("error", (err) => {
+    logger.warn(
+      { event: "voice_diag_ws_error", err: serializeErr(err) },
+      "voice diagnostic: ws error",
+    );
+    cleanup("twilio-ws-error");
+  });
+
+  await new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+    if (closed) resolve();
+  });
+}
+
 async function persistTranscript(
   supabase: ResupplySupabaseClient,
   conversationId: string,
@@ -865,8 +1103,10 @@ function buildElevenLabsSynthesizer(opts: {
   apiKey: string;
   voiceId?: string;
   modelId?: string;
+  voiceSettings: ElevenLabsVoiceSettings;
   conversationId: string;
 }): TtsSynthesizer {
+  const { voiceSettings } = opts;
   let client: ElevenLabsClient;
   try {
     client = createElevenLabsClient({ apiKey: opts.apiKey });
@@ -892,6 +1132,7 @@ function buildElevenLabsSynthesizer(opts: {
           text,
           ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
           ...(opts.modelId ? { modelId: opts.modelId } : {}),
+          voiceSettings,
           outputFormat: "ulaw_8000",
           signal,
         },
@@ -923,6 +1164,89 @@ function buildElevenLabsSynthesizer(opts: {
           `elevenlabs ${result.errorCode}: ${result.errorMessage}`,
         );
       }
+    },
+  };
+}
+
+/**
+ * Merge the tuned conversational voice settings with any operator env
+ * overrides (stability / speed). Shared by both the streaming and
+ * per-sentence ElevenLabs transports so they sound identical.
+ */
+function resolveElevenLabsVoiceSettings(
+  config: VoiceConfig,
+): ElevenLabsVoiceSettings {
+  return {
+    ...DEFAULT_CONVERSATIONAL_VOICE_SETTINGS,
+    ...(config.elevenLabsStability !== undefined
+      ? { stability: config.elevenLabsStability }
+      : {}),
+    ...(config.elevenLabsSpeed !== undefined
+      ? { speed: config.elevenLabsSpeed }
+      : {}),
+  };
+}
+
+/**
+ * Adapt the ElevenLabs stream-input WebSocket to the bridge's
+ * `TtsStreamer` contract. One session per agent turn: the bridge feeds
+ * text in as the model generates it and we stream `ulaw_8000` audio back,
+ * re-framed into 160-byte µ-law frames (same as the HTTP path) so Twilio
+ * plays it cleanly. A vendor/transport error surfaces via `onError` (the
+ * bridge logs a `tts` session error and drops the turn's audio without
+ * ending the call).
+ *
+ * PHI: the synthesised text IS patient-facing speech. We never log the
+ * text or the audio bytes — only structural error info on failure.
+ */
+function buildElevenLabsStreamer(opts: {
+  apiKey: string;
+  voiceId?: string;
+  modelId?: string;
+  voiceSettings: ElevenLabsVoiceSettings;
+}): TtsStreamer {
+  return {
+    openSession(handlers) {
+      // Per-session re-framing buffer: ElevenLabs returns ulaw_8000 in
+      // arbitrary chunk sizes; we hand Twilio uniform 160-byte frames.
+      let carry = Buffer.alloc(0);
+      const session = openElevenLabsStream(
+        {
+          apiKey: opts.apiKey,
+          ...(opts.voiceId ? { voiceId: opts.voiceId } : {}),
+          ...(opts.modelId ? { modelId: opts.modelId } : {}),
+          voiceSettings: opts.voiceSettings,
+          outputFormat: "ulaw_8000",
+        },
+        {
+          onAudioBase64: (audioBase64) => {
+            const bytes = Buffer.from(audioBase64, "base64");
+            carry = carry.length === 0 ? bytes : Buffer.concat([carry, bytes]);
+            let offset = 0;
+            while (carry.length - offset >= MULAW_FRAME_BYTES) {
+              handlers.onFrame(
+                carry
+                  .subarray(offset, offset + MULAW_FRAME_BYTES)
+                  .toString("base64"),
+              );
+              offset += MULAW_FRAME_BYTES;
+            }
+            carry = carry.subarray(offset);
+          },
+          onError: (err) =>
+            handlers.onError(new Error(`${err.code}: ${err.message}`)),
+          onClosed: () => {
+            // Flush the trailing partial frame at end-of-turn (Twilio
+            // tolerates a short final frame).
+            if (carry.length > 0) {
+              handlers.onFrame(carry.toString("base64"));
+              carry = Buffer.alloc(0);
+            }
+            handlers.onDone?.();
+          },
+        },
+      );
+      return session;
     },
   };
 }
