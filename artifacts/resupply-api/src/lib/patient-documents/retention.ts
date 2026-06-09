@@ -39,6 +39,9 @@ const RETENTION_YEARS_BY_TYPE: Record<string, DocumentRetentionYears> = {
   // Compliance / adherence documentation rides the same 10-year payer
   // audit window as diagnostic reports.
   compliance_report: 10,
+  // Patient billing statements are DMEPOS billing-support records — hold
+  // the CMS 7-year supplier-standard window from creation.
+  billing_statement: 7,
   referral: 6,
   other: 6,
 };
