@@ -54,6 +54,7 @@ import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
 import analyticsRevenueBySourceRouter from "./admin/analytics-revenue-by-source.js";
+import analyticsChannelEngagementRouter from "./admin/analytics-channel-engagement.js";
 import inventoryTurnoverRouter from "./admin/inventory-turnover.js";
 import ltvCacRouter from "./admin/ltv-cac.js";
 import rtOverviewRouter from "./admin/rt-overview.js";
@@ -711,6 +712,10 @@ router.use(analyticsRouter);
 // /admin/analytics/revenue-by-source — order volume + cash revenue split
 // across the storefront / resupply-fulfillment / clinical-form channels.
 router.use(analyticsRevenueBySourceRouter);
+// /admin/analytics/channel-engagement — cross-channel scoreboard for the
+// automated outreach system (SMS / email / chat replies + voice
+// answered/missed), paired with the purchases it drives.
+router.use(analyticsChannelEngagementRouter);
 // /admin/analytics/outreach-attribution — of patients contacted by
 // reminders / clinical outreach, the share who placed a fulfillment
 // within N days (closed-loop conversion by channel).

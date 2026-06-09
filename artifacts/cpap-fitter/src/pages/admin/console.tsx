@@ -160,6 +160,11 @@ const AdminAnalyticsRevenueBySourcePage = lazy(() =>
     default: m.AdminAnalyticsRevenueBySourcePage,
   })),
 );
+const AdminAnalyticsChannelEngagementPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-channel-engagement").then((m) => ({
+    default: m.AdminAnalyticsChannelEngagementPage,
+  })),
+);
 const AdminLtvCacPage = lazy(() =>
   import("@/pages/admin/admin-ltv-cac").then((m) => ({
     default: m.AdminLtvCacPage,
@@ -896,6 +901,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/revenue-by-source"
               component={AdminAnalyticsRevenueBySourcePage}
+            />
+            <Route
+              path="/admin/analytics/channel-engagement"
+              component={AdminAnalyticsChannelEngagementPage}
             />
             <Route
               path="/admin/analytics/ltv-cac"

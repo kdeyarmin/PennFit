@@ -835,6 +835,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Order volume + cash revenue by channel (storefront / resupply / clinical form)",
           },
           {
+            href: "/admin/analytics/channel-engagement",
+            label: "Channel engagement",
+            icon: Activity,
+            matchPrefix: "/admin/analytics/channel-engagement",
+            requiredPermission: "reports.read",
+            hint: "Automation scoreboard — SMS/email/chat replies + phone answered/missed, paired with purchases",
+          },
+          {
             href: "/admin/analytics/ltv-cac",
             label: "LTV & CAC",
             icon: TrendingUp,
