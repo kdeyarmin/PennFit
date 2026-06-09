@@ -99,9 +99,37 @@ const EMAIL_REPLY_ADDENDUM = [
   "address, or insurance/member id in the reply, even if it appeared in",
   "their message. NEVER invent clinical, pricing, or order facts.",
   "",
+  'Also REPORT YOUR CONFIDENCE in the reply as a number "confidence"',
+  "between 0 and 1: how sure you are that your answer is correct, complete,",
+  "and safe to send WITHOUT a human reviewing it first. Use ~0.95+ only",
+  "when the question is squarely general CPAP/insurance/returns knowledge",
+  "and your answer is unambiguous. Use ~0.6 when your answer is probably",
+  "right but the question is a little ambiguous or partly specific to this",
+  "person. Use ~0.3 when you're guessing. Only HIGH-confidence replies are",
+  "sent automatically; anything below the bar is routed to a human, so",
+  "report your honest doubt rather than inflating — an unsent reply just",
+  "means a teammate follows up, which is always fine.",
+  "",
   'OUTPUT STRICT JSON ONLY (no prose, no markdown fences): { "handoff":',
-  'true|false, "reply": "..." }',
+  'true|false, "reply": "...", "confidence": 0.0..1.0 }',
 ].join("\n");
+
+// Only replies the model is at least this confident in are sent
+// automatically; everything below routes to a human (awaiting_admin).
+// Deliberately conservative — a missed auto-reply costs a teammate a
+// follow-up, but a wrong one was sent to a patient. Overridable per
+// environment via RESUPPLY_EMAIL_AUTO_REPLY_MIN_CONFIDENCE.
+const DEFAULT_MIN_AUTO_REPLY_CONFIDENCE = 0.8;
+
+function resolveMinConfidence(env: NodeJS.ProcessEnv): number {
+  const raw = env.RESUPPLY_EMAIL_AUTO_REPLY_MIN_CONFIDENCE?.trim();
+  if (!raw) return DEFAULT_MIN_AUTO_REPLY_CONFIDENCE;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    return DEFAULT_MIN_AUTO_REPLY_CONFIDENCE;
+  }
+  return parsed;
+}
 
 export interface EmailReplyThreadTurn {
   role: "patient" | "agent";
@@ -159,9 +187,12 @@ export function __setEmailAutoReplyFetchForTests(
 
 /**
  * Draft an email reply to an inbound patient message using the chatbot
- * knowledge base. NEVER throws — every failure mode collapses to
+ * knowledge base. Only replies the model is confident in (>= the
+ * configured threshold) come back as `{ kind: "reply" }`; everything
+ * else — explicit hand-off, low confidence, empty output — collapses to
  * `{ kind: "handoff" }` (or `{ kind: "offline" }` when no provider is
- * configured) so a flaky model call can never 500 a SendGrid webhook.
+ * configured). NEVER throws, so a flaky model call can never 500 a
+ * SendGrid webhook.
  */
 export async function generateEmailReply(
   input: EmailReplyInput,
@@ -174,17 +205,19 @@ export async function generateEmailReply(
 
   const userPrompt = buildUserPrompt(input);
   const systemPrompt = getEmailSystemPrompt();
+  const minConfidence = resolveMinConfidence(env);
 
   if (selection.provider === "anthropic") {
-    return generateViaAnthropic(env, systemPrompt, userPrompt);
+    return generateViaAnthropic(env, systemPrompt, userPrompt, minConfidence);
   }
-  return generateViaOpenAi(env, systemPrompt, userPrompt);
+  return generateViaOpenAi(env, systemPrompt, userPrompt, minConfidence);
 }
 
 async function generateViaAnthropic(
   env: NodeJS.ProcessEnv,
   systemPrompt: string,
   userPrompt: string,
+  minConfidence: number,
 ): Promise<EmailReplyResult> {
   const apiKey = env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return { kind: "handoff" };
@@ -222,7 +255,11 @@ async function generateViaAnthropic(
       );
       return { kind: "handoff" };
     }
-    return parseModelOutput("anthropic", getResponseText(result.response));
+    return parseModelOutput(
+      "anthropic",
+      getResponseText(result.response),
+      minConfidence,
+    );
   } catch (err) {
     logger.warn(
       {
@@ -240,6 +277,7 @@ async function generateViaOpenAi(
   env: NodeJS.ProcessEnv,
   systemPrompt: string,
   userPrompt: string,
+  minConfidence: number,
 ): Promise<EmailReplyResult> {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) return { kind: "handoff" };
@@ -288,6 +326,7 @@ async function generateViaOpenAi(
     return parseModelOutput(
       "openai",
       json.choices?.[0]?.message?.content ?? "",
+      minConfidence,
     );
   } catch (err) {
     logger.warn(
@@ -340,15 +379,20 @@ function scrub(s: string): string {
 function parseModelOutput(
   vendor: "anthropic" | "openai",
   content: string,
+  minConfidence: number,
 ): EmailReplyResult {
-  let parsed: { handoff?: unknown; reply?: unknown };
+  let parsed: { handoff?: unknown; reply?: unknown; confidence?: unknown };
   try {
     // Tolerate a stray markdown fence the model occasionally wraps JSON in.
     const cleaned = content
       .trim()
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/i, "");
-    parsed = JSON.parse(cleaned) as { handoff?: unknown; reply?: unknown };
+    parsed = JSON.parse(cleaned) as {
+      handoff?: unknown;
+      reply?: unknown;
+      confidence?: unknown;
+    };
   } catch {
     logger.warn(
       { event: "email_auto_reply_parse_failed", vendor },
@@ -358,11 +402,32 @@ function parseModelOutput(
   }
   const handoff = parsed.handoff === true;
   const reply = typeof parsed.reply === "string" ? parsed.reply.trim() : "";
-  // An empty/whitespace reply is treated as a hand-off regardless of the
-  // boolean — there is nothing to send.
-  if (handoff || reply.length === 0) {
+  // Confidence is required to clear the bar. A model that omits it (older
+  // fine-tune, malformed output) is treated as "no signal" → below the
+  // bar → hand off. Clamp in case the model overshoots [0,1].
+  const confidence =
+    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+      ? Math.max(0, Math.min(1, parsed.confidence))
+      : undefined;
+
+  // Hand off on: explicit handoff, an empty/whitespace reply (nothing to
+  // send), or confidence below the configured bar. Only a confident,
+  // non-empty, non-handoff reply is sent automatically.
+  const belowBar = confidence === undefined || confidence < minConfidence;
+  if (handoff || reply.length === 0 || belowBar) {
     logger.info(
-      { event: "email_auto_reply_decided", vendor, handoff: true },
+      {
+        event: "email_auto_reply_decided",
+        vendor,
+        handoff: true,
+        reason: handoff
+          ? "model_handoff"
+          : reply.length === 0
+            ? "empty_reply"
+            : "low_confidence",
+        confidence: confidence ?? null,
+        min_confidence: minConfidence,
+      },
       "email-auto-reply: handing off to human",
     );
     return { kind: "handoff" };
@@ -373,8 +438,10 @@ function parseModelOutput(
       vendor,
       handoff: false,
       replyChars: reply.length,
+      confidence,
+      min_confidence: minConfidence,
     },
-    "email-auto-reply: drafted reply",
+    "email-auto-reply: drafted high-confidence reply",
   );
   return { kind: "reply", reply };
 }

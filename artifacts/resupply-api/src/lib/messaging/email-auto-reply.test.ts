@@ -1,10 +1,12 @@
 // Unit tests for the chatbot email auto-reply generator.
 //
 // We drive the OpenAI path (simplest to mock) via the fetch test seam
-// and assert the {handoff, reply} contract collapses to the right
-// EmailReplyResult. The "offline" branch (no provider key) and the
-// fail-soft hand-off branches (HTTP error, bad JSON) are the safety
-// guarantees the inbound webhook relies on, so they're covered too.
+// and assert the {handoff, reply, confidence} contract collapses to the
+// right EmailReplyResult — including the confidence gate (only high-
+// confidence replies are sent; low/absent confidence hands off). The
+// "offline" branch (no provider key) and the fail-soft hand-off branches
+// (HTTP error, bad JSON) are the safety guarantees the inbound webhook
+// relies on, so they're covered too.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -56,11 +58,12 @@ describe("generateEmailReply", () => {
     expect(result).toEqual({ kind: "offline" });
   });
 
-  it("returns a reply when the model answers confidently", async () => {
+  it("returns a reply when the model answers with high confidence", async () => {
     const fetchMock = vi.fn(async () =>
       openAiReply(
         JSON.stringify({
           handoff: false,
+          confidence: 0.95,
           reply:
             "Hi there!\n\nGreat question — a full-face mask is the way to go.\n\n— The PennPaps Team",
         }),
@@ -74,6 +77,55 @@ describe("generateEmailReply", () => {
       expect(result.reply).toContain("— The PennPaps Team");
     }
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands off when the reply is below the confidence bar", async () => {
+    __setEmailAutoReplyFetchForTests(
+      vi.fn(async () =>
+        openAiReply(
+          JSON.stringify({
+            handoff: false,
+            confidence: 0.5,
+            reply:
+              "I think the deductible resets in January.\n— The PennPaps Team",
+          }),
+        ),
+      ) as unknown as typeof fetch,
+    );
+    const result = await generateEmailReply(INPUT);
+    expect(result).toEqual({ kind: "handoff" });
+  });
+
+  it("hands off when the model omits a confidence (no signal)", async () => {
+    __setEmailAutoReplyFetchForTests(
+      vi.fn(async () =>
+        openAiReply(
+          JSON.stringify({
+            handoff: false,
+            reply: "All set.\n— The PennPaps Team",
+          }),
+        ),
+      ) as unknown as typeof fetch,
+    );
+    const result = await generateEmailReply(INPUT);
+    expect(result).toEqual({ kind: "handoff" });
+  });
+
+  it("honors a custom RESUPPLY_EMAIL_AUTO_REPLY_MIN_CONFIDENCE override", async () => {
+    process.env.RESUPPLY_EMAIL_AUTO_REPLY_MIN_CONFIDENCE = "0.5";
+    __setEmailAutoReplyFetchForTests(
+      vi.fn(async () =>
+        openAiReply(
+          JSON.stringify({
+            handoff: false,
+            confidence: 0.6,
+            reply: "Happy to help.\n— The PennPaps Team",
+          }),
+        ),
+      ) as unknown as typeof fetch,
+    );
+    const result = await generateEmailReply(INPUT);
+    expect(result.kind).toBe("reply");
   });
 
   it("hands off when the model sets handoff=true", async () => {
@@ -113,7 +165,7 @@ describe("generateEmailReply", () => {
     __setEmailAutoReplyFetchForTests(
       vi.fn(async () =>
         openAiReply(
-          '```json\n{"handoff": false, "reply": "All set.\\n— The PennPaps Team"}\n```',
+          '```json\n{"handoff": false, "confidence": 0.9, "reply": "All set.\\n— The PennPaps Team"}\n```',
         ),
       ) as unknown as typeof fetch,
     );

@@ -293,11 +293,15 @@ missing).
 lets the storefront chatbot brain answer patient email replies. The
 SendGrid Inbound Parse webhook (`routes/email/inbound-parse.ts`) calls
 `generateEmailReply()` — grounded in the SAME `buildChatSystemPrompt()`
-knowledge base as the `/api/chat` widget — and, when the model is
-confident it can answer from general knowledge, sends the reply back by
-email (conversation → `awaiting_patient`). Anything order/account/
-clinical-specific or low-confidence returns `handoff` and the thread
-falls through to `awaiting_admin` for a human, exactly as before. It is
+knowledge base as the `/api/chat` widget — which returns a structured
+`{ handoff, reply, confidence }`. Only **high-confidence** answers are
+sent automatically: the model self-reports a `confidence` 0..1 and a
+reply is sent back by email (conversation → `awaiting_patient`) only when
+it clears the bar (default **0.8**, overridable via
+`RESUPPLY_EMAIL_AUTO_REPLY_MIN_CONFIDENCE`). Anything order/account/
+clinical-specific, an explicit hand-off, or **below the confidence bar**
+returns `handoff` and the thread falls through to `awaiting_admin` for a
+human, exactly as before. It is
 **opt-in** behind the `email.auto_reply` feature flag (seeded **OFF** in
 migration 0248 — this deliberately departs from ADR 013's "free-text
 email goes to a human"), and degrades to hand-off whenever the provider
