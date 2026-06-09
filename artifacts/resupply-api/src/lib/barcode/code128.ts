@@ -26,7 +26,10 @@ import type PDFKit from "pdfkit";
 // Each entry is the alternating bar/space module widths, bar first.
 // Index 104 = Start Code B, 106 = Stop (the literal 13-module stop bar,
 // "2331112", already includes its trailing 2-module bar).
-const PATTERNS: readonly string[] = [
+//
+// Exported so the matching decoder (code128-decode.ts) builds its reverse
+// lookup from the SAME table — the encoder and decoder can never drift.
+export const PATTERNS: readonly string[] = [
   "212222",
   "222122",
   "222221",
@@ -136,13 +139,13 @@ const PATTERNS: readonly string[] = [
   "2331112",
 ] as const;
 
-const START_B = 104;
-const STOP = 106;
+export const START_B = 104;
+export const STOP = 106;
 /** Recommended clear space on each side of the symbol, in modules. */
 export const QUIET_ZONE_MODULES = 10;
 
 /** Lowest / highest printable ASCII char Code 128 set B can encode. */
-const MIN_CHAR = 32; // space
+export const MIN_CHAR = 32; // space
 const MAX_CHAR = 126; // ~
 
 /**

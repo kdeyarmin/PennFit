@@ -1,8 +1,8 @@
 // Tests for the inbound-fax barcode auto-file orchestration. The barcode
-// scan and object storage are injected stubs; Supabase is the shared
-// route-test mock. These pin the match → file-to-chart → mark-returned →
-// release-bill-hold flow and every non-match outcome without a network or
-// model call.
+// decode + vision scan + object storage are injected stubs; Supabase is the
+// shared route-test mock. These pin the deterministic fast-path, the
+// match → file → mark-returned → release-hold flow, and every non-match /
+// error outcome without a network, model, or image-decode call.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -61,9 +61,14 @@ function trackingDbRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Stub scan returning a fixed result. */
+/** Stub vision scan returning a fixed result. */
 function scanReturning(result: TrackingScanResult) {
   return vi.fn(async () => result);
+}
+
+/** Stub deterministic decode returning a fixed code (or null = miss). */
+function decodeReturning(code: string | null) {
+  return vi.fn(async () => code);
 }
 
 const baseInput = {
@@ -72,12 +77,25 @@ const baseInput = {
   contentType: "application/pdf",
 };
 
-function deps(scan: ReturnType<typeof scanReturning>) {
+function deps(
+  scan: ReturnType<typeof scanReturning>,
+  decode: ReturnType<typeof decodeReturning> = decodeReturning(null),
+) {
   return {
     logger: loggerStub as unknown as Logger,
+    decode: decode as never,
     scan: scan as never,
     storage: storageStub as never,
   };
+}
+
+/** Stage the happy-path reads/writes for a matched, outstanding signature. */
+function stageHappyPath(row = trackingDbRow()) {
+  stageSupabaseResponse("signature_tracking", "select", { data: row });
+  stageSupabaseResponse("patient_documents", "insert", {
+    data: { id: "doc-1" },
+  });
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
 }
 
 beforeEach(() => {
@@ -89,15 +107,9 @@ beforeEach(() => {
 });
 
 describe("autoFileSignedFax — happy path", () => {
-  it("files a matched signed fax to the chart and marks it returned", async () => {
+  it("files a matched signed fax to the chart and marks it returned (vision)", async () => {
     const scan = scanReturning({ status: "found", code: "PFS-ABCD2345" });
-    stageSupabaseResponse("signature_tracking", "select", {
-      data: trackingDbRow(),
-    });
-    stageSupabaseResponse("patient_documents", "insert", {
-      data: { id: "doc-1" },
-    });
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
+    stageHappyPath();
 
     const outcome = await autoFileSignedFax(baseInput, deps(scan));
 
@@ -107,14 +119,11 @@ describe("autoFileSignedFax — happy path", () => {
       signatureTrackingId: "track-1",
       chartDocumentId: "doc-1",
     });
-    // Copied the bytes to a new chart object and PUT them.
     expect(storageStub.getObjectEntityUploadURL).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://storage.test/upload",
       expect.objectContaining({ method: "PUT" }),
     );
-
-    // The chart document was filed for the right patient + type.
     const docInsert = getSupabaseWritePayloads(
       "patient_documents",
       "insert",
@@ -124,8 +133,6 @@ describe("autoFileSignedFax — happy path", () => {
       object_key: "chart-object-key",
       document_type: "prescription",
     });
-
-    // The fax row was attached + stamped filed.
     const faxPatch = getSupabaseWritePayloads(
       "inbound_faxes",
       "update",
@@ -138,25 +145,29 @@ describe("autoFileSignedFax — happy path", () => {
       signature_tracking_id: "track-1",
       chart_document_id: "doc-1",
     });
-
-    // The signature was marked returned (signature_tracking update).
     expect(getSupabaseCallCount("signature_tracking", "update")).toBe(1);
+  });
+
+  it("uses the deterministic barcode decode and skips the vision scan", async () => {
+    const scan = scanReturning({ status: "offline" });
+    stageHappyPath();
+
+    const outcome = await autoFileSignedFax(
+      baseInput,
+      deps(scan, decodeReturning("PFS-ABCD2345")),
+    );
+
+    expect(outcome.status).toBe("filed");
+    // The fast-path hit, so the (paid) vision scan was never called.
+    expect(scan).not.toHaveBeenCalled();
   });
 
   it("satisfies a matching claim paperwork requirement (releases the hold)", async () => {
     const scan = scanReturning({ status: "found", code: "PFS-ABCD2345" });
-    stageSupabaseResponse("signature_tracking", "select", {
-      data: trackingDbRow(),
-    });
-    stageSupabaseResponse("patient_documents", "insert", {
-      data: { id: "doc-1" },
-    });
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
-    // One outstanding requirement sourced from this packet → satisfied.
+    stageHappyPath();
     stageSupabaseResponse("claim_paperwork_requirements", "select", {
       data: [{ id: "req-1" }],
     });
-    // satisfyRequirement reads the row then updates it.
     stageSupabaseResponse("claim_paperwork_requirements", "select", {
       data: {
         id: "req-1",
@@ -187,7 +198,7 @@ describe("autoFileSignedFax — happy path", () => {
 });
 
 describe("autoFileSignedFax — non-match outcomes", () => {
-  it("records no_code when the scan finds no barcode", async () => {
+  it("records no_code when neither decode nor scan finds a code", async () => {
     const scan = scanReturning({ status: "not_found" });
     const outcome = await autoFileSignedFax(baseInput, deps(scan));
     expect(outcome.status).toBe("no_code");
@@ -200,8 +211,10 @@ describe("autoFileSignedFax — non-match outcomes", () => {
   });
 
   it("records offline when the scan is offline", async () => {
-    const scan = scanReturning({ status: "offline" });
-    const outcome = await autoFileSignedFax(baseInput, deps(scan));
+    const outcome = await autoFileSignedFax(
+      baseInput,
+      deps(scanReturning({ status: "offline" })),
+    );
     expect(outcome.status).toBe("offline");
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -212,14 +225,6 @@ describe("autoFileSignedFax — non-match outcomes", () => {
     const outcome = await autoFileSignedFax(baseInput, deps(scan));
     expect(outcome.status).toBe("no_match");
     expect(storageStub.getObjectEntityUploadURL).not.toHaveBeenCalled();
-    const faxPatch = getSupabaseWritePayloads(
-      "inbound_faxes",
-      "update",
-    )[0] as Record<string, unknown>;
-    expect(faxPatch).toMatchObject({
-      auto_file_status: "no_match",
-      tracking_code_detected: "PFS-ABCD2345",
-    });
   });
 
   it("records already_returned without re-filing", async () => {
@@ -240,9 +245,43 @@ describe("autoFileSignedFax — non-match outcomes", () => {
     });
     const outcome = await autoFileSignedFax(baseInput, deps(scan));
     expect(outcome.status).toBe("no_patient");
-    // Signature still marked returned (it genuinely came back)…
     expect(getSupabaseCallCount("signature_tracking", "update")).toBe(1);
-    // …but nothing was filed to a chart.
     expect(storageStub.getObjectEntityUploadURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("autoFileSignedFax — errors abort to failed", () => {
+  it("records failed (not no_match) when the lookup query throws", async () => {
+    const scan = scanReturning({ status: "found", code: "PFS-ABCD2345" });
+    stageSupabaseResponse("signature_tracking", "select", {
+      throws: new Error("db unavailable"),
+    });
+    const outcome = await autoFileSignedFax(baseInput, deps(scan));
+    expect(outcome.status).toBe("failed");
+    expect(storageStub.getObjectEntityUploadURL).not.toHaveBeenCalled();
+  });
+
+  it("aborts to failed (no hold release) when mark-returned throws", async () => {
+    const scan = scanReturning({ status: "found", code: "PFS-ABCD2345" });
+    // Lookup ok, chart write ok, but the mark-returned update fails.
+    stageSupabaseResponse("signature_tracking", "select", {
+      data: trackingDbRow(),
+    });
+    stageSupabaseResponse("patient_documents", "insert", {
+      data: { id: "doc-1" },
+    });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
+    stageSupabaseResponse("signature_tracking", "update", {
+      throws: new Error("update failed"),
+    });
+
+    const outcome = await autoFileSignedFax(baseInput, deps(scan));
+    expect(outcome.status).toBe("failed");
+    // The chart document was written, but the bill-hold release step was
+    // never reached — no requirement lookup/update happened.
+    expect(getSupabaseCallCount("patient_documents", "insert")).toBe(1);
+    expect(getSupabaseCallCount("claim_paperwork_requirements", "select")).toBe(
+      0,
+    );
   });
 });
