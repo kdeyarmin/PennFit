@@ -525,6 +525,14 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
     expect(pending).not.toBeNull();
     expect(pending!.callerKind).toBe("shop_customer");
     expect(pending!.shopCustomerId).toBe("cust_store_1");
+
+    // The session is marked in_progress (not left patient_not_identified)
+    // for a routed storefront caller, so ops/analytics classify it right.
+    const sessionUpdates = supabaseMock.writePayloads(
+      "voice_reorder_sessions",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(sessionUpdates.some((u) => u.status === "in_progress")).toBe(true);
   });
 
   it("returns a 500 hangup when caller resolution hits a DB error (no silent mis-route)", async () => {

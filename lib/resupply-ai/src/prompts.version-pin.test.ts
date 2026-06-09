@@ -97,7 +97,7 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
  * Update the same way: render, take the printed hash, record it here.
  */
 const SHOP_PROMPT_HASH =
-  "7f3e9e0d9f483eb630000256f741aa48d3263ea934bc87816893d1f06db27146";
+  "e1dd68f240c73351dd17e22ab562a7c84948d9e61079310e8e8a10a99deb088c";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {

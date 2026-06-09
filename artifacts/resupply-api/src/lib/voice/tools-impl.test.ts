@@ -791,7 +791,9 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
     expect(dispatcher.isIdentityVerified()).toBe(false);
   });
 
-  it("does not burn an attempt when there is no card on file", async () => {
+  it("signals terminal (attempts_remaining 0) when there is no card on file", async () => {
+    // No card on file → verification can never succeed; the result must tell
+    // the model to hand off rather than loop asking for digits.
     const dispatcher = shopDispatcher({ ...RICH_SHOP, last4: null });
     const r1 = await dispatcher.dispatch({
       callId: "v1",
@@ -803,8 +805,8 @@ describe("VoiceToolDispatcher — shop_customer flow", () => {
       name: "verify_shop_customer_identity",
       args: { last_four: "4242" },
     });
-    expect(r1.result).toEqual({ matched: false, attempts_remaining: 3 });
-    expect(r2.result).toEqual({ matched: false, attempts_remaining: 3 });
+    expect(r1.result).toEqual({ matched: false, attempts_remaining: 0 });
+    expect(r2.result).toEqual({ matched: false, attempts_remaining: 0 });
   });
 
   it("gates get_customer_chart behind verification", async () => {

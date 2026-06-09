@@ -271,6 +271,10 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
+        // The row was inserted as patient_not_identified (no patient), but a
+        // matched storefront caller IS being actively handled — mark it
+        // in_progress so ops/analytics don't misclassify the call.
+        status: "in_progress",
         outcome_json: {
           routed: "realtime_bridge",
           conversation_id: shopConversationId,

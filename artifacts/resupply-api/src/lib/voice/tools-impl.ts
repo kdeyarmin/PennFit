@@ -358,15 +358,14 @@ class Impl implements VoiceToolDispatcher {
 
     const last4OnFile = row?.default_payment_method_last4 ?? null;
     if (!last4OnFile) {
-      // Nothing to compare against — don't increment; let the agent hand off.
-      const attemptsRemaining = Math.max(
-        0,
-        MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
-      );
+      // No card on file → verification can NEVER succeed. Signal a terminal
+      // state (attempts_remaining: 0) so the model stops asking for digits
+      // and hands off, per the prompt's "no card on file" rule. We don't
+      // increment the counter — there was nothing to compare.
       return {
         callId: call.callId,
         name: call.name,
-        result: { matched: false, attempts_remaining: attemptsRemaining },
+        result: { matched: false, attempts_remaining: 0 },
       };
     }
 
