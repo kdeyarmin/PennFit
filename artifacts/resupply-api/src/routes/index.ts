@@ -39,6 +39,7 @@ import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
+import adminAssistantChatRouter from "./admin/assistant-chat.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
@@ -664,6 +665,11 @@ router.use(shopReviewRequestsRouter);
 // (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
 // see middlewares/requireAdmin.ts for the resolution order.
 router.use(teamRouter);
+// /admin/assistant/chat — PennPilot, the in-app program-manager /
+// tech-support chatbot for staff. Answers "how does the app work"
+// questions and can email feature suggestions to the super-admins.
+// requireAdmin gate is on the router itself.
+router.use(adminAssistantChatRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);

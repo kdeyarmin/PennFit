@@ -275,6 +275,7 @@ degrade when their API key is unset.
 | Voice agent (STT)        | `gpt-4o-mini-transcribe`                       | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
 | Voice agent (TTS)        | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
 | Storefront chatbot       | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Admin assistant (PennPilot) | Claude Sonnet 4.6                           | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | Inbound email auto-reply | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | Sleep coach              | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 | SMS intent classifier    | Claude Haiku 4.5                               | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
@@ -288,6 +289,26 @@ selection). When only `OPENAI_API_KEY` is configured, OpenAI is used
 end to end. When neither is set, routes return a static "offline"
 reply and stay 200 (deploys must not break because a vendor key is
 missing).
+
+**Admin assistant — "PennPilot"**
+(`artifacts/resupply-api/src/routes/admin/assistant-chat.ts`, knowledge +
+tools in `artifacts/resupply-api/src/lib/admin-assistant/`) is the
+staff-facing in-app helper, mounted as a floating widget on every
+`/admin` page (`AdminAssistantWidget`, rendered by `AppShell`). It runs
+behind `requireAdmin` at `POST /resupply-api/admin/assistant/chat` and
+does two jobs: (1) **tech support** — answers "how does the app work /
+where is the page that does X" grounded in a complete map of the admin
+console (the same `NAV_GROUPS` the sidebar renders), and (2) **program
+manager / feature suggester** — its one tool, `suggest_feature`, emails a
+structured idea to the super-admin(s) when a genuine gap surfaces. It
+**always confirms with the operator before sending** (prompt rule, not a
+hard gate), and never sends silently. Recipients resolve from active
+`admin_users` super-admins (role='admin', status='active'), falling back
+to `RESUPPLY_ADMIN_EMAILS`; email funnels through the shared
+`createSendgridClient()`. Same Claude-first / OpenAI-fallback / offline
+posture as the chatbots, gated behind the `admin.assistant` feature flag
+(seeded ON, migration 0253). It takes no other actions in the app and
+never echoes patient PHI.
 
 **Inbound email auto-reply** (`artifacts/resupply-api/src/lib/messaging/email-auto-reply.ts`)
 lets the storefront chatbot brain answer patient email replies. The

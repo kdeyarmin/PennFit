@@ -86,6 +86,7 @@ import { useDashboardIdentity } from "@/lib/admin/identity";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { GlobalLookup } from "./GlobalLookup";
+import { AdminAssistantWidget } from "./AdminAssistantWidget";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
 import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
 
@@ -2022,6 +2023,15 @@ export function AppShell({
           </main>
         </div>
         <BrandFooter />
+        {/*
+        PennPilot — the in-app tech-support / program-manager assistant.
+        Floating launcher, available on every admin page. Only rendered
+        for a confirmed admin session (adminEmail set) so it never shows
+        during the signed-out access-check window. Server-side it's gated
+        by requireAdmin + the `admin.assistant` feature flag, so a missing
+        AI key or a disabled flag degrades it gracefully.
+      */}
+        {adminEmail ? <AdminAssistantWidget /> : null}
       </div>
     </RoleProvider>
   );
