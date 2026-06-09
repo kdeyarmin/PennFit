@@ -354,13 +354,14 @@ layer Niko doesn't have.
   `GET /admin/cmn-documents/:id/pdf` + a "PDF" link).
 
 **The accuracy + last-mile lists are now closed.** The only remaining
-**operational** step (no code) is the one-time A2 validation:
-
-1. In the Office Ally **test (T) cycle**, flip `billing.line_ordering_provider`
-   ON from the Control Center, submit a batch, and confirm the **277CA** accepts
-   the 2420E loop; then leave it on for production. If a payer rejects the
-   duplicate provider loop, the follow-up is to drop the claim-level 2310D for
-   that path.
+**operational** step (no code, needs the Office Ally account) is the one-time
+A2 validation — turnkey in
+[`runbooks/activate-line-ordering-provider-2420e.md`](./runbooks/activate-line-ordering-provider-2420e.md):
+preview the 2420E in stub mode, transmit one test claim on usage indicator `T`,
+confirm the **277CA** accepts it, then leave the flag on for production
+(instant Control-Center rollback if a payer rejects the loop). It can't be
+validated from a dev box or by flipping the flag alone — there's no 277CA to
+read until a batch actually transmits.
 
 Everything the first draft listed is now **shipped** — A1, A2, A5, U1, U6 in
 this PR; CMN/DWO cover PDF, line COGS, 276/277 status, secondary COB, and
