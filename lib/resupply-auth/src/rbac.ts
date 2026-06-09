@@ -90,6 +90,10 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   cases.read              — view CSR cases (cross-channel tickets)
  *   cases.manage            — open / edit / link cases
  *   targets.manage          — set / view business goals (management)
+ *   provider_portal.manage  — run the provider e-signature portal:
+ *                              invite/manage provider accounts, stage
+ *                              documents for signature, track + release
+ *                              signed items, print the signature audit log
  *   system.config.manage    — read/write the System Configuration store
  *                              (integration credentials + platform
  *                              secrets). super_admin ONLY — like
@@ -124,6 +128,7 @@ export type Permission =
   | "cases.read"
   | "cases.manage"
   | "targets.manage"
+  | "provider_portal.manage"
   | "system.config.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
@@ -155,6 +160,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "cases.read",
   "cases.manage",
   "targets.manage",
+  "provider_portal.manage",
   "system.config.manage",
 ];
 
@@ -246,6 +252,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "cases.read",
     "cases.manage",
     "targets.manage",
+    "provider_portal.manage",
   ]),
 
   // Union of legacy `csr` + `fitter` + `fulfillment` + `agent`.
@@ -265,6 +272,11 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "fit_session.override",
     "cases.read",
     "cases.manage",
+    // Employees run the provider e-signature portal day-to-day:
+    // staging documents for signature, tracking signed items through
+    // ready-to-print / returned-signed / released, and printing the
+    // signature audit log to send to a payer / Medicare.
+    "provider_portal.manage",
   ]),
 
   // Respiratory therapist (rt). Clinical documentation + the patient

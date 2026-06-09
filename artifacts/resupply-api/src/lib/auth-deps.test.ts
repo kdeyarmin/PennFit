@@ -59,6 +59,8 @@ const { getAuthDeps } = await import("./auth-deps");
 // to each individual test call.
 const mfaProbe = getAuthDeps().mfa!;
 const consumeRecoveryCode = mfaProbe.consumeRecoveryCode!;
+const findActiveSecret = mfaProbe.findActiveSecret!;
+const findAllActiveSecrets = mfaProbe.findAllActiveSecrets!;
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -217,5 +219,68 @@ describe("consumeRecoveryCode: concurrent spend behavior", () => {
 
     expect(first).toEqual({ id: "rc-row-77" });
     expect(second).toBeNull();
+  });
+});
+
+describe("provider MFA fallback for dual-linked auth users", () => {
+  it("falls through to provider_mfa_secrets when admin_mfa_secrets is empty", async () => {
+    stageSupabaseResponse("admin_users", "select", {
+      data: { id: "admin-7" },
+    });
+    stageSupabaseResponse("admin_mfa_secrets", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: { id: "provider-account-1" },
+    });
+    stageSupabaseResponse("provider_mfa_secrets", "select", {
+      data: {
+        secret_base32: "JBSWY3DPEHPK3PXP",
+        last_used_counter: 9,
+        verified_at: "2026-01-01T00:00:00.000Z",
+      },
+      error: null,
+    });
+
+    const secret = await findActiveSecret("user-dual-linked");
+
+    expect(secret).toEqual({
+      secretBase32: "JBSWY3DPEHPK3PXP",
+      lastUsedCounter: 9,
+    });
+  });
+
+  it("falls through to provider secrets for MFA verify when admin has zero devices", async () => {
+    stageSupabaseResponse("admin_users", "select", {
+      data: { id: "admin-8" },
+    });
+    stageSupabaseResponse("admin_mfa_secrets", "select", {
+      data: [],
+      error: null,
+    });
+    stageSupabaseResponse("provider_portal_accounts", "select", {
+      data: { id: "provider-account-2" },
+    });
+    stageSupabaseResponse("provider_mfa_secrets", "select", {
+      data: [
+        {
+          id: "provider-secret-1",
+          secret_base32: "JBSWY3DPEHPK3PXP",
+          last_used_counter: 3,
+        },
+      ],
+      error: null,
+    });
+
+    const secrets = await findAllActiveSecrets("user-dual-linked");
+
+    expect(secrets).toEqual([
+      {
+        id: "provider-secret-1",
+        secretBase32: "JBSWY3DPEHPK3PXP",
+        lastUsedCounter: 3,
+      },
+    ]);
   });
 });

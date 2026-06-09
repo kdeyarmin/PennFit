@@ -77,6 +77,7 @@ export const FEATURE_FLAG_KEYS = [
   "patient_packets.autosend_on_delivery",
   "patient_packets.autoremind",
   "orders.require_signed_paperwork",
+  "provider.portal_enabled",
   "multi_location.enabled",
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
