@@ -315,7 +315,7 @@ async function runRecallSendSweepInner(
       // figure out what happened. Gate on status='queued' so a
       // sibling worker that already finished this row doesn't get
       // its terminal status overwritten by 'skipped'.
-      await supabase
+      const { error: skipErr } = await supabase
         .schema("resupply")
         .from("recall_notifications")
         .update({
@@ -325,6 +325,12 @@ async function runRecallSendSweepInner(
         })
         .eq("id", row.id)
         .eq("status", "queued");
+      if (skipErr) {
+        logger.warn(
+          { err: skipErr.message, id: row.id },
+          "recall-notifications.send: skip stamp failed",
+        );
+      }
       stats.skipped += 1;
       continue;
     }
@@ -383,7 +389,7 @@ async function runRecallSendSweepInner(
     // on a genuinely stuck claim.
     const nowIso = new Date().toISOString();
     if (outcome.kind === "sent") {
-      await supabase
+      const { error: sentErr } = await supabase
         .schema("resupply")
         .from("recall_notifications")
         .update({
@@ -393,9 +399,15 @@ async function runRecallSendSweepInner(
         })
         .eq("id", row.id)
         .eq("status", "sending");
+      if (sentErr) {
+        logger.error(
+          { err: sentErr.message, id: row.id },
+          "recall-notifications.send: sent stamp failed — row may stay in sending state",
+        );
+      }
       stats.sent += 1;
     } else if (outcome.kind === "failed") {
-      await supabase
+      const { error: failedErr } = await supabase
         .schema("resupply")
         .from("recall_notifications")
         .update({
@@ -406,9 +418,15 @@ async function runRecallSendSweepInner(
         })
         .eq("id", row.id)
         .eq("status", "sending");
+      if (failedErr) {
+        logger.error(
+          { err: failedErr.message, id: row.id },
+          "recall-notifications.send: failed stamp failed — row may stay in sending state",
+        );
+      }
       stats.failed += 1;
     } else {
-      await supabase
+      const { error: skippedErr } = await supabase
         .schema("resupply")
         .from("recall_notifications")
         .update({
@@ -418,6 +436,12 @@ async function runRecallSendSweepInner(
         })
         .eq("id", row.id)
         .eq("status", "sending");
+      if (skippedErr) {
+        logger.error(
+          { err: skippedErr.message, id: row.id },
+          "recall-notifications.send: skipped stamp failed — row may stay in sending state",
+        );
+      }
       stats.skipped += 1;
     }
   }

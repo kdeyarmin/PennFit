@@ -403,11 +403,21 @@ export async function processTick(
           { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
           "bulk_campaigns.tick: suppression update failed — marking recipient failed",
         );
-        await supabase
+        const { error: failMarkErr } = await supabase
           .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({ status: "failed", error: supErr.message.slice(0, 500) })
           .eq("id", row.id);
+        if (failMarkErr) {
+          log.error(
+            {
+              err: failMarkErr.message,
+              recipientId: row.id,
+              campaignId: campaign.id,
+            },
+            "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
+          );
+        }
         failed += 1;
         continue;
       }
