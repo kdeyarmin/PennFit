@@ -291,7 +291,7 @@ router.post(
     const baseUrl = getFaxPublicBaseUrl()!;
     const token = signAppealFaxToken(letter.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
-    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
+    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
     const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let faxId: string;

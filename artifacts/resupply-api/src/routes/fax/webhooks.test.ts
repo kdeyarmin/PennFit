@@ -169,3 +169,63 @@ describe("Telnyx fax webhooks — signature plumbing", () => {
     expect(logAuditMock).toHaveBeenCalledOnce();
   });
 });
+
+describe("Telnyx fax webhooks — unified /webhook endpoint", () => {
+  it("routes a signed fax.received to the inbound ingest path", async () => {
+    const raw = JSON.stringify({
+      data: {
+        event_type: "fax.received",
+        payload: { fax_id: "fx-u1", from: "+15551112222", page_count: 1 },
+      },
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const res = await request(makeApp())
+      .post("/resupply-api/fax/webhook")
+      .set("Content-Type", "application/json")
+      .set("telnyx-signature-ed25519", sign(ts, raw))
+      .set("telnyx-timestamp", ts)
+      .send(raw);
+    expect(res.status).toBe(200);
+    await flush();
+    expect(ingestInboundFaxMock).toHaveBeenCalledOnce();
+    const arg = ingestInboundFaxMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(arg.telnyxFaxId).toBe("fx-u1");
+  });
+
+  it("routes a signed outbound fax.delivered to the status path", async () => {
+    stageSupabaseResponse("physician_fax_outreach", "update", { error: null });
+    const raw = JSON.stringify({
+      data: {
+        event_type: "fax.delivered",
+        payload: { fax_id: "fx-u2", direction: "outbound" },
+      },
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const res = await request(makeApp())
+      .post("/resupply-api/fax/webhook")
+      .set("Content-Type", "application/json")
+      .set("telnyx-signature-ed25519", sign(ts, raw))
+      .set("telnyx-timestamp", ts)
+      .send(raw);
+    expect(res.status).toBe(200);
+    await flush();
+    expect(logAuditMock).toHaveBeenCalledOnce();
+    expect(ingestInboundFaxMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsigned /webhook request with 403", async () => {
+    const raw = JSON.stringify({
+      data: { event_type: "fax.received", payload: { fax_id: "fx-u3" } },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/fax/webhook")
+      .set("Content-Type", "application/json")
+      .send(raw);
+    expect(res.status).toBe(403);
+    await flush();
+    expect(ingestInboundFaxMock).not.toHaveBeenCalled();
+  });
+});

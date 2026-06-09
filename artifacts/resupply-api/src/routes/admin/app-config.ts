@@ -194,18 +194,11 @@ const TWILIO_WEBHOOK_ENDPOINTS: ReadonlyArray<{
     path: "/resupply-api/sms/status-callback",
   },
   {
-    id: "fax_inbound",
-    label: "Fax — A fax comes in",
+    id: "fax_webhook",
+    label: "Fax — inbound + delivery status (unified)",
     description:
-      "Twilio Console → Programmable Fax number → “A fax comes in” (Webhook, HTTP POST).",
-    path: "/resupply-api/fax/inbound",
-  },
-  {
-    id: "fax_status",
-    label: "Fax — Delivery status callback",
-    description:
-      "Set automatically on outbound faxes (delivery lifecycle). No manual Console entry required.",
-    path: "/resupply-api/fax/status-callback",
+      "Telnyx portal → your Fax Application (connection) → Inbound Settings → Webhook URL (HTTP POST). One endpoint serves both inbound fax.received events and outbound delivery-status events; the app sets it automatically as the per-fax webhook_url on outbound faxes. (Legacy /fax/inbound and /fax/status-callback still resolve here.)",
+    path: "/resupply-api/fax/webhook",
   },
 ];
 

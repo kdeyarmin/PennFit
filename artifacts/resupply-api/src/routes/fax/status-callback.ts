@@ -29,7 +29,10 @@ import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-import { parseTelnyxFaxEvent } from "@workspace/resupply-telecom";
+import {
+  parseTelnyxFaxEvent,
+  type TelnyxFaxEvent,
+} from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
 
@@ -78,7 +81,25 @@ export async function faxStatusCallbackHandler(
     return;
   }
 
-  const event = parsed.event;
+  try {
+    await processOutboundFaxEvent(parsed.event);
+  } catch (err) {
+    // Telnyx already received its 200 and won't retry, so a post-ACK
+    // throw would otherwise reach Express's default handler (response
+    // already sent) and skip structured logging. Log it here.
+    logger.warn(
+      { event: "fax_status_post_ack_failed", err },
+      "fax status-callback: post-ACK processing failed",
+    );
+  }
+}
+
+// Post-ACK work for an outbound fax delivery-status event. Exported so
+// the unified /fax/webhook dispatcher can reuse it. Unmapped event types
+// (e.g. fax.received, which the inbound handler owns) are logged + dropped.
+export async function processOutboundFaxEvent(
+  event: TelnyxFaxEvent,
+): Promise<void> {
   const dbStatus = mapTelnyxEvent(event.eventType);
   if (!dbStatus) {
     // An event type we don't map (e.g. a future Telnyx status). Log once

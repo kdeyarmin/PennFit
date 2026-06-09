@@ -142,7 +142,7 @@ async function dispatchFax(
   const faxClient = createTelnyxFaxClient();
   const token = signFaxDocumentToken(outreachId);
   const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
-  const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
+  const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
   const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
   // Scope try/catch to the Telnyx API call only. A DB failure after a

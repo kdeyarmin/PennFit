@@ -220,8 +220,8 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
     expect(urls.sms_status).toBe(
       "https://pennfit.example.com/resupply-api/sms/status-callback",
     );
-    expect(urls.fax_inbound).toBe(
-      "https://pennfit.example.com/resupply-api/fax/inbound",
+    expect(urls.fax_webhook).toBe(
+      "https://pennfit.example.com/resupply-api/fax/webhook",
     );
   });
 

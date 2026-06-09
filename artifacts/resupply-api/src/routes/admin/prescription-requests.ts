@@ -431,7 +431,7 @@ router.post(
 
     const token = signPrescriptionRequestToken(packet.id);
     const mediaUrl = `${baseUrl}/resupply-api/rx-request/document/${token}`;
-    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
+    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
     const faxClient = createTelnyxFaxClient();
     const nowIso = new Date().toISOString();
     try {
