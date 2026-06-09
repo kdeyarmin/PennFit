@@ -203,8 +203,11 @@ async function processRemoteFile(
   fileName: string,
   stats: PollStats,
 ): Promise<boolean> {
-  // 1. Cheap dedupe by remote_path BEFORE downloading.
-  const { data: existing } = await supabase
+  // 1. Cheap dedupe by remote_path BEFORE downloading. A transient
+  //    read failure must not be treated as "not seen before" — skip
+  //    this file for the run (the next poll retries) rather than
+  //    proceed to a download/insert on a blind dedupe.
+  const { data: existing, error: existingErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
     .select("id, dispatch_status")
@@ -212,6 +215,13 @@ async function processRemoteFile(
     .eq("remote_path", remotePath)
     .limit(1)
     .maybeSingle();
+  if (existingErr) {
+    logger.warn(
+      { remotePath, err: existingErr.message },
+      "office-ally.inbound-poll: remote_path dedupe lookup failed — deferring file to next poll",
+    );
+    return false;
+  }
   if (existing) {
     stats.skippedDuplicates += 1;
     return false;
@@ -237,7 +247,7 @@ async function processRemoteFile(
   const sha256 = createHash("sha256")
     .update(download.content, "utf8")
     .digest("hex");
-  const { data: sameContent } = await supabase
+  const { data: sameContent, error: sameContentErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
     .select("id")
@@ -245,6 +255,13 @@ async function processRemoteFile(
     .eq("file_sha256", sha256)
     .limit(1)
     .maybeSingle();
+  if (sameContentErr) {
+    logger.warn(
+      { remotePath, err: sameContentErr.message },
+      "office-ally.inbound-poll: sha256 dedupe lookup failed — deferring file to next poll",
+    );
+    return false;
+  }
   if (sameContent) {
     // Persist a skipped row so the audit shows the redelivery without
     // re-processing.
@@ -430,7 +447,13 @@ export async function dispatch277ca(
 ): Promise<void> {
   const parsed = parse277CA(content);
   // Walk each claim block; match by traceNumber (which we put on
-  // CLM01 == insurance_claims.id) and update status.
+  // CLM01 == insurance_claims.id) and update status. The submission
+  // roll-up is aggregated across blocks first and written ONCE per
+  // submission: one 837 carries many claims, and writing per-block
+  // let a later accepted block overwrite an earlier rejected one —
+  // the submission worklist then showed accepted_277ca while a claim
+  // inside it had been rejected.
+  const submissionHasRejection = new Map<string, boolean>();
   for (const block of parsed.claims) {
     if (!block.traceNumber) continue;
     const { data: claim } = await supabase
@@ -466,28 +489,36 @@ export async function dispatch277ca(
         ),
         actor_email: SYSTEM_ACTOR_EMAIL,
       });
-    // Roll-up onto the office_ally_submissions row.
+    // Accumulate for the per-submission roll-up below.
     if (claim.office_ally_submission_id) {
-      const newStatus =
-        block.outcome === "rejected" ? "rejected_277ca" : "accepted_277ca";
-      await supabase
-        .schema("resupply")
-        .from("office_ally_submissions")
-        .update({
-          status: newStatus,
-          ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
-          ack_277ca_received_at: new Date().toISOString(),
-        })
-        .eq("id", claim.office_ally_submission_id);
-      await supabase
-        .schema("resupply")
-        .from("clearinghouse_inbound_files")
-        .update({
-          applied_to_submission_id: claim.office_ally_submission_id,
-          parse_summary_json: summarise277(parsed) as unknown as Json,
-        })
-        .eq("id", inboundFileId);
+      submissionHasRejection.set(
+        claim.office_ally_submission_id,
+        (submissionHasRejection.get(claim.office_ally_submission_id) ??
+          false) ||
+          block.outcome === "rejected",
+      );
     }
+  }
+  // Roll-up onto the office_ally_submissions row — any rejected claim
+  // marks the whole submission rejected_277ca.
+  for (const [submissionId, hasRejection] of submissionHasRejection) {
+    await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .update({
+        status: hasRejection ? "rejected_277ca" : "accepted_277ca",
+        ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
+        ack_277ca_received_at: new Date().toISOString(),
+      })
+      .eq("id", submissionId);
+    await supabase
+      .schema("resupply")
+      .from("clearinghouse_inbound_files")
+      .update({
+        applied_to_submission_id: submissionId,
+        parse_summary_json: summarise277(parsed) as unknown as Json,
+      })
+      .eq("id", inboundFileId);
   }
 }
 

@@ -251,9 +251,17 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     return;
   }
 
-  // 5. Find or create the open email conversation. Same shape as the
-  // SMS path — prefer the most recent OPEN email thread; if none, open
-  // a new one bound to the patient's most recent episode.
+  // 5. Find or create the live email conversation. Reuse any LIVE
+  // conversation ('open', 'awaiting_admin', or 'awaiting_patient') for
+  // this patient so a multi-turn exchange stays one thread — the same
+  // fix the SMS path carries (routes/sms/inbound.ts). Matching only
+  // status='open' never hit: step 9 below flips every conversation to
+  // awaiting_admin/awaiting_patient after each inbound, and an admin
+  // reply sets awaiting_patient, so each follow-up email spawned a
+  // brand-new conversation row — shattering the CSR email inbox,
+  // breaking SLA tracking, and emptying the auto-reply bot's context
+  // window every turn. If none is live, open a new one bound to the
+  // patient's most recent episode.
   let conversationId: string | null;
   const { data: openConv, error: openConvErr } = await supabase
     .schema("resupply")
@@ -261,7 +269,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     .select("id")
     .eq("patient_id", patientId)
     .eq("channel", "email")
-    .eq("status", "open")
+    .in("status", ["open", "awaiting_admin", "awaiting_patient"])
     .order("last_message_at", { ascending: false })
     .limit(1)
     .maybeSingle();

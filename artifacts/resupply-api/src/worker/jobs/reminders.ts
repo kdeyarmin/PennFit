@@ -554,25 +554,39 @@ export async function scanForDueReminders(
 
   // Step 4: lastFulfilledAt is MAX(shipped_at) per (patient, item_sku).
   // PostgREST has no GROUP BY, so we fetch all fulfillment shipped
-  // rows for the patients of interest and reduce in JS.
+  // rows for the patients of interest and reduce in JS. Chunk the
+  // `patient_id` IN list AND page within each chunk — fulfillments
+  // accumulate one row per shipment over ALL time, so 200 patients can
+  // own far more than the ~1000-row PostgREST cap. An unpaginated
+  // select silently truncated there: when a patient's LATEST shipment
+  // fell off the page, the reducer kept an older shipped_at (or fell
+  // back to prescription.created_at) and the cadence check fired a
+  // reminder before the patient was actually due. Same cap-truncation
+  // class as the Step-2/Step-5 comments above.
   const lastFulfilledByKey = new Map<string, string>();
   const activePatientIds = Array.from(patientById.keys());
   for (let i = 0; i < activePatientIds.length; i += 200) {
     const batch = activePatientIds.slice(i, i + 200);
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("fulfillments")
-      .select("patient_id, item_sku, shipped_at")
-      .in("patient_id", batch)
-      .not("shipped_at", "is", null);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      if (!row.shipped_at) continue;
-      const key = `${row.patient_id}\x00${row.item_sku}`;
-      const prev = lastFulfilledByKey.get(key);
-      if (!prev || row.shipped_at > prev) {
-        lastFulfilledByKey.set(key, row.shipped_at);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select("id, patient_id, item_sku, shipped_at")
+        .in("patient_id", batch)
+        .not("shipped_at", "is", null)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        if (!row.shipped_at) continue;
+        const key = `${row.patient_id}\x00${row.item_sku}`;
+        const prev = lastFulfilledByKey.get(key);
+        if (!prev || row.shipped_at > prev) {
+          lastFulfilledByKey.set(key, row.shipped_at);
+        }
       }
+      if (data.length < PAGE_SIZE) break;
     }
   }
 

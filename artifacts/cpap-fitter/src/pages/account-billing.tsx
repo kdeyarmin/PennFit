@@ -52,6 +52,7 @@ import {
   type PatientPayment,
   type StatementDeliveryMethod,
 } from "@/lib/me-billing-api";
+import { formatDateOnly } from "@/lib/utils";
 
 function paymentTone(status: PatientPayment["status"]): {
   color: string;
@@ -341,9 +342,7 @@ function AccountBillingInner() {
                     <p className="font-medium text-slate-900">{c.payerName}</p>
                     <p className="text-xs text-slate-500">
                       Date of service:{" "}
-                      {c.dateOfService
-                        ? new Date(c.dateOfService).toLocaleDateString()
-                        : "—"}
+                      {c.dateOfService ? formatDateOnly(c.dateOfService) : "—"}
                     </p>
                   </div>
                   <span className="font-semibold tabular-nums text-slate-900">
@@ -769,7 +768,7 @@ function ClaimsSection() {
                       </p>
                       <p className="text-xs text-slate-500">
                         {c.dateOfService
-                          ? new Date(c.dateOfService).toLocaleDateString()
+                          ? formatDateOnly(c.dateOfService)
                           : "—"}{" "}
                         · <span className="capitalize">{c.status}</span>
                       </p>

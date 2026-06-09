@@ -124,11 +124,17 @@ export async function runWebhookDispatcher(
   // Group by subscription_id so we resolve each subscription row
   // once per tick.
   const subIds = [...new Set(deliveries.map((d) => d.subscription_id))];
-  const { data: subs } = await supabase
+  const { data: subs, error: subsErr } = await supabase
     .schema("resupply")
     .from("webhook_subscriptions")
     .select("id, target_url, signing_secret, max_retries, is_active")
     .in("id", subIds);
+  // A transient failure here must NOT be treated as "subscription
+  // missing" — processOne would then mark every claimed delivery
+  // exhausted ("subscription inactive"), turning retryable rows into
+  // terminal failures. Throw instead: the claimed rows stay 'queued'
+  // and recover once the lease bump expires.
+  if (subsErr) throw subsErr;
   const subById = new Map((subs ?? []).map((s) => [s.id, s] as const));
 
   // Step 3: process the claimed batch with bounded parallelism so a

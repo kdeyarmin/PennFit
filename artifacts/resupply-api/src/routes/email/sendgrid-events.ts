@@ -97,12 +97,20 @@ router.post(
     await Promise.all(
       events.map(async (ev) => {
         const sgMessageId = ev.sg_message_id ?? null;
+        // The send paths store the bare `X-Message-Id` response header
+        // in vendor_metadata, but the Event Webhook's `sg_message_id`
+        // appends filter-routing segments to it
+        // ("<X-Message-Id>.filterNNNN…"). Match on the first
+        // dot-segment — a full-string eq never matches a real
+        // production event, so delivery_status/delivered_at and
+        // bounce/drop errors silently never landed on the message row.
+        const vendorMessageId = sgMessageId?.split(".")[0] || null;
         const conversationId = ev.conversation_id ?? null;
 
         try {
           // Map SendGrid event names to our delivery_status taxonomy.
           const statusUpdate = mapEventToStatus(ev.event);
-          if (statusUpdate && sgMessageId) {
+          if (statusUpdate && vendorMessageId) {
             // The original SQL path used `case when status='delivered'
             // then now() else delivered_at end` to conditionally bump the
             // delivered_at timestamp. PostgREST has no SQL CASE, so we
@@ -126,7 +134,7 @@ router.post(
               .filter(
                 "vendor_metadata->>sendgrid_message_id",
                 "eq",
-                sgMessageId,
+                vendorMessageId,
               );
             if (updateErr) throw updateErr;
           }
