@@ -1,4 +1,4 @@
--- 0253_acquisition_funnel_rpc — server-side rollup of the anonymous
+-- 0254_acquisition_funnel_rpc — server-side rollup of the anonymous
 -- storefront/fitter funnel events (Growth #G1, surfacing half).
 --
 -- Background: the customer SPA already instruments the whole acquisition

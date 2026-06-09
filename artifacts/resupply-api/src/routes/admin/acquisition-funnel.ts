@@ -6,7 +6,7 @@
 // Surfacing half of Growth #G1. The customer SPA already posts ~25 typed
 // funnel steps to /api/usage-events (see lib/track.ts + routes/storefront/
 // usage-events.ts); until now nothing read them. This route runs the
-// acquisition_funnel_steps RPC (mig 0253 — per-step distinct-session +
+// acquisition_funnel_steps RPC (mig 0254 — per-step distinct-session +
 // event counts over a window) and arranges the steps into two ordered
 // funnels (the at-home fitter flow and the shop checkout flow), computing
 // step-to-step and top-of-funnel conversion so the team can see WHERE

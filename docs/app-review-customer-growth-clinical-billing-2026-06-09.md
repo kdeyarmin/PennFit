@@ -8,8 +8,11 @@ depth**.
 **Method:** Full code-grounded inventory of all five product surfaces
 (storefront SPA, admin console, in-process worker + voice agent, AI/
 integrations, billing/RCM), cross-checked against the existing `docs/` review
-corpus and verified against current code on the working branch. No application
-behavior is changed by this document.
+corpus and verified against current code on the working branch. This document
+itself changes no application behavior, but the PR that introduces it also
+ships the first wave of these recommendations as code — the acquisition-funnel
+dashboard (G1), RT therapy-cohort campaign targeting (C-R1), and opt-in,
+inert-by-default installment auto-charge — so the PR is **not** docs-only.
 
 > **How this differs from the existing docs.** The repo already has an
 > excellent, code-verified internal-persona review set — most recently

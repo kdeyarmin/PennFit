@@ -347,19 +347,13 @@ export const stripeWebhookHandler: RequestHandler = async (
           session.mode === "setup" &&
           session.metadata?.purpose === "payment_plan_autopay"
         ) {
-          try {
-            await authorizePaymentPlanAutopay(config, session, log);
-          } catch (autopayErr) {
-            log?.warn?.(
-              {
-                err:
-                  autopayErr instanceof Error
-                    ? autopayErr.message
-                    : String(autopayErr),
-              },
-              "stripe webhook: payment-plan autopay authorization failed",
-            );
-          }
+          // Let any failure propagate to the outer catch, which deletes
+          // the dedupe record and returns 500 so Stripe RETRIES. Stripe
+          // won't re-fire this event on its own, and swallowing here
+          // would strand the plan in 'pending' after the patient already
+          // completed the setup — so this must be retryable, not
+          // best-effort.
+          await authorizePaymentPlanAutopay(config, session, log);
           break;
         }
         const paidRow = await markPaid(session, log);

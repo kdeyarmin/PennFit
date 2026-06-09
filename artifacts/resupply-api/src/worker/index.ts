@@ -645,7 +645,7 @@ async function doStartWorker(): Promise<void> {
   await registerCappedRentalAdvanceJob(boss);
 
   // Auto-charge due patient payment-plan installments off-session
-  // (mig 0254). Triple-gated: opt-in cron (BILLING_PAYMENT_PLAN_
+  // (mig 0255). Triple-gated: opt-in cron (BILLING_PAYMENT_PLAN_
   // AUTOCHARGE_CRON), the seeded-OFF billing.payment_plan_autocharge
   // flag, and per-plan patient authorization. Inert by default.
   await registerPaymentPlanAutochargeJob(boss);

@@ -7,7 +7,7 @@
 //      schedule only attaches when BILLING_PAYMENT_PLAN_AUTOCHARGE_CRON
 //      is set. Dev / preview / a fresh prod never auto-charge.
 //   2. RUNTIME FEATURE FLAG. Even with the cron scheduled, the tick
-//      checks billing.payment_plan_autocharge (seeded OFF, mig 0254) and
+//      checks billing.payment_plan_autocharge (seeded OFF, mig 0255) and
 //      no-ops when off — a one-click kill switch with no deploy.
 //   3. PER-PLAN AUTHORIZATION. selectChargeableInstallments only returns
 //      installments on plans the patient authorized via a Stripe setup
@@ -35,6 +35,10 @@ import {
   type AutochargeSink,
   type OffSessionCharger,
 } from "../../lib/billing/payment-plan-autocharge.js";
+import {
+  derivePlanStatus,
+  type InstallmentStatus,
+} from "../../lib/billing/payment-plan.js";
 import { logger } from "../../lib/logger.js";
 import {
   createQueueWithDlq,
@@ -204,11 +208,40 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
     if (due.length === 0) continue;
     stats.plansConsidered += 1;
 
+    let anySucceeded = false;
     for (const inst of due) {
       const res = await chargeInstallment(plan, inst, charger, sink);
-      if (res.outcome === "succeeded") stats.charged += 1;
-      else if (res.outcome === "requires_action") stats.requiresAction += 1;
+      if (res.outcome === "succeeded") {
+        stats.charged += 1;
+        // Reflect the success locally so the plan-completion check below
+        // sees it (chargeInstallment persisted it via the sink; `inst` is
+        // the same object reference held in `installments`).
+        inst.status = "paid";
+        anySucceeded = true;
+      } else if (res.outcome === "requires_action") stats.requiresAction += 1;
       else stats.failed += 1;
+    }
+
+    // If autopay just settled the last installment, complete the plan —
+    // otherwise it stays 'active' forever (billing UI shows it as open and
+    // the worker keeps re-scanning it). Mirrors the manual settle route.
+    if (anySucceeded) {
+      const planStatus = derivePlanStatus(
+        installments.map((i) => ({
+          amountCents: i.amountCents,
+          status: i.status as InstallmentStatus,
+          dueDate: i.dueDate,
+        })),
+      );
+      if (planStatus === "completed") {
+        const { error: completeErr } = await supabase
+          .schema("resupply")
+          .from("patient_payment_plans")
+          .update({ status: "completed", updated_at: new Date().toISOString() })
+          .eq("id", plan.id)
+          .eq("status", "active");
+        if (completeErr) throw completeErr;
+      }
     }
   }
   return stats;

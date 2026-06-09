@@ -494,8 +494,10 @@ router.post(
         { idempotencyKey: `pennpaps-autopay-setup-${plan.id}` },
       );
     } catch (err) {
+      // Log the Error object so pino's serializer redacts message/stack
+      // (a raw string field bypasses that redaction).
       logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err },
         "payment-plan authorize-autopay: stripe session create failed",
       );
       res.status(502).json({ error: "stripe_error" });
@@ -507,8 +509,12 @@ router.post(
     }
 
     // Mark the plan as pending authorization (not yet authorized — that
-    // only happens when the webhook confirms the completed setup).
-    await supabase
+    // only happens when the webhook confirms the completed setup). If this
+    // write fails the plan stays in its prior state; the setup session is
+    // already live and the webhook flips it to 'authorized' on completion
+    // regardless, so we don't fail the request — but we surface the error
+    // so a stuck 'off' status is debuggable rather than silent.
+    const { error: pendingErr } = await supabase
       .schema("resupply")
       .from("patient_payment_plans")
       .update({
@@ -516,6 +522,12 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", plan.id);
+    if (pendingErr) {
+      logger.warn(
+        { err: pendingErr, planId: plan.id },
+        "payment-plan authorize-autopay: failed to mark plan pending",
+      );
+    }
 
     await audit(
       req,

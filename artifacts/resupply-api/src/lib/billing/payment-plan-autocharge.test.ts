@@ -49,14 +49,21 @@ describe("selectChargeableInstallments", () => {
           status: "failed",
           chargeAttempts: MAX_CHARGE_ATTEMPTS,
         }),
-        inst({ id: "retryable", status: "action_required", chargeAttempts: 1 }),
+        // a prior hard-decline is retryable while under the attempt cap
+        inst({ id: "retryable_failed", status: "failed", chargeAttempts: 1 }),
+        // 3DS/re-auth pending — NOT retried blindly
+        inst({
+          id: "needs_action",
+          status: "action_required",
+          chargeAttempts: 1,
+        }),
       ],
       today,
     );
     expect(out.map((i) => i.id).sort()).toEqual([
       "due_overdue",
       "due_scheduled",
-      "retryable",
+      "retryable_failed",
     ]);
   });
 

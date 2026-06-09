@@ -7,7 +7,7 @@
 // Stripe setup page; on completion the webhook flips the plan to
 // 'authorized' and the seeded-OFF auto-charge worker can debit it.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditCard, Plus } from "lucide-react";
 
@@ -81,8 +81,18 @@ export function PaymentPlansSection({ patientId }: { patientId: string }) {
 
   const [showCreate, setShowCreate] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Holds the tab opened synchronously on click (see onMutate). Opening it
+  // inside the async onSuccess would be blocked by pop-up blockers — it's
+  // no longer a direct user gesture by then.
+  const authWindowRef = useRef<Window | null>(null);
 
   const authorize = useMutation({
+    onMutate: () => {
+      // Open within the click gesture; we navigate it once we have the URL.
+      // No `noopener` here — we need the handle to set its location (the
+      // target is Stripe's trusted hosted setup page).
+      authWindowRef.current = window.open("about:blank", "_blank");
+    },
     mutationFn: async (planId: string): Promise<string> => {
       const origin = window.location.origin;
       const res = await fetch(
@@ -115,10 +125,19 @@ export function PaymentPlansSection({ patientId }: { patientId: string }) {
       void qc.invalidateQueries({
         queryKey: ["patient-payment-plans", patientId],
       });
-      // Open the hosted Stripe setup page for the patient to complete.
-      window.open(url, "_blank", "noopener,noreferrer");
+      // Navigate the pre-opened tab to the hosted Stripe setup page. If the
+      // browser blocked the pop-up (no handle), fall back to same-tab nav.
+      if (authWindowRef.current && !authWindowRef.current.closed) {
+        authWindowRef.current.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+      authWindowRef.current = null;
     },
     onError: (err) => {
+      // Close the blank tab we optimistically opened.
+      authWindowRef.current?.close();
+      authWindowRef.current = null;
       setActionError(err instanceof Error ? err.message : "Failed.");
     },
   });

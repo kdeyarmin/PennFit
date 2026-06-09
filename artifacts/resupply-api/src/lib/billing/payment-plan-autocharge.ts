@@ -45,8 +45,12 @@ export const MAX_CHARGE_ATTEMPTS = 4;
  * An installment is chargeable iff ALL hold:
  *   * the plan is authorized for autopay with a stored customer + PM,
  *   * the installment is due today or earlier,
- *   * its status is one we charge ('scheduled' | 'overdue' | the
- *     're-tryable' 'action_required'/'failed'), NOT already paid/waived,
+ *   * its status is one we charge ('scheduled' | 'overdue' | a previously
+ *     'failed' hard-decline we can re-attempt), NOT already paid/waived
+ *     and NOT 'action_required' — that one is waiting on the patient to
+ *     complete 3DS/re-auth, so a blind off-session retry can never
+ *     succeed and would only burn attempts. It re-enters the set only
+ *     once a fresh authorization moves it back to 'scheduled'.
  *   * it hasn't exhausted MAX_CHARGE_ATTEMPTS.
  */
 export function selectChargeableInstallments(
@@ -61,12 +65,7 @@ export function selectChargeableInstallments(
   ) {
     return [];
   }
-  const CHARGEABLE_STATUSES = new Set([
-    "scheduled",
-    "overdue",
-    "action_required",
-    "failed",
-  ]);
+  const CHARGEABLE_STATUSES = new Set(["scheduled", "overdue", "failed"]);
   return installments.filter(
     (i) =>
       CHARGEABLE_STATUSES.has(i.status) &&

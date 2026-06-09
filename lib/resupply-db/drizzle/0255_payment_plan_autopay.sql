@@ -1,4 +1,4 @@
--- 0254_payment_plan_autopay — opt-in Stripe auto-charge for patient
+-- 0255_payment_plan_autopay — opt-in Stripe auto-charge for patient
 -- payment-plan installments (biller #B7 follow-up / financing).
 --
 -- Migration 0236 added the installment tracker but deliberately moved no
