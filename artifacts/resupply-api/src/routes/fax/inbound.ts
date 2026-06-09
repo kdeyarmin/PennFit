@@ -38,7 +38,10 @@
 import type { Request, Response } from "express";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { parseTelnyxFaxEvent } from "@workspace/resupply-telecom";
+import {
+  parseTelnyxFaxEvent,
+  type TelnyxFaxEvent,
+} from "@workspace/resupply-telecom";
 
 import { ingestInboundFax } from "../../lib/fax/ingest-inbound.js";
 import { logger } from "../../lib/logger.js";
@@ -66,13 +69,18 @@ export async function faxInboundHandler(
     return;
   }
 
-  const event = parsed.event;
+  await processInboundFaxEvent(parsed.event);
+}
 
-  // Only the terminal inbound `fax.received` event persists. Outbound
-  // lifecycle events (queued/sending/delivered/failed) are routed to
-  // /fax/status-callback via the per-fax webhook_url override, but we
-  // defensively ignore anything that isn't fax.received here so a
-  // mis-routed event can't insert a spurious inbound row.
+// Post-ACK work for an inbound fax event. Exported so the unified
+// /fax/webhook dispatcher can reuse it without duplicating the PHI-safe
+// ingest/audit. Only the terminal inbound `fax.received` event persists;
+// any other event type is an intentional no-op (outbound lifecycle events
+// route to the status handler), so a mis-routed event can't insert a
+// spurious inbound row.
+export async function processInboundFaxEvent(
+  event: TelnyxFaxEvent,
+): Promise<void> {
   if (event.eventType !== "fax.received") return;
 
   const outcome = await ingestInboundFax(

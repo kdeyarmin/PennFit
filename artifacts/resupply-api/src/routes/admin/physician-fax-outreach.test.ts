@@ -247,7 +247,7 @@ describe("POST /admin/physician-fax-outreach", () => {
       "https://api.example.test/resupply-api/fax/document/",
     );
     expect(faxCall.statusCallbackUrl).toBe(
-      "https://api.example.test/resupply-api/fax/status-callback",
+      "https://api.example.test/resupply-api/fax/webhook",
     );
 
     const updates = getSupabaseWritePayloads(

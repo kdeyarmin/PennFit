@@ -29,7 +29,10 @@ import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-import { parseTelnyxFaxEvent } from "@workspace/resupply-telecom";
+import {
+  parseTelnyxFaxEvent,
+  type TelnyxFaxEvent,
+} from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
 
@@ -78,7 +81,15 @@ export async function faxStatusCallbackHandler(
     return;
   }
 
-  const event = parsed.event;
+  await processOutboundFaxEvent(parsed.event);
+}
+
+// Post-ACK work for an outbound fax delivery-status event. Exported so
+// the unified /fax/webhook dispatcher can reuse it. Unmapped event types
+// (e.g. fax.received, which the inbound handler owns) are logged + dropped.
+export async function processOutboundFaxEvent(
+  event: TelnyxFaxEvent,
+): Promise<void> {
   const dbStatus = mapTelnyxEvent(event.eventType);
   if (!dbStatus) {
     // An event type we don't map (e.g. a future Telnyx status). Log once

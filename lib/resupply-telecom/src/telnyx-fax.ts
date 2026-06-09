@@ -63,9 +63,9 @@ export interface SendFaxInput {
    * Per-fax webhook override. Telnyx posts this fax's lifecycle events
    * (fax.queued / fax.sending.started / fax.delivered / fax.failed)
    * here; without it they go to the connection's configured webhook
-   * URL. We always set it to the /fax/status-callback endpoint so
-   * outbound status and inbound (`fax.received`, which stays on the
-   * connection URL) land on distinct handlers.
+   * URL. We set it to the unified /fax/webhook endpoint; inbound
+   * `fax.received` stays on the connection-level webhook URL, and the
+   * single handler routes both directions by event_type.
    */
   statusCallbackUrl?: string;
   /** Fax quality. Defaults to "high". */
