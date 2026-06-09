@@ -75,7 +75,8 @@ export type TrackStep =
   | "chat_feedback"
   | "fitter_lead_submit_failed"
   | "fitter_invite_opened"
-  | "fitter_invite_started";
+  | "fitter_invite_started"
+  | "web_vital";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {
@@ -122,7 +123,15 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
                   // blow the 500-char track() payload cap.
                   errorCode: string;
                 }
-              : Record<string, unknown>;
+              : T extends "web_vital"
+                ? {
+                    name: "LCP" | "CLS" | "INP" | "FCP" | "TTFB";
+                    value: number;
+                    rating: "good" | "needs-improvement" | "poor";
+                    navigationType: string;
+                    path: string;
+                  }
+                : Record<string, unknown>;
 
 export function track<T extends TrackStep>(
   step: T,

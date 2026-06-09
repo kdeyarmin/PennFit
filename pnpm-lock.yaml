@@ -195,6 +195,9 @@ importers:
       '@workspace/resupply-auth-react':
         specifier: workspace:*
         version: link:../../lib/resupply-auth-react
+      web-vitals:
+        specifier: ^5.3.0
+        version: 5.3.0
     devDependencies:
       '@hookform/resolvers':
         specifier: ^5.2.2
@@ -381,7 +384,7 @@ importers:
         version: 8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0)
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
       wouter:
         specifier: ^3.3.5
         version: 3.9.0(react@19.2.6)
@@ -559,7 +562,7 @@ importers:
         version: 4.2.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/api-client-react:
     dependencies:
@@ -587,7 +590,7 @@ importers:
         version: 8.18.1
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-audit:
     dependencies:
@@ -603,7 +606,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-auth:
     dependencies:
@@ -637,7 +640,7 @@ importers:
         version: 7.2.2
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-auth-react:
     dependencies:
@@ -659,7 +662,7 @@ importers:
         version: 19.2.6
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-db:
     dependencies:
@@ -684,7 +687,7 @@ importers:
         version: 8.20.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-domain:
     dependencies:
@@ -697,7 +700,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-email:
     dependencies:
@@ -713,7 +716,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations:
     dependencies:
@@ -726,7 +729,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations-airview:
     dependencies:
@@ -742,7 +745,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations-care-orchestrator:
     dependencies:
@@ -758,7 +761,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations-davinci-pas:
     dependencies:
@@ -771,7 +774,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations-office-ally:
     dependencies:
@@ -784,7 +787,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations-pacware:
     dependencies:
@@ -797,7 +800,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-integrations-react-health:
     dependencies:
@@ -813,7 +816,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-messaging:
     dependencies:
@@ -829,7 +832,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-reminders:
     dependencies:
@@ -857,7 +860,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-secrets:
     devDependencies:
@@ -866,7 +869,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-telecom:
     dependencies:
@@ -885,7 +888,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   lib/resupply-templates:
     devDependencies:
@@ -894,7 +897,7 @@ importers:
         version: 25.8.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   scripts:
     dependencies:
@@ -922,7 +925,7 @@ importers:
         version: 4.22.0
       vitest:
         specifier: ^4.1.6
-        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+        version: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
 packages:
 
@@ -4053,6 +4056,7 @@ packages:
       '@vitest/ui': 4.1.6
       happy-dom: '*'
       jsdom: '*'
+      vite: ^8.0.13
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -4085,6 +4089,9 @@ packages:
     resolution: {integrity: sha512-OpiIUe8cuGjrj3mMBFWY+e4MMIkW3SVT+7vEIjvD9kejGUypv8GPDf84JdPWskK8zMRIJ6xYGm+Kxr8YkPyA0A==}
     engines: {node: '>= 16'}
     hasBin: true
+
+  web-vitals@5.3.0:
+    resolution: {integrity: sha512-q6LWsLatGYZp5VGBIOvbTj6JBV2nOmC8KvWztXBmwJcfFAzhwKwbOxhUH306XY3CcaZDUlSmSuNPBsCn0bFu+g==}
 
   webidl-conversions@8.0.1:
     resolution: {integrity: sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==}
@@ -5600,7 +5607,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0)
+      vitest: 4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
 
   '@vitest/expect@4.1.6':
     dependencies:
@@ -7334,7 +7341,7 @@ snapshots:
       jiti: 2.7.0
       tsx: 4.22.0
 
-  vitest@4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(esbuild@0.27.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(tsx@4.22.0):
+  vitest@4.1.6(@types/node@25.8.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0)):
     dependencies:
       '@vitest/expect': 4.1.6
       '@vitest/mocker': 4.1.6(vite@8.0.13(@types/node@25.8.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.22.0))
@@ -7361,18 +7368,7 @@ snapshots:
       '@vitest/coverage-v8': 4.1.6(vitest@4.1.6)
       jsdom: 29.1.1(@noble/hashes@1.8.0)
     transitivePeerDependencies:
-      - '@vitejs/devtools'
-      - esbuild
-      - jiti
-      - less
       - msw
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - terser
-      - tsx
-      - yaml
 
   w3c-xmlserializer@5.0.0:
     dependencies:
@@ -7387,6 +7383,8 @@ snapshots:
       minimist: 1.2.8
     transitivePeerDependencies:
       - supports-color
+
+  web-vitals@5.3.0: {}
 
   webidl-conversions@8.0.1: {}
 
