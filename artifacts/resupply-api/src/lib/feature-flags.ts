@@ -45,6 +45,7 @@ export const FEATURE_FLAG_KEYS = [
   "email.auto_reply",
   "voice.agent",
   "storefront.chatbot",
+  "admin.assistant",
   "storefront.checkout",
   "storefront.pickup",
   "storefront.reviews_collection",
