@@ -33,6 +33,8 @@ import type {
   ToolName,
 } from "@workspace/resupply-ai";
 
+import { describeHcpcsPlain } from "../swo-pdf";
+
 const MAX_VERIFY_ATTEMPTS = 3;
 
 // Tools the dispatcher will still serve once the caller has burned all
@@ -401,7 +403,7 @@ class Impl implements VoiceToolDispatcher {
     const { data: rows, error } = await this.supabase
       .schema("resupply")
       .from("prescriptions")
-      .select("item_sku, cadence_days")
+      .select("item_sku, cadence_days, hcpcs_code")
       .eq("patient_id", this.requirePatientId())
       .eq("status", "active");
     if (error) throw error;
@@ -410,12 +412,13 @@ class Impl implements VoiceToolDispatcher {
       .filter((r) => r.item_sku)
       .map((r) => ({
         sku: r.item_sku,
-        // We don't carry SKU descriptions in our schema yet — the
-        // Pacware product catalogue lives outside this DB. The model's
-        // prompt tells it the description is the SKU's product
-        // description in plain English; for now we hand it the SKU
-        // itself so it can still read it back to the patient.
-        description: r.item_sku,
+        // The Pacware product catalogue (which holds the marketing name
+        // for each SKU) lives outside this DB, but the prescription
+        // carries the authorising HCPCS code — enough to read a real
+        // product name back to the patient instead of a bare SKU
+        // number. Fall back to the SKU when the code isn't one we
+        // recognise.
+        description: describeHcpcsPlain(r.hcpcs_code) ?? r.item_sku,
         quantity: 1,
         due_reason: `every ${r.cadence_days} days`,
       }));
@@ -451,7 +454,7 @@ class Impl implements VoiceToolDispatcher {
       this.supabase
         .schema("resupply")
         .from("prescriptions")
-        .select("item_sku, cadence_days")
+        .select("item_sku, cadence_days, hcpcs_code")
         .eq("patient_id", patientId)
         .eq("status", "active"),
       this.supabase
@@ -479,10 +482,10 @@ class Impl implements VoiceToolDispatcher {
       .filter((r) => r.item_sku)
       .map((r) => ({
         sku: r.item_sku,
-        // Same as lookup_resupply_inventory: we don't carry SKU
-        // descriptions in our schema, so the SKU doubles as the
-        // description for now.
-        description: r.item_sku,
+        // Same as lookup_resupply_inventory: derive a plain-English
+        // product name from the authorising HCPCS code, falling back
+        // to the raw SKU when the code isn't one we recognise.
+        description: describeHcpcsPlain(r.hcpcs_code) ?? r.item_sku,
         quantity: 1,
         due_reason: `every ${r.cadence_days} days`,
       }));

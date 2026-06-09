@@ -542,7 +542,11 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
 
 interface ChartStubOpts {
   patient: { date_of_birth: string | null; legal_first_name: string | null };
-  prescriptions: Array<{ item_sku: string; cadence_days: number }>;
+  prescriptions: Array<{
+    item_sku: string;
+    cadence_days: number;
+    hcpcs_code?: string | null;
+  }>;
   lastFulfillment: { created_at: string } | null;
   openFollowups: Array<{ id: string }>;
 }
@@ -590,7 +594,10 @@ describe("VoiceToolDispatcher — get_customer_chart", () => {
   const RICH_CHART: ChartStubOpts = {
     patient: { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
     prescriptions: [
-      { item_sku: "A7030", cadence_days: 30 },
+      // Carries a recognised HCPCS code → the agent reads the
+      // plain-English product name instead of the bare SKU.
+      { item_sku: "MASK-FF-01", cadence_days: 30, hcpcs_code: "A7030" },
+      // No HCPCS code → falls back to the raw SKU.
       { item_sku: "A7034", cadence_days: 90 },
     ],
     lastFulfillment: { created_at: "2026-05-01T00:00:00.000Z" },
@@ -636,8 +643,8 @@ describe("VoiceToolDispatcher — get_customer_chart", () => {
       first_name: "Alex",
       supplies_due: [
         {
-          sku: "A7030",
-          description: "A7030",
+          sku: "MASK-FF-01",
+          description: "Full face mask, used with positive airway pressure",
           quantity: 1,
           due_reason: "every 30 days",
         },
@@ -683,6 +690,55 @@ describe("VoiceToolDispatcher — get_customer_chart", () => {
       supplies_due: [],
       recent_order_summary: { last_order_at: null, open_subscription: false },
       has_open_followups: false,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lookup_resupply_inventory — same HCPCS→description derivation as the
+// chart, but on the standalone inventory tool the model calls when the
+// caller asks "what am I due for?".
+// ---------------------------------------------------------------------------
+describe("VoiceToolDispatcher — lookup_resupply_inventory", () => {
+  it("reads HCPCS product names aloud, falling back to the SKU when unknown", async () => {
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabaseForChart({
+        patient: { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+        prescriptions: [
+          { item_sku: "TUBE-15MM", cadence_days: 90, hcpcs_code: "A7037" },
+          { item_sku: "FILT-XYZ", cadence_days: 30 },
+        ],
+        lastFulfillment: null,
+        openFollowups: [],
+      }),
+    });
+    await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_patient_identity",
+      args: { date_of_birth: "1980-01-01" },
+    });
+
+    const res = await dispatcher.dispatch({
+      callId: "lk",
+      name: "lookup_resupply_inventory",
+      args: {},
+    });
+    expect(res.result).toEqual({
+      items: [
+        {
+          sku: "TUBE-15MM",
+          description: "Tubing, used with positive airway pressure",
+          quantity: 1,
+          due_reason: "every 90 days",
+        },
+        {
+          sku: "FILT-XYZ",
+          description: "FILT-XYZ",
+          quantity: 1,
+          due_reason: "every 30 days",
+        },
+      ],
     });
   });
 });
