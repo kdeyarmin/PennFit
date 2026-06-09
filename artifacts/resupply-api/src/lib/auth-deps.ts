@@ -448,6 +448,9 @@ function makeSendgridSender(): EmailSender {
         subject: input.subject,
         html: input.html,
         text: input.text,
+        ...(input.attachments && input.attachments.length > 0
+          ? { attachments: input.attachments }
+          : {}),
       });
     } catch (err) {
       if (err instanceof EmailApiError) {
