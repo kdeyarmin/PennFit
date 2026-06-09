@@ -132,10 +132,13 @@ export {
 
 export {
   TOOL_NAMES,
+  PATIENT_TOOL_NAMES,
+  SHOP_TOOL_NAMES,
   TOOL_ARG_SCHEMAS,
   OPENAI_TOOL_DESCRIPTORS,
   summarizeToolArgsForAudit,
   verifyPatientIdentityArgs,
+  verifyShopCustomerIdentityArgs,
   lookupResupplyInventoryArgs,
   getShippingAddressArgs,
   updateShippingAddressArgs,
@@ -150,6 +153,7 @@ export {
   type ToolArgsByName,
   type ToolResultByName,
   type VerifyPatientIdentityResult,
+  type VerifyShopCustomerIdentityResult,
   type LookupResupplyInventoryResult,
   type ShippingAddressResult,
   type UpdateShippingAddressResult,

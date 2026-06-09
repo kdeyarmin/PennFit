@@ -66,6 +66,11 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
     "d649f6de1b5dd50fae9e50b16ba5bc9a8173d10496debda1cd80fbb40215781d",
   "2026-06-09.v5":
     "536a15815b7ad1c3244d6d8b7c4561ddb7294de2f2bd1ec7dc2c2e76bccdfb27",
+  // v6 adds the storefront (shop_customer) caller-kind variant. The
+  // PATIENT render is unchanged, so this hash matches v5's; the shop
+  // variant is pinned separately in SHOP_PROMPT_HASH below.
+  "2026-06-09.v6":
+    "536a15815b7ad1c3244d6d8b7c4561ddb7294de2f2bd1ec7dc2c2e76bccdfb27",
 };
 
 function renderCanonicalPrompt(): string {
@@ -84,6 +89,15 @@ function hashStrippingVersionLine(prompt: string, version: string): string {
   const stripped = prompt.split(token).join("Prompt version: <PINNED>.");
   return createHash("sha256").update(stripped).digest("hex");
 }
+
+/**
+ * The storefront (shop_customer) variant renders different Scope / Identity
+ * / Tools clauses. Pinned separately from PROMPT_VERSION_HASHES (which
+ * tracks the patient render) so drift in the shop clauses is caught too.
+ * Update the same way: render, take the printed hash, record it here.
+ */
+const SHOP_PROMPT_HASH =
+  "7f3e9e0d9f483eb630000256f741aa48d3263ea934bc87816893d1f06db27146";
 
 describe("PROMPT_VERSION drift detector", () => {
   it("has a recorded hash for the currently-shipped PROMPT_VERSION", () => {
@@ -128,6 +142,19 @@ describe("PROMPT_VERSION drift detector", () => {
           "         keyed by the new PROMPT_VERSION, with the actual",
           "         hash above as the value. KEEP older entries.",
         ].join("\n"),
+      );
+    }
+  });
+
+  it("the shop_customer variant matches its recorded hash", () => {
+    const actual = hashStrippingVersionLine(
+      buildSystemPrompt({ ...CANONICAL_INPUT, callerKind: "shop_customer" }),
+      PROMPT_VERSION,
+    );
+    if (actual !== SHOP_PROMPT_HASH) {
+      throw new Error(
+        `Shop prompt drift. Expected ${SHOP_PROMPT_HASH}, got ${actual}. ` +
+          "If the change was intended, record the value above in SHOP_PROMPT_HASH.",
       );
     }
   });

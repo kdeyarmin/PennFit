@@ -686,3 +686,199 @@ describe("VoiceToolDispatcher — get_customer_chart", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Storefront (shop_customer) flow — card-last-4 verify, shop chart, and
+// per-caller-kind tool gating. Same per-table-builder stub style as the
+// chart tests so Promise.all reads resolve against the right table.
+// ---------------------------------------------------------------------------
+
+interface ShopStubOpts {
+  last4: string | null;
+  displayName: string | null;
+  lastOrder: { paid_at: string | null; created_at: string } | null;
+  activeSubs: Array<{ status: string }>;
+  openFollowups: Array<{ id: string }>;
+}
+
+function buildShopStub(opts: ShopStubOpts) {
+  const responseFor = (table: string): { data: unknown; error: null } => {
+    switch (table) {
+      case "shop_customers":
+        return {
+          data: {
+            default_payment_method_last4: opts.last4,
+            display_name: opts.displayName,
+          },
+          error: null,
+        };
+      case "shop_orders":
+        return { data: opts.lastOrder, error: null };
+      case "shop_subscriptions":
+        return { data: opts.activeSubs, error: null };
+      case "shop_customer_followups":
+        return { data: opts.openFollowups, error: null };
+      default:
+        return { data: null, error: null };
+    }
+  };
+  const makeBuilder = (table: string): Record<string, unknown> => {
+    const b: Record<string, unknown> = {
+      select: () => b,
+      eq: () => b,
+      is: () => b,
+      in: () => b,
+      order: () => b,
+      limit: () => b,
+      maybeSingle: () => Promise.resolve(responseFor(table)),
+      single: () => Promise.resolve(responseFor(table)),
+      then: (
+        onfulfilled: (v: unknown) => unknown,
+        onrejected?: (e: unknown) => unknown,
+      ) => Promise.resolve(responseFor(table)).then(onfulfilled, onrejected),
+    };
+    return b;
+  };
+  return {
+    schema: () => ({ from: (table: string) => makeBuilder(table) }),
+  } as unknown as never;
+}
+
+function shopDispatcher(opts: ShopStubOpts) {
+  return createVoiceToolDispatcher({
+    callerKind: "shop_customer",
+    conversationId: "conv-shop-1",
+    shopCustomerId: "cust-1",
+    supabase: buildShopStub(opts),
+  });
+}
+
+describe("VoiceToolDispatcher — shop_customer flow", () => {
+  const RICH_SHOP: ShopStubOpts = {
+    last4: "4242",
+    displayName: "Jane Doe",
+    lastOrder: {
+      paid_at: "2026-05-02T00:00:00.000Z",
+      created_at: "2026-05-01T00:00:00.000Z",
+    },
+    activeSubs: [{ status: "active" }],
+    openFollowups: [{ id: "f1" }],
+  };
+
+  it("verifies a storefront caller by the last four of the card on file", async () => {
+    const dispatcher = shopDispatcher(RICH_SHOP);
+    const r = await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_shop_customer_identity",
+      args: { last_four: "4242" },
+    });
+    expect(r.result).toEqual({
+      matched: true,
+      first_name: "Jane",
+      attempts_remaining: 2,
+    });
+    expect(dispatcher.isIdentityVerified()).toBe(true);
+  });
+
+  it("counts down on a wrong last-four and does not verify", async () => {
+    const dispatcher = shopDispatcher(RICH_SHOP);
+    const r = await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_shop_customer_identity",
+      args: { last_four: "0000" },
+    });
+    expect(r.result).toEqual({ matched: false, attempts_remaining: 2 });
+    expect(dispatcher.isIdentityVerified()).toBe(false);
+  });
+
+  it("does not burn an attempt when there is no card on file", async () => {
+    const dispatcher = shopDispatcher({ ...RICH_SHOP, last4: null });
+    const r1 = await dispatcher.dispatch({
+      callId: "v1",
+      name: "verify_shop_customer_identity",
+      args: { last_four: "4242" },
+    });
+    const r2 = await dispatcher.dispatch({
+      callId: "v2",
+      name: "verify_shop_customer_identity",
+      args: { last_four: "4242" },
+    });
+    expect(r1.result).toEqual({ matched: false, attempts_remaining: 3 });
+    expect(r2.result).toEqual({ matched: false, attempts_remaining: 3 });
+  });
+
+  it("gates get_customer_chart behind verification", async () => {
+    const dispatcher = shopDispatcher(RICH_SHOP);
+    const r = await dispatcher.dispatch({
+      callId: "g",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(r.result).toEqual({
+      kind: "patient",
+      supplies_due: [],
+      has_open_followups: false,
+    });
+  });
+
+  it("returns a storefront chart after verification", async () => {
+    const dispatcher = shopDispatcher(RICH_SHOP);
+    await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_shop_customer_identity",
+      args: { last_four: "4242" },
+    });
+    const r = await dispatcher.dispatch({
+      callId: "g",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(r.result).toEqual({
+      kind: "shop_customer",
+      first_name: "Jane",
+      supplies_due: [],
+      recent_order_summary: {
+        last_order_at: "2026-05-02T00:00:00.000Z",
+        open_subscription: true,
+      },
+      has_open_followups: true,
+    });
+  });
+
+  it("refuses patient-only tools for a storefront caller (per-kind gate)", async () => {
+    const dispatcher = shopDispatcher(RICH_SHOP);
+    const inv = await dispatcher.dispatch({
+      callId: "lk",
+      name: "lookup_resupply_inventory",
+      args: {},
+    });
+    expect(inv.result).toEqual({ items: [] });
+    const order = await dispatcher.dispatch({
+      callId: "or",
+      name: "place_resupply_order",
+      args: { skus: ["X"], address_confirmed: true },
+    });
+    expect(order.result).toEqual({
+      ok: false,
+      order_id: "",
+      accepted_skus: [],
+    });
+  });
+
+  it("refuses the shop verify tool for a patient caller (per-kind gate)", async () => {
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabase({
+        date_of_birth: "1980-01-01",
+        legal_first_name: "Alex",
+      }),
+    });
+    const r = await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_shop_customer_identity",
+      args: { last_four: "4242" },
+    });
+    expect(r.result).toEqual({ matched: false, attempts_remaining: 0 });
+    expect(dispatcher.isIdentityVerified()).toBe(false);
+  });
+});

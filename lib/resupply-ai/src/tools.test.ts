@@ -13,6 +13,7 @@ import {
 // is here to catch.
 const EXAMPLES: Record<ToolName, Record<string, unknown>> = {
   verify_patient_identity: { date_of_birth: "1972-01-05" },
+  verify_shop_customer_identity: { last_four: "4242" },
   lookup_resupply_inventory: {},
   get_customer_chart: {},
   get_shipping_address: {},

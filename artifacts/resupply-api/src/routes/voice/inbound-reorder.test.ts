@@ -481,6 +481,52 @@ describe("POST /voice/inbound-reorder — storefront caller resolution", () => {
     });
   });
 
+  it("connects a matched storefront caller to the bridge when the voice agent is enabled", async () => {
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [{ customer_id: "cust_store_1" }],
+    });
+    stageSupabaseResponse("voice_reorder_sessions", "insert", {
+      data: { id: SESSION_ID },
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+
+    const res = await request(makeApp())
+      .post("/voice/inbound-reorder")
+      .type("form")
+      .send({ From: "+12155557777", CallSid: "CA_shop_bridge" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("<Connect");
+    expect(res.text).toContain("<Stream");
+    expect(res.text).toContain(CONVERSATION_ID);
+
+    // A customer-bound voice conversation was created (no patient/episode),
+    // satisfying the conversations subject-XOR constraint.
+    const convInserts = supabaseMock.writePayloads(
+      "conversations",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(convInserts).toHaveLength(1);
+    expect(convInserts[0]).toMatchObject({
+      customer_id: "cust_store_1",
+      channel: "voice",
+      patient_id: null,
+      episode_id: null,
+    });
+
+    // The pending session is registered in shop_customer mode.
+    const pending = getPendingSessions().peek(CONVERSATION_ID);
+    expect(pending).not.toBeNull();
+    expect(pending!.callerKind).toBe("shop_customer");
+    expect(pending!.shopCustomerId).toBe("cust_store_1");
+  });
+
   it("returns a 500 hangup when caller resolution hits a DB error (no silent mis-route)", async () => {
     // The patients lookup errors → resolveCallerByPhone throws → the route
     // must surface it as a retryable failure, NOT silently route as

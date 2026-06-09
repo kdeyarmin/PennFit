@@ -63,6 +63,15 @@ const INBOUND_GREETING =
   "Hi there, thanks for calling your CPAP resupply line! I can help you " +
   "reorder your supplies today.";
 
+const INBOUND_SHOP_CALL_CONTEXT =
+  "Inbound call: a storefront customer phoned to check on their account. " +
+  "Verify by the last four digits of the card on file, then review their " +
+  "recent order and subscription status. For any change, hand off to a human.";
+
+const INBOUND_SHOP_GREETING =
+  "Hi there, thanks for calling PennPaps! I can help you check on your " +
+  "account today.";
+
 // Human fallback number, shared by the unidentified and no-actionable-
 // episode paths.
 const SUPPORT_DIAL_E164 = "+18144710627";
@@ -174,6 +183,126 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  // Transfer the caller to a human (used by both the storefront and patient
+  // flows on any fall-through). Records the outcome on the session first.
+  const transferToHuman = async (reason: string): Promise<void> => {
+    await supabase
+      .schema("resupply")
+      .from("voice_reorder_sessions")
+      .update({
+        status: "transferred_to_human",
+        outcome_json: { routed: "human", reason } as unknown as Json,
+      })
+      .eq("id", session.id);
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          "<Response>",
+          "<Say>Hi! Welcome to your PennPaps reorder line. ",
+          "Connecting you to our team now.</Say>",
+          `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
+          "</Response>",
+        ].join(""),
+      );
+  };
+
+  // 2b. Matched storefront (cash-pay) caller → connect to the storefront
+  // voice agent: verify by card last-4, read account status, hand off for
+  // any change. Same Connect/Stream machinery as the patient flow, but the
+  // conversation is bound to the shop customer (customer_id) and the agent
+  // runs in "shop_customer" mode. Falls back to a human on any hiccup.
+  if (!patientId && shopCustomerId && !ambiguous) {
+    if (!(await isFeatureEnabled("voice.agent"))) {
+      logger.info(
+        { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
+        "voice.inbound-reorder: voice agent disabled; transferring shop caller",
+      );
+      await transferToHuman("voice_agent_disabled");
+      return;
+    }
+    let shopConversationId: string;
+    try {
+      const { data: conv, error: convErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .insert({
+          customer_id: shopCustomerId,
+          // patient_id / episode_id stay null — the conversations subject-
+          // XOR check requires customer_id rows to have both null.
+          patient_id: null,
+          episode_id: null,
+          channel: "voice",
+          status: "open",
+          external_ref: CallSid,
+          last_message_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (convErr) throw convErr;
+      shopConversationId = conv.id;
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : "unknown",
+          callSid: CallSid,
+        },
+        "voice.inbound-reorder: shop conversation create failed; transferring",
+      );
+      await transferToHuman("shop_conversation_create_failed");
+      return;
+    }
+
+    getPendingSessions().register({
+      conversationId: shopConversationId,
+      // Patient/episode are empty for a storefront caller; callerKind +
+      // shopCustomerId drive the shop tool set + prompt.
+      patientId: "",
+      episodeId: "",
+      callerKind: "shop_customer",
+      shopCustomerId,
+      callContext: INBOUND_SHOP_CALL_CONTEXT,
+      greeting: INBOUND_SHOP_GREETING,
+    });
+
+    await supabase
+      .schema("resupply")
+      .from("voice_reorder_sessions")
+      .update({
+        outcome_json: {
+          routed: "realtime_bridge",
+          conversation_id: shopConversationId,
+          caller_kind: "shop_customer",
+        } as unknown as Json,
+      })
+      .eq("id", session.id);
+
+    const shopWsUrl =
+      `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +
+      `/resupply-api/voice/stream?conversationId=${encodeURIComponent(shopConversationId)}`;
+    logger.info(
+      {
+        event: "voice.inbound-reorder.connected",
+        callSid: CallSid,
+        sessionId: session.id,
+        callerKind: "shop_customer",
+      },
+      "voice.inbound-reorder: connecting storefront caller to the realtime agent",
+    );
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        buildConnectStreamTwiml({
+          wsUrl: shopWsUrl,
+          customParameters: { conversationId: shopConversationId },
+        }),
+      );
+    return;
+  }
+
   // 3a. Unknown (or ambiguous) caller → transfer to human. An ambiguous
   // match (one phone, multiple patients) is deliberately treated as
   // unidentified so we never bind the AI reorder agent to an arbitrary
@@ -218,30 +347,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // the unchanged WS upgrade handler then claims it and runs the bridge.
   // Anything else falls back to a human, which is strictly better than
   // greeting the caller and dropping them.
-  const transferToHuman = async (reason: string): Promise<void> => {
-    await supabase
-      .schema("resupply")
-      .from("voice_reorder_sessions")
-      .update({
-        status: "transferred_to_human",
-        outcome_json: { routed: "human", reason } as unknown as Json,
-      })
-      .eq("id", session.id);
-    res
-      .status(200)
-      .type("text/xml")
-      .send(
-        [
-          '<?xml version="1.0" encoding="UTF-8"?>',
-          "<Response>",
-          "<Say>Hi! Welcome to your PennPaps reorder line. ",
-          "Connecting you to our team now.</Say>",
-          `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
-          "</Response>",
-        ].join(""),
-      );
-  };
-
   if (!(await isFeatureEnabled("voice.agent"))) {
     logger.info(
       { event: "voice.inbound-reorder.agent_disabled", callSid: CallSid },
