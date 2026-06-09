@@ -156,6 +156,57 @@ export interface BridgeEvents {
   "session.closed": (info: { code: number; reason: string }) => void;
 }
 
+/**
+ * Configuration for the tool-call dead-air filler. When a tool call is
+ * dispatched the agent goes silent for the round-trip (DB lookup + the
+ * model generating its next turn + TTS first-byte) — easily 1–2s of dead
+ * air, the single most robotic moment of a call. When this is configured
+ * (and an external TTS engine owns the voice), the bridge speaks one short
+ * filler ("one moment…") if the gap runs long and the agent hasn't just
+ * spoken. See {@link VoiceBridge} for the exact guard conditions.
+ */
+export interface ToolCallFillerConfig {
+  /**
+   * Short, natural acknowledgements to choose from. Rotated so the caller
+   * never hears the same one twice in a row. Keep them brief — a filler
+   * that runs longer than the gap it covers defeats the purpose.
+   */
+  phrases: readonly string[];
+  /**
+   * How long the tool call must stay in flight before a filler is spoken.
+   * Fast lookups resolve before this fires, so they get no filler (there
+   * was no dead air to cover). Default 600ms.
+   */
+  delayMs?: number;
+  /**
+   * If the agent finished speaking within this window before the filler
+   * would fire, skip it — the model almost certainly already said "let me
+   * check", and a second filler on top would sound stilted. Default
+   * 1500ms.
+   */
+  graceMs?: number;
+}
+
+/**
+ * Default filler phrases for the tool-call dead-air bridge. Short, warm,
+ * and varied so a multi-lookup call doesn't repeat one. Exported so the
+ * API can pass them (or its own list) when wiring the bridge.
+ */
+export const DEFAULT_TOOL_CALL_FILLER_PHRASES: readonly string[] = [
+  "One moment.",
+  "Let me take a look.",
+  "Just a sec.",
+  "Okay, let me check on that.",
+  "Bear with me one second.",
+];
+
+const DEFAULT_FILLER_DELAY_MS = 600;
+const DEFAULT_FILLER_GRACE_MS = 1500;
+// Synthetic output-item key the streaming-TTS path uses for a filler turn.
+// Distinct from any real model item id (and the "__output__" fallback) so
+// the next genuine turn always transitions off it cleanly.
+const FILLER_STREAM_ITEM_KEY = "__tool_call_filler__";
+
 export interface BridgeOptions {
   client: RealtimeClient;
   sink: MediaStreamSink;
@@ -179,6 +230,12 @@ export interface BridgeOptions {
    * it requires the Realtime client to run with `generateAudio: false`.
    */
   ttsStreamer?: TtsStreamer;
+  /**
+   * Optional tool-call dead-air filler. Only takes effect on the external-
+   * TTS path (the bridge can't synthesise a filler on the built-in cedar
+   * path — the model owns that audio). Omit to disable entirely.
+   */
+  filler?: ToolCallFillerConfig;
 }
 
 const KNOWN_TOOL_NAMES = new Set<ToolName>(TOOL_NAMES);
@@ -252,6 +309,18 @@ export class VoiceBridge extends EventEmitter {
   private ttsStreamItemId: string | null = null;
   private ttsStreamPushed = 0;
 
+  // Tool-call dead-air filler state (only used when `this.filler` is set
+  // AND an external TTS engine owns the voice). `fillerTimer` is the
+  // pending "speak a filler if the gap runs long" timer; `lastOutputAt`
+  // tracks when the agent last produced output text so we can skip the
+  // filler when the model just acknowledged the caller itself; and
+  // `lastFillerIndex` rotates the phrase list so no two fillers repeat
+  // back to back.
+  private readonly filler: Required<ToolCallFillerConfig> | null;
+  private fillerTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastOutputAt = 0;
+  private lastFillerIndex = -1;
+
   constructor(opts: BridgeOptions) {
     super();
     this.client = opts.client;
@@ -259,6 +328,14 @@ export class VoiceBridge extends EventEmitter {
     this.dispatcher = opts.dispatcher;
     this.tts = opts.tts ?? null;
     this.ttsStreamer = opts.ttsStreamer ?? null;
+    this.filler =
+      opts.filler && opts.filler.phrases.length > 0
+        ? {
+            phrases: opts.filler.phrases,
+            delayMs: opts.filler.delayMs ?? DEFAULT_FILLER_DELAY_MS,
+            graceMs: opts.filler.graceMs ?? DEFAULT_FILLER_GRACE_MS,
+          }
+        : null;
     this.wireRealtimeEvents();
   }
 
@@ -283,6 +360,7 @@ export class VoiceBridge extends EventEmitter {
       this.ttsStream.abort();
       this.resetTtsStream();
     }
+    this.cancelFiller();
     this.client.close(1000, reason);
   }
 
@@ -305,12 +383,23 @@ export class VoiceBridge extends EventEmitter {
     // external TTS engine, we must stop feeding + flush queued frames
     // ourselves the instant the caller starts speaking.
     this.client.on("input.speech_started", () => {
+      // The caller is talking — never interject a filler over them, and
+      // drop any pending one.
+      this.cancelFiller();
       if (this.ttsStreamer) this.bargeInStream();
       else if (this.tts) this.bargeInTts();
     });
 
     this.client.on("transcript.delta", (delta) => {
       const isOutput = delta.source === "output";
+      if (isOutput) {
+        // The agent is producing its turn — note the time (so a filler
+        // scheduled by an upcoming tool call can tell the model just
+        // spoke) and cancel any filler still waiting to fire, since the
+        // real reply is now landing.
+        this.lastOutputAt = Date.now();
+        this.cancelFiller();
+      }
       const buf = delta.source === "input" ? this.inputBuf : this.outputBuf;
       const key = delta.itemId ?? `__${delta.source}__`;
       const prior = buf.get(key) ?? "";
@@ -356,6 +445,9 @@ export class VoiceBridge extends EventEmitter {
     });
 
     this.client.on("tool.call", (call) => {
+      // Cover the dead air while the tool runs + the model composes its
+      // reply. No-op unless a filler is configured on an external-TTS path.
+      this.scheduleFiller(call.name);
       this.handleToolCall(call.callId, call.name, call.argumentsJson).catch(
         (err) => {
           // Outer try-catch in handleToolCall covers the dispatch path.
@@ -380,8 +472,93 @@ export class VoiceBridge extends EventEmitter {
     });
 
     this.client.on("closed", (info) => {
+      this.cancelFiller();
       this.emit("session.closed", info);
     });
+  }
+
+  // ---- Tool-call dead-air filler -------------------------------------
+
+  /**
+   * Arm the dead-air filler for an in-flight tool call. Restarts the timer
+   * on each tool call (back-to-back lookups share one gap). No-ops unless a
+   * filler is configured AND an external TTS engine owns the voice — on the
+   * built-in cedar path the model produces its own audio and we have
+   * nothing to synthesise through. `end_call` is skipped: the call is
+   * ending, so there's no gap worth filling.
+   */
+  private scheduleFiller(toolName: string): void {
+    if (!this.filler) return;
+    if (!this.tts && !this.ttsStreamer) return;
+    if (toolName === "end_call") return;
+    this.cancelFiller();
+    const timer = setTimeout(() => {
+      this.fillerTimer = null;
+      this.maybeSpeakFiller();
+    }, this.filler.delayMs);
+    // Don't let a pending filler keep the worker's event loop alive during
+    // teardown; close()/the closed event clear it anyway.
+    timer.unref?.();
+    this.fillerTimer = timer;
+  }
+
+  /** Clear any pending filler timer. Idempotent. */
+  private cancelFiller(): void {
+    if (this.fillerTimer) {
+      clearTimeout(this.fillerTimer);
+      this.fillerTimer = null;
+    }
+  }
+
+  /**
+   * Fired when a tool call has stayed in flight past `delayMs`. Speak one
+   * short filler UNLESS the agent is already talking (its real reply beat
+   * the timer) or it finished speaking within `graceMs` (the model almost
+   * certainly already acknowledged the caller, e.g. "let me check" — a
+   * second filler would stack awkwardly).
+   */
+  private maybeSpeakFiller(): void {
+    if (!this.filler) return;
+    if (this.isSpeaking()) return;
+    if (Date.now() - this.lastOutputAt < this.filler.graceMs) return;
+    this.speakFiller(this.nextFillerPhrase());
+  }
+
+  /** True when the agent currently has audio in flight to the caller. */
+  private isSpeaking(): boolean {
+    if (this.ttsStreamer) return this.ttsStream !== null;
+    return this.ttsDraining || this.ttsQueue.length > 0;
+  }
+
+  /** Pick the next filler phrase, never repeating the previous one. */
+  private nextFillerPhrase(): string {
+    const phrases = this.filler!.phrases;
+    if (phrases.length === 1) return phrases[0]!;
+    let idx = Math.floor(Math.random() * phrases.length);
+    if (idx === this.lastFillerIndex) idx = (idx + 1) % phrases.length;
+    this.lastFillerIndex = idx;
+    return phrases[idx]!;
+  }
+
+  /**
+   * Voice a filler utterance through whichever external-TTS path is wired.
+   * On the streaming path it rides a throwaway session pinned to a
+   * synthetic item key, so the next real turn (a different key) transitions
+   * off it cleanly via {@link driveTtsStream}. On the per-utterance path it
+   * just joins the synthesis queue ahead of the reply.
+   */
+  private speakFiller(text: string): void {
+    if (this.ttsStreamer) {
+      this.openTtsStream(FILLER_STREAM_ITEM_KEY);
+      if (this.ttsStream) {
+        this.ttsStream.pushText(text);
+        this.ttsStreamPushed = text.length;
+        this.ttsStream.flush();
+        this.ttsStream.end();
+      }
+    } else if (this.tts) {
+      this.enqueueTts(text);
+    }
   }
 
   private async handleToolCall(
