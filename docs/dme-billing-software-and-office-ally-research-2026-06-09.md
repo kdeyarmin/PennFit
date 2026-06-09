@@ -310,17 +310,18 @@ secondary-COB worklist** (`secondary-claims.ts` + `admin-secondary-claims.tsx`),
 and **outbound fax for appeal letters** (`telnyx-fax.ts` + `routes/fax/document.ts`
 + `claim-appeals.ts`). Manual claims are intentionally header-only, so there is
 no "stamp modifiers on manual claims" gap — fulfillment-derived claims auto-stamp
-via `claim-builder.ts`. What's genuinely left:
+via `claim-builder.ts`. The two remaining seams are now **both closed in this
+PR**:
 
-| # | Gap | Why it hurts usability | Effort | Where |
-| --- | --- | --- | --- | --- |
-| U1 | **Prior-auth request forms aren't auto-faxed.** The route renders a faxable PDF + returns the payer fax number, but a CSR still kicks off the send (appeal letters already auto-fax). | One manual step the appeal path doesn't have | **S** — mirror the `claim-appeals.ts` → `fax/document.ts` signed-URL + `sendFax()` pattern | `routes/admin/prior-auth-request-form.ts`; `lib/billing/pa-request-pdf.ts` |
-| U6 | **No admin UI field for the new line `narrative`.** A1 ships the API + preflight block; the SPA line editor doesn't expose the field yet. | CSR sets the narrative via API/scrubber, not a form input | **XS** | `artifacts/cpap-fitter/src/pages/admin/` claim line editor |
+| # | Gap | Status | Where |
+| --- | --- | --- | --- |
+| U1 | **Auto-fax prior-auth request forms** (appeal letters already auto-faxed; PA forms only rendered a PDF) | **DONE (this PR)** — `POST …/prior-authorizations/:paId/fax` dispatches via Telnyx to the payer's `prior_auth_fax_e164`; shared on-demand PA-PDF render + signed `pa_request` token; "Fax to payer" button in the clinical PA table | `lib/billing/pa-request-render.ts`; `routes/admin/prior-auth-request-form.ts`; `fax-document-token.ts`; `routes/fax/document.ts`; `ClinicalTabs.tsx` |
+| U6 | **Admin UI field for the line `narrative`** | **DONE (this PR)** — AddLineForm input + per-line inline editor, with a NOC-code amber prompt; `POST /lines` + GET detail carry it | `pages/admin/admin-insurance-claims.tsx`; `lib/admin/clinical-tabs-api.ts`; `routes/patients/insurance-claims.ts` |
 
 NikoHealth's reputation as "easiest to use" is built on automating exactly this
-last mile — and PennFit is already there on the big pieces (claim status,
-secondary COB, appeal fax), on top of a denial-intelligence layer Niko doesn't
-have. U1 + U6 are the small remaining seams.
+last mile — and PennFit is now there on every piece (claim status, secondary
+COB, appeal **and** PA fax, NOC narrative entry), on top of a denial-intelligence
+layer Niko doesn't have.
 
 ---
 
@@ -337,25 +338,26 @@ have. U1 + U6 are the small remaining seams.
 **Done in this PR:**
 
 - **A1 — NTE narrative end-to-end** (the one real accuracy gap): `NTE*ADD` in
-  the 837P builder, a `narrative` line column (migration 0248), the line PATCH
-  endpoint, the batch mapping, and a preflight **error** that blocks submit
-  when a NOC/miscellaneous HCPCS line has no narrative.
+  the 837P builder, a `narrative` line column (migration 0248), the line
+  create/PATCH endpoints, the batch mapping, and a preflight **error** that
+  blocks submit when a NOC/miscellaneous HCPCS line has no narrative.
+- **U6 — narrative in the claim UI**: AddLineForm input + per-line inline
+  editor with a NOC-code prompt, so a CSR sets it from a form.
+- **U1 — auto-fax prior-auth request forms**: a Telnyx dispatch endpoint +
+  shared on-demand PA-PDF render + signed token + a "Fax to payer" button,
+  mirroring the appeal-letter fax path.
 - **A2 capability** — line-level ordering-provider loop 2420E in the builder,
   off by default (tests included), ready to activate.
 
-**Do next (short, post-verification list — highest value first):**
+**Do next (what remains):**
 
-1. **U6 — surface the `narrative` field in the SPA line editor.** Finishes A1's
-   last mile so a CSR types the narrative in a form, not the API. (XS)
-2. **U1 — auto-fax prior-auth request forms.** Mirror the appeal-letter fax
-   path; the PA PDF + payer fax number already exist. (S)
-3. **A2 activation** — wire the per-line ordering provider into the live claim
+1. **A2 activation** — wire the per-line ordering provider into the live claim
    path **only after** a live 277CA batch confirms 2310D is being rejected.
-4. **A5 — full CMS-484 clinical CMN PDF** — optional; the cover already renders
+2. **A5 — full CMS-484 clinical CMN PDF** — optional; the cover already renders
    and CMNs are mostly retired. (S–M)
 
 Everything else the first draft listed (CMN/DWO cover PDF, line COGS, 276/277
-status, secondary COB, modifier auto-stamp) is **already shipped** — see the
+status, secondary COB, modifier auto-stamp) was **already shipped** — see the
 Verification update.
 
 **Operational (no code):**
