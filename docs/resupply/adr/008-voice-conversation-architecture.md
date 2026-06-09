@@ -1,5 +1,16 @@
 # ADR 008 — Voice conversation architecture (OpenAI Realtime + Twilio Media Streams)
 
+> **Update (2026-06): inbound calling was subsequently implemented.** This ADR
+> originally scoped the batch to outbound, admin-initiated calls only and
+> deferred inbound because the patient phone column was encrypted random-IV (no
+> equality lookup). Migration 0025 later dropped that column-level encryption,
+> so inbound now works: `artifacts/resupply-api/src/routes/voice/inbound-reorder.ts`
+> reverse-looks-up the caller's E.164 against the plaintext
+> `patients.phone_e164` and either connects an identified patient to the same
+> Realtime bridge or transfers to a human. The two "Inbound is deferred" notes
+> below are retained for historical context but no longer reflect the system.
+> Operator runbook: [`docs/runbooks/voice-agent-go-live.md`](../../runbooks/voice-agent-go-live.md).
+
 ## Context
 
 The Resupply product needs to hold real-time spoken conversations with
@@ -29,6 +40,8 @@ OpenAI / Twilio BAA documentation:
 5. **Admin-initiated only (this batch)**: outbound calls only.
    Inbound is deferred (it requires phone-number lookup against an
    encrypted column, which is a separate design problem — see Backlog).
+   _(Superseded 2026-06 — inbound shipped after migration 0025 removed the
+   encrypted column; see the Update note at the top.)_
 
 ADR 006 picked Anthropic Claude as the **text** conversation model.
 That choice doesn't carry to voice: Claude does not (yet) have a
@@ -214,3 +227,6 @@ it explicitly.
   random-IV (`encryptedText`) so equality lookup is impossible without
   a separate lookup table or a deterministic-encrypted column. That's
   a schema change + threat-model revision. Captured in the backlog.
+  _(Superseded 2026-06: migration 0025 dropped the column encryption, so
+  inbound now does a plaintext `patients.phone_e164` lookup in
+  `routes/voice/inbound-reorder.ts`. See the Update note at the top.)_

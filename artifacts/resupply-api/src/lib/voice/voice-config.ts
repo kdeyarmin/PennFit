@@ -27,10 +27,12 @@ export interface VoiceConfig {
   twilioAccountSid: string;
   twilioAuthToken: string;
   /**
-   * E.164 number we dial OUT FROM. Required to place outbound calls.
-   * If you only handle inbound (a future phase), this is optional —
-   * but inbound is deferred per ADR 004 because the encrypted phone
-   * column blocks reverse lookup.
+   * E.164 number we dial OUT FROM (the outbound caller-ID). Required
+   * only for outbound `/voice/place-call`; inbound calls work without
+   * it. Inbound IS implemented — `routes/voice/inbound-reorder.ts`
+   * reverse-looks-up the caller against the plaintext
+   * `patients.phone_e164` column (migration 0025 removed the phone
+   * encryption that originally blocked this; see ADR 008's update note).
    */
   twilioPhoneNumber?: string;
   /**

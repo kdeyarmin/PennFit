@@ -705,7 +705,9 @@ function runChecks(): void {
   //    that matches the example placeholder verbatim is a copy-
   //    paste oversight worth flagging.
   refusePlaceholder("OPENAI_API_KEY", "sk-replace_me");
-  refusePlaceholder("TWILIO_PHONE_NUMBER", "+15555550123");
+  // TWILIO_PHONE_NUMBER placeholder + E.164 shape are validated in the
+  // "Voice agent readiness" block below (section 9) so the number is
+  // recorded exactly once.
   refusePlaceholder("PENN_FULFILLMENT_EMAIL", "fulfillment@example.com");
   refusePlaceholder("VITE_RESUPPLY_CONTACT_EMAIL", "support@example.com");
 
@@ -881,6 +883,80 @@ function runChecks(): void {
           "warn",
           `Office Ally is fully configured but usage indicator is "${usage ?? "T"}" (test) — claims/eligibility go to Office Ally's TEST environment. Set OFFICE_ALLY_USAGE_INDICATOR=P to go live`,
         );
+      }
+    }
+  }
+
+  // 9. Voice agent readiness (OpenAI Realtime brain + Twilio Media
+  //    Streams). readVoiceConfigOrThrow() in resupply-api gates the
+  //    voice routes on FOUR vars; a PARTIAL set means every inbound call
+  //    503s / hangs up ("voice_not_configured"). Unlike Office Ally we
+  //    do NOT hard-FAIL on a partial set: OPENAI_API_KEY and the Twilio
+  //    creds are shared with the storefront chatbot and SMS, so "voice
+  //    intentionally off" can't be told apart from "voice misconfigured"
+  //    via env alone. Informational pass/warn only — the post-deploy
+  //    smoke test in docs/runbooks/voice-agent-go-live.md is the
+  //    live-wire check.
+  {
+    const voiceVars: Array<[string, string | undefined]> = [
+      ["OPENAI_API_KEY", getTrimmed("OPENAI_API_KEY")],
+      ["TWILIO_ACCOUNT_SID", getTrimmed("TWILIO_ACCOUNT_SID")],
+      ["TWILIO_AUTH_TOKEN", getTrimmed("TWILIO_AUTH_TOKEN")],
+      [
+        "RESUPPLY_VOICE_PUBLIC_BASE_URL || RAILWAY_PUBLIC_DOMAIN",
+        getTrimmed("RESUPPLY_VOICE_PUBLIC_BASE_URL") ??
+          getTrimmed("RAILWAY_PUBLIC_DOMAIN"),
+      ],
+    ];
+    const presentVoice = voiceVars.filter(([, v]) => v !== undefined);
+    const missingVoice = voiceVars
+      .filter(([, v]) => v === undefined)
+      .map(([name]) => name);
+    if (presentVoice.length === voiceVars.length) {
+      record(
+        "VOICE_AGENT",
+        "pass",
+        "OpenAI Realtime + Twilio + public base URL all set — the inbound voice agent (POST /resupply-api/voice/inbound-reorder) is live. Wire the Twilio number per docs/runbooks/voice-agent-go-live.md",
+      );
+    } else if (presentVoice.length === 0) {
+      record(
+        "VOICE_AGENT",
+        "pass",
+        "no voice env set — voice agent disabled (inbound calls 503 / hang up). Fine if voice isn't part of this launch.",
+      );
+    } else {
+      record(
+        "VOICE_AGENT",
+        "warn",
+        `partially configured (${presentVoice.length}/${voiceVars.length}) — the voice routes 503 until all are set. Missing: ${missingVoice.join(", ")}. Ignore if voice is intentionally off and these vars are only for SMS/chat.`,
+      );
+    }
+
+    // TWILIO_PHONE_NUMBER — the caller-ID we dial OUT from. Inbound voice
+    // doesn't need it; outbound /voice/place-call returns 503
+    // ("voice_outbound_not_configured") without it. Validate placeholder
+    // + E.164 shape once here (moved out of section 6 to avoid a
+    // duplicate record). E.164 here = a leading "+" then 8 to 15
+    // digits, first digit non-zero; the placeholder check runs first
+    // because "+15555550123" is itself E.164-shaped. The 8-digit floor
+    // rejects an obviously truncated value (e.g. "+1555") — every real
+    // Twilio voice caller-ID (NANP is +1 + 10 digits) clears it.
+    if (!refusePlaceholder("TWILIO_PHONE_NUMBER", "+15555550123")) {
+      const voiceOutboundNumber = getTrimmed("TWILIO_PHONE_NUMBER");
+      if (voiceOutboundNumber === undefined) {
+        record(
+          "TWILIO_PHONE_NUMBER",
+          "warn",
+          "unset — inbound voice + SMS (via messaging service) still work, but outbound voice (admin places a call) returns 503 until set (E.164, e.g. +12155550123).",
+        );
+      } else if (!/^\+[1-9]\d{7,14}$/.test(voiceOutboundNumber)) {
+        record(
+          "TWILIO_PHONE_NUMBER",
+          "fail",
+          "not E.164 — must be a leading + then 8 to 15 digits, first non-zero, with no spaces or dashes (e.g. +12155550123).",
+        );
+      } else {
+        record("TWILIO_PHONE_NUMBER", "pass", "E.164 shape");
       }
     }
   }
