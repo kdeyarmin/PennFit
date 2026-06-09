@@ -134,41 +134,96 @@ export function getAuthDeps(): AuthDeps {
 }
 
 /**
- * MFA probe — looks up admin_mfa_secrets for the user_id the sign-
- * in / verify-mfa handler resolves. Returns null when the user has
- * NO active enrollment (either no row, or the row is mid-enrollment
- * with verified_at IS NULL).
+ * Resolve the admin_users.id for an auth user, or null. `staff_user_id`
+ * on admin_mfa_secrets references admin_users.id, not auth.users.id;
+ * the sign-in handler passes auth.users.id, so we bridge here.
+ */
+async function adminIdForAuthUser(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  authUserId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("admin_users")
+    .select("id")
+    .eq("auth_user_id", authUserId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.id as string | undefined) ?? null;
+}
+
+/**
+ * Resolve the provider_portal_accounts.id for an auth user, or null.
+ * provider_mfa_secrets.account_id references the portal account.
+ */
+async function providerAccountIdForAuthUser(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  authUserId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("provider_portal_accounts")
+    .select("id")
+    .eq("auth_user_id", authUserId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.id as string | undefined) ?? null;
+}
+
+/**
+ * MFA probe — bridges an auth.users.id to its TOTP enrollment.
  *
- * The probe path is the slowest possible point in sign-in (one
- * extra round-trip per admin signing in), so we keep the SELECT
- * narrow and indexed on staff_user_id.
+ * The probe is UNIFIED across both authenticated populations:
+ *
+ *   * Staff (admin / CSR) keyed by admin_mfa_secrets (admin_users).
+ *   * Providers keyed by provider_mfa_secrets (provider_portal_accounts).
+ *
+ * A given auth user belongs to exactly one population, so each method
+ * tries the staff tables first and falls back to the provider tables.
+ * Unifying them here is a SECURITY requirement, not a convenience: the
+ * same `getAuthDeps()` object is mounted on every /auth router (admin,
+ * storefront, AND provider). If the probe only knew about admin secrets,
+ * a provider could sign in through the storefront mount password-only —
+ * bypassing the MFA the provider portal requires. With the provider
+ * fallback wired here, an enrolled provider is challenged for a code on
+ * EVERY sign-in surface.
  */
 function makeMfaProbe(): MfaProbe {
   return {
     async findActiveSecret(userId) {
       const supabase = getSupabaseServiceRoleClient();
-      // staff_user_id on admin_mfa_secrets references admin_users.id,
-      // not auth.users.id. The sign-in handler passes auth.users.id;
-      // we bridge through admin_users.auth_user_id.
-      const { data: admin, error: adminErr } = await supabase
-        .schema("resupply")
-        .from("admin_users")
-        .select("id")
-        .eq("auth_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (adminErr) throw adminErr;
-      if (!admin) return null;
-
       // After the multi-device migration, this is "any active
       // secret" — used by sign-in to detect "does this user have
       // MFA at all?" The verify path uses findAllActiveSecrets to
       // try each device.
+      const adminId = await adminIdForAuthUser(supabase, userId);
+      if (adminId) {
+        const { data, error } = await supabase
+          .schema("resupply")
+          .from("admin_mfa_secrets")
+          .select("secret_base32, verified_at, last_used_counter")
+          .eq("staff_user_id", adminId)
+          .not("verified_at", "is", null)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) {
+          return {
+            secretBase32: data.secret_base32,
+            lastUsedCounter: data.last_used_counter,
+          };
+        }
+      }
+      // Provider fallback.
+      const accountId = await providerAccountIdForAuthUser(supabase, userId);
+      if (!accountId) return null;
       const { data, error } = await supabase
         .schema("resupply")
-        .from("admin_mfa_secrets")
+        .from("provider_mfa_secrets")
         .select("secret_base32, verified_at, last_used_counter")
-        .eq("staff_user_id", admin.id)
+        .eq("account_id", accountId)
         .not("verified_at", "is", null)
         .limit(1)
         .maybeSingle();
@@ -181,19 +236,32 @@ function makeMfaProbe(): MfaProbe {
     },
     async findAllActiveSecrets(userId) {
       const supabase = getSupabaseServiceRoleClient();
-      const { data: admin } = await supabase
-        .schema("resupply")
-        .from("admin_users")
-        .select("id")
-        .eq("auth_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (!admin) return [];
+      const adminId = await adminIdForAuthUser(supabase, userId);
+      if (adminId) {
+        const { data, error } = await supabase
+          .schema("resupply")
+          .from("admin_mfa_secrets")
+          .select("id, secret_base32, last_used_counter")
+          .eq("staff_user_id", adminId)
+          .not("verified_at", "is", null)
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        const adminSecrets = (data ?? []).map((r) => ({
+          id: r.id,
+          secretBase32: r.secret_base32,
+          lastUsedCounter: r.last_used_counter,
+        }));
+        if (adminSecrets.length > 0) {
+          return adminSecrets;
+        }
+      }
+      const accountId = await providerAccountIdForAuthUser(supabase, userId);
+      if (!accountId) return [];
       const { data, error } = await supabase
         .schema("resupply")
-        .from("admin_mfa_secrets")
+        .from("provider_mfa_secrets")
         .select("id, secret_base32, last_used_counter")
-        .eq("staff_user_id", admin.id)
+        .eq("account_id", accountId)
         .not("verified_at", "is", null)
         .order("created_at", { ascending: true });
       if (error) throw error;
@@ -205,103 +273,125 @@ function makeMfaProbe(): MfaProbe {
     },
     async recordVerify(userId, counter, secretId) {
       const supabase = getSupabaseServiceRoleClient();
-      // Multi-device: when the verify path tells us WHICH secret
-      // matched (secretId), scope the counter bump to that row.
-      // Falls back to user-scoped update for legacy callers that
-      // don't pass secretId.
       const nowIso = new Date().toISOString();
+      // When the verify path tells us WHICH secret matched (secretId),
+      // scope the counter bump to that row. The id is unique to its
+      // table; updating both tables by id is a no-op on the one that
+      // doesn't own it, so we don't need to know the population.
       if (secretId) {
         await supabase
           .schema("resupply")
           .from("admin_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
           .eq("id", secretId);
+        await supabase
+          .schema("resupply")
+          .from("provider_mfa_secrets")
+          .update({ last_used_counter: counter, last_used_at: nowIso })
+          .eq("id", secretId);
         return;
       }
-      const { data: admin } = await supabase
-        .schema("resupply")
-        .from("admin_users")
-        .select("id")
-        .eq("auth_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (!admin) return;
+      // User-scoped fallback (single-device callers).
+      const adminId = await adminIdForAuthUser(supabase, userId);
+      if (adminId) {
+        await supabase
+          .schema("resupply")
+          .from("admin_mfa_secrets")
+          .update({ last_used_counter: counter, last_used_at: nowIso })
+          .eq("staff_user_id", adminId);
+        return;
+      }
+      const accountId = await providerAccountIdForAuthUser(supabase, userId);
+      if (!accountId) return;
       await supabase
         .schema("resupply")
-        .from("admin_mfa_secrets")
+        .from("provider_mfa_secrets")
         .update({ last_used_counter: counter, last_used_at: nowIso })
-        .eq("staff_user_id", admin.id);
+        .eq("account_id", accountId);
     },
     async findRecoveryCodeMatch(userId, codeHash) {
       const supabase = getSupabaseServiceRoleClient();
-      const { data: admin } = await supabase
-        .schema("resupply")
-        .from("admin_users")
-        .select("id")
-        .eq("auth_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (!admin) return null;
       // Spendable rows only — used_at IS NULL. The unique index on
-      // code_hash means at most one row matches; the staff_user_id
-      // filter prevents a code minted for admin A from being spent
-      // by admin B (defense in depth — the hash unique constraint
-      // alone would already block that since the hashes wouldn't
-      // collide in practice).
+      // code_hash means at most one row matches; the owner filter
+      // prevents a code minted for one account being spent by another.
+      const adminId = await adminIdForAuthUser(supabase, userId);
+      if (adminId) {
+        const { data, error } = await supabase
+          .schema("resupply")
+          .from("admin_mfa_recovery_codes")
+          .select("id")
+          .eq("staff_user_id", adminId)
+          .eq("code_hash", codeHash)
+          .is("used_at", null)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        return data ? { id: data.id } : null;
+      }
+      const accountId = await providerAccountIdForAuthUser(supabase, userId);
+      if (!accountId) return null;
       const { data, error } = await supabase
         .schema("resupply")
-        .from("admin_mfa_recovery_codes")
+        .from("provider_mfa_recovery_codes")
         .select("id")
-        .eq("staff_user_id", admin.id)
+        .eq("account_id", accountId)
         .eq("code_hash", codeHash)
         .is("used_at", null)
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      if (!data) return null;
-      return { id: data.id };
+      return data ? { id: data.id } : null;
     },
     async markRecoveryCodeUsed(rowId, ip) {
       const supabase = getSupabaseServiceRoleClient();
+      const usedAt = new Date().toISOString();
+      // The row lives in exactly one table; update both by id (the
+      // non-owning update is a no-op).
       await supabase
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
-        .update({
-          used_at: new Date().toISOString(),
-          used_ip: ip ?? null,
-        })
+        .update({ used_at: usedAt, used_ip: ip ?? null })
+        .eq("id", rowId);
+      await supabase
+        .schema("resupply")
+        .from("provider_mfa_recovery_codes")
+        .update({ used_at: usedAt, used_ip: ip ?? null })
         .eq("id", rowId);
     },
     async consumeRecoveryCode(userId, codeHash, ip) {
       const supabase = getSupabaseServiceRoleClient();
-      const { data: admin } = await supabase
-        .schema("resupply")
-        .from("admin_users")
-        .select("id")
-        .eq("auth_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (!admin) return null;
+      const usedAt = new Date().toISOString();
       // Atomic compare-and-set: the .is("used_at", null) clause is
       // part of the UPDATE WHERE, so Postgres only flips rows that
-      // haven't been spent yet. Two concurrent submissions of the
-      // same valid code can't both succeed — one returns the row,
-      // the other gets an empty result.
+      // haven't been spent yet. Two concurrent submissions of the same
+      // valid code can't both succeed.
+      const adminId = await adminIdForAuthUser(supabase, userId);
+      if (adminId) {
+        const { data, error } = await supabase
+          .schema("resupply")
+          .from("admin_mfa_recovery_codes")
+          .update({ used_at: usedAt, used_ip: ip ?? null })
+          .eq("staff_user_id", adminId)
+          .eq("code_hash", codeHash)
+          .is("used_at", null)
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        return data ? { id: data.id } : null;
+      }
+      const accountId = await providerAccountIdForAuthUser(supabase, userId);
+      if (!accountId) return null;
       const { data, error } = await supabase
         .schema("resupply")
-        .from("admin_mfa_recovery_codes")
-        .update({
-          used_at: new Date().toISOString(),
-          used_ip: ip ?? null,
-        })
-        .eq("staff_user_id", admin.id)
+        .from("provider_mfa_recovery_codes")
+        .update({ used_at: usedAt, used_ip: ip ?? null })
+        .eq("account_id", accountId)
         .eq("code_hash", codeHash)
         .is("used_at", null)
         .select("id")
         .maybeSingle();
       if (error) throw error;
-      if (!data) return null;
-      return { id: data.id };
+      return data ? { id: data.id } : null;
     },
   };
 }
