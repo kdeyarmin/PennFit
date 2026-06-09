@@ -174,6 +174,7 @@ import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
 import connectionTestsRouter from "./admin/connection-tests.js";
+import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
@@ -567,6 +568,10 @@ router.use(pacwareRouter);
 // email / SMS / voice / chat. Verifies a credential (including one just
 // saved in System Configuration) actually works. system.config.manage.
 router.use(connectionTestsRouter);
+// /admin/bot-playground/* — admin sandbox to exercise the storefront,
+// account, and voice bots against scripted situations (synthetic data,
+// simulated tools) and inspect their system prompts. admin.tools.manage.
+router.use(botPlaygroundRouter);
 // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).

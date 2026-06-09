@@ -26,12 +26,9 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
+import { notifyCsrInboxOfCustomerMessage } from "../../lib/messaging/csr-inbox-notify";
 import {
   IN_APP_MESSAGE_BODY_MAX,
   appendCustomerMessage,
@@ -152,11 +149,12 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
   // even though the body is plaintext in the DB. Disabled by leaving
   // SHOP_CSR_INBOX_EMAIL unset — preview/dev environments don't need
   // SendGrid configured.
-  await tryNotifyCsrInbox({
+  await notifyCsrInboxOfCustomerMessage({
     threadId: result.threadId,
     threadCreated: result.threadCreated,
     customerEmail: req.shopCustomerEmail ?? null,
     customerDisplayName: req.shopCustomerDisplayName ?? null,
+    source: "customer",
   }).catch((err) => {
     logger.warn(
       { err, conversation_id: result.threadId },
@@ -170,72 +168,5 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
     threadCreated: result.threadCreated,
   });
 });
-
-/**
- * Notify the shared CSR inbox when a customer posts. Best-effort —
- * a SendGrid outage doesn't reach the route handler. The notification
- * is subject-only (no body) so even though the body is plaintext in
- * the DB, the email provider never sees PHI.
- *
- * Skips silently when:
- *   * `SHOP_CSR_INBOX_EMAIL` is unset (operator opt-out)
- *   * `SENDGRID_API_KEY` etc. are unset (preview / dev)
- */
-async function tryNotifyCsrInbox(input: {
-  threadId: string;
-  threadCreated: boolean;
-  customerEmail: string | null;
-  customerDisplayName: string | null;
-}): Promise<void> {
-  const inboxEmail = process.env["SHOP_CSR_INBOX_EMAIL"]?.trim();
-  if (!inboxEmail) {
-    return;
-  }
-
-  let sg;
-  try {
-    sg = createSendgridClient();
-  } catch (err) {
-    if (err instanceof EmailConfigError) {
-      // Preview / dev — no SENDGRID_API_KEY. Skip silently.
-      return;
-    }
-    throw err;
-  }
-
-  // Subject + body are deliberately content-free. We surface the
-  // customer's display name (or email) so the CSR knows who pinged
-  // — display name is already visible in the admin inbox header,
-  // not new PHI surface.
-  const customerLabel =
-    input.customerDisplayName ?? input.customerEmail ?? "A shop customer";
-  const subjectPrefix = input.threadCreated ? "New" : "Reply on";
-  const subject = `${subjectPrefix} customer message — ${customerLabel}`;
-
-  // Pull the public base URL from the same env the rest of the
-  // shop side uses. Fallback to relative path so the link still
-  // navigates if the env var isn't set in dev.
-  const base = process.env["SHOP_PUBLIC_BASE_URL"]?.trim().replace(/\/$/, "");
-  const inboxUrl = `${base ?? ""}/admin/conversations/${input.threadId}`;
-
-  await sg.sendEmail({
-    to: inboxEmail,
-    subject,
-    text:
-      `A signed-in shop customer just messaged customer service.\n\n` +
-      `Open the thread:\n${inboxUrl}\n\n` +
-      `(This email contains no message content. Sign in to read.)\n`,
-    html:
-      `<p>A signed-in shop customer just messaged customer service.</p>` +
-      `<p><a href="${inboxUrl}" style="color: #003B71">Open the thread →</a></p>` +
-      `<p style="color: #6b7280; font-size: 12px">` +
-      `This email contains no message content. Sign in to read.` +
-      `</p>`,
-    customArgs: {
-      conversation_id: input.threadId,
-      kind: "in_app_csr_inbox_ping",
-    },
-  });
-}
 
 export default router;

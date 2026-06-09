@@ -87,6 +87,11 @@ const SUGGESTED_PROMPTS: ReadonlyArray<{ label: string; prompt: string }> = [
     label: "What was in my last order?",
     prompt: "What was in my last order?",
   },
+  {
+    label: "Send a message to the support team",
+    prompt:
+      "I'd like to send a message to your support team — can you forward it to a person for me?",
+  },
 ];
 
 interface DisplayMessage extends CustomerChatMessage {
