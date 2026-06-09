@@ -21,7 +21,7 @@
 import { issueToken } from "./token";
 import { hashPassword } from "./password";
 import { validatePassword } from "./password-policy";
-import type { AuthDeps } from "./http/types";
+import type { AuthDeps, EmailAttachment } from "./http/types";
 import { renderPasswordResetEmail } from "./http/email-templates";
 import { stripTrailingSlashes } from "./string-utils";
 import { bufferToHexBytea } from "./bytea";
@@ -88,6 +88,14 @@ export interface InviteArgs {
    * already has a secure channel to the user.
    */
   initialPassword?: string;
+  /**
+   * Optional files attached to the invite email — used to ship the
+   * new team member their role-specific getting-started help
+   * documents. Ignored on the `initialPassword` path (no email is
+   * sent). Forwarded verbatim to `deps.email`; a host whose wired
+   * sender drops attachments simply sends the email without them.
+   */
+  attachments?: ReadonlyArray<EmailAttachment>;
 }
 
 /**
@@ -288,6 +296,9 @@ export async function inviteTeamMember(
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      ...(args.attachments && args.attachments.length > 0
+        ? { attachments: args.attachments }
+        : {}),
     });
     emailSent = true;
   } catch {

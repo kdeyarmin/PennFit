@@ -142,6 +142,7 @@ export type {
   AuditWriter,
   AuthRequestLocals,
   CustomerIdResolver,
+  EmailAttachment,
   EmailSender,
   MfaProbe,
   MfaProbeSecret,

@@ -41,11 +41,29 @@ import {
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 type PatientUpdate = Database["resupply"]["Tables"]["patients"]["Update"];
+
+/**
+ * Render the patient getting-started guide(s) to attach to a portal
+ * invite email. Best-effort: a render failure logs and returns an
+ * empty list so the invite still goes out.
+ */
+async function patientInviteAttachments() {
+  try {
+    return await buildInviteHelpAttachments({ kind: "patient" });
+  } catch (err) {
+    logger.warn(
+      { err, event: "patient_invite_help_docs_render_failed" },
+      "failed to render patient invite help documents; sending invite without them",
+    );
+    return [];
+  }
+}
 
 const router: IRouter = Router();
 
@@ -333,6 +351,7 @@ router.post(
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
+        attachments: await patientInviteAttachments(),
       });
       emailSent = true;
     } catch (err) {
@@ -455,6 +474,7 @@ router.post(
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
+        attachments: await patientInviteAttachments(),
       });
       emailSent = true;
     } catch (err) {
