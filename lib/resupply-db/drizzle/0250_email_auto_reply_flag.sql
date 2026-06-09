@@ -1,4 +1,4 @@
--- 0248_email_auto_reply_flag — Control Center toggle for chatbot email
+-- 0250_email_auto_reply_flag — Control Center toggle for chatbot email
 -- auto-replies.
 --
 -- Adds the `email.auto_reply` feature flag. When ENABLED (and an LLM

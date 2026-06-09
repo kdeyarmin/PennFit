@@ -303,7 +303,7 @@ clinical-specific, an explicit hand-off, or **below the confidence bar**
 returns `handoff` and the thread falls through to `awaiting_admin` for a
 human, exactly as before. It is
 **opt-in** behind the `email.auto_reply` feature flag (seeded **OFF** in
-migration 0248 — this deliberately departs from ADR 013's "free-text
+migration 0250 — this deliberately departs from ADR 013's "free-text
 email goes to a human"), and degrades to hand-off whenever the provider
 is offline or the model call fails. Inbound text is PII-scrubbed
 (`chatbotPii`) before it reaches the model. It never runs the keyword
