@@ -452,7 +452,14 @@ router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
     );
   }
 
-  const toolCtx: CustomerChatToolContext = { supabase, customerId };
+  const toolCtx: CustomerChatToolContext = {
+    supabase,
+    customerId,
+    // Non-PHI label used only by escalate_to_human to tag the
+    // CSR-inbox notification — same label the admin inbox already shows.
+    customerDisplayName: req.shopCustomerDisplayName ?? null,
+    customerEmail: req.shopCustomerEmail ?? null,
+  };
 
   // Claude path — preferred when Anthropic is configured. Sonnet 4.6
   // writes noticeably warmer patient-facing copy than gpt-4o-mini and
