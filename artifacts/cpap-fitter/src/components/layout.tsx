@@ -381,7 +381,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                                   ? "bg-secondary text-primary border-l-4 border-[hsl(var(--penn-gold))] pl-5"
                                   : "text-foreground hover:bg-muted/60 active:bg-muted pl-6 pr-4"
                               }`}
-                              data-testid={`mobile-link-${c.href.replace("/", "")}`}
+                              data-testid={`mobile-link-${c.href.replace(/\//g, "")}`}
                             >
                               <span>{c.label}</span>
                               {isActive ? (
@@ -407,7 +407,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                           ? "bg-secondary text-primary border-l-4 border-[hsl(var(--penn-gold))] pl-3"
                           : "text-foreground hover:bg-muted/60 active:bg-muted"
                       }`}
-                      data-testid={`mobile-link-${l.href.replace("/", "")}`}
+                      data-testid={`mobile-link-${l.href.replace(/\//g, "")}`}
                     >
                       <span>{l.label}</span>
                       {isActive ? (
