@@ -142,6 +142,6 @@ Operational follow-ups:
   that does not exist yet for any other PHI in the system; out of
   scope here.
 - Encryption-at-rest is Supabase-managed (AES-256 on the underlying
-  S3-compatible storage). The BAA Supabase signs with PennPaps covers
+  S3-compatible storage). The agreement Supabase signs with PennPaps covers
   the default keys; revisit if compliance later requires
   customer-managed encryption keys (CMEK).

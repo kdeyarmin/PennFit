@@ -3457,6 +3457,8 @@ export interface Database {
           notes: string | null;
           created_by_user_id: string | null;
           created_by_email: string | null;
+          assigned_to_user_id: string | null;
+          assigned_to_email: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3683,6 +3685,21 @@ export interface Database {
         Update: Partial<
           Database["resupply"]["Tables"]["office_recurring_closures"]["Row"]
         >;
+        Relationships: [];
+      };
+      office_hours: {
+        Row: {
+          id: string;
+          day_of_week: number;
+          open_time_utc: string;
+          close_time_utc: string;
+          active: number;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["office_hours"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["office_hours"]["Row"]>;
         Relationships: [];
       };
       patient_coaching_plans: {
@@ -4271,44 +4288,6 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["shop_return_notes"]["Row"]
-        >;
-        Relationships: [];
-      };
-      business_associate_agreements: {
-        Row: {
-          id: string;
-          vendor_slug: string;
-          vendor_legal_name: string;
-          vendor_kind:
-            | "clearinghouse"
-            | "cloud_infrastructure"
-            | "email_provider"
-            | "sms_telecom_provider"
-            | "ai_llm_provider"
-            | "payment_processor"
-            | "storage_provider"
-            | "eprescribe"
-            | "analytics"
-            | "other";
-          scope_json: Json;
-          agreement_signed_on: string | null;
-          agreement_expires_on: string | null;
-          agreement_document_object_key: string | null;
-          last_safeguard_attestation_on: string | null;
-          compliance_certifications: string[];
-          vendor_contact_email: string | null;
-          vendor_contact_phone_e164: string | null;
-          internal_owner_email: string | null;
-          status: "active" | "expired" | "terminated" | "pending";
-          notes: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: Partial<
-          Database["resupply"]["Tables"]["business_associate_agreements"]["Row"]
-        >;
-        Update: Partial<
-          Database["resupply"]["Tables"]["business_associate_agreements"]["Row"]
         >;
         Relationships: [];
       };

@@ -65,6 +65,15 @@ export interface TodayInboundFax {
   received_at: string;
 }
 
+export interface TodayAssignedAppointment {
+  id: string;
+  patient_id: string;
+  event_type: string;
+  starts_at: string;
+  ends_at: string;
+  location: string | null;
+}
+
 export interface TodayResponse {
   serverTime: string;
   conversationsAwaitingReply: TodayConversation[];
@@ -74,6 +83,7 @@ export interface TodayResponse {
   rxRenewalsDue: TodayRxRenewal[];
   documentsToReview: TodayDocument[];
   inboundFaxes: TodayInboundFax[];
+  appointmentsAssignedToMe: TodayAssignedAppointment[];
 }
 
 export async function fetchTodayWorklist(): Promise<TodayResponse> {

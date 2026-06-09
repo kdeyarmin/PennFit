@@ -9,7 +9,7 @@ spanning a week with SMS, voice, and email steps).
 Temporal requires running its own server cluster (Cassandra/MySQL/Postgres
 backend, history service, matching service, frontend service, workers).
 That is awkward to host on a single Railway service; the realistic options
-are Temporal Cloud (paid, no BAA on free tier) or a self-hosted cluster on a
+are Temporal Cloud (paid) or a self-hosted cluster on a
 real cloud.
 
 For Phase 0 we need a durable job substrate that:
@@ -67,8 +67,8 @@ Move to Temporal when **any** of these become true:
 - **Temporal dev server in a workflow** — rejected; the dev server is not
   meant for production and there is no clean Railway production target for
   the cluster.
-- **BullMQ + Redis** — rejected; would require a managed Redis (extra
-  dependency, extra BAA) when pg-boss covers the same ground using the DB
+- **BullMQ + Redis** — rejected; would require a managed Redis (an extra
+  vendor dependency) when pg-boss covers the same ground using the DB
   we already need.
 - **node-cron + ad-hoc scheduling** — rejected; no durability, no retry,
   no fan-out.

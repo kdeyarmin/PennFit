@@ -17,6 +17,7 @@ import { Link } from "wouter";
 import {
   Activity,
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   Clock,
   FileText,
@@ -90,6 +91,7 @@ export function TodayWorklistSection() {
         <ErrorPanel error={error} onRetry={() => void refetch()} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AssignedAppointmentsCard data={data} />
           <ConversationsCard data={data} />
           <FollowupsCard data={data} />
           <ReturnsCard data={data} />
@@ -506,6 +508,79 @@ function InboundFaxesCard({ data }: { data: TodayResponse }) {
       )}
     </Card>
   );
+}
+
+function AssignedAppointmentsCard({ data }: { data: TodayResponse }) {
+  const items = data.appointmentsAssignedToMe;
+  return (
+    <Card
+      title={
+        <SectionTitle
+          icon={<CalendarClock className="h-4 w-4" />}
+          label="Appointments assigned to me"
+          count={items.length}
+        />
+      }
+      action={
+        <Link
+          href="/admin/company-calendar"
+          className="text-xs font-semibold hover:underline"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          Open calendar →
+        </Link>
+      }
+    >
+      {items.length === 0 ? (
+        <EmptyState>Nothing assigned to you.</EmptyState>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((a) => (
+            <li key={a.id} className="text-sm">
+              <Link href="/admin/company-calendar" className="hover:underline">
+                <span className="font-medium">
+                  {humanizeApptType(a.event_type)}
+                </span>
+                <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
+                  — {formatApptWhen(a.starts_at)}
+                  {a.location ? ` · ${a.location}` : ""}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function formatApptWhen(iso: string): string {
+  return new Date(iso).toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function humanizeApptType(t: string): string {
+  switch (t) {
+    case "fitting_virtual":
+      return "Virtual fitting";
+    case "fitting_in_person":
+      return "In-person fitting";
+    case "setup_virtual":
+      return "Virtual setup";
+    case "setup_in_person":
+      return "In-person setup";
+    case "follow_up":
+      return "Follow-up";
+    case "consultation":
+      return "Consultation";
+    default:
+      return "Appointment";
+  }
 }
 
 function SeverityChip({

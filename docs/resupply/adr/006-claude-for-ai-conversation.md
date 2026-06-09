@@ -10,7 +10,7 @@ must:
 1. Refuse to give clinical advice beyond pre-approved language.
 2. Be reliable with structured tool use (we will give it tools to look up
    eligibility, place an order draft, escalate to a human).
-3. Have a vendor BAA covering PHI in prompts and responses.
+3. Be HIPAA-eligible for the PHI that flows through prompts and responses.
 4. Be steerable enough that we can pin its responses to a tight script for
    regulatory replies.
 
@@ -19,8 +19,6 @@ must:
 Use Anthropic Claude (Sonnet tier as the default; Opus for the hardest
 escalation reasoning if cost allows) via the Anthropic API.
 
-- BAA: Anthropic enterprise BAA must be executed before any real PHI is
-  sent in prompts.
 - Adapter: `lib/resupply-ai` exposes a `ConversationModel` interface; the
   Anthropic implementation lives behind it. Tests use a mock that returns
   scripted replies.
@@ -33,7 +31,7 @@ escalation reasoning if cost allows) via the Anthropic API.
 
 ## Consequences
 
-- One model vendor. One BAA.
+- One model vendor.
 - Switching to OpenAI / Google later is a swap of the
   `ConversationModel` implementation, not a rewrite.
 - The redaction layer is load-bearing. If it has bugs, real PHI leaks to
@@ -44,12 +42,12 @@ escalation reasoning if cost allows) via the Anthropic API.
 - **OpenAI GPT-4 / GPT-4o** — comparable quality. Anthropic's tool-use
   reliability and instruction-following on regulatory scripts have been
   better in our internal evals at the time of writing.
-- **Self-hosted open-source model (Llama 3, Mistral)** — avoids vendor BAA
-  but operating an LLM at production reliability is a separate company.
+- **Self-hosted open-source model (Llama 3, Mistral)** — avoids a third-party
+  model vendor but operating an LLM at production reliability is a separate company.
 - **No AI** — rule-based only. Rejected for this product because the
   conversation surface is too varied (free-text replies about fit issues,
   shipping changes, complaints).
 
 ## TODO
 
-- [DONE] Anthropic enterprise BAA is executed.
+- [DONE] Anthropic Claude is wired in as the conversation model.

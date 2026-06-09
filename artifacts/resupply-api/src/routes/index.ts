@@ -61,6 +61,7 @@ import staffingLiveRouter from "./admin/staffing-live.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
 import officeClosuresRouter from "./admin/office-closures.js";
+import officeHoursRouter from "./admin/office-hours.js";
 import companyCalendarRouter from "./admin/company-calendar.js";
 import coachingPlansRouter from "./admin/coaching-plans.js";
 import conversationRoutingRouter from "./admin/conversation-routing.js";
@@ -269,8 +270,8 @@ router.use(shopProductCompatibilityAdminRouter);
 router.use(inventoryReconciliationRouter);
 // /admin/patients/:id/therapy-nights/* — therapy-cloud sync
 // (Phase E.1 / feature #18). Adapter stubs for ResMed AirView +
-// Philips Care; the actual partner integration lands once a BAA
-// + API access is in place. Sync endpoint 503s until the chosen
+// Philips Care; the actual partner integration lands once partner
+// API access is in place. Sync endpoint 503s until the chosen
 // adapter's env var is set.
 router.use(patientTherapySyncRouter);
 // /admin/patients/:id/resupply-summary — single round-trip
@@ -578,8 +579,6 @@ router.use(webhookDeliveryRetryRouter);
 // obtain" guidance for every gap.
 router.use(dispenseReadinessRouter);
 // ── Phase 10 (compliance machinery, migration 0141) ──────────────
-// /admin/compliance/business-associate-agreements — HIPAA
-// §164.504(e) BAA inventory + expiry buckets.
 // /admin/compliance/oig-leie-screenings — record + list OIG LEIE
 // monthly exclusion-list screens against staff / providers /
 // BAs / contractors. Coverage rollup flags overdue subjects.
@@ -593,7 +592,7 @@ router.use(dispenseReadinessRouter);
 // out §164.308(a)(1)/(a)(7), ACHC QAPI, and §424.57(c)(17).
 // /admin/compliance/officer-summary — single round-trip rollup the
 // compliance officer loads every morning. Aggregate counts across
-// BAA inventory, OIG screening, patient rights, disclosures, risk
+// OIG screening, patient rights, disclosures, risk
 // assessments, contingency / drills, QAPI, ownership, training,
 // grievances, and the most recent accreditation readiness run.
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
@@ -747,6 +746,9 @@ router.use(shopBackordersRouter);
 // /admin/office-closures — CSR-managed closure windows; inbound
 // SMS during an active window gets the closure auto-reply.
 router.use(officeClosuresRouter);
+// /admin/office-hours — the practice's standard weekly open hours
+// (the "open by default" baseline the company calendar shades against).
+router.use(officeHoursRouter);
 // /admin/company-calendar — shared, staff-wide appointment calendar
 // (patient fittings/setups/follow-ups). Any signed-in staff member can
 // view and edit; distinct from the patient-initiated appointment_requests

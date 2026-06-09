@@ -106,14 +106,14 @@ and hosting review R2.
 
 ### Public URLs — every URL is HTTPS and points at `pennpaps.com`
 
-| Variable                             | Production value                                                              |
-| ------------------------------------ | ----------------------------------------------------------------------------- |
-| `SHOP_PUBLIC_BASE_URL`               | `https://pennpaps.com`                                                        |
-| `REMINDER_PUBLIC_BASE_URL`           | `https://pennpaps.com` (or a subdomain if the reminder host is separate).     |
-| `RESUPPLY_VOICE_PUBLIC_BASE_URL`     | `https://pennpaps.com` — Twilio webhook target.                               |
-| `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL` | `https://pennpaps.com` (admin SPA is co-located with the storefront).         |
-| `PENN_ADMIN_PUBLIC_BASE_URL`         | `https://pennpaps.com`                                                        |
-| `SENDGRID_FROM_EMAIL`                | `info@pennpaps.com` — the only From address (CLAUDE.md "One From" invariant). |
+| Variable                             | Production value                                                                                                                                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SHOP_PUBLIC_BASE_URL`               | `https://pennpaps.com`                                                                                                                                                                                                         |
+| `REMINDER_PUBLIC_BASE_URL`           | `https://pennpaps.com` (or a subdomain if the reminder host is separate).                                                                                                                                                      |
+| `RESUPPLY_VOICE_PUBLIC_BASE_URL`     | `https://pennpaps.com` — Twilio webhook target (voice agent + fax). The voice agent is **optional**; to turn it on, follow [`voice-agent-go-live.md`](./voice-agent-go-live.md) to provision the number and wire its webhooks. |
+| `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL` | `https://pennpaps.com` (admin SPA is co-located with the storefront).                                                                                                                                                          |
+| `PENN_ADMIN_PUBLIC_BASE_URL`         | `https://pennpaps.com`                                                                                                                                                                                                         |
+| `SENDGRID_FROM_EMAIL`                | `info@pennpaps.com` — the only From address (CLAUDE.md "One From" invariant).                                                                                                                                                  |
 
 ### Feature flag — turn the abandoned-fitter nudge ON
 
@@ -355,6 +355,11 @@ products (404)").
 - [ ] `/admin/operations` shows GREEN dots for Stripe, SendGrid,
       Twilio. Red dots here mean a credential is wrong or missing —
       compare against §2 and rotate as needed.
+- [ ] **(If the voice agent is configured)** Place a test inbound call
+      from a known patient's number → the AI agent answers and asks to
+      verify date of birth; place one from an unknown number → it
+      transfers to the human line. Full procedure:
+      [`voice-agent-go-live.md`](./voice-agent-go-live.md).
 - [ ] A user without an `admin`/`agent` row in `auth.users` who tries
       to reach `/admin` is rejected with 401 ("Sign in required") or
       403 ("not authorized"), NOT the generic "transient" error.
@@ -402,6 +407,9 @@ If any smoke test fails:
   — rotating the link key on a live system.
 - [`docs/runbooks/worker-recovery.md`](./worker-recovery.md) — what to
   do when pg-boss queues back up.
+- [`docs/runbooks/voice-agent-go-live.md`](./voice-agent-go-live.md) —
+  provisioning the Twilio number + wiring the AI voice agent's webhooks
+  (optional subsystem; not on the critical launch path).
 - [`.env.example`](../../.env.example) — every variable, including
   the optional / feature-gated ones not listed above.
 - [`README.md`](../../README.md#environment-variables) — human-facing

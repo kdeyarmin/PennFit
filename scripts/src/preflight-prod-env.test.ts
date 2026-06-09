@@ -53,6 +53,9 @@ const VALID_PROD_ENV: Record<string, string> = {
   TWILIO_AUTH_TOKEN: "abc123authtoken",
   TWILIO_ACCOUNT_SID: "AC" + "abcdef1234567890abcdef1234567890",
   TWILIO_MESSAGING_SERVICE_SID: "MGxxx123",
+  // Outbound voice caller-ID (E.164). Present so the VOICE_AGENT block's
+  // TWILIO_PHONE_NUMBER check is a clean PASS on the happy path.
+  TWILIO_PHONE_NUMBER: "+12155550100",
   // Public URLs:
   RESUPPLY_ALLOWED_ORIGINS: "https://pennpaps.com",
   SHOP_PUBLIC_BASE_URL: "https://pennpaps.com",
@@ -62,6 +65,11 @@ const VALID_PROD_ENV: Record<string, string> = {
   PENN_ADMIN_PUBLIC_BASE_URL: "https://pennpaps.com",
   // Feature flag:
   RESUPPLY_FITTER_REENGAGE_ENABLED: "1",
+  // OpenAI — the voice agent's Realtime brain + the LLM fallback. Present
+  // (with the three vendor keys below) so the canonical launch env has the
+  // voice path fully configured: VOICE_AGENT reports a clean PASS and the
+  // happy-path fixture stays at zero warnings.
+  OPENAI_API_KEY: "sk-proj" + "-fake-sample-1234567890abcdef",
   // Vendor keys (May 2026 addition — Anthropic / Deepgram / ElevenLabs).
   // All optional at boot, but in the "Ready for launch" fixture we set
   // them to syntactically valid sample values so the preflight does NOT
@@ -1304,5 +1312,100 @@ describe("Office Ally readiness", () => {
     );
     expect(exitCode).toBe(0);
     expect(stdout).toContain("stub mode forced");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Voice agent readiness (OpenAI Realtime + Twilio Media Streams)
+// ---------------------------------------------------------------------------
+
+describe("voice agent readiness", () => {
+  it("reports a clean VOICE_AGENT pass when all four voice vars are set (happy path)", () => {
+    const { exitCode, stdout } = run(VALID_PROD_ENV);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("VOICE_AGENT");
+    // 4/4 present → PASS, and the canonical fixture stays warning-free.
+    expect(stdout).toContain("Ready for launch.");
+  });
+
+  it("warns (exit 0) when voice is partially configured — OPENAI_API_KEY missing", () => {
+    const env = withEnv({ OPENAI_API_KEY: undefined });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("partially configured");
+    const voiceWarn = stdout
+      .split("\n")
+      .some((l) => l.includes("WARN") && l.includes("VOICE_AGENT"));
+    expect(voiceWarn).toBe(true);
+  });
+
+  it("passes (voice off) when none of the voice-required vars are set", () => {
+    // Strip OpenAI + the whole Twilio trio + both public-URL sources so the
+    // voice-required group is fully empty. TWILIO_AUTH_TOKEN unset in prod
+    // is itself a FAIL (prodSeverity), so run in development mode to isolate
+    // the VOICE_AGENT "voice off" pass.
+    const env = withEnv({
+      NODE_ENV: "development",
+      OPENAI_API_KEY: undefined,
+      TWILIO_ACCOUNT_SID: undefined,
+      TWILIO_AUTH_TOKEN: undefined,
+      TWILIO_MESSAGING_SERVICE_SID: undefined,
+      TWILIO_PHONE_NUMBER: undefined,
+      RESUPPLY_VOICE_PUBLIC_BASE_URL: undefined,
+      RAILWAY_PUBLIC_DOMAIN: undefined,
+    });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("voice agent disabled");
+  });
+
+  it("fails when TWILIO_PHONE_NUMBER is set but not E.164 (missing +)", () => {
+    const env = withEnv({ TWILIO_PHONE_NUMBER: "2155550100" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("TWILIO_PHONE_NUMBER");
+    expect(stdout).toContain("E.164");
+  });
+
+  it("fails when TWILIO_PHONE_NUMBER is too short to be a real E.164 number", () => {
+    // "+1555" is "+"-prefixed digits but truncated (4 digits) — the
+    // 8-digit floor catches it; a real Twilio caller-ID never is.
+    const env = withEnv({ TWILIO_PHONE_NUMBER: "+1555" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("TWILIO_PHONE_NUMBER");
+    expect(stdout).toContain("E.164");
+  });
+
+  it("still flags the TWILIO_PHONE_NUMBER .env.example placeholder (now from the voice block)", () => {
+    const env = withEnv({ TWILIO_PHONE_NUMBER: "+15555550123" });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain("TWILIO_PHONE_NUMBER");
+    expect(stdout).toContain("placeholder");
+  });
+
+  it("warns (exit 0) when TWILIO_PHONE_NUMBER is unset — outbound voice disabled", () => {
+    // Keep the messaging-service SID so the SMS check still passes; only the
+    // outbound-voice caller-ID is missing.
+    const env = withEnv({ TWILIO_PHONE_NUMBER: undefined });
+    const { exitCode, stdout } = run(env);
+    expect(exitCode).toBe(0);
+    const phoneWarn = stdout
+      .split("\n")
+      .some((l) => l.includes("WARN") && l.includes("TWILIO_PHONE_NUMBER"));
+    expect(phoneWarn).toBe(true);
+  });
+
+  it("records TWILIO_PHONE_NUMBER as a standalone entry exactly once (no double-report after the section-6 move)", () => {
+    // The placeholder check moved from section 6 into the voice block; a
+    // valid number must produce exactly one standalone result entry. The
+    // SMS combined "… / TWILIO_PHONE_NUMBER" label is a different line and
+    // does not match the standalone-label pattern below.
+    const { stdout } = run(VALID_PROD_ENV);
+    const labelLines = stdout
+      .split("\n")
+      .filter((l) => /^\s+(PASS|WARN|FAIL)\s+TWILIO_PHONE_NUMBER$/.test(l));
+    expect(labelLines).toHaveLength(1);
   });
 });
