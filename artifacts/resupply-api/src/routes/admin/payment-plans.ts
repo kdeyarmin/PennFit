@@ -166,7 +166,7 @@ router.post(
       .schema("resupply")
       .from("patient_payment_plans")
       .select(
-        "id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at",
+        "id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, autopay_status, autopay_authorized_at",
       )
       .eq("patient_id", parsed.data.patientId)
       .order("created_at", { ascending: false })
@@ -197,7 +197,7 @@ router.get(
       .schema("resupply")
       .from("patient_payment_plans")
       .select(
-        "id, patient_id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, updated_at",
+        "id, patient_id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, updated_at, autopay_status, autopay_authorized_at",
       )
       .eq("id", id.data)
       .limit(1)
