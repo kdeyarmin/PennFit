@@ -215,7 +215,6 @@ function makeMfaProbe(): MfaProbe {
             lastUsedCounter: data.last_used_counter,
           };
         }
-        return null;
       }
       // Provider fallback.
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
@@ -247,11 +246,12 @@ function makeMfaProbe(): MfaProbe {
           .not("verified_at", "is", null)
           .order("created_at", { ascending: true });
         if (error) throw error;
-        return (data ?? []).map((r) => ({
+        const adminSecrets = (data ?? []).map((r) => ({
           id: r.id,
           secretBase32: r.secret_base32,
           lastUsedCounter: r.last_used_counter,
         }));
+        if (adminSecrets.length > 0) return adminSecrets;
       }
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return [];

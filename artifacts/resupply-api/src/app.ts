@@ -3,7 +3,12 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import express, { type Express, type Request } from "express";
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import compression from "compression";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -15,6 +20,7 @@ import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
+import { isFeatureEnabled } from "./lib/feature-flags";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
@@ -304,7 +310,30 @@ logger.info(
 // win. Each route gates itself via requireProvider (+ MFA for PHI
 // routes); the provider tree is NOT covered by the app-level admin/shop
 // CSRF gates, so requireProvider enforces CSRF on its own mutations.
-app.use(providerPortalRouter);
+//
+// Runtime gate: fail closed when the feature flag is OFF. Auth routes
+// remain mounted so providers can still sign in during staged rollout,
+// but the queue/sign/decline data surface stays dark.
+const providerPortalFeatureGate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  if (!req.path.startsWith("/api/provider")) {
+    next();
+    return;
+  }
+  if (req.path === "/api/provider/auth" || req.path.startsWith("/api/provider/auth/")) {
+    next();
+    return;
+  }
+  if (!(await isFeatureEnabled("provider.portal_enabled"))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  next();
+};
+app.use(providerPortalFeatureGate, providerPortalRouter);
 logger.info(
   { event: "provider_portal_mounted" },
   "provider e-signature portal routes mounted at /api/provider",
