@@ -1,4 +1,4 @@
--- 0248_manual_documents — staff-authored, manually-typed PDF documents.
+-- 0252_manual_documents — staff-authored, manually-typed PDF documents.
 --
 -- CSRs need to produce one-off documents (Certificate of Medical
 -- Necessity, prescription/order, agreement/consent, delivery ticket,
