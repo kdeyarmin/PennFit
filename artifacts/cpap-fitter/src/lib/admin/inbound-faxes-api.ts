@@ -6,6 +6,18 @@ import { csrfHeader } from "../csrf";
 
 export type InboundFaxStatus = "new" | "triaged" | "attached" | "archived";
 
+/** Outcome of the inbound-fax barcode auto-file attempt (migration 0258).
+ *  Null when the `fax.auto_file_signed` flag is off or no scan ran. */
+export type AutoFileStatus =
+  | "filed"
+  | "no_code"
+  | "no_match"
+  | "already_returned"
+  | "no_patient"
+  | "failed"
+  | "unsupported"
+  | "offline";
+
 export interface InboundFaxListItem {
   id: string;
   twilioFaxSid: string;
@@ -24,6 +36,11 @@ export interface InboundFaxListItem {
   notes: string | null;
   createdAt: string;
   triagedAt: string | null;
+  trackingCodeDetected: string | null;
+  autoFileStatus: AutoFileStatus | null;
+  autoFiledAt: string | null;
+  signatureTrackingId: string | null;
+  chartDocumentId: string | null;
 }
 
 export interface PatchInboundFaxRequest {
