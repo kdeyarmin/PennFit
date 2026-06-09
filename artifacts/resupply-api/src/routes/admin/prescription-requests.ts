@@ -83,6 +83,12 @@ import {
   type SignatureBatchCoverItem,
   renderSignatureBatchCover,
 } from "../../lib/prescription-signature-batch-pdf";
+import {
+  markTrackingCanceled,
+  markTrackingReturned,
+  recordTrackingSent,
+  registerSignatureTracking,
+} from "../../lib/signature-tracking/service";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { getFaxPublicBaseUrl } from "./physician-fax-outreach";
@@ -188,14 +194,14 @@ router.post(
       supabase
         .schema("resupply")
         .from("patients")
-        .select("id")
+        .select("id, legal_first_name, legal_last_name")
         .eq("id", params.data.id)
         .limit(1)
         .maybeSingle(),
       supabase
         .schema("resupply")
         .from("providers")
-        .select("id, fax_e164")
+        .select("id, fax_e164, legal_name, practice_name")
         .eq("id", parsed.data.providerId)
         .limit(1)
         .maybeSingle(),
@@ -240,6 +246,33 @@ router.post(
       return;
     }
 
+    // Register the signature-tracking row so the packet gets a stable
+    // tracking code + barcode and shows up in the outstanding-signatures
+    // dashboard. Snapshot the provider/patient labels for at-a-glance
+    // rendering. Best-effort: a tracking failure must not fail the
+    // packet create (the PDF just renders without a barcode).
+    let trackingCode: string | null = null;
+    try {
+      const reg = await registerSignatureTracking(supabase, {
+        kind: "prescription_request",
+        documentId: inserted.id,
+        title: "Prescription request",
+        patientId: params.data.id,
+        providerId: parsed.data.providerId,
+        patientLabel: formatPatientLabel(
+          patient.legal_first_name,
+          patient.legal_last_name,
+        ),
+        providerLabel: provider.legal_name ?? null,
+        practiceName: provider.practice_name ?? null,
+        returnFaxE164: returnFax,
+        createdByEmail: req.adminEmail ?? null,
+      });
+      trackingCode = reg.trackingCode;
+    } catch (err) {
+      logger.warn({ err }, "prescription_request.tracking_register failed");
+    }
+
     await logAudit({
       action: "prescription_request.created",
       adminEmail: req.adminEmail ?? null,
@@ -257,7 +290,7 @@ router.post(
       logger.warn({ err }, "prescription_request.created audit write failed");
     });
 
-    res.status(201).json({ id: inserted.id });
+    res.status(201).json({ id: inserted.id, trackingCode });
   },
 );
 
@@ -656,6 +689,14 @@ router.post(
           "prescription_request.send.db_stamp_failed",
         );
       }
+      await recordTrackingSent(
+        supabase,
+        "prescription_request",
+        packet.id,
+        "fax",
+      ).catch((err) => {
+        logger.warn({ err }, "prescription_request.tracking_sent failed");
+      });
       await logAudit({
         action: "prescription_request.sent_fax",
         adminEmail: req.adminEmail ?? null,
@@ -763,6 +804,13 @@ router.post(
       .update(update)
       .eq("id", params.data.id);
     if (updErr) throw updErr;
+    await markTrackingReturned(
+      supabase,
+      "prescription_request",
+      params.data.id,
+    ).catch((err) => {
+      logger.warn({ err }, "prescription_request.tracking_returned failed");
+    });
     await logAudit({
       action: "prescription_request.signed",
       adminEmail: req.adminEmail ?? null,
@@ -820,6 +868,13 @@ router.post(
       })
       .eq("id", params.data.id);
     if (error) throw error;
+    await markTrackingCanceled(
+      supabase,
+      "prescription_request",
+      params.data.id,
+    ).catch((err) => {
+      logger.warn({ err }, "prescription_request.tracking_canceled failed");
+    });
     await logAudit({
       action: "prescription_request.void",
       adminEmail: req.adminEmail ?? null,
@@ -835,6 +890,16 @@ router.post(
     res.status(200).json({ status: "void" });
   },
 );
+
+function formatPatientLabel(
+  first: string | null,
+  last: string | null,
+): string | null {
+  const f = (first ?? "").trim();
+  const l = (last ?? "").trim();
+  if (l && f) return `${l}, ${f}`;
+  return l || f || null;
+}
 
 function projectListItem(
   r: Pick<

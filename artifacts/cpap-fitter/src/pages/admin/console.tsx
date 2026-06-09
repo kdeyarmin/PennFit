@@ -74,6 +74,11 @@ const AdminDocumentsPage = lazy(() =>
     default: m.AdminDocumentsPage,
   })),
 );
+const AdminSignatureTrackingPage = lazy(() =>
+  import("@/pages/admin/admin-signature-tracking").then((m) => ({
+    default: m.AdminSignatureTrackingPage,
+  })),
+);
 const ConversationsPage = lazy(() =>
   import("@/pages/admin/conversations").then((m) => ({
     default: m.ConversationsPage,
@@ -794,6 +799,10 @@ function AdminConsole() {
               component={AdminPatientPacketsPage}
             />
             <Route path="/admin/documents" component={AdminDocumentsPage} />
+            <Route
+              path="/admin/signature-tracking"
+              component={AdminSignatureTrackingPage}
+            />
             {/* Literal segment — MUST precede /admin/patients/:id below. */}
             <Route
               path="/admin/patients/duplicates"
