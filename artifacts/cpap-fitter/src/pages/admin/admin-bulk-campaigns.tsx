@@ -20,6 +20,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   cancelBulkCampaign,
   createBulkCampaignDraft,
@@ -373,6 +374,7 @@ function CampaignDetailModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const detailKey = ["admin", "bulk-campaigns", id] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: detailKey,
@@ -401,6 +403,42 @@ function CampaignDetailModal({
     onSuccess: invalidate,
   });
 
+  // Starting a campaign fires real SMS/email to every resolved
+  // recipient — irreversible once sending begins — so it gates behind
+  // an explicit confirm naming the recipient count. Cancel is likewise
+  // guarded (a half-sent campaign can't be un-cancelled). Pause/Resume
+  // are reversible and fire immediately.
+  const confirmStart = async () => {
+    const total = data?.totalRecipients ?? 0;
+    if (
+      !(await confirm({
+        title: "Start sending this campaign?",
+        description: `This will begin sending to ${total.toLocaleString()} recipient${
+          total === 1 ? "" : "s"
+        } via SMS/email. Once sending starts it can be paused but messages already sent cannot be recalled.`,
+        confirmLabel: "Start sending",
+      }))
+    ) {
+      return;
+    }
+    start.mutate();
+  };
+  const confirmCancel = async () => {
+    if (
+      !(await confirm({
+        title: "Cancel this campaign?",
+        description:
+          "No further messages will be sent. Recipients already contacted are not affected. This cannot be undone.",
+        confirmLabel: "Cancel campaign",
+        cancelLabel: "Keep campaign",
+        destructive: true,
+      }))
+    ) {
+      return;
+    }
+    cancel.mutate();
+  };
+
   const anyPending =
     start.isPending || pause.isPending || resume.isPending || cancel.isPending;
   const actionError =
@@ -421,10 +459,10 @@ function CampaignDetailModal({
           data={data}
           actionsPending={anyPending}
           actionError={actionError}
-          onStart={() => start.mutate()}
+          onStart={() => void confirmStart()}
           onPause={() => pause.mutate()}
           onResume={() => resume.mutate()}
-          onCancel={() => cancel.mutate()}
+          onCancel={() => void confirmCancel()}
         />
       )}
       <div className="flex justify-end pt-3 border-t border-border/40">
@@ -432,6 +470,7 @@ function CampaignDetailModal({
           Close
         </Button>
       </div>
+      {ConfirmDialogEl}
     </ModalShell>
   );
 }
