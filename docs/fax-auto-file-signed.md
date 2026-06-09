@@ -84,24 +84,28 @@ matched rows and a banner in the triage modal explaining the outcome.
 Two readers run in front of each other, both validated against
 `isWellFormedTrackingCode`:
 
-1. **Deterministic Code 128 decode** — `lib/barcode/code128-decode.ts` (the
-   inverse of the encoder, sharing its symbol tables so the two can't drift);
-   `lib/inbound-fax/barcode-decode.ts` rasterizes the fax and scans rows.
-   Free, instant, no model cost. It needs pixels, so it covers **raster
-   (TIFF / image) faxes** via an _optional_ `sharp` import — there is no hard
-   dependency, and when `sharp` isn't installed it simply returns null.
-   **PDF faxes (Telnyx's default) are not rasterized here** — the prebuilt
-   `sharp` binary can't render PDF — so they fall through to vision.
-2. **Vision scan** — `lib/inbound-fax/tracking-scan.ts`, the robust fallback.
-   Received faxes are low-resolution raster (~200 dpi) where 1D barcode
-   decoding is unreliable, which is exactly why the stamp also prints the
-   code as plain text beside the bars; the vision model reads that text.
+1. **Deterministic Code 128 decode** — free, instant, no model cost.
+   `lib/barcode/code128-decode.ts` is the inverse of the encoder (shares its
+   symbol tables so the two can't drift; validates the mod-103 checksum +
+   Start/Stop framing, so a misread returns null, never a wrong code).
+   `lib/inbound-fax/barcode-decode.ts` rasterizes the fax and scans rows
+   (`scanGrayscaleForCode`):
+   - **PDF** (Telnyx's default) → rasterized with the WASM **PDFium** build
+     (`@hyzyla/pdfium`, MIT, no native compile) at ~288 dpi, grayscale.
+   - **Raster faxes** (TIFF / image) → rasterized with `sharp` when present,
+     imported _optionally_ (a soft dependency: null when not installed).
+   - Both rasterizers load lazily + memoized and are fail-soft.
+2. **Vision scan** — `lib/inbound-fax/tracking-scan.ts`, the robust fallback
+   (BAA-covered Claude). It reads the human-readable code printed beside the
+   bars — which survives the degraded scans where 1D decoding fails.
 
-**Extending the fast-path to PDFs** is a drop-in: wire a PDF→bitmap
-rasterizer (e.g. `pdfjs-dist` + a canvas) behind the same null-returning
-boundary in `barcode-decode.ts` and feed its grayscale rows to
-`scanGrayscaleForCode`. It was deliberately left out here because it adds a
-heavier native dependency and wants validation against real fax samples.
+The deterministic path reliably handles **crisp bars** — it round-trips the
+encoder's own output, verified end-to-end through a real PDFium render of a
+stamped PDF (`barcode-decode.pdf.test.ts`). Heavily degraded ~200 dpi fax
+scans that don't decode simply fall through to the vision scan, so coverage
+is "free when it's readable, vision otherwise." Neither reader can produce a
+wrong code: both validate the shape, and the lookup must match an
+outstanding signature before anything is filed.
 
 ## Enabling & validating (operator)
 

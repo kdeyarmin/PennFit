@@ -76,10 +76,10 @@ describe("scanGrayscaleForCode", () => {
 });
 
 describe("tryDecodeTrackingBarcode — fail-soft", () => {
-  it("returns null for a PDF (vision scan handles those)", async () => {
+  it("returns null for a malformed PDF (PDFium load fails → vision)", async () => {
     expect(
       await tryDecodeTrackingBarcode({
-        bytes: Buffer.from([0x25, 0x50, 0x44, 0x46]),
+        bytes: Buffer.from([0x25, 0x50, 0x44, 0x46]), // "%PDF" then nothing
         contentType: "application/pdf",
       }),
     ).toBeNull();

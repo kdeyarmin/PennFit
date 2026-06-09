@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --passWithNoTests --config vitest.config.ts --coverage"
   },
   "dependencies": {
+    "@hyzyla/pdfium": "^2.1.13",
     "@swc/helpers": "0.5.21",
     "@workspace/resupply-ai": "workspace:*",
     "@workspace/resupply-audit": "workspace:*",
