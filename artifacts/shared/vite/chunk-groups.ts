@@ -9,6 +9,8 @@ export function dashboardChunkForPackage(
 export function fitterChunkForPackage(packageName: string): string | undefined {
   if (packageName === "react" || packageName === "react-dom") return "react";
   if (packageName === "@tanstack/react-query") return "query";
+  if (packageName === "wouter") return "router";
+  if (packageName === "lucide-react") return "icons";
   if (
     packageName.startsWith("@radix-ui/") ||
     packageName === "cmdk" ||
