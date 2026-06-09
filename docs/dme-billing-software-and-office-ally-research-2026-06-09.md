@@ -282,14 +282,15 @@ drugs) is correctly out of scope for CPAP/DME resupply.
 
 ## 5. Accuracy — the open list (post-verification)
 
-After the verification pass the accuracy list collapses to one shipped fix and
-two follow-ons:
+After the verification pass — and the work in this PR — the accuracy list is
+**fully closed** (A2 ships behind a seeded-OFF flag pending a one-time 277CA
+validation):
 
 | # | Item | DME impact | Status / effort | Where |
 | --- | --- | --- | --- | --- |
 | A1 | **NTE narrative for NOC/misc HCPCS** (E1399 etc.) — required by Medicare DME | Denial on every narrative-less NOC line | **DONE (this PR)** — `NTE*ADD` in builder; `narrative` column; preflight ERROR blocks submit until set | `edi/837p.ts`; `0248_claim_line_narrative.sql`; `office-ally-batch.ts`; `claim-preflight.ts` |
-| A2 | **Line-level ordering-provider loop 2420E (`DK`)** | Possible Medicare DME PECOS edit rejection; today relies on 2310D being accepted | **Built, dormant** — capability + tests shipped; activate the per-line wiring only after a live 277CA confirms 2310D is rejected | `edi/837p.ts` (`ServiceLine.orderingProvider`) |
-| A5 | **Full CMS-484 _clinical_ CMN PDF** | The DWO/CMN **cover** renders today; the answered clinical questionnaire doesn't | **S–M**, optional — most CMNs were retired by CMS; low frequency | `lib/billing/cmn-forms.ts` (Q&A model), `dwo-pdf.ts` (cover renderer to extend) |
+| A2 | **Line-level ordering-provider loop 2420E (`DK`)** | Possible Medicare DME PECOS edit rejection; today relies on 2310D being accepted | **DONE (this PR), flag-gated OFF** — `office-ally-batch` attaches the referring provider (NPI + address) per line behind `billing.line_ordering_provider` (mig `0249`, seeded OFF). Flip on in the Office Ally T cycle, confirm via 277CA, then leave on. Off → byte-identical 837P. | `edi/837p.ts`; `office-ally-batch.ts`; `0249_…_flag.sql` |
+| A5 | **Full CMS-484 _clinical_ CMN PDF** | The DWO/CMN **cover** rendered; the answered clinical questionnaire didn't | **DONE (this PR)** — `lib/billing/cmn-pdf.ts` renders the Section B Q&A + attestation; `GET /admin/cmn-documents/:id/pdf`; "PDF" link in `PatientCmnCard` | `lib/billing/cmn-pdf.ts`; `routes/admin/cmn-documents.ts`; `PatientCmnCard.tsx` |
 
 **Already covered (do not re-build):** line-level COGS (`claim-builder.ts`,
 migration 0193); the **modifier/KX/capped-rental** traps from §1.2
@@ -346,19 +347,24 @@ layer Niko doesn't have.
 - **U1 — auto-fax prior-auth request forms**: a Telnyx dispatch endpoint +
   shared on-demand PA-PDF render + signed token + a "Fax to payer" button,
   mirroring the appeal-letter fax path.
-- **A2 capability** — line-level ordering-provider loop 2420E in the builder,
-  off by default (tests included), ready to activate.
+- **A2 — line-level ordering-provider loop 2420E** wired through
+  `office-ally-batch`, behind the seeded-OFF flag `billing.line_ordering_provider`
+  (mig 0249). Capability + tests shipped; flip on after a 277CA check.
+- **A5 — answered CMS-484/846/848/DIF clinical CMN PDF** (`cmn-pdf.ts` +
+  `GET /admin/cmn-documents/:id/pdf` + a "PDF" link).
 
-**Do next (what remains):**
+**The accuracy + last-mile lists are now closed.** The only remaining
+**operational** step (no code) is the one-time A2 validation:
 
-1. **A2 activation** — wire the per-line ordering provider into the live claim
-   path **only after** a live 277CA batch confirms 2310D is being rejected.
-2. **A5 — full CMS-484 clinical CMN PDF** — optional; the cover already renders
-   and CMNs are mostly retired. (S–M)
+1. In the Office Ally **test (T) cycle**, flip `billing.line_ordering_provider`
+   ON from the Control Center, submit a batch, and confirm the **277CA** accepts
+   the 2420E loop; then leave it on for production. If a payer rejects the
+   duplicate provider loop, the follow-up is to drop the claim-level 2310D for
+   that path.
 
-Everything else the first draft listed (CMN/DWO cover PDF, line COGS, 276/277
-status, secondary COB, modifier auto-stamp) was **already shipped** — see the
-Verification update.
+Everything the first draft listed is now **shipped** — A1, A2, A5, U1, U6 in
+this PR; CMN/DWO cover PDF, line COGS, 276/277 status, secondary COB, and
+modifier auto-stamp were **already in the tree** (see the Verification update).
 
 **Operational (no code):**
 
