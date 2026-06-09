@@ -39,6 +39,13 @@ export type AudienceKind =
   | "all_active_shop_customers"
   | "all_active_patients"
   | "by_patient_payer"
+  // RT clinical cohort (C-R1): patients with an open compliance alert of a
+  // given type (low adherence / no check-in response / at-risk). The route
+  // pre-resolves the cohort to patient candidates and carries the cohort
+  // key in `audiencePayer`, so this resolver treats them like any other
+  // patient audience — the payer-filter guard below only fires for
+  // by_patient_payer.
+  | "by_therapy_cohort"
   | "manual_list";
 
 export interface ShopCustomerCandidate {

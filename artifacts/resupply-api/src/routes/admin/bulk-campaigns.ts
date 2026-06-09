@@ -46,9 +46,20 @@ const AUDIENCE_KIND_VALUES: AudienceKind[] = [
   "all_active_shop_customers",
   "all_active_patients",
   "by_patient_payer",
+  "by_therapy_cohort",
   "manual_list",
 ];
 const CATEGORY_VALUES: Category[] = ["marketing", "service", "compliance"];
+
+// RT clinical cohorts (C-R1). The selector is carried in the
+// `audience_payer` column (a generic audience parameter) so it threads
+// through the existing draft + regenerate-audience plumbing without a
+// schema change. Keep in sync with THERAPY_COHORT_ALERT_TYPES.
+const THERAPY_COHORT_VALUES = [
+  "low_adherence",
+  "no_checkin_response",
+  "at_risk",
+] as const;
 
 const draftBody = z
   .object({
@@ -58,6 +69,9 @@ const draftBody = z
       AUDIENCE_KIND_VALUES as [AudienceKind, ...AudienceKind[]],
     ),
     audiencePayer: z.string().trim().max(120).nullable().optional(),
+    /** Required when audienceKind='by_therapy_cohort'. Selects which
+     *  open-compliance-alert cohort to target. Stored in audience_payer. */
+    therapyCohort: z.enum(THERAPY_COHORT_VALUES).optional(),
     /** Required when audienceKind='manual_list'. Each id is a UUID;
      *  recipientKind is determined by the order in shop/patient
      *  arrays. */
@@ -82,6 +96,13 @@ const draftBody = z
     {
       path: ["audiencePayer"],
       message: "audiencePayer is required when audienceKind=by_patient_payer.",
+    },
+  )
+  .refine(
+    (b) => b.audienceKind !== "by_therapy_cohort" || Boolean(b.therapyCohort),
+    {
+      path: ["therapyCohort"],
+      message: "therapyCohort is required when audienceKind=by_therapy_cohort.",
     },
   )
   .refine(
@@ -156,19 +177,29 @@ router.post(
       return;
     }
 
+    // The `audience_payer` column doubles as the generic audience
+    // parameter: the payer name for by_patient_payer, the cohort key for
+    // by_therapy_cohort. This keeps both the draft fetch and the
+    // regenerate-audience path (which only re-reads audience_payer) working
+    // with no extra column.
+    const audienceParam =
+      b.audienceKind === "by_therapy_cohort"
+        ? (b.therapyCohort ?? null)
+        : (b.audiencePayer ?? null);
+
     // ── Pull candidates ───────────────────────────────────────────
     const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
       supabase,
       {
         audienceKind: b.audienceKind,
-        audiencePayer: b.audiencePayer,
+        audiencePayer: audienceParam,
         manualShopCustomerIds: b.manualShopCustomerIds,
         manualPatientIds: b.manualPatientIds,
       },
     );
     const resolved = resolveAudience({
       audienceKind: b.audienceKind,
-      audiencePayer: b.audiencePayer ?? null,
+      audiencePayer: audienceParam,
       category: b.category,
       shopCustomers: shopCandidates,
       patients: patientCandidates,
@@ -182,7 +213,7 @@ router.post(
         name: b.name,
         description: b.description ?? null,
         audience_kind: b.audienceKind,
-        audience_payer: b.audiencePayer ?? null,
+        audience_payer: audienceParam,
         channel: "email",
         category: b.category,
         compliance_attestation: b.complianceAttestation ?? null,

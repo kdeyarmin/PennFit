@@ -37,6 +37,7 @@ import {
   type CampaignStatus,
   type Category,
   type CreateDraftRequest,
+  type TherapyCohort,
 } from "@/lib/admin/bulk-campaigns-api";
 
 const listQueryKey = ["admin", "bulk-campaigns"] as const;
@@ -111,8 +112,18 @@ const AUDIENCE_LABEL: Record<AudienceKind, string> = {
   all_active_shop_customers: "All shop customers",
   all_active_patients: "All active patients",
   by_patient_payer: "Patients by payer",
+  by_therapy_cohort: "Therapy cohort",
   manual_list: "Manual list",
 };
+
+const THERAPY_COHORT_OPTIONS: ReadonlyArray<{
+  value: TherapyCohort;
+  label: string;
+}> = [
+  { value: "at_risk", label: "At-risk (low usage or no response)" },
+  { value: "low_adherence", label: "Low adherence (low usage)" },
+  { value: "no_checkin_response", label: "No check-in response" },
+];
 
 const CATEGORY_LABEL: Record<Category, string> = {
   marketing: "Marketing",
@@ -205,6 +216,7 @@ function NewCampaignModal({
     "all_active_shop_customers",
   );
   const [audiencePayer, setAudiencePayer] = useState("");
+  const [therapyCohort, setTherapyCohort] = useState<TherapyCohort>("at_risk");
   const [category, setCategory] = useState<Category>("marketing");
   const [complianceAttestation, setComplianceAttestation] = useState("");
   const [templateKey, setTemplateKey] = useState("");
@@ -220,6 +232,8 @@ function NewCampaignModal({
           audienceKind === "by_patient_payer"
             ? audiencePayer.trim() || null
             : null,
+        therapyCohort:
+          audienceKind === "by_therapy_cohort" ? therapyCohort : undefined,
         category,
         complianceAttestation:
           category === "compliance"
@@ -273,6 +287,9 @@ function NewCampaignModal({
             <option value="by_patient_payer">
               Patients by insurance payer
             </option>
+            <option value="by_therapy_cohort">
+              Therapy cohort (at-risk adherence)
+            </option>
             <option value="manual_list">Manual list (Phase B)</option>
           </select>
         </div>
@@ -287,6 +304,27 @@ function NewCampaignModal({
               maxLength={120}
               aria-label="Payer"
             />
+          </div>
+        )}
+
+        {audienceKind === "by_therapy_cohort" && (
+          <div>
+            <Label>Cohort</Label>
+            <select
+              value={therapyCohort}
+              onChange={(e) =>
+                setTherapyCohort(e.target.value as TherapyCohort)
+              }
+              aria-label="Therapy cohort"
+              className="w-full rounded border px-2 py-1.5 text-sm"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              {THERAPY_COHORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
