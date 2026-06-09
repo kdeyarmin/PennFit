@@ -371,7 +371,7 @@ async function deliverOnChannel(
  *               regardless of the generic billing-statement toggle / quiet
  *               hours. No email on file → falls back to the mail worklist.
  *   * null / legacy — honors comm preferences + DND, email-or-SMS, via
- *               pickStatementChannel (unchanged pre-0256 behavior).
+ *               pickStatementChannel (unchanged pre-0257 behavior).
  *
  * Fail-soft — returns the outcome; never throws for a normal gated send.
  */
@@ -529,7 +529,7 @@ export async function runStatementBatchSend(
     .eq("delivery_status", "pending")
     .gt("total_patient_responsibility_cents", 0)
     // Electronic only — exclude mail-preference rows (and legacy sms /
-    // in_person), keeping null (pre-0256) on the electronic path.
+    // in_person), keeping null (pre-0257) on the electronic path.
     .or("delivery_method.is.null,delivery_method.eq.email")
     .order("created_at", { ascending: true })
     .limit(Math.max(1, cap));

@@ -178,7 +178,7 @@ router.post(
         total_patient_responsibility_cents:
           result.totalPatientResponsibilityCents,
         // Segregate at generation time: stamp the patient's emailed-vs-
-        // mailed preference (migration 0256) unless the caller explicitly
+        // mailed preference (migration 0257) unless the caller explicitly
         // overrode the method. The send path keys off this: 'email' →
         // emailed; 'mail' → routed to the print/mail worklist. (DB
         // constrains the patient column to 'email' | 'mail'.)

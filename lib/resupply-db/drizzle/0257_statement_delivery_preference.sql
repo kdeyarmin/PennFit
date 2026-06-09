@@ -1,4 +1,4 @@
--- 0256_statement_delivery_preference — emailed-vs-mailed patient
+-- 0257_statement_delivery_preference — emailed-vs-mailed patient
 -- statement / bill delivery.
 --
 -- Adds a per-patient delivery preference so generated statements can be
