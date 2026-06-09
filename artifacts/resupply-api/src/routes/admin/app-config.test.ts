@@ -171,7 +171,7 @@ describe("GET /admin/system/config", () => {
   });
 });
 
-describe("GET /admin/system/config — Twilio webhook URLs", () => {
+describe("GET /admin/system/config — telephony webhook reference", () => {
   const BASE_KEY = "RESUPPLY_VOICE_PUBLIC_BASE_URL";
   let savedBase: string | undefined;
   let savedRailway: string | undefined;
@@ -199,7 +199,7 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
     const res = await request(makeApp()).get("/admin/system/config");
     expect(res.status).toBe(200);
 
-    const w = res.body.twilioWebhooks;
+    const w = res.body.webhookReference;
     expect(w.baseUrl).toBe("https://pennfit.example.com");
     expect(w.baseUrlSource).toBe("env");
     expect(w.baseUrlKey).toBe(BASE_KEY);
@@ -244,7 +244,7 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
     const res = await request(makeApp()).get("/admin/system/config");
     expect(res.status).toBe(200);
 
-    const w = res.body.twilioWebhooks;
+    const w = res.body.webhookReference;
     // URLs reflect what the live process signs/emits, NOT the saved value.
     expect(w.baseUrl).toBe("https://live.example.com");
     expect(w.baseUrlSource).toBe("env");
@@ -262,11 +262,11 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
 
     const res = await request(makeApp()).get("/admin/system/config");
     expect(res.status).toBe(200);
-    expect(res.body.twilioWebhooks.baseUrl).toBe(
+    expect(res.body.webhookReference.baseUrl).toBe(
       "https://pennfit.up.railway.app",
     );
-    expect(res.body.twilioWebhooks.baseUrlSource).toBe("railway");
-    expect(res.body.twilioWebhooks.pendingRestart).toBe(false);
+    expect(res.body.webhookReference.baseUrlSource).toBe("railway");
+    expect(res.body.webhookReference.pendingRestart).toBe(false);
   });
 
   it("returns no URLs when no base URL is configured", async () => {
@@ -275,10 +275,10 @@ describe("GET /admin/system/config — Twilio webhook URLs", () => {
 
     const res = await request(makeApp()).get("/admin/system/config");
     expect(res.status).toBe(200);
-    expect(res.body.twilioWebhooks.baseUrl).toBeNull();
-    expect(res.body.twilioWebhooks.baseUrlSource).toBe("unset");
-    expect(res.body.twilioWebhooks.endpoints).toEqual([]);
-    expect(res.body.twilioWebhooks.pendingRestart).toBe(false);
+    expect(res.body.webhookReference.baseUrl).toBeNull();
+    expect(res.body.webhookReference.baseUrlSource).toBe("unset");
+    expect(res.body.webhookReference.endpoints).toEqual([]);
+    expect(res.body.webhookReference.pendingRestart).toBe(false);
   });
 });
 

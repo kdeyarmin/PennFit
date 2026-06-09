@@ -36,7 +36,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import {
   type AppConfigActivity,
   type AppConfigSettingView,
-  type TwilioWebhooksView,
+  type WebhookReferenceView,
   clearConfigValue,
   getSystemConfig,
   getSystemConfigActivity,
@@ -156,7 +156,7 @@ export function AdminSystemConfigurationPage() {
               </Card>
             ))
           )}
-          <TwilioWebhookUrls webhooks={data?.twilioWebhooks} />
+          <WebhookReferenceCard webhooks={data?.webhookReference} />
           <RecentActivity />
         </>
       )}
@@ -165,7 +165,7 @@ export function AdminSystemConfigurationPage() {
 }
 
 function baseUrlSourceLabel(
-  source: TwilioWebhooksView["baseUrlSource"],
+  source: WebhookReferenceView["baseUrlSource"],
 ): string {
   switch (source) {
     case "env":
@@ -198,27 +198,33 @@ function PendingRestartNote() {
       <span>
         A new base URL has been saved but takes effect on the next deploy. Until
         the service restarts it still signs and emits webhooks from its current
-        origin, so the URLs below reflect that live configuration — keep Twilio
-        pointed at them until you redeploy, then update Twilio to match.
+        origin, so the URLs below reflect that live configuration — keep your
+        telephony vendors (Twilio, Telnyx) pointed at them until you redeploy,
+        then update each vendor to match.
       </span>
     </div>
   );
 }
 
-// Read-only reference: the exact Twilio webhook URLs to paste into the
-// Twilio Console, derived server-side from the LIVE "Public webhook base
-// URL" the running process uses. Shown for every deployment so an operator
-// can wire Twilio without hand-assembling the route paths.
-function TwilioWebhookUrls({ webhooks }: { webhooks?: TwilioWebhooksView }) {
+// Read-only reference: the exact telephony webhook URLs to paste into each
+// vendor portal — Twilio Console (voice/SMS) and the Telnyx portal (fax) —
+// derived server-side from the LIVE "Public webhook base URL" the running
+// process uses. Shown for every deployment so an operator can wire the
+// vendors without hand-assembling the route paths.
+function WebhookReferenceCard({
+  webhooks,
+}: {
+  webhooks?: WebhookReferenceView;
+}) {
   if (!webhooks) return null;
   return (
     <Card
       title={
         <span className="flex items-center gap-2">
-          <Webhook className="h-4 w-4" /> Twilio webhook URLs
+          <Webhook className="h-4 w-4" /> Telephony webhook URLs
         </span>
       }
-      subtitle="Paste these into the Twilio Console for your phone number, Messaging Service, and fax."
+      subtitle="Paste each URL into its vendor portal — voice & SMS into the Twilio Console (phone number / Messaging Service), fax into the Telnyx portal (Fax Application)."
     >
       <div className="space-y-3">
         {webhooks.pendingRestart && <PendingRestartNote />}
@@ -249,8 +255,8 @@ function TwilioWebhookUrls({ webhooks }: { webhooks?: TwilioWebhooksView }) {
               >
                 {webhooks.baseUrl}
               </span>{" "}
-              ({baseUrlSourceLabel(webhooks.baseUrlSource)}). Twilio signs these
-              exact URLs — re-enter them in Twilio whenever the base URL
+              ({baseUrlSourceLabel(webhooks.baseUrlSource)}). Each vendor signs
+              the exact URL you configure — re-enter them whenever the base URL
               changes.
             </p>
             <ul className="space-y-3">
