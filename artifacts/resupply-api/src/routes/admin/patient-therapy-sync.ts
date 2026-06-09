@@ -9,12 +9,25 @@
 // The sync endpoint requires `partnerPatientId` + `source` in the
 // body — a CSR enters the partner-side patient id explicitly to
 // avoid auto-mapping mistakes. Source must be one of the
-// `TherapyCloudSource` values; "manual" isn't valid here (no
+// `IntegrationSource` values; "manual" isn't valid here (no
 // remote fetch to perform).
 //
-// 503 when the requested adapter isn't configured; the SPA hides
-// the "Sync from ResMed" button when this happens. No partial
-// writes — we batch upserts in one round-trip.
+// This route shares the SAME adapter registry + persistence helpers
+// as the nightly bulk-sync worker (therapy-integrations.nightly-sync):
+// it resolves the live vendor adapter via
+// getIntegrationAdaptersWithDbOverrides(), normalises + validates the
+// returned snapshot, and persists recentNights through
+// persistTherapyNights(). It previously delegated to a legacy stub
+// registry (lib/therapy-cloud) that always reported the adapter
+// unconfigured and threw "not implemented" — so the route could never
+// succeed. Wiring it to the unified registry makes the on-demand
+// "Sync from <vendor>" button actually import a window when the
+// vendor's credentials are present.
+//
+// 503 when the requested adapter is unavailable (no partner
+// credentials configured); the SPA hides the "Sync from ResMed"
+// button when this happens. No partial writes — persistence batches
+// upserts in chunked round-trips.
 //
 // PHI / log posture: nightly data IS PHI. We never log usage /
 // AHI / leak values. The audit envelope records patient_id +
@@ -25,8 +38,14 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type IntegrationSource,
+  integrationSnapshotSchema,
+} from "@workspace/resupply-integrations";
 
-import { adapterFor } from "../../lib/therapy-cloud";
+import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry";
+import { persistTherapyNights } from "../../lib/integrations/persist-nights";
+import { normalizeSnapshotForPersistence } from "../../worker/jobs/therapy-integrations-nightly-sync";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -124,12 +143,23 @@ router.post(
       });
       return;
     }
-    const { source, partnerPatientId } = bodyParsed.data;
+    const source = bodyParsed.data.source as IntegrationSource;
+    const { partnerPatientId } = bodyParsed.data;
     const sinceDate =
       bodyParsed.data.sinceDate ??
       new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
+
+    // The unified adapter contract takes a `windowDays` bound rather
+    // than a `sinceDate`. Derive the window from the requested start,
+    // clamped to [1, PER_SYNC_CAP] so a far-back date can't ask a
+    // partner for an unbounded history in one on-demand call.
+    const sinceMs = Date.parse(`${sinceDate}T00:00:00Z`);
+    const windowDays = Math.min(
+      PER_SYNC_CAP,
+      Math.max(1, Math.ceil((Date.now() - sinceMs) / (24 * 60 * 60 * 1000))),
+    );
 
     const supabase = getSupabaseServiceRoleClient();
 
@@ -146,50 +176,72 @@ router.post(
       return;
     }
 
-    const adapter = adapterFor(source);
-    if (!adapter.configured) {
+    const adapters = await getIntegrationAdaptersWithDbOverrides();
+    const adapter = adapters.get(source);
+    if (!adapter || adapter.availability().status === "unavailable") {
       res.status(503).json({
         error: "therapy_cloud_not_configured",
-        message: `${source} adapter is not configured on this server. Add the partner OAuth env var and a real adapter implementation.`,
+        message: `${source} adapter is not configured on this server. Add the partner OAuth credentials to enable on-demand sync.`,
         source,
       });
       return;
     }
 
-    let imported = 0;
+    // Assigned exactly once in the try below; the catch returns, so a
+    // read after the try is always reached with a value set.
+    let imported: number;
     try {
-      const result = await adapter.fetchNights({
+      const fetched = await adapter.fetchSnapshot({
         partnerPatientId,
-        sinceDate,
-        limit: PER_SYNC_CAP,
+        windowDays,
       });
-
-      // Bulk upsert. The unique (patient, night, source) constraint
-      // dedupes re-imports — supabase-js's `.upsert()` supports
-      // explicit conflict columns via `onConflict`.
-      if (result.nights.length > 0) {
-        const rowsToUpsert = result.nights.map((n) => ({
-          patient_id: patientId,
-          night_date: n.nightDate,
-          source,
-          source_event_id: n.sourceEventId,
-          usage_minutes: n.usageMinutes,
-          ahi: n.ahi !== null ? String(n.ahi) : null,
-          leak_rate_l_min:
-            n.leakRateLMin !== null ? String(n.leakRateLMin) : null,
-          pressure_p95_cmh2o:
-            n.pressureP95Cmh2o !== null ? String(n.pressureP95Cmh2o) : null,
-          updated_at: new Date().toISOString(),
-        }));
-        const { error: upsertErr } = await supabase
-          .schema("resupply")
-          .from("patient_therapy_nights")
-          .upsert(rowsToUpsert, {
-            onConflict: "patient_id,night_date,source",
-          });
-        if (upsertErr) throw upsertErr;
-        imported = rowsToUpsert.length;
+      if (!fetched.ok) {
+        logger.warn(
+          { patient_id: patientId, source, adapter_error: fetched.error },
+          "therapy-cloud sync: adapter returned error",
+        );
+        res.status(502).json({
+          error: "therapy_cloud_fetch_failed",
+          message: "Partner returned an error or timed out.",
+        });
+        return;
       }
+
+      // Normalise the common per-night vendor quirks (ISO timestamps,
+      // fractional/negative numerics) the same way the nightly worker
+      // does, then validate against the canonical snapshot schema so a
+      // malformed payload is rejected rather than silently half-written.
+      const parsed = integrationSnapshotSchema.safeParse(
+        normalizeSnapshotForPersistence(fetched.snapshot),
+      );
+      if (!parsed.success) {
+        logger.warn(
+          {
+            patient_id: patientId,
+            source,
+            issues: parsed.error.issues
+              .slice(0, 5)
+              .map((i) => ({ path: i.path.join("."), code: i.code })),
+          },
+          "therapy-cloud sync: snapshot failed schema validation; dropping",
+        );
+        res.status(502).json({
+          error: "therapy_cloud_fetch_failed",
+          message: "Partner returned an unexpected response shape.",
+        });
+        return;
+      }
+
+      // Shared idempotent persistence: chunked upserts keyed on
+      // (patient_id, night_date, source). `inserted` counts only the
+      // nights that carried at least one numeric reading.
+      const persisted = await persistTherapyNights(
+        supabase,
+        patientId,
+        source,
+        parsed.data.recentNights,
+      );
+      imported = persisted.inserted;
     } catch (err) {
       logger.warn(
         { err, patient_id: patientId, source },

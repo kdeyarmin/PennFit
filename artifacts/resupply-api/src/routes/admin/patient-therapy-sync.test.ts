@@ -62,29 +62,62 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
 
 type MockNight = {
   nightDate: string;
-  sourceEventId: string;
   usageMinutes: number | null;
   ahi: number | null;
   leakRateLMin: number | null;
   pressureP95Cmh2o: number | null;
 };
+type FetchResult =
+  | { ok: true; snapshot: Record<string, unknown> }
+  | { ok: false; error: string };
+
+// Build a valid IntegrationSnapshot (matches integrationSnapshotSchema)
+// from a bare list of nights so the route's real normalize+validate+
+// persist path runs against the supabase mock.
+function snapshotFromNights(nights: MockNight[]): {
+  ok: true;
+  snapshot: Record<string, unknown>;
+} {
+  return {
+    ok: true,
+    snapshot: {
+      source: "resmed_airview",
+      partnerPatientId: "abc",
+      settings: null,
+      compliance: null,
+      recentNights: nights,
+      supplies: [],
+    },
+  };
+}
+
 const adapterState = vi.hoisted(
   (): {
-    configured: boolean;
-    fetch: () => Promise<{ nights: MockNight[]; hasMore: boolean }>;
+    availability: "configured" | "stub" | "unavailable";
+    fetch: () => Promise<FetchResult>;
   } => ({
-    configured: true,
-    fetch: async () => ({ nights: [], hasMore: false }),
+    availability: "configured",
+    fetch: async () => snapshotFromNights([]),
   }),
 );
-vi.mock("../../lib/therapy-cloud", () => ({
-  adapterFor: () => ({
-    source: "resmed_airview",
-    get configured() {
-      return adapterState.configured;
-    },
-    fetchNights: (...args: unknown[]) => adapterState.fetch(...(args as [])),
-  }),
+vi.mock("../../lib/integrations/registry", () => ({
+  getIntegrationAdaptersWithDbOverrides: async () =>
+    new Map([
+      [
+        "resmed_airview",
+        {
+          source: "resmed_airview",
+          availability: () =>
+            adapterState.availability === "unavailable"
+              ? { status: "unavailable", reason: "no_credentials" }
+              : adapterState.availability === "stub"
+                ? { status: "stub", reason: "no_credentials" }
+                : { status: "configured" },
+          fetchSnapshot: (...args: unknown[]) =>
+            adapterState.fetch(...(args as [])),
+        },
+      ],
+    ]),
 }));
 
 import patientTherapySyncRouter from "./patient-therapy-sync";
@@ -108,8 +141,8 @@ beforeEach(() => {
   supabaseMock.reset();
   adminRateLimitSpy.mockClear();
   logAuditMock.mockClear();
-  adapterState.configured = true;
-  adapterState.fetch = async () => ({ nights: [], hasMore: false });
+  adapterState.availability = "configured";
+  adapterState.fetch = async () => snapshotFromNights([]);
 });
 
 // ── PR change: verify adminRateLimit is NOT invoked ─────────────────────────
@@ -127,7 +160,7 @@ describe("POST /admin/patients/:id/therapy-nights/sync — adminRateLimit remove
   it("does NOT return 429 when authenticated (no rate limiter present)", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
-    adapterState.fetch = async () => ({ nights: [], hasMore: false });
+    adapterState.fetch = async () => snapshotFromNights([]);
     const res = await request(makeApp())
       .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
       .send({ source: "resmed_airview", partnerPatientId: "abc" });
@@ -188,10 +221,10 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
     expect(res.status).toBe(401);
   });
 
-  it("503s when the adapter is unconfigured", async () => {
+  it("503s when the adapter is unavailable", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
-    adapterState.configured = false;
+    adapterState.availability = "unavailable";
     const res = await request(makeApp())
       .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
       .send({ source: "resmed_airview", partnerPatientId: "abc" });
@@ -214,30 +247,42 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
     ).toEqual([]);
   });
 
-  it("imports + audits with non-PHI envelope", async () => {
+  it("502s when the adapter reports an error result", async () => {
     mockAdmin.current = ADMIN;
     stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
-    adapterState.fetch = async () => ({
-      nights: [
+    adapterState.fetch = async () => ({ ok: false, error: "auth_failed" });
+    const res = await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({ source: "resmed_airview", partnerPatientId: "abc" });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("therapy_cloud_fetch_failed");
+    expect(
+      getSupabaseWritePayloads("patient_therapy_nights", "upsert"),
+    ).toEqual([]);
+  });
+
+  it("imports + audits with non-PHI envelope (all-null nights skipped)", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    adapterState.fetch = async () =>
+      snapshotFromNights([
         {
           nightDate: "2026-05-04",
-          sourceEventId: "evt_1",
           usageMinutes: 415,
           ahi: 1.2,
           leakRateLMin: 12.4,
           pressureP95Cmh2o: 10.5,
         },
         {
+          // All-null night: persistTherapyNights skips it so a
+          // no-data stub row doesn't pollute the compliance window.
           nightDate: "2026-05-03",
-          sourceEventId: "evt_2",
-          usageMinutes: 390,
+          usageMinutes: null,
           ahi: null,
           leakRateLMin: null,
           pressureP95Cmh2o: null,
         },
-      ],
-      hasMore: false,
-    });
+      ]);
     stageSupabaseResponse("patient_therapy_nights", "upsert", { error: null });
 
     const res = await request(makeApp())
@@ -249,27 +294,28 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.body.imported).toBe(2);
+    // Only the night carrying data is persisted; the all-null night
+    // is skipped by the shared persistence helper.
+    expect(res.body.imported).toBe(1);
     expect(res.body.source).toBe("resmed_airview");
 
-    // The route uses bulk upsert: a SINGLE call passing the whole
-    // array, not one call per row. That's why writePayloads returns
-    // length 1 with an array payload.
+    // persistTherapyNights batches a chunk: a SINGLE upsert call
+    // passing the deduped array of rows that carried data.
     const upserts = getSupabaseWritePayloads(
       "patient_therapy_nights",
       "upsert",
     );
     expect(upserts).toHaveLength(1);
     const rows = upserts[0] as Record<string, unknown>[];
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       patient_id: PATIENT_ID,
       night_date: "2026-05-04",
       source: "resmed_airview",
-      source_event_id: "evt_1",
+      // source_event_id is derived deterministically as source:night.
+      source_event_id: "resmed_airview:2026-05-04",
       usage_minutes: 415,
-      // numeric columns serialized as strings; the adapter contract
-      // lets the route translate.
+      // numeric columns serialized as strings.
       ahi: "1.2",
       leak_rate_l_min: "12.4",
     });
@@ -283,7 +329,7 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
     expect(audit.metadata).toEqual({
       patient_id: PATIENT_ID,
       source: "resmed_airview",
-      import_count: 2,
+      import_count: 1,
       since_date: "2026-05-01",
     });
     // No PHI in the envelope: no usage / AHI / leak fields.

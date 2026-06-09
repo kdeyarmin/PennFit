@@ -22,9 +22,19 @@
 //          admin session.
 //
 //   POST   /admin/prescription-requests/:id/send-fax
-//          Dispatch via Telnyx. Idempotent: a packet already in
-//          status=sent_fax returns 409 (CSR should use re-send
-//          which is a deliberate follow-up, not implemented yet).
+//          First dispatch via Telnyx. Only valid from status=draft or
+//          status=failed; a packet already in flight (sent_fax /
+//          delivered) returns 409 — use /resend-fax for a deliberate
+//          follow-up.
+//
+//   POST   /admin/prescription-requests/:id/resend-fax
+//          Deliberate re-dispatch of an in-flight packet (status
+//          sent_fax or delivered) when the physician hasn't returned
+//          it — re-renders the same packet and re-faxes it. Refuses
+//          terminal states (signed / void / expired); for draft /
+//          failed use /send-fax. Audited as a distinct
+//          `prescription_request.resent_fax` action so a re-send is
+//          never mistaken for an accidental double-send.
 //
 //   POST   /admin/prescription-requests/:id/mark-signed
 //          CSR stamps when the signed PDF returns via fax /
@@ -42,7 +52,12 @@
 // PHI posture: list/detail responses include patient + provider
 // identifiers (PHI). The logger emits packet id + status only.
 
-import { Router, type IRouter } from "express";
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+} from "express";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 
@@ -350,6 +365,149 @@ router.get(
   },
 );
 
+/**
+ * Shared Telnyx dispatch for a prescription packet, used by both the
+ * first send (`/send-fax`) and the deliberate re-send (`/resend-fax`).
+ * The status guard differs per route (which lifecycle states are
+ * eligible) and is checked by the caller; this helper owns the
+ * render-verify → config-check → dispatch → stamp → audit pipeline so
+ * the two routes can't drift apart. `isResend` only changes the audit
+ * action and the logged event name — the wire behaviour is identical
+ * (re-render the same packet, re-fax to the return number).
+ */
+async function dispatchPacketFax(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  packet: { id: string; return_fax_e164: string | null },
+  req: Request,
+  res: Response,
+  { isResend }: { isResend: boolean },
+): Promise<void> {
+  if (!packet.return_fax_e164) {
+    res.status(409).json({ error: "no_return_fax" });
+    return;
+  }
+
+  // Verify inputs render before dispatch so we don't fire a Telnyx
+  // bill on a packet that the public fetch would 422 on.
+  const resolved = await resolvePrescriptionRequestInputs(supabase, packet.id);
+  if (resolved.kind !== "ok") {
+    res.status(422).json({
+      error: "invalid_inputs",
+      missing:
+        resolved.kind === "invalid_inputs" ? resolved.missing : ["unknown"],
+    });
+    return;
+  }
+  const validated = validatePrescriptionRequestInputs(resolved.inputs);
+  if (!validated.ok) {
+    res
+      .status(422)
+      .json({ error: "invalid_inputs", missing: validated.missing });
+    return;
+  }
+
+  // Configuration check: same posture as physician-fax-outreach
+  // (TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER
+  // + TELNYX_PUBLIC_KEY + public base URL). TELNYX_PUBLIC_KEY is required
+  // because without it the webhook router rejects every status callback,
+  // so a sent packet would never get its delivered/failed update. When
+  // unconfigured, leave the packet status untouched so the CSR can re-fire
+  // after env is set; surface a 503 so the UI can show an actionable error.
+  const baseUrl = getFaxPublicBaseUrl();
+  const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER?.trim();
+  if (
+    !process.env.TELNYX_API_KEY?.trim() ||
+    !process.env.TELNYX_FAX_CONNECTION_ID?.trim() ||
+    !process.env.TELNYX_PUBLIC_KEY?.trim() ||
+    !fromNumber ||
+    !baseUrl
+  ) {
+    res.status(503).json({ error: "fax_not_configured" });
+    return;
+  }
+
+  const token = signPrescriptionRequestToken(packet.id);
+  const mediaUrl = `${baseUrl}/resupply-api/rx-request/document/${token}`;
+  const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
+  const faxClient = createTelnyxFaxClient();
+  const nowIso = new Date().toISOString();
+  try {
+    const result = await faxClient.sendFax({
+      to: packet.return_fax_e164,
+      from: fromNumber,
+      mediaUrl,
+      statusCallbackUrl,
+    });
+    const update: PacketUpdate = {
+      status: "sent_fax",
+      sent_to_fax_e164: packet.return_fax_e164,
+      sent_at: nowIso,
+      // A re-send clears the prior in-flight delivery/failure stamps so
+      // the webhook callback for THIS dispatch lands on a clean slate.
+      delivered_at: null,
+      failed_at: null,
+      failure_reason: null,
+      vendor_ref: result.id,
+      vendor_name: "telnyx",
+      updated_at: nowIso,
+    };
+    const { error: stampErr } = await supabase
+      .schema("resupply")
+      .from("prescription_request_packets")
+      .update(update)
+      .eq("id", packet.id);
+    if (stampErr) {
+      logger.warn(
+        {
+          packet_id: packet.id,
+          vendor_ref: result.id,
+          err: stampErr.message,
+        },
+        "prescription_request.send.db_stamp_failed",
+      );
+    }
+    await logAudit({
+      action: isResend
+        ? "prescription_request.resent_fax"
+        : "prescription_request.sent_fax",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "prescription_request_packets",
+      targetId: packet.id,
+      metadata: { vendor_ref: result.id, resend: isResend },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        `prescription_request.${isResend ? "resent_fax" : "sent_fax"} audit write failed`,
+      );
+    });
+    res.status(200).json({
+      status: "sent_fax",
+      vendorRef: result.id,
+      resent: isResend,
+    });
+  } catch (err) {
+    const msg =
+      err instanceof TelnyxApiError
+        ? `Telnyx fax error: ${err.message}`
+        : `Fax dispatch error: ${String(err)}`;
+    await supabase
+      .schema("resupply")
+      .from("prescription_request_packets")
+      .update({
+        status: "failed",
+        failed_at: nowIso,
+        failure_reason: msg.slice(0, 2000),
+        updated_at: nowIso,
+      })
+      .eq("id", packet.id);
+    logger.warn({ packet_id: packet.id }, "prescription_request.send.failed");
+    res.status(502).json({ error: "fax_dispatch_failed", message: msg });
+  }
+}
+
 router.post(
   "/admin/prescription-requests/:id/send-fax",
   requirePermission("patients.update"),
@@ -378,131 +536,57 @@ router.post(
     if (packet.status !== "draft" && packet.status !== "failed") {
       res.status(409).json({
         error: "invalid_status",
-        message: `Cannot dispatch a packet in status "${packet.status.replace(/_/g, " ")}".`,
+        message:
+          packet.status === "sent_fax" || packet.status === "delivered"
+            ? `Packet already sent — use re-send for a deliberate follow-up.`
+            : `Cannot dispatch a packet in status "${packet.status.replace(/_/g, " ")}".`,
       });
       return;
     }
-    if (!packet.return_fax_e164) {
-      res.status(409).json({ error: "no_return_fax" });
-      return;
-    }
+    await dispatchPacketFax(supabase, packet, req, res, { isResend: false });
+  },
+);
 
-    // Verify inputs render before dispatch so we don't fire a Telnyx
-    // bill on a packet that the public fetch would 422 on.
-    const resolved = await resolvePrescriptionRequestInputs(
-      supabase,
-      packet.id,
-    );
-    if (resolved.kind !== "ok") {
-      res.status(422).json({
-        error: "invalid_inputs",
-        missing:
-          resolved.kind === "invalid_inputs" ? resolved.missing : ["unknown"],
+router.post(
+  "/admin/prescription-requests/:id/resend-fax",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "prescription_requests.resend_fax",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: packet } = await supabase
+      .schema("resupply")
+      .from("prescription_request_packets")
+      .select("id, status, return_fax_e164")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!packet) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // Re-send is only meaningful for a packet that's already in flight
+    // and awaiting the physician's signature. draft / failed haven't
+    // been sent yet (use /send-fax); signed / void / expired are
+    // terminal.
+    if (packet.status !== "sent_fax" && packet.status !== "delivered") {
+      res.status(409).json({
+        error: "invalid_status",
+        message:
+          packet.status === "draft" || packet.status === "failed"
+            ? `Packet has not been sent yet — use send-fax for the first dispatch.`
+            : `Cannot re-send a packet in status "${packet.status.replace(/_/g, " ")}".`,
       });
       return;
     }
-    const validated = validatePrescriptionRequestInputs(resolved.inputs);
-    if (!validated.ok) {
-      res
-        .status(422)
-        .json({ error: "invalid_inputs", missing: validated.missing });
-      return;
-    }
-
-    // Configuration check: same posture as physician-fax-outreach
-    // (TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER
-    // + TELNYX_PUBLIC_KEY + public base URL). TELNYX_PUBLIC_KEY is required
-    // because without it the webhook router rejects every status callback,
-    // so a sent packet would never get its delivered/failed update. When
-    // unconfigured, leave the packet in draft so the CSR can re-fire after
-    // env is set; surface a 503 so the UI can show an actionable error.
-    const baseUrl = getFaxPublicBaseUrl();
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER?.trim();
-    if (
-      !process.env.TELNYX_API_KEY?.trim() ||
-      !process.env.TELNYX_FAX_CONNECTION_ID?.trim() ||
-      !process.env.TELNYX_PUBLIC_KEY?.trim() ||
-      !fromNumber ||
-      !baseUrl
-    ) {
-      res.status(503).json({ error: "fax_not_configured" });
-      return;
-    }
-
-    const token = signPrescriptionRequestToken(packet.id);
-    const mediaUrl = `${baseUrl}/resupply-api/rx-request/document/${token}`;
-    const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const faxClient = createTelnyxFaxClient();
-    const nowIso = new Date().toISOString();
-    try {
-      const result = await faxClient.sendFax({
-        to: packet.return_fax_e164,
-        from: fromNumber,
-        mediaUrl,
-        statusCallbackUrl,
-      });
-      const update: PacketUpdate = {
-        status: "sent_fax",
-        sent_to_fax_e164: packet.return_fax_e164,
-        sent_at: nowIso,
-        failed_at: null,
-        failure_reason: null,
-        vendor_ref: result.id,
-        vendor_name: "telnyx",
-        updated_at: nowIso,
-      };
-      const { error: stampErr } = await supabase
-        .schema("resupply")
-        .from("prescription_request_packets")
-        .update(update)
-        .eq("id", packet.id);
-      if (stampErr) {
-        logger.warn(
-          {
-            packet_id: packet.id,
-            vendor_ref: result.id,
-            err: stampErr.message,
-          },
-          "prescription_request.send.db_stamp_failed",
-        );
-      }
-      await logAudit({
-        action: "prescription_request.sent_fax",
-        adminEmail: req.adminEmail ?? null,
-        adminUserId: req.adminUserId ?? null,
-        targetTable: "prescription_request_packets",
-        targetId: packet.id,
-        metadata: { vendor_ref: result.id },
-        ip: req.ip ?? null,
-        userAgent: req.get("user-agent") ?? null,
-      }).catch((err) => {
-        logger.warn(
-          { err },
-          "prescription_request.sent_fax audit write failed",
-        );
-      });
-      res.status(200).json({
-        status: "sent_fax",
-        vendorRef: result.id,
-      });
-    } catch (err) {
-      const msg =
-        err instanceof TelnyxApiError
-          ? `Telnyx fax error: ${err.message}`
-          : `Fax dispatch error: ${String(err)}`;
-      await supabase
-        .schema("resupply")
-        .from("prescription_request_packets")
-        .update({
-          status: "failed",
-          failed_at: nowIso,
-          failure_reason: msg.slice(0, 2000),
-          updated_at: nowIso,
-        })
-        .eq("id", packet.id);
-      logger.warn({ packet_id: packet.id }, "prescription_request.send.failed");
-      res.status(502).json({ error: "fax_dispatch_failed", message: msg });
-    }
+    await dispatchPacketFax(supabase, packet, req, res, { isResend: true });
   },
 );
 
