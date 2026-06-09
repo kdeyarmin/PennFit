@@ -531,3 +531,158 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// get_customer_chart — gated consolidated snapshot for the verified caller
+// ---------------------------------------------------------------------------
+// The chart issues four reads CONCURRENTLY via Promise.all, so the stub
+// must hand each `from(table)` its OWN builder bound to that table — a
+// single shared builder (as used by the sequential place_resupply_order
+// stub) would race and resolve every chain against the last table seen.
+
+interface ChartStubOpts {
+  patient: { date_of_birth: string | null; legal_first_name: string | null };
+  prescriptions: Array<{ item_sku: string; cadence_days: number }>;
+  lastFulfillment: { created_at: string } | null;
+  openFollowups: Array<{ id: string }>;
+}
+
+function buildStubSupabaseForChart(opts: ChartStubOpts) {
+  const responseFor = (table: string): { data: unknown; error: null } => {
+    switch (table) {
+      case "patients":
+        return { data: opts.patient, error: null };
+      case "prescriptions":
+        return { data: opts.prescriptions, error: null };
+      case "fulfillments":
+        return { data: opts.lastFulfillment, error: null };
+      case "patient_followups":
+        return { data: opts.openFollowups, error: null };
+      default:
+        return { data: null, error: null };
+    }
+  };
+  const makeBuilder = (table: string): Record<string, unknown> => {
+    const b: Record<string, unknown> = {
+      select: () => b,
+      update: () => b,
+      eq: () => b,
+      is: () => b,
+      order: () => b,
+      limit: () => b,
+      maybeSingle: () => Promise.resolve(responseFor(table)),
+      single: () => Promise.resolve(responseFor(table)),
+      then: (
+        onfulfilled: (v: unknown) => unknown,
+        onrejected?: (e: unknown) => unknown,
+      ) => Promise.resolve(responseFor(table)).then(onfulfilled, onrejected),
+    };
+    return b;
+  };
+  return {
+    schema: () => ({
+      from: (table: string) => makeBuilder(table),
+    }),
+  } as unknown as never;
+}
+
+describe("VoiceToolDispatcher — get_customer_chart", () => {
+  const RICH_CHART: ChartStubOpts = {
+    patient: { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+    prescriptions: [
+      { item_sku: "A7030", cadence_days: 30 },
+      { item_sku: "A7034", cadence_days: 90 },
+    ],
+    lastFulfillment: { created_at: "2026-05-01T00:00:00.000Z" },
+    openFollowups: [{ id: "f1" }],
+  };
+
+  it("is gated behind identity verification (empty stub before verify)", async () => {
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabaseForChart(RICH_CHART),
+    });
+
+    const res = await dispatcher.dispatch({
+      callId: "g1",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(res.result).toEqual({
+      kind: "patient",
+      supplies_due: [],
+      has_open_followups: false,
+    });
+  });
+
+  it("returns a populated, PHI-scrubbed chart after identity is verified", async () => {
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabaseForChart(RICH_CHART),
+    });
+    await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_patient_identity",
+      args: { date_of_birth: "1980-01-01" },
+    });
+
+    const res = await dispatcher.dispatch({
+      callId: "g2",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(res.result).toEqual({
+      kind: "patient",
+      first_name: "Alex",
+      supplies_due: [
+        {
+          sku: "A7030",
+          description: "A7030",
+          quantity: 1,
+          due_reason: "every 30 days",
+        },
+        {
+          sku: "A7034",
+          description: "A7034",
+          quantity: 1,
+          due_reason: "every 90 days",
+        },
+      ],
+      recent_order_summary: {
+        last_order_at: "2026-05-01T00:00:00.000Z",
+        open_subscription: false,
+      },
+      has_open_followups: true,
+    });
+  });
+
+  it("reports no open follow-ups and a null last order when there's no history", async () => {
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabaseForChart({
+        patient: { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
+        prescriptions: [],
+        lastFulfillment: null,
+        openFollowups: [],
+      }),
+    });
+    await dispatcher.dispatch({
+      callId: "v",
+      name: "verify_patient_identity",
+      args: { date_of_birth: "1980-01-01" },
+    });
+
+    const res = await dispatcher.dispatch({
+      callId: "g3",
+      name: "get_customer_chart",
+      args: {},
+    });
+    expect(res.result).toEqual({
+      kind: "patient",
+      first_name: "Alex",
+      supplies_due: [],
+      recent_order_summary: { last_order_at: null, open_subscription: false },
+      has_open_followups: false,
+    });
+  });
+});

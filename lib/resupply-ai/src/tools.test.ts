@@ -14,6 +14,7 @@ import {
 const EXAMPLES: Record<ToolName, Record<string, unknown>> = {
   verify_patient_identity: { date_of_birth: "1972-01-05" },
   lookup_resupply_inventory: {},
+  get_customer_chart: {},
   get_shipping_address: {},
   update_shipping_address: {
     street: "123 Walnut St Apt 4B",

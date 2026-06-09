@@ -77,6 +77,12 @@ function identityRequiredResultFor<K extends ToolName>(
       } as DispatchToolResult<K>["result"];
     case "lookup_resupply_inventory":
       return { items: [] } as unknown as DispatchToolResult<K>["result"];
+    case "get_customer_chart":
+      return {
+        kind: "patient",
+        supplies_due: [],
+        has_open_followups: false,
+      } as unknown as DispatchToolResult<K>["result"];
     case "get_shipping_address":
       return {
         street_name: "",
@@ -177,6 +183,10 @@ class Impl implements VoiceToolDispatcher {
       case "lookup_resupply_inventory":
         return (await this.lookupInventory(
           call as DispatchToolCall<"lookup_resupply_inventory">,
+        )) as DispatchToolResult<K>;
+      case "get_customer_chart":
+        return (await this.getCustomerChart(
+          call as DispatchToolCall<"get_customer_chart">,
         )) as DispatchToolResult<K>;
       case "get_shipping_address":
         return (await this.getShippingAddress(
@@ -293,6 +303,81 @@ class Impl implements VoiceToolDispatcher {
       callId: call.callId,
       name: call.name,
       result: { items },
+    };
+  }
+
+  private async getCustomerChart(
+    call: DispatchToolCall<"get_customer_chart">,
+  ): Promise<DispatchToolResult<"get_customer_chart">> {
+    // Consolidated, SAFE-TO-VOICE account snapshot for the verified
+    // caller: first name + supplies due + latest order date + an
+    // open-followup flag. We never return addresses, order contents,
+    // DOB, phone, email, or any identifier (the model never sees the
+    // bound patientId). The agent prompt also forbids reading full PHI
+    // aloud — this is defense in depth.
+    const patientId = this.deps.patientId;
+    const [patientRes, rxRes, fulfillmentRes, followupRes] = await Promise.all([
+      this.supabase
+        .schema("resupply")
+        .from("patients")
+        .select("legal_first_name")
+        .eq("id", patientId)
+        .limit(1)
+        .maybeSingle(),
+      this.supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .select("item_sku, cadence_days")
+        .eq("patient_id", patientId)
+        .eq("status", "active"),
+      this.supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select("created_at")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      this.supabase
+        .schema("resupply")
+        .from("patient_followups")
+        .select("id")
+        .eq("patient_id", patientId)
+        .is("completed_at", null)
+        .limit(1),
+    ]);
+    if (patientRes.error) throw patientRes.error;
+    if (rxRes.error) throw rxRes.error;
+    if (fulfillmentRes.error) throw fulfillmentRes.error;
+    if (followupRes.error) throw followupRes.error;
+
+    const suppliesDue = (rxRes.data ?? [])
+      .filter((r) => r.item_sku)
+      .map((r) => ({
+        sku: r.item_sku,
+        // Same as lookup_resupply_inventory: we don't carry SKU
+        // descriptions in our schema, so the SKU doubles as the
+        // description for now.
+        description: r.item_sku,
+        quantity: 1,
+        due_reason: `every ${r.cadence_days} days`,
+      }));
+
+    return {
+      callId: call.callId,
+      name: call.name,
+      result: {
+        kind: "patient",
+        first_name: patientRes.data?.legal_first_name ?? undefined,
+        supplies_due: suppliesDue,
+        recent_order_summary: {
+          last_order_at: fulfillmentRes.data?.created_at ?? null,
+          // Patients aren't Stripe subscribers; their recurring resupply
+          // is represented by supplies_due, not an "open subscription".
+          open_subscription: false,
+        },
+        has_open_followups: (followupRes.data ?? []).length > 0,
+      },
     };
   }
 

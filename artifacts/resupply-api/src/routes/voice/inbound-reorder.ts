@@ -28,7 +28,6 @@ import {
   getSupabaseServiceRoleClient,
   type Json,
 } from "@workspace/resupply-db";
-import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   buildConnectStreamTwiml,
   buildHangupTwiml,
@@ -38,6 +37,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
+import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
 import {
   publicWsOriginFromBaseUrl,
   readTwilioWebhookAuthTokenOrNull,
@@ -354,40 +354,29 @@ async function identifyCaller(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   fromE164: string,
 ): Promise<IdentifyResult> {
-  if (!fromE164)
-    return { patientId: null, shopCustomerId: null, ambiguous: false };
-  // Use the canonical E.164 normalizer (same as the SMS + inbound voice
-  // paths) so a bare 10-digit US caller ID maps to +1XXXXXXXXXX and
-  // matches the stored patients.phone_e164. The previous naive
-  // `+${digits}` produced `+2155551212` (no country code) and silently
-  // failed to identify a known caller. null ⇒ unparseable ⇒ unidentified.
-  const normalised = normalizeE164(fromE164);
-  if (!normalised)
-    return { patientId: null, shopCustomerId: null, ambiguous: false };
-  // Pull up to 2 rows to detect a shared number. Multiple patients on one
-  // phone (a family/household plan) can't be safely auto-routed to a
-  // patient-scoped AI reorder agent — binding to an arbitrary [0] would
-  // expose one patient's episode to whoever called. Mirror the SMS inbound
-  // handler: on ambiguity, treat as unidentified and let the caller route
-  // to a human (where identity can be verified out of band).
-  const { data: rows } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id")
-    .eq("phone_e164", normalised)
-    .limit(2);
-  const matches = rows ?? [];
-  if (matches.length > 1) {
-    return { patientId: null, shopCustomerId: null, ambiguous: true };
+  // Unified resolution across clinical patients + cash-pay storefront
+  // customers (patients win on a tie). The shared-number / ambiguity
+  // rules live in resolveCallerByPhone; we map its discriminated result
+  // back onto the IdentifyResult shape the rest of this route expects.
+  const resolution = await resolveCallerByPhone(supabase, fromE164);
+  switch (resolution.kind) {
+    case "patient":
+      return {
+        patientId: resolution.patientId,
+        shopCustomerId: null,
+        ambiguous: false,
+      };
+    case "shop_customer":
+      return {
+        patientId: null,
+        shopCustomerId: resolution.customerId,
+        ambiguous: false,
+      };
+    case "ambiguous":
+      return { patientId: null, shopCustomerId: null, ambiguous: true };
+    case "none":
+      return { patientId: null, shopCustomerId: null, ambiguous: false };
   }
-  return {
-    patientId: matches[0]?.id ?? null,
-    // shop_customers doesn't carry phone_e164 today; we leave the
-    // hookup for when the storefront captures it (storefront opt-in
-    // SMS flow).
-    shopCustomerId: null,
-    ambiguous: false,
-  };
 }
 
 export default router;

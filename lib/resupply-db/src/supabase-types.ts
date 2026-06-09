@@ -3891,6 +3891,8 @@ export interface Database {
           caregiver_name: string | null;
           caregiver_consent_at: string | null;
           caregiver_revoked_at: string | null;
+          // E.164 phone captured at Stripe Checkout (migration 0245).
+          phone_e164: string | null;
           created_at: string;
           updated_at: string;
         };

@@ -30,6 +30,7 @@ import { z } from "zod";
 export const TOOL_NAMES = [
   "verify_patient_identity",
   "lookup_resupply_inventory",
+  "get_customer_chart",
   "get_shipping_address",
   "update_shipping_address",
   "place_resupply_order",
@@ -56,6 +57,8 @@ export const verifyPatientIdentityArgs = z
   .strict();
 
 export const lookupResupplyInventoryArgs = z.object({}).strict();
+
+export const getCustomerChartArgs = z.object({}).strict();
 
 export const getShippingAddressArgs = z.object({}).strict();
 
@@ -123,6 +126,7 @@ export const endCallArgs = z
 export const TOOL_ARG_SCHEMAS = {
   verify_patient_identity: verifyPatientIdentityArgs,
   lookup_resupply_inventory: lookupResupplyInventoryArgs,
+  get_customer_chart: getCustomerChartArgs,
   get_shipping_address: getShippingAddressArgs,
   update_shipping_address: updateShippingAddressArgs,
   place_resupply_order: placeResupplyOrderArgs,
@@ -160,6 +164,21 @@ export interface LookupResupplyInventoryResult {
   items: InventoryItem[];
 }
 
+export interface CustomerChartResult {
+  kind: "patient" | "shop_customer";
+  /** First name — the caller already stated it during verify; safe to use. */
+  first_name?: string;
+  /** Supplies currently due. Empty for storefront (cash-pay) customers. */
+  supplies_due: InventoryItem[];
+  /** Order/subscription crumbs — dates + booleans only, never contents. */
+  recent_order_summary?: {
+    last_order_at: string | null;
+    open_subscription: boolean;
+  };
+  /** Whether the account has open follow-ups — a flag, not the contents. */
+  has_open_followups: boolean;
+}
+
 export interface ShippingAddressResult {
   /** Street name only — no number/apartment. Safe to read aloud. */
   street_name: string;
@@ -193,6 +212,7 @@ export interface EndCallResult {
 export interface ToolResultByName {
   verify_patient_identity: VerifyPatientIdentityResult;
   lookup_resupply_inventory: LookupResupplyInventoryResult;
+  get_customer_chart: CustomerChartResult;
   get_shipping_address: ShippingAddressResult;
   update_shipping_address: UpdateShippingAddressResult;
   place_resupply_order: PlaceResupplyOrderResult;
@@ -246,6 +266,17 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     name: "lookup_resupply_inventory",
     description:
       "Return the list of CPAP supplies currently due for resupply for the verified patient.",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "get_customer_chart",
+    description:
+      "Return a SAFE-TO-READ snapshot of the verified caller's account: their first name, any supplies due, whether they have a recent order or an active subscription, and whether there are open follow-ups. Never read back full addresses, full order contents, date of birth, phone, or email. Requires identity verification first.",
     parameters: {
       type: "object",
       properties: {},
@@ -437,6 +468,7 @@ export function summarizeToolArgsForAudit(
       return { name, has_dob: typeof a.date_of_birth === "string" };
     case "lookup_resupply_inventory":
     case "get_shipping_address":
+    case "get_customer_chart":
       return { name };
     case "update_shipping_address":
       return {
