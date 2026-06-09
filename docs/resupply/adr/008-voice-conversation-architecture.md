@@ -22,12 +22,12 @@ admins can audit every call and so SMS/email follow-ups carry the
 same context.
 
 Hard constraints, derived from the threat model and the Anthropic /
-OpenAI / Twilio BAA documentation:
+OpenAI / Twilio HIPAA-eligibility documentation:
 
 1. **PHI-safe**: the patient's phone number, address, DOB, and prescription
    data live encrypted in `resupply.*` (per ADR 007). The voice path must
    never log, return, or otherwise spill those values, and must never
-   send them to a model that we don't have a BAA with.
+   send them to a model vendor that is not HIPAA-eligible.
 2. **Audio is ephemeral**: we keep the **transcript** in `messages`
    (encrypted) but discard the audio bytes themselves — no recordings,
    no S3, no cache.
@@ -45,7 +45,7 @@ OpenAI / Twilio BAA documentation:
 
 ADR 006 picked Anthropic Claude as the **text** conversation model.
 That choice doesn't carry to voice: Claude does not (yet) have a
-realtime speech-to-speech API under BAA, so a voice-conversation
+HIPAA-eligible realtime speech-to-speech API, so a voice-conversation
 deployment that uses Claude requires gluing together STT + LLM + TTS
 across two or three vendors, plus a turn-detection layer. We chose
 instead to use OpenAI's Realtime API (`gpt-realtime`, voice `marin`)
@@ -59,8 +59,8 @@ for voice specifically, while leaving Claude as the SMS/email model.
   (bidirectional WebSocket, **g711 µ-law @ 8 kHz**). ADR 004 already
   picked Twilio.
 - **Voice model**: OpenAI Realtime API (`gpt-realtime`, voice `marin`)
-  over `wss://api.openai.com/v1/realtime`, **under the OpenAI BAA**
-  (`OPENAI_API_KEY` must point at a BAA-covered project).
+  over `wss://api.openai.com/v1/realtime`, **on a HIPAA-eligible OpenAI
+  project** (`OPENAI_API_KEY` must point at a HIPAA-eligible project).
 - **Audio format**: configure Realtime with
   `input_audio_format=g711_ulaw` AND `output_audio_format=g711_ulaw` so
   there is **no transcoding** between Twilio and OpenAI in either
@@ -193,7 +193,7 @@ returns 503 with a stable error code when missing:
 
 | Env var                             | Required for                | Source                 |
 | ----------------------------------- | --------------------------- | ---------------------- |
-| `OPENAI_API_KEY`                    | WS bridge + `place-call`    | OpenAI BAA project key |
+| `OPENAI_API_KEY`                    | WS bridge + `place-call`    | OpenAI project key     |
 | `TWILIO_ACCOUNT_SID`                | All voice routes            | Twilio integration     |
 | `TWILIO_AUTH_TOKEN`                 | Signature validation + REST | Twilio integration     |
 | `RESUPPLY_VOICE_PUBLIC_BASE_URL`    | TwiML + Status callback URL | Admin-supplied         |
@@ -205,8 +205,8 @@ it explicitly.
 
 ## Consequences
 
-- **One BAA per modality.** Voice goes through OpenAI; SMS/email goes
-  through Anthropic. Two BAAs to manage, but each adapter stays simple
+- **One vendor per modality.** Voice goes through OpenAI; SMS/email goes
+  through Anthropic. Two vendors to manage, but each adapter stays simple
   and switchable.
 - **No recordings.** We have transcripts, not audio. Resolves the
   retention question at the design layer rather than the policy layer.
@@ -221,7 +221,7 @@ it explicitly.
   dispatcher boundary mean the rewrite is contained, not project-wide.
 - **µ-law passthrough means no audio inspection.** We give up the
   ability to record-on-error or replay a problem call's audio. We
-  accepted that trade for the BAA + retention story.
+  accepted that trade for the PHI + retention story.
 - **Inbound is deferred.** The TwiML inbound path needs to map an
   E.164 number back to a `patients` row. The phone column is encrypted
   random-IV (`encryptedText`) so equality lookup is impossible without

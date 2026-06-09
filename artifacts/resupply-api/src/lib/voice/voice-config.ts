@@ -66,8 +66,7 @@ export interface VoiceConfig {
    * before being streamed to Twilio. When UNSET, the voice agent falls
    * back to OpenAI's built-in `cedar` voice (the historical default).
    *
-   * PHI note: agent speech IS patient-facing PHI by definition,
-   * covered by the executed ElevenLabs BAA.
+   * PHI note: agent speech IS patient-facing PHI by definition.
    */
   elevenLabsApiKey?: string;
   /** Optional ElevenLabs voice id override (defaults to the client's). */

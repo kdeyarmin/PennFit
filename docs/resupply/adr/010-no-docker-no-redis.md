@@ -32,6 +32,6 @@ Drop all four locally-run containers from the dev environment.
 ## Alternatives Considered
 
 - **Run a Railway-managed Redis** — the Railway add-on catalog has Redis,
-  but adopting it would add a vendor and a BAA we don't otherwise need.
+  but adopting it would add a vendor dependency we don't otherwise need.
 - **Keep Mailhog and run it via Nix** — possible but adds a service for a
   problem already solved by the mock adapter.

@@ -202,32 +202,6 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
   },
   // ── Compliance auto-workflow (Phase 11) ──
   {
-    type: "compliance.baa_expiring_soon",
-    description:
-      "Business Associate Agreement is within the 60-day expiry window. Emitted once per BAA per 24-hour cooldown.",
-    publisher: "lib/compliance/auto-workflow.ts",
-    payloadFields: {
-      baa_id: "uuid",
-      vendor_slug: "string",
-      vendor_kind: "string",
-      expires_on: "string",
-    },
-    carriesPatientId: false,
-  },
-  {
-    type: "compliance.baa_expired",
-    description:
-      "BAA has expired without renewal — a HIPAA §164.504(e) violation in flight. Emitted once per BAA per 24-hour cooldown.",
-    publisher: "lib/compliance/auto-workflow.ts",
-    payloadFields: {
-      baa_id: "uuid",
-      vendor_slug: "string",
-      vendor_kind: "string",
-      expires_on: "string",
-    },
-    carriesPatientId: false,
-  },
-  {
     type: "compliance.oig_screening_overdue",
     description:
       "No OIG LEIE screening has been recorded in the last 35 days. Emitted once per 24-hour cooldown.",
