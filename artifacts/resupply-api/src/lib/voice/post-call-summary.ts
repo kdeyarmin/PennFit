@@ -33,8 +33,8 @@
 //
 // PHI containment:
 //   The transcript IS PHI — patients say their date of birth, address,
-//   prescription, sometimes clinical symptoms. We send it to Claude
-//   under the existing Anthropic BAA. The audit row metadata is
+//   prescription, sometimes clinical symptoms. We send it to Claude.
+//   The audit row metadata is
 //   sanitized by @workspace/resupply-audit before write (PHI denylist,
 //   size cap, depth cap), so any model-volunteered PHI is filtered
 //   before persistence.

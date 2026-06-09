@@ -1,7 +1,7 @@
 // Therapy-cloud partner adapter interface (Phase E.1 / feature #18).
 //
 // Production deployment will populate this with one or more concrete
-// adapters once we have a partner agreement (BAA + API access) with
+// adapters once we have a partner agreement (API access) with
 // ResMed AirView, Philips Care Orchestrator, or both. Until then,
 // the registry below contains only stub adapters that report
 // `configured: false` so every consumer (the sync endpoint, the

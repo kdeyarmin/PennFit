@@ -367,28 +367,6 @@ export type StaffTrainingType = (typeof TRAINING_TYPE_VALUES)[number];
 // Phase 9 compliance machinery (migration 0141)
 // ────────────────────────────────────────────────────────────────
 
-export const BAA_VENDOR_KIND_VALUES = [
-  "clearinghouse",
-  "cloud_infrastructure",
-  "email_provider",
-  "sms_telecom_provider",
-  "ai_llm_provider",
-  "payment_processor",
-  "storage_provider",
-  "eprescribe",
-  "analytics",
-  "other",
-] as const;
-export type BaaVendorKind = (typeof BAA_VENDOR_KIND_VALUES)[number];
-
-export const BAA_STATUS_VALUES = [
-  "active",
-  "expired",
-  "terminated",
-  "pending",
-] as const;
-export type BaaStatus = (typeof BAA_STATUS_VALUES)[number];
-
 export const OIG_LEIE_SUBJECT_KIND_VALUES = [
   "admin_user",
   "provider",

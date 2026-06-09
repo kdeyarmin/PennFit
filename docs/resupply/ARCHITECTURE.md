@@ -161,7 +161,7 @@ which runs as part of the `resupply-check` validation step.
 
 - Pino structured logs to stdout from both the api and the worker.
   The Railway log viewer is the only sink in Phase 0.
-- Sentry (BAA tier) is added before Phase 9 production hardening (ADR 010).
+- Sentry is added before Phase 9 production hardening (ADR 010).
 - The `admin_audit_log`-style append-only audit table for the resupply
   product lives in `lib/resupply-audit`'s schema. Every PHI read or write
   by an admin writes one row.

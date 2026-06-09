@@ -7,7 +7,7 @@ authentication. The product direction has changed: we want sign-in
 for both staff and customers managed entirely inside this monorepo,
 with no third-party identity provider in the loop.
 
-The HIPAA BAA constraint that originally pushed us toward a vendor
+The HIPAA constraint that originally pushed us toward a vendor
 with healthcare paperwork is no longer a requirement for this
 decision. Compliance posture for PHI in the database (encryption at
 rest, audit logging, retention) is unchanged and continues to live
@@ -40,7 +40,7 @@ Build and own the authentication stack inside the monorepo:
 
 ## Consequences
 
-- No third-party identity vendor. No vendor BAA, no vendor outage,
+- No third-party identity vendor. No vendor lock-in, no vendor outage,
   no vendor cost line.
 - We now own the security boundary: password hashing, rate limiting,
   session revocation, account enumeration defenses, audit logging,

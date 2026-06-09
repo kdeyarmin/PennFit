@@ -16,7 +16,7 @@ call. We need an interactive, two-way messaging subsystem for:
 1. Outbound resupply reminders ("Time to refill your CPAP supplies — reply
    YES to confirm, NO to decline").
 2. Inbound replies from patients (SMS texts back, email link clicks).
-3. PHI-safe handling end to end (HIPAA / BAA constraints).
+3. PHI-safe handling end to end (HIPAA constraints).
 4. Integration with the existing single-writer audit trail
    (`lib/resupply-audit`) and encrypted-at-rest message store.
 
@@ -36,7 +36,7 @@ for "comms with patient", not two divergent ones.
 - Email is a new dependency: SendGrid via `@sendgrid/mail`. It lives in a
   brand-new `lib/resupply-email/` package, structurally symmetric with
   `lib/resupply-telecom/` (Rule 12 — see below). SendGrid was chosen over
-  AWS SES / Mailgun because SendGrid offers a BAA on Pro+ plans, has a
+  AWS SES / Mailgun because SendGrid is HIPAA-eligible on Pro+ plans, has a
   signed Event Webhook (we can verify delivery / bounce events), and has
   the lowest engineering surface for transactional templated email.
 - Inbound email PARSING (SendGrid Inbound Parse, parsing free-text

@@ -266,8 +266,8 @@ read — lives in [`README.md`](./README.md#environment-variables) and
 ## AI / communications stack (May 2026)
 
 Three independent AI vendors are wired into the codebase, each used
-where it's strongest. All three are HIPAA-eligible and covered by
-executed vendor BAAs, and gracefully degrade when their API key is unset.
+where it's strongest. All three are HIPAA-eligible and gracefully
+degrade when their API key is unset.
 
 | Surface                 | Primary                                        | Fallback                           | Key                                                |
 | ----------------------- | ---------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
@@ -327,7 +327,7 @@ Vendor clients live in `lib/resupply-ai/src/`:
   a missing key degrades gracefully, never breaks the call. A mid-call
   ElevenLabs failure drops that one turn's audio (logged as a `tts`
   session error) but does NOT end the call. **PHI:** synthesised text is
-  patient-facing speech, covered by the executed ElevenLabs BAA.
+  patient-facing speech.
 
 **Post-call summarization** (`artifacts/resupply-api/src/lib/voice/post-call-summary.ts`)
 runs Claude Sonnet 4.6 on the accumulated transcript turns after every

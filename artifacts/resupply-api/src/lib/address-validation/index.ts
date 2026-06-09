@@ -7,8 +7,8 @@
 // of avoidable RMA work. USPS / Smarty / Lob have address-correction
 // services that catch typos (Stret → Street, wrong ZIP for city) at
 // checkout time, before the order is paid. This module is the
-// adapter boundary; the actual partner integration lands when a BAA
-// + API key is configured.
+// adapter boundary; the actual partner integration lands when a
+// partner API key is configured.
 //
 // Posture in the meantime
 // -----------------------
@@ -40,7 +40,7 @@ const US_STATE_RE = /^[A-Z]{2}$/;
 
 /**
  * Heuristic-only address validator. Replaceable with a Smarty/USPS
- * adapter behind the same signature once a BAA is in place.
+ * adapter behind the same signature once a partner key is configured.
  */
 export function validateAddress(addr: AddressInput): AddressValidationResult {
   const reasons: string[] = [];

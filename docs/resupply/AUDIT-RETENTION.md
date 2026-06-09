@@ -22,7 +22,7 @@ sanitizer in `lib/resupply-audit/src/sanitize.ts` is the single
 chokepoint — see the file header for the active denylist plus
 size and depth caps.
 
-This isn't a HIPAA _requirement_ (BAAs don't mandate immutability),
+This isn't a HIPAA _requirement_,
 but it's how we keep the audit channel trustworthy: a row that can
 be silently rewritten by a compromised admin is not a useful
 forensic artifact.

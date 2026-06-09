@@ -68,8 +68,8 @@ propagation, role-scoped routes).
 
 This ADR should be reopened — not silently overturned — if:
 
-- The application takes a BAA with a signing partner that
-  explicitly requires column-level encryption with key custody
+- The application onboards a signing partner that explicitly
+  requires column-level encryption with key custody
   outside the application process. (Common ask from health-system
   partners, less common from device manufacturers.)
 - The deploy host stops providing transparent storage-layer

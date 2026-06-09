@@ -8,10 +8,9 @@
 // attaches, but they're typing far less.
 //
 // Design choices:
-//   * Reuses the existing BAA-covered Claude client (getAnthropicClient).
-//     No new OCR vendor, no new key, no new BAA. Faxes contain PHI; the
-//     synthesised request is patient-facing document text covered by the
-//     executed Anthropic BAA.
+//   * Reuses the existing Claude client (getAnthropicClient). No new
+//     OCR vendor, no new key. Faxes contain PHI; the synthesised
+//     request is patient-facing document text.
 //   * Fail-soft. No ANTHROPIC_API_KEY → { status: "offline" } and the
 //     CSR keys it by hand exactly as today. A model/parse error →
 //     { status: "failed" } — never throws into the request path.

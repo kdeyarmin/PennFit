@@ -54,7 +54,7 @@ the From itself stays one value.
    funnel to one inbox. Without, replies scatter across
    `orders@`, `noreply@`, `system@` — half of which nobody
    actually monitors.
-4. **Compliance footprint.** A BAA-bound domain (PHI in the
+4. **Compliance footprint.** A single sending domain (PHI in the
    reminder bodies) is one identity to audit, not five.
 
 ## What `createSendgridClient` enforces
