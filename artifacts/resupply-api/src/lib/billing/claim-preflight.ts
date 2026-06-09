@@ -516,7 +516,7 @@ export async function preflightClaim(
   const { data: lines } = await supabase
     .schema("resupply")
     .from("insurance_claim_line_items")
-    .select("id, hcpcs_code, modifier, billed_cents, quantity")
+    .select("id, hcpcs_code, modifier, billed_cents, quantity, narrative")
     .eq("claim_id", claim.id);
   if (!lines || lines.length === 0) {
     items.push({
@@ -549,6 +549,34 @@ export async function preflightClaim(
           kind: "edit_line_item",
           claimId: claim.id,
           lineId: zeroBilled[0]!.id,
+        },
+      });
+    }
+
+    // ── NOC / miscellaneous HCPCS need a narrative (837P NTE) ───────
+    // Medicare DME rejects a miscellaneous / not-otherwise-classified
+    // HCPCS line that carries no narrative (item description + MSRP). The
+    // 837P builder emits the loop-2400 NTE only when the line has one, so
+    // flag a NOC line whose `narrative` is blank before it's submitted.
+    const nocMissingNarrative = lines.filter(
+      (l) =>
+        isNocHcpcs(l.hcpcs_code) && (l.narrative ?? "").trim().length === 0,
+    );
+    if (nocMissingNarrative.length > 0) {
+      const first = nocMissingNarrative[0]!;
+      items.push({
+        key: "noc_narrative",
+        severity: "error",
+        label: "Miscellaneous HCPCS line needs a narrative",
+        detail: `${nocMissingNarrative
+          .map((l) => l.hcpcs_code)
+          .join(
+            ", ",
+          )} is a not-otherwise-classified code — Medicare DME requires an item description + MSRP narrative (837P NTE) or the line denies. Add it to the line.`,
+        fixAction: {
+          kind: "edit_line_item",
+          claimId: claim.id,
+          lineId: first.id,
         },
       });
     }
@@ -747,6 +775,29 @@ export async function preflightClaim(
     warningCount,
     items,
   };
+}
+
+/**
+ * Miscellaneous / not-otherwise-classified (NOC) HCPCS codes that
+ * Medicare DME requires a narrative (item description + MSRP) for. A
+ * narrative-less NOC line denies as unprocessable, so the preflight
+ * blocks on it. Kept deliberately small + DME-relevant (the codes a
+ * CPAP/DME supplier actually touches); extend as needed. Exported for
+ * unit testing.
+ */
+const NOC_HCPCS = new Set([
+  "E1399", // Durable medical equipment, miscellaneous
+  "A9999", // Miscellaneous DME supply or accessory, not otherwise specified
+  "K0108", // Wheelchair component or accessory, not otherwise specified
+  "A4649", // Surgical supply, miscellaneous
+  "E1699", // Dialysis equipment, not otherwise specified
+  "K0900", // Customized DME, other than wheelchair
+  "L9999", // Lower-limb orthosis/prosthesis, not otherwise specified
+]);
+
+export function isNocHcpcs(hcpcs: string | null | undefined): boolean {
+  if (!hcpcs) return false;
+  return NOC_HCPCS.has(hcpcs.trim().toUpperCase());
 }
 
 function missingPayer(claimId: string, detail: string): PreflightItem {

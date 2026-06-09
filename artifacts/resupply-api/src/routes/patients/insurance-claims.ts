@@ -136,6 +136,11 @@ const createLineBody = z
     description: z.string().trim().max(240).nullable().optional(),
     quantity: z.number().int().min(1).max(9999).default(1),
     billedCents: z.number().int().min(0),
+    // 837P loop-2400 NTE narrative (migration 0250) — payer-facing, capped
+    // at the X12 NTE02 80-char limit. Required by Medicare DME for NOC/misc
+    // HCPCS (E1399 etc.); the preflight blocks submit on a narrative-less
+    // NOC line.
+    narrative: z.string().trim().max(80).nullable().optional(),
   })
   .strict();
 
@@ -149,6 +154,10 @@ const patchLineBody = z
     allowedCents: z.number().int().min(0).optional(),
     paidCents: z.number().int().min(0).optional(),
     denialReason: z.string().trim().max(2000).nullable().optional(),
+    // 837P loop-2400 NTE narrative (migration 0250). Capped at the X12
+    // NTE02 80-char limit; the EDI builder truncates too, but reject
+    // overflow at the boundary so the operator sees it. Payer-facing.
+    narrative: z.string().trim().max(80).nullable().optional(),
   })
   .strict();
 
@@ -335,6 +344,7 @@ router.get(
         billedCents: l.billed_cents,
         allowedCents: l.allowed_cents,
         paidCents: l.paid_cents,
+        narrative: l.narrative,
         status: l.status,
         denialReason: l.denial_reason,
         createdAt: l.created_at,
@@ -657,6 +667,7 @@ router.post(
         description: b.description ?? null,
         quantity: b.quantity,
         billed_cents: b.billedCents,
+        narrative: b.narrative ?? null,
         status: "pending",
       })
       .select("id")
@@ -750,6 +761,7 @@ router.patch(
     if (b.allowedCents !== undefined) update.allowed_cents = b.allowedCents;
     if (b.paidCents !== undefined) update.paid_cents = b.paidCents;
     if (b.denialReason !== undefined) update.denial_reason = b.denialReason;
+    if (b.narrative !== undefined) update.narrative = b.narrative;
 
     const { error } = await supabase
       .schema("resupply")

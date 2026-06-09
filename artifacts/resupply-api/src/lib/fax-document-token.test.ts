@@ -27,6 +27,7 @@ import {
   signAppealFaxToken,
   signFaxDocumentToken,
   signManualDocumentFaxToken,
+  signPaRequestFaxToken,
   verifyFaxDocumentToken,
 } from "./fax-document-token";
 
@@ -52,6 +53,17 @@ describe("fax document kind", () => {
     if (r.valid) {
       expect(r.kind).toBe("manual_document");
       expect(r.outreachId).toBe("doc-1");
+    }
+  });
+
+  it("round-trips a PA-request token with kind=pa_request + composite id", () => {
+    const r = verifyFaxDocumentToken(
+      signPaRequestFaxToken("patient-abc", "pa-xyz"),
+    );
+    expect(r.valid).toBe(true);
+    if (r.valid) {
+      expect(r.kind).toBe("pa_request");
+      expect(r.outreachId).toBe("patient-abc:pa-xyz");
     }
   });
 });

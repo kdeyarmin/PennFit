@@ -99,6 +99,10 @@ const upsertBody = z
     claimFormat: z.enum(CLAIM_FORMAT_VALUES).default("837p"),
     paperOnly: z.boolean().default(false),
     requiresPriorAuthDme: z.boolean().default(false),
+    // When true, a patient whose primary coverage maps to this payer
+    // must have signed intake paperwork on file before any of their
+    // orders can be marked shipped (migration 0248).
+    requiresSignedPaperwork: z.boolean().default(false),
     priorAuthPhoneE164: z.string().trim().max(20).nullable().optional(),
     claimStatusPhoneE164: z.string().trim().max(20).nullable().optional(),
     providerPortalUrl: z.string().trim().max(240).nullable().optional(),
@@ -160,6 +164,7 @@ interface PayerRow {
   claim_format: string;
   paper_only: boolean;
   requires_prior_auth_dme: boolean;
+  requires_signed_paperwork: boolean;
   prior_auth_phone_e164: string | null;
   claim_status_phone_e164: string | null;
   provider_portal_url: string | null;
@@ -202,6 +207,7 @@ function rowToApi(r: PayerRow) {
     claimFormat: r.claim_format,
     paperOnly: r.paper_only,
     requiresPriorAuthDme: r.requires_prior_auth_dme,
+    requiresSignedPaperwork: r.requires_signed_paperwork,
     priorAuthPhoneE164: r.prior_auth_phone_e164,
     claimStatusPhoneE164: r.claim_status_phone_e164,
     providerPortalUrl: r.provider_portal_url,
@@ -231,7 +237,7 @@ function rowToApi(r: PayerRow) {
 }
 
 const FULL_SELECT =
-  "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, timely_filing_days, claims_address_line1, claims_address_line2, claims_city, claims_state, claims_zip, claims_phone_e164, claims_fax_e164, prior_auth_submission_method, prior_auth_fax_e164, prior_auth_turnaround_business_days, required_claim_modifiers, accepts_electronic_secondary, edi_enrollment_status, member_id_format_hint, requirements_last_verified_at, requirements_last_verified_by, created_at, updated_at";
+  "id, slug, display_name, payer_legal_name, parent_org, line_of_business, region, office_ally_payer_id, edi_5010_payer_id, claim_format, paper_only, requires_prior_auth_dme, requires_signed_paperwork, prior_auth_phone_e164, claim_status_phone_e164, provider_portal_url, fee_schedule_source, notes, is_active, timely_filing_days, claims_address_line1, claims_address_line2, claims_city, claims_state, claims_zip, claims_phone_e164, claims_fax_e164, prior_auth_submission_method, prior_auth_fax_e164, prior_auth_turnaround_business_days, required_claim_modifiers, accepts_electronic_secondary, edi_enrollment_status, member_id_format_hint, requirements_last_verified_at, requirements_last_verified_by, created_at, updated_at";
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get(
@@ -399,6 +405,7 @@ router.post(
         claim_format: b.claimFormat,
         paper_only: b.paperOnly,
         requires_prior_auth_dme: b.requiresPriorAuthDme,
+        requires_signed_paperwork: b.requiresSignedPaperwork,
         prior_auth_phone_e164: b.priorAuthPhoneE164 ?? null,
         claim_status_phone_e164: b.claimStatusPhoneE164 ?? null,
         provider_portal_url: b.providerPortalUrl ?? null,
@@ -493,6 +500,8 @@ router.patch(
     if (b.paperOnly !== undefined) update.paper_only = b.paperOnly;
     if (b.requiresPriorAuthDme !== undefined)
       update.requires_prior_auth_dme = b.requiresPriorAuthDme;
+    if (b.requiresSignedPaperwork !== undefined)
+      update.requires_signed_paperwork = b.requiresSignedPaperwork;
     if (b.priorAuthPhoneE164 !== undefined)
       update.prior_auth_phone_e164 = b.priorAuthPhoneE164;
     if (b.claimStatusPhoneE164 !== undefined)

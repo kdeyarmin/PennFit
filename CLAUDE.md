@@ -269,14 +269,15 @@ Three independent AI vendors are wired into the codebase, each used
 where it's strongest. All three are HIPAA-eligible and gracefully
 degrade when their API key is unset.
 
-| Surface                 | Primary                                        | Fallback                           | Key                                                |
-| ----------------------- | ---------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
-| Voice agent (LLM brain) | OpenAI `gpt-realtime`                          | n/a (offline if down)              | `OPENAI_API_KEY`                                   |
-| Voice agent (STT)       | `gpt-4o-mini-transcribe`                       | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
-| Voice agent (TTS)       | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
-| Storefront chatbot      | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
-| Sleep coach             | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
-| SMS intent classifier   | Claude Haiku 4.5                               | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Surface                  | Primary                                        | Fallback                           | Key                                                |
+| ------------------------ | ---------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
+| Voice agent (LLM brain)  | OpenAI `gpt-realtime`                          | n/a (offline if down)              | `OPENAI_API_KEY`                                   |
+| Voice agent (STT)        | `gpt-4o-mini-transcribe`                       | Deepgram Nova-3 (opt)              | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`               |
+| Voice agent (TTS)        | ElevenLabs (when key set), else OpenAI `cedar` | OpenAI `cedar` (no ElevenLabs key) | `ELEVENLABS_API_KEY` (preferred), `OPENAI_API_KEY` |
+| Storefront chatbot       | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Inbound email auto-reply | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| Sleep coach              | Claude Sonnet 4.6                              | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
+| SMS intent classifier    | Claude Haiku 4.5                               | `gpt-4o-mini`                      | `ANTHROPIC_API_KEY` (preferred), `OPENAI_API_KEY`  |
 
 Provider selection happens in
 `artifacts/resupply-api/src/lib/llm-provider.ts:selectLlmProvider()` —
@@ -287,6 +288,26 @@ selection). When only `OPENAI_API_KEY` is configured, OpenAI is used
 end to end. When neither is set, routes return a static "offline"
 reply and stay 200 (deploys must not break because a vendor key is
 missing).
+
+**Inbound email auto-reply** (`artifacts/resupply-api/src/lib/messaging/email-auto-reply.ts`)
+lets the storefront chatbot brain answer patient email replies. The
+SendGrid Inbound Parse webhook (`routes/email/inbound-parse.ts`) calls
+`generateEmailReply()` — grounded in the SAME `buildChatSystemPrompt()`
+knowledge base as the `/api/chat` widget — which returns a structured
+`{ handoff, reply, confidence }`. Only **high-confidence** answers are
+sent automatically: the model self-reports a `confidence` 0..1 and a
+reply is sent back by email (conversation → `awaiting_patient`) only when
+it clears the bar (default **0.8**, overridable via
+`RESUPPLY_EMAIL_AUTO_REPLY_MIN_CONFIDENCE`). Anything order/account/
+clinical-specific, an explicit hand-off, or **below the confidence bar**
+returns `handoff` and the thread falls through to `awaiting_admin` for a
+human, exactly as before. It is
+**opt-in** behind the `email.auto_reply` feature flag (seeded **OFF** in
+migration 0250 — this deliberately departs from ADR 013's "free-text
+email goes to a human"), and degrades to hand-off whenever the provider
+is offline or the model call fails. Inbound text is PII-scrubbed
+(`chatbotPii`) before it reaches the model. It never runs the keyword
+router (confirm/decline still come from the signed click-through link).
 
 Vendor clients live in `lib/resupply-ai/src/`:
 

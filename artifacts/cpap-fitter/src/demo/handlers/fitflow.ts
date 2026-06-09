@@ -52,6 +52,8 @@ export const fitflowHandlers: DemoHandler[] = [
       tracking: null,
       shippedAt: null,
       deliveredAt: null,
+      fulfillmentMethod: "ship",
+      pickup: null,
       podUploadedAt: null,
       canEditAddress: true,
       items: [

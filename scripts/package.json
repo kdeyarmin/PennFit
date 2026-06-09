@@ -6,6 +6,7 @@
   "scripts": {
     "seed:shop": "tsx ./src/seed-stripe-products.ts",
     "seed:product-costs": "tsx ./src/seed-product-costs.ts",
+    "seed:sample": "tsx ./src/seed-sample-data.ts",
     "auth:bootstrap-admin": "tsx ./src/auth-bootstrap-admin.ts",
     "auth:grant-super-admin": "tsx ./src/auth-grant-super-admin.ts",
     "auth:set-admin-password": "tsx ./src/auth-set-admin-password.ts",

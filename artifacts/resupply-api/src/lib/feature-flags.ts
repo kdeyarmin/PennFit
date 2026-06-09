@@ -42,9 +42,11 @@ import { logger } from "./logger";
 export const FEATURE_FLAG_KEYS = [
   "sms.reminders",
   "email.reminders",
+  "email.auto_reply",
   "voice.agent",
   "storefront.chatbot",
   "storefront.checkout",
+  "storefront.pickup",
   "storefront.reviews_collection",
   "storefront.nps",
   "bulk_campaigns.send",
@@ -53,6 +55,7 @@ export const FEATURE_FLAG_KEYS = [
   "billing.auto_submit_claims",
   "billing.eligibility_precheck",
   "billing.eligibility_precheck_refresh",
+  "billing.line_ordering_provider",
   "smart_triggers.dispatcher",
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
@@ -70,6 +73,7 @@ export const FEATURE_FLAG_KEYS = [
   "inbound_referrals.dispatcher",
   "patient_packets.autosend_on_delivery",
   "patient_packets.autoremind",
+  "orders.require_signed_paperwork",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

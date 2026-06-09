@@ -219,6 +219,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             badgeKey: "awaitingReplyConversations",
           },
           {
+            href: "/admin/email-inbox",
+            label: "Email Inbox",
+            icon: Mail,
+            matchPrefix: "/admin/email-inbox",
+            hint: "Inbound patient emails — needs-response vs already-answered mailboxes",
+          },
+          {
             href: "/admin/cases",
             label: "Cases",
             icon: FolderKanban,
@@ -1034,6 +1041,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/connection-tests",
             requiredPermission: "system.config.manage",
             hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
+          },
+          {
+            href: "/admin/bot-playground",
+            label: "Bot playground",
+            icon: FlaskConical,
+            matchPrefix: "/admin/bot-playground",
+            requiredPermission: "admin.tools.manage",
+            hint: "Rehearse the chat & voice bots against scripted situations (synthetic data, simulated tools) to tune their prompts",
           },
           {
             href: "/admin/system/configuration",

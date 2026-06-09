@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, ShieldCheck } from "lucide-react";
+import { FileText, Plus, Send, ShieldCheck } from "lucide-react";
 
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -19,6 +19,7 @@ import {
   createInsuranceCoverage,
   createPriorAuthorization,
   createSleepStudy,
+  faxPriorAuthRequestForm,
   listEligibilityChecks,
   listInsuranceCoverages,
   listPriorAuthorizations,
@@ -667,20 +668,23 @@ export function PriorAuthorizationsTab({ patientId }: { patientId: string }) {
                       prior-authorizations/:paId/request-form). Same-origin
                       GET carries the admin session cookie, so a plain link
                       streams the PDF in a new tab. */}
-                  <a
-                    href={`/resupply-api/admin/patients/${encodeURIComponent(
-                      patientId,
-                    )}/prior-authorizations/${encodeURIComponent(
-                      p.id,
-                    )}/request-form`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                    title="Download the auto-populated prior-authorization request form (PDF) to fax or attach to the payer portal"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    PA form
-                  </a>
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={`/resupply-api/admin/patients/${encodeURIComponent(
+                        patientId,
+                      )}/prior-authorizations/${encodeURIComponent(
+                        p.id,
+                      )}/request-form`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                      title="Download the auto-populated prior-authorization request form (PDF) to fax or attach to the payer portal"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      PA form
+                    </a>
+                    <PaFaxButton patientId={patientId} paId={p.id} />
+                  </div>
                 </td>
               </tr>
             ))}
@@ -716,6 +720,65 @@ function PaStatusBadge({ status }: { status: PriorAuthStatus }) {
       className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${PA_STATUS_COLOR[status]}`}
     >
       {status}
+    </span>
+  );
+}
+
+/**
+ * Fax the PA request form to the payer. Uses the payer profile's published
+ * prior-auth fax by default; if the payer has none on file (or the operator
+ * wants a different number) it prompts for one and retries. The PDF is
+ * rendered on demand server-side when Telnyx fetches the signed URL — same
+ * posture as appeal-letter faxes.
+ */
+function PaFaxButton({ patientId, paId }: { patientId: string; paId: string }) {
+  const [note, setNote] = useState<string | null>(null);
+  const faxMut = useMutation({
+    mutationFn: (faxNumber?: string) =>
+      faxPriorAuthRequestForm(patientId, paId, faxNumber),
+    onSuccess: () => setNote("Faxed ✓"),
+    onError: (err: unknown) => {
+      const code = (err as { data?: { error?: string } } | null)?.data?.error;
+      if (code === "no_fax_destination") {
+        // Payer has no published PA fax — ask the operator for one.
+        const entered = window.prompt(
+          "This payer has no prior-auth fax on file. Enter a destination fax number (E.164, e.g. +18145551234):",
+        );
+        const trimmed = entered?.trim();
+        if (trimmed && /^\+[1-9]\d{6,14}$/.test(trimmed)) {
+          faxMut.mutate(trimmed);
+          return;
+        }
+        setNote(trimmed ? "Invalid fax number" : null);
+        return;
+      }
+      setNote(
+        code === "fax_not_configured"
+          ? "Fax not configured"
+          : code === "prior_auth_not_found"
+            ? "PA not found"
+            : "Fax failed",
+      );
+    },
+  });
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        disabled={faxMut.isPending}
+        onClick={() => {
+          setNote(null);
+          faxMut.mutate(undefined);
+        }}
+        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+        title="Fax this PA request form to the payer's prior-auth fax number"
+      >
+        <Send className="h-3.5 w-3.5" />
+        {faxMut.isPending ? "Faxing…" : "Fax to payer"}
+      </button>
+      {note && (
+        <span className="text-[10px] text-muted-foreground">{note}</span>
+      )}
     </span>
   );
 }

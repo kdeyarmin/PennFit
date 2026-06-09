@@ -15,13 +15,17 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
+import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { renderCmnPdf } from "../../lib/billing/cmn-pdf";
 import {
   CMN_FORMS,
   isCmnFormType,
   validateCmnAnswers,
 } from "../../lib/billing/cmn-forms";
+import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -259,6 +263,120 @@ router.patch(
       return;
     }
     res.json({ ok: true });
+  },
+);
+
+// Render the answered clinical questionnaire as a PDF (A5). Complements
+// the DWO/CMN *cover* (dwo-documents.ts) by printing the Section B Q&A from
+// the catalog paired with the stored answers, plus the physician
+// attestation + signature line. GET (deterministic projection); no-store
+// so the PHI bytes don't land in a cache.
+router.get(
+  "/admin/cmn-documents/:cmnId/pdf",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const idOk = z.string().uuid().safeParse(req.params.cmnId);
+    if (!idOk.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: cmn, error } = await supabase
+      .schema("resupply")
+      .from("cmn_documents")
+      .select(
+        "id, patient_id, form_type, hcpcs_code, status, answers, physician_name, physician_npi, initial_date, recert_date, length_of_need_months",
+      )
+      .eq("id", idOk.data)
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
+    if (!cmn) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const c = cmn as {
+      patient_id: string;
+      form_type: string;
+      hcpcs_code: string;
+      status: string;
+      answers: Record<string, unknown> | null;
+      physician_name: string | null;
+      physician_npi: string | null;
+      initial_date: string | null;
+      recert_date: string | null;
+      length_of_need_months: number | null;
+    };
+    if (!isCmnFormType(c.form_type)) {
+      res.status(409).json({ error: "unrenderable_form_type" });
+      return;
+    }
+
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("legal_first_name, legal_last_name, date_of_birth, address")
+      .eq("id", c.patient_id)
+      .limit(1)
+      .maybeSingle();
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    const identity = await resolveBillingIdentity({ supabase });
+    const supplierName =
+      identity.source !== "stub"
+        ? identity.billingProvider.organizationName
+        : process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+
+    const pdf = await renderCmnPdf({
+      formType: c.form_type,
+      hcpcsCode: c.hcpcs_code,
+      status: c.status,
+      answers: c.answers,
+      physicianName: c.physician_name,
+      physicianNpi: c.physician_npi,
+      initialDate: c.initial_date,
+      recertDate: c.recert_date,
+      lengthOfNeedMonths: c.length_of_need_months,
+      patient: {
+        legalFirstName: patient.legal_first_name,
+        legalLastName: patient.legal_last_name,
+        dateOfBirth: patient.date_of_birth,
+        address: (patient.address ?? null) as never,
+      },
+      supplierName,
+      generatedOn: new Date(),
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="cmn-${c.form_type}-${idOk.data.slice(0, 8)}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.send(pdf);
+
+    await logAudit({
+      action: "cmn_document.pdf_rendered",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "cmn_documents",
+      targetId: idOk.data,
+      metadata: {
+        patient_id: c.patient_id,
+        form_type: c.form_type,
+        hcpcs_code: c.hcpcs_code,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "cmn_document.pdf_rendered audit write failed");
+    });
   },
 );
 

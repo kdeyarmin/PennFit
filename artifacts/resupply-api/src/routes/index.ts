@@ -43,6 +43,7 @@ import opsStatusRouter from "./admin/ops-status.js";
 import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
+import emailInboxRouter from "./admin/email-inbox.js";
 import todayRouter from "./admin/today.js";
 import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
@@ -174,6 +175,7 @@ import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
 import connectionTestsRouter from "./admin/connection-tests.js";
+import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
 import manualDocumentsAdminRouter from "./admin/manual-documents.js";
@@ -568,6 +570,10 @@ router.use(pacwareRouter);
 // email / SMS / voice / chat. Verifies a credential (including one just
 // saved in System Configuration) actually works. system.config.manage.
 router.use(connectionTestsRouter);
+// /admin/bot-playground/* — admin sandbox to exercise the storefront,
+// account, and voice bots against scripted situations (synthetic data,
+// simulated tools) and inspect their system prompts. admin.tools.manage.
+router.use(botPlaygroundRouter);
 // /admin/hipaa-breach-incidents — HIPAA §164.404-414 lifecycle.
 // /admin/patients/:id/documentation-packets — combined PDF
 // support packets (cover letter + sleep study + Rx + DWO summaries).
@@ -758,6 +764,9 @@ router.use(conversationRoutingRouter);
 router.use(conversationCoachingNotesRouter);
 // Conversation triage (Wave 1): snooze / tags / claim.
 router.use(conversationTriageRouter);
+// /admin/email-inbox — email conversations split into needs-response
+// vs responded mailboxes for the Email Inbox page.
+router.use(emailInboxRouter);
 // Patient address change history.
 router.use(patientAddressHistoryRouter);
 // Patient timeline — unified chronological feed across episodes,

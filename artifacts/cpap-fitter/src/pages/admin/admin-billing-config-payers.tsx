@@ -509,6 +509,17 @@ function PayerDrawer({
                 />
               </Field>
             </FieldRow>
+            <FieldRow>
+              <Field
+                label="Require signed paperwork before shipment?"
+                hint="When on, a patient whose primary coverage is this payer must have signed intake paperwork (HIPAA NPP, Assignment of Benefits, Supplier Standards) on file before their orders can be marked shipped."
+              >
+                <BooleanToggle
+                  value={form.requiresSignedPaperwork}
+                  onChange={(v) => set("requiresSignedPaperwork", v)}
+                />
+              </Field>
+            </FieldRow>
           </Section>
 
           <Section title="Electronic claim identifiers">
@@ -804,6 +815,7 @@ interface PayerProfileFormState {
   claimFormat: PayerClaimFormat;
   paperOnly: boolean;
   requiresPriorAuthDme: boolean;
+  requiresSignedPaperwork: boolean;
   priorAuthPhoneE164: string;
   claimStatusPhoneE164: string;
   providerPortalUrl: string;
@@ -840,6 +852,7 @@ function emptyForm(): PayerProfileFormState {
     claimFormat: "837p",
     paperOnly: false,
     requiresPriorAuthDme: false,
+    requiresSignedPaperwork: false,
     priorAuthPhoneE164: "",
     claimStatusPhoneE164: "",
     providerPortalUrl: "",
@@ -877,6 +890,7 @@ function formFromProfile(p: PayerProfile): PayerProfileFormState {
     claimFormat: p.claimFormat,
     paperOnly: p.paperOnly,
     requiresPriorAuthDme: p.requiresPriorAuthDme,
+    requiresSignedPaperwork: p.requiresSignedPaperwork,
     priorAuthPhoneE164: p.priorAuthPhoneE164 ?? "",
     claimStatusPhoneE164: p.claimStatusPhoneE164 ?? "",
     providerPortalUrl: p.providerPortalUrl ?? "",
@@ -932,6 +946,7 @@ function formToPayload(
     claimFormat: f.claimFormat,
     paperOnly: f.paperOnly,
     requiresPriorAuthDme: f.requiresPriorAuthDme,
+    requiresSignedPaperwork: f.requiresSignedPaperwork,
     priorAuthPhoneE164: nullableString(f.priorAuthPhoneE164),
     claimStatusPhoneE164: nullableString(f.claimStatusPhoneE164),
     providerPortalUrl: nullableString(f.providerPortalUrl),

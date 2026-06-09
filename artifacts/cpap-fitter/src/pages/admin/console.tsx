@@ -84,6 +84,11 @@ const ConversationDetailPage = lazy(() =>
     default: m.ConversationDetailPage,
   })),
 );
+const EmailInboxPage = lazy(() =>
+  import("@/pages/admin/email-inbox").then((m) => ({
+    default: m.EmailInboxPage,
+  })),
+);
 const EpisodesPage = lazy(() =>
   import("@/pages/admin/episodes").then((m) => ({ default: m.EpisodesPage })),
 );
@@ -313,6 +318,11 @@ const AdminSystemConfigurationPage = lazy(() =>
 const AdminConnectionTestsPage = lazy(() =>
   import("@/pages/admin/admin-connection-tests").then((m) => ({
     default: m.AdminConnectionTestsPage,
+  })),
+);
+const AdminBotPlaygroundPage = lazy(() =>
+  import("@/pages/admin/admin-bot-playground").then((m) => ({
+    default: m.AdminBotPlaygroundPage,
   })),
 );
 const AdminTherapyFleetPage = lazy(() =>
@@ -796,6 +806,7 @@ function AdminConsole() {
             <Route path="/admin/conversations/:id">
               {(params) => <ConversationDetailPage id={params.id} />}
             </Route>
+            <Route path="/admin/email-inbox" component={EmailInboxPage} />
             <Route path="/admin/episodes" component={EpisodesPage} />
             <Route path="/admin/rules" component={RulesPage} />
             <Route
@@ -993,6 +1004,10 @@ function AdminConsole() {
             <Route
               path="/admin/connection-tests"
               component={AdminConnectionTestsPage}
+            />
+            <Route
+              path="/admin/bot-playground"
+              component={AdminBotPlaygroundPage}
             />
             <Route
               path="/admin/therapy-fleet"

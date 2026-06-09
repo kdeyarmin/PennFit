@@ -1672,6 +1672,12 @@ export interface Database {
           unit_cost_cents: number | null;
           cost_source: string | null;
           cost_captured_at: string | null;
+          // Migration 0250: payer-facing 837P line narrative (loop 2400
+          // NTE*ADD). Required by Medicare DME for miscellaneous/NOC HCPCS
+          // (item description + MSRP). null = no NTE emitted. Distinct from
+          // `description` (internal label) and the claim `notes` (internal,
+          // never transmitted). Capped at 80 chars (X12 NTE02).
+          narrative: string | null;
           status: "pending" | "accepted" | "denied" | "paid";
           denial_reason: string | null;
           created_at: string;
@@ -1735,6 +1741,10 @@ export interface Database {
           claim_format: "837p" | "837i" | "paper_1500";
           paper_only: boolean;
           requires_prior_auth_dme: boolean;
+          // When true, a patient whose primary coverage maps to this
+          // payer must have signed intake paperwork on file before any
+          // of their orders can be marked shipped (migration 0248).
+          requires_signed_paperwork: boolean;
           prior_auth_phone_e164: string | null;
           claim_status_phone_e164: string | null;
           provider_portal_url: string | null;
@@ -4037,6 +4047,16 @@ export interface Database {
           // contribution margin (subtracted alongside COGS).
           stripe_fee_cents: number | null;
           shipping_cost_cents: number | null;
+          // Migration 0249: in-store pickup fulfillment. `ship` orders
+          // follow the carrier/tracking path; `pickup` orders are
+          // collected at `pickup_location_id` and use the
+          // ready_for_pickup/picked_up lifecycle instead of
+          // shipped/delivered.
+          fulfillment_method: "ship" | "pickup";
+          pickup_location_id: string | null;
+          ready_for_pickup_at: string | null;
+          picked_up_at: string | null;
+          ready_for_pickup_email_sent_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

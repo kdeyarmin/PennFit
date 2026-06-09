@@ -54,6 +54,7 @@ import {
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
+import { getPickupLocationsByIds } from "../../lib/pickup/locations";
 import {
   encodeCompositeCursor,
   isUuidCursorId,
@@ -180,7 +181,7 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
     .schema("resupply")
     .from("shop_orders")
     .select(
-      "id, stripe_session_id, status, amount_total_cents, currency, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, pod_uploaded_at",
+      "id, stripe_session_id, status, amount_total_cents, currency, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, pod_uploaded_at, fulfillment_method, pickup_location_id, ready_for_pickup_at, picked_up_at",
     )
     .eq("customer_id", req.userCustomerId!)
     .eq("status", "paid")
@@ -229,6 +230,14 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
   );
   const productNames = await fetchProductNames(productIds, req.log);
 
+  // Resolve pickup-location details for any pickup orders on this page
+  // in one round-trip, so the UI can show "ready to collect at <store>"
+  // without a follow-up request. Ship orders contribute no ids.
+  const pickupLocationIds = trimmed
+    .map((o) => o.pickup_location_id)
+    .filter((v): v is string => typeof v === "string" && v.length > 0);
+  const pickupLocations = await getPickupLocationsByIds(pickupLocationIds);
+
   // Group items by order_id for O(1) lookup during projection.
   const itemsByOrder = new Map<string, typeof itemRows>();
   for (const row of itemRows) {
@@ -260,15 +269,30 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
           : null,
       shippedAt: o.shipped_at,
       deliveredAt: o.delivered_at,
+      // Fulfillment method + pickup block. `fulfillmentMethod` defaults
+      // to "ship" for older orders (pre-migration-0249). For pickup
+      // orders the UI renders the pickup lifecycle (ready / collected)
+      // and the store address instead of carrier tracking.
+      fulfillmentMethod: o.fulfillment_method === "pickup" ? "pickup" : "ship",
+      pickup:
+        o.fulfillment_method === "pickup"
+          ? {
+              readyForPickupAt: o.ready_for_pickup_at,
+              pickedUpAt: o.picked_up_at,
+              location: o.pickup_location_id
+                ? (pickupLocations.get(o.pickup_location_id) ?? null)
+                : null,
+            }
+          : null,
       // Truthy when a delivery photo has been uploaded. The image
       // bytes come from a separate /shop/orders/:sessionId/pod
       // endpoint so the list payload stays JSON-only.
       podUploadedAt: o.pod_uploaded_at,
       // Convenience boolean for the UI: "is the customer still allowed
-      // to edit the address?". The same predicate is enforced server-
-      // side in the POST handler below, so the UI flag is purely a
-      // display hint — a stale `true` won't open a security hole.
-      canEditAddress: o.shipped_at === null,
+      // to edit the address?". Ship orders only, pre-shipment. Pickup
+      // orders never collect a shipping address, so it's always false.
+      canEditAddress:
+        o.fulfillment_method !== "pickup" && o.shipped_at === null,
       items: (itemsByOrder.get(o.id) ?? []).map((it) => ({
         productId: it.product_id,
         // Fallback name keeps the UI clean when the catalog has

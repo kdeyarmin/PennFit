@@ -236,7 +236,14 @@ function csrfHeader(): Record<string, string> {
 
 export async function startCheckout(
   items: CheckoutItem[],
-  options?: { successPath?: string; cancelPath?: string },
+  options?: {
+    successPath?: string;
+    cancelPath?: string;
+    /** "ship" (default) or "pickup". Pickup requires pickupLocationId. */
+    fulfillmentMethod?: "ship" | "pickup";
+    /** Active location id — required when fulfillmentMethod === "pickup". */
+    pickupLocationId?: string | null;
+  },
 ): Promise<{ url: string; sessionId: string }> {
   // Per-attempt idempotency key — re-clicking "Checkout" within a
   // few seconds will hit Stripe's idempotency cache and reuse the
@@ -253,6 +260,12 @@ export async function startCheckout(
       items,
       successPath: options?.successPath,
       cancelPath: options?.cancelPath,
+      ...(options?.fulfillmentMethod
+        ? { fulfillmentMethod: options.fulfillmentMethod }
+        : {}),
+      ...(options?.pickupLocationId
+        ? { pickupLocationId: options.pickupLocationId }
+        : {}),
     }),
   });
   if (!res.ok) {
@@ -260,6 +273,42 @@ export async function startCheckout(
     throw new Error(body.message ?? `Couldn't start checkout (${res.status})`);
   }
   return (await res.json()) as { url: string; sessionId: string };
+}
+
+export interface PickupLocation {
+  id: string;
+  name: string;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  phoneE164: string | null;
+  isPrimary: boolean;
+}
+
+export interface PickupLocationsResponse {
+  /** True when in-store pickup is offered (flag on + ≥1 active location). */
+  enabled: boolean;
+  locations: PickupLocation[];
+}
+
+/**
+ * Fetch the in-store pickup options. Returns `{ enabled: false }` when
+ * the storefront.pickup flag is off or no active location exists — the
+ * cart UI then stays ship-only. Never throws on a non-OK response; a
+ * pickup-locations outage must not break the cart.
+ */
+export async function fetchPickupLocations(): Promise<PickupLocationsResponse> {
+  try {
+    const res = await fetch("/resupply-api/shop/pickup-locations", {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return { enabled: false, locations: [] };
+    return (await res.json()) as PickupLocationsResponse;
+  } catch {
+    return { enabled: false, locations: [] };
+  }
 }
 
 export interface OrderSummaryResponse {
@@ -509,6 +558,25 @@ export interface OrderTracking {
   url: string | null;
 }
 
+/** Pickup projection for an in-store-pickup order. */
+export interface OrderPickup {
+  /** Stamped when staff mark the order ready to collect. */
+  readyForPickupAt: string | null;
+  /** Stamped when the customer collects the order. */
+  pickedUpAt: string | null;
+  /** Where to collect. Null if the location was since removed. */
+  location: {
+    id: string;
+    name: string;
+    addressLine1: string | null;
+    addressLine2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    phoneE164: string | null;
+  } | null;
+}
+
 export interface OrderHistoryItem {
   id: string;
   sessionId: string;
@@ -523,6 +591,13 @@ export interface OrderHistoryItem {
   tracking: OrderTracking | null;
   shippedAt: string | null;
   deliveredAt: string | null;
+  /**
+   * "ship" (default) or "pickup". For pickup orders the UI renders the
+   * pickup lifecycle + store address instead of carrier tracking.
+   */
+  fulfillmentMethod: "ship" | "pickup";
+  /** Pickup details — non-null only when fulfillmentMethod === "pickup". */
+  pickup: OrderPickup | null;
   /** Truthy when a delivery photo (POD) has been uploaded for
    *  this order. UI shows a "View delivery photo" link that hits
    *  GET /shop/orders/:sessionId/pod for the image bytes. */
