@@ -55,7 +55,7 @@ export function AdminShopBackInStockPage() {
         title: "Dispatch complete",
         description: `${res.delivered} delivered, ${res.failed} failed (of ${res.attempted}).`,
       });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
     onError: (err) => {
       toast({

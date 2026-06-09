@@ -211,7 +211,7 @@ function TemplateRow({ item }: { item: MessageTemplate }) {
   const patch = useMutation({
     mutationFn: (body: PatchTemplateBody) => patchTemplate(item.id, body),
     onSuccess: () => {
-      invalidate();
+      void invalidate();
       setEditing(false);
     },
   });
