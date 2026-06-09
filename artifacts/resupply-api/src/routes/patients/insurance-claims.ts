@@ -136,6 +136,11 @@ const createLineBody = z
     description: z.string().trim().max(240).nullable().optional(),
     quantity: z.number().int().min(1).max(9999).default(1),
     billedCents: z.number().int().min(0),
+    // 837P loop-2400 NTE narrative (migration 0248) — payer-facing, capped
+    // at the X12 NTE02 80-char limit. Required by Medicare DME for NOC/misc
+    // HCPCS (E1399 etc.); the preflight blocks submit on a narrative-less
+    // NOC line.
+    narrative: z.string().trim().max(80).nullable().optional(),
   })
   .strict();
 
@@ -339,6 +344,7 @@ router.get(
         billedCents: l.billed_cents,
         allowedCents: l.allowed_cents,
         paidCents: l.paid_cents,
+        narrative: l.narrative,
         status: l.status,
         denialReason: l.denial_reason,
         createdAt: l.created_at,
@@ -661,6 +667,7 @@ router.post(
         description: b.description ?? null,
         quantity: b.quantity,
         billed_cents: b.billedCents,
+        narrative: b.narrative ?? null,
         status: "pending",
       })
       .select("id")

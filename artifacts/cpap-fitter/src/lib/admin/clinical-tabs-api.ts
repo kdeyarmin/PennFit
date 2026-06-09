@@ -339,6 +339,9 @@ export interface InsuranceClaimLineItem {
   billedCents: number;
   allowedCents: number;
   paidCents: number;
+  /** Payer-facing 837P line narrative (loop 2400 NTE*ADD). Required by
+   *  Medicare DME for NOC/miscellaneous HCPCS (item description + MSRP). */
+  narrative: string | null;
   status: InsuranceClaimLineStatus;
   denialReason: string | null;
   createdAt: string;
@@ -382,6 +385,21 @@ export interface CreateInsuranceClaimLineRequest {
   description?: string | null;
   quantity?: number;
   billedCents: number;
+  /** 837P loop-2400 NTE narrative — payer-facing, ≤80 chars. */
+  narrative?: string | null;
+}
+
+export interface PatchInsuranceClaimLineRequest {
+  status?: InsuranceClaimLineStatus;
+  modifier?: string | null;
+  description?: string | null;
+  quantity?: number;
+  billedCents?: number;
+  allowedCents?: number;
+  paidCents?: number;
+  denialReason?: string | null;
+  /** 837P loop-2400 NTE narrative — payer-facing, ≤80 chars. */
+  narrative?: string | null;
 }
 
 export interface CreateInsuranceClaimEventRequest {
@@ -442,6 +460,21 @@ export const createInsuranceClaimLine = (
     `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/lines`,
     {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+export const patchInsuranceClaimLine = (
+  patientId: string,
+  claimId: string,
+  lineId: string,
+  body: PatchInsuranceClaimLineRequest,
+) =>
+  jsonFetch<{ ok: true }>(
+    `/patients/${encodeURIComponent(patientId)}/insurance-claims/${encodeURIComponent(claimId)}/lines/${encodeURIComponent(lineId)}`,
+    {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     },

@@ -44,6 +44,7 @@ import {
   getInsuranceClaim,
   listInsuranceClaims,
   patchInsuranceClaim,
+  patchInsuranceClaimLine,
   submitInsuranceClaimToOfficeAlly,
   type CreateInsuranceClaimEventRequest,
   type CreateInsuranceClaimLineRequest,
@@ -430,6 +431,17 @@ function ClaimDrawer({
     onSuccess: invalidate,
   });
 
+  const setLineNarrativeMut = useMutation({
+    mutationFn: ({
+      lineId,
+      narrative,
+    }: {
+      lineId: string;
+      narrative: string | null;
+    }) => patchInsuranceClaimLine(patientId, claimId, lineId, { narrative }),
+    onSuccess: invalidate,
+  });
+
   const addEventMut = useMutation({
     mutationFn: (body: CreateInsuranceClaimEventRequest) =>
       createInsuranceClaimEvent(patientId, claimId, body),
@@ -503,6 +515,9 @@ function ClaimDrawer({
               })
             }
             onAddLine={(body) => addLineMut.mutate(body)}
+            onSetLineNarrative={(lineId, narrative) =>
+              setLineNarrativeMut.mutate({ lineId, narrative })
+            }
             onAddEvent={(body) => addEventMut.mutate(body)}
             onSubmitToOfficeAlly={() => {
               setSubmitResult(null);
@@ -538,6 +553,7 @@ function ClaimDrawerContent({
   submitResult,
   onTransition,
   onAddLine,
+  onSetLineNarrative,
   onAddEvent,
   onSubmitToOfficeAlly,
   onRefreshPreflight,
@@ -551,6 +567,7 @@ function ClaimDrawerContent({
   submitResult: SubmitClaimToOfficeAllyResponse | { error: string } | null;
   onTransition: (to: InsuranceClaimStatus, denialReason: string | null) => void;
   onAddLine: (body: CreateInsuranceClaimLineRequest) => void;
+  onSetLineNarrative: (lineId: string, narrative: string | null) => void;
   onAddEvent: (body: CreateInsuranceClaimEventRequest) => void;
   onSubmitToOfficeAlly: () => void;
   onRefreshPreflight: () => void;
@@ -654,6 +671,11 @@ function ClaimDrawerContent({
                   {formatMoneyCents(l.allowedCents)} · Paid{" "}
                   {formatMoneyCents(l.paidCents)}
                 </p>
+                <LineNarrativeEditor
+                  line={l}
+                  editable={claim.status === "draft"}
+                  onSave={(narrative) => onSetLineNarrative(l.id, narrative)}
+                />
               </li>
             ))}
           </ul>
@@ -922,6 +944,114 @@ function TransitionButton({
   );
 }
 
+// Miscellaneous / not-otherwise-classified HCPCS that Medicare DME requires
+// a narrative (item description + MSRP) for — mirrors isNocHcpcs() in the
+// API's claim-preflight. A narrative-less NOC line denies as unprocessable.
+const NOC_HCPCS = new Set([
+  "E1399",
+  "A9999",
+  "K0108",
+  "A4649",
+  "E1699",
+  "K0900",
+  "L9999",
+]);
+function isNocHcpcs(code: string | null | undefined): boolean {
+  return !!code && NOC_HCPCS.has(code.trim().toUpperCase());
+}
+
+/**
+ * Per-line NTE narrative (837P loop 2400). Shows the saved narrative, and —
+ * for a NOC/miscellaneous HCPCS on a draft claim — an inline editor with a
+ * prominent prompt, since Medicare DME rejects a narrative-less NOC line.
+ */
+function LineNarrativeEditor({
+  line,
+  editable,
+  onSave,
+}: {
+  line: InsuranceClaimLineItem;
+  editable: boolean;
+  onSave: (narrative: string | null) => void;
+}) {
+  const isNoc = isNocHcpcs(line.hcpcsCode);
+  const [draft, setDraft] = useState(line.narrative ?? "");
+  const [open, setOpen] = useState(false);
+  const dirty = (draft.trim() || null) !== (line.narrative ?? null);
+
+  // Display-only (non-draft, or a non-NOC line with no narrative).
+  if (!editable) {
+    return line.narrative ? (
+      <p className="text-xs mt-1 italic" style={{ color: "hsl(var(--ink-3))" }}>
+        NTE: {line.narrative}
+      </p>
+    ) : null;
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-1.5 space-y-1">
+        {line.narrative ? (
+          <p
+            className="text-xs italic"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            NTE: {line.narrative}
+          </p>
+        ) : isNoc ? (
+          <p className="text-xs text-amber-700">
+            {line.hcpcsCode} is a miscellaneous/NOC code — Medicare DME
+            requires a narrative (item description + MSRP) or it denies.
+          </p>
+        ) : null}
+        <button
+          type="button"
+          className="text-xs underline"
+          style={{ color: "hsl(var(--ink-3))" }}
+          onClick={() => {
+            setDraft(line.narrative ?? "");
+            setOpen(true);
+          }}
+        >
+          {line.narrative ? "Edit narrative" : "Add narrative"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1">
+      <Input
+        aria-label="Line narrative (837P NTE)"
+        placeholder="Item description + MSRP (≤80 chars)"
+        value={draft}
+        maxLength={80}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button
+          disabled={!dirty}
+          onClick={() => {
+            onSave(draft.trim() || null);
+            setOpen(false);
+          }}
+        >
+          Save narrative
+        </Button>
+        <Button
+          intent="secondary"
+          onClick={() => {
+            setDraft(line.narrative ?? "");
+            setOpen(false);
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Renders a form for adding an HCPCS line item and calls `onAdd` with a normalized payload when the user submits.
  *
@@ -938,6 +1068,7 @@ function AddLineForm({
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [billed, setBilled] = useState("");
+  const [narrative, setNarrative] = useState("");
 
   function reset() {
     setHcpcsCode("");
@@ -945,6 +1076,7 @@ function AddLineForm({
     setDescription("");
     setQuantity("1");
     setBilled("");
+    setNarrative("");
   }
 
   return (
@@ -994,7 +1126,21 @@ function AddLineForm({
           value={billed}
           onChange={(e) => setBilled(e.target.value)}
         />
+        <Input
+          placeholder="Narrative — item description + MSRP (NOC codes)"
+          aria-label="Line narrative (837P NTE)"
+          value={narrative}
+          onChange={(e) => setNarrative(e.target.value)}
+          maxLength={80}
+          className="col-span-2"
+        />
       </div>
+      {isNocHcpcs(hcpcsCode) && !narrative.trim() && (
+        <p className="text-xs text-amber-700">
+          {hcpcsCode} is a miscellaneous/NOC code — Medicare DME requires a
+          narrative (item description + MSRP) or the line denies.
+        </p>
+      )}
       <div className="flex justify-end">
         <Button
           disabled={
@@ -1009,6 +1155,7 @@ function AddLineForm({
               description: description.trim() || null,
               quantity: Math.max(1, Number(quantity) || 1),
               billedCents: Math.max(0, Number(billed) || 0),
+              narrative: narrative.trim() || null,
             });
             reset();
           }}
