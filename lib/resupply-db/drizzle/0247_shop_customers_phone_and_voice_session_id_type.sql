@@ -1,4 +1,4 @@
--- 0245_shop_customers_phone_and_voice_session_id_type
+-- 0247_shop_customers_phone_and_voice_session_id_type
 --
 -- Two related changes that unblock resolving an inbound caller's phone
 -- number against the cash-pay storefront (shop_customers), in addition
