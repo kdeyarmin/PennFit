@@ -637,12 +637,23 @@ async function stampAction(
     });
     return;
   }
-  const { error: updErr } = await supabase
+  const { data: updated, error: updErr } = await supabase
     .schema("resupply")
     .from("provider_signature_requests")
     .update({ ...opts.update, updated_at: new Date().toISOString() })
-    .eq("id", params.data.id);
+    .eq("id", params.data.id)
+    .eq("status", opts.requireStatus ?? String(row.status))
+    .select("id")
+    .limit(1)
+    .maybeSingle();
   if (updErr) throw updErr;
+  if (!updated) {
+    res.status(409).json({
+      error: "wrong_status",
+      message: "This document’s status changed. Please refresh and try again.",
+    });
+    return;
+  }
   await appendSignatureEvent({
     requestId: params.data.id,
     eventType: opts.eventType,
