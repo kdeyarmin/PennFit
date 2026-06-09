@@ -208,6 +208,49 @@ describe("ingestInboundFax — media URL guards", () => {
     );
     expect(result).toMatchObject({ kind: "inserted", mediaPersisted: true });
   });
+
+  it("rejects a redirect to a non-allowlisted host (SSRF guard)", async () => {
+    stageInsertSuccess("id-r1");
+    // Allowlisted initial host 302s to an internal/off-allowlist host.
+    fetchMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://evil.example.com/x.pdf" },
+      }),
+    );
+    const result = await ingestInboundFax(
+      baseInput,
+      loggerStub as unknown as Logger,
+      objectStorageStub as never,
+    );
+    expect(result).toMatchObject({ kind: "inserted", mediaPersisted: false });
+    // Only the redirect response was fetched — we never followed to the
+    // disallowed host, and never uploaded anything.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(loggerStub.warn).toHaveBeenCalledWith(
+      expect.any(Object),
+      "fax_inbound_media_redirect_rejected",
+    );
+  });
+
+  it("follows a redirect that stays on an allowlisted host", async () => {
+    stageInsertSuccess("id-r2");
+    fetchMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://s3.amazonaws.com/telnyx/real.pdf" },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(mediaResponse(PDF_MAGIC));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
+    stagePatch();
+    const result = await ingestInboundFax(
+      baseInput,
+      loggerStub as unknown as Logger,
+      objectStorageStub as never,
+    );
+    expect(result).toMatchObject({ kind: "inserted", mediaPersisted: true });
+  });
 });
 
 describe("ingestInboundFax — media content gates", () => {

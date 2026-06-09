@@ -399,10 +399,11 @@ export function buildChecklistItems(
         isSet(env, "TELNYX_API_KEY") &&
         isSet(env, "TELNYX_FAX_CONNECTION_ID") &&
         isSet(env, "TELNYX_FAX_FROM_NUMBER") &&
+        isSet(env, "TELNYX_PUBLIC_KEY") &&
         (isSet(env, "RESUPPLY_VOICE_PUBLIC_BASE_URL") ||
           isSet(env, "RAILWAY_PUBLIC_DOMAIN")),
       envHint:
-        "TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER (with a public base URL)",
+        "TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER + TELNYX_PUBLIC_KEY (with a public base URL)",
     }),
     vendorItem({
       id: "vendor-web-push",

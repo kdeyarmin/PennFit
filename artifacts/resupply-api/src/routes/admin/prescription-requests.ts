@@ -411,14 +411,17 @@ router.post(
 
     // Configuration check: same posture as physician-fax-outreach
     // (TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER
-    // + public base URL). When unconfigured, leave the packet in draft so
-    // the CSR can re-fire after env is set; surface a 503 so the UI can
-    // show an actionable error.
+    // + TELNYX_PUBLIC_KEY + public base URL). TELNYX_PUBLIC_KEY is required
+    // because without it the webhook router rejects every status callback,
+    // so a sent packet would never get its delivered/failed update. When
+    // unconfigured, leave the packet in draft so the CSR can re-fire after
+    // env is set; surface a 503 so the UI can show an actionable error.
     const baseUrl = getFaxPublicBaseUrl();
     const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER?.trim();
     if (
       !process.env.TELNYX_API_KEY?.trim() ||
       !process.env.TELNYX_FAX_CONNECTION_ID?.trim() ||
+      !process.env.TELNYX_PUBLIC_KEY?.trim() ||
       !fromNumber ||
       !baseUrl
     ) {

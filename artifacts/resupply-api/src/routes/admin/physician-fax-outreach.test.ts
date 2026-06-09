@@ -86,6 +86,7 @@ const TELNYX_FAX_ENV_KEYS = [
   "TELNYX_API_KEY",
   "TELNYX_FAX_CONNECTION_ID",
   "TELNYX_FAX_FROM_NUMBER",
+  "TELNYX_PUBLIC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
 ] as const;
 
@@ -208,6 +209,7 @@ describe("POST /admin/physician-fax-outreach", () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -260,10 +262,38 @@ describe("POST /admin/physician-fax-outreach", () => {
     });
   });
 
+  it("does not dispatch (stays pending) when TELNYX_PUBLIC_KEY is missing", async () => {
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+    // TELNYX_PUBLIC_KEY intentionally unset — without it the webhook router
+    // rejects every status/inbound callback, so dispatching would send a fax
+    // we could never get a delivery/failure update for.
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("physician_fax_outreach", "insert", {
+      data: { id: "out_nopubkey" },
+    });
+
+    const res = await request(makeApp())
+      .post("/admin/physician-fax-outreach")
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      status: "pending",
+      provider: "not_configured",
+    });
+    expect(sendFaxMock).not.toHaveBeenCalled();
+  });
+
   it("returns status=failed and stamps DB when Telnyx throws", async () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     sendFaxMock.mockRejectedValueOnce(
@@ -346,6 +376,7 @@ describe("GET /admin/physician-fax-outreach", () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -380,6 +411,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -396,6 +428,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -420,6 +453,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -443,6 +477,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.TELNYX_API_KEY = "KEYtest";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
     process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };

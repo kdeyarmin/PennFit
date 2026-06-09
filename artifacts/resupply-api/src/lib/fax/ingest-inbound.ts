@@ -47,6 +47,55 @@ const ALLOWED_CONTENT_TYPES = new Set<string>([
   "image/tif",
 ]);
 
+/** Cap on manually-followed redirects for the media fetch. */
+const MAX_MEDIA_REDIRECTS = 3;
+
+/** Telnyx stores received-fax media on AWS S3 (pre-signed) or a
+ *  telnyx.com host. Anything else is rejected to constrain SSRF. */
+function isAllowedMediaHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "amazonaws.com" ||
+    host.endsWith(".amazonaws.com") ||
+    host === "telnyx.com" ||
+    host.endsWith(".telnyx.com")
+  );
+}
+
+/**
+ * Fetch `url`, following at most MAX_MEDIA_REDIRECTS redirects MANUALLY so
+ * every hop is re-validated against the host allowlist. `redirect: "follow"`
+ * would validate only the first URL, letting an allowlisted host 3xx-redirect
+ * us to an internal/non-allowlisted address (an SSRF primitive). Returns the
+ * final non-redirect Response, or null if a hop is rejected or the cap is hit.
+ */
+async function fetchAllowlistedMedia(
+  url: string,
+  signal: AbortSignal,
+): Promise<Response | null> {
+  let current = url;
+  for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
+    const resp = await fetch(current, { signal, redirect: "manual" });
+    if (resp.status >= 300 && resp.status < 400) {
+      const location = resp.headers.get("location");
+      if (!location) return null;
+      let next: URL;
+      try {
+        next = new URL(location, current);
+      } catch {
+        return null;
+      }
+      if (next.protocol !== "https:" || !isAllowedMediaHost(next.hostname)) {
+        return null;
+      }
+      current = next.toString();
+      continue;
+    }
+    return resp;
+  }
+  return null; // exceeded the redirect cap
+}
+
 export interface IngestInboundFaxInput {
   /** Telnyx fax id (UUID). Stored in the `twilio_fax_sid` column. */
   telnyxFaxId: string;
@@ -195,13 +244,7 @@ async function tryPersistMedia(
     );
     return false;
   }
-  const host = parsed.hostname.toLowerCase();
-  const hostAllowed =
-    host === "amazonaws.com" ||
-    host.endsWith(".amazonaws.com") ||
-    host === "telnyx.com" ||
-    host.endsWith(".telnyx.com");
-  if (parsed.protocol !== "https:" || !hostAllowed) {
+  if (parsed.protocol !== "https:" || !isAllowedMediaHost(parsed.hostname)) {
     logger.warn(
       {
         fax_id_first8: input.telnyxFaxId.slice(0, 8),
@@ -214,14 +257,12 @@ async function tryPersistMedia(
 
   // No Authorization header — the S3 pre-signed URL carries its own
   // SigV4 auth in the query string; adding a header would break it.
+  // Redirects are followed manually so each hop's host is re-validated.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let resp: Response;
+  let resp: Response | null;
   try {
-    resp = await fetch(input.mediaUrl, {
-      signal: controller.signal,
-      redirect: "follow",
-    });
+    resp = await fetchAllowlistedMedia(input.mediaUrl, controller.signal);
   } catch (err) {
     clearTimeout(timer);
     logger.warn(
@@ -234,6 +275,15 @@ async function tryPersistMedia(
     return false;
   }
   clearTimeout(timer);
+  if (!resp) {
+    // A redirect pointed off-allowlist (or exceeded the cap) — treat the
+    // same as a rejected host.
+    logger.warn(
+      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
+      "fax_inbound_media_redirect_rejected",
+    );
+    return false;
+  }
   if (!resp.ok) {
     logger.warn(
       {

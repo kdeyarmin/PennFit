@@ -48,6 +48,7 @@ const ALL_VENDOR_KEYS = [
   "TELNYX_API_KEY",
   "TELNYX_FAX_CONNECTION_ID",
   "TELNYX_FAX_FROM_NUMBER",
+  "TELNYX_PUBLIC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "STRIPE_SECRET_KEY",
   "SUPABASE_STORAGE_BUCKET_PRIVATE",
@@ -208,6 +209,7 @@ describe("GET /admin/ops-status", () => {
     process.env.TELNYX_API_KEY = "KEYxxx";
     process.env.TELNYX_FAX_CONNECTION_ID = "conn-1";
     process.env.TELNYX_FAX_FROM_NUMBER = "+15005550006";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://example.com";
     process.env.STRIPE_SECRET_KEY = "sk_test_xxx";
     process.env.SUPABASE_STORAGE_BUCKET_PRIVATE = "attachments";

@@ -44,6 +44,7 @@ function computeVendorFlags(env: NodeJS.ProcessEnv) {
       env.TELNYX_API_KEY &&
       env.TELNYX_FAX_CONNECTION_ID &&
       env.TELNYX_FAX_FROM_NUMBER &&
+      env.TELNYX_PUBLIC_KEY &&
       (env.RESUPPLY_VOICE_PUBLIC_BASE_URL || env.RAILWAY_PUBLIC_DOMAIN),
     ),
     stripe: Boolean(env.STRIPE_SECRET_KEY),
@@ -74,6 +75,7 @@ const VENDOR_CONFIG_KEYS: Record<keyof VendorFlags, readonly string[]> = {
     "TELNYX_API_KEY",
     "TELNYX_FAX_CONNECTION_ID",
     "TELNYX_FAX_FROM_NUMBER",
+    "TELNYX_PUBLIC_KEY",
     "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   ],
   stripe: ["STRIPE_SECRET_KEY"],

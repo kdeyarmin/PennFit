@@ -105,12 +105,21 @@ export async function faxStatusCallbackHandler(
   }
 
   try {
-    const { error } = await supabase
+    let outreachQuery = supabase
       .schema("resupply")
       .from("physician_fax_outreach")
       .update(updates)
       .eq("vendor_ref", faxId)
       .eq("vendor_name", "telnyx");
+    // Telnyx can deliver lifecycle webhooks out of order. Don't let a
+    // late intermediate event (queued / media.processed / sending.started
+    // → "sent") rewrite a row that already reached a terminal state, which
+    // would make a completed/failed fax look merely "in transit" again.
+    // Terminal events (delivered/failed) still apply unconditionally.
+    if (dbStatus === "sent") {
+      outreachQuery = outreachQuery.not("status", "in", "(delivered,failed)");
+    }
+    const { error } = await outreachQuery;
     if (error) throw error;
   } catch (err) {
     logger.warn(

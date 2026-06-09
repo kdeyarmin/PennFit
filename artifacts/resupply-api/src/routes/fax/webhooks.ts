@@ -19,7 +19,11 @@ import { faxStatusCallbackHandler } from "./status-callback.js";
 
 const router: IRouter = Router();
 
-// Public key read at request time so rotation doesn't need a restart.
+// The public key is read from process.env per request (not captured when
+// the middleware is constructed), so a changed process-level value takes
+// effect without rebuilding the middleware. A key saved via System
+// Configuration is a catalog key (applyMode: "restart"), so that path still
+// only takes effect on the next deploy/restart, like the other Telnyx vars.
 const telnyxSignature = requireTelnyxSignature({
   getPublicKey: () => process.env.TELNYX_PUBLIC_KEY,
 });

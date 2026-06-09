@@ -88,23 +88,29 @@ export function getFaxPublicBaseUrl(): string | null {
 }
 
 /**
- * Returns true when all four conditions for a live fax dispatch are met:
+ * Returns true when all conditions for a live fax dispatch are met:
  *   - TELNYX_API_KEY (Bearer key from the Telnyx portal)
  *   - TELNYX_FAX_CONNECTION_ID (the Fax Application that owns the number)
  *   - TELNYX_FAX_FROM_NUMBER (fax-enabled Telnyx number)
+ *   - TELNYX_PUBLIC_KEY (Ed25519 webhook key). Without it the webhook
+ *     router rejects every inbound/status callback, so a dispatched fax
+ *     would never receive a delivery/failure update and inbound faxes
+ *     couldn't be ingested — we'd rather report "not configured" and
+ *     hold the row than send a fax we can't track.
  *   - RESUPPLY_VOICE_PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN (needed to
  *     build the signed mediaUrl that Telnyx fetches, and the
  *     statusCallback URL for delivery events)
  *
- * All four are required for a successful send; showing "configured"
- * when the base URL is missing would mislead the ops dashboard into
- * thinking dispatch works when it silently would not.
+ * All are required for a successful, trackable send; showing "configured"
+ * when any is missing would mislead the ops dashboard into thinking
+ * dispatch works when it silently would not.
  */
 export function isFaxConfigured(): boolean {
   return Boolean(
     process.env.TELNYX_API_KEY?.trim() &&
     process.env.TELNYX_FAX_CONNECTION_ID?.trim() &&
     process.env.TELNYX_FAX_FROM_NUMBER?.trim() &&
+    process.env.TELNYX_PUBLIC_KEY?.trim() &&
     getFaxPublicBaseUrl(),
   );
 }
