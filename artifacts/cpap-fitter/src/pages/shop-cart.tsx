@@ -38,9 +38,11 @@ import {
   removeFromWishlist,
 } from "@/lib/wishlist";
 import {
+  fetchPickupLocations,
   fetchShopProducts,
   formatMoneyCents,
   startCheckout,
+  type PickupLocation,
   type ShopProductView,
 } from "@/lib/shop-api";
 import {
@@ -442,6 +444,48 @@ export function ShopCart() {
 
   const probing = purchasingEnabled === null;
 
+  // ── In-store pickup ──────────────────────────────────────────────
+  // Offered only when the storefront.pickup flag is on AND at least one
+  // active location exists (the API folds both into `enabled`). Pickup
+  // doesn't apply to Subscribe & Save lines, so it's hidden whenever the
+  // cart carries any subscription item.
+  const [pickupEnabled, setPickupEnabled] = useState(false);
+  const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<"ship" | "pickup">(
+    "ship",
+  );
+  const [pickupLocationId, setPickupLocationId] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetchPickupLocations()
+      .then((r) => {
+        if (!active) return;
+        setPickupEnabled(r.enabled);
+        setPickupLocations(r.locations);
+        // Default the selected location to the primary (first) one so a
+        // customer who flips to pickup doesn't have to pick when there's
+        // an obvious default.
+        if (r.locations.length > 0) setPickupLocationId(r.locations[0]!.id);
+      })
+      .catch(() => {
+        /* fetchPickupLocations never throws; stay ship-only on failure */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const hasSubscription = items.some((it) => it.mode === "subscription");
+  // Pickup is only actually offerable when enabled and the cart has no
+  // subscription line. When it's not, force the method back to ship.
+  const pickupOfferable = pickupEnabled && !hasSubscription;
+  useEffect(() => {
+    if (!pickupOfferable && fulfillmentMethod === "pickup") {
+      setFulfillmentMethod("ship");
+    }
+  }, [pickupOfferable, fulfillmentMethod]);
+  const isPickup = fulfillmentMethod === "pickup" && pickupOfferable;
+
   async function handleCheckout() {
     if (items.length === 0) return;
     if (purchasingEnabled !== true) return;
@@ -469,6 +513,9 @@ export function ShopCart() {
               ? "subscription"
               : "one_time",
         })),
+        isPickup
+          ? { fulfillmentMethod: "pickup", pickupLocationId }
+          : { fulfillmentMethod: "ship" },
       );
       window.location.assign(url);
     } catch (err: unknown) {
@@ -549,7 +596,14 @@ export function ShopCart() {
     signedIn === true &&
     savedCard !== null &&
     savedCard.last4 !== null &&
-    purchasingEnabled === true;
+    purchasingEnabled === true &&
+    // Express (one-tap saved-card) checkout goes through quick-checkout,
+    // which is ship-only — when the customer chooses pickup, route them
+    // through the standard checkout button instead.
+    !isPickup;
+  // Block checkout when pickup is selected but no location is chosen
+  // (defensive — we default-select the primary, so this is rare).
+  const pickupBlocksCheckout = isPickup && !pickupLocationId;
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-4xl">
@@ -978,6 +1032,85 @@ export function ShopCart() {
                   </p>
                 </div>
               )}
+              {/* Fulfillment selector — ship vs in-store pickup. Only
+                  rendered when pickup is offerable (flag on + ≥1 active
+                  location + no subscription line in the cart). */}
+              {pickupOfferable && (
+                <div className="mb-4" data-testid="cart-fulfillment">
+                  <div
+                    className="grid grid-cols-2 gap-2"
+                    role="radiogroup"
+                    aria-label="Fulfillment method"
+                  >
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={fulfillmentMethod === "ship"}
+                      onClick={() => setFulfillmentMethod("ship")}
+                      className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                        fulfillmentMethod === "ship"
+                          ? "border-[hsl(var(--penn-navy))] bg-[hsl(var(--penn-navy))]/5 text-[hsl(var(--penn-navy))]"
+                          : "border-border/60 text-muted-foreground hover:bg-secondary/40"
+                      }`}
+                      data-testid="cart-fulfillment-ship"
+                    >
+                      Ship to me
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={fulfillmentMethod === "pickup"}
+                      onClick={() => setFulfillmentMethod("pickup")}
+                      className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                        fulfillmentMethod === "pickup"
+                          ? "border-[hsl(var(--penn-navy))] bg-[hsl(var(--penn-navy))]/5 text-[hsl(var(--penn-navy))]"
+                          : "border-border/60 text-muted-foreground hover:bg-secondary/40"
+                      }`}
+                      data-testid="cart-fulfillment-pickup"
+                    >
+                      Pick up in store
+                    </button>
+                  </div>
+                  {isPickup && (
+                    <div className="mt-3" data-testid="cart-pickup-location">
+                      {pickupLocations.length > 1 ? (
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">
+                          Pickup location
+                          <select
+                            value={pickupLocationId ?? ""}
+                            onChange={(e) => setPickupLocationId(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-foreground"
+                            data-testid="cart-pickup-location-select"
+                          >
+                            {pickupLocations.map((loc) => (
+                              <option key={loc.id} value={loc.id}>
+                                {loc.name}
+                                {loc.city ? ` — ${loc.city}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : (
+                        pickupLocations[0] && (
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            Pick up at{" "}
+                            <span className="font-medium text-foreground">
+                              {pickupLocations[0].name}
+                            </span>
+                            {pickupLocations[0].addressLine1
+                              ? `, ${pickupLocations[0].addressLine1}`
+                              : ""}
+                            {pickupLocations[0].city
+                              ? `, ${pickupLocations[0].city}`
+                              : ""}
+                            . We'll email you when it's ready.
+                          </p>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {showExpressCheckout && (
                 <div className="mb-3" data-testid="cart-express-block">
                   <Button
@@ -1009,7 +1142,12 @@ export function ShopCart() {
               )}
               <Button
                 onClick={handleCheckout}
-                disabled={checkingOut || probing || purchasingEnabled === false}
+                disabled={
+                  checkingOut ||
+                  probing ||
+                  purchasingEnabled === false ||
+                  pickupBlocksCheckout
+                }
                 className="w-full"
                 data-testid="cart-checkout"
               >

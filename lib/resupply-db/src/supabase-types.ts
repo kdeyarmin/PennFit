@@ -4002,6 +4002,16 @@ export interface Database {
           // contribution margin (subtracted alongside COGS).
           stripe_fee_cents: number | null;
           shipping_cost_cents: number | null;
+          // Migration 0249: in-store pickup fulfillment. `ship` orders
+          // follow the carrier/tracking path; `pickup` orders are
+          // collected at `pickup_location_id` and use the
+          // ready_for_pickup/picked_up lifecycle instead of
+          // shipped/delivered.
+          fulfillment_method: "ship" | "pickup";
+          pickup_location_id: string | null;
+          ready_for_pickup_at: string | null;
+          picked_up_at: string | null;
+          ready_for_pickup_email_sent_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

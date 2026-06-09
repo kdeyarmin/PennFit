@@ -615,6 +615,81 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
 // We deliberately do NOT show a "still no tracking after N days"
 // warning here — that's the support team's job. The customer-facing
 // UI stays calm and factual.
+// In-store pickup status. Renders the collect-in-store lifecycle:
+//   - picked up        → green "Picked up <date>" badge.
+//   - ready, not yet   → "Ready for pickup" + location address.
+//   - paid, not ready  → "Preparing your order" + "we'll email you".
+function PickupSection({ order }: { order: OrderHistoryItem }) {
+  const fmt = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : null;
+  const pickup = order.pickup;
+  const readyDate = fmt(pickup?.readyForPickupAt ?? null);
+  const pickedUpDate = fmt(pickup?.pickedUpAt ?? null);
+  const loc = pickup?.location ?? null;
+
+  return (
+    <div
+      className="mt-4 pt-3 border-t border-border/40 space-y-3"
+      data-testid={`order-${order.id}-pickup`}
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        <MapPin className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))]/70 shrink-0" />
+        <div className="flex-1 min-w-0 text-sm">
+          {pickedUpDate ? (
+            <div className="font-medium text-foreground">In-store pickup</div>
+          ) : readyDate ? (
+            <>
+              <div className="font-medium text-foreground">
+                Ready for pickup
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Ready since {readyDate}. Bring a photo ID matching the order.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="font-medium text-foreground">
+                Preparing your order
+              </div>
+              <div className="text-xs text-muted-foreground">
+                We&apos;ll email you when it&apos;s ready to pick up.
+              </div>
+            </>
+          )}
+          {loc && (
+            <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              <span className="font-medium text-foreground">{loc.name}</span>
+              {loc.addressLine1 ? <>, {loc.addressLine1}</> : null}
+              {loc.city ? (
+                <>
+                  , {loc.city}
+                  {loc.state ? `, ${loc.state}` : ""}{" "}
+                  {loc.postalCode ?? ""}
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
+        {pickedUpDate && (
+          <Badge
+            variant="outline"
+            className="border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold"
+            data-testid={`order-${order.id}-picked-up-badge`}
+          >
+            Picked up {pickedUpDate}
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ShipmentSection({
   order,
   onOrderUpdated,
@@ -623,6 +698,13 @@ function ShipmentSection({
   onOrderUpdated: (next: OrderHistoryItem) => void;
 }) {
   const [editOpen, setEditOpen] = useState(false);
+
+  // In-store pickup orders run a different lifecycle (ready → collected)
+  // and have no shipping address or carrier tracking, so they get their
+  // own section ahead of the ship UI below.
+  if (order.fulfillmentMethod === "pickup") {
+    return <PickupSection order={order} />;
+  }
 
   // Pre-migration-0014 orders have neither shipping_address nor any
   // tracking columns. Skip the section entirely so they don't show

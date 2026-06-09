@@ -877,3 +877,137 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
     expect(callArgs.metadata?.shop_order_id).toBe(VALID_ID);
   });
 });
+
+// =====================================================================
+// In-store pickup lifecycle: ready-for-pickup + picked-up
+// =====================================================================
+// A pickup order (fulfillment_method='pickup') uses ready_for_pickup_at
+// / picked_up_at instead of shipped_at / delivered_at. The ship
+// endpoints refuse pickup orders and vice versa.
+function pickupOrderRow(
+  over: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return paidOrderRow({
+    fulfillment_method: "pickup",
+    pickup_location_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ready_for_pickup_at: null,
+    picked_up_at: null,
+    ready_for_pickup_email_sent_at: null,
+    ...over,
+  });
+}
+
+describe("POST /admin/shop/orders/:orderId/ready-for-pickup", () => {
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/ready-for-pickup`,
+    );
+    expect([401, 403]).toContain(res.status);
+  });
+
+  it("409s when the order is a ship order, not pickup", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/ready-for-pickup`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_is_ship");
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("409s when the order isn't paid", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: pickupOrderRow({ status: "pending" }),
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/ready-for-pickup`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_not_paid");
+  });
+
+  it("stamps ready_for_pickup_at on a paid pickup order", async () => {
+    stubVerifiedAdmin();
+    const readyIso = new Date("2026-05-02T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", { data: pickupOrderRow() }); // loadOrder
+    // stamp update (no .select) + the email helper's claim update both
+    // resolve to the unstaged default — claim returns null → email skip.
+    // Final loadOrder returns the now-ready row for projection.
+    stageSupabaseResponse("shop_orders", "select", {
+      data: pickupOrderRow({ ready_for_pickup_at: readyIso }),
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/ready-for-pickup`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.order.fulfillmentMethod).toBe("pickup");
+    expect(res.body.order.readyForPickupAt).toBe(readyIso);
+  });
+});
+
+describe("POST /admin/shop/orders/:orderId/picked-up", () => {
+  it("409s when the order is a ship order", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/picked-up`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_is_ship");
+  });
+
+  it("409s when the order isn't ready for pickup yet", async () => {
+    stubVerifiedAdmin();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: pickupOrderRow({ ready_for_pickup_at: null }),
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/picked-up`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_not_ready_for_pickup");
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
+  it("stamps picked_up_at on a ready pickup order", async () => {
+    stubVerifiedAdmin();
+    const readyIso = new Date("2026-05-02T09:00:00Z").toISOString();
+    const pickedIso = new Date("2026-05-03T15:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: pickupOrderRow({ ready_for_pickup_at: readyIso }),
+    }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: pickupOrderRow({
+        ready_for_pickup_at: readyIso,
+        picked_up_at: pickedIso,
+      }),
+    }); // picked_up UPDATE returning
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/picked-up`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.order.pickedUpAt).toBe(pickedIso);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(1);
+  });
+
+  it("is idempotent on a re-fire (keeps the original picked_up_at)", async () => {
+    stubVerifiedAdmin();
+    const readyIso = new Date("2026-05-02T09:00:00Z").toISOString();
+    const pickedIso = new Date("2026-05-03T15:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: pickupOrderRow({
+        ready_for_pickup_at: readyIso,
+        picked_up_at: pickedIso,
+      }),
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/picked-up`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.order.pickedUpAt).toBe(pickedIso);
+    // No UPDATE — idempotent short-circuit on the already-picked-up row.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+});
