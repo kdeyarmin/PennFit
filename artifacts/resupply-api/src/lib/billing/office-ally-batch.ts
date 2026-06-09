@@ -818,8 +818,7 @@ function jsonToPostalAddress(
 ): { line1: string; city: string; state: string; zip: string } | null {
   if (!raw || typeof raw !== "object") return null;
   const a = raw as Record<string, unknown>;
-  const str = (v: unknown): string =>
-    typeof v === "string" ? v.trim() : "";
+  const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
   const line1 = str(a.line1);
   const city = str(a.city);
   const state = str(a.state);

@@ -23,7 +23,12 @@ function fixture(overrides: Partial<CmnPdfInput> = {}): CmnPdfInput {
       legalFirstName: "Jane",
       legalLastName: "Doe",
       dateOfBirth: "1955-03-04",
-      address: { line1: "200 Elm St", city: "Altoona", state: "PA", zip: "16601" },
+      address: {
+        line1: "200 Elm St",
+        city: "Altoona",
+        state: "PA",
+        zip: "16601",
+      },
     },
     supplierName: "PennPaps Inc",
     generatedOn: new Date(Date.UTC(2026, 5, 9)),

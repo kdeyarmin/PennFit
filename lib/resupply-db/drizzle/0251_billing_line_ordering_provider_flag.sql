@@ -1,4 +1,4 @@
--- 0249_billing_line_ordering_provider_flag — feature flag for the
+-- 0251_billing_line_ordering_provider_flag — feature flag for the
 -- line-level ordering-provider loop (837P 2420E NM1*DK).
 --
 -- The 837P builder can emit a line-level ordering provider (the

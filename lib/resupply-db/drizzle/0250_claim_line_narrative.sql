@@ -1,4 +1,4 @@
--- 0248_claim_line_narrative — line-level narrative for the 837P NTE
+-- 0250_claim_line_narrative — line-level narrative for the 837P NTE
 -- segment (DME accuracy gap A1 in the DME billing research doc).
 --
 -- Medicare DME (and most commercial DME payers) REQUIRE a narrative

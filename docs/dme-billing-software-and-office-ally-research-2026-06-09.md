@@ -77,16 +77,16 @@ none of it requires switching vendors or re-architecting.
 > page) corrected it. The corrected verdicts are folded into §5–§7 below; the
 > raw findings:
 >
-> | Capability | First-draft claim | **Verified state** | Evidence |
-> | --- | --- | --- | --- |
-> | NTE narrative (NOC HCPCS) | missing | **shipped in this PR** | `edi/837p.ts`; `0248_claim_line_narrative.sql`; `claim-preflight.ts` |
-> | Line-level ordering provider (2420E) | missing | **builder shipped, off by default** | `edi/837p.ts` (gated pending live 277CA) |
-> | CMN / DWO form generation | "tracked only, manual" | **DONE** (PDF + route + worklist) | `lib/billing/dwo-pdf.ts:143` `renderDwoPdf()`; `routes/admin/dwo-documents.ts` `GET …/pdf`; `cmn-documents.ts`; `admin-billing-cmn-worklist.tsx`. _Refinement open:_ the full CMS-484 **clinical** questionnaire PDF (the cover renders today). |
-> | Line-level COGS | missing | **DONE** | `lib/billing/claim-builder.ts:314-325` stamps `unit_cost_cents`/`cost_source` (migration 0193) |
-> | 276/277 claim status | "no workflow" | **DONE** | `lib/billing/claim-status-checker.ts`; `routes/admin/claim-status.ts`; inbound-277 poller |
-> | Secondary-COB UI | "logic only" | **DONE** | `routes/admin/secondary-claims.ts` (worklist + one-click `generate-secondary` + line copy); `admin-secondary-claims.tsx` |
-> | Modifier stamping | "not on manual claims" | **DONE (auto); N/A for manual** | `claim-builder.ts:327-368` auto-applies `payer_modifier_rules`; manual claims are intentionally header-only (corrections/voids carry no lines) |
-> | Outbound fax | "missing" | **DONE for appeals; PA dispatch open** | `lib/resupply-telecom/src/telnyx-fax.ts`; `routes/fax/document.ts` renders appeal PDFs; `claim-appeals.ts` faxes. `prior-auth-request-form.ts` produces a faxable PDF + destination but doesn't auto-dispatch |
+> | Capability                           | First-draft claim      | **Verified state**                     | Evidence                                                                                                                                                                                                                                        |
+> | ------------------------------------ | ---------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | NTE narrative (NOC HCPCS)            | missing                | **shipped in this PR**                 | `edi/837p.ts`; `0250_claim_line_narrative.sql`; `claim-preflight.ts`                                                                                                                                                                            |
+> | Line-level ordering provider (2420E) | missing                | **builder shipped, off by default**    | `edi/837p.ts` (gated pending live 277CA)                                                                                                                                                                                                        |
+> | CMN / DWO form generation            | "tracked only, manual" | **DONE** (PDF + route + worklist)      | `lib/billing/dwo-pdf.ts:143` `renderDwoPdf()`; `routes/admin/dwo-documents.ts` `GET …/pdf`; `cmn-documents.ts`; `admin-billing-cmn-worklist.tsx`. _Refinement open:_ the full CMS-484 **clinical** questionnaire PDF (the cover renders today). |
+> | Line-level COGS                      | missing                | **DONE**                               | `lib/billing/claim-builder.ts:314-325` stamps `unit_cost_cents`/`cost_source` (migration 0193)                                                                                                                                                  |
+> | 276/277 claim status                 | "no workflow"          | **DONE**                               | `lib/billing/claim-status-checker.ts`; `routes/admin/claim-status.ts`; inbound-277 poller                                                                                                                                                       |
+> | Secondary-COB UI                     | "logic only"           | **DONE**                               | `routes/admin/secondary-claims.ts` (worklist + one-click `generate-secondary` + line copy); `admin-secondary-claims.tsx`                                                                                                                        |
+> | Modifier stamping                    | "not on manual claims" | **DONE (auto); N/A for manual**        | `claim-builder.ts:327-368` auto-applies `payer_modifier_rules`; manual claims are intentionally header-only (corrections/voids carry no lines)                                                                                                  |
+> | Outbound fax                         | "missing"              | **DONE for appeals; PA dispatch open** | `lib/resupply-telecom/src/telnyx-fax.ts`; `routes/fax/document.ts` renders appeal PDFs; `claim-appeals.ts` faxes. `prior-auth-request-form.ts` produces a faxable PDF + destination but doesn't auto-dispatch                                   |
 
 ---
 
@@ -99,13 +99,13 @@ to payers). PennFit competes with the first; Office Ally _is_ the second.
 
 ### 1.1 Commercial DME/HME platforms
 
-| Platform | Strongest at | Notes |
-| --- | --- | --- |
-| **Brightree** (ResMed) | Medicare FFS depth, scale, ecosystem | Market leader; quote-based pricing, often revenue-share/per-claim; rated middling on usability/value vs. price. |
-| **Bonafide** | Feature breadth for larger HME | Rated higher than Brightree on capability, but more expensive to implement. |
-| **NikoHealth** | **Ease of use + workflow automation**, transparent flat pricing | Repeatedly cited as the usability benchmark; lighter on Medicare-Advantage quirks. |
-| **WellSky / CareTend** | Complex commercial + infusion/pharmacy | Depth for mixed HME + respiratory + infusion. |
-| **TIMS, Universal Software Solutions (HDMS), Nymbl** | Structural claims workflow | Solid claims engines; vary on resupply/outreach. |
+| Platform                                             | Strongest at                                                    | Notes                                                                                                           |
+| ---------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Brightree** (ResMed)                               | Medicare FFS depth, scale, ecosystem                            | Market leader; quote-based pricing, often revenue-share/per-claim; rated middling on usability/value vs. price. |
+| **Bonafide**                                         | Feature breadth for larger HME                                  | Rated higher than Brightree on capability, but more expensive to implement.                                     |
+| **NikoHealth**                                       | **Ease of use + workflow automation**, transparent flat pricing | Repeatedly cited as the usability benchmark; lighter on Medicare-Advantage quirks.                              |
+| **WellSky / CareTend**                               | Complex commercial + infusion/pharmacy                          | Depth for mixed HME + respiratory + infusion.                                                                   |
+| **TIMS, Universal Software Solutions (HDMS), Nymbl** | Structural claims workflow                                      | Solid claims engines; vary on resupply/outreach.                                                                |
 
 Two findings from the scan are decisive for positioning PennFit:
 
@@ -150,13 +150,13 @@ billing system is judged on whether it prevents) are:
 
 ## 2. The clearinghouse landscape — and why Office Ally is right
 
-| Clearinghouse | Claim submission | ERA / extras | Best fit |
-| --- | --- | --- | --- |
-| **Office Ally** | **Free** for par claims | ERA ~$35/mo; non-par surcharge per Tax-ID+NPI/mo | Small–mid practices; **PennFit's choice** |
-| **Claim.MD** | $0.15–0.25/claim | Feature-rich at low cost | Small–mid, API-forward |
-| **Availity** | Free–low | Widest payer connectivity | Mid; strong commercial reach |
-| **Waystar** | Subscription $200–800/mo | Heavy automation | Mid–large, staff-time savings |
-| **TriZetto / Optum (Change)** | $0.15–0.40/claim, volume | Enterprise | Large practices |
+| Clearinghouse                 | Claim submission         | ERA / extras                                     | Best fit                                  |
+| ----------------------------- | ------------------------ | ------------------------------------------------ | ----------------------------------------- |
+| **Office Ally**               | **Free** for par claims  | ERA ~$35/mo; non-par surcharge per Tax-ID+NPI/mo | Small–mid practices; **PennFit's choice** |
+| **Claim.MD**                  | $0.15–0.25/claim         | Feature-rich at low cost                         | Small–mid, API-forward                    |
+| **Availity**                  | Free–low                 | Widest payer connectivity                        | Mid; strong commercial reach              |
+| **Waystar**                   | Subscription $200–800/mo | Heavy automation                                 | Mid–large, staff-time savings             |
+| **TriZetto / Optum (Change)** | $0.15–0.40/claim, volume | Enterprise                                       | Large practices                           |
 
 **Verdict: stay on Office Ally.** For a single-location PA CPAP/DME supplier:
 
@@ -193,14 +193,14 @@ revenue-cycle engine. Verified in the tree on this branch:
 
 **EDI transactions** (`lib/resupply-integrations-office-ally/src/edi/`):
 
-| Txn | File | Role |
-| --- | --- | --- |
-| **837P** claims | `837p.ts` | 5010X222A1 claim builder (see §4) |
-| **270/271** eligibility | `270.ts`, `parse-271.ts` | Build inquiry / parse benefits; service-type `12`/`B0`/`30` |
-| **276/277** claim status | `276.ts`, `parse-277.ts` | Build status request / parse status |
-| **277CA** | `parse-277ca.ts` | Acknowledgment / front-end rejection classification |
-| **835** remittance | `parse-835.ts` | BPR/TRN/CLP/CAS/SVC/PLB — claim- and line-level adjustments |
-| **999** | `parse-999.ts` | Functional ack (syntax accept/reject) |
+| Txn                      | File                     | Role                                                        |
+| ------------------------ | ------------------------ | ----------------------------------------------------------- |
+| **837P** claims          | `837p.ts`                | 5010X222A1 claim builder (see §4)                           |
+| **270/271** eligibility  | `270.ts`, `parse-271.ts` | Build inquiry / parse benefits; service-type `12`/`B0`/`30` |
+| **276/277** claim status | `276.ts`, `parse-277.ts` | Build status request / parse status                         |
+| **277CA**                | `parse-277ca.ts`         | Acknowledgment / front-end rejection classification         |
+| **835** remittance       | `parse-835.ts`           | BPR/TRN/CLP/CAS/SVC/PLB — claim- and line-level adjustments |
+| **999**                  | `parse-999.ts`           | Functional ack (syntax accept/reject)                       |
 
 Transports: SFTP batch (`transport/sftp.ts`) + real-time REST
 (`transport/realtime.ts`); stub/outbox mode when unconfigured.
@@ -249,9 +249,9 @@ line-by-line. It is **high quality** and DME-correct on the essentials:
 - **CLM02 is recomputed from the sum of service lines**, so a drifted stored
   header total can't produce a claim whose total ≠ Σ(lines) (a common
   front-end rejection). This is a genuinely careful touch.
-- Claim frequency `1`/`7`/`8` with **REF*F8** original-claim-number on
+- Claim frequency `1`/`7`/`8` with **REF\*F8** original-claim-number on
   replacement/void — correct corrected-claim handling.
-- Prior-auth **REF*G1**; ICD-10 diagnoses with **ABK/ABF** qualifiers and
+- Prior-auth **REF\*G1**; ICD-10 diagnoses with **ABK/ABF** qualifiers and
   per-line diagnosis pointers; up to 4 modifiers per line.
 - **Loop 2310B** rendering provider, **loop 2310D** referring/ordering
   physician (`NM1*DN`) — emitted for Medicare DME; **loop 2320/2330** COB with
@@ -286,11 +286,11 @@ After the verification pass — and the work in this PR — the accuracy list is
 **fully closed** (A2 ships behind a seeded-OFF flag pending a one-time 277CA
 validation):
 
-| # | Item | DME impact | Status / effort | Where |
-| --- | --- | --- | --- | --- |
-| A1 | **NTE narrative for NOC/misc HCPCS** (E1399 etc.) — required by Medicare DME | Denial on every narrative-less NOC line | **DONE (this PR)** — `NTE*ADD` in builder; `narrative` column; preflight ERROR blocks submit until set | `edi/837p.ts`; `0248_claim_line_narrative.sql`; `office-ally-batch.ts`; `claim-preflight.ts` |
-| A2 | **Line-level ordering-provider loop 2420E (`DK`)** | Possible Medicare DME PECOS edit rejection; today relies on 2310D being accepted | **DONE (this PR), flag-gated OFF** — `office-ally-batch` attaches the referring provider (NPI + address) per line behind `billing.line_ordering_provider` (mig `0249`, seeded OFF). Flip on in the Office Ally T cycle, confirm via 277CA, then leave on. Off → byte-identical 837P. | `edi/837p.ts`; `office-ally-batch.ts`; `0249_…_flag.sql` |
-| A5 | **Full CMS-484 _clinical_ CMN PDF** | The DWO/CMN **cover** rendered; the answered clinical questionnaire didn't | **DONE (this PR)** — `lib/billing/cmn-pdf.ts` renders the Section B Q&A + attestation; `GET /admin/cmn-documents/:id/pdf`; "PDF" link in `PatientCmnCard` | `lib/billing/cmn-pdf.ts`; `routes/admin/cmn-documents.ts`; `PatientCmnCard.tsx` |
+| #   | Item                                                                         | DME impact                                                                       | Status / effort                                                                                                                                                                                                                                                                      | Where                                                                                        |
+| --- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| A1  | **NTE narrative for NOC/misc HCPCS** (E1399 etc.) — required by Medicare DME | Denial on every narrative-less NOC line                                          | **DONE (this PR)** — `NTE*ADD` in builder; `narrative` column; preflight ERROR blocks submit until set                                                                                                                                                                               | `edi/837p.ts`; `0250_claim_line_narrative.sql`; `office-ally-batch.ts`; `claim-preflight.ts` |
+| A2  | **Line-level ordering-provider loop 2420E (`DK`)**                           | Possible Medicare DME PECOS edit rejection; today relies on 2310D being accepted | **DONE (this PR), flag-gated OFF** — `office-ally-batch` attaches the referring provider (NPI + address) per line behind `billing.line_ordering_provider` (mig `0251`, seeded OFF). Flip on in the Office Ally T cycle, confirm via 277CA, then leave on. Off → byte-identical 837P. | `edi/837p.ts`; `office-ally-batch.ts`; `0251_…_flag.sql`                                     |
+| A5  | **Full CMS-484 _clinical_ CMN PDF**                                          | The DWO/CMN **cover** rendered; the answered clinical questionnaire didn't       | **DONE (this PR)** — `lib/billing/cmn-pdf.ts` renders the Section B Q&A + attestation; `GET /admin/cmn-documents/:id/pdf`; "PDF" link in `PatientCmnCard`                                                                                                                            | `lib/billing/cmn-pdf.ts`; `routes/admin/cmn-documents.ts`; `PatientCmnCard.tsx`              |
 
 **Already covered (do not re-build):** line-level COGS (`claim-builder.ts`,
 migration 0193); the **modifier/KX/capped-rental** traps from §1.2
@@ -309,15 +309,16 @@ the **276/277 claim-status** path (`claim-status-checker.ts` +
 `routes/admin/claim-status.ts` + inbound-277 poller), the **one-click
 secondary-COB worklist** (`secondary-claims.ts` + `admin-secondary-claims.tsx`),
 and **outbound fax for appeal letters** (`telnyx-fax.ts` + `routes/fax/document.ts`
-+ `claim-appeals.ts`). Manual claims are intentionally header-only, so there is
-no "stamp modifiers on manual claims" gap — fulfillment-derived claims auto-stamp
-via `claim-builder.ts`. The two remaining seams are now **both closed in this
-PR**:
 
-| # | Gap | Status | Where |
-| --- | --- | --- | --- |
-| U1 | **Auto-fax prior-auth request forms** (appeal letters already auto-faxed; PA forms only rendered a PDF) | **DONE (this PR)** — `POST …/prior-authorizations/:paId/fax` dispatches via Telnyx to the payer's `prior_auth_fax_e164`; shared on-demand PA-PDF render + signed `pa_request` token; "Fax to payer" button in the clinical PA table | `lib/billing/pa-request-render.ts`; `routes/admin/prior-auth-request-form.ts`; `fax-document-token.ts`; `routes/fax/document.ts`; `ClinicalTabs.tsx` |
-| U6 | **Admin UI field for the line `narrative`** | **DONE (this PR)** — AddLineForm input + per-line inline editor, with a NOC-code amber prompt; `POST /lines` + GET detail carry it | `pages/admin/admin-insurance-claims.tsx`; `lib/admin/clinical-tabs-api.ts`; `routes/patients/insurance-claims.ts` |
+- `claim-appeals.ts`). Manual claims are intentionally header-only, so there is
+  no "stamp modifiers on manual claims" gap — fulfillment-derived claims auto-stamp
+  via `claim-builder.ts`. The two remaining seams are now **both closed in this
+  PR**:
+
+| #   | Gap                                                                                                     | Status                                                                                                                                                                                                                              | Where                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U1  | **Auto-fax prior-auth request forms** (appeal letters already auto-faxed; PA forms only rendered a PDF) | **DONE (this PR)** — `POST …/prior-authorizations/:paId/fax` dispatches via Telnyx to the payer's `prior_auth_fax_e164`; shared on-demand PA-PDF render + signed `pa_request` token; "Fax to payer" button in the clinical PA table | `lib/billing/pa-request-render.ts`; `routes/admin/prior-auth-request-form.ts`; `fax-document-token.ts`; `routes/fax/document.ts`; `ClinicalTabs.tsx` |
+| U6  | **Admin UI field for the line `narrative`**                                                             | **DONE (this PR)** — AddLineForm input + per-line inline editor, with a NOC-code amber prompt; `POST /lines` + GET detail carry it                                                                                                  | `pages/admin/admin-insurance-claims.tsx`; `lib/admin/clinical-tabs-api.ts`; `routes/patients/insurance-claims.ts`                                    |
 
 NikoHealth's reputation as "easiest to use" is built on automating exactly this
 last mile — and PennFit is now there on every piece (claim status, secondary
@@ -339,7 +340,7 @@ layer Niko doesn't have.
 **Done in this PR:**
 
 - **A1 — NTE narrative end-to-end** (the one real accuracy gap): `NTE*ADD` in
-  the 837P builder, a `narrative` line column (migration 0248), the line
+  the 837P builder, a `narrative` line column (migration 0250), the line
   create/PATCH endpoints, the batch mapping, and a preflight **error** that
   blocks submit when a NOC/miscellaneous HCPCS line has no narrative.
 - **U6 — narrative in the claim UI**: AddLineForm input + per-line inline
@@ -349,7 +350,7 @@ layer Niko doesn't have.
   mirroring the appeal-letter fax path.
 - **A2 — line-level ordering-provider loop 2420E** wired through
   `office-ally-batch`, behind the seeded-OFF flag `billing.line_ordering_provider`
-  (mig 0249). Capability + tests shipped; flip on after a 277CA check.
+  (mig 0251). Capability + tests shipped; flip on after a 277CA check.
 - **A5 — answered CMS-484/846/848/DIF clinical CMN PDF** (`cmn-pdf.ts` +
   `GET /admin/cmn-documents/:id/pdf` + a "PDF" link).
 
@@ -391,5 +392,5 @@ modifier auto-stamp were **already in the tree** (see the Verification update).
 - [CMS — referring/ordering provider, loops 2310A/2310D/2420E](https://www.cms.gov/Outreach-and-Education/MLN/WBT/MLN4462429-MLN-WBT-1500/1500/lesson04/07/index.html)
 - [Clustox — why 18% of DME claims get denied](https://www.clustox.com/blog/claims-processing-software-dme/)
 - [AnnexMed — DME CPT/HCPCS/modifiers guide 2026](https://annexmed.com/dme-cpt-codes)
-</content>
-</invoke>
+  </content>
+  </invoke>

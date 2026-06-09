@@ -136,7 +136,7 @@ const createLineBody = z
     description: z.string().trim().max(240).nullable().optional(),
     quantity: z.number().int().min(1).max(9999).default(1),
     billedCents: z.number().int().min(0),
-    // 837P loop-2400 NTE narrative (migration 0248) — payer-facing, capped
+    // 837P loop-2400 NTE narrative (migration 0250) — payer-facing, capped
     // at the X12 NTE02 80-char limit. Required by Medicare DME for NOC/misc
     // HCPCS (E1399 etc.); the preflight blocks submit on a narrative-less
     // NOC line.
@@ -154,7 +154,7 @@ const patchLineBody = z
     allowedCents: z.number().int().min(0).optional(),
     paidCents: z.number().int().min(0).optional(),
     denialReason: z.string().trim().max(2000).nullable().optional(),
-    // 837P loop-2400 NTE narrative (migration 0248). Capped at the X12
+    // 837P loop-2400 NTE narrative (migration 0250). Capped at the X12
     // NTE02 80-char limit; the EDI builder truncates too, but reject
     // overflow at the boundary so the operator sees it. Payer-facing.
     narrative: z.string().trim().max(80).nullable().optional(),

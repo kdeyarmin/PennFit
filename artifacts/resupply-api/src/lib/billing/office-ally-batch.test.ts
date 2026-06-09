@@ -280,7 +280,12 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
 describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () => {
   it("attaches the referring provider as a 2420E ordering provider when the flag is ON", async () => {
     stageMinimalDetail([
-      { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+      {
+        hcpcs_code: "E0601",
+        modifier: "RR,KX",
+        billed_cents: 24999,
+        quantity: 1,
+      },
     ]);
     // Referring (prescribing) provider — the source of the line ordering provider.
     stageSupabaseResponse("providers", "select", {
@@ -330,7 +335,12 @@ describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () 
         organizationName: "PENNPAPS",
         npi: "1234567893",
         taxId: "123456789",
-        address: { line1: "1 A St", city: "STATE COLLEGE", state: "PA", zip: "16801" },
+        address: {
+          line1: "1 A St",
+          city: "STATE COLLEGE",
+          state: "PA",
+          zip: "16801",
+        },
       },
       claims: [detail!],
       control: {
@@ -347,7 +357,12 @@ describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () 
 
   it("does NOT attach an ordering provider when the flag is OFF (default)", async () => {
     stageMinimalDetail([
-      { hcpcs_code: "E0601", modifier: "RR,KX", billed_cents: 24999, quantity: 1 },
+      {
+        hcpcs_code: "E0601",
+        modifier: "RR,KX",
+        billed_cents: 24999,
+        quantity: 1,
+      },
     ]);
     stageSupabaseResponse("providers", "select", {
       data: {

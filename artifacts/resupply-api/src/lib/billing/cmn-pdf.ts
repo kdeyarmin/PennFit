@@ -281,9 +281,7 @@ function formatIsoDate(iso: string): string {
   });
 }
 
-function formatAddress(
-  a: CmnPdfPatient["address"],
-): string | null {
+function formatAddress(a: CmnPdfPatient["address"]): string | null {
   if (!a) return null;
   const zip = a.zip ?? a.postalCode ?? a.postal_code;
   const parts: string[] = [];

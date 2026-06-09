@@ -843,7 +843,10 @@ export function build837P(
         );
         if (op.address) {
           segments.push(
-            joinSegment(["N3", padOrTrunc(sanitizeElement(op.address.line1), 55)]),
+            joinSegment([
+              "N3",
+              padOrTrunc(sanitizeElement(op.address.line1), 55),
+            ]),
           );
           segments.push(
             joinSegment([

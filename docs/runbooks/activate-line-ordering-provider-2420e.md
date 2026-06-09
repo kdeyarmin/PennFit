@@ -9,7 +9,7 @@ line. It is **additive** to the claim-level 2310D referring loop.
 
 **Why it's gated.** Flipping it ON changes the bytes of every live 837P sent to
 payers — an outward-facing, hard-to-reverse change. So it ships behind the
-seeded-**OFF** feature flag `billing.line_ordering_provider` (migration 0249)
+seeded-**OFF** feature flag `billing.line_ordering_provider` (migration 0251)
 and must be confirmed against a real clearinghouse acknowledgment (**277CA**)
 before production billing. With the flag OFF the 837P is **byte-identical** to
 today.
@@ -86,9 +86,9 @@ Nothing else changes; no migration or deploy involved.
 
 ## Where the code lives
 
-| Piece | Location |
-| --- | --- |
-| Flag seed (OFF) | `lib/resupply-db/drizzle/0249_billing_line_ordering_provider_flag.sql` |
-| Flag enum | `artifacts/resupply-api/src/lib/feature-flags.ts` |
-| Per-line attach (gated) | `artifacts/resupply-api/src/lib/billing/office-ally-batch.ts` (`buildOneDetail` → `orderingProvider`) |
-| EDI emit (2420E `NM1*DK` + N3/N4 + REF*0B) | `lib/resupply-integrations-office-ally/src/edi/837p.ts` |
+| Piece                                       | Location                                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Flag seed (OFF)                             | `lib/resupply-db/drizzle/0251_billing_line_ordering_provider_flag.sql`                                |
+| Flag enum                                   | `artifacts/resupply-api/src/lib/feature-flags.ts`                                                     |
+| Per-line attach (gated)                     | `artifacts/resupply-api/src/lib/billing/office-ally-batch.ts` (`buildOneDetail` → `orderingProvider`) |
+| EDI emit (2420E `NM1*DK` + N3/N4 + REF\*0B) | `lib/resupply-integrations-office-ally/src/edi/837p.ts`                                               |

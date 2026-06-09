@@ -166,7 +166,9 @@ export async function buildPaRequestPdf(
     supabase
       .schema("resupply")
       .from("sleep_studies")
-      .select("study_type, study_date, ahi, rdi, diagnosis_icd10, facility_name")
+      .select(
+        "study_type, study_date, ahi, rdi, diagnosis_icd10, facility_name",
+      )
       .eq("patient_id", patientId)
       .order("study_date", { ascending: false })
       .limit(1)

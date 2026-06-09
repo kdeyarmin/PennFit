@@ -615,7 +615,12 @@ describe("build837P", () => {
       npi: "1801234569",
       firstName: "DANA",
       lastName: "OKAFOR",
-      address: { line1: "55 CLINIC WAY", city: "HERSHEY", state: "PA", zip: "17033" },
+      address: {
+        line1: "55 CLINIC WAY",
+        city: "HERSHEY",
+        state: "PA",
+        zip: "17033",
+      },
     };
     const { payload } = build837P(input);
     const stIdx = payload.indexOf("ST*");

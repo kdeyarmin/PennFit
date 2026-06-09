@@ -992,16 +992,13 @@ function LineNarrativeEditor({
     return (
       <div className="mt-1.5 space-y-1">
         {line.narrative ? (
-          <p
-            className="text-xs italic"
-            style={{ color: "hsl(var(--ink-3))" }}
-          >
+          <p className="text-xs italic" style={{ color: "hsl(var(--ink-3))" }}>
             NTE: {line.narrative}
           </p>
         ) : isNoc ? (
           <p className="text-xs text-amber-700">
-            {line.hcpcsCode} is a miscellaneous/NOC code — Medicare DME
-            requires a narrative (item description + MSRP) or it denies.
+            {line.hcpcsCode} is a miscellaneous/NOC code — Medicare DME requires
+            a narrative (item description + MSRP) or it denies.
           </p>
         ) : null}
         <button

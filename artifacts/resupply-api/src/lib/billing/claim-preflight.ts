@@ -560,8 +560,7 @@ export async function preflightClaim(
     // flag a NOC line whose `narrative` is blank before it's submitted.
     const nocMissingNarrative = lines.filter(
       (l) =>
-        isNocHcpcs(l.hcpcs_code) &&
-        (l.narrative ?? "").trim().length === 0,
+        isNocHcpcs(l.hcpcs_code) && (l.narrative ?? "").trim().length === 0,
     );
     if (nocMissingNarrative.length > 0) {
       const first = nocMissingNarrative[0]!;
@@ -571,7 +570,9 @@ export async function preflightClaim(
         label: "Miscellaneous HCPCS line needs a narrative",
         detail: `${nocMissingNarrative
           .map((l) => l.hcpcs_code)
-          .join(", ")} is a not-otherwise-classified code — Medicare DME requires an item description + MSRP narrative (837P NTE) or the line denies. Add it to the line.`,
+          .join(
+            ", ",
+          )} is a not-otherwise-classified code — Medicare DME requires an item description + MSRP narrative (837P NTE) or the line denies. Add it to the line.`,
         fixAction: {
           kind: "edit_line_item",
           claimId: claim.id,
