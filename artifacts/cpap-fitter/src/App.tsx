@@ -45,6 +45,9 @@ import { LearnVideos } from "@/pages/learn-videos";
 const Consent = lazyWithRetry(() =>
   import("@/pages/consent").then((m) => ({ default: m.Consent })),
 );
+const FitterInvite = lazyWithRetry(() =>
+  import("@/pages/fitter-invite").then((m) => ({ default: m.FitterInvite })),
+);
 const Capture = lazyWithRetry(() =>
   import("@/pages/capture").then((m) => ({ default: m.Capture })),
 );
@@ -709,6 +712,7 @@ function PatientRouter() {
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/consent" component={Consent} />
+          <Route path="/fitter-invite" component={FitterInvite} />
           <Route path="/capture" component={GuardedCapture} />
           <Route path="/masks" component={Masks} />
           <Route path="/cpap-masks" component={CpapMasks} />

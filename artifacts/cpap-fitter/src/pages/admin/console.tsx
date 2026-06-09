@@ -390,6 +390,11 @@ const AdminFitterLeadsPage = lazy(() =>
     default: m.AdminFitterLeadsPage,
   })),
 );
+const AdminFitterInvitesPage = lazy(() =>
+  import("@/pages/admin/admin-fitter-invites").then((m) => ({
+    default: m.AdminFitterInvitesPage,
+  })),
+);
 const AdminInsuranceClaimsPage = lazy(() =>
   import("@/pages/admin/admin-insurance-claims").then((m) => ({
     default: m.AdminInsuranceClaimsPage,
@@ -825,6 +830,10 @@ function AdminConsole() {
             <Route
               path="/admin/fitter-leads"
               component={AdminFitterLeadsPage}
+            />
+            <Route
+              path="/admin/fitter-invites"
+              component={AdminFitterInvitesPage}
             />
             <Route
               path="/admin/shop/customers"

@@ -73,7 +73,9 @@ export type TrackStep =
   | "chat_sent"
   | "chat_replied"
   | "chat_feedback"
-  | "fitter_lead_submit_failed";
+  | "fitter_lead_submit_failed"
+  | "fitter_invite_opened"
+  | "fitter_invite_started";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {

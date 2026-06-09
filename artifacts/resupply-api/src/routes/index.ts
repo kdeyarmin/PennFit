@@ -121,6 +121,7 @@ import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import fitterLeadsAdminRouter from "./admin/fitter-leads.js";
+import fitterInvitesAdminRouter from "./admin/fitter-invites.js";
 import payerProfilesRouter from "./admin/payer-profiles.js";
 import officeAllySubmissionsRouter from "./admin/office-ally-submissions.js";
 import officeAllyUploadAckRouter from "./admin/office-ally-upload-ack.js";
@@ -314,6 +315,11 @@ router.use(insuranceLeadsAdminRouter);
 // dispatchers (fitter-supply-campaign + fitter-conversion-
 // attribution) handle the actual sends and conversion stamps.
 router.use(fitterLeadsAdminRouter);
+// /admin/fitter-invites/* — staff-initiated AI mask-fitter invites.
+// Send a prospect/patient a signed fitter link; on completion the
+// measurements + answers + recommendation come back via
+// /shop/fitter-invite/complete and auto-attach to a matching chart.
+router.use(fitterInvitesAdminRouter);
 // /admin/payer-profiles/* — Pennsylvania payer catalog (migration
 // 0128). Read by every admin; write restricted to requireAdminOnly.
 // Drives 837P NM1*PR loop population on Office Ally submissions.

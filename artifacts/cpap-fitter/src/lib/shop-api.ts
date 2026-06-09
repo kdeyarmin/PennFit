@@ -11,6 +11,11 @@
 // just for three endpoints would be more weight than three small
 // typed wrappers.
 
+import type {
+  FacialMeasurements,
+  QuestionnaireAnswers,
+} from "@workspace/api-client-react/storefront";
+
 export interface ShopProductView {
   id: string;
   name: string;
@@ -842,6 +847,80 @@ export async function submitFitterComplete(
   }
   const body = (await res.json()) as { ok: true; enrolled?: boolean };
   return { ok: true, enrolled: Boolean(body.enrolled) };
+}
+
+// ─────────────────────────────────────────── staff fitter invite
+//
+// A CSR / fitter can send a prospect or current patient a signed link
+// to run the AI mask fitter (/fitter-invite?t=<token>). The
+// storefront resolves the token to prefill the patient's email, then
+// — unlike the public flow — transmits the FULL fitting back on
+// completion so PennPaps can follow up and attach it to a chart.
+
+export interface ResolveFitterInviteResult {
+  valid: boolean;
+  email?: string | null;
+  name?: string | null;
+  reason?: string;
+}
+
+export async function resolveFitterInvite(
+  token: string,
+): Promise<ResolveFitterInviteResult> {
+  const res = await fetch(
+    `/resupply-api/shop/fitter-invite/resolve?t=${encodeURIComponent(token)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`http_${res.status}`);
+  return (await res.json()) as ResolveFitterInviteResult;
+}
+
+export interface FitterInviteCompleteInput {
+  token: string;
+  measurements: FacialMeasurements;
+  answers: QuestionnaireAnswers;
+  recommendation: {
+    maskId: string;
+    name: string;
+    type: "fullFace" | "nasal" | "nasalPillow" | "hybrid";
+    top?: {
+      maskId: string;
+      name: string;
+      type: "fullFace" | "nasal" | "nasalPillow" | "hybrid";
+      confidence?: number;
+    }[];
+  };
+}
+
+export async function submitFitterInviteComplete(
+  input: FitterInviteCompleteInput,
+): Promise<{ ok: true; matched: boolean }> {
+  const res = await fetch("/resupply-api/shop/fitter-invite/complete", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify({
+      t: input.token,
+      measurements: input.measurements,
+      answers: input.answers,
+      recommendation: input.recommendation,
+    }),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  const body = (await res.json()) as { ok: true; matched?: boolean };
+  return { ok: true, matched: Boolean(body.matched) };
 }
 
 // ─────────────────────────────────────────── sleep apnea quiz capture

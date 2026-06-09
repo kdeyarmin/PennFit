@@ -910,6 +910,52 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Relationships: [];
       };
+      // Mig 0243 — staff-initiated AI mask-fitter invitations.
+      fitter_invites: {
+        Row: {
+          id: string;
+          patient_id: string | null;
+          recipient_email: string | null;
+          recipient_phone_e164: string | null;
+          recipient_name: string | null;
+          channel: "email" | "sms";
+          status:
+            | "sent"
+            | "opened"
+            | "completed"
+            | "attached"
+            | "revoked"
+            | "expired";
+          invited_by_user_id: string | null;
+          invited_by_email: string | null;
+          measurements: Json | null;
+          questionnaire_answers: Json | null;
+          recommended_mask_id: string | null;
+          recommended_mask_name: string | null;
+          recommended_mask_type: string | null;
+          recommendations: Json | null;
+          auto_matched: boolean;
+          sent_at: string | null;
+          opened_at: string | null;
+          completed_at: string | null;
+          attached_at: string | null;
+          revoked_at: string | null;
+          expires_at: string;
+          created_at: string;
+          updated_at: string;
+          // Mig 0244 — holding-area claim ownership.
+          claimed_by_user_id: string | null;
+          claimed_by_email: string | null;
+          claimed_at: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["fitter_invites"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["fitter_invites"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Mig 0151 — per-send audit log for the multi-touch supply
       // campaign. One row per (lead, touch_index, channel).
       fitter_campaign_touches: {
