@@ -88,6 +88,60 @@ export async function renderStatementPdf(
   });
 }
 
+export interface StatementBatchResult {
+  pdf: Buffer;
+  statementCount: number;
+}
+
+/**
+ * Render MANY statements into a single PDF — one statement per page —
+ * for the mail worklist's "print batch" action. Staff print this one
+ * file and stuff envelopes for the patients who chose mailed bills.
+ *
+ * Shares the per-statement draw + CONFIDENTIAL banner with
+ * renderStatementPdf; the `pageAdded` listener re-stamps the banner on
+ * every page after the first. (Same ≤~20-line-item-per-page caveat as
+ * the single renderer — long statements aren't paginated mid-table.)
+ */
+export async function renderStatementsBatchPdf(
+  inputs: StatementInput[],
+): Promise<StatementBatchResult> {
+  const doc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: 72, bottom: 54, left: 54, right: 54 },
+  });
+  doc.on("pageAdded", () => drawConfidentialBanner(doc));
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () =>
+      resolve({ pdf: Buffer.concat(chunks), statementCount: inputs.length }),
+    );
+    doc.on("error", reject);
+    try {
+      if (inputs.length === 0) {
+        drawConfidentialBanner(doc);
+        doc
+          .font("Helvetica")
+          .fontSize(12)
+          .text("No statements are queued for mail.", { align: "center" });
+        doc.end();
+        return;
+      }
+      inputs.forEach((input, i) => {
+        // The very first page exists at construction (the listener only
+        // fires for pages ADDED after), so stamp its banner by hand.
+        if (i === 0) drawConfidentialBanner(doc);
+        else doc.addPage();
+        drawStatement(doc, input);
+      });
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 function drawConfidentialBanner(doc: PDFKit.PDFDocument): void {
   const saved = { x: doc.x, y: doc.y };
   doc

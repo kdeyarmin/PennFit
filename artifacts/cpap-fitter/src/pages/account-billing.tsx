@@ -20,6 +20,7 @@ import {
   CreditCard,
   Download,
   FileText,
+  Mail,
   Wallet,
   XCircle,
 } from "lucide-react";
@@ -32,9 +33,12 @@ import {
   fetchBillingBalance,
   fetchPatientPayments,
   fetchPatientStatements,
+  fetchStatementPreference,
   formatMoneyCents,
   statementPdfUrl,
+  updateStatementPreference,
   type PatientPayment,
+  type StatementDeliveryMethod,
 } from "@/lib/me-billing-api";
 
 function paymentTone(status: PatientPayment["status"]): {
@@ -188,8 +192,8 @@ function AccountBillingInner() {
         <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
         <p className="text-slate-600">
           Your open balance with PennPaps after insurance, plus past statements
-          and payments. Statements are also emailed when generated; this page is
-          the always-current view.
+          and payments. Choose below whether you&apos;d like your bills emailed
+          or mailed; either way, this page is always current.
         </p>
       </header>
 
@@ -338,6 +342,8 @@ function AccountBillingInner() {
         )}
       </section>
 
+      <StatementDeliverySection />
+
       <section
         className="rounded-2xl border bg-white p-6 shadow-sm"
         data-testid="billing-statements"
@@ -372,7 +378,7 @@ function AccountBillingInner() {
           </div>
         ) : (statements.data?.statements.length ?? 0) === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
-            No statements yet. We email one whenever there's a new
+            No statements yet. One is generated whenever there's a new
             patient-responsibility balance to settle.
           </p>
         ) : (
@@ -477,5 +483,115 @@ function AccountBillingInner() {
         )}
       </section>
     </main>
+  );
+}
+
+// Lets the patient choose emailed vs mailed bills. Tolerant: hides on
+// load error, and explains when the account isn't yet linked to a
+// billing record (the preference has nowhere to apply until then).
+function StatementDeliverySection() {
+  const qc = useQueryClient();
+  const pref = useQuery({
+    queryKey: ["me-statement-preference"],
+    queryFn: fetchStatementPreference,
+    staleTime: 30_000,
+  });
+  const update = useMutation({
+    mutationFn: (method: StatementDeliveryMethod) =>
+      updateStatementPreference(method),
+    onSuccess: (data) => qc.setQueryData(["me-statement-preference"], data),
+  });
+
+  if (pref.isPending || pref.isError || !pref.data) return null;
+  const { statementDeliveryMethod, email, linked } = pref.data;
+  const current = update.isPending
+    ? (update.variables as StatementDeliveryMethod)
+    : statementDeliveryMethod;
+
+  const options: Array<{
+    value: StatementDeliveryMethod;
+    label: string;
+    hint: string;
+  }> = [
+    {
+      value: "email",
+      label: "Email",
+      hint: email ? `Sent to ${email}` : "Sent to your account email",
+    },
+    { value: "mail", label: "Mail", hint: "Paper statement by post" },
+  ];
+
+  return (
+    <section
+      className="rounded-2xl border bg-white p-6 shadow-sm"
+      data-testid="billing-delivery-preference"
+    >
+      <h2 className="text-lg font-semibold text-slate-900 inline-flex items-center gap-2">
+        <Mail className="h-4 w-4" />
+        How you get your bills
+      </h2>
+      <p className="text-sm text-slate-600 mt-1">
+        Choose how you&apos;d like to receive new statements and bills. You can
+        always view and download every statement here regardless.
+      </p>
+
+      {linked === false && (
+        <p className="mt-3 text-xs text-amber-700">
+          We&apos;ll apply this once your billing record is set up.
+        </p>
+      )}
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {options.map((opt) => {
+          const active = current === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={update.isPending || linked === false}
+              onClick={() => {
+                if (opt.value !== statementDeliveryMethod) {
+                  update.mutate(opt.value);
+                }
+              }}
+              data-testid={`billing-delivery-${opt.value}`}
+              className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${
+                active
+                  ? "border-[hsl(var(--penn-navy))] bg-[hsl(var(--penn-navy))]/5"
+                  : "border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${
+                    active
+                      ? "border-[hsl(var(--penn-navy))]"
+                      : "border-slate-400"
+                  }`}
+                >
+                  {active && (
+                    <span className="h-2 w-2 rounded-full bg-[hsl(var(--penn-navy))]" />
+                  )}
+                </span>
+                <span className="font-semibold text-slate-900">
+                  {opt.label}
+                </span>
+              </span>
+              <span className="block mt-1 text-xs text-slate-500 pl-6">
+                {opt.hint}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {update.isError && (
+        <p className="mt-2 text-xs text-red-600" role="alert">
+          Couldn&apos;t save your preference. Please try again.
+        </p>
+      )}
+    </section>
   );
 }

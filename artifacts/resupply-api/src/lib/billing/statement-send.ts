@@ -127,7 +127,11 @@ export interface StatementContext {
 export type SendOutcome =
   | { kind: "sent"; channel: StatementChannel }
   | { kind: "failed"; channel: StatementChannel; reason: string }
-  | { kind: "skipped"; reason: string };
+  | { kind: "skipped"; reason: string }
+  // Routed to the print/mail worklist (the patient chose mailed
+  // statements, or has no email for an emailed one). Left pending with
+  // delivery_method 'mail' until an operator marks the mail batch sent.
+  | { kind: "mail"; reason: string };
 
 function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -233,6 +237,9 @@ async function persistOutcome(
   statementId: string,
   outcome: SendOutcome,
 ): Promise<void> {
+  // 'mail' is not a delivery_status — those rows stay 'pending' on the
+  // mail worklist and are flipped to sent/mail by the mark-mailed route.
+  if (outcome.kind === "mail") return;
   const status =
     outcome.kind === "sent"
       ? "sent"
@@ -253,9 +260,120 @@ async function persistOutcome(
 }
 
 /**
- * Load one statement + its patient's contact + comm prefs, pick a
- * consented channel, send, and record the outcome. Fail-soft — returns
- * the outcome; never throws for a normal gated/failed send.
+ * Flag a statement for the print/mail worklist: delivery_method 'mail',
+ * left pending. Used when a patient who prefers an emailed statement has
+ * no email on file (so the bill isn't silently lost).
+ */
+async function routeToMail(
+  supabase: SupabaseClient,
+  statementId: string,
+): Promise<void> {
+  await supabase
+    .schema("resupply")
+    .from("patient_billing_statements")
+    .update({ delivery_method: "mail" })
+    .eq("id", statementId);
+}
+
+/**
+ * Mark mailed statements delivered: status 'sent', channel 'mail',
+ * delivered_at now. Called when an operator confirms a print/mail batch
+ * went out (routes/admin/billing-statement-send.ts). Guarded — only
+ * flips rows that are actually mail-preference + pending, so a stray id
+ * can't mark an electronic/already-sent statement mailed. Returns the
+ * count actually marked.
+ */
+export async function markStatementsMailed(
+  supabase: SupabaseClient,
+  statementIds: string[],
+): Promise<number> {
+  if (statementIds.length === 0) return 0;
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("patient_billing_statements")
+    .update({
+      delivery_status: "sent",
+      delivery_channel: "mail",
+      delivery_method: "mail",
+      delivered_at: new Date().toISOString(),
+      delivery_error: null,
+    })
+    .in("id", statementIds)
+    .eq("delivery_method", "mail")
+    .eq("delivery_status", "pending")
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).length;
+}
+
+interface LoadedStatement {
+  id: string;
+  total_patient_responsibility_cents: number;
+  statement_pdf_object_key: string | null;
+}
+
+/**
+ * Sign the PDF link, deliver on the chosen channel, persist + log the
+ * outcome. Shared by the emailed-preference and legacy comm-prefs paths.
+ */
+async function deliverOnChannel(
+  supabase: SupabaseClient,
+  stmt: LoadedStatement,
+  contact: { email: string | null; phoneE164: string | null },
+  channel: StatementChannel,
+  cfg: StatementMessagingConfig,
+  send: NonNullable<StatementSendDeps["send"]>,
+  deps: StatementSendDeps,
+): Promise<SendOutcome> {
+  let pdfUrl: string | null = null;
+  if (stmt.statement_pdf_object_key && deps.signPdfUrl) {
+    try {
+      pdfUrl = await deps.signPdfUrl(stmt.statement_pdf_object_key);
+    } catch {
+      pdfUrl = null; // fail-soft — send the balance notice without a link
+    }
+  }
+
+  const outcome = await send(
+    {
+      statementId: stmt.id,
+      amountCents: stmt.total_patient_responsibility_cents,
+      email: contact.email,
+      phoneE164: contact.phoneE164,
+      pdfUrl,
+    },
+    channel,
+    cfg,
+  );
+  await persistOutcome(supabase, stmt.id, outcome);
+
+  logger.info(
+    {
+      event: "billing.statement.send",
+      statement_id: stmt.id,
+      channel: "channel" in outcome ? outcome.channel : null,
+      status: outcome.kind,
+    },
+    "billing.statement.send",
+  );
+  return outcome;
+}
+
+/**
+ * Load one statement + its patient's contact, SEGREGATE by the patient's
+ * statement delivery preference (stamped on the row's `delivery_method`
+ * at generation), and deliver:
+ *
+ *   * 'mail'  — routed to the print/mail worklist (left pending). Never
+ *               emailed/texted.
+ *   * 'email' — emailed to the patient. An emailed-statement preference
+ *               is an explicit opt-in to a bill by email, so it sends
+ *               regardless of the generic billing-statement toggle / quiet
+ *               hours. No email on file → falls back to the mail worklist.
+ *   * null / legacy — honors comm preferences + DND, email-or-SMS, via
+ *               pickStatementChannel (unchanged pre-0257 behavior).
+ *
+ * Fail-soft — returns the outcome; never throws for a normal gated send.
  */
 export async function sendOneStatement(
   supabase: SupabaseClient,
@@ -270,7 +388,7 @@ export async function sendOneStatement(
     .schema("resupply")
     .from("patient_billing_statements")
     .select(
-      "id, patient_id, total_patient_responsibility_cents, statement_pdf_object_key, delivery_status",
+      "id, patient_id, total_patient_responsibility_cents, statement_pdf_object_key, delivery_status, delivery_method",
     )
     .eq("id", statementId)
     .limit(1)
@@ -281,6 +399,20 @@ export async function sendOneStatement(
     const outcome: SendOutcome = { kind: "skipped", reason: "zero_balance" };
     await persistOutcome(supabase, statementId, outcome);
     return outcome;
+  }
+
+  const deliveryMethod = (stmt.delivery_method as string | null) ?? null;
+  const loaded: LoadedStatement = {
+    id: stmt.id,
+    total_patient_responsibility_cents: stmt.total_patient_responsibility_cents,
+    statement_pdf_object_key:
+      (stmt.statement_pdf_object_key as string | null) ?? null,
+  };
+
+  // Mailed-preference statements are not delivered electronically — they
+  // sit on the print/mail worklist until an operator marks the batch sent.
+  if (deliveryMethod === "mail") {
+    return { kind: "mail", reason: "mail_preference" };
   }
 
   const { data: patient } = await supabase
@@ -297,9 +429,28 @@ export async function sendOneStatement(
     | string
     | null;
 
-  // Communication preferences live on the linked shop_customers row
-  // (keyed by lowercased email), not on patients. No row / no email →
-  // defaults (billing-statement email ON, transactional SMS OFF).
+  // Emailed-statement preference: explicit opt-in to a bill by email.
+  if (deliveryMethod === "email") {
+    if (!email) {
+      // Can't email — route to the mail worklist so it isn't lost.
+      await routeToMail(supabase, statementId);
+      return { kind: "mail", reason: "no_email_fallback_mail" };
+    }
+    return deliverOnChannel(
+      supabase,
+      loaded,
+      { email, phoneE164 },
+      "email",
+      cfg,
+      send,
+      deps,
+    );
+  }
+
+  // Legacy / unset preference. Communication preferences live on the
+  // linked shop_customers row (keyed by lowercased email), not on
+  // patients. No row / no email → defaults (billing-statement email ON,
+  // transactional SMS OFF).
   let prefs = DEFAULT_COMMUNICATION_PREFERENCES;
   if (email) {
     const { data: cust } = await supabase
@@ -326,38 +477,15 @@ export async function sendOneStatement(
     return outcome;
   }
 
-  let pdfUrl: string | null = null;
-  if (stmt.statement_pdf_object_key && deps.signPdfUrl) {
-    try {
-      pdfUrl = await deps.signPdfUrl(stmt.statement_pdf_object_key);
-    } catch {
-      pdfUrl = null; // fail-soft — send the balance notice without a link
-    }
-  }
-
-  const outcome = await send(
-    {
-      statementId: stmt.id,
-      amountCents: stmt.total_patient_responsibility_cents,
-      email,
-      phoneE164,
-      pdfUrl,
-    },
+  return deliverOnChannel(
+    supabase,
+    loaded,
+    { email, phoneE164 },
     pick.channel,
     cfg,
+    send,
+    deps,
   );
-  await persistOutcome(supabase, statementId, outcome);
-
-  logger.info(
-    {
-      event: "billing.statement.send",
-      statement_id: statementId,
-      channel: "channel" in outcome ? outcome.channel : null,
-      status: outcome.kind,
-    },
-    "billing.statement.send",
-  );
-  return outcome;
 }
 
 export interface StatementBatchOpts {
@@ -370,11 +498,15 @@ export interface StatementBatchResult {
   sent: number;
   failed: number;
   skipped: number;
+  /** Statements left on the print/mail worklist (mail preference). */
+  mailQueued: number;
 }
 
 /**
- * Send all pending statements with a positive balance, capped per run.
- * Fail-soft per statement.
+ * Send all pending ELECTRONIC statements (emailed-preference + legacy)
+ * with a positive balance, capped per run. Mailed-preference statements
+ * are excluded — they live on the separate mail worklist — so the batch
+ * never repeatedly re-scans them. Fail-soft per statement.
  */
 export async function runStatementBatchSend(
   opts: StatementBatchOpts = {},
@@ -387,6 +519,7 @@ export async function runStatementBatchSend(
     sent: 0,
     failed: 0,
     skipped: 0,
+    mailQueued: 0,
   };
 
   const { data, error } = await supabase
@@ -395,6 +528,11 @@ export async function runStatementBatchSend(
     .select("id, total_patient_responsibility_cents")
     .eq("delivery_status", "pending")
     .gt("total_patient_responsibility_cents", 0)
+    // Electronic = everything EXCEPT mail-preference. Excluding only
+    // 'mail' keeps null (pre-0257) AND any legacy sms/in_person rows on
+    // the electronic path (handled by pickStatementChannel) rather than
+    // orphaning them off both queues.
+    .or("delivery_method.is.null,delivery_method.neq.mail")
     .order("created_at", { ascending: true })
     .limit(Math.max(1, cap));
   if (error) throw error;
@@ -406,6 +544,7 @@ export async function runStatementBatchSend(
       const outcome = await sendOneStatement(supabase, row.id, deps);
       if (outcome.kind === "sent") result.sent += 1;
       else if (outcome.kind === "failed") result.failed += 1;
+      else if (outcome.kind === "mail") result.mailQueued += 1;
       else result.skipped += 1;
     } catch (err) {
       logger.warn(
