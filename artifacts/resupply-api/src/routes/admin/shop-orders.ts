@@ -846,6 +846,35 @@ router.post(
       return;
     }
 
+    // Verification stop: required intake paperwork must be signed before
+    // a patient-linked order is released — for pickup as well as
+    // shipment. Same gate as the /tracking handler (global flag and/or
+    // per-payer requirement); guest / non-clinical orders pass through.
+    const paperworkGate = await evaluatePaperworkGateForCustomer(
+      existing.customerId,
+    );
+    if (paperworkGate.required && !paperworkGate.satisfied) {
+      req.log?.info?.(
+        {
+          orderId,
+          adminEmail: req.adminEmail,
+          requirementSources: paperworkGate.sources,
+          missingCount: paperworkGate.missingForms.length,
+        },
+        "admin/shop/orders: pickup blocked — required paperwork unsigned",
+      );
+      res.status(409).json({
+        error: "order_requires_signed_paperwork",
+        message:
+          "Required intake paperwork is not signed yet. The following form(s) must be signed before this order can be released for pickup: " +
+          paperworkGate.missingForms.join(", ") +
+          ".",
+        missingForms: paperworkGate.missingForms,
+        requirementSources: paperworkGate.sources,
+      });
+      return;
+    }
+
     const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
     // Idempotent stamp: only set ready_for_pickup_at if it's currently

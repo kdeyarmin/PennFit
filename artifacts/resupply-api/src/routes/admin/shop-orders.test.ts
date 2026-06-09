@@ -1070,8 +1070,37 @@ describe("POST /admin/shop/orders/:orderId/ready-for-pickup", () => {
     expect(res.body.error).toBe("order_not_paid");
   });
 
+  it("blocks pickup release when required paperwork is unsigned", async () => {
+    stubVerifiedAdmin();
+    invalidateFeatureFlagCache();
+    stageSupabaseResponse("shop_orders", "select", { data: pickupOrderRow() }); // loadOrder
+    // Paperwork gate resolves the customer to a patient, the global
+    // requirement flag is on, and no forms are signed → 409.
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { auth_user_id: "auth_patient" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: { id: "99999999-9999-4999-8999-999999999999" },
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("insurance_coverages", "select", { data: null });
+    stageSupabaseResponse("patient_form_acknowledgements", "select", {
+      data: [],
+    });
+    const res = await request(makeApp()).post(
+      `/resupply-api/admin/shop/orders/${VALID_ID}/ready-for-pickup`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("order_requires_signed_paperwork");
+    // Nothing released — ready_for_pickup_at untouched.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
+  });
+
   it("stamps ready_for_pickup_at on a paid pickup order", async () => {
     stubVerifiedAdmin();
+    invalidateFeatureFlagCache();
     const readyIso = new Date("2026-05-02T09:00:00Z").toISOString();
     stageSupabaseResponse("shop_orders", "select", { data: pickupOrderRow() }); // loadOrder
     // stamp update (no .select) + the email helper's claim update both
