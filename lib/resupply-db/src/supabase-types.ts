@@ -3289,11 +3289,18 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
-          status: "pending" | "suppressed" | "sending" | "sent" | "failed";
+          status:
+            | "pending"
+            | "retry_pending"
+            | "suppressed"
+            | "sending"
+            | "sent"
+            | "failed";
           suppression_reason: string | null;
           sent_at: string | null;
           vendor_message_id: string | null;
           error: string | null;
+          send_attempts: number;
           created_at: string;
           updated_at: string;
         };

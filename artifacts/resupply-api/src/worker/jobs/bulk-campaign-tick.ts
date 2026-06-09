@@ -12,15 +12,16 @@
 //     campaign has been paused or cancelled since the tick was
 //     scheduled.
 //
-// Each tick claims its batch with a `status='pending' →
-// 'sending'` UPDATE keyed on the row's pending status, so a
-// concurrent worker can't grab the same row twice (single-row
-// update is atomic in Postgres). Failures on the SendGrid call
-// flip the recipient to `failed`; transient errors are not
-// retried within the tick (the next tick won't re-pick a failed
-// row), keeping the worker simple — a CSR who wants to retry
-// failures can clone the campaign with the failed recipient ids
-// as a manual_list.
+// Each tick claims its batch with a `status IN ('pending',
+// 'retry_pending') → 'sending'` UPDATE keyed on the row's status, so
+// a concurrent worker can't grab the same row twice (single-row update
+// is atomic in Postgres). A SendGrid failure that is RETRYABLE (the
+// email client already exhausted its in-call retries on a transient
+// 5xx / network blip) flips the recipient to `retry_pending` and bumps
+// `send_attempts`, so a later tick re-picks it — bounded by
+// MAX_SEND_ATTEMPTS, after which (or on a permanent failure) it lands
+// in `failed`. A CSR can still clone a campaign with the failed
+// recipient ids for a manual re-send.
 //
 // Why per-tick jobs instead of one long-running job
 // -------------------------------------------------
@@ -59,6 +60,18 @@ import {
 } from "../lib/queue-options.js";
 
 export const BULK_CAMPAIGN_TICK_JOB = "bulk-campaigns.send-tick";
+
+// Max delivery attempts before a recipient is marked permanently
+// 'failed'. The email client already exhausts its own in-call retry
+// budget per attempt, so this bounds the cross-tick re-picks of a
+// *retryable* failure: a sustained outage gets a few more shots over
+// successive ticks, then we stop rather than spin forever.
+const MAX_SEND_ATTEMPTS = 3;
+
+// Selection / liveness statuses a recipient can be in while still
+// awaiting delivery. 'retry_pending' is treated identically to
+// 'pending' for claiming and for the "is the campaign done?" check.
+const PENDING_STATUSES = ["pending", "retry_pending"] as const;
 
 export interface BulkCampaignTickPayload {
   campaignId: string;
@@ -185,9 +198,9 @@ export async function processTick(
   const { data: pendingRows, error: pErr } = await supabase
     .schema("resupply")
     .from("bulk_campaign_recipients")
-    .select("id, recipient_kind, recipient_id, recipient_email")
+    .select("id, recipient_kind, recipient_id, recipient_email, send_attempts")
     .eq("campaign_id", campaign.id)
-    .eq("status", "pending")
+    .in("status", PENDING_STATUSES)
     .limit(batchSize);
   if (pErr) {
     log.error(
@@ -221,6 +234,7 @@ export async function processTick(
     recipient_email: string | null;
     recipient_kind: string;
     recipient_id: string;
+    send_attempts: number;
   }> = [];
   for (let i = 0; i < claimedIds.length; i += 200) {
     const idChunk = claimedIds.slice(i, i + 200);
@@ -229,8 +243,10 @@ export async function processTick(
       .from("bulk_campaign_recipients")
       .update({ status: "sending" })
       .in("id", idChunk)
-      .eq("status", "pending")
-      .select("id, recipient_email, recipient_kind, recipient_id");
+      .in("status", PENDING_STATUSES)
+      .select(
+        "id, recipient_email, recipient_kind, recipient_id, send_attempts",
+      );
     if (claimErr) {
       log.error(
         { err: claimErr.message },
@@ -327,6 +343,7 @@ export async function processTick(
   );
   let sent = 0;
   let failed = 0;
+  let retried = 0;
   let suppressedAtSend = 0;
   for (const row of claimed ?? []) {
     if (!winningIds.has(row.id)) continue;
@@ -403,12 +420,34 @@ export async function processTick(
         err instanceof Error
           ? err.message.slice(0, 500)
           : String(err).slice(0, 500);
+      const nextAttempts = (row.send_attempts ?? 0) + 1;
+      // Re-queue a transient failure (the email client already exhausted
+      // its in-call retries) for a later tick, up to MAX_SEND_ATTEMPTS —
+      // so a SendGrid blip that outlasts one attempt doesn't permanently
+      // drop the recipient. A permanent failure, or hitting the cap,
+      // marks 'failed' for good.
+      // The email client throws an EmailApiError carrying `retryable`
+      // (true for a transient 5xx / network failure it couldn't recover
+      // in its own in-call retries, false for a permanent reject). Read
+      // it by shape so we don't couple this job to the error class.
+      const isRetryable =
+        typeof (err as { retryable?: unknown })?.retryable === "boolean" &&
+        (err as { retryable: boolean }).retryable;
+      const willRetry = isRetryable && nextAttempts < MAX_SEND_ATTEMPTS;
       await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
-        .update({ status: "failed", error: message })
+        .update({
+          status: willRetry ? "retry_pending" : "failed",
+          send_attempts: nextAttempts,
+          error: message,
+        })
         .eq("id", row.id);
-      failed += 1;
+      if (willRetry) {
+        retried += 1;
+      } else {
+        failed += 1;
+      }
     }
   }
 
@@ -452,6 +491,7 @@ export async function processTick(
       campaignId: campaign.id,
       sent,
       failed,
+      retried,
       suppressedAtSend,
       batchSize,
     },
@@ -481,8 +521,10 @@ export async function processTick(
 }
 
 /**
- * Mark the campaign 'sent' ONLY when no recipients remain in either
- * 'pending' OR 'sending'; otherwise enqueue another tick.
+ * Mark the campaign 'sent' ONLY when no recipients remain in 'pending',
+ * 'retry_pending', or 'sending'; otherwise enqueue another tick.
+ * ('retry_pending' rows are transient-failure re-queues awaiting a later
+ * tick — the campaign isn't done until they resolve to sent/failed.)
  *
  * Counting only 'pending' (the old behavior) marked a campaign 'sent'
  * while recipients orphaned in 'sending' by a crashed tick had never
@@ -505,7 +547,7 @@ async function finalizeOrReschedule(
     .from("bulk_campaign_recipients")
     .select("*", { count: "exact", head: true })
     .eq("campaign_id", campaignId)
-    .in("status", ["pending", "sending"]);
+    .in("status", ["pending", "retry_pending", "sending"]);
   if (error) {
     // Be conservative: reschedule rather than risk a premature 'sent'.
     log.error(
