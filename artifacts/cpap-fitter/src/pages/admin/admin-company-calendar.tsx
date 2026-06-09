@@ -44,16 +44,17 @@ import {
   type CompanyCalendarEvent,
   createCalendarEvent,
   deleteCalendarEvent,
+  listAssignableStaff,
   listCompanyCalendar,
   updateCalendarEvent,
 } from "@/lib/admin/company-calendar-api";
-import { listTeam } from "@/lib/admin/admin-team-api";
 import {
   createClosure,
   listOfficeClosures,
   listRecurringClosures,
 } from "@/lib/admin/office-closures-api";
 import { getOfficeHours } from "@/lib/admin/office-hours-api";
+import { listTemplates } from "@/lib/admin/message-templates-api";
 
 // ── Appointment-type metadata ────────────────────────────────────
 // Order matters: drives the legend + the <select> order. Keep the keys
@@ -221,6 +222,9 @@ type EditorState =
   | { mode: "edit"; event: CompanyCalendarEvent };
 
 const CALENDAR_KEY = ["admin", "company-calendar"] as const;
+
+const FALLBACK_BLOCK_DAY_MSG =
+  "Our office is closed today. We'll reply when we reopen. Reply STOP to opt out.";
 
 // ── Page ─────────────────────────────────────────────────────────
 export function AdminCompanyCalendarPage() {
@@ -643,6 +647,18 @@ function SelectedDayPanel({
 }) {
   const qc = useQueryClient();
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
+  // Pre-fill the closure auto-reply from the seeded "office hours" SMS
+  // template so a one-click block-day speaks the practice's standard hours,
+  // matching the closures page (falls back to a static line).
+  const officeHoursTpl = useQuery({
+    queryKey: ["admin", "message-templates", "office_hours", "sms"] as const,
+    queryFn: () =>
+      listTemplates({ templateKey: "office_hours", channel: "sms" }),
+    staleTime: 5 * 60_000,
+  });
+  const blockDayMessage = (
+    officeHoursTpl.data?.templates?.[0]?.bodyText || FALLBACK_BLOCK_DAY_MSG
+  ).slice(0, 320);
   const blockDay = useMutation({
     mutationFn: () => {
       const s = startOfDay(day);
@@ -658,8 +674,7 @@ function SelectedDayPanel({
         label: `Closed ${s.toLocaleDateString()}`,
         startsAt: s.toISOString(),
         endsAt: e.toISOString(),
-        autoReplyMessage:
-          "Our office is closed today. We'll reply when we reopen. Reply STOP to opt out.",
+        autoReplyMessage: blockDayMessage,
       });
     },
     onSuccess: () =>
@@ -988,28 +1003,21 @@ function EventEditor({
     state.mode === "edit" ? (state.event.assignedToUserId ?? "") : "",
   );
 
-  // Staff roster for the "Assign to" picker — active members with a usable
-  // auth-user id (pending invites have none, so they can't be assigned).
-  const teamQuery = useQuery({
-    queryKey: ["admin", "team"] as const,
-    queryFn: listTeam,
+  // Staff roster for the "Assign to" picker. Served by the calendar's own
+  // requireAdmin-gated endpoint (not admin-only /admin/team) and already
+  // filtered to the effectively-active roster, so agents can assign too.
+  const staffQuery = useQuery({
+    queryKey: ["admin", "assignable-staff"] as const,
+    queryFn: listAssignableStaff,
     staleTime: 60_000,
   });
-  const assignableMembers = useMemo(
-    () =>
-      (teamQuery.data?.members ?? []).filter(
-        (m) => m.status === "active" && m.authUserId,
-      ),
-    [teamQuery.data],
-  );
+  const assignableMembers = staffQuery.data?.staff ?? [];
   // If the current assignee isn't in the active roster (revoked, or not yet
   // loaded), keep them selectable so editing doesn't silently drop them.
   const currentAssigneeMissing =
     state.mode === "edit" &&
     !!state.event.assignedToUserId &&
-    !assignableMembers.some(
-      (m) => m.authUserId === state.event.assignedToUserId,
-    );
+    !assignableMembers.some((m) => m.userId === state.event.assignedToUserId);
 
   // Esc closes the modal.
   useEffect(() => {
@@ -1213,7 +1221,7 @@ function EventEditor({
             >
               <option value="">Unassigned</option>
               {assignableMembers.map((m) => (
-                <option key={m.authUserId!} value={m.authUserId!}>
+                <option key={m.userId} value={m.userId}>
                   {m.displayName ?? m.email}
                 </option>
               ))}

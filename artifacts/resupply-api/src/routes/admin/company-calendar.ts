@@ -29,11 +29,14 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { sendAppointmentAssignedEmail } from "../../lib/calendar/appointment-assigned-email";
+import {
+  type AssignableStaff,
+  listAssignableStaff,
+  resolveAssignableStaff,
+} from "../../lib/calendar/assignable-staff";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 type CalendarUpdate =
   Database["resupply"]["Tables"]["company_calendar_events"]["Update"];
@@ -102,39 +105,6 @@ const listQuery = z.object({
 
 const DAY_MS = 86_400_000;
 
-interface ResolvedAssignee {
-  userId: string;
-  email: string;
-  displayName: string | null;
-}
-
-/**
- * Resolve an assignee's email + display name from the active staff roster
- * by their auth-user id. Returns null when there is no active `admin_users`
- * row for that id (unknown / pending / revoked) so the route can reject the
- * assignment rather than email an arbitrary address.
- */
-async function resolveAssignee(
-  supabase: SupabaseClient,
-  authUserId: string,
-): Promise<ResolvedAssignee | null> {
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("admin_users")
-    .select("auth_user_id, email_lower, display_name, status")
-    .eq("auth_user_id", authUserId)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data || !data.auth_user_id) return null;
-  return {
-    userId: data.auth_user_id,
-    email: data.email_lower,
-    displayName: data.display_name,
-  };
-}
-
 /** Absolute URL to the company calendar for the notification email. */
 function calendarDashboardUrl(): string {
   return `${getAuthDeps().publicBaseUrl}/admin/company-calendar`;
@@ -142,7 +112,7 @@ function calendarDashboardUrl(): string {
 
 /** Fire-and-forget the assignment email; never throws into the request. */
 function fireAssignmentEmail(args: {
-  assignee: ResolvedAssignee;
+  assignee: AssignableStaff;
   startsAt: string;
   endsAt: string;
   eventType: string;
@@ -166,7 +136,9 @@ function fireAssignmentEmail(args: {
           {
             event: "appointment_assigned_email_undelivered",
             configured: r.configured,
-            err: r.error,
+            // Plain string detail (not an Error object) — keep it off the
+            // pino `err` key so it can't masquerade past err-path redaction.
+            reason: r.error,
           },
           "appointment-assigned email not delivered",
         );
@@ -260,6 +232,25 @@ router.get(
   },
 );
 
+// GET /admin/company-calendar/assignable-staff — the staff members an
+// appointment can be assigned to (effectively-active roster). Gated by
+// requireAdmin (same as the rest of the calendar) so AGENTS — who can edit the
+// calendar but are blocked from the admin-only /admin/team — can still
+// populate the assignee picker. Returns minimal directory fields only.
+router.get(
+  "/admin/company-calendar/assignable-staff",
+  requireAdmin,
+  adminRateLimit({
+    name: "company_calendar.assignable_staff",
+    preset: "query",
+  }),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const staff = await listAssignableStaff(supabase);
+    res.json({ staff });
+  },
+);
+
 router.post(
   "/admin/company-calendar",
   requireAdmin,
@@ -278,11 +269,15 @@ router.post(
     }
     const supabase = getSupabaseServiceRoleClient();
 
-    // Validate the assignee (if any) against the active roster before the
-    // insert, so an unknown id is a clean 400 rather than a dangling column.
-    let assignee: ResolvedAssignee | null = null;
+    // Validate the assignee (if any) against the effectively-active roster
+    // before the insert, so an unknown id is a clean 400 rather than a
+    // dangling column.
+    let assignee: AssignableStaff | null = null;
     if (parsed.data.assignedToUserId) {
-      assignee = await resolveAssignee(supabase, parsed.data.assignedToUserId);
+      assignee = await resolveAssignableStaff(
+        supabase,
+        parsed.data.assignedToUserId,
+      );
       if (!assignee) {
         res.status(400).json({ error: "invalid_assignee" });
         return;
@@ -406,7 +401,7 @@ router.patch(
     // is validated, stored, and (if it actually changed and isn't a
     // self-assign) emailed after the write succeeds.
     let emailPlan: {
-      assignee: ResolvedAssignee;
+      assignee: AssignableStaff;
       eventType: string;
       startsAt: string;
       endsAt: string;
@@ -422,7 +417,7 @@ router.patch(
         // Unchanged — skip re-validation (tolerates an assignee who has since
         // left the active roster) and don't re-email.
       } else {
-        const assignee = await resolveAssignee(
+        const assignee = await resolveAssignableStaff(
           supabase,
           parsed.data.assignedToUserId,
         );

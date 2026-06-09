@@ -311,8 +311,10 @@ router.get(
       .slice(0, PER_QUEUE_LIMIT);
 
     if (assignedApptRes.error) {
+      // Log the error object (not .message) so pino's err-path redaction can
+      // apply, rather than passing a raw string under the special `err` key.
       logger.debug(
-        { err: assignedApptRes.error.message },
+        { err: assignedApptRes.error },
         "admin.today: assigned-appointments read failed (degrading to empty)",
       );
     }

@@ -77,6 +77,23 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface AssignableStaff {
+  /** Auth-user id — the value to store in assignedToUserId. */
+  userId: string;
+  email: string;
+  displayName: string | null;
+}
+
+/**
+ * Staff an appointment can be assigned to. Served by the calendar's own
+ * requireAdmin-gated endpoint (NOT /admin/team, which is admin-only) so
+ * agents who can edit the calendar can still populate the picker.
+ */
+export const listAssignableStaff = () =>
+  jsonFetch<{ staff: AssignableStaff[] }>(
+    "/admin/company-calendar/assignable-staff",
+  );
+
 export const listCompanyCalendar = (fromIso: string, toIso: string) =>
   jsonFetch<{ events: CompanyCalendarEvent[] }>(
     `/admin/company-calendar?from=${encodeURIComponent(
