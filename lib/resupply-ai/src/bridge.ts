@@ -191,9 +191,11 @@ function isKnownTool(name: string): name is ToolName {
 // external-TTS path. Returns the exclusive end index up to which `text` is
 // one or more COMPLETE sentences — a run of terminal punctuation
 // (. ! ? …) plus any trailing closing quote/bracket, then whitespace.
-// Requiring the trailing whitespace keeps us from splitting a decimal
-// ("12.5"), an abbreviation, or a terminator that's still mid-stream.
-// Returns 0 when there's no safe split point yet.
+// Requiring the trailing whitespace avoids splitting a decimal ("12.5") or
+// a terminator that's still mid-stream. It does NOT special-case
+// abbreviations ("Dr. ", "e.g. ") — those split into an extra chunk, which
+// is harmless: one more TTS request, identical audio. Returns 0 when
+// there's no safe split point yet.
 const SENTENCE_BOUNDARY_RE = /[.!?…]+["')\]]*\s/g;
 function lastSpeakableBoundary(text: string): number {
   let end = 0;
@@ -540,6 +542,10 @@ export class VoiceBridge extends EventEmitter {
         this.sink.writeAudioBase64(frame);
       },
       onError: (err) => {
+        // Tear down the vendor connection — an errored session must not be
+        // left open streaming audio we'd only discard for the rest of the
+        // turn. abort() is idempotent and suppresses any trailing onClosed.
+        session.abort();
         // Drop the session but KEEP `ttsStreamItemId` so the rest of this
         // (now voice-less) turn's deltas are ignored rather than reopening
         // a fresh session and re-speaking from the top.

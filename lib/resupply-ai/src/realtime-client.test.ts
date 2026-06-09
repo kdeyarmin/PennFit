@@ -224,6 +224,33 @@ describe("RealtimeClient", () => {
     expect(sent.session.audio.input.format).toEqual({ type: "g711_ulaw" });
   });
 
+  it("GA schema with no overrides defaults to the COHERENT GA pair (gpt-realtime-2 + gpt-realtime-whisper)", () => {
+    const fake = new FakeWebSocket();
+    let capturedUrl = "";
+    new RealtimeClient({
+      apiKey: "sk-test",
+      instructions: "x",
+      sessionSchema: "ga",
+      // No model / transcriptionModel override.
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames,
+      webSocketFactory: (url) => {
+        capturedUrl = url;
+        return fake;
+      },
+    });
+    // GA mode alone never pairs the GA wire shape with the beta model/STT.
+    expect(capturedUrl).toBe(
+      "wss://api.openai.com/v1/realtime?model=gpt-realtime-2",
+    );
+    fake.fakeOpen();
+    const sent = JSON.parse(fake.received[0]!);
+    expect(sent.session.model).toBe("gpt-realtime-2");
+    expect(sent.session.audio.input.transcription.model).toBe(
+      "gpt-realtime-whisper",
+    );
+  });
+
   it("maps text-output events onto output transcript turns (text-mode)", () => {
     const fake = new FakeWebSocket();
     const client = new RealtimeClient({

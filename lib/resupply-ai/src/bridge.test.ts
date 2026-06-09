@@ -684,6 +684,9 @@ describe("VoiceBridge — streaming TTS path", () => {
     });
     sessions[0]!.handlers.onError(new Error("elevenlabs ws hang up"));
     expect(errors.some((e) => e.source === "tts")).toBe(true);
+    // The errored vendor session is torn down (not left open streaming
+    // audio we'd discard) — but the CALL itself continues.
+    expect(sessions[0]!.aborted).toBe(true);
     expect(fake.close).not.toHaveBeenCalled();
   });
 });

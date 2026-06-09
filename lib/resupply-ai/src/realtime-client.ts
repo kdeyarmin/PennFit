@@ -235,9 +235,16 @@ export class RealtimeClient extends EventEmitter {
       );
     }
     const sessionSchema = opts.sessionSchema ?? "beta";
+    const isGa = sessionSchema === "ga";
     this.opts = {
       apiKey: opts.apiKey,
-      model: opts.model ?? DEFAULT_REALTIME_MODEL,
+      // GA mode defaults to the GA model + STT so `sessionSchema: "ga"`
+      // alone yields a COHERENT session — never the GA wire shape paired
+      // with the beta model/STT (which 400s with a confusing handshake
+      // error). Either is still overridable.
+      model:
+        opts.model ??
+        (isGa ? DEFAULT_REALTIME_GA_MODEL : DEFAULT_REALTIME_MODEL),
       voice: opts.voice ?? DEFAULT_REALTIME_VOICE,
       generateAudio: opts.generateAudio ?? true,
       instructions: opts.instructions,
@@ -246,12 +253,13 @@ export class RealtimeClient extends EventEmitter {
       sessionSchema,
       reasoningEffort: opts.reasoningEffort ?? "low",
       transcriptionModel:
-        opts.transcriptionModel ?? DEFAULT_REALTIME_TRANSCRIBE_MODEL,
+        opts.transcriptionModel ??
+        (isGa
+          ? DEFAULT_REALTIME_GA_TRANSCRIBE_MODEL
+          : DEFAULT_REALTIME_TRANSCRIBE_MODEL),
       // Beta sends a bare µ-law string; GA wraps the µ-law token in an
       // object. Default the token per schema; either can be overridden.
-      audioFormat:
-        opts.audioFormat ??
-        (sessionSchema === "ga" ? "audio/pcmu" : "g711_ulaw"),
+      audioFormat: opts.audioFormat ?? (isGa ? "audio/pcmu" : "g711_ulaw"),
     };
 
     // Attach a noop "error" listener immediately so a synchronously
