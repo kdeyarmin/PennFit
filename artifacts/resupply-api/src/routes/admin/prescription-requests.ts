@@ -12,6 +12,16 @@
 //   GET    /admin/patients/:id/prescription-requests
 //          List all packets for a patient (most recent first).
 //
+//   GET    /admin/prescription-requests/needs-signature
+//          ?providerId=… | ?practiceName=… — JSON manifest of every
+//          outstanding packet still awaiting a signature for one
+//          provider or practice.
+//
+//   GET    /admin/prescription-requests/needs-signature/pdf
+//          Same scoping; returns ONE combined PDF (hand-delivery cover
+//          checklist + each packet's signable order) so the whole
+//          stack can be printed and hand-carried for in-person signing.
+//
 //   GET    /admin/prescription-requests/:id
 //          Single-packet detail.
 //
@@ -69,11 +79,26 @@ import {
 
 import { logger } from "../../lib/logger";
 import {
+  type PrescriptionRequestInputs,
   renderPrescriptionRequest,
   validatePrescriptionRequestInputs,
 } from "../../lib/prescription-request-pdf";
 import { resolvePrescriptionRequestInputs } from "../../lib/prescription-request-resolver";
 import { signPrescriptionRequestToken } from "../../lib/prescription-request-token";
+import {
+  type SignatureTarget,
+  aggregatePacketsNeedingSignature,
+} from "../../lib/prescription-signature-aggregation";
+import {
+  type SignatureBatchCoverItem,
+  renderSignatureBatchCover,
+} from "../../lib/prescription-signature-batch-pdf";
+import {
+  markTrackingCanceled,
+  markTrackingReturned,
+  recordTrackingSent,
+  registerSignatureTracking,
+} from "../../lib/signature-tracking/service";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { getFaxPublicBaseUrl } from "./physician-fax-outreach";
@@ -179,14 +204,14 @@ router.post(
       supabase
         .schema("resupply")
         .from("patients")
-        .select("id")
+        .select("id, legal_first_name, legal_last_name")
         .eq("id", params.data.id)
         .limit(1)
         .maybeSingle(),
       supabase
         .schema("resupply")
         .from("providers")
-        .select("id, fax_e164")
+        .select("id, fax_e164, legal_name, practice_name")
         .eq("id", parsed.data.providerId)
         .limit(1)
         .maybeSingle(),
@@ -231,6 +256,33 @@ router.post(
       return;
     }
 
+    // Register the signature-tracking row so the packet gets a stable
+    // tracking code + barcode and shows up in the outstanding-signatures
+    // dashboard. Snapshot the provider/patient labels for at-a-glance
+    // rendering. Best-effort: a tracking failure must not fail the
+    // packet create (the PDF just renders without a barcode).
+    let trackingCode: string | null = null;
+    try {
+      const reg = await registerSignatureTracking(supabase, {
+        kind: "prescription_request",
+        documentId: inserted.id,
+        title: "Prescription request",
+        patientId: params.data.id,
+        providerId: parsed.data.providerId,
+        patientLabel: formatPatientLabel(
+          patient.legal_first_name,
+          patient.legal_last_name,
+        ),
+        providerLabel: provider.legal_name ?? null,
+        practiceName: provider.practice_name ?? null,
+        returnFaxE164: returnFax,
+        createdByEmail: req.adminEmail ?? null,
+      });
+      trackingCode = reg.trackingCode;
+    } catch (err) {
+      logger.warn({ err }, "prescription_request.tracking_register failed");
+    }
+
     await logAudit({
       action: "prescription_request.created",
       adminEmail: req.adminEmail ?? null,
@@ -248,7 +300,7 @@ router.post(
       logger.warn({ err }, "prescription_request.created audit write failed");
     });
 
-    res.status(201).json({ id: inserted.id });
+    res.status(201).json({ id: inserted.id, trackingCode });
   },
 );
 
@@ -273,6 +325,177 @@ router.get(
       .limit(50);
     if (error) throw error;
     res.json({ packets: (data ?? []).map(projectListItem) });
+  },
+);
+
+// Batch view of every outstanding packet still awaiting a signature
+// for one provider or one practice. Two routes share the same query
+// contract (exactly one of providerId / practiceName):
+//
+//   GET .../needs-signature      → JSON manifest (counts + list)
+//   GET .../needs-signature/pdf  → one combined PDF: a hand-delivery
+//                                  cover checklist followed by each
+//                                  packet's signable order, for printing
+//                                  the whole stack at once.
+//
+// Registered before the "/:id" routes so the static "needs-signature"
+// path is not captured by the ":id" param.
+const needsSignatureQuery = z
+  .object({
+    providerId: z.string().uuid().optional(),
+    practiceName: z.string().trim().min(1).max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  })
+  .refine((q) => Boolean(q.providerId) !== Boolean(q.practiceName), {
+    message: "Provide exactly one of providerId or practiceName",
+  });
+
+function targetFromQuery(q: {
+  providerId?: string;
+  practiceName?: string;
+}): SignatureTarget {
+  return q.providerId
+    ? { kind: "provider", providerId: q.providerId }
+    : { kind: "practice", practiceName: q.practiceName! };
+}
+
+router.get(
+  "/admin/prescription-requests/needs-signature",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const parsed = needsSignatureQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const aggregation = await aggregatePacketsNeedingSignature(
+      supabase,
+      targetFromQuery(parsed.data),
+      { limit: parsed.data.limit },
+    );
+    res.json(aggregation);
+  },
+);
+
+router.get(
+  "/admin/prescription-requests/needs-signature/pdf",
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const parsed = needsSignatureQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_query",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const target = targetFromQuery(parsed.data);
+    const supabase = getSupabaseServiceRoleClient();
+    const aggregation = await aggregatePacketsNeedingSignature(
+      supabase,
+      target,
+      {
+        limit: parsed.data.limit,
+      },
+    );
+    if (aggregation.count === 0) {
+      res.status(404).json({ error: "no_outstanding_packets" });
+      return;
+    }
+
+    // Resolve each packet to renderer inputs, preserving order. A packet
+    // whose inputs don't resolve (missing patient/provider) or fail
+    // validation (e.g. no NPI) can't be rendered into a signable order —
+    // it's listed on the cover as "excluded" rather than silently
+    // dropped, so the CSR knows to fix it before the visit.
+    const resolved = await Promise.all(
+      aggregation.packets.map(async (packet) => ({
+        packet,
+        outcome: await resolvePrescriptionRequestInputs(supabase, packet.id),
+      })),
+    );
+
+    const coverItems: SignatureBatchCoverItem[] = [];
+    const renderable: PrescriptionRequestInputs[] = [];
+    for (const { packet, outcome } of resolved) {
+      if (outcome.kind === "ok") {
+        const validated = validatePrescriptionRequestInputs(outcome.inputs);
+        if (validated.ok) {
+          renderable.push(validated.inputs);
+          coverItems.push({
+            patientName: packet.patientName,
+            status: packet.status,
+          });
+          continue;
+        }
+      }
+      coverItems.push({
+        patientName: packet.patientName,
+        status: packet.status,
+        excluded: true,
+        excludedReason:
+          outcome.kind === "not_found" ? "not found" : "incomplete order",
+      });
+    }
+
+    if (renderable.length === 0) {
+      res.status(422).json({ error: "no_renderable_packets" });
+      return;
+    }
+
+    const doc = new PDFDocument({ margin: 72, size: "LETTER" });
+    res.setHeader("Content-Type", "application/pdf");
+    const filenameStem =
+      target.kind === "provider"
+        ? `provider-${target.providerId.slice(0, 8)}`
+        : "practice";
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="rx-signature-batch-${filenameStem}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "no-store");
+    doc.pipe(res);
+    renderSignatureBatchCover(doc, {
+      label: aggregation.label,
+      includedCount: renderable.length,
+      items: coverItems,
+      generatedOn: new Date(),
+    });
+    for (const inputs of renderable) {
+      doc.addPage();
+      renderPrescriptionRequest(doc, inputs);
+    }
+    doc.end();
+
+    await logAudit({
+      action: "prescription_request.batch_previewed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "prescription_request_packets",
+      targetId: null,
+      metadata: {
+        target_kind: target.kind,
+        included: renderable.length,
+        excluded: coverItems.length - renderable.length,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "prescription_request.batch_previewed audit write failed",
+      );
+    });
   },
 );
 
@@ -653,6 +876,13 @@ router.post(
       .update(update)
       .eq("id", params.data.id);
     if (updErr) throw updErr;
+    await markTrackingReturned(
+      supabase,
+      "prescription_request",
+      params.data.id,
+    ).catch((err) => {
+      logger.warn({ err }, "prescription_request.tracking_returned failed");
+    });
     await logAudit({
       action: "prescription_request.signed",
       adminEmail: req.adminEmail ?? null,
@@ -710,6 +940,13 @@ router.post(
       })
       .eq("id", params.data.id);
     if (error) throw error;
+    await markTrackingCanceled(
+      supabase,
+      "prescription_request",
+      params.data.id,
+    ).catch((err) => {
+      logger.warn({ err }, "prescription_request.tracking_canceled failed");
+    });
     await logAudit({
       action: "prescription_request.void",
       adminEmail: req.adminEmail ?? null,
@@ -725,6 +962,16 @@ router.post(
     res.status(200).json({ status: "void" });
   },
 );
+
+function formatPatientLabel(
+  first: string | null,
+  last: string | null,
+): string | null {
+  const f = (first ?? "").trim();
+  const l = (last ?? "").trim();
+  if (l && f) return `${l}, ${f}`;
+  return l || f || null;
+}
 
 function projectListItem(
   r: Pick<

@@ -47,10 +47,30 @@ import {
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { assertAssignableLocation } from "../../lib/locations/assignable";
+import { logger } from "../../lib/logger";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 type AdminUserRow = Database["resupply"]["Tables"]["admin_users"]["Row"];
+
+/**
+ * Render the role-specific getting-started help documents to attach to
+ * a staff invite email. Best-effort: a render failure logs and returns
+ * an empty list so the invite still goes out — an invite must never
+ * fail because a help doc didn't render.
+ */
+async function staffInviteAttachments(role: AdminRole) {
+  try {
+    return await buildInviteHelpAttachments({ kind: "staff", role });
+  } catch (err) {
+    logger.warn(
+      { err, event: "staff_invite_help_docs_render_failed", role },
+      "failed to render staff invite help documents; sending invite without them",
+    );
+    return [];
+  }
+}
 
 const router: IRouter = Router();
 
@@ -295,6 +315,11 @@ router.post(
       initialPassword: useInitialPassword
         ? (initialPassword as string)
         : undefined,
+      // Attach the new member's role-specific getting-started guides.
+      // Skipped automatically on the initialPassword path (no email).
+      attachments: useInitialPassword
+        ? undefined
+        : await staffInviteAttachments(role),
     });
 
     const nowIso = new Date().toISOString();
@@ -411,6 +436,7 @@ router.post(
       displayName: row.display_name,
       productName: "Resupply",
       uiPathPrefix: "/admin",
+      attachments: await staffInviteAttachments(row.role as AdminRole),
     });
 
     const nowIso = new Date().toISOString();

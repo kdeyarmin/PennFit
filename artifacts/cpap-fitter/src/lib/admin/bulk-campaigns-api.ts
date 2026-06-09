@@ -12,7 +12,11 @@ export type AudienceKind =
   | "all_active_shop_customers"
   | "all_active_patients"
   | "by_patient_payer"
+  | "by_therapy_cohort"
   | "manual_list";
+
+/** RT clinical cohorts (C-R1) — patients with an open compliance alert. */
+export type TherapyCohort = "low_adherence" | "no_checkin_response" | "at_risk";
 
 export type Category = "marketing" | "service" | "compliance";
 
@@ -71,6 +75,8 @@ export interface CreateDraftRequest {
   description?: string | null;
   audienceKind: AudienceKind;
   audiencePayer?: string | null;
+  /** Required when audienceKind='by_therapy_cohort'. */
+  therapyCohort?: TherapyCohort;
   manualShopCustomerIds?: string[];
   manualPatientIds?: string[];
   category: Category;

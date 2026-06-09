@@ -39,6 +39,7 @@ import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
+import adminAssistantChatRouter from "./admin/assistant-chat.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import voiceMetricsRouter from "./admin/voice-metrics.js";
 import accountSetupRouter from "./admin/account-setup.js";
@@ -80,6 +81,7 @@ import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
 import referralsAttributeRouter from "./admin/referrals-attribute.js";
 import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
 import resupplyFunnelRouter from "./admin/resupply-funnel.js";
+import acquisitionFunnelRouter from "./admin/acquisition-funnel.js";
 import therapyUsageReportRouter from "./admin/therapy-usage-report.js";
 import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-manual.js";
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
@@ -163,6 +165,7 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
@@ -196,6 +199,7 @@ import shopRouter from "./shop/index.js";
 import faxRouter from "./fax/index.js";
 import rxRequestDocumentRouter from "./rx-request-document.js";
 import prescriptionRequestsRouter from "./admin/prescription-requests.js";
+import signatureTrackingRouter from "./admin/signature-tracking.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -309,6 +313,11 @@ router.use(physicianFaxOutreachRouter);
 // pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
 router.use(prescriptionRequestsRouter);
+// /admin/signature-tracking — unified "still out for a provider
+// signature" dashboard + the barcode-lookup hook that files a signed fax
+// when it comes back. Reads resupply.signature_tracking, which the
+// prescription-request and manual-document send paths register into.
+router.use(signatureTrackingRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
@@ -397,6 +406,9 @@ router.use(casesRouter);
 // /admin/work-items — the unified, prioritized CSR work queue (F4),
 // UNIONing the open work across every triage source.
 router.use(workItemsRouter);
+// /admin/claims/:id/paperwork + /admin/billing/bill-hold-worklist —
+// claim signed-paperwork ledger + the bill-hold release gate (0253).
+router.use(claimPaperworkRouter);
 // /admin/business-targets — owner goal / target tracking (Phase 1).
 router.use(businessTargetsRouter);
 // /admin/agent-availability — CSR availability toggle (Phase 1); the
@@ -664,6 +676,11 @@ router.use(shopReviewRequestsRouter);
 // (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
 // see middlewares/requireAdmin.ts for the resolution order.
 router.use(teamRouter);
+// /admin/assistant/chat — PennPilot, the in-app program-manager /
+// tech-support chatbot for staff. Answers "how does the app work"
+// questions and can email feature suggestions to the super-admins.
+// requireAdmin gate is on the router itself.
+router.use(adminAssistantChatRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
@@ -808,6 +825,9 @@ router.use(patientMaintenanceLogRouter);
 // /admin/analytics/resupply-funnel — episode-stage rollup with
 // confirm + fulfillment rates over a configurable window.
 router.use(resupplyFunnelRouter);
+// /admin/analytics/acquisition-funnel — storefront/fitter funnel
+// drop-off from the anonymous usage_events stream (Growth #G1).
+router.use(acquisitionFunnelRouter);
 router.use(therapyUsageReportRouter);
 // /admin/patients/:id/therapy-nights — manual entry path for nights
 // not delivered via the partner integration.

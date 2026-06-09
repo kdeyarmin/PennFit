@@ -26,6 +26,7 @@ import {
   type ProviderRef,
 } from "@workspace/resupply-integrations-office-ally";
 
+import { countOutstandingByClaim } from "./bill-hold";
 import {
   gateCoverageEligibility,
   type CoverageBlock,
@@ -83,7 +84,8 @@ export type BatchSubmitResult =
         | "non_draft_claims_in_batch"
         | "payer_not_electronic"
         | "claim_missing_required_data"
-        | "eligibility_blocked";
+        | "eligibility_blocked"
+        | "bill_hold";
       detail: Record<string, unknown>;
     };
 
@@ -131,6 +133,27 @@ export async function executeOfficeAllyBatchSubmit(
       kind: "non_draft_claims_in_batch",
       detail: { claimIds: draftIssues.map((c) => c.id) },
     };
+  }
+
+  // Bill hold — a claim with outstanding REQUIRED signed paperwork is not
+  // released for billing. Re-reads the live ledger (never the denormalised
+  // bill_hold flag) so a drifted cache can't let an under-documented claim
+  // out the door. Feature-flagged so it can be turned off whole-cloth, and
+  // inert for any claim that has no requirements tracked against it.
+  if (await isFeatureEnabled("billing.bill_hold")) {
+    const outstanding = await countOutstandingByClaim(
+      claims.map((c) => c.id),
+      supabase,
+    );
+    const heldClaimIds = claims
+      .filter((c) => (outstanding.get(c.id) ?? 0) > 0)
+      .map((c) => ({
+        claimId: c.id,
+        outstandingCount: outstanding.get(c.id)!,
+      }));
+    if (heldClaimIds.length > 0) {
+      return { ok: false, kind: "bill_hold", detail: { held: heldClaimIds } };
+    }
   }
 
   const { data: payer } = await supabase

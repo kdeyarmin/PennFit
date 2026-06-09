@@ -43,6 +43,7 @@ import { signManualDocumentFaxToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
 import {
   MANUAL_DOCUMENT_CATALOG,
+  getManualDocumentTypeDef,
   isManualDocumentType,
   normalizeManualDocumentFields,
   type ManualDocumentType,
@@ -58,6 +59,11 @@ import {
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage.js";
 import { computeRetentionUntilAt } from "../../lib/patient-documents/retention.js";
+import {
+  markTrackingCanceled,
+  recordTrackingSent,
+  registerSignatureTracking,
+} from "../../lib/signature-tracking/service.js";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -244,6 +250,28 @@ router.post(
     if (error) throw error;
     if (!inserted) throw new Error("manual_documents insert returned no rows");
 
+    // Signable document kinds (CMN, prescription, agreement, delivery
+    // ticket) get a signature-tracking row + barcode so they show up in
+    // the outstanding-signatures dashboard and a returned fax can be
+    // scanned and filed. Non-signable kinds (cover letter, free-form) do
+    // not. Best-effort — never fail the create on a tracking error.
+    let trackingCode: string | null = null;
+    if (getManualDocumentTypeDef(type).requiresSignature) {
+      try {
+        const reg = await registerSignatureTracking(supabase, {
+          kind: "manual_document",
+          documentId: inserted.id,
+          title: b.title,
+          providerLabel: b.recipientName ?? null,
+          returnFaxE164: b.recipientFaxE164 ?? null,
+          createdByEmail: req.adminEmail ?? null,
+        });
+        trackingCode = reg.trackingCode;
+      } catch (err) {
+        logger.warn({ err }, "manual_document.tracking_register failed");
+      }
+    }
+
     await logAudit({
       action: "manual_document.created",
       adminEmail: req.adminEmail ?? null,
@@ -260,7 +288,7 @@ router.post(
       logger.warn({ err }, "manual_document.created audit write failed");
     });
 
-    res.status(201).json({ id: inserted.id, status: "draft" });
+    res.status(201).json({ id: inserted.id, status: "draft", trackingCode });
   },
 );
 
@@ -392,6 +420,14 @@ router.delete(
       .eq("id", parsed.data.id);
     if (error) throw error;
 
+    await markTrackingCanceled(
+      supabase,
+      "manual_document",
+      parsed.data.id,
+    ).catch((err) =>
+      logger.warn({ err }, "manual_document.tracking_canceled failed"),
+    );
+
     await logAudit({
       action: "manual_document.deleted",
       adminEmail: req.adminEmail ?? null,
@@ -426,7 +462,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const pdf = await renderManualDocumentRowToPdf(row);
+    const pdf = await renderManualDocumentRowToPdf(supabase, row);
 
     await logAudit({
       action: "manual_document.downloaded",
@@ -484,7 +520,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(row);
+    const pdf = await renderManualDocumentRowToPdf(supabase, row);
     const supplier = manualDocumentSupplierName();
     const text = [
       `Please find the attached document from ${supplier}.`,
@@ -531,6 +567,15 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", row.id);
+
+    await recordTrackingSent(
+      supabase,
+      "manual_document",
+      row.id,
+      "email",
+    ).catch((err) =>
+      logger.warn({ err }, "manual_document.tracking_sent failed"),
+    );
 
     await logAudit({
       action: "manual_document.emailed",
@@ -623,6 +668,10 @@ router.post(
       })
       .eq("id", row.id);
 
+    await recordTrackingSent(supabase, "manual_document", row.id, "fax").catch(
+      (err) => logger.warn({ err }, "manual_document.tracking_sent failed"),
+    );
+
     await logAudit({
       action: "manual_document.faxed",
       adminEmail: req.adminEmail ?? null,
@@ -683,7 +732,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(row);
+    const pdf = await renderManualDocumentRowToPdf(supabase, row);
 
     // Upload the rendered PDF to private object storage, owned by the
     // patient — same pattern as the inbound-fax / portal-upload paths.

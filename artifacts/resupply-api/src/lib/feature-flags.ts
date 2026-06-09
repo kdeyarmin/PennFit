@@ -45,6 +45,7 @@ export const FEATURE_FLAG_KEYS = [
   "email.auto_reply",
   "voice.agent",
   "storefront.chatbot",
+  "admin.assistant",
   "storefront.checkout",
   "storefront.pickup",
   "storefront.reviews_collection",
@@ -56,6 +57,7 @@ export const FEATURE_FLAG_KEYS = [
   "billing.eligibility_precheck",
   "billing.eligibility_precheck_refresh",
   "billing.line_ordering_provider",
+  "billing.payment_plan_autocharge",
   "smart_triggers.dispatcher",
   "patient_onboarding.dispatcher",
   "fitter_supply_campaign.dispatcher",
@@ -75,6 +77,8 @@ export const FEATURE_FLAG_KEYS = [
   "patient_packets.autoremind",
   "orders.require_signed_paperwork",
   "multi_location.enabled",
+  "billing.bill_hold",
+  "billing.bill_hold_auto_remind",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

@@ -74,6 +74,11 @@ const AdminDocumentsPage = lazy(() =>
     default: m.AdminDocumentsPage,
   })),
 );
+const AdminSignatureTrackingPage = lazy(() =>
+  import("@/pages/admin/admin-signature-tracking").then((m) => ({
+    default: m.AdminSignatureTrackingPage,
+  })),
+);
 const ConversationsPage = lazy(() =>
   import("@/pages/admin/conversations").then((m) => ({
     default: m.ConversationsPage,
@@ -163,6 +168,11 @@ const AdminAnalyticsMarginPage = lazy(() =>
 const AdminAnalyticsOutreachAttributionPage = lazy(() =>
   import("@/pages/admin/admin-analytics-outreach-attribution").then((m) => ({
     default: m.AdminAnalyticsOutreachAttributionPage,
+  })),
+);
+const AdminAnalyticsAcquisitionFunnelPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-acquisition-funnel").then((m) => ({
+    default: m.AdminAnalyticsAcquisitionFunnelPage,
   })),
 );
 const AdminAnalyticsRevenueBySourcePage = lazy(() =>
@@ -465,6 +475,11 @@ const AdminBillingCmnWorklistPage = lazy(() =>
     default: m.AdminBillingCmnWorklistPage,
   })),
 );
+const AdminBillingBillHoldPage = lazy(() =>
+  import("@/pages/admin/admin-billing-bill-hold").then((m) => ({
+    default: m.AdminBillingBillHoldPage,
+  })),
+);
 const AdminBillingTimelyFilingPage = lazy(() =>
   import("@/pages/admin/admin-billing-timely-filing").then((m) => ({
     default: m.AdminBillingTimelyFilingPage,
@@ -710,6 +725,10 @@ function AdminConsole() {
               component={AdminBillingCmnWorklistPage}
             />
             <Route
+              path="/admin/billing/bill-hold"
+              component={AdminBillingBillHoldPage}
+            />
+            <Route
               path="/admin/billing/timely-filing"
               component={AdminBillingTimelyFilingPage}
             />
@@ -799,6 +818,10 @@ function AdminConsole() {
               component={AdminPatientPacketsPage}
             />
             <Route path="/admin/documents" component={AdminDocumentsPage} />
+            <Route
+              path="/admin/signature-tracking"
+              component={AdminSignatureTrackingPage}
+            />
             {/* Literal segment — MUST precede /admin/patients/:id below. */}
             <Route
               path="/admin/patients/duplicates"
@@ -909,6 +932,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/outreach-attribution"
               component={AdminAnalyticsOutreachAttributionPage}
+            />
+            <Route
+              path="/admin/analytics/acquisition-funnel"
+              component={AdminAnalyticsAcquisitionFunnelPage}
             />
             <Route
               path="/admin/analytics/revenue-by-source"

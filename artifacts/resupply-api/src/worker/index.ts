@@ -48,6 +48,7 @@ import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
+import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
@@ -72,6 +73,7 @@ import { registerOfficeAllyInboundPollJob } from "./jobs/office-ally-inbound-pol
 import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
+import { registerPaymentPlanAutochargeJob } from "./jobs/payment-plan-autocharge.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
@@ -503,6 +505,13 @@ async function doStartWorker(): Promise<void> {
   // emits outbound 837P claim files).
   await registerAutoSubmitBatchJob(boss);
 
+  // Bill-hold sweep (0253). Backfills the default signed-paperwork
+  // requirement set onto draft claims that lack one (so the hold covers
+  // ALL claims) and auto-bumps stale reminders. Queue + worker always
+  // register; the recurring cron attaches only when BILL_HOLD_SWEEP_CRON
+  // is set (opt-in — it seeds holds across the draft-claim backlog).
+  await registerBillHoldSweepJob(boss);
+
   // Proactive clinical outreach (RT #23). Queue + worker always register;
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
   // (opt-in — it emits outbound patient contact).
@@ -642,6 +651,12 @@ async function doStartWorker(): Promise<void> {
   // cycle past the next anniversary, generates a draft monthly
   // claim with the correct KH/KI/KX modifier rotation.
   await registerCappedRentalAdvanceJob(boss);
+
+  // Auto-charge due patient payment-plan installments off-session
+  // (mig 0255). Triple-gated: opt-in cron (BILLING_PAYMENT_PLAN_
+  // AUTOCHARGE_CRON), the seeded-OFF billing.payment_plan_autocharge
+  // flag, and per-plan patient authorization. Inert by default.
+  await registerPaymentPlanAutochargeJob(boss);
 
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.

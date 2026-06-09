@@ -64,6 +64,8 @@
 
 import type PDFKit from "pdfkit";
 
+import { drawSignatureTrackingStamp } from "./barcode/tracking-stamp";
+
 const MARGIN = 72;
 const PAGE_WIDTH = 612;
 const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
@@ -158,6 +160,13 @@ export interface PrescriptionRequestInputs {
   lengthOfNeedMonths: number;
   clinicalNotes: string | null;
   generatedOn: Date;
+  /**
+   * Signature-tracking code (migration 0253). When present it is printed
+   * as a Code 128 barcode in the top-right corner so the signed copy
+   * faxed back can be scanned and filed. Optional — a packet without a
+   * tracking row still renders.
+   */
+  trackingCode?: string | null;
 }
 
 export type ValidationResult =
@@ -204,6 +213,9 @@ export function renderPrescriptionRequest(
   doc: PDFKit.PDFDocument,
   inputs: PrescriptionRequestInputs,
 ): void {
+  // Top-right signature-tracking barcode (absolute-positioned, drawn
+  // before the flowing content so it sits in the top margin).
+  drawSignatureTrackingStamp(doc, inputs.trackingCode);
   drawConfidentialBanner(doc);
   drawLetterhead(doc, inputs.supplier);
   drawDateAndSubject(doc, inputs.generatedOn);

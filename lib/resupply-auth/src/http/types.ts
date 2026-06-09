@@ -21,18 +21,38 @@ export type AuditWriter = (event: {
 }) => Promise<void> | void;
 
 /**
+ * A file attached to a transactional email. Mirrors the shape of
+ * `@workspace/resupply-email`'s `SendEmailInput["attachments"]`
+ * element so the host can forward it straight through to SendGrid —
+ * but kept inline here so this pure lib doesn't depend on the email
+ * package. `content` is the raw bytes; the SendGrid client base64-
+ * encodes them on the wire.
+ */
+export interface EmailAttachment {
+  content: Buffer;
+  filename: string;
+  contentType: string;
+}
+
+/**
  * Pluggable email sender. Resupply-api wires this to
  * `@workspace/resupply-email`'s SendGrid client; tests pass a
  * recording stub. Returning a Promise lets the handler `await`
  * delivery — but the handler treats failures as "logged and
  * swallowed" so a bouncing SendGrid doesn't take down the
  * password reset endpoint.
+ *
+ * `attachments` is optional and only honoured by hosts whose wired
+ * sender forwards it (resupply-api does — see `makeSendgridSender`).
+ * Used by the invite flows to ship the new user their getting-
+ * started help documents.
  */
 export type EmailSender = (input: {
   to: string;
   subject: string;
   html: string;
   text: string;
+  attachments?: ReadonlyArray<EmailAttachment>;
 }) => Promise<void> | void;
 
 /**
