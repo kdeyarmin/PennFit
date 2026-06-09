@@ -66,11 +66,12 @@ function toColumns(d: z.infer<typeof patchBody>): Record<string, unknown> {
 async function clearExistingPrimary(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
 ): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .schema("resupply")
     .from("locations")
     .update({ is_primary: false, updated_at: new Date().toISOString() })
     .eq("is_primary", true);
+  if (error) throw error;
 }
 
 router.get(

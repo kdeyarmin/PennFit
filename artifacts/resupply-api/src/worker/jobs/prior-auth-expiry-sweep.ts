@@ -199,7 +199,7 @@ export async function runPriorAuthExpirySweep(
 
     // CSR alert — critical: patient may need a dispense block until
     // the renewal lands.
-    await supabase
+    const { error: alertErr } = await supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
@@ -215,6 +215,12 @@ export async function runPriorAuthExpirySweep(
           authNumber: row.auth_number,
         },
       });
+    if (alertErr) {
+      logger.warn(
+        { err: alertErr.message, paId: row.id },
+        "prior-auth.expiry-sweep: expired CSR alert insert failed",
+      );
+    }
 
     await logAuditBestEffort(
       {
@@ -298,7 +304,7 @@ export async function runPriorAuthExpirySweep(
       // Idempotency: check if an alert with this priorAuthId + window
       // already exists in 'open' state. metric_snapshot is jsonb so we
       // use ->> to compare a specific field.
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .schema("resupply")
         .from("csr_compliance_alerts")
         .select("id")
@@ -308,13 +314,21 @@ export async function runPriorAuthExpirySweep(
         .filter("metric_snapshot->>priorAuthId", "eq", row.id)
         .filter("metric_snapshot->>window", "eq", String(win))
         .limit(1);
+      if (existingErr) {
+        // Idempotency query failed — skip rather than risk a duplicate.
+        logger.warn(
+          { err: existingErr.message, paId: row.id, window: win },
+          "prior-auth.expiry-sweep: idempotency check failed, skipping",
+        );
+        continue;
+      }
       if (existing && existing.length > 0) continue;
 
       // Severity escalates the closer we are to expiry.
       const severity: "warning" | "critical" =
         win <= 7 ? "critical" : "warning";
 
-      await supabase
+      const { error: headsUpErr } = await supabase
         .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
@@ -331,6 +345,13 @@ export async function runPriorAuthExpirySweep(
             window: win,
           },
         });
+      if (headsUpErr) {
+        logger.warn(
+          { err: headsUpErr.message, paId: row.id, window: win },
+          "prior-auth.expiry-sweep: heads-up alert insert failed",
+        );
+        continue;
+      }
       stats.headsUpQueued += 1;
       stats.windows[win] += 1;
     }

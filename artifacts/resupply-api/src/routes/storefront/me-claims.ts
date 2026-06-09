@@ -69,7 +69,7 @@ router.get("/me/claims", async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
-  const { data } = await supabase
+  const { data, error: claimsErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select(
@@ -78,6 +78,7 @@ router.get("/me/claims", async (req, res) => {
     .eq("patient_id", link.patientId)
     .order("date_of_service", { ascending: false })
     .limit(100);
+  if (claimsErr) throw claimsErr;
   res.json({
     claims: (data ?? []).map((c) => ({
       id: c.id,
@@ -126,7 +127,10 @@ router.get("/me/claims/:claimId", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const [{ data: lines }, { data: events }] = await Promise.all([
+  const [
+    { data: lines, error: linesErr },
+    { data: events, error: eventsErr },
+  ] = await Promise.all([
     supabase
       .schema("resupply")
       .from("insurance_claim_line_items")
@@ -143,6 +147,8 @@ router.get("/me/claims/:claimId", async (req, res) => {
       .order("occurred_at", { ascending: false })
       .limit(30),
   ]);
+  if (linesErr) throw linesErr;
+  if (eventsErr) throw eventsErr;
   // Strip the actor_email from events — patient doesn't need our
   // internal staff identifiers.
   res.json({
@@ -194,13 +200,14 @@ router.get("/me/billing-balance", async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
-  const { data } = await supabase
+  const { data, error: balanceErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select("id, payer_name, date_of_service, patient_responsibility_cents")
     .eq("patient_id", link.patientId)
     .gt("patient_responsibility_cents", 0)
     .in("status", ["paid", "denied", "appealed", "closed"]);
+  if (balanceErr) throw balanceErr;
   const claimList = data ?? [];
   const totalOpenCents = claimList.reduce(
     (s, c) => s + c.patient_responsibility_cents,
