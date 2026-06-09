@@ -654,6 +654,13 @@ export interface Database {
           insurance_payer: string | null;
           cadence_override_days: number | null;
           channel_preference: string | null;
+          /**
+           * Emailed-vs-mailed delivery preference for billing
+           * statements / bills (migration 0256). 'email' | 'mail';
+           * default 'mail'. Drives generation-time segregation in
+           * lib/billing/statement-send.ts.
+           */
+          statement_delivery_method: string;
           portal_auth_user_id: string | null;
           portal_invited_at: string | null;
           portal_invited_by: string | null;

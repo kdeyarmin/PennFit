@@ -16,6 +16,7 @@ const supabaseMock = installSupabaseMock();
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
+  markStatementsMailed,
   pickStatementChannel,
   sendOneStatement,
   runStatementBatchSend,
@@ -177,6 +178,76 @@ describe("sendOneStatement", () => {
     );
     expect(outcome.kind).toBe("skipped");
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("routes a mailed-preference statement to the mail worklist without sending", async () => {
+    // delivery_method 'mail' → segregated to print/mail; never emailed.
+    stageStatement({ delivery_method: "mail" });
+    const send = vi.fn<SendFn>();
+    const outcome = await sendOneStatement(
+      getSupabaseServiceRoleClient(),
+      "stmt-1",
+      { send, cfg: stubCfg() },
+    );
+    expect(outcome).toEqual({ kind: "mail", reason: "mail_preference" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("emails an emailed-preference statement on the forced email channel", async () => {
+    // delivery_method 'email' is an explicit opt-in — sends email without
+    // consulting the generic opt-out / DND (no shop_customers read).
+    stageStatement({ delivery_method: "email" });
+    stagePatient({ phone_e164: "+15551234567" });
+    const send = vi
+      .fn<SendFn>()
+      .mockResolvedValue({ kind: "sent", channel: "email" });
+    const outcome = await sendOneStatement(
+      getSupabaseServiceRoleClient(),
+      "stmt-1",
+      { send, cfg: stubCfg() },
+    );
+    expect(outcome).toEqual({ kind: "sent", channel: "email" });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![1]).toBe("email");
+  });
+
+  it("falls back to mail when an emailed-preference patient has no email", async () => {
+    stageStatement({ delivery_method: "email" });
+    stagePatient({ email: null });
+    const send = vi.fn<SendFn>();
+    const outcome = await sendOneStatement(
+      getSupabaseServiceRoleClient(),
+      "stmt-1",
+      { send, cfg: stubCfg() },
+    );
+    expect(outcome).toEqual({
+      kind: "mail",
+      reason: "no_email_fallback_mail",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("markStatementsMailed", () => {
+  it("flips the guarded rows and returns the marked count", async () => {
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }, { id: "stmt-2" }],
+      error: null,
+    });
+    const marked = await markStatementsMailed(getSupabaseServiceRoleClient(), [
+      "stmt-1",
+      "stmt-2",
+      "stmt-3",
+    ]);
+    expect(marked).toBe(2);
+  });
+
+  it("is a no-op for an empty id list", async () => {
+    const marked = await markStatementsMailed(
+      getSupabaseServiceRoleClient(),
+      [],
+    );
+    expect(marked).toBe(0);
   });
 });
 

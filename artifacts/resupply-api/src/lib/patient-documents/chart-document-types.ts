@@ -25,6 +25,7 @@ export const CHART_DOCUMENT_TYPES: readonly ChartDocumentType[] = [
   { value: "face_to_face", label: "Face-to-face / chart notes" },
   { value: "insurance_card", label: "Insurance card" },
   { value: "eob", label: "Explanation of Benefits" },
+  { value: "billing_statement", label: "Billing statement" },
   { value: "compliance_report", label: "Compliance report" },
   { value: "other", label: "Other" },
 ] as const;

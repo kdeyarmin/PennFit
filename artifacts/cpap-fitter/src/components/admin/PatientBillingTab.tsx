@@ -13,7 +13,7 @@
 // to context-switch to a different URL for each piece. This tab is
 // the "one record, end-to-end" view.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -23,6 +23,7 @@ import {
   DollarSign,
   FileText,
   FolderArchive,
+  Mail,
   ShieldAlert,
 } from "lucide-react";
 
@@ -404,6 +405,8 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
           </span>
         )}
       </div>
+
+      <StatementDeliveryCard patientId={patientId} />
 
       <Card
         title="Recent claims"
@@ -874,6 +877,178 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
 
       <PaymentPlansSection patientId={patientId} />
     </div>
+  );
+}
+
+interface StatementDeliveryPref {
+  statementDeliveryMethod: "email" | "mail";
+  email: string | null;
+}
+
+// Collect the patient's email + how they want bills delivered. The
+// preference is stamped on each statement at generation, segregating
+// emailed bills (sent automatically) from mailed bills (print queue).
+function StatementDeliveryCard({ patientId }: { patientId: string }) {
+  const qc = useQueryClient();
+  const pref = useQuery({
+    queryKey: ["patient-statement-delivery", patientId],
+    queryFn: () =>
+      getJSON<StatementDeliveryPref>(
+        `/admin/patients/${patientId}/statement-delivery`,
+      ),
+    staleTime: 30_000,
+  });
+
+  const [method, setMethod] = useState<"email" | "mail">("mail");
+  const [email, setEmail] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (pref.data) {
+      setMethod(pref.data.statementDeliveryMethod);
+      setEmail(pref.data.email ?? "");
+      setDirty(false);
+    }
+  }, [pref.data]);
+
+  const save = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const res = await fetch(
+        `${BASE}/admin/patients/${patientId}/statement-delivery`,
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
+          body: JSON.stringify({
+            statementDeliveryMethod: method,
+            email: email.trim() ? email.trim() : null,
+          }),
+        },
+      );
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const json = (await res.json()) as { error?: string };
+          detail = json.error ?? "";
+        } catch {
+          // ignore
+        }
+        throw new Error(
+          detail === "invalid_body"
+            ? "Enter a valid email address."
+            : detail || `request failed (${res.status})`,
+        );
+      }
+    },
+    onSuccess: () => {
+      setError(null);
+      setSavedAt(Date.now());
+      void qc.invalidateQueries({
+        queryKey: ["patient-statement-delivery", patientId],
+      });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed.");
+    },
+  });
+
+  const emailRequiredButMissing = method === "email" && !email.trim();
+
+  return (
+    <Card
+      title={
+        <span className="inline-flex items-center gap-2">
+          <Mail className="h-4 w-4" />
+          Statement delivery
+        </span>
+      }
+      subtitle="How this patient receives bills. Emailed bills send automatically; mailed bills go to the print/mail queue."
+    >
+      {pref.isPending ? (
+        <Spinner label="Loading preference…" />
+      ) : pref.isError ? (
+        <p className="text-sm py-1" style={{ color: "#b91c1c" }}>
+          {pref.error instanceof Error
+            ? pref.error.message
+            : "Failed to load delivery preference."}
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Delivery method
+            </span>
+            <select
+              value={method}
+              onChange={(e) => {
+                setMethod(e.target.value as "email" | "mail");
+                setDirty(true);
+              }}
+              disabled={save.isPending}
+              className="rounded border border-slate-300 px-2 py-1.5 text-sm min-w-[160px]"
+              data-testid="statement-delivery-method"
+            >
+              <option value="mail">Mailed (paper)</option>
+              <option value="email">Emailed</option>
+            </select>
+          </label>
+          <label className="block flex-1 min-w-[220px]">
+            <span
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Email address
+            </span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setDirty(true);
+              }}
+              placeholder="patient@example.com"
+              disabled={save.isPending}
+              className="rounded border border-slate-300 px-2 py-1.5 text-sm w-full"
+              data-testid="statement-delivery-email"
+            />
+          </label>
+          <Button
+            intent="primary"
+            size="sm"
+            disabled={save.isPending || !dirty || emailRequiredButMissing}
+            isLoading={save.isPending}
+            onClick={() => save.mutate()}
+            data-testid="statement-delivery-save"
+          >
+            Save
+          </Button>
+          {savedAt && Date.now() - savedAt < 4000 && (
+            <span className="text-xs" style={{ color: "#15803d" }}>
+              Saved
+            </span>
+          )}
+          {emailRequiredButMissing && (
+            <span className="text-xs w-full" style={{ color: "#b45309" }}>
+              Add an email address to deliver bills by email.
+            </span>
+          )}
+          {error && (
+            <span
+              className="text-xs w-full"
+              style={{ color: "#b91c1c" }}
+              data-testid="statement-delivery-error"
+            >
+              {error}
+            </span>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
