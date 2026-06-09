@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { respondInvalidBody } from "../../lib/http-validation";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import {
@@ -170,7 +171,7 @@ router.post(
     }
     const parsed = triageSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      res.status(400).json({ error: "invalid_body" });
+      respondInvalidBody(res, parsed.error);
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
