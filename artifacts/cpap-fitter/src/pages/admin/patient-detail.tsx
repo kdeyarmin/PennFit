@@ -1565,7 +1565,10 @@ function FaxOutreachTab({
           >
             No fax vendor is wired in this environment yet. Submitted requests
             will be queued (status &lsquo;pending&rsquo;) until a deployer sets{" "}
-            <code>FAX_VENDOR / FAX_API_KEY / FAX_FROM_NUMBER</code>.
+            <code>
+              TELNYX_API_KEY / TELNYX_FAX_CONNECTION_ID / TELNYX_FAX_FROM_NUMBER
+            </code>
+            .
           </p>
         )}
       </div>

@@ -200,32 +200,6 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     },
     carriesPatientId: false,
   },
-  // ── Compliance auto-workflow (Phase 11) ──
-  {
-    type: "compliance.oig_screening_overdue",
-    description:
-      "No OIG LEIE screening has been recorded in the last 35 days. Emitted once per 24-hour cooldown.",
-    publisher: "lib/compliance/auto-workflow.ts",
-    payloadFields: {
-      cutoff_days: "number",
-      cutoff_at: "iso_timestamp",
-    },
-    carriesPatientId: false,
-  },
-  {
-    type: "compliance.patient_rights_overdue",
-    description:
-      "A §164.522/524/526/528 rights request has passed its 30-day (or 60-day extended) response deadline. Emitted once per request per 24-hour cooldown.",
-    publisher: "lib/compliance/auto-workflow.ts",
-    payloadFields: {
-      request_id: "uuid",
-      patient_id: "uuid",
-      request_kind: "string",
-      received_at: "iso_timestamp",
-      extended: "boolean",
-    },
-    carriesPatientId: true,
-  },
 ];
 
 /** Build the set of valid event-type slugs for the admin

@@ -80,9 +80,6 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   fit_session.override    — override a recommended mask/size
  *   inventory.read          — view shop stock counts (Pacware
  *                              mirror)
- *   training.manage         — assign / mark complete staff trainings
- *   grievances.read         — view patient grievance log
- *   grievances.resolve      — close out a grievance / adverse event
  *   conversations.manage    — triage admin inbox: snooze, tag, claim
  *   admin.tools.manage      — supervisor-tier CSR-tool management
  *                              (macro templates, future quick-actions)
@@ -119,9 +116,6 @@ export type Permission =
   | "bulk_campaigns.send"
   | "fit_session.override"
   | "inventory.read"
-  | "training.manage"
-  | "grievances.read"
-  | "grievances.resolve"
   | "conversations.manage"
   | "admin.tools.manage"
   | "clinical.read"
@@ -153,9 +147,6 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "bulk_campaigns.send",
   "fit_session.override",
   "inventory.read",
-  "training.manage",
-  "grievances.read",
-  "grievances.resolve",
   "conversations.manage",
   "admin.tools.manage",
   "clinical.read",
@@ -174,8 +165,8 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
  *                              destruction, etc.).
  *   * admin                 — broad management without the most
  *                              destructive ops; can approve returns,
- *                              export audit, resolve grievances,
- *                              manage training records.
+ *                              export audit, resolve compliance
+ *                              alerts, and manage cost / metrics.
  *   * customer_service_rep  — operational CSR + clinical fitter +
  *                              fulfillment + legacy "agent" all
  *                              folded together. Day-to-day patient
@@ -247,9 +238,6 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "bulk_campaigns.send",
     "fit_session.override",
     "inventory.read",
-    "training.manage",
-    "grievances.read",
-    "grievances.resolve",
     "conversations.manage",
     "admin.tools.manage",
     "clinical.read",
@@ -273,7 +261,6 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "compliance.read",
     "reports.read",
     "inventory.read",
-    "grievances.read",
     "conversations.manage",
     "fit_session.override",
     "cases.read",

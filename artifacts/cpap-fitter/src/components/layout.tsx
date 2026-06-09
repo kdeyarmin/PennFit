@@ -1,6 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ShieldCheck, Menu, X, Package, Heart } from "lucide-react";
+import {
+  ShieldCheck,
+  Menu,
+  X,
+  Package,
+  Heart,
+  ChevronDown,
+} from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
 import { UserMenu } from "@/components/user-menu";
@@ -56,15 +63,132 @@ function ScrollToTop() {
   return null;
 }
 
-const navLinks = [
+// Primary header navigation. A nav entry is either a single link
+// ({ href, label }) or a labelled group with a dropdown of child
+// links ({ label, children }). The three mask-discovery surfaces
+// (the spec catalog + the brand landings) are grouped under one
+// "Masks" menu so the top bar isn't four near-synonymous shopping
+// links; the Virtual Mask Fitter (the differentiated funnel) and
+// Shop (the transactional store) stay as their own items. FAQ is
+// intentionally NOT here — it's surfaced on the /help hub (and the
+// mobile "Talk to us" bar), so the top bar carries one support entry.
+type NavLeaf = { href: string; label: string };
+type NavGroup = { label: string; children: NavLeaf[] };
+type NavEntry = NavLeaf | NavGroup;
+
+const navLinks: NavEntry[] = [
   { href: "/how-it-works", label: "Virtual Mask Fitter" },
-  { href: "/masks", label: "Mask Catalog" },
-  { href: "/cpap-masks", label: "Brands" },
+  {
+    label: "Masks",
+    children: [
+      { href: "/masks", label: "Mask Catalog" },
+      { href: "/cpap-masks", label: "Brands" },
+      { href: "/cpap-masks/resmed", label: "ResMed" },
+      { href: "/cpap-masks/react-health", label: "React Health" },
+      { href: "/cpap-masks/fisher-paykel", label: "Fisher & Paykel" },
+    ],
+  },
   { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
   { href: "/help", label: "Help" },
-  { href: "/faq", label: "FAQ" },
 ];
+
+function isNavGroup(entry: NavEntry): entry is NavGroup {
+  return "children" in entry;
+}
+
+// A nav route is "active" for its own path and any descendant
+// ("/foo" matches "/foo" and "/foo/bar"). Shared by the desktop
+// dropdown, the desktop flat links, and the mobile panel.
+function isHrefActive(location: string, href: string): boolean {
+  return location === href || location.startsWith(`${href}/`);
+}
+
+// Desktop-only dropdown for a grouped nav entry (e.g. "Masks").
+// Hand-rolled to match UserMenu's popover idiom (no shadcn dropdown
+// primitive exists in the storefront): click toggles it; outside-click,
+// Escape, and route-change all close it. Click (not hover) so there's
+// no dead-gap flicker and it stays keyboard/touch friendly, exactly
+// like UserMenu. The mobile menu renders the same children inline
+// instead (see Layout below).
+function NavDropdown({ label, items }: { label: string; items: NavLeaf[] }) {
+  const [location] = useLocation();
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const groupActive = items.some((c) => isHrefActive(location, c.href));
+
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // Close when the route changes (e.g. a child link was clicked).
+  useEffect(() => {
+    setOpen(false);
+  }, [location]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-current={groupActive ? "page" : undefined}
+        data-testid="nav-masks-menu"
+        className={`relative inline-flex items-center gap-1 py-1 transition-colors hover:text-primary focus-visible:text-primary ${
+          groupActive
+            ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-[hsl(var(--penn-gold))]"
+            : "text-foreground/75"
+        }`}
+      >
+        {label}
+        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 mt-2 w-56 rounded-lg border bg-background shadow-md p-1 text-sm z-50"
+        >
+          {items.map((c) => {
+            const isActive = isHrefActive(location, c.href);
+            return (
+              <Link
+                key={c.href}
+                href={c.href}
+                role="menuitem"
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => setOpen(false)}
+                data-testid={`nav-${c.href.replace(/\//g, "")}`}
+                className={`block px-3 py-2 rounded-md transition-colors hover:bg-muted ${
+                  isActive ? "text-primary font-medium" : ""
+                }`}
+              >
+                {c.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // (CartNavIcon was replaced by MiniCart — see
 // components/shop/mini-cart.tsx. The header now opens a popover
@@ -159,11 +283,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
             */}
             <nav className="hidden md:flex items-center gap-7 text-[15px] font-medium">
               {navLinks.map((l) => {
+                // Grouped entries (e.g. "Masks") render as a dropdown;
+                // single entries render as a flat link.
+                if (isNavGroup(l)) {
+                  return (
+                    <NavDropdown
+                      key={l.label}
+                      label={l.label}
+                      items={l.children}
+                    />
+                  );
+                }
                 // Treat "/foo" as active for "/foo" and any
                 // descendant route ("/foo/bar"). Home ("/") is
                 // not in navLinks, so no special-case needed.
-                const isActive =
-                  location === l.href || location.startsWith(`${l.href}/`);
+                const isActive = isHrefActive(location, l.href);
                 return (
                   <Link
                     key={l.href}
@@ -226,8 +360,43 @@ export function Layout({ children }: { children: React.ReactNode }) {
             >
               <nav className="container mx-auto flex flex-col px-3 py-3 gap-1 text-base font-medium">
                 {navLinks.map((l) => {
-                  const isActive =
-                    location === l.href || location.startsWith(`${l.href}/`);
+                  // Grouped entries render a small section label with the
+                  // child links indented beneath it — no nested dropdown
+                  // on mobile, everything stays one tap away.
+                  if (isNavGroup(l)) {
+                    return (
+                      <div key={l.label} className="flex flex-col gap-1">
+                        <span className="px-4 pt-2 pb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {l.label}
+                        </span>
+                        {l.children.map((c) => {
+                          const isActive = isHrefActive(location, c.href);
+                          return (
+                            <Link
+                              key={c.href}
+                              href={c.href}
+                              aria-current={isActive ? "page" : undefined}
+                              className={`flex items-center justify-between min-h-12 rounded-xl transition-colors ${
+                                isActive
+                                  ? "bg-secondary text-primary border-l-4 border-[hsl(var(--penn-gold))] pl-5"
+                                  : "text-foreground hover:bg-muted/60 active:bg-muted pl-6 pr-4"
+                              }`}
+                              data-testid={`mobile-link-${c.href.replace(/\//g, "")}`}
+                            >
+                              <span>{c.label}</span>
+                              {isActive ? (
+                                <span
+                                  aria-hidden
+                                  className="h-2 w-2 rounded-full bg-[hsl(var(--penn-gold))]"
+                                />
+                              ) : null}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  const isActive = isHrefActive(location, l.href);
                   return (
                     <Link
                       key={l.href}
@@ -238,7 +407,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                           ? "bg-secondary text-primary border-l-4 border-[hsl(var(--penn-gold))] pl-3"
                           : "text-foreground hover:bg-muted/60 active:bg-muted"
                       }`}
-                      data-testid={`mobile-link-${l.href.replace("/", "")}`}
+                      data-testid={`mobile-link-${l.href.replace(/\//g, "")}`}
                     >
                       <span>{l.label}</span>
                       {isActive ? (

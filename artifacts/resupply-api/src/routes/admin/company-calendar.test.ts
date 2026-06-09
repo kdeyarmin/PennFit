@@ -23,7 +23,8 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-// adminRateLimit / adminReadRateLimiter → transparent passthroughs so the
+// adminRateLimit / adminReadRateLimiter / adminWriteRateLimiter →
+// transparent passthroughs so the
 // rate limiters never interfere with the route contract under test.
 vi.mock("../../middlewares/admin-rate-limit", () => ({
   adminRateLimit:
@@ -35,6 +36,11 @@ vi.mock("../../middlewares/admin-rate-limit", () => ({
     ) =>
       next(),
   adminReadRateLimiter: (
+    _req: import("express").Request,
+    _res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => next(),
+  adminWriteRateLimiter: (
     _req: import("express").Request,
     _res: import("express").Response,
     next: import("express").NextFunction,

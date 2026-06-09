@@ -174,7 +174,13 @@ forbid_imports_in lib/resupply-telecom/src \
 # `@workspace/api-zod` already permits it everywhere.
 #
 # Quote-agnostic: forbid both single- and double-quoted forms.
-for resdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db/src lib/resupply-audit/src lib/resupply-telecom/src lib/resupply-ai/src artifacts/resupply-api/src artifacts/resupply-dashboard/src; do
+for resdir in lib/resupply-domain/src \
+              lib/resupply-db/src \
+              lib/resupply-audit/src \
+              lib/resupply-telecom/src \
+              lib/resupply-ai/src \
+              artifacts/resupply-api/src \
+              artifacts/resupply-dashboard/src; do
   forbid_imports_in "$resdir" \
     "$resdir must not import the storefront UI client (@workspace/api-client-react is for cpap-fitter only)" \
     "@workspace/api-client-react['\"]"
@@ -203,10 +209,10 @@ done
 # stand up throwaway pools against test databases.
 for nopool in artifacts/resupply-api/src \
               artifacts/resupply-dashboard/src \
-              lib/resupply-contracts/src lib/resupply-domain/src \
+              lib/resupply-domain/src \
+              lib/resupply-api-client/src \
               lib/resupply-audit/src lib/resupply-telecom/src \
-              lib/resupply-ai/src lib/resupply-testing/src \
-              lib/resupply-api-client/src; do
+              lib/resupply-ai/src; do
   if [[ -d "$nopool" ]]; then
     bad="$(rg --no-messages -n "${RG_TYPES[@]}" \
       -e 'new\s+([A-Za-z_$][\w$]*\.)?(Pool|PgPool)\(' \
@@ -240,11 +246,10 @@ done
 # defeat the "logAudit is the only path" invariant the moment a future
 # refactor copy/pastes the test fixture into production code.
 for noaudit in artifacts/resupply-api/src \
-               artifacts/resupply-dashboard/src \
-               lib/resupply-contracts/src lib/resupply-domain/src \
+               lib/resupply-domain/src \
+               lib/resupply-testing/src \
                lib/resupply-db/src lib/resupply-telecom/src \
-               lib/resupply-ai/src lib/resupply-testing/src \
-               lib/resupply-api-client/src; do
+               lib/resupply-ai/src; do
   if [[ -d "$noaudit" ]]; then
     # Patterns (multi-line `-U` mode so a regex can span newlines —
     # without it, a developer can split `import { auditLog,\n} from`

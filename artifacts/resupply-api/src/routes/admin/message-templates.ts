@@ -117,7 +117,14 @@ function serialize(row: MessageTemplateRow): MessageTemplateView {
     subject: row.subject ?? null,
     bodyHtml: row.body_html ?? null,
     bodyText: row.body_text,
-    allowedVariables: row.allowed_variables ?? [],
+    // `allowed_variables` is a jsonb column: it can hold any JSON shape, not
+    // just the string[] the view promises. Coerce defensively so a stored
+    // non-array (jsonb string/object/null) can never reach the admin UI,
+    // which dereferences `.length`/`.map` on it and would otherwise throw a
+    // TypeError into the page's error boundary.
+    allowedVariables: Array.isArray(row.allowed_variables)
+      ? row.allowed_variables.filter((v): v is string => typeof v === "string")
+      : [],
     isActive: row.is_active,
     // PostgREST returns timestamptz as ISO string already.
     updatedAt: row.updated_at,
