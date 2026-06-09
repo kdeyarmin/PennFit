@@ -137,6 +137,12 @@ export interface ClaimDetail {
    *  loop 2300 when the frequency is 7 or 8 so the payer matches the
    *  replacement/void to the original instead of adjudicating a duplicate. */
   originalClaimNumber?: string | null;
+  /** Loop 2300 claim-level note — emitted as `NTE*ADD`. Medicare DME requires
+   *  a narrative (item description + MSRP) on claims for miscellaneous / NOC
+   *  HCPCS (E1399, A9999, K0108, …) or the line denies as unprocessable. Use
+   *  this for a claim-wide narrative; per-line narratives live on the service
+   *  line (`note`). Truncated to the X12 NTE02 80-char limit. */
+  claimNote?: string | null;
 }
 
 export interface ProviderRef {
@@ -150,6 +156,10 @@ export interface ProviderRef {
   middleName?: string | null;
   /** Optional state license number — surfaces as REF*0B when present. */
   stateLicenseNumber?: string | null;
+  /** Optional provider address. The 837P TR3 expects an address (N3/N4) on
+   *  the line-level ordering-provider loop (2420E); when supplied it is
+   *  emitted there. Referring/rendering loops omit it (not required). */
+  address?: PostalAddress | null;
 }
 
 export interface OtherSubscriberDetail {
@@ -201,6 +211,16 @@ export interface ServiceLine {
   /** Diagnosis pointers — which entries from `diagnosisCodes` apply to this line.
    *  Pointer is 1-based; e.g. [1] points at the first diagnosis. */
   diagnosisPointers: number[];
+  /** Loop 2400 line-level note — emitted as `NTE*ADD` after the service date.
+   *  The precise place for a NOC/miscellaneous-HCPCS narrative (item
+   *  description + MSRP) tied to one line. Truncated to NTE02's 80-char limit. */
+  note?: string | null;
+  /** Loop 2420E line-level ordering provider — emitted as `NM1*DK`. Medicare
+   *  DME edits verify the ordering provider is PECOS-enrolled; the line-level
+   *  ordering loop is the DMEPOS-strict placement (vs. the claim-level
+   *  referring loop 2310D). Optional + off by default — supply per line to
+   *  emit it. When `address` is set, N3/N4 are emitted (TR3-expected here). */
+  orderingProvider?: ProviderRef | null;
 }
 
 export interface ControlNumbers {
@@ -572,6 +592,14 @@ export function build837P(
     });
     segments.push(joinSegment(["HI", ...hiComposites]));
 
+    // 2300 NTE*ADD — claim-level narrative. Required by Medicare DME for a
+    // miscellaneous/NOC HCPCS line (item description + MSRP) when the
+    // narrative applies to the claim rather than one line.
+    const claimNote = sanitizeElement(claim.claimNote).slice(0, 80);
+    if (claimNote) {
+      segments.push(joinSegment(["NTE", "ADD", claimNote]));
+    }
+
     if (claim.priorAuthNumber) {
       segments.push(
         joinSegment([
@@ -785,6 +813,57 @@ export function build837P(
           toCcyymmdd(line.serviceDate),
         ]),
       );
+
+      // 2400 NTE*ADD — line-level narrative. The precise placement for a
+      // NOC/miscellaneous-HCPCS narrative (item description + MSRP) tied to
+      // this specific service line.
+      const lineNote = sanitizeElement(line.note).slice(0, 80);
+      if (lineNote) {
+        segments.push(joinSegment(["NTE", "ADD", lineNote]));
+      }
+
+      // 2420E — line-level ordering provider (NM1*DK). DMEPOS-strict
+      // placement of the ordering physician so Medicare's PECOS edit binds
+      // to the line. Optional; emitted only when supplied per line.
+      if (line.orderingProvider) {
+        const op = line.orderingProvider;
+        segments.push(
+          joinSegment([
+            "NM1",
+            "DK", // ordering provider
+            "1", // person
+            padOrTrunc(sanitizeElement(op.lastName), 60),
+            padOrTrunc(sanitizeElement(op.firstName), 35),
+            padOrTrunc(sanitizeElement(op.middleName ?? ""), 25),
+            "",
+            "",
+            "XX", // NPI
+            sanitizeElement(op.npi),
+          ]),
+        );
+        if (op.address) {
+          segments.push(
+            joinSegment(["N3", padOrTrunc(sanitizeElement(op.address.line1), 55)]),
+          );
+          segments.push(
+            joinSegment([
+              "N4",
+              padOrTrunc(sanitizeElement(op.address.city), 30),
+              sanitizeElement(op.address.state).slice(0, 2),
+              digitsOnly(op.address.zip),
+            ]),
+          );
+        }
+        if (op.stateLicenseNumber) {
+          segments.push(
+            joinSegment([
+              "REF",
+              "0B",
+              sanitizeElement(op.stateLicenseNumber).slice(0, 50),
+            ]),
+          );
+        }
+      }
     });
 
     claimCount++;
