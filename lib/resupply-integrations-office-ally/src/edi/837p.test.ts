@@ -524,6 +524,113 @@ describe("build837P", () => {
     expect(payload).not.toContain("AMT*D*");
   });
 
+  it("emits a 2300 NTE*ADD claim note when claimNote is supplied", () => {
+    const input = fixtureInput();
+    input.claims[0]!.claimNote =
+      "Custom interface accessory; MSRP $129.00 per manufacturer.";
+    const { payload } = build837P(input);
+    expect(payload).toContain(
+      "~NTE*ADD*Custom interface accessory; MSRP $129.00 per manufacturer.~",
+    );
+  });
+
+  it("omits the 2300 NTE when no claim note is supplied", () => {
+    const { payload } = build837P(fixtureInput());
+    expect(payload).not.toContain("NTE*ADD");
+  });
+
+  it("truncates the claim NTE narrative to the 80-char NTE02 limit", () => {
+    const input = fixtureInput();
+    input.claims[0]!.claimNote = "X".repeat(120);
+    const { payload } = build837P(input);
+    expect(payload).toContain(`~NTE*ADD*${"X".repeat(80)}~`);
+    expect(payload).not.toContain("X".repeat(81));
+  });
+
+  it("emits a 2400 line-level NTE*ADD after the line's service date", () => {
+    const input = fixtureInput();
+    input.claims[0]!.serviceLines[0]!.hcpcsCode = "E1399";
+    input.claims[0]!.serviceLines[0]!.note =
+      "Miscellaneous DME - replacement headgear strap; MSRP $24.00.";
+    const { payload } = build837P(input);
+    // NTE follows the DTP*472 service-date segment within loop 2400.
+    expect(payload).toMatch(
+      /~DTP\*472\*D8\*\d{8}~NTE\*ADD\*Miscellaneous DME - replacement headgear strap; MSRP \$24\.00\.~/,
+    );
+  });
+
+  it("strips X12 reserved delimiters (e.g. ':') from NTE narrative text", () => {
+    const input = fixtureInput();
+    input.claims[0]!.claimNote = "Note: see attached.";
+    const { payload } = build837P(input);
+    // The ':' component separator must never reach the wire inside an element.
+    expect(payload).toContain("~NTE*ADD*Note see attached.~");
+  });
+
+  it("emits loop 2420E line-level ordering provider (NM1*DK) when supplied", () => {
+    const input = fixtureInput();
+    input.claims[0]!.serviceLines[0]!.orderingProvider = {
+      npi: "1801234569",
+      firstName: "DANA",
+      lastName: "OKAFOR",
+      stateLicenseNumber: "PA-MD-99887",
+      address: {
+        line1: "55 CLINIC WAY",
+        city: "HERSHEY",
+        state: "PA",
+        zip: "17033",
+      },
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~NM1\*DK\*1\*OKAFOR\*DANA\*[^~]*XX\*1801234569~/);
+    // N3/N4 address emitted because the ordering provider carries one.
+    expect(payload).toContain("~N3*55 CLINIC WAY~");
+    expect(payload).toMatch(/~N4\*HERSHEY\*PA\*17033~/);
+    expect(payload).toContain("~REF*0B*PA-MD-99887~");
+  });
+
+  it("omits N3/N4 on 2420E when the ordering provider has no address", () => {
+    const input = fixtureInput();
+    input.claims[0]!.serviceLines[0]!.orderingProvider = {
+      npi: "1801234569",
+      firstName: "DANA",
+      lastName: "OKAFOR",
+    };
+    const { payload } = build837P(input);
+    expect(payload).toMatch(/~NM1\*DK\*1\*OKAFOR\*DANA\*[^~]*XX\*1801234569~/);
+    // Only the billing-provider + subscriber N3 segments — no ordering-provider address.
+    expect((payload.match(/~N3\*/g) ?? []).length).toBe(2);
+  });
+
+  it("omits loop 2420E when no ordering provider is supplied", () => {
+    const { payload } = build837P(fixtureInput());
+    expect(payload).not.toContain("NM1*DK");
+  });
+
+  it("keeps the SE segment count correct with NTE + 2420E segments added", () => {
+    const input = fixtureInput();
+    input.claims[0]!.claimNote = "Claim narrative.";
+    input.claims[0]!.serviceLines[0]!.note = "Line narrative.";
+    input.claims[0]!.serviceLines[0]!.orderingProvider = {
+      npi: "1801234569",
+      firstName: "DANA",
+      lastName: "OKAFOR",
+      address: {
+        line1: "55 CLINIC WAY",
+        city: "HERSHEY",
+        state: "PA",
+        zip: "17033",
+      },
+    };
+    const { payload } = build837P(input);
+    const stIdx = payload.indexOf("ST*");
+    const seMatch = payload.slice(stIdx).match(/~SE\*(\d+)\*/);
+    const declared = Number(seMatch![1]);
+    const inner = payload.slice(stIdx, payload.indexOf("~GE*"));
+    const actual = inner.split("~").filter((s) => s.length > 0).length;
+    expect(declared).toBe(actual);
+  });
+
   it("multi-claim batch keeps the SE segment count correct", () => {
     const input = fixtureInput();
     input.claims.push({
