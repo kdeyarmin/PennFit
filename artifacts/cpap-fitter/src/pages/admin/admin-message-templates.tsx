@@ -41,6 +41,26 @@ const CHANNEL_LABEL: Record<TemplateChannel, string> = {
   push: "Push",
 };
 
+/**
+ * `allowedVariables` is typed `string[]`, but it is backed by a jsonb
+ * column and the API has historically only coerced null/undefined. A
+ * stored jsonb string/object — or a stale API that null'd or omitted the
+ * field — used to reach the render path and throw a raw TypeError on
+ * `.length`/`.map`, bubbling to the global ErrorBoundary ("templates page
+ * - Something went wrong"). Coerce every row to a clean string[] (and a
+ * string templateKey, which the filter/group/sort dereference) so one bad
+ * row can never take down the whole admin page.
+ */
+function normalizeTemplate(t: MessageTemplate): MessageTemplate {
+  return {
+    ...t,
+    templateKey: typeof t.templateKey === "string" ? t.templateKey : "",
+    allowedVariables: Array.isArray(t.allowedVariables)
+      ? t.allowedVariables.filter((v): v is string => typeof v === "string")
+      : [],
+  };
+}
+
 export function AdminMessageTemplatesPage() {
   return (
     <div className="space-y-6" data-testid="admin-message-templates-page">
@@ -77,7 +97,7 @@ function TemplateList() {
   });
 
   const grouped = useMemo(() => {
-    const list = query.data?.templates ?? [];
+    const list = (query.data?.templates ?? []).map(normalizeTemplate);
     const filtered = filterKey
       ? list.filter((t) => t.templateKey.includes(filterKey))
       : list;

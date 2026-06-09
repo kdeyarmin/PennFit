@@ -584,23 +584,6 @@ router.use(webhookDeliveryRetryRouter);
 // that produces a plain-English action plan with specific "how to
 // obtain" guidance for every gap.
 router.use(dispenseReadinessRouter);
-// ── Phase 10 (compliance machinery, migration 0141) ──────────────
-// /admin/compliance/oig-leie-screenings — record + list OIG LEIE
-// monthly exclusion-list screens against staff / providers /
-// BAs / contractors. Coverage rollup flags overdue subjects.
-// /admin/compliance/patient-rights-requests — HIPAA
-// §164.522/524/526/528 access / amendment / accounting /
-// restriction / confidential-communications workflow with the
-// 30-day response clock (single 30-day extension allowed).
-// /admin/compliance/risk-assessments + contingency-attestations +
-// disaster-drills + qi-initiatives + qi-measurements +
-// ownership-disclosures + disclosure-log — registers that close
-// out §164.308(a)(1)/(a)(7), ACHC QAPI, and §424.57(c)(17).
-// /admin/compliance/officer-summary — single round-trip rollup the
-// compliance officer loads every morning. Aggregate counts across
-// OIG screening, patient rights, disclosures, risk
-// assessments, contingency / drills, QAPI, ownership, training,
-// grievances, and the most recent accreditation readiness run.
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

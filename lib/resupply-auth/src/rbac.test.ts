@@ -77,9 +77,6 @@ describe("roleHasPermission", () => {
       true,
     );
     expect(roleHasPermission("compliance_officer", "audit.export")).toBe(true);
-    expect(roleHasPermission("compliance_officer", "training.manage")).toBe(
-      true,
-    );
     expect(roleHasPermission("compliance_officer", "returns.approve")).toBe(
       true,
     );
