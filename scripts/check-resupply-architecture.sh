@@ -174,7 +174,13 @@ forbid_imports_in lib/resupply-telecom/src \
 # `@workspace/api-zod` already permits it everywhere.
 #
 # Quote-agnostic: forbid both single- and double-quoted forms.
-for resdir in lib/resupply-domain/src lib/resupply-db/src lib/resupply-audit/src lib/resupply-telecom/src lib/resupply-ai/src artifacts/resupply-api/src; do
+for resdir in lib/resupply-domain/src \
+              lib/resupply-db/src \
+              lib/resupply-audit/src \
+              lib/resupply-telecom/src \
+              lib/resupply-ai/src \
+              artifacts/resupply-api/src \
+              artifacts/resupply-dashboard/src; do
   forbid_imports_in "$resdir" \
     "$resdir must not import the storefront UI client (@workspace/api-client-react is for cpap-fitter only)" \
     "@workspace/api-client-react['\"]"
@@ -202,7 +208,9 @@ done
 # Test files (`*.test.*`) are exempt because they may legitimately
 # stand up throwaway pools against test databases.
 for nopool in artifacts/resupply-api/src \
+              artifacts/resupply-dashboard/src \
               lib/resupply-domain/src \
+              lib/resupply-api-client/src \
               lib/resupply-audit/src lib/resupply-telecom/src \
               lib/resupply-ai/src; do
   if [[ -d "$nopool" ]]; then
@@ -239,6 +247,7 @@ done
 # refactor copy/pastes the test fixture into production code.
 for noaudit in artifacts/resupply-api/src \
                lib/resupply-domain/src \
+               lib/resupply-testing/src \
                lib/resupply-db/src lib/resupply-telecom/src \
                lib/resupply-ai/src; do
   if [[ -d "$noaudit" ]]; then
