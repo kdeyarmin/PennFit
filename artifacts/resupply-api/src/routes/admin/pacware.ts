@@ -627,6 +627,7 @@ router.get(
   adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   async (_req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
     const supabase = getSupabaseServiceRoleClient();
     const [autoSync, pending] = await Promise.all([
       readPacwareAutoSync(supabase),
@@ -642,6 +643,7 @@ router.put(
   adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   async (req, res) => {
+    if (!ensurePacwareEnabled(res)) return;
     const parsed = settingsBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_body" });

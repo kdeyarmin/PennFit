@@ -454,5 +454,15 @@ describe("PACWARE_EXCHANGE_DISABLED kill switch", () => {
       "/resupply-api/admin/pacware/export/resupply-due.csv",
     );
     expect(resupply.status).toBe(503);
+
+    const settingsGet = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/settings",
+    );
+    expect(settingsGet.status).toBe(503);
+
+    const settingsPut = await request(makeApp())
+      .put("/resupply-api/admin/pacware/settings")
+      .send({ autoSync: true });
+    expect(settingsPut.status).toBe(503);
   });
 });

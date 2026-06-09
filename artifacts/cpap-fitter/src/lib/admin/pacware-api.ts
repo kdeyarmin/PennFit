@@ -94,7 +94,7 @@ export interface PacwareImportCommit {
 export type PacwareSyncTarget = "patients" | "resupply-due";
 
 export interface PacwareSyncPreview {
-  target: string;
+  target: "patient_roster" | "resupply_due";
   status?: string;
   count: number;
   sample: Array<Record<string, string | number | null>>;

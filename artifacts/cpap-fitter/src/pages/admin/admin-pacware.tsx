@@ -353,7 +353,13 @@ const RESUPPLY_STATUSES = [
 
 const settingsKey = ["admin", "pacware", "settings"] as const;
 
-async function downloadCsv(path: string, filename: string): Promise<void> {
+// Server-side export cap (mirrors MAX_EXPORT_ROWS in the API route). Used to
+// warn the operator BEFORE download when a sync would be truncated.
+const SYNC_EXPORT_CAP = 5000;
+
+/** Download the export CSV. Returns true when the server capped the file
+ *  (X-Truncated) so the caller can warn that rows were dropped. */
+async function downloadCsv(path: string, filename: string): Promise<boolean> {
   const url = new URL(`/resupply-api${path}`, window.location.origin);
   const res = await fetch(url.toString(), {
     headers: { Accept: "text/csv" },
@@ -366,6 +372,7 @@ async function downloadCsv(path: string, filename: string): Promise<void> {
         : `Sync failed (${res.status}).`,
     );
   }
+  const truncated = res.headers.get("X-Truncated") === "true";
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -375,6 +382,7 @@ async function downloadCsv(path: string, filename: string): Promise<void> {
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  return truncated;
 }
 
 function SyncCard() {
@@ -427,7 +435,7 @@ function SyncCard() {
         </label>
       </div>
 
-      {autoSync && pending && (
+      {autoSync && pending && pending.resupplyDue > 0 && (
         <div
           className="mt-3 rounded-lg border px-3 py-2 text-sm flex items-center gap-2"
           style={{
@@ -438,10 +446,8 @@ function SyncCard() {
           <Bell className="h-4 w-4" style={{ color: "hsl(217,91%,45%)" }} />
           <span>
             Ready to sync: <strong>{pending.resupplyDue}</strong> confirmed
-            resupply order{pending.resupplyDue === 1 ? "" : "s"} ·{" "}
-            <strong>{pending.patients}</strong> patient
-            {pending.patients === 1 ? "" : "s"} in the roster. Review &amp;
-            download below.
+            resupply order{pending.resupplyDue === 1 ? "" : "s"} waiting. Review
+            &amp; download below.
           </span>
         </div>
       )}
@@ -508,7 +514,7 @@ function VerifyModal({
   target: PacwareSyncTarget;
   status?: string;
   onClose: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: () => Promise<boolean>;
 }) {
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["admin", "pacware", "preview", target, status ?? ""],
@@ -521,13 +527,22 @@ function VerifyModal({
     target === "patients" ? "Sync patient roster" : "Sync resupply due";
   const columns =
     data && data.sample.length > 0 ? Object.keys(data.sample[0]) : [];
+  const willTruncate = (data?.count ?? 0) > SYNC_EXPORT_CAP;
 
   async function confirm() {
     setErr(null);
     setDownloading(true);
     try {
-      await onConfirm();
-      onClose();
+      const truncated = await onConfirm();
+      if (truncated) {
+        // The file downloaded, but the server capped it. Keep the modal
+        // open with a warning rather than silently closing.
+        setErr(
+          `Downloaded — but capped at ${SYNC_EXPORT_CAP.toLocaleString()} rows. Narrow the filter and sync again for the rest.`,
+        );
+      } else {
+        onClose();
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Sync failed.");
     } finally {
@@ -567,6 +582,21 @@ function VerifyModal({
                 {status ? ` (status: ${status})` : ""}. Showing the first{" "}
                 {data.sample.length}:
               </p>
+              {willTruncate && (
+                <div
+                  className="rounded-lg border px-3 py-2 text-xs"
+                  style={{
+                    borderColor: "hsl(38,92%,45%)",
+                    backgroundColor: "rgba(245,158,11,0.08)",
+                  }}
+                >
+                  <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
+                  The download is capped at {SYNC_EXPORT_CAP.toLocaleString()}{" "}
+                  rows — only the first {SYNC_EXPORT_CAP.toLocaleString()} of
+                  these {data.count} will be included. Narrow the filter and
+                  sync again for the rest.
+                </div>
+              )}
               {data.sample.length === 0 ? (
                 <p
                   className="text-sm py-2"
