@@ -346,6 +346,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Send & track e-signature packets for new patients",
       },
       {
+        label: "Documents",
+        icon: FilePlus2,
+        href: "/admin/documents",
+        matchPrefix: "/admin/documents",
+        hint: "Type out a CMN, prescription, agreement, or fax cover by hand",
+      },
+      {
         label: "Duplicate review",
         icon: CopyCheck,
         href: "/admin/patients/duplicates",

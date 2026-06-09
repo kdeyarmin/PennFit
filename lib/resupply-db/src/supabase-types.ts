@@ -2459,6 +2459,41 @@ export interface Database {
         >;
         Relationships: [];
       };
+      manual_documents: {
+        Row: {
+          id: string;
+          document_type:
+            | "cmn"
+            | "prescription"
+            | "agreement"
+            | "delivery_ticket"
+            | "cover_letter"
+            | "other";
+          title: string;
+          recipient_name: string | null;
+          recipient_address: string | null;
+          recipient_email: string | null;
+          recipient_fax_e164: string | null;
+          fields: Json;
+          body: string | null;
+          patient_id: string | null;
+          chart_document_id: string | null;
+          status: "draft" | "sent" | "attached";
+          last_emailed_at: string | null;
+          last_faxed_at: string | null;
+          attached_at: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["manual_documents"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["manual_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_packet_documents: {
         Row: {
           id: string;

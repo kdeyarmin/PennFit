@@ -28,6 +28,7 @@ interface FaxDocumentPayload {
 export type FaxDocumentKind =
   | "physician_outreach"
   | "appeal_letter"
+  | "manual_document"
   | "pa_request";
 
 const DEFAULT_TTL_SECONDS = 3600; // 1 hour — Telnyx fetches immediately
@@ -89,6 +90,18 @@ export function signAppealFaxToken(
   });
 }
 
+/** Sign a manual-document fax token (kind=manual_document). */
+export function signManualDocumentFaxToken(
+  manualDocumentId: string,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+): string {
+  return signToken({
+    id: manualDocumentId,
+    k: "manual_document",
+    e: Math.floor(Date.now() / 1000) + ttlSeconds,
+  });
+}
+
 /** Sign a PA-request-form fax token (kind=pa_request). The id is the
  *  composite `${patientId}:${paId}` so the render stays patient-scoped. */
 export function signPaRequestFaxToken(
@@ -145,8 +158,10 @@ export function verifyFaxDocumentToken(
   const kind: FaxDocumentKind =
     p.k === "appeal_letter"
       ? "appeal_letter"
-      : p.k === "pa_request"
-        ? "pa_request"
-        : "physician_outreach";
+      : p.k === "manual_document"
+        ? "manual_document"
+        : p.k === "pa_request"
+          ? "pa_request"
+          : "physician_outreach";
   return { valid: true, outreachId: p.id, kind };
 }
