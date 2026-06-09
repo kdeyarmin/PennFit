@@ -80,13 +80,30 @@ export interface PacwareImportPreview {
 
 export interface PacwareImportCommit {
   mode: "commit";
-  synced: number;
+  created: number;
+  updated: number;
+  unchanged: number;
   validCount: number;
   errorCount: number;
   totalDataRows: number;
   unmappedHeaders: string[];
   errors: PacwareRowError[];
   batchErrors: string[];
+}
+
+export type PacwareSyncTarget = "patients" | "resupply-due";
+
+export interface PacwareSyncPreview {
+  target: string;
+  status?: string;
+  count: number;
+  sample: Array<Record<string, string | number | null>>;
+}
+
+export interface PacwareSettings {
+  autoSync: boolean;
+  pending: { resupplyDue: number; patients: number };
+  generatedAt: string;
 }
 
 export const getPacwareStatus = () =>
@@ -100,3 +117,22 @@ export const importPacwarePatients = (
     "/admin/pacware/import/patients",
     { method: "POST", body: JSON.stringify({ csv, mode }) },
   );
+
+export const getPacwareSyncPreview = (
+  target: PacwareSyncTarget,
+  status?: string,
+) => {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return jsonFetch<PacwareSyncPreview>(
+    `/admin/pacware/sync/${target}/preview${qs}`,
+  );
+};
+
+export const getPacwareSettings = () =>
+  jsonFetch<PacwareSettings>("/admin/pacware/settings");
+
+export const setPacwareAutoSync = (autoSync: boolean) =>
+  jsonFetch<{ autoSync: boolean }>("/admin/pacware/settings", {
+    method: "PUT",
+    body: JSON.stringify({ autoSync }),
+  });
