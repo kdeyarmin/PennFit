@@ -34,6 +34,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { Link } from "wouter";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -121,6 +122,48 @@ function clearPersistedMessages(): void {
 
 function nextId(): string {
   return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// Matches an in-app admin path the bot mentions: `/admin`, optionally
+// followed by `/segment` parts. Stops before trailing punctuation like
+// `)`, `.` or `,` so a path in prose / parentheses links cleanly. The
+// `:` is allowed so a route param placeholder (e.g. `/admin/patients/:id`)
+// still highlights, even though it isn't directly navigable.
+const ADMIN_PATH_RE = /\/admin(?:\/[A-Za-z0-9_:-]+)*/g;
+
+export interface MessageSegment {
+  type: "text" | "link";
+  value: string;
+}
+
+/**
+ * Split an assistant reply into plain-text and admin-path segments so
+ * the UI can render each `/admin/...` path the bot mentions as a
+ * one-click link. Pure + exported for unit testing. A path containing a
+ * `:` route placeholder is treated as plain text (not a real
+ * destination).
+ */
+export function splitAdminPaths(text: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  let lastIndex = 0;
+  ADMIN_PATH_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ADMIN_PATH_RE.exec(text)) !== null) {
+    const path = match[0];
+    if (match.index > lastIndex) {
+      segments.push({
+        type: "text",
+        value: text.slice(lastIndex, match.index),
+      });
+    }
+    // A `:param` placeholder isn't a concrete destination — keep it as text.
+    segments.push({ type: path.includes(":") ? "text" : "link", value: path });
+    lastIndex = match.index + path.length;
+  }
+  if (lastIndex < text.length) {
+    segments.push({ type: "text", value: text.slice(lastIndex) });
+  }
+  return segments;
 }
 
 // Localized error boundary so a malformed streamed token can't take the
@@ -423,7 +466,11 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
             </div>
           )}
           {messages.map((m) => (
-            <ChatBubble key={m.id} message={m} />
+            <ChatBubble
+              key={m.id}
+              message={m}
+              onNavigate={() => setOpen(false)}
+            />
           ))}
         </div>
 
@@ -468,8 +515,11 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
 
 function ChatBubble({
   message,
+  onNavigate,
 }: {
   message: DisplayMessage;
+  /** Called when the user clicks an in-app link (closes the panel). */
+  onNavigate: () => void;
 }): React.JSX.Element {
   const isUser = message.role === "user";
   return (
@@ -487,12 +537,54 @@ function ChatBubble({
             : "border border-border/40 bg-white text-foreground",
         ].join(" ")}
       >
-        {message.content || (message.streaming ? <StreamingDots /> : "")}
+        {message.content ? (
+          // Bot replies: turn any /admin/... path into a one-click link
+          // so the operator lands on the page without hunting the nav.
+          // User turns render as plain text (no links).
+          isUser ? (
+            message.content
+          ) : (
+            <BotMessageBody content={message.content} onNavigate={onNavigate} />
+          )
+        ) : message.streaming ? (
+          <StreamingDots />
+        ) : (
+          ""
+        )}
         {message.streaming && message.content.length > 0 && (
           <span className="ml-1 inline-block animate-pulse">▍</span>
         )}
       </div>
     </div>
+  );
+}
+
+function BotMessageBody({
+  content,
+  onNavigate,
+}: {
+  content: string;
+  onNavigate: () => void;
+}): React.JSX.Element {
+  const segments = splitAdminPaths(content);
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.type === "link" ? (
+          <Link
+            key={i}
+            href={seg.value}
+            onClick={onNavigate}
+            className="font-medium text-[hsl(var(--penn-navy))] underline underline-offset-2 hover:opacity-80"
+            data-testid="admin-assistant-link"
+          >
+            {seg.value}
+          </Link>
+        ) : (
+          <React.Fragment key={i}>{seg.value}</React.Fragment>
+        ),
+      )}
+    </>
   );
 }
 
