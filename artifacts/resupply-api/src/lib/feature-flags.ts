@@ -79,6 +79,7 @@ export const FEATURE_FLAG_KEYS = [
   "provider.portal_enabled",
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
+  "fax.auto_file_signed",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

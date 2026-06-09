@@ -14,7 +14,11 @@
 
 import { describe, it, expect } from "vitest";
 
-import { renderStatementPdf, type StatementInput } from "./statement-pdf";
+import {
+  renderStatementPdf,
+  renderStatementsBatchPdf,
+  type StatementInput,
+} from "./statement-pdf";
 
 const ORG: StatementInput["dmeOrganization"] = {
   legalName: "PennPaps Inc",
@@ -130,5 +134,32 @@ describe("renderStatementPdf", () => {
       paymentUrl: "https://pay.pennpaps.com/abc",
     });
     expect(result.pdf.length).toBeGreaterThan(0);
+  });
+});
+
+describe("renderStatementsBatchPdf", () => {
+  const line = {
+    claimId: "c_1",
+    payerName: "Acme",
+    dateOfService: "2026-04-01",
+    billedCents: 10000,
+    paidCents: 6000,
+    patientResponsibilityCents: 4000,
+  };
+
+  it("renders a valid PDF for a multi-statement mail batch", async () => {
+    const result = await renderStatementsBatchPdf([
+      { patient: PATIENT, dmeOrganization: ORG, lineItems: [line] },
+      { patient: PATIENT, dmeOrganization: ORG, lineItems: [line, line] },
+    ]);
+    expect(result.pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(result.pdf.length).toBeGreaterThan(0);
+    expect(result.statementCount).toBe(2);
+  });
+
+  it("renders a valid PDF for an empty queue", async () => {
+    const result = await renderStatementsBatchPdf([]);
+    expect(result.pdf.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(result.statementCount).toBe(0);
   });
 });
