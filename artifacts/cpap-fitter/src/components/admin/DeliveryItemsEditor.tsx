@@ -93,7 +93,8 @@ export function DeliveryItemsEditor({
       items: state.items.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
     });
 
-  const addRow = () => apply({ ...state, items: [...state.items, { ...EMPTY_ROW }] });
+  const addRow = () =>
+    apply({ ...state, items: [...state.items, { ...EMPTY_ROW }] });
 
   const removeRow = (i: number) =>
     apply({
