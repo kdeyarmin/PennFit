@@ -8,7 +8,7 @@
 //      schedule only attaches when BILLING_PATIENT_AUTOPAY_CRON is set.
 //      Dev / preview / a fresh prod never auto-charge.
 //   2. RUNTIME FEATURE FLAG. Even with the cron scheduled, the tick
-//      checks billing.patient_autopay (seeded OFF, mig 0259) and no-ops
+//      checks billing.patient_autopay (seeded OFF, mig 0260) and no-ops
 //      when off — a one-click kill switch with no deploy.
 //   3. PER-PATIENT AUTHORIZATION + TOGGLE. We only charge patients who
 //      saved a card via a Stripe setup mandate AND flipped their own
