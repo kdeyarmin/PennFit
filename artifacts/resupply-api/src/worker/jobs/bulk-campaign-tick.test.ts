@@ -395,6 +395,84 @@ describe("processTick — opt-out re-check at send time (marketing)", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// transient-failure retry (retry_pending)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("processTick — transient-failure retry", () => {
+  function findUpdate(status: string): Record<string, unknown> | undefined {
+    return getWrites("bulk_campaign_recipients", "update").find(
+      (u) => (u as Record<string, unknown>).status === status,
+    ) as Record<string, unknown> | undefined;
+  }
+
+  it("re-queues a retryable send failure as retry_pending and bumps send_attempts", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing" },
+      recipient: { send_attempts: 0 },
+      patientPrefs: { emailMarketing: true },
+    });
+    sendEmailMock.mockRejectedValueOnce(
+      Object.assign(new Error("503 upstream"), { retryable: true }),
+    );
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    const retry = findUpdate("retry_pending");
+    expect(retry).toBeDefined();
+    expect(retry!.send_attempts).toBe(1);
+    expect(findUpdate("failed")).toBeUndefined();
+  });
+
+  it("marks 'failed' once the retry cap (MAX_SEND_ATTEMPTS) is reached", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing" },
+      // 2 prior attempts → this attempt is the 3rd = the cap, so no more
+      // retries: it lands in 'failed'.
+      recipient: { send_attempts: 2 },
+      patientPrefs: { emailMarketing: true },
+    });
+    sendEmailMock.mockRejectedValueOnce(
+      Object.assign(new Error("503 upstream"), { retryable: true }),
+    );
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(findUpdate("retry_pending")).toBeUndefined();
+    const failed = findUpdate("failed");
+    expect(failed).toBeDefined();
+    expect(failed!.send_attempts).toBe(3);
+  });
+
+  it("marks a non-retryable failure 'failed' immediately, regardless of attempts", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing" },
+      recipient: { send_attempts: 0 },
+      patientPrefs: { emailMarketing: true },
+    });
+    sendEmailMock.mockRejectedValueOnce(
+      Object.assign(new Error("invalid recipient"), { retryable: false }),
+    );
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(findUpdate("retry_pending")).toBeUndefined();
+    expect(findUpdate("failed")).toBeDefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // isRecipientOptedOut — service category
 // ──────────────────────────────────────────────────────────────────────────────
 
