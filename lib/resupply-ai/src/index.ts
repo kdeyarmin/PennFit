@@ -51,6 +51,8 @@ export {
   type TtsStreamer,
   type TtsStreamSession,
   type TtsStreamHandlers,
+  type ToolCallFillerConfig,
+  DEFAULT_TOOL_CALL_FILLER_PHRASES,
 } from "./bridge";
 
 export {
