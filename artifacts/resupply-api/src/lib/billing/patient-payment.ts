@@ -429,6 +429,173 @@ export async function createPaymentCheckoutSession(
   };
 }
 
+// ─── Ad-hoc CSR-initiated payment link ────────────────────────────
+
+export interface CreateAdhocCheckoutSessionInput {
+  patientId: string;
+  /** Amount to collect, in cents. Stripe's USD minimum is 50¢. */
+  amountCents: number;
+  /**
+   * Customer-visible line-item label on the Stripe hosted page and the
+   * emailed receipt. Defaults to a generic "Payment to PennPaps". Keep
+   * it free of PHI — Stripe's receipt is not encrypted.
+   */
+  description?: string | null;
+  /** Where Stripe sends the patient after a successful payment. */
+  successUrl: string;
+  /** Where Stripe sends the patient if they cancel mid-checkout. */
+  cancelUrl: string;
+  /** Caller for the audit/metadata trail (the admin's email). */
+  initiatorEmail: string;
+}
+
+export interface CreateAdhocCheckoutFailure {
+  error: "stripe_not_configured" | "stripe_rejected" | "invalid_amount";
+  message: string;
+}
+
+/**
+ * Create a hosted Stripe Checkout Session for an ARBITRARY amount a staff
+ * member is collecting from a patient — a copay, a cash-pay item, a
+ * balance not tracked as an insurance_claim.
+ *
+ * Unlike `createPaymentCheckoutSession`, this allocates against NO
+ * claims: the patient_payments row carries an empty
+ * `applied_claims_json` and `source='csr'`. On a succeeded payment the
+ * existing webhook flips the row to 'succeeded' and the
+ * `apply_patient_payment` RPC is a safe no-op — it early-returns on a
+ * non-array / empty allocation list (migration 0214), so nothing is
+ * decremented and nothing is double-applied. We stamp the same
+ * `metadata.patient_payment_id` contract as the portal flows so the
+ * webhook handler correlates the payment with zero new plumbing.
+ *
+ * Never auto-charges: the patient must open the returned `url` and pay.
+ */
+export async function createAdhocPaymentCheckoutSession(
+  input: CreateAdhocCheckoutSessionInput,
+): Promise<CreateCheckoutSessionResult | CreateAdhocCheckoutFailure> {
+  if (!Number.isInteger(input.amountCents) || input.amountCents < 50) {
+    return {
+      error: "invalid_amount",
+      message: "amount must be a whole number of cents, at least 50",
+    };
+  }
+  const config = readStripeConfigOrNull();
+  if (!config) {
+    return {
+      error: "stripe_not_configured",
+      message: "Stripe secret key is not set",
+    };
+  }
+  const supabase = getSupabaseServiceRoleClient();
+
+  // Reserve our patient_payments row up front so the Checkout Session
+  // metadata can reference it; if Stripe rejects we mark the row failed
+  // so the audit trail is complete. source='csr' + empty allocations:
+  // staff entered on behalf of the patient, not tied to a claim.
+  const { data: row, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("patient_payments")
+    .insert({
+      patient_id: input.patientId,
+      amount_cents: input.amountCents,
+      currency: "usd",
+      status: "pending",
+      applied_claims_json: [] as unknown as Json,
+      source: "csr",
+      note: input.description ?? null,
+    })
+    .select("id")
+    .single();
+  if (insertErr) throw insertErr;
+
+  const label =
+    input.description && input.description.trim().length > 0
+      ? input.description.trim().slice(0, 200)
+      : "Payment to PennPaps";
+
+  let session: Stripe.Checkout.Session;
+  try {
+    const stripe = getStripeClient(config);
+    session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: input.amountCents,
+              product_data: { name: label },
+            },
+          },
+        ],
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        metadata: {
+          patient_payment_id: row.id,
+          patient_id: input.patientId,
+          source: "csr",
+          initiator_email: input.initiatorEmail,
+        },
+        payment_intent_data: {
+          metadata: {
+            patient_payment_id: row.id,
+            patient_id: input.patientId,
+            source: "csr",
+            initiator_email: input.initiatorEmail,
+          },
+        },
+      },
+      // Idempotency-key namespaced to the patient_payment row id so a
+      // network retry collapses to one Checkout Session at Stripe. Each
+      // fresh row id (= each fresh admin "send link" click) produces a
+      // new Session.
+      { idempotencyKey: `pennpaps-patient-adhoc-${row.id}` },
+    );
+  } catch (err) {
+    await supabase
+      .schema("resupply")
+      .from("patient_payments")
+      .update({
+        status: "failed",
+        failure_reason:
+          err instanceof Error ? err.message.slice(0, 2000) : String(err),
+      })
+      .eq("id", row.id);
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "patient_payment: stripe adhoc checkout.sessions.create failed",
+    );
+    return {
+      error: "stripe_rejected",
+      message: "Stripe rejected the checkout session create",
+    };
+  }
+
+  if (!session.url) {
+    await supabase
+      .schema("resupply")
+      .from("patient_payments")
+      .update({
+        status: "failed",
+        failure_reason: "Stripe session missing url",
+      })
+      .eq("id", row.id);
+    return {
+      error: "stripe_rejected",
+      message: "Stripe returned a session without a hosted URL",
+    };
+  }
+
+  return {
+    paymentId: row.id,
+    url: session.url,
+    amountCents: input.amountCents,
+  };
+}
+
 /**
  * Apply a succeeded payment: decrement patient_responsibility_cents on
  * each claim in the allocation, atomically and idempotently.
