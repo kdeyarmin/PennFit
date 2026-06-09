@@ -162,6 +162,91 @@ describe("executeOfficeAllyBatchSubmit — eligibility precheck", () => {
   });
 });
 
+describe("executeOfficeAllyBatchSubmit — bill hold", () => {
+  it("refuses to transmit a claim with outstanding required paperwork", async () => {
+    const flag = vi.mocked(isFeatureEnabled);
+    const original = flag.getMockImplementation();
+    // Turn the bill-hold gate ON (and leave the eligibility precheck OFF).
+    flag.mockImplementation(async (key: string) => key === "billing.bill_hold");
+    try {
+      stageSupabaseResponse("insurance_claims", "select", {
+        data: [
+          {
+            id: "claim-held-1",
+            payer_profile_id: "pp-1",
+            status: "draft",
+            insurance_coverage_id: "cov-1",
+            patient_id: "pat-1",
+          },
+        ],
+      });
+      // countOutstandingByClaim → one outstanding required requirement.
+      stageSupabaseResponse("claim_paperwork_requirements", "select", {
+        data: [{ claim_id: "claim-held-1" }],
+      });
+
+      const result = await executeOfficeAllyBatchSubmit({
+        claimIds: ["claim-held-1"],
+        adminEmail: "ops@example.com",
+        adminUserId: "u-1",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.kind).toBe("bill_hold");
+        const held = result.detail.held as Array<{
+          claimId: string;
+          outstandingCount: number;
+        }>;
+        expect(held).toHaveLength(1);
+        expect(held[0]!.claimId).toBe("claim-held-1");
+        expect(held[0]!.outstandingCount).toBe(1);
+      }
+    } finally {
+      if (original) flag.mockImplementation(original);
+    }
+  });
+
+  it("lets a claim through when its paperwork ledger is empty", async () => {
+    const flag = vi.mocked(isFeatureEnabled);
+    const original = flag.getMockImplementation();
+    flag.mockImplementation(async (key: string) => key === "billing.bill_hold");
+    try {
+      stageSupabaseResponse("insurance_claims", "select", {
+        data: [
+          {
+            id: "claim-clear-1",
+            payer_profile_id: "pp-1",
+            status: "draft",
+            insurance_coverage_id: "cov-1",
+            patient_id: "pat-1",
+          },
+        ],
+      });
+      // No outstanding paperwork → gate passes, falls through to the payer
+      // check (which we leave unsatisfied → payer_not_electronic, NOT bill_hold).
+      stageSupabaseResponse("claim_paperwork_requirements", "select", {
+        data: [],
+      });
+      stageSupabaseResponse("payer_profiles", "select", { data: null });
+
+      const result = await executeOfficeAllyBatchSubmit({
+        claimIds: ["claim-clear-1"],
+        adminEmail: "ops@example.com",
+        adminUserId: "u-1",
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.kind).not.toBe("bill_hold");
+        expect(result.kind).toBe("payer_not_electronic");
+      }
+    } finally {
+      if (original) flag.mockImplementation(original);
+    }
+  });
+});
+
 describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity", () => {
   it("multiplies billed_cents by quantity to produce the extended line charge", async () => {
     // 2 units @ $15.99 → extended = $31.98

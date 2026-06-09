@@ -1644,6 +1644,15 @@ export interface Database {
           cob_primary_paid_cents: number | null;
           cob_contractual_cents: number | null;
           cob_patient_resp_cents: number | null;
+          // Migration 0253: claim-level BILL HOLD. `bill_hold` is a
+          // denormalised cache of "has >=1 outstanding required paperwork
+          // requirement", kept in step by recomputeBillHold(). The release
+          // columns record when/by-whom the last requirement cleared.
+          bill_hold: boolean;
+          bill_hold_reason: string | null;
+          bill_hold_updated_at: string | null;
+          bill_hold_released_at: string | null;
+          bill_hold_released_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -2522,6 +2531,69 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["signature_tracking"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0253: per-claim signed-paperwork ledger backing the
+      // bill hold. One row per document a claim needs back signed.
+      claim_paperwork_requirements: {
+        Row: {
+          id: string;
+          claim_id: string | null;
+          patient_id: string;
+          requirement_type:
+            | "prescription"
+            | "swo"
+            | "cmn"
+            | "dwo"
+            | "aob"
+            | "abn"
+            | "proof_of_delivery"
+            | "medical_records"
+            | "face_to_face"
+            | "sleep_study"
+            | "agreement"
+            | "other";
+          label: string;
+          status: "outstanding" | "satisfied" | "waived" | "voided";
+          required: boolean;
+          sent_at: string | null;
+          sent_via:
+            | "fax"
+            | "email"
+            | "esign"
+            | "portal"
+            | "mail"
+            | "manual"
+            | null;
+          expected_return_fax_e164: string | null;
+          reminder_count: number;
+          last_reminded_at: string | null;
+          satisfied_at: string | null;
+          satisfied_via:
+            | "inbound_fax"
+            | "upload"
+            | "esign"
+            | "portal"
+            | "mail"
+            | "manual"
+            | null;
+          satisfied_by_email: string | null;
+          satisfied_inbound_fax_id: string | null;
+          satisfied_document_id: string | null;
+          source_manual_document_id: string | null;
+          source_packet_id: string | null;
+          waived_reason: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["claim_paperwork_requirements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["claim_paperwork_requirements"]["Row"]
         >;
         Relationships: [];
       };

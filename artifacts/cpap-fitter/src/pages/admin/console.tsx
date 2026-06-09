@@ -465,6 +465,11 @@ const AdminBillingCmnWorklistPage = lazy(() =>
     default: m.AdminBillingCmnWorklistPage,
   })),
 );
+const AdminBillingBillHoldPage = lazy(() =>
+  import("@/pages/admin/admin-billing-bill-hold").then((m) => ({
+    default: m.AdminBillingBillHoldPage,
+  })),
+);
 const AdminBillingTimelyFilingPage = lazy(() =>
   import("@/pages/admin/admin-billing-timely-filing").then((m) => ({
     default: m.AdminBillingTimelyFilingPage,
@@ -708,6 +713,10 @@ function AdminConsole() {
             <Route
               path="/admin/billing/cmn"
               component={AdminBillingCmnWorklistPage}
+            />
+            <Route
+              path="/admin/billing/bill-hold"
+              component={AdminBillingBillHoldPage}
             />
             <Route
               path="/admin/billing/timely-filing"

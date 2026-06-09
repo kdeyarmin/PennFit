@@ -21,6 +21,8 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold";
+import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -168,6 +170,22 @@ router.post(
       return;
     }
     const newId = (row as Record<string, unknown>).id as string;
+
+    // Seed the default signed-paperwork requirement set (bill hold). Gated
+    // by the flag; never fails claim creation.
+    if (await isFeatureEnabled("billing.bill_hold")) {
+      try {
+        await seedDefaultRequirementsForClaim(newId, {
+          supabase,
+          createdByEmail: req.adminEmail ?? null,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, claimId: newId },
+          "manual-claim: bill-hold seed failed (non-fatal)",
+        );
+      }
+    }
 
     await logAudit({
       action: "insurance_claim.manual_create",

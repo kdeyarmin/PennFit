@@ -163,6 +163,7 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
 import claimAppealsRouter from "./admin/claim-appeals.js";
@@ -403,6 +404,9 @@ router.use(casesRouter);
 // /admin/work-items — the unified, prioritized CSR work queue (F4),
 // UNIONing the open work across every triage source.
 router.use(workItemsRouter);
+// /admin/claims/:id/paperwork + /admin/billing/bill-hold-worklist —
+// claim signed-paperwork ledger + the bill-hold release gate (0253).
+router.use(claimPaperworkRouter);
 // /admin/business-targets — owner goal / target tracking (Phase 1).
 router.use(businessTargetsRouter);
 // /admin/agent-availability — CSR availability toggle (Phase 1); the

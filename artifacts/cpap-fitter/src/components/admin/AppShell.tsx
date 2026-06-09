@@ -73,6 +73,7 @@ import {
   Wind,
   FileCheck2,
   FileSignature,
+  FileLock2,
   Send,
   PlayCircle,
 } from "lucide-react";
@@ -695,6 +696,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/cmn",
             requiredPermission: "reports.read",
             hint: "Draft Certificates of Medical Necessity awaiting completion",
+          },
+          {
+            href: "/admin/billing/bill-hold",
+            label: "Bill hold",
+            icon: FileLock2,
+            matchPrefix: "/admin/billing/bill-hold",
+            requiredPermission: "reports.read",
+            hint: "Claims held from billing until their signed paperwork is back",
           },
         ],
       },
