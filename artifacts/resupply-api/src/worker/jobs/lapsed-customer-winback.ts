@@ -267,7 +267,20 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
         }
         stats.sent += 1;
       } catch (err) {
-        await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
+        try {
+          await rollbackWinbackStamp(row.customer_id, row.winback_sent_at);
+        } catch (rollbackErr) {
+          logger.error(
+            {
+              err:
+                rollbackErr instanceof Error
+                  ? rollbackErr.message
+                  : String(rollbackErr),
+              customerId: row.customer_id,
+            },
+            "shop-customers.winback: rollback failed — winback_sent_at may remain claimed",
+          );
+        }
         stats.failed += 1;
         logger.error(
           {
