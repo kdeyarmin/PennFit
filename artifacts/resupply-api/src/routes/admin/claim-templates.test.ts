@@ -13,6 +13,12 @@
 //   * SQL-injection-style string → 400
 //   * UUID with appended operator fragment → 400
 //   * Empty string query param → 200 (treated as "no filter")
+//
+// Also covers `rowToApi` line serialization: the stored `lines_json`
+// fields (`hcpcs` / `modifiers` / `units` / `billed_cents`) must be mapped
+// to the camelCased wire contract the admin client reads (`hcpcsCode` /
+// `modifier` / `quantity` / `chargeCents`) — otherwise the claim-templates
+// table renders those columns blank.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -183,5 +189,99 @@ describe("GET /admin/claim-templates — payerProfileId UUID validation (PR chan
       "/resupply-api/admin/claim-templates?payerProfileId=invalid",
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /admin/claim-templates — line serialization (rowToApi)", () => {
+  beforeEach(() => {
+    supabaseMock.reset();
+    mockAdmin.current = null;
+  });
+
+  it("maps stored line fields to the camelCased wire contract the client reads", async () => {
+    stubAdmin();
+    stageSupabaseResponse("claim_templates", "select", {
+      data: [
+        {
+          id: VALID_UUID,
+          slug: "cpap-initial",
+          display_name: "CPAP Initial Setup",
+          description: "Standard initial CPAP setup",
+          lines_json: {
+            lines: [
+              {
+                hcpcs: "E0601",
+                modifiers: "KX",
+                units: 1,
+                billed_cents: 150000,
+                description: "CPAP device",
+              },
+            ],
+          },
+          default_diagnosis_codes: ["G47.33"],
+          scoped_payer_profile_id: null,
+          is_active: true,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
+      ],
+      error: null,
+    });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates",
+    );
+
+    expect(res.status).toBe(200);
+    const line = res.body.templates[0].lines[0];
+    expect(line).toEqual({
+      hcpcsCode: "E0601",
+      modifier: "KX",
+      description: "CPAP device",
+      quantity: 1,
+      chargeCents: 150000,
+    });
+    // The DB-internal field names must NOT leak onto the wire — that
+    // mismatch is exactly what left the table columns blank.
+    expect(line).not.toHaveProperty("hcpcs");
+    expect(line).not.toHaveProperty("modifiers");
+    expect(line).not.toHaveProperty("units");
+    expect(line).not.toHaveProperty("billed_cents");
+  });
+
+  it("serializes an empty modifier CSV as null and a missing description as null", async () => {
+    stubAdmin();
+    stageSupabaseResponse("claim_templates", "select", {
+      data: [
+        {
+          id: VALID_UUID,
+          slug: "filters",
+          display_name: "Disposable filters",
+          description: null,
+          lines_json: {
+            lines: [
+              { hcpcs: "A7038", modifiers: "", units: 2, billed_cents: 500 },
+            ],
+          },
+          default_diagnosis_codes: [],
+          scoped_payer_profile_id: null,
+          is_active: true,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
+      ],
+      error: null,
+    });
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/claim-templates",
+    );
+
+    expect(res.status).toBe(200);
+    const line = res.body.templates[0].lines[0];
+    expect(line.modifier).toBeNull();
+    expect(line.description).toBeNull();
+    expect(line.quantity).toBe(2);
+    expect(line.chargeCents).toBe(500);
   });
 });
