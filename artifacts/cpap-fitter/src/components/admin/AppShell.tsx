@@ -834,6 +834,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Share of contacted patients who ordered, by outreach channel",
           },
           {
+            href: "/admin/analytics/acquisition-funnel",
+            label: "Acquisition funnel",
+            icon: ListFilter,
+            matchPrefix: "/admin/analytics/acquisition-funnel",
+            requiredPermission: "reports.read",
+            hint: "Where anonymous visitors drop out of the fitter and shop checkout flows",
+          },
+          {
             href: "/admin/analytics/revenue-by-source",
             label: "Revenue by source",
             icon: BarChart3,

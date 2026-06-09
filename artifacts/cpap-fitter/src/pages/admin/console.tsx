@@ -160,6 +160,11 @@ const AdminAnalyticsOutreachAttributionPage = lazy(() =>
     default: m.AdminAnalyticsOutreachAttributionPage,
   })),
 );
+const AdminAnalyticsAcquisitionFunnelPage = lazy(() =>
+  import("@/pages/admin/admin-analytics-acquisition-funnel").then((m) => ({
+    default: m.AdminAnalyticsAcquisitionFunnelPage,
+  })),
+);
 const AdminAnalyticsRevenueBySourcePage = lazy(() =>
   import("@/pages/admin/admin-analytics-revenue-by-source").then((m) => ({
     default: m.AdminAnalyticsRevenueBySourcePage,
@@ -903,6 +908,10 @@ function AdminConsole() {
             <Route
               path="/admin/analytics/outreach-attribution"
               component={AdminAnalyticsOutreachAttributionPage}
+            />
+            <Route
+              path="/admin/analytics/acquisition-funnel"
+              component={AdminAnalyticsAcquisitionFunnelPage}
             />
             <Route
               path="/admin/analytics/revenue-by-source"
