@@ -52,12 +52,7 @@
 // PHI posture: list/detail responses include patient + provider
 // identifiers (PHI). The logger emits packet id + status only.
 
-import {
-  Router,
-  type IRouter,
-  type Request,
-  type Response,
-} from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 

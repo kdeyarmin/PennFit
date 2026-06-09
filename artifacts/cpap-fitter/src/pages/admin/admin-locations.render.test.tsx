@@ -26,7 +26,11 @@ vi.mock("@tanstack/react-query", async () => {
         ? rollupState.current
         : queryState.current;
     },
-    useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+    useMutation: () => ({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn(),
+      isPending: false,
+    }),
     useQueryClient: () => ({ invalidateQueries: vi.fn() }),
   };
 });
@@ -45,7 +49,10 @@ import { AdminLocationsPage } from "./admin-locations";
 
 function withLocations(locations: Location[]): void {
   queryState.current = {
-    data: { locations, primaryId: locations.find((l) => l.isPrimary)?.id ?? null },
+    data: {
+      locations,
+      primaryId: locations.find((l) => l.isPrimary)?.id ?? null,
+    },
     isPending: false,
     isError: false,
     error: null,

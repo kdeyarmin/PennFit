@@ -157,9 +157,9 @@ function Header({ onCreate }: { onCreate: () => void }) {
           Locations
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          Business branches that service patients. Billing identity stays
-          shared at the org level — a branch is an operational anchor, not a
-          separate billing entity.
+          Business branches that service patients. Billing identity stays shared
+          at the org level — a branch is an operational anchor, not a separate
+          billing entity.
         </p>
       </div>
       <Button onClick={onCreate}>+ New location</Button>
@@ -218,7 +218,10 @@ function LocationsTable({
       key: "phone",
       header: "Phone",
       render: (l) => (
-        <span className="text-xs font-mono" style={{ color: "hsl(var(--ink-2))" }}>
+        <span
+          className="text-xs font-mono"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
           {l.phoneE164 ?? "—"}
         </span>
       ),
@@ -327,8 +330,10 @@ function LocationFormModal({
     mutationFn: (data: LocationCreate) => createLocation(data),
   });
   const updateMut = useMutation({
-    mutationFn: (vars: { id: string; data: Partial<LocationCreate> & { isActive?: boolean } }) =>
-      updateLocation(vars.id, vars.data),
+    mutationFn: (vars: {
+      id: string;
+      data: Partial<LocationCreate> & { isActive?: boolean };
+    }) => updateLocation(vars.id, vars.data),
   });
   const isPending = createMut.isPending || updateMut.isPending;
 
@@ -519,7 +524,10 @@ function LocationFormModal({
                 onChange={(e) => patch("npi", e.target.value)}
                 disabled={isPending}
               />
-              <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              <p
+                className="mt-1 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
                 Informational only — claims use the shared org NPI.
               </p>
             </div>

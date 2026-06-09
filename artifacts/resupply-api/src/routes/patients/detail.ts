@@ -129,59 +129,57 @@ router.get(
       linkedCustomerRes,
       locationRes,
     ] = await Promise.all([
-        supabase
-          .schema("resupply")
-          .from("patient_latest_message")
-          .select(
-            "last_message_at, last_message_direction, last_message_preview",
-          )
-          .eq("patient_id", id)
-          .limit(1)
-          .maybeSingle(),
-        patient.portal_auth_user_id
-          ? supabase
-              .schema("resupply_auth")
-              .from("users")
-              .select("email_verified_at")
-              .eq("id", patient.portal_auth_user_id)
-              .limit(1)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null } as const),
-        episodePrescriptionIds.length > 0
-          ? supabase
-              .schema("resupply")
-              .from("prescriptions")
-              .select("id, item_sku")
-              .in("id", episodePrescriptionIds)
-          : Promise.resolve({ data: [], error: null } as const),
-        // The storefront shop-customer that shares this patient's portal
-        // login, if any. Patients and shop customers are otherwise
-        // unlinked; the only deterministic correlation is a shared
-        // in-house auth user (patients.portal_auth_user_id ===
-        // shop_customers.auth_user_id). Surfacing the customer's id lets
-        // the detail page offer a real "view their customer record" jump.
-        patient.portal_auth_user_id
-          ? supabase
-              .schema("resupply")
-              .from("shop_customers")
-              .select("customer_id")
-              .eq("auth_user_id", patient.portal_auth_user_id)
-              .limit(1)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null } as const),
-        // The servicing branch (multi-location, owner #O1). Looked up
-        // only when assigned; the name lets the detail page render the
-        // branch without a second client round-trip.
-        patient.location_id
-          ? supabase
-              .schema("resupply")
-              .from("locations")
-              .select("id, name")
-              .eq("id", patient.location_id)
-              .limit(1)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null } as const),
-      ]);
+      supabase
+        .schema("resupply")
+        .from("patient_latest_message")
+        .select("last_message_at, last_message_direction, last_message_preview")
+        .eq("patient_id", id)
+        .limit(1)
+        .maybeSingle(),
+      patient.portal_auth_user_id
+        ? supabase
+            .schema("resupply_auth")
+            .from("users")
+            .select("email_verified_at")
+            .eq("id", patient.portal_auth_user_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null } as const),
+      episodePrescriptionIds.length > 0
+        ? supabase
+            .schema("resupply")
+            .from("prescriptions")
+            .select("id, item_sku")
+            .in("id", episodePrescriptionIds)
+        : Promise.resolve({ data: [], error: null } as const),
+      // The storefront shop-customer that shares this patient's portal
+      // login, if any. Patients and shop customers are otherwise
+      // unlinked; the only deterministic correlation is a shared
+      // in-house auth user (patients.portal_auth_user_id ===
+      // shop_customers.auth_user_id). Surfacing the customer's id lets
+      // the detail page offer a real "view their customer record" jump.
+      patient.portal_auth_user_id
+        ? supabase
+            .schema("resupply")
+            .from("shop_customers")
+            .select("customer_id")
+            .eq("auth_user_id", patient.portal_auth_user_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null } as const),
+      // The servicing branch (multi-location, owner #O1). Looked up
+      // only when assigned; the name lets the detail page render the
+      // branch without a second client round-trip.
+      patient.location_id
+        ? supabase
+            .schema("resupply")
+            .from("locations")
+            .select("id, name")
+            .eq("id", patient.location_id)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null } as const),
+    ]);
     if (latestMsgRes.error) throw latestMsgRes.error;
     if (authRes.error) throw authRes.error;
     if (episodeRxRes.error) throw episodeRxRes.error;
