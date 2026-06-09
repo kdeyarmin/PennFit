@@ -289,6 +289,57 @@ describe("App.tsx — lazy() imports for educational article pages", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Initial-chunk code-splitting — formerly-eager public pages are now lazy.
+//
+// These 13 pages used to be statically imported into the main bundle, which
+// pushed the initial `index` chunk past the 400 kB build budget. They are now
+// each their own on-demand chunk. `Home` is the ONLY page that stays eager
+// (the landing route — eager avoids a first-paint load waterfall).
+// ---------------------------------------------------------------------------
+
+describe("App.tsx — formerly-eager pages are code-split", () => {
+  const NOW_LAZY: Array<[string, string]> = [
+    ["shop", "Shop"],
+    ["masks", "Masks"],
+    ["how-it-works", "HowItWorks"],
+    ["faq", "Faq"],
+    ["learn", "Learn"],
+    ["privacy", "Privacy"],
+    ["terms", "Terms"],
+    ["insurance", "Insurance"],
+    ["insurance-estimate", "InsuranceEstimate"],
+    ["track-order", "TrackOrder"],
+    ["nps", "NpsLanding"],
+    ["mask-fit", "MaskFitLanding"],
+    ["learn-videos", "LearnVideos"],
+  ];
+
+  it.each(NOW_LAZY)(
+    "lazy-imports %s (m.%s) and no longer statically imports it",
+    (mod, exportName) => {
+      expect(hasLazyImport(SRC, mod, exportName)).toBe(true);
+      // The old static `import { Export } from "@/pages/<mod>"` must be gone —
+      // a lingering static import rejoins the page to the initial chunk and
+      // silently undoes the split.
+      expect(SRC).not.toContain(
+        `import { ${exportName} } from "@/pages/${mod}"`,
+      );
+    },
+  );
+
+  it("keeps Home as the only eagerly-imported page", () => {
+    expect(SRC).toContain('import { Home } from "@/pages/home"');
+  });
+
+  it("leaves the now-lazy pages' routes registered (components unchanged)", () => {
+    expect(hasRoute(SRC, "/shop", "Shop")).toBe(true);
+    expect(hasRoute(SRC, "/masks", "Masks")).toBe(true);
+    expect(hasRoute(SRC, "/learn", "Learn")).toBe(true);
+    expect(hasRoute(SRC, "/faq", "Faq")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Comment presence — the explanatory comment block is part of the contract
 // ---------------------------------------------------------------------------
 
