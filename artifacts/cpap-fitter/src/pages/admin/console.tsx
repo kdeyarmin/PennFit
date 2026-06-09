@@ -295,6 +295,11 @@ const AdminIntegrationsPage = lazy(() =>
     default: m.AdminIntegrationsPage,
   })),
 );
+const AdminPacwarePage = lazy(() =>
+  import("@/pages/admin/admin-pacware").then((m) => ({
+    default: m.AdminPacwarePage,
+  })),
+);
 const AdminSystemConfigurationPage = lazy(() =>
   import("@/pages/admin/admin-system-configuration").then((m) => ({
     default: m.AdminSystemConfigurationPage,
@@ -974,6 +979,7 @@ function AdminConsole() {
               path="/admin/integrations"
               component={AdminIntegrationsPage}
             />
+            <Route path="/admin/pacware" component={AdminPacwarePage} />
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}

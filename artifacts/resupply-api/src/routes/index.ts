@@ -172,6 +172,7 @@ import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
+import pacwareRouter from "./admin/pacware.js";
 import connectionTestsRouter from "./admin/connection-tests.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
@@ -557,6 +558,10 @@ router.use(payerFeeSchedulesImportRouter);
 // /admin/system/integrations-status — admin-facing rollup of every
 // integration's configured/configured-partial/unconfigured posture.
 router.use(systemIntegrationsStatusRouter);
+// /admin/pacware/* — PacWare (legacy DME billing) file exchange: status,
+// patient-roster import (sync), and CSV exports (roster + resupply-due).
+// PacWare has no API; this is the documented CSV bridge.
+router.use(pacwareRouter);
 // /admin/connection-tests/* — super-admin "send a test" diagnostics for
 // email / SMS / voice / chat. Verifies a credential (including one just
 // saved in System Configuration) actually works. system.config.manage.
