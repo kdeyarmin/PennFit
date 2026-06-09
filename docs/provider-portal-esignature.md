@@ -9,7 +9,7 @@ printable, tamper-evident **signature log** (per document or per
 provider) can be generated for Medicare / insurer audit.
 
 Shipped behind the `provider.portal_enabled` feature flag (seeded **OFF**
-in migration `0257`).
+across migrations `0253` + `0259`).
 
 > This is distinct from the older, public, token-gated read-only view at
 > `GET /provider-portal/:token` (which only lists a provider's active
@@ -99,12 +99,21 @@ authorization complete and clears the item for the team. It does **not**
 flip `insurance_claims` state — actual 837P transmission stays in the
 existing billing pipeline (no risk of corrupting claim state).
 
-## Schema (migration 0257)
+## Schema (migrations 0253 + 0259)
 
-- `provider_portal_accounts` — auth-user ↔ provider link + status.
-- `provider_mfa_secrets`, `provider_mfa_recovery_codes` — provider TOTP.
-- `provider_signature_requests` — the signable envelope + lifecycle stamps.
-- `provider_signature_events` — hash-chained append-only ceremony log.
+Split across two migrations:
+
+- **`0253_provider_portal_esign.sql`** — the base `provider_portal_accounts`
+  table (auth-user ↔ provider link; `auth_user_id` is a soft reference to
+  `resupply_auth.users(id)` enforced in app code, since the migration runner
+  lacks cross-schema `REFERENCES` privilege).
+- **`0259_provider_portal_esign_tables.sql`** — ALTERs the lifecycle / MFA
+  columns onto `provider_portal_accounts` (`status`, `mfa_enrolled_at`,
+  `last_login_at`, invite/disable audit), then creates the rest:
+  - `provider_mfa_secrets`, `provider_mfa_recovery_codes` — provider TOTP.
+  - `provider_signature_requests` — the signable envelope + lifecycle stamps.
+  - `provider_signature_events` — hash-chained append-only ceremony log.
+  - seeds the `provider.portal_enabled` feature flag (OFF).
 
 ## Follow-ups (not in this PR)
 

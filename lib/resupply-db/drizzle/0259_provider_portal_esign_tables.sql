@@ -1,83 +1,67 @@
--- Provider e-signature portal (Task: provider-portal-esignature).
+-- Provider e-signature portal — completes the schema.
 --
--- A secure, MFA-protected portal where ordering physicians / NPs sign
--- in and e-sign the orders, prescriptions, CMNs/DWOs, and claims that
--- are outstanding for THEIR patients. Once a provider signs, employees
--- mark the item ready-to-print, note it returned-signed + attached to
--- the patient chart, and release the claim / item. A printable,
--- tamper-evident signature log (per request or per provider) can be
--- generated for Medicare / insurer audit.
+-- CONTEXT: migration 0253_provider_portal_esign.sql (already on main)
+-- created a MINIMAL `provider_portal_accounts` table (id, auth_user_id,
+-- provider_id, email_lower, timestamps + the uniqueness indexes). This
+-- migration finishes the feature on top of it:
 --
--- Design notes
--- ------------
---   * Provider login REUSES the in-house auth stack. A provider is a
---     normal `resupply_auth.users` row (role 'customer' — the lowest
---     privilege, so a provider can NEVER pass requireAdmin) that is
---     LINKED to a `resupply.providers` row via
---     `provider_portal_accounts`. "Provider-ness" is the existence of
---     that link, not an auth role — this keeps the staff RBAC gate and
---     the role CHECK constraint untouched.
---   * MFA reuses the same TOTP + recovery-code primitives as admin MFA,
---     but in provider-scoped tables keyed by the portal account so the
---     two populations never share a secret row.
---   * Signatures are TYPED-NAME + explicit ESIGN consent (no drawn
---     image), which satisfies the ESIGN Act / Medicare e-signature
---     guidance and sidesteps the repo's "no image logging" rule.
---   * `provider_signature_events` is a feature-local, hash-chained
---     append-only log for THIS portal's signature ceremony. It is NOT
---     the retired global `resupply.audit_log` machinery (migration
---     0156) and adds no readers against that table — the hash chain is
---     scoped to producing a single printable signature certificate.
+--   1. ALTER provider_portal_accounts — add the lifecycle/MFA columns
+--      the portal needs (status, mfa_enrolled_at, last_login_at,
+--      invited/disabled audit columns). Done as ADD COLUMN IF NOT
+--      EXISTS so it is idempotent and forward-deploy-safe; the base
+--      table from 0253 is NOT re-created (a CREATE TABLE IF NOT EXISTS
+--      would silently skip and leave these columns missing).
+--   2. CREATE the four remaining tables — provider_mfa_secrets,
+--      provider_mfa_recovery_codes, provider_signature_requests,
+--      provider_signature_events (the hash-chained ceremony log).
+--   3. Seed the `provider.portal_enabled` feature flag (OFF).
 --
--- Forward-deploy-safe: every statement is IF NOT EXISTS / ON CONFLICT
--- DO NOTHING. Journal posture matches 0050+ (not journaled).
+-- auth_user_id stays a soft reference to resupply_auth.users(id) (no
+-- cross-schema FK — the migration runner lacks REFERENCES privilege on
+-- resupply_auth; uniqueness is enforced by the 0253 index). The app
+-- enforces the relationship in auth-deps.ts / requireProvider.ts.
+--
+-- Design notes (signatures, audit posture) live in
+-- docs/provider-portal-esignature.md. Signatures are TYPED-NAME + ESIGN
+-- consent (no image). provider_signature_events is a feature-local,
+-- hash-chained log — NOT the retired global audit_log (migration 0156).
+--
+-- Forward-deploy-safe: every statement is IF NOT EXISTS / guarded /
+-- ON CONFLICT DO NOTHING. Journal posture matches 0050+ (not journaled).
 
 -- ────────────────────────────────────────────────────────────────
--- provider_portal_accounts — links an auth user to a provider record.
+-- 1. Complete provider_portal_accounts (base table from 0253).
 -- ────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS "resupply"."provider_portal_accounts" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- The in-house auth user the provider signs in as. Cross-schema FK
-  -- into resupply_auth.users; ON DELETE CASCADE so removing the auth
-  -- user tears down the portal link. NOTE: resupply_auth.users.id is
-  -- TEXT (a text-typed UUID), so this column must be text too — a uuid
-  -- column cannot FK to a text primary key.
-  "auth_user_id" text NOT NULL
-    REFERENCES "resupply_auth"."users"("id") ON DELETE CASCADE,
-  -- The clinical provider this account acts for.
-  "provider_id" uuid NOT NULL
-    REFERENCES "resupply"."providers"("id") ON DELETE CASCADE,
-  "email_lower" text NOT NULL,
-  -- invited  → account created, password-set / verify email sent
-  -- active   → provider has signed in at least once
-  -- disabled → access revoked by an employee (kept for audit)
-  "status" text NOT NULL DEFAULT 'invited',
-  "mfa_enrolled_at" timestamp with time zone,
-  "last_login_at" timestamp with time zone,
-  "invited_by_email" text,
-  "disabled_at" timestamp with time zone,
-  "disabled_by_email" text,
-  "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT "provider_portal_accounts_status_chk"
-    CHECK ("status" IN ('invited', 'active', 'disabled'))
-);
+ALTER TABLE "resupply"."provider_portal_accounts"
+  ADD COLUMN IF NOT EXISTS "status" text NOT NULL DEFAULT 'invited',
+  ADD COLUMN IF NOT EXISTS "mfa_enrolled_at" timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS "last_login_at" timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS "invited_by_email" text,
+  ADD COLUMN IF NOT EXISTS "disabled_at" timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS "disabled_by_email" text;
 --> statement-breakpoint
--- One portal account per auth user, and one per provider record.
-CREATE UNIQUE INDEX IF NOT EXISTS "provider_portal_accounts_auth_user_unique"
-  ON "resupply"."provider_portal_accounts" ("auth_user_id");
---> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "provider_portal_accounts_provider_unique"
-  ON "resupply"."provider_portal_accounts" ("provider_id");
+-- status enum guard (Postgres has no ADD CONSTRAINT IF NOT EXISTS).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'provider_portal_accounts_status_chk'
+      AND conrelid = 'resupply.provider_portal_accounts'::regclass
+  ) THEN
+    ALTER TABLE "resupply"."provider_portal_accounts"
+      ADD CONSTRAINT "provider_portal_accounts_status_chk"
+      CHECK ("status" IN ('invited', 'active', 'disabled'));
+  END IF;
+END $$;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "provider_portal_accounts_status_idx"
   ON "resupply"."provider_portal_accounts" ("status");
 --> statement-breakpoint
 
 -- ────────────────────────────────────────────────────────────────
--- provider_mfa_secrets — TOTP enrollment, keyed by the portal account.
--- Mirrors resupply.admin_mfa_secrets (migration 0084/0091) but scoped
--- to the provider population. One verified row per device.
+-- 2a. provider_mfa_secrets — TOTP enrollment, keyed by the portal
+-- account. Mirrors resupply.admin_mfa_secrets (0084/0091) but scoped to
+-- the provider population. One verified row per device.
 -- ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "resupply"."provider_mfa_secrets" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -99,7 +83,7 @@ CREATE INDEX IF NOT EXISTS "provider_mfa_secrets_account_idx"
 --> statement-breakpoint
 
 -- ────────────────────────────────────────────────────────────────
--- provider_mfa_recovery_codes — single-use backup codes (SHA-256).
+-- 2b. provider_mfa_recovery_codes — single-use backup codes (SHA-256).
 -- ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "resupply"."provider_mfa_recovery_codes" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -119,8 +103,8 @@ CREATE INDEX IF NOT EXISTS "provider_mfa_recovery_codes_account_idx"
 --> statement-breakpoint
 
 -- ────────────────────────────────────────────────────────────────
--- provider_signature_requests — the envelope of "things this provider
--- must e-sign". Created by employees, pushed to the provider's
+-- 2c. provider_signature_requests — the envelope of "things this
+-- provider must e-sign". Created by employees, pushed to the provider's
 -- authenticated queue. Optionally references an existing signable
 -- subject (Rx packet, prescription, claim, order, CMN/DWO, or a
 -- free-form document) by type + id, with a name/label snapshot so the
@@ -204,13 +188,11 @@ CREATE INDEX IF NOT EXISTS "provider_signature_requests_status_created_idx"
 --> statement-breakpoint
 
 -- ────────────────────────────────────────────────────────────────
--- provider_signature_events — append-only, hash-chained ceremony log.
--- One row per lifecycle event (created / viewed / signed / declined /
--- reminded / voided / ready_to_print / returned_signed / attached /
--- released). `seq` is the per-request ordinal; `event_hash` chains off
--- `prev_hash` so a printed certificate can show an unbroken chain for
--- Medicare / insurer audit. Hashes are computed in application code
--- (see lib/provider-portal/signature-events.ts).
+-- 2d. provider_signature_events — append-only, hash-chained ceremony
+-- log. One row per lifecycle event. `seq` is the per-request ordinal;
+-- `event_hash` chains off `prev_hash` so a printed certificate shows an
+-- unbroken chain for Medicare / insurer audit. Hashes are computed in
+-- application code (lib/provider-portal/signature-events.ts).
 -- ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "resupply"."provider_signature_events" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -247,8 +229,7 @@ CREATE INDEX IF NOT EXISTS "provider_signature_events_request_idx"
 --> statement-breakpoint
 
 -- ────────────────────────────────────────────────────────────────
--- Feature flag — the portal is OFF by default. Flipping it on enables
--- the provider sign-in surface + the employee management console.
+-- 3. Feature flag — the portal is OFF by default.
 -- ────────────────────────────────────────────────────────────────
 INSERT INTO resupply.feature_flags (key, enabled, description, category)
 VALUES
