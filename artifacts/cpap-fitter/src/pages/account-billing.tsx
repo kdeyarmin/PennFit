@@ -17,22 +17,34 @@ import { Link, useLocation } from "wouter";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   CreditCard,
   Download,
   FileText,
+  Plus,
+  ShieldCheck,
+  Trash2,
   Wallet,
   XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { SignedIn } from "@/lib/identity";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
+  createAutopaySetupSession,
   createPaymentCheckoutSession,
   fetchBillingBalance,
+  fetchClaimDetail,
+  fetchClaims,
   fetchPatientPayments,
   fetchPatientStatements,
+  fetchPaymentMethods,
   formatMoneyCents,
+  removePaymentMethod,
+  setAutopayEnabled,
   statementPdfUrl,
   type PatientPayment,
 } from "@/lib/me-billing-api";
@@ -96,13 +108,15 @@ function AccountBillingInner() {
   // banner state; dismissal is tracked separately (and also strips the
   // query — see dismissBanner).
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [{ justPaid, cancelled }] = useState(() => {
+  const [{ justPaid, cancelled, cardAdded }] = useState(() => {
     const params = new URLSearchParams(
       typeof window === "undefined" ? "" : window.location.search,
     );
     return {
       justPaid: params.get("paid") === "1",
       cancelled: params.get("cancelled") === "1",
+      // Set by the Stripe setup return URL (me-payment-methods.ts).
+      cardAdded: params.get("card_added") === "1",
     };
   });
 
@@ -338,6 +352,10 @@ function AccountBillingInner() {
         )}
       </section>
 
+      <PaymentMethodsSection cardAdded={cardAdded} />
+
+      <ClaimsSection />
+
       <section
         className="rounded-2xl border bg-white p-6 shadow-sm"
         data-testid="billing-statements"
@@ -477,5 +495,395 @@ function AccountBillingInner() {
         )}
       </section>
     </main>
+  );
+}
+
+function titleCase(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+// ─── Payment method + autopay ──────────────────────────────────────────
+function PaymentMethodsSection({ cardAdded }: { cardAdded: boolean }) {
+  const qc = useQueryClient();
+  const pm = useQuery({
+    queryKey: ["me-payment-methods"],
+    queryFn: fetchPaymentMethods,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const [enableOnAdd, setEnableOnAdd] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // The setup webhook lands async after the Stripe redirect — give it a
+  // few seconds, then refetch so the saved card shows.
+  useEffect(() => {
+    if (!cardAdded) return;
+    const t = setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: ["me-payment-methods"] });
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [cardAdded, qc]);
+
+  const addCard = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const { url } = await createAutopaySetupSession({
+        enableAutopay: enableOnAdd,
+      });
+      // Hosted by Stripe — full-window redirect (same as the pay flow).
+      window.location.href = url;
+    },
+    onMutate: () => setErr(null),
+    onError: (e) =>
+      setErr(e instanceof Error ? e.message : "Couldn't start card setup."),
+  });
+
+  const toggleAutopay = useMutation({
+    mutationFn: (enabled: boolean) => setAutopayEnabled(enabled),
+    onMutate: () => setErr(null),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["me-payment-methods"] });
+    },
+    onError: (e) =>
+      setErr(e instanceof Error ? e.message : "Couldn't update autopay."),
+  });
+
+  const removeCard = useMutation({
+    mutationFn: () => removePaymentMethod(),
+    onMutate: () => setErr(null),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["me-payment-methods"] });
+    },
+    onError: (e) =>
+      setErr(e instanceof Error ? e.message : "Couldn't remove the card."),
+  });
+
+  const status = pm.data;
+  return (
+    <section
+      className="rounded-2xl border bg-white p-6 shadow-sm"
+      data-testid="billing-payment-methods"
+    >
+      <h2 className="text-lg font-semibold text-slate-900 inline-flex items-center gap-2">
+        <CreditCard className="h-4 w-4" />
+        Payment method &amp; autopay
+      </h2>
+      <p className="text-sm text-slate-600 mt-1">
+        Save a card on file to check out faster — and, if you choose, let
+        PennPaps automatically pay new balances after insurance so you never
+        miss one. Your card is stored by Stripe; it never touches our servers.
+      </p>
+
+      {cardAdded && (
+        <div
+          className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"
+          data-testid="card-added-note"
+        >
+          Card saved — it appears below within a few seconds.
+        </div>
+      )}
+
+      {pm.isPending ? (
+        <p className="mt-4 text-sm text-slate-500">Loading…</p>
+      ) : pm.isError ? (
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <p className="text-sm text-red-600">
+            {pm.error instanceof Error
+              ? pm.error.message
+              : "Failed to load payment method."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void pm.refetch()}
+            disabled={pm.isFetching}
+          >
+            {pm.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      ) : status?.hasCard ? (
+        <div className="mt-4 space-y-4">
+          <div className="flex items-center justify-between gap-3 rounded-xl border bg-slate-50 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <CreditCard className="h-5 w-5 text-slate-500" />
+              <div>
+                <p className="text-sm font-medium text-slate-900">
+                  {status.card?.brand ? titleCase(status.card.brand) : "Card"}{" "}
+                  •••• {status.card?.last4 ?? "????"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {status.card?.expMonth && status.card?.expYear
+                    ? `Expires ${String(status.card.expMonth).padStart(2, "0")}/${status.card.expYear}`
+                    : "On file"}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => removeCard.mutate()}
+              disabled={removeCard.isPending}
+              data-testid="remove-card-button"
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              {removeCard.isPending ? "Removing…" : "Remove"}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="h-5 w-5 text-slate-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-slate-900">
+                  Automatic payments
+                </p>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  When on, we charge this card for new patient-responsibility
+                  balances after insurance. Turn it off any time.
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={status.autopayEnabled}
+              onCheckedChange={(v) => toggleAutopay.mutate(v)}
+              disabled={toggleAutopay.isPending}
+              aria-label="Toggle automatic payments"
+              data-testid="autopay-toggle"
+            />
+          </div>
+          <p className="text-xs text-slate-500" data-testid="autopay-status">
+            {status.autopayEnabled
+              ? "Autopay is ON — new balances are paid automatically."
+              : "Autopay is OFF — you'll pay each balance yourself."}
+          </p>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-xl border border-dashed px-4 py-6 text-center">
+            <p className="text-sm text-slate-600">No card on file yet.</p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300"
+              checked={enableOnAdd}
+              onChange={(e) => setEnableOnAdd(e.target.checked)}
+              data-testid="enable-autopay-on-add"
+            />
+            Also turn on automatic payments for future balances
+          </label>
+          <Button
+            onClick={() => addCard.mutate()}
+            disabled={addCard.isPending}
+            data-testid="add-card-button"
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            {addCard.isPending ? "Redirecting…" : "Add a card"}
+          </Button>
+          <p className="text-[11px] text-slate-500">
+            Hosted by Stripe — your card never touches our servers.
+          </p>
+        </div>
+      )}
+      {err && (
+        <p
+          className="mt-3 text-xs text-red-600"
+          data-testid="payment-method-error"
+        >
+          {err}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ─── Claims, charges & credits ─────────────────────────────────────────
+function ClaimsSection() {
+  const claims = useQuery({
+    queryKey: ["me-claims"],
+    queryFn: fetchClaims,
+    staleTime: 30_000,
+  });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <section
+      className="rounded-2xl border bg-white p-6 shadow-sm"
+      data-testid="billing-claims"
+    >
+      <h2 className="text-lg font-semibold text-slate-900 inline-flex items-center gap-2">
+        <FileText className="h-4 w-4" />
+        Claims, charges &amp; credits
+      </h2>
+      <p className="text-sm text-slate-600 mt-1">
+        Every claim we filed for your equipment — what was charged, what
+        insurance and payments covered, and what's left. Open a claim for the
+        line-item detail.
+      </p>
+
+      {claims.isPending ? (
+        <p className="mt-4 text-sm text-slate-500">Loading…</p>
+      ) : claims.isError ? (
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <p className="text-sm text-red-600">
+            {claims.error instanceof Error
+              ? claims.error.message
+              : "Failed to load claims."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void claims.refetch()}
+            disabled={claims.isFetching}
+          >
+            {claims.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      ) : (claims.data?.claims.length ?? 0) === 0 ? (
+        <p className="mt-4 text-sm text-slate-500">No claims on file yet.</p>
+      ) : (
+        <ul className="mt-4 divide-y">
+          {(claims.data?.claims ?? []).map((c) => {
+            const open = expandedId === c.id;
+            return (
+              <li key={c.id} className="py-3">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(open ? null : c.id)}
+                  className="w-full flex items-center justify-between gap-3 text-left"
+                  aria-expanded={open}
+                  data-testid={`claim-row-${c.id}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {open ? (
+                      <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate">
+                        {c.payerName ?? "Claim"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {c.dateOfService
+                          ? new Date(c.dateOfService).toLocaleDateString()
+                          : "—"}{" "}
+                        · <span className="capitalize">{c.status}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold tabular-nums text-slate-900">
+                      {formatMoneyCents(c.patientResponsibilityCents)}
+                    </p>
+                    <p className="text-[11px] text-slate-500">your balance</p>
+                  </div>
+                </button>
+                {open && <ClaimDetailView claimId={c.id} />}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ClaimDetailView({ claimId }: { claimId: string }) {
+  const detail = useQuery({
+    queryKey: ["me-claim", claimId],
+    queryFn: () => fetchClaimDetail(claimId),
+    staleTime: 30_000,
+  });
+  if (detail.isPending) {
+    return <p className="mt-3 ml-6 text-xs text-slate-500">Loading detail…</p>;
+  }
+  if (detail.isError) {
+    return (
+      <p className="mt-3 ml-6 text-xs text-red-600">
+        {detail.error instanceof Error
+          ? detail.error.message
+          : "Failed to load claim detail."}
+      </p>
+    );
+  }
+  const d = detail.data;
+  if (!d) return null;
+  return (
+    <div
+      className="mt-3 ml-6 space-y-4"
+      data-testid={`claim-detail-${claimId}`}
+    >
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+          Charges
+        </p>
+        {d.lineItems.length === 0 ? (
+          <p className="text-xs text-slate-500">No line items recorded.</p>
+        ) : (
+          <ul className="divide-y rounded-lg border">
+            {d.lineItems.map((l, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-800 truncate">
+                    {l.description ?? l.hcpcsCode ?? "Item"}
+                  </p>
+                  <p className="text-slate-500">
+                    {l.hcpcsCode}
+                    {l.modifier ? `-${l.modifier}` : ""} · qty {l.quantity}
+                  </p>
+                </div>
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {formatMoneyCents(l.billedCents)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+          Insurance &amp; payments (credits)
+        </p>
+        {d.events.length === 0 ? (
+          <p className="text-xs text-slate-500">No activity yet.</p>
+        ) : (
+          <ul className="space-y-1">
+            {d.events.map((e, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between gap-3 text-xs"
+              >
+                <span className="text-slate-600">
+                  {new Date(e.occurredAt).toLocaleDateString()} ·{" "}
+                  <span className="capitalize">
+                    {e.eventType.replace(/_/g, " ")}
+                  </span>
+                  {e.note ? ` — ${e.note}` : ""}
+                </span>
+                {e.amountCents != null && (
+                  <span className="tabular-nums text-slate-700">
+                    {formatMoneyCents(e.amountCents)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between border-t pt-2 text-xs gap-3">
+        <span className="text-slate-500">
+          Billed {formatMoneyCents(d.claim.totalBilledCents)} · Paid{" "}
+          {formatMoneyCents(d.claim.totalPaidCents)}
+        </span>
+        <span className="font-semibold text-slate-900">
+          Your balance {formatMoneyCents(d.claim.patientResponsibilityCents)}
+        </span>
+      </div>
+    </div>
   );
 }

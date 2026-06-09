@@ -2350,7 +2350,7 @@ export interface Database {
             | "cancelled"
             | "refunded";
           applied_claims_json: Json;
-          source: "portal" | "csr" | "mail_in_check" | "external";
+          source: "portal" | "csr" | "mail_in_check" | "external" | "autopay";
           note: string | null;
           failure_reason: string | null;
           succeeded_at: string | null;
@@ -2362,6 +2362,37 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["patient_payments"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_autopay_authorizations: {
+        Row: {
+          id: string;
+          patient_id: string;
+          shop_customer_id: string | null;
+          stripe_customer_id: string;
+          stripe_payment_method_id: string;
+          card_brand: string | null;
+          card_last4: string | null;
+          card_exp_month: number | null;
+          card_exp_year: number | null;
+          autopay_enabled: boolean;
+          authorized_at: string;
+          autopay_enabled_at: string | null;
+          autopay_disabled_at: string | null;
+          revoked_at: string | null;
+          charge_attempts: number;
+          last_charge_error: string | null;
+          last_charge_attempt_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_autopay_authorizations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_autopay_authorizations"]["Row"]
         >;
         Relationships: [];
       };

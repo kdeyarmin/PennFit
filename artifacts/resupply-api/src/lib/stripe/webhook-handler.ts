@@ -356,6 +356,20 @@ export const stripeWebhookHandler: RequestHandler = async (
           await authorizePaymentPlanAutopay(config, session, log);
           break;
         }
+        // Patient-controlled autopay: a signed-in patient saved a card on
+        // file from /account/billing. Record the card + (if they asked)
+        // flip their autopay switch. Same retry-on-throw posture as the
+        // plan flow — stranding a completed setup is worse than a retry.
+        if (
+          session.mode === "setup" &&
+          session.metadata?.purpose === "patient_autopay_setup"
+        ) {
+          const { recordAutopayAuthorization } = await import(
+            "../billing/patient-autopay.js"
+          );
+          await recordAutopayAuthorization(config, session, log);
+          break;
+        }
         const paidRow = await markPaid(session, log);
         // Best-effort: mirror the session's line items into
         // shop_order_items so the verified-purchaser badge and the
@@ -611,6 +625,27 @@ export const stripeWebhookHandler: RequestHandler = async (
             log?.info?.(
               { paymentMethodId: pm.id },
               "shop_customers: cleared default PM on detach",
+            );
+          }
+          // Also revoke any patient autopay authorization pointing at this
+          // card so the worker never tries to charge a card the patient
+          // removed via Stripe's own Customer Portal. Best-effort — a
+          // failure here must not 500 the webhook.
+          try {
+            const { clearAutopayByPaymentMethod } = await import(
+              "../billing/patient-autopay.js"
+            );
+            await clearAutopayByPaymentMethod(pm.id, log);
+          } catch (autopayErr) {
+            log?.warn?.(
+              {
+                err:
+                  autopayErr instanceof Error
+                    ? autopayErr.message
+                    : String(autopayErr),
+                paymentMethodId: pm.id,
+              },
+              "patient autopay: revoke on PM detach failed (non-fatal)",
             );
           }
         }

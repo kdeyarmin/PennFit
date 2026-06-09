@@ -74,6 +74,7 @@ import { registerPaMcoSlaSweepJob } from "./jobs/pa-mco-sla-sweep.js";
 import { registerPecosSyncJob } from "./jobs/pecos-sync.js";
 import { registerCappedRentalAdvanceJob } from "./jobs/capped-rental-advance.js";
 import { registerPaymentPlanAutochargeJob } from "./jobs/payment-plan-autocharge.js";
+import { registerPatientAutopayChargeJob } from "./jobs/patient-autopay-charge.js";
 import { registerDwoExpirySweepJob } from "./jobs/dwo-expiry-sweep.js";
 import { registerWebhookDispatcherJob } from "./jobs/webhook-dispatcher.js";
 import { registerAutoWorkflowJob } from "./jobs/auto-workflow.js";
@@ -657,6 +658,13 @@ async function doStartWorker(): Promise<void> {
   // AUTOCHARGE_CRON), the seeded-OFF billing.payment_plan_autocharge
   // flag, and per-plan patient authorization. Inert by default.
   await registerPaymentPlanAutochargeJob(boss);
+
+  // Auto-charge a patient's outstanding balance off-session against the
+  // card they saved + authorized in the portal (mig 0256). Triple-gated:
+  // opt-in cron (BILLING_PATIENT_AUTOPAY_CRON), the seeded-OFF
+  // billing.patient_autopay flag, and the per-patient autopay toggle.
+  // Inert by default.
+  await registerPatientAutopayChargeJob(boss);
 
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.
