@@ -20,6 +20,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { AdminModal } from "@/components/admin/AdminModal";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   cancelBulkCampaign,
@@ -711,30 +712,13 @@ function ModalShell({
   children: React.ReactNode;
   onClose: () => void;
 }) {
+  // Delegates to the shared AdminModal (Radix): Escape-to-close, focus
+  // trap, scroll lock, and aria-modal for free — the hand-rolled version
+  // had none of those.
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="w-full max-w-3xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
-          <h2
-            className="text-lg font-semibold"
-            style={{ color: "hsl(var(--ink-1))" }}
-          >
-            {title}
-          </h2>
-          {children}
-        </div>
-      </div>
-    </div>
+    <AdminModal title={title} onClose={onClose} className="max-w-3xl">
+      <div className="space-y-4">{children}</div>
+    </AdminModal>
   );
 }
 
