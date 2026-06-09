@@ -14,6 +14,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { respondInvalidBody } from "../../lib/http-validation";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -52,7 +53,7 @@ router.post(
     }
     const parsed = body.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "invalid_body" });
+      respondInvalidBody(res, parsed.error);
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
