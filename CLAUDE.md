@@ -357,10 +357,10 @@ unified types, the `IntegrationAdapter` contract, and the Zod schemas;
 every vendor package depends on it and on nothing in the data layer.
 The adapters cover three distinct domains:
 
-| Domain                      | Packages                                                                                      | Direction     |
-| --------------------------- | --------------------------------------------------------------------------------------------- | ------------- |
-| Therapy-cloud device data   | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)             | pull / ingest |
-| Payer / claims / prior-auth | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth) | outbound      |
+| Domain                       | Packages                                                                                      | Direction       |
+| ---------------------------- | --------------------------------------------------------------------------------------------- | --------------- |
+| Therapy-cloud device data    | `-airview` (ResMed), `-care-orchestrator` (Philips), `-react-health` (3B Medical)             | pull / ingest   |
+| Payer / claims / prior-auth  | `-office-ally` (837P/835/277CA clearinghouse over SFTP), `-davinci-pas` (FHIR PAS prior auth) | outbound        |
 | DME billing system (PacWare) | `-pacware` (legacy desktop billing; **CSV file exchange, no API**)                            | import + export |
 
 Wiring & conventions:
@@ -381,11 +381,16 @@ Wiring & conventions:
   PacWare is a legacy desktop billing system with no API. The pure package
   owns the report column catalog + tolerant CSV parser + exporter; the
   routes (`artifacts/resupply-api/src/routes/admin/pacware.ts`) own DB +
-  audit; the admin UI is `/admin/pacware`. Patient import is a **sync** on
-  `patients.pacware_id` that touches only the columns the uploaded report
-  contained (so a missing column never blanks data). Exports (patient
-  roster, resupply-due worklist) are formula-injection-guarded and the
-  importer reverses the guard for lossless round-trips. PacWare is the
+  audit; the admin UI is `/admin/pacware`. Patient import is a **fill-only
+  sync** on `patients.pacware_id`: new patients are inserted, existing ones
+  only have **blank** fields filled — an existing value is **never
+  overwritten** (reports created/updated/unchanged). The PennFit→PacWare
+  exports (patient roster, resupply-due worklist) are surfaced as **"Sync to
+  PacWare"** actions with a **verify** step (preview count+sample before
+  download), are formula-injection-guarded, and the importer reverses the
+  guard for lossless round-trips. An opt-in `pacware.auto_sync` toggle
+  (`app_config`, non-catalog key) drives an in-app "ready to sync" notice;
+  nothing is ever pushed automatically (PacWare has no API). PacWare is the
   billing/warehouse system of record; PennFit is the resupply engine. See
   [`docs/integrations/pacware.md`](./docs/integrations/pacware.md) and the
   operator manual

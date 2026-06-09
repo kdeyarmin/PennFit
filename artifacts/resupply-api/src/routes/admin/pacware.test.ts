@@ -128,8 +128,9 @@ describe("POST /admin/pacware/import/patients (preview)", () => {
 });
 
 describe("POST /admin/pacware/import/patients (commit)", () => {
-  it("upserts valid rows on pacware_id and audits counts only", async () => {
-    stageSupabaseResponse("patients", "upsert", { data: null, error: null });
+  it("inserts new patients and audits created/updated/unchanged", async () => {
+    stageSupabaseResponse("patients", "select", { data: [] }); // none exist
+    stageSupabaseResponse("patients", "insert", { data: null, error: null });
     const csv = [
       HEADER,
       "PW1,Jane,Doe,1970-05-04,+14155551212,Medicare",
@@ -140,28 +141,92 @@ describe("POST /admin/pacware/import/patients (commit)", () => {
       .send({ csv, mode: "commit" });
     expect(res.status).toBe(200);
     expect(res.body.mode).toBe("commit");
-    expect(res.body.synced).toBe(2);
+    expect(res.body.created).toBe(2);
+    expect(res.body.updated).toBe(0);
+    expect(res.body.unchanged).toBe(0);
 
-    const payloads = getSupabaseWritePayloads("patients", "upsert");
-    expect(payloads).toHaveLength(1);
-    const batch = payloads[0] as Array<Record<string, unknown>>;
-    expect(batch).toHaveLength(2);
-    // Phone was present in the header, blank in PW2 -> cleared to null.
-    expect(batch[1].phone_e164).toBeNull();
-    expect(batch[0].phone_e164).toBe("+14155551212");
+    const inserts = (getSupabaseWritePayloads("patients", "insert")[0] ??
+      []) as Array<Record<string, unknown>>;
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0].phone_e164).toBe("+14155551212");
 
-    expect(logAuditMock).toHaveBeenCalledTimes(1);
     const arg = (logAuditMock.mock.calls[0] as unknown[])[0] as {
       action: string;
       metadata: Record<string, unknown>;
     };
     expect(arg.action).toBe("patient.pacware_sync");
-    expect(arg.metadata.synced).toBe(2);
+    expect(arg.metadata.created).toBe(2);
   });
 
-  it("omits columns the report did not contain (no accidental blanking)", async () => {
-    stageSupabaseResponse("patients", "upsert", { data: null, error: null });
-    // No phone / insurance columns at all.
+  it("NEVER overwrites a populated field — fills only blanks", async () => {
+    // PW1 exists with a phone already set but no email / insurance.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p1",
+          pacware_id: "PW1",
+          legal_first_name: "Jane",
+          legal_last_name: "Doe",
+          date_of_birth: "1970-05-04",
+          phone_e164: "+14150000000", // already populated
+          email: null, // blank -> fillable
+          insurance_payer: null, // blank -> fillable
+          address: null,
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "update", { data: null, error: null });
+    const csv = [
+      "pacware_id,legal_first_name,legal_last_name,date_of_birth,phone_e164,email,insurance_payer",
+      "PW1,Jane,Doe,1970-05-04,+14159999999,jane@example.com,Medicare",
+    ].join("\n");
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv, mode: "commit" });
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(0);
+    expect(res.body.updated).toBe(1);
+
+    const patch = (getSupabaseWritePayloads("patients", "update")[0] ??
+      {}) as Record<string, unknown>;
+    // Phone was already populated → untouched. Email + insurance were blank → filled.
+    expect(patch).not.toHaveProperty("phone_e164");
+    expect(patch.email).toBe("jane@example.com");
+    expect(patch.insurance_payer).toBe("Medicare");
+  });
+
+  it("counts an existing fully-populated patient as unchanged (no write)", async () => {
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p1",
+          pacware_id: "PW1",
+          legal_first_name: "Jane",
+          legal_last_name: "Doe",
+          date_of_birth: "1970-05-04",
+          phone_e164: "+14150000000",
+          email: "jane@example.com",
+          insurance_payer: "Medicare",
+          address: null,
+        },
+      ],
+    });
+    const csv = [
+      "pacware_id,legal_first_name,legal_last_name,date_of_birth,phone_e164",
+      "PW1,Jane,Doe,1970-05-04,+14159999999",
+    ].join("\n");
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv, mode: "commit" });
+    expect(res.body.created).toBe(0);
+    expect(res.body.updated).toBe(0);
+    expect(res.body.unchanged).toBe(1);
+    expect(getSupabaseWritePayloads("patients", "update")).toHaveLength(0);
+  });
+
+  it("omits columns the report did not contain (insert)", async () => {
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("patients", "insert", { data: null, error: null });
     const csv = [
       "pacware_id,legal_first_name,legal_last_name,date_of_birth",
       "PW1,Jane,Doe,1970-05-04",
@@ -169,16 +234,17 @@ describe("POST /admin/pacware/import/patients (commit)", () => {
     await request(makeApp())
       .post("/resupply-api/admin/pacware/import/patients")
       .send({ csv, mode: "commit" });
-    const batch = (getSupabaseWritePayloads("patients", "upsert")[0] ??
+    const inserts = (getSupabaseWritePayloads("patients", "insert")[0] ??
       []) as Array<Record<string, unknown>>;
-    expect(batch[0]).not.toHaveProperty("phone_e164");
-    expect(batch[0]).not.toHaveProperty("insurance_payer");
-    expect(batch[0]).not.toHaveProperty("address");
-    expect(batch[0].pacware_id).toBe("PW1");
+    expect(inserts[0]).not.toHaveProperty("phone_e164");
+    expect(inserts[0]).not.toHaveProperty("insurance_payer");
+    expect(inserts[0]).not.toHaveProperty("address");
+    expect(inserts[0].pacware_id).toBe("PW1");
   });
 
   it("dedupes a repeated pacware_id within the file (last wins)", async () => {
-    stageSupabaseResponse("patients", "upsert", { data: null, error: null });
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("patients", "insert", { data: null, error: null });
     const csv = [
       "pacware_id,legal_first_name,legal_last_name,date_of_birth",
       "PW1,Jane,Doe,1970-05-04",
@@ -187,11 +253,11 @@ describe("POST /admin/pacware/import/patients (commit)", () => {
     const res = await request(makeApp())
       .post("/resupply-api/admin/pacware/import/patients")
       .send({ csv, mode: "commit" });
-    expect(res.body.synced).toBe(1);
-    const batch = (getSupabaseWritePayloads("patients", "upsert")[0] ??
+    expect(res.body.created).toBe(1);
+    const inserts = (getSupabaseWritePayloads("patients", "insert")[0] ??
       []) as Array<Record<string, unknown>>;
-    expect(batch).toHaveLength(1);
-    expect(batch[0].legal_first_name).toBe("Janet");
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].legal_first_name).toBe("Janet");
   });
 });
 
@@ -272,8 +338,9 @@ describe("GET /admin/pacware/export/resupply-due.csv", () => {
 });
 
 describe("partial write failure", () => {
-  it("returns 502 (not a cacheable 200) when a batch upsert fails", async () => {
-    stageSupabaseResponse("patients", "upsert", {
+  it("returns 502 (not a cacheable 200) when an insert fails", async () => {
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("patients", "insert", {
       data: null,
       error: { message: "db down" },
     });
@@ -285,14 +352,15 @@ describe("partial write failure", () => {
       .post("/resupply-api/admin/pacware/import/patients")
       .send({ csv, mode: "commit" });
     expect(res.status).toBe(502);
-    expect(res.body.synced).toBe(0);
+    expect(res.body.created).toBe(0);
     expect(res.body.batchErrors.length).toBe(1);
   });
 });
 
 describe("address-column safety", () => {
   it("does not write the address column when only address_line2 is present", async () => {
-    stageSupabaseResponse("patients", "upsert", { data: null, error: null });
+    stageSupabaseResponse("patients", "select", { data: [] });
+    stageSupabaseResponse("patients", "insert", { data: null, error: null });
     // Header carries address_line2 but none of line1/city/state/postal.
     const csv = [
       "pacware_id,legal_first_name,legal_last_name,date_of_birth,address_line2",
@@ -301,9 +369,64 @@ describe("address-column safety", () => {
     await request(makeApp())
       .post("/resupply-api/admin/pacware/import/patients")
       .send({ csv, mode: "commit" });
-    const batch = (getSupabaseWritePayloads("patients", "upsert")[0] ??
+    const inserts = (getSupabaseWritePayloads("patients", "insert")[0] ??
       []) as Array<Record<string, unknown>>;
-    expect(batch[0]).not.toHaveProperty("address");
+    expect(inserts[0]).not.toHaveProperty("address");
+  });
+});
+
+describe("sync verify + settings", () => {
+  it("previews the resupply-due worklist (count + sample, no CSV)", async () => {
+    stageSupabaseResponse("episodes", "select", { data: null, count: 7 }); // head count
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: "ep_1",
+          status: "confirmed",
+          due_at: "2026-06-15T00:00:00.000Z",
+          prescriptions: { item_sku: "MASK-N20-M" },
+          patients: {
+            pacware_id: "PW1",
+            legal_first_name: "Jane",
+            legal_last_name: "Doe",
+            insurance_payer: "Medicare",
+          },
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/sync/resupply-due/preview",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.target).toBe("resupply_due");
+    expect(res.body.count).toBe(7);
+    expect(res.body.sample[0].itemSku).toBe("MASK-N20-M");
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("returns settings (autoSync default false) + live pending counts", async () => {
+    stageSupabaseResponse("app_config", "select", { data: null }); // no toggle row
+    stageSupabaseResponse("episodes", "select", { data: null, count: 3 });
+    stageSupabaseResponse("patients", "select", { data: null, count: 42 });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/settings",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.autoSync).toBe(false);
+    expect(res.body.pending.resupplyDue).toBe(3);
+    expect(res.body.pending.patients).toBe(42);
+  });
+
+  it("persists the autoSync toggle", async () => {
+    stageSupabaseResponse("app_config", "upsert", { data: null, error: null });
+    const res = await request(makeApp())
+      .put("/resupply-api/admin/pacware/settings")
+      .send({ autoSync: true });
+    expect(res.status).toBe(200);
+    expect(res.body.autoSync).toBe(true);
+    const writes = getSupabaseWritePayloads("app_config", "upsert");
+    expect(writes).toHaveLength(1);
+    expect((writes[0] as Record<string, unknown>).value).toBe("true");
   });
 });
 
@@ -331,5 +454,15 @@ describe("PACWARE_EXCHANGE_DISABLED kill switch", () => {
       "/resupply-api/admin/pacware/export/resupply-due.csv",
     );
     expect(resupply.status).toBe(503);
+
+    const settingsGet = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/settings",
+    );
+    expect(settingsGet.status).toBe(503);
+
+    const settingsPut = await request(makeApp())
+      .put("/resupply-api/admin/pacware/settings")
+      .send({ autoSync: true });
+    expect(settingsPut.status).toBe(503);
   });
 });

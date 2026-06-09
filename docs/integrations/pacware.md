@@ -72,22 +72,66 @@ this documentation can never drift apart.
 | `patient_roster` | both      | `resupply.patients` (demographics + address + `insurance_payer`), keyed on `pacware_id`.            |
 | `resupply_due`   | export    | `resupply.episodes` ⋈ `prescriptions` ⋈ `patients` — one line per due item for PacWare order entry. |
 
-## Import semantics — "sync, don't clobber"
+## Import semantics — "fill only, never overwrite"
 
-The patient-roster import is a **sync** keyed on `pacware_id`: a new
-account is inserted, an existing one is updated. The safety rule:
+The patient-roster import is a **fill-only sync** keyed on `pacware_id`:
 
-- **Only the columns present in the uploaded report are written.** If your
-  report omits the phone column, existing phone numbers are never touched.
-- A column that **is** present but **blank** in a row is treated as
-  "cleared" (PacWare is the demographics system of record).
-- `status` and `created_at` are never overwritten by an import.
+- **New patients** (no matching `pacware_id`) are **inserted** with every
+  field the report provides.
+- **Existing patients** are only **topped up**: a field is written **only
+  when it is currently blank in PennFit** and the report carries a value
+  for it. A value already in PennFit is **never overwritten**.
+- Required fields (`legal_first_name`, `legal_last_name`, `date_of_birth`)
+  are `NOT NULL` on existing rows, so they can never be filled/overwritten;
+  `status` and `created_at` are never touched.
+- A column the report omits is never written; a present-but-blank cell on a
+  patient who already has that value is left as-is.
 - Rows are de-duplicated within a file (last occurrence wins) before write.
+
+The response (and `patient.pacware_sync` audit row) reports **created /
+updated / unchanged** counts. "updated" means one or more blank fields were
+filled; "unchanged" means the patient already had everything the report
+offered.
+
+> Why fill-only? PennFit and PacWare can both hold demographics; a fill-only
+> merge lets PacWare backfill gaps in PennFit without a stale PacWare export
+> ever clobbering a fresher value a patient just updated in PennFit.
+
+Implementation note: the sync reads existing rows in chunks of 200 (to keep
+the `.in(pacware_id,…)` lookup URL bounded), batch-inserts the new patients,
+and issues a small per-row `UPDATE` only for existing patients that actually
+have a blank to fill (rare once a roster has synced once).
 
 Validation is strict and surfaced **before** any write: the upload first
 runs a `preview` (parse + validate, no DB) so the operator can fix the
 source file. Rows that fail validation are skipped, never partially
 written.
+
+## Sync to PacWare — verify before sending
+
+The PennFit → PacWare exports are surfaced as **"Sync to PacWare"** actions
+(patient roster + resupply-due worklist). Each opens a **verify** step that
+calls a preview endpoint (`GET /admin/pacware/sync/{patients,resupply-due}/preview`)
+returning the **total count + a sample of the actual rows** — no file is
+produced and (being a GET) nothing is persisted. The operator confirms,
+then the CSV downloads from the existing `export/*.csv` endpoint. The
+preview and the download share the same mapper, so what you verify is
+exactly what you get.
+
+## Automatic vs manual sync
+
+A persisted toggle (`GET`/`PUT /admin/pacware/settings`, stored under the
+non-catalog `app_config` key `pacware.auto_sync`) controls the **in-app
+notice**:
+
+- **Manual** (default): no proactive nudging — sync on demand.
+- **Automatic**: the page shows a "ready to sync" banner with the live
+  pending counts (confirmed resupply orders + roster size).
+
+PacWare has no API and the server filesystem is ephemeral (Railway), so
+"automatic" **never pushes PHI anywhere on its own**. It only surfaces the
+pending counts (computed live by the settings endpoint) so an admin can
+verify + download. Nothing leaves the app without a human confirming.
 
 ## PHI & security posture
 
