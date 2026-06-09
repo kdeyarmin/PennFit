@@ -204,7 +204,8 @@ router.get(
 
 router.get(
   "/admin/inbound-faxes/:id/media",
-  // Per-attachment media URLs (one-shot signed Twilio links).
+  // Per-attachment media URLs (one-shot signed object-storage links;
+  // the fax bytes were mirrored from Telnyx at ingest time).
   // Same scope as the list/detail above.
   requirePermission("conversations.manage"),
   async (req, res) => {

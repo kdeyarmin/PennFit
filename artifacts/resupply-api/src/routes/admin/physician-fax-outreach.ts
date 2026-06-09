@@ -5,8 +5,8 @@
 //        Body: { patientId, prescriptionId?, physicianName,
 //                physicianFaxE164, coverLetterText }
 //        Inserts a physician_fax_outreach row and dispatches via
-//        Twilio Programmable Fax when TWILIO_ACCOUNT_SID,
-//        TWILIO_AUTH_TOKEN, and TWILIO_FAX_FROM_NUMBER are set.
+//        Telnyx Programmable Fax when TELNYX_API_KEY,
+//        TELNYX_FAX_CONNECTION_ID, and TELNYX_FAX_FROM_NUMBER are set.
 //        Returns the outreach row id + final status.
 //
 //   POST /admin/physician-fax-outreach/:id/retry
@@ -16,9 +16,9 @@
 //   GET  /admin/physician-fax-outreach?patientId=...
 //        Lists recent outreach rows for a patient.
 //
-// Vendor: Twilio Programmable Fax (same credentials as SMS + voice).
-//   Required env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
-//                 TWILIO_FAX_FROM_NUMBER
+// Vendor: Telnyx Programmable Fax (Twilio retired its fax product).
+//   Required env: TELNYX_API_KEY, TELNYX_FAX_CONNECTION_ID,
+//                 TELNYX_FAX_FROM_NUMBER
 //   Optional env: RESUPPLY_VOICE_PUBLIC_BASE_URL (needed for the
 //                 mediaUrl and statusCallback — if unset the row is
 //                 created but not dispatched immediately).
@@ -28,7 +28,7 @@
 //     cover_letter_length. Never the fax number, never the cover
 //     letter body, never the physician name.
 //   * The mediaUrl token carries only the outreach ID + expiry; the
-//     cover letter text is fetched by Twilio from /fax/document/:token.
+//     cover letter text is fetched by Telnyx from /fax/document/:token.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -36,8 +36,8 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
-  createTwilioFaxClient,
-  TwilioApiError,
+  createTelnyxFaxClient,
+  TelnyxApiError,
 } from "@workspace/resupply-telecom";
 
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
@@ -74,7 +74,7 @@ const listQuery = z
   .strict();
 
 /**
- * Returns the public base URL used for Twilio fax callbacks and the
+ * Returns the public base URL used for Telnyx fax callbacks and the
  * cover-letter mediaUrl. Falls back to RAILWAY_PUBLIC_DOMAIN when the
  * explicit env var is unset. Returns null when neither is set.
  */
@@ -88,22 +88,29 @@ export function getFaxPublicBaseUrl(): string | null {
 }
 
 /**
- * Returns true when all four conditions for a live fax dispatch are met:
- *   - TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (shared with SMS/voice)
- *   - TWILIO_FAX_FROM_NUMBER (fax-enabled Twilio number)
+ * Returns true when all conditions for a live fax dispatch are met:
+ *   - TELNYX_API_KEY (Bearer key from the Telnyx portal)
+ *   - TELNYX_FAX_CONNECTION_ID (the Fax Application that owns the number)
+ *   - TELNYX_FAX_FROM_NUMBER (fax-enabled Telnyx number)
+ *   - TELNYX_PUBLIC_KEY (Ed25519 webhook key). Without it the webhook
+ *     router rejects every inbound/status callback, so a dispatched fax
+ *     would never receive a delivery/failure update and inbound faxes
+ *     couldn't be ingested — we'd rather report "not configured" and
+ *     hold the row than send a fax we can't track.
  *   - RESUPPLY_VOICE_PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN (needed to
- *     build the signed mediaUrl that Twilio fetches, and the
+ *     build the signed mediaUrl that Telnyx fetches, and the
  *     statusCallback URL for delivery events)
  *
- * All four are required for a successful send; showing "configured"
- * when the base URL is missing would mislead the ops dashboard into
- * thinking dispatch works when it silently would not.
+ * All are required for a successful, trackable send; showing "configured"
+ * when any is missing would mislead the ops dashboard into thinking
+ * dispatch works when it silently would not.
  */
 export function isFaxConfigured(): boolean {
   return Boolean(
-    process.env.TWILIO_ACCOUNT_SID?.trim() &&
-    process.env.TWILIO_AUTH_TOKEN?.trim() &&
-    process.env.TWILIO_FAX_FROM_NUMBER?.trim() &&
+    process.env.TELNYX_API_KEY?.trim() &&
+    process.env.TELNYX_FAX_CONNECTION_ID?.trim() &&
+    process.env.TELNYX_FAX_FROM_NUMBER?.trim() &&
+    process.env.TELNYX_PUBLIC_KEY?.trim() &&
     getFaxPublicBaseUrl(),
   );
 }
@@ -116,7 +123,7 @@ interface DispatchResult {
 }
 
 /**
- * Attempt to dispatch a fax outreach row via Twilio. Updates the DB
+ * Attempt to dispatch a fax outreach row via Telnyx. Updates the DB
  * row in-place and returns the outcome. Shared between the POST
  * (create + dispatch) and the POST /:id/retry (re-dispatch) handlers.
  */
@@ -132,17 +139,17 @@ async function dispatchFax(
   const baseUrl = getFaxPublicBaseUrl()!;
   const supabase = getSupabaseServiceRoleClient();
 
-  const faxClient = createTwilioFaxClient();
+  const faxClient = createTelnyxFaxClient();
   const token = signFaxDocumentToken(outreachId);
   const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
   const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
-  const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+  const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
-  // Scope try/catch to the Twilio API call only. A DB failure after a
+  // Scope try/catch to the Telnyx API call only. A DB failure after a
   // successful send must NOT fall into the catch path — that would mark
   // the row as "failed" and allow the retry endpoint to re-fire an already-
   // accepted fax, causing duplicate physician outreach and double billing.
-  let result: { sid: string; status: string };
+  let result: { id: string; status: string };
   try {
     result = await faxClient.sendFax({
       to,
@@ -152,8 +159,8 @@ async function dispatchFax(
     });
   } catch (err) {
     const msg =
-      err instanceof TwilioApiError
-        ? `Twilio fax error: ${err.message}`
+      err instanceof TelnyxApiError
+        ? `Telnyx fax error: ${err.message}`
         : `Fax dispatch error: ${String(err)}`;
 
     const nowIso = new Date().toISOString();
@@ -176,14 +183,14 @@ async function dispatchFax(
 
     logger.warn(
       { event: "fax_dispatch_failed", outreachId },
-      "physician_fax_outreach: Twilio dispatch failed",
+      "physician_fax_outreach: Telnyx dispatch failed",
     );
 
-    return { status: "failed", provider: "twilio", dispatchError: msg };
+    return { status: "failed", provider: "telnyx", dispatchError: msg };
   }
 
-  // Twilio accepted the fax. Stamp the row outside the sendFax try/catch so
-  // a DB hiccup doesn't trigger a retry. The Twilio status-callback will
+  // Telnyx accepted the fax. Stamp the row outside the sendFax try/catch so
+  // a DB hiccup doesn't trigger a retry. The Telnyx status-callback will
   // also update the row when delivery completes, giving a second correction path.
   const sentIso = new Date().toISOString();
   const { error: stampErr } = await supabase
@@ -191,8 +198,8 @@ async function dispatchFax(
     .from("physician_fax_outreach")
     .update({
       status: "sent",
-      vendor_ref: result.sid,
-      vendor_name: "twilio",
+      vendor_ref: result.id,
+      vendor_name: "telnyx",
       sent_at: sentIso,
       failed_at: null,
       failure_reason: null,
@@ -205,21 +212,21 @@ async function dispatchFax(
       {
         event: "fax_db_stamp_failed",
         outreachId,
-        vendorRef: result.sid,
+        vendorRef: result.id,
         err: stampErr,
       },
-      "physician_fax_outreach: fax accepted by Twilio but DB stamp failed",
+      "physician_fax_outreach: fax accepted by Telnyx but DB stamp failed",
     );
   }
 
-  return { status: "sent", provider: "twilio", vendorRef: result.sid };
+  return { status: "sent", provider: "telnyx", vendorRef: result.id };
 }
 
 // ---------------------------------------------------------------------------
 // POST /admin/physician-fax-outreach — create + dispatch
 // ---------------------------------------------------------------------------
 
-// Create + record Rx-renewal physician faxes (Twilio dispatch when
+// Create + record Rx-renewal physician faxes (Telnyx dispatch when
 // configured, else pending). Writes per-patient outreach state, so
 // `patients.update` matches the rest of the patient-tier write
 // matrix.
@@ -326,7 +333,7 @@ router.post(
 // POST /admin/physician-fax-outreach/:id/retry — re-fire a failed/pending row
 // ---------------------------------------------------------------------------
 
-// Tight limit: each retry triggers a live Twilio API call that incurs cost.
+// Tight limit: each retry triggers a live Telnyx API call that incurs cost.
 // 5 retries / 15 min per IP is generous for legitimate manual re-dispatch
 // but blocks runaway automation or misclicks.
 const retryLimiter = rateLimit({
@@ -381,7 +388,7 @@ router.post(
     // Optimistic-concurrency claim: two concurrent retry requests both
     // pass the status check above. Only one UPDATE matches (Postgres
     // serialises row writes); the loser sees zero rows and returns 409
-    // before either touches Twilio — preventing duplicate physician
+    // before either touches Telnyx — preventing duplicate physician
     // faxes. PostgREST round-trips timestamptz losslessly so the
     // updated_at equality is exact.
     const { data: claimed, error: claimErr } = await supabase

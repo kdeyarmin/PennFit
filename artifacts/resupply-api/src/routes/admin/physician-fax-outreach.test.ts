@@ -6,9 +6,9 @@
 //   * 404 when patient doesn't exist
 //   * 400 when prescription doesn't belong to the patient
 //   * 201 happy path: row inserted, audit envelope is non-PHI
-//   * 201 with Twilio dispatch when all three env vars are set
+//   * 201 with Telnyx dispatch when all three env vars are set
 //   * GET ?patientId=… returns rows scoped to that patient
-//   * `providerConfigured` reflects TWILIO_* env vars
+//   * `providerConfigured` reflects TELNYX_* env vars
 //
 // PHI invariant under test: the audit metadata never contains the
 // fax number, physician name, or cover-letter body.
@@ -49,8 +49,8 @@ vi.mock("../../lib/fax-document-token", () => ({
 }));
 
 // Fax client mock — captures sendFax calls.
-const sendFaxMock = vi.fn<() => Promise<{ sid: string; status: string }>>(
-  async () => ({ sid: "FX_test_sid", status: "queued" }),
+const sendFaxMock = vi.fn<() => Promise<{ id: string; status: string }>>(
+  async () => ({ id: "tx_test_id", status: "queued" }),
 );
 vi.mock("@workspace/resupply-telecom", async () => {
   const actual = await vi.importActual<
@@ -58,7 +58,7 @@ vi.mock("@workspace/resupply-telecom", async () => {
   >("@workspace/resupply-telecom");
   return {
     ...actual,
-    createTwilioFaxClient: () => ({ sendFax: sendFaxMock }),
+    createTelnyxFaxClient: () => ({ sendFax: sendFaxMock }),
   };
 });
 
@@ -82,27 +82,28 @@ const VALID_BODY = {
     "Please renew the prescription for the patient below — sent on behalf of Penn Home Medical Supply.",
 };
 
-const TWILIO_FAX_ENV_KEYS = [
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_FAX_FROM_NUMBER",
+const TELNYX_FAX_ENV_KEYS = [
+  "TELNYX_API_KEY",
+  "TELNYX_FAX_CONNECTION_ID",
+  "TELNYX_FAX_FROM_NUMBER",
+  "TELNYX_PUBLIC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
 ] as const;
 
 const originalEnv: Partial<
-  Record<(typeof TWILIO_FAX_ENV_KEYS)[number], string | undefined>
+  Record<(typeof TELNYX_FAX_ENV_KEYS)[number], string | undefined>
 > = {};
 
 beforeEach(() => {
-  for (const k of TWILIO_FAX_ENV_KEYS) originalEnv[k] = process.env[k];
-  for (const k of TWILIO_FAX_ENV_KEYS) delete process.env[k];
+  for (const k of TELNYX_FAX_ENV_KEYS) originalEnv[k] = process.env[k];
+  for (const k of TELNYX_FAX_ENV_KEYS) delete process.env[k];
   mockAdmin.current = null;
   supabaseMock.reset();
   sendFaxMock.mockClear();
   logAuditMock.mockClear();
 });
 afterEach(() => {
-  for (const k of TWILIO_FAX_ENV_KEYS) {
+  for (const k of TELNYX_FAX_ENV_KEYS) {
     if (originalEnv[k] === undefined) delete process.env[k];
     else process.env[k] = originalEnv[k];
   }
@@ -156,7 +157,7 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(res.body.error).toBe("prescription_patient_mismatch");
   });
 
-  it("201s + inserts + audits with non-PHI envelope (no Twilio config)", async () => {
+  it("201s + inserts + audits with non-PHI envelope (no Telnyx config)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
     stageSupabaseResponse("physician_fax_outreach", "insert", {
@@ -204,10 +205,11 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(auditJson).not.toContain("renew the prescription");
   });
 
-  it("dispatches via Twilio and returns status=sent when env vars are set", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+  it("dispatches via Telnyx and returns status=sent when env vars are set", async () => {
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -226,7 +228,7 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(res.body).toMatchObject({
       id: "out_xyz",
       status: "sent",
-      provider: "twilio",
+      provider: "telnyx",
     });
 
     expect(sendFaxMock).toHaveBeenCalledOnce();
@@ -255,19 +257,47 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0]).toMatchObject({
       status: "sent",
-      vendor_ref: "FX_test_sid",
-      vendor_name: "twilio",
+      vendor_ref: "tx_test_id",
+      vendor_name: "telnyx",
     });
   });
 
-  it("returns status=failed and stamps DB when Twilio throws", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+  it("does not dispatch (stays pending) when TELNYX_PUBLIC_KEY is missing", async () => {
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+    // TELNYX_PUBLIC_KEY intentionally unset — without it the webhook router
+    // rejects every status/inbound callback, so dispatching would send a fax
+    // we could never get a delivery/failure update for.
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("physician_fax_outreach", "insert", {
+      data: { id: "out_nopubkey" },
+    });
+
+    const res = await request(makeApp())
+      .post("/admin/physician-fax-outreach")
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      status: "pending",
+      provider: "not_configured",
+    });
+    expect(sendFaxMock).not.toHaveBeenCalled();
+  });
+
+  it("returns status=failed and stamps DB when Telnyx throws", async () => {
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     sendFaxMock.mockRejectedValueOnce(
-      Object.assign(new Error("Twilio 400"), { name: "TwilioApiError" }),
+      Object.assign(new Error("Telnyx 422"), { name: "TelnyxApiError" }),
     );
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -284,7 +314,7 @@ describe("POST /admin/physician-fax-outreach", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.status).toBe("failed");
-    expect(res.body.provider).toBe("twilio");
+    expect(res.body.provider).toBe("telnyx");
     expect(typeof res.body.dispatchError).toBe("string");
 
     const updates = getSupabaseWritePayloads(
@@ -342,10 +372,11 @@ describe("GET /admin/physician-fax-outreach", () => {
     expect(res.body.providerConfigured).toBe(false);
   });
 
-  it("returns providerConfigured=true when Twilio vars are set", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+  it("returns providerConfigured=true when Telnyx vars are set", async () => {
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -367,7 +398,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     expect(res.status).toBe(401);
   });
 
-  it("503s when Twilio is not configured", async () => {
+  it("503s when Telnyx is not configured", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     const res = await request(makeApp()).post(
       "/admin/physician-fax-outreach/out_1/retry",
@@ -377,9 +408,10 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
   });
 
   it("404s when outreach row not found", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -393,9 +425,10 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
   });
 
   it("409s when row is already sent (double-billing guard)", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -417,9 +450,10 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
   });
 
   it("409s when row is already delivered", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -440,9 +474,10 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
   });
 
   it("retries a failed row and returns status=sent", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token_test";
-    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_API_KEY = "KEYtest";
+    process.env.TELNYX_FAX_CONNECTION_ID = "conn_test";
+    process.env.TELNYX_FAX_FROM_NUMBER = "+12155550000";
+    process.env.TELNYX_PUBLIC_KEY = "cHVibGljLWtleQ==";
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
@@ -468,7 +503,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     expect(res.body).toMatchObject({
       id: "out_1",
       status: "sent",
-      provider: "twilio",
+      provider: "telnyx",
     });
 
     expect(sendFaxMock).toHaveBeenCalledOnce();
@@ -481,8 +516,8 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     expect(updates).toHaveLength(2);
     expect(updates[1]).toMatchObject({
       status: "sent",
-      vendor_ref: "FX_test_sid",
-      vendor_name: "twilio",
+      vendor_ref: "tx_test_id",
+      vendor_name: "telnyx",
     });
   });
 });

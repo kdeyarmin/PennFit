@@ -208,9 +208,10 @@ router.use(shopRouter);
 // a clean 503 (or TwiML 503 for vendor-only paths) rather than a 404.
 router.use(voiceRouter);
 router.use(smsRouter);
-// /fax/document/:token  — signed cover-letter PDF fetched by Twilio
-// /fax/status-callback  — Twilio fax delivery lifecycle webhook
-router.use(faxRouter); // /rx-request/document/:token — Twilio fetches a fully-rendered
+// /fax/document/:token  — signed cover-letter PDF fetched by Telnyx.
+// The Telnyx webhooks (/fax/inbound, /fax/status-callback) are mounted
+// separately in app.ts (raw body for Ed25519), not via this router.
+router.use(faxRouter); // /rx-request/document/:token — Telnyx fetches a fully-rendered
 // pre-populated prescription PDF here when an admin dispatches a
 // prescription-request packet. Token-gated; signed HMAC w/ 24h TTL.
 router.use(rxRequestDocumentRouter);
@@ -296,12 +297,12 @@ router.use(patientIntegrationsRouter);
 // the rate of calendar-only reminders.
 router.use(smartTriggersRouter);
 // /admin/physician-fax-outreach — record + dispatch physician-fax
-// Rx-renewal requests (Phase G.6). Dispatches via Twilio when
-// TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FAX_FROM_NUMBER
+// Rx-renewal requests (Phase G.6). Dispatches via Telnyx when
+// TELNYX_API_KEY / TELNYX_FAX_CONNECTION_ID / TELNYX_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
 // /admin/(patients/:id)/prescription-requests — physician-faxable
-// pre-populated prescriptions. Twilio dispatch, signed-PDF return,
+// pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
 router.use(prescriptionRequestsRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting

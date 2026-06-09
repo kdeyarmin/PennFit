@@ -73,11 +73,34 @@ export {
   type WithRetryHooks,
 } from "./retry";
 
+// Faxes go through Telnyx (Twilio retired Programmable Fax). The Twilio
+// REST client / SMS / voice / signature wrappers above stay on Twilio;
+// only fax moved.
 export {
-  createTwilioFaxClient,
+  createTelnyxFaxClient,
+  TelnyxConfigError,
+  TelnyxApiError,
   type SendFaxInput,
   type SendFaxResult,
-  type TwilioFaxClient,
-  type CreateTwilioFaxClientOptions,
+  type TelnyxFaxClient,
+  type TelnyxFaxQuality,
+  type TelnyxFaxRequestBody,
+  type CreateTelnyxFaxClientOptions,
   type FaxHttpSend,
-} from "./fax";
+} from "./telnyx-fax";
+
+export {
+  validateTelnyxSignature,
+  requireTelnyxSignature,
+  type ValidateTelnyxSignatureInput,
+  type RequireTelnyxSignatureOptions,
+  type TelnyxSignatureRequestLike,
+} from "./telnyx-signature";
+
+export {
+  parseTelnyxFaxEvent,
+  TELNYX_FAX_EVENT_TYPES,
+  type TelnyxFaxEvent,
+  type TelnyxFaxEventType,
+  type ParseTelnyxFaxEventResult,
+} from "./telnyx-webhook";

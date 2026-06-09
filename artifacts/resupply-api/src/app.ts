@@ -25,6 +25,7 @@ import {
 import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
+import faxWebhooksRouter from "./routes/fax/webhooks";
 
 // Register the audit lib's request-id bridge once at import time so
 // any logAudit() call from inside an HTTP request automatically
@@ -203,6 +204,21 @@ app.post(
   "/resupply-api/stripe/webhook",
   express.raw({ type: "application/json", limit: "256kb" }),
   stripeWebhookHandler,
+);
+
+// Telnyx fax webhooks (inbound fax.received + outbound delivery status)
+// are registered BEFORE express.json() for the same reason as Stripe:
+// Telnyx's Ed25519 signature is verified over the EXACT raw body bytes,
+// so the route needs the unparsed Buffer. The requireTelnyxSignature
+// middleware inside the router verifies, then parses the JSON for the
+// handlers. The GET /fax/document/:token route (no body) stays in the
+// main /resupply-api router tree. express.raw is a no-op for the GET
+// document requests that also match this path prefix, so they fall
+// through to the main router unharmed.
+app.use(
+  "/resupply-api/fax",
+  express.raw({ type: "application/json", limit: "256kb" }),
+  faxWebhooksRouter,
 );
 
 // The patient-packet signing endpoint can carry a drawn-signature PNG

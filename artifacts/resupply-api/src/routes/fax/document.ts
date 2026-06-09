@@ -1,6 +1,6 @@
 // GET /fax/document/:token — serves the physician cover letter as a PDF.
 //
-// Twilio fetches this URL immediately after the dispatch call so it can
+// Telnyx fetches this URL immediately after the dispatch call so it can
 // render and transmit the fax. The URL carries a short-lived HMAC-signed
 // token (1 hour TTL) containing only the outreach row ID; no PHI in the
 // URL itself.
@@ -11,7 +11,7 @@
 //     the application logger (pdfkit pipes to res, never to a buffer
 //     that could be accidentally logged).
 //   * No audit event here — the dispatch audit in the POST route is
-//     sufficient; logging every Twilio fetch would add noise without value.
+//     sufficient; logging every Telnyx fetch would add noise without value.
 
 import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";

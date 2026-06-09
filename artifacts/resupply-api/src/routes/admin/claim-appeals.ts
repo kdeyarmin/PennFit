@@ -17,8 +17,8 @@ import {
 } from "@workspace/resupply-db";
 
 import {
-  createTwilioFaxClient,
-  TwilioApiError,
+  createTelnyxFaxClient,
+  TelnyxApiError,
 } from "@workspace/resupply-telecom";
 
 import { renderAppealPdf } from "../../lib/billing/appeal-pdf";
@@ -292,32 +292,32 @@ router.post(
     const token = signAppealFaxToken(letter.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
-    const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
-    let sid: string;
+    let faxId: string;
     try {
-      const result = await createTwilioFaxClient().sendFax({
+      const result = await createTelnyxFaxClient().sendFax({
         to: parsed.data.faxNumber,
         from: fromNumber,
         mediaUrl,
         statusCallbackUrl,
       });
-      sid = result.sid;
+      faxId = result.id;
     } catch (err) {
       const msg =
-        err instanceof TwilioApiError
-          ? `Twilio fax error: ${err.message}`
+        err instanceof TelnyxApiError
+          ? `Telnyx fax error: ${err.message}`
           : `Fax dispatch error: ${String(err)}`;
       logger.warn(
         { event: "appeal_fax_dispatch_failed", appeal_letter_id: letter.id },
-        "claim_appeal.fax: Twilio dispatch failed",
+        "claim_appeal.fax: Telnyx dispatch failed",
       );
       res.status(502).json({ error: "fax_dispatch_failed", message: msg });
       return;
     }
 
-    // Twilio accepted the fax → mark the delivery method. delivered_at is
-    // stamped on Twilio's terminal status-callback in a follow-up; for now
+    // Telnyx accepted the fax → mark the delivery method. delivered_at is
+    // stamped on Telnyx's terminal status-callback in a follow-up; for now
     // the accept timestamp records the hand-off.
     const nowIso = new Date().toISOString();
     const { error: stampErr } = await supabase
@@ -330,10 +330,10 @@ router.post(
         {
           event: "appeal_fax_db_stamp_failed",
           appeal_letter_id: letter.id,
-          vendorRef: sid,
+          vendorRef: faxId,
           err: stampErr,
         },
-        "claim_appeal.fax: fax accepted by Twilio but DB stamp failed",
+        "claim_appeal.fax: fax accepted by Telnyx but DB stamp failed",
       );
     }
 
@@ -345,8 +345,8 @@ router.post(
       targetId: letter.id,
       metadata: {
         claim_id: params.data.claimId,
-        vendor_ref: sid,
-        vendor_name: "twilio",
+        vendor_ref: faxId,
+        vendor_name: "telnyx",
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -354,7 +354,7 @@ router.post(
       logger.warn({ err }, "claim_appeal.faxed audit write failed");
     });
 
-    res.json({ ok: true, vendorRef: sid });
+    res.json({ ok: true, vendorRef: faxId });
   },
 );
 

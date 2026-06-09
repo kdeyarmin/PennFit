@@ -1,108 +1,88 @@
-// POST /fax/inbound — Twilio Programmable Fax inbound webhook.
+// POST /fax/inbound — Telnyx Programmable Fax inbound webhook.
 //
-// When a physician faxes a sleep study, signed Rx, chart note, or
-// any other clinical document to our Twilio fax number, Twilio
-// POSTs this endpoint. We:
-//   1. Validate the Twilio signature.
-//   2. ACK immediately with empty TwiML — Twilio retries 5xx and
-//      will mint a duplicate FaxSid if we don't 2xx within ~15s.
-//   3. On the `Status=received` terminal callback only, persist an
-//      `inbound_faxes` row, download the fax bytes from Twilio's
-//      media URL with basic-auth, and mirror them to GCS so the
-//      CSR triage queue can pull up the PDF whenever (not just
-//      inside Twilio's ~365-day retention window).
+// When a physician faxes a sleep study, signed Rx, chart note, or any
+// other clinical document to our Telnyx fax number, Telnyx POSTs a
+// `fax.received` event to the Fax Application's webhook URL (configured
+// to this endpoint). We:
+//   1. The Telnyx Ed25519 signature is validated by the
+//      requireTelnyxSignature middleware mounted ahead of this handler
+//      (see app.ts — it runs on the RAW body, then hands us parsed JSON).
+//   2. ACK with 200 immediately — Telnyx retries non-2xx, and the media
+//      download below can take several seconds for a multi-page fax.
+//   3. On the terminal `fax.received` event, persist an `inbound_faxes`
+//      row, download the fax bytes from Telnyx's short-lived S3
+//      pre-signed media URL, and mirror them to private object storage so
+//      the CSR triage queue can pull up the PDF after the ~10-minute URL
+//      expiry.
 //   4. Emit a non-PHI audit event.
 //
-// Twilio fax inbound fields (form-urlencoded):
-//   FaxSid    — "FXxxxxxxxxxx…" unique ID for this inbound fax
-//   From      — caller's fax number (PHI — never logged)
-//   To        — our Twilio fax number (not PHI on its own)
-//   Status    — "received" (terminal), "receiving" (in progress)
-//   MediaUrl  — URL to the received fax image (Twilio basic-auth)
-//   NumPages  — page count (safe to log)
-//   Direction — always "inbound"
+// Telnyx fax.received payload (data.payload):
+//   fax_id    — UUID for this inbound fax
+//   from      — caller's fax number (PHI — never logged)
+//   to        — our Telnyx fax number (not PHI on its own)
+//   status    — "received" (terminal)
+//   media_url — S3 pre-signed URL to the received fax (no auth header)
+//   page_count
+//   direction — "inbound"
 //
 // PHI posture
 // -----------
-//   * `From` is stored on the row (CSRs need it to recognize the
+//   * `from` is stored on the row (CSRs need it to recognize the
 //     sending office) but never reaches the application or audit
-//     logger. Audit metadata carries only the FaxSid + counts.
-//   * MediaUrl bytes may contain PHI. They land in GCS under the
-//     same private ACL as patient_documents and are fetched only
-//     through the admin-gated /admin/inbound-faxes/:id/media
-//     signed-URL endpoint.
+//     logger. Audit metadata carries only the fax id + counts.
+//   * media_url bytes may contain PHI. They land in object storage under
+//     the same private ACL as patient_documents and are fetched only
+//     through the admin-gated /admin/inbound-faxes/:id/media signed-URL
+//     endpoint.
 
-import { Router, type IRouter } from "express";
-import { z } from "zod";
+import type { Request, Response } from "express";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { requireTwilioSignature } from "@workspace/resupply-telecom";
+import { parseTelnyxFaxEvent } from "@workspace/resupply-telecom";
 
 import { ingestInboundFax } from "../../lib/fax/ingest-inbound.js";
 import { logger } from "../../lib/logger.js";
 
-const router: IRouter = Router();
+/**
+ * Handler for POST /fax/inbound. The Telnyx Ed25519 signature is
+ * verified by the requireTelnyxSignature middleware (mounted in app.ts
+ * with express.raw) BEFORE this runs; by here `req.body` is the parsed
+ * JSON event.
+ */
+export async function faxInboundHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  // ACK immediately — Telnyx retries on non-2xx. We do the media
+  // download (which can take several seconds) after responding.
+  res.status(200).json({ received: true });
 
-const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => process.env.TWILIO_AUTH_TOKEN,
-  buildPublicUrl: (req) => {
-    const base = (
-      process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (process.env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-        : "")
-    ).replace(/\/+$/u, "");
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
-    return `${base}${originalUrl}`;
-  },
-});
-
-const inboundFaxSchema = z.object({
-  FaxSid: z.string().min(1),
-  // From included server-side for persistence; never returned to a
-  // log line because it's PHI when tied to a physician office.
-  From: z.string().optional(),
-  To: z.string().optional(),
-  Status: z.string().optional(),
-  NumPages: z.coerce.number().int().nonnegative().optional(),
-  Direction: z.string().optional(),
-  MediaUrl: z.string().optional(),
-});
-
-router.post("/fax/inbound", signatureMiddleware, async (req, res) => {
-  // ACK immediately — Twilio retries on 5xx. We MUST 200 within ~15s,
-  // and the media download below can take several seconds for a
-  // multi-page fax.
-  res.status(200).type("text/xml").send("<Response/>");
-
-  const body = (req.body ?? {}) as Record<string, string>;
-  const parsed = inboundFaxSchema.safeParse(body);
-  if (!parsed.success) {
+  const parsed = parseTelnyxFaxEvent(req.body);
+  if (!parsed.ok) {
     logger.warn(
       { event: "fax_inbound_malformed" },
-      "fax/inbound: missing required fields",
+      "fax/inbound: event missing event_type/fax_id",
     );
     return;
   }
 
-  // Only the terminal "received" callback persists. The mid-transfer
-  // "receiving" callback fires once per page on multi-page faxes and
-  // would otherwise insert N rows for the same fax.
-  const { FaxSid, From, To, Status, NumPages, Direction, MediaUrl } =
-    parsed.data;
-  if (Status !== "received") return;
+  const event = parsed.event;
+
+  // Only the terminal inbound `fax.received` event persists. Outbound
+  // lifecycle events (queued/sending/delivered/failed) are routed to
+  // /fax/status-callback via the per-fax webhook_url override, but we
+  // defensively ignore anything that isn't fax.received here so a
+  // mis-routed event can't insert a spurious inbound row.
+  if (event.eventType !== "fax.received") return;
 
   const outcome = await ingestInboundFax(
     {
-      twilioFaxSid: FaxSid,
-      fromE164: From ?? null,
-      toE164: To ?? null,
-      numPages: NumPages ?? null,
+      telnyxFaxId: event.faxId,
+      fromE164: event.from,
+      toE164: event.to,
+      numPages: event.pageCount,
       receivedAt: new Date().toISOString(),
-      mediaUrl: MediaUrl ?? null,
-      twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? null,
-      twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? null,
+      mediaUrl: event.mediaUrl,
     },
     logger,
   );
@@ -115,22 +95,19 @@ router.post("/fax/inbound", signatureMiddleware, async (req, res) => {
         ? outcome.id
         : null,
     metadata: {
-      twilio_fax_sid: FaxSid,
-      num_pages: NumPages ?? null,
-      direction: Direction ?? "inbound",
+      fax_id: event.faxId,
+      num_pages: event.pageCount,
+      direction: event.direction ?? "inbound",
       outcome: outcome.kind,
-      // media_persisted captures whether the PDF made it to GCS so
-      // a CSR investigating "where's the fax" can tell at a glance
-      // whether the media URL is still live in Twilio's retention
-      // window.
+      // media_persisted captures whether the PDF made it to object
+      // storage so a CSR investigating "where's the fax" can tell at a
+      // glance whether they need to chase the (now-expired) media URL.
       media_persisted:
         outcome.kind === "inserted" ? outcome.mediaPersisted : null,
-      // From withheld — PHI when tied to a physician office. The row
+      // from withheld — PHI when tied to a physician office. The row
       // itself carries it under PHI ACL.
     },
   }).catch((err: unknown) => {
     logger.warn({ err }, "fax/inbound: audit write failed");
   });
-});
-
-export default router;
+}
