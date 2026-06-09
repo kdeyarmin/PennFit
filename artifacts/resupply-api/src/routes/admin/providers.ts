@@ -91,6 +91,18 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    // Pagination: clamp to sane bounds. The registry can grow past the
+    // old hard 50-cap, which silently hid the overflow — return total +
+    // a page window so the UI can page through and show "N of M".
+    const DEFAULT_LIMIT = 50;
+    const MAX_LIMIT = 100;
+    const rawLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
+    const rawOffset = Number.parseInt(String(req.query.offset ?? ""), 10);
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(MAX_LIMIT, rawLimit)
+        : DEFAULT_LIMIT;
+    const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
     const supabase = getSupabaseServiceRoleClient();
 
     let query = supabase
@@ -98,9 +110,10 @@ router.get(
       .from("providers")
       .select(
         "id, npi, legal_name, taxonomy_code, phone_e164, fax_e164, email, practice_name, source, verified_at, created_at",
+        { count: "exact" },
       )
       .order("legal_name", { ascending: true })
-      .limit(50);
+      .range(offset, offset + limit - 1);
 
     if (q.length > 0) {
       // If the query is 10 digits, treat it as an NPI exact match. The
@@ -114,10 +127,13 @@ router.get(
       }
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw error;
 
     res.json({
+      total: count ?? 0,
+      limit,
+      offset,
       providers: (data ?? []).map((r) => ({
         id: r.id,
         npi: r.npi,

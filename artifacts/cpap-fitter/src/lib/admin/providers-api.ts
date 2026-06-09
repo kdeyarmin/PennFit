@@ -81,11 +81,21 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function listProviders(query: string = ""): Promise<{
+export async function listProviders(
+  query: string = "",
+  opts: { limit?: number; offset?: number } = {},
+): Promise<{
   providers: ProviderListItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }> {
-  const qs = query ? `?q=${encodeURIComponent(query)}` : "";
-  return jsonFetch(`/admin/providers${qs}`);
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.offset != null) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return jsonFetch(`/admin/providers${qs ? `?${qs}` : ""}`);
 }
 
 export async function lookupNppes(npi: string): Promise<{

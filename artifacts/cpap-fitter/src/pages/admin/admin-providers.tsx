@@ -27,6 +27,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { Pagination } from "@/components/admin/Pagination";
 import {
   createProvider,
   listProviderCaseload,
@@ -38,16 +39,19 @@ import {
   type ProviderSource,
 } from "@/lib/admin/providers-api";
 
-const queryKey = (q: string) => ["admin", "providers", q] as const;
+const PAGE_SIZE = 50;
+const queryKey = (q: string, offset: number) =>
+  ["admin", "providers", q, offset] as const;
 
 export function AdminProvidersPage() {
   const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
   const [showAdd, setShowAdd] = useState(false);
   const qc = useQueryClient();
 
   const { data, isPending, isError, error, refetch } = useQuery({
-    queryKey: queryKey(search),
-    queryFn: () => listProviders(search),
+    queryKey: queryKey(search, offset),
+    queryFn: () => listProviders(search, { limit: PAGE_SIZE, offset }),
   });
 
   return (
@@ -74,7 +78,12 @@ export function AdminProvidersPage() {
             placeholder="Search by name or NPI"
             aria-label="Search by name or NPI"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              // New search → back to the first page so the result window
+              // isn't stranded past the end of a smaller result set.
+              setOffset(0);
+            }}
           />
         </div>
         {isPending ? (
@@ -86,7 +95,16 @@ export function AdminProvidersPage() {
             {search ? "No matches." : "No providers in the registry yet."}
           </p>
         ) : (
-          <ProvidersTable rows={data.providers} />
+          <>
+            <ProvidersTable rows={data.providers} />
+            <Pagination
+              total={data.total}
+              limit={data.limit}
+              offset={data.offset}
+              onChange={setOffset}
+              isLoading={isPending}
+            />
+          </>
         )}
       </Card>
 
