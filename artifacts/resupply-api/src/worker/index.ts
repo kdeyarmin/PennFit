@@ -48,6 +48,7 @@ import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
+import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
 import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
@@ -502,6 +503,13 @@ async function doStartWorker(): Promise<void> {
   // feature flag is flipped ON in the admin Control Center (opt-in — it
   // emits outbound 837P claim files).
   await registerAutoSubmitBatchJob(boss);
+
+  // Bill-hold sweep (0253). Backfills the default signed-paperwork
+  // requirement set onto draft claims that lack one (so the hold covers
+  // ALL claims) and auto-bumps stale reminders. Queue + worker always
+  // register; the recurring cron attaches only when BILL_HOLD_SWEEP_CRON
+  // is set (opt-in — it seeds holds across the draft-claim backlog).
+  await registerBillHoldSweepJob(boss);
 
   // Proactive clinical outreach (RT #23). Queue + worker always register;
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set

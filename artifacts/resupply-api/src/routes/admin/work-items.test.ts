@@ -38,6 +38,7 @@ const EMPTY = {
   shopFollowups: [],
   patientFollowups: [],
   faxes: [],
+  paperwork: [],
 };
 
 function makeApp(): Express {
@@ -90,6 +91,7 @@ describe("buildWorkItems", () => {
         reviews: [{ id: "v1", created_at: NOW }],
         documents: [{ id: "d1", created_at: NOW }],
         patientFollowups: [{ id: "p1", created_at: NOW, due_at: NOW }],
+        paperwork: [{ id: "pw1", created_at: NOW }],
       },
       NOW,
     );
@@ -99,6 +101,7 @@ describe("buildWorkItems", () => {
       v1: "review",
       d1: "patient_document",
       p1: "followup",
+      pw1: "paperwork",
     });
   });
 
