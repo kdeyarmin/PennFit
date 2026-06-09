@@ -47,6 +47,7 @@
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getResponseText,
+  sendWithRetry,
   type AnthropicClient,
 } from "@workspace/resupply-ai";
 
@@ -276,7 +277,10 @@ export async function summarizePostCall(
     };
   }
   const userMessage = buildTranscriptMessage(input);
-  const result = await input.client.send({
+  // Retry a transient blip — the post-call summary is fire-and-forget
+  // after hangup, so a couple hundred ms of backoff costs nothing and
+  // lifts the success rate on flaky upstream windows.
+  const result = await sendWithRetry(input.client, {
     model: input.model ?? DEFAULT_ANTHROPIC_MODEL_CHAT,
     max_tokens: 600,
     temperature: 0,

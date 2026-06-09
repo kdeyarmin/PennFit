@@ -24,6 +24,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getAnthropicClient,
   getResponseText,
+  sendWithRetry,
 } from "../llm-provider";
 import { logger } from "../logger";
 
@@ -179,7 +180,9 @@ export async function extractFaxFields(input: {
       };
 
   const startedAt = Date.now();
-  const result = await client.send({
+  // Retry a transient 429 / 5xx / network blip before failing the OCR
+  // pass — non-streaming, so replay is safe.
+  const result = await sendWithRetry(client, {
     model: DEFAULT_ANTHROPIC_MODEL_CHAT,
     max_tokens: 1024,
     temperature: 0,
