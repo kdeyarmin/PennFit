@@ -69,7 +69,17 @@ export async function faxInboundHandler(
     return;
   }
 
-  await processInboundFaxEvent(parsed.event);
+  try {
+    await processInboundFaxEvent(parsed.event);
+  } catch (err) {
+    // Telnyx already received its 200 and won't retry, so a post-ACK
+    // throw would otherwise reach Express's default handler (response
+    // already sent) and skip structured logging. Log it here.
+    logger.warn(
+      { event: "fax_inbound_post_ack_failed", err },
+      "fax/inbound: post-ACK processing failed",
+    );
+  }
 }
 
 // Post-ACK work for an inbound fax event. Exported so the unified

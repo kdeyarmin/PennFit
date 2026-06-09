@@ -67,10 +67,25 @@ export async function faxWebhookHandler(
   }
 
   const event = parsed.event;
-  if (event.eventType === "fax.received") {
-    await processInboundFaxEvent(event);
-  } else {
-    await processOutboundFaxEvent(event);
+  try {
+    if (event.eventType === "fax.received") {
+      await processInboundFaxEvent(event);
+    } else {
+      await processOutboundFaxEvent(event);
+    }
+  } catch (err) {
+    // Telnyx already received its 200 and won't retry, so a post-ACK
+    // throw would otherwise reach Express's default error handler
+    // (response already sent) and skip our structured logging. Log it
+    // here so post-ACK failures stay observable.
+    logger.warn(
+      {
+        event: "fax_webhook_post_ack_failed",
+        telnyx_event_type: event.eventType,
+        err,
+      },
+      "fax/webhook: post-ACK processing failed",
+    );
   }
 }
 
