@@ -674,6 +674,7 @@ async function dispatchPacketFax(
       .from("prescription_request_packets")
       .update(update)
       .eq("id", packet.id);
+    if (stampErr) {
       logger.warn(
         {
           packet_id: packet.id,
@@ -682,9 +683,15 @@ async function dispatchPacketFax(
         },
         "prescription_request.send.db_stamp_failed",
       );
-        "prescription_request.send.db_stamp_failed",
-      );
     }
+    await recordTrackingSent(
+      supabase,
+      "prescription_request",
+      packet.id,
+      "fax",
+    ).catch((err) => {
+      logger.warn({ err }, "prescription_request.tracking_sent failed");
+    });
     await logAudit({
       action: isResend
         ? "prescription_request.resent_fax"
