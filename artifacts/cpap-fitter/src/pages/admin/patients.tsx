@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   keepPreviousData,
@@ -12,6 +12,7 @@ import {
   ListPatientsStatus,
   useBulkUpdatePatientStatus,
   useCreatePatient,
+  useGetAdminMe,
   useImportPatientsCsv,
   useListPatients,
 } from "@workspace/api-client-react/admin";
@@ -153,6 +154,30 @@ export function PatientsPage() {
       .filter((l) => l.isActive)
       .map((l) => ({ value: l.id, label: l.name })),
   ];
+
+  // Soft branch default (multi-location #O1, phase 3): when the signed-in
+  // staff member has a home branch AND the URL didn't already pin a
+  // branch, pre-select their branch once. They can still switch to any
+  // branch or "All branches" — this is a convenience default, not an
+  // access gate (the server enforces nothing; unassigned staff see all).
+  const meQuery = useGetAdminMe();
+  const urlSeededLocation = useMemo(
+    () => initialPatientFilters().locationId !== "",
+    [],
+  );
+  const appliedHomeBranchRef = useRef(false);
+  useEffect(() => {
+    if (appliedHomeBranchRef.current) return;
+    if (urlSeededLocation) {
+      appliedHomeBranchRef.current = true;
+      return;
+    }
+    const homeBranch = meQuery.data?.locationId;
+    if (homeBranch) {
+      setFilter("locationId", homeBranch);
+      appliedHomeBranchRef.current = true;
+    }
+  }, [meQuery.data?.locationId, urlSeededLocation, setFilter]);
 
   useEffect(() => {
     const trimmed = searchInput.trim();

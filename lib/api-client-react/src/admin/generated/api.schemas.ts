@@ -94,6 +94,13 @@ configured, NODE_ENV=development) returns `admin`.
    * "no extra permissions" (fail-closed).
    */
   permissions?: string[];
+  /**
+   * The caller's home branch (location) id, from admin_users.location_id
+   * (multi-location #O1). Drives the SPA's soft default branch filter on
+   * the patients list. Null/absent = unassigned, treated as org-wide (no
+   * restriction). Not an access gate — purely a UX default.
+   */
+  locationId?: string | null;
 }
 
 /**

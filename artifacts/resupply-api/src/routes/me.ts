@@ -61,6 +61,11 @@ router.get("/me", adminReadRateLimiter, requireAdmin, (req, res) => {
     email: req.adminEmail ?? "",
     role: req.adminRole ?? "admin",
     permissions: permissionsForRole(role),
+    // Home branch (multi-location #O1). Drives the SPA's soft default
+    // branch filter; null = unassigned (treated as org-wide, no
+    // restriction). Not an access gate — the server enforces nothing on
+    // this value.
+    locationId: req.adminLocationId ?? null,
   });
 });
 
