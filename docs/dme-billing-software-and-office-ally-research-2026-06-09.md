@@ -42,23 +42,51 @@ onto what PennFit actually emits and how an operator drives it.
    breadth, fax, form-fill (CMN/DWO), and "legacy-friendly" last-mile plumbing**,
    not on claim accuracy or workflow intelligence.
 
-3. **"Most accurate"** is largely true today, with **four concrete, citable EDI
-   gaps** that matter for DME specifically (NTE narrative for miscellaneous
-   HCPCS, line-level ordering-provider loop, CMN/DWO form generation, and
-   line-level COGS for revenue-integrity). None is a correctness bug for the
-   bread-and-butter CPAP resupply codes; each is a DME edge that costs a denial
-   when it hits. They're listed in §5 with file references and effort.
+3. **"Most accurate"** is true today. A line-by-line code verification (see
+   the **Verification update** below) found that almost everything the first
+   draft of this doc listed as a "gap" is **already shipped** — CMN/DWO PDF
+   generation, line-level COGS, 276/277 claim status, secondary-COB, and
+   automatic payer-modifier stamping all exist and are wired. The one genuine
+   accuracy gap was the **NTE narrative for miscellaneous/NOC HCPCS** (E1399,
+   A9999, …), which Medicare DME requires; that has now been **closed in this
+   PR** (837P builder + DB column + preflight block — §5). One capability is
+   deliberately built-but-dormant: the **line-level ordering-provider loop
+   (2420E)**, shipped in the builder, off by default pending a live 277CA
+   validation.
 
-4. **"Easiest to use"** is the bigger lever. The engine is strong; the
-   last-mile is where billers fall back to manual work ~15–20% of the time —
-   **outbound fax, a proactive 276/277 "where's my claim?" workflow, and a
-   one-click secondary-claim UI**. These are §6.
+4. **"Easiest to use"** is in similarly good shape. The last-mile pieces the
+   first draft flagged are mostly built — a **276/277 claim-status** path, a
+   **one-click secondary-COB worklist**, and **outbound fax for appeal
+   letters** all exist. The remaining usability seams are narrow (§6): fax
+   **dispatch** for prior-auth request forms (appeals already fax), and a full
+   CMS-484 _clinical_ PDF (the DWO/CMN _cover_ already renders).
 
 **Bottom line:** keep Office Ally; PennFit already _is_ a best-in-class DME
-billing system for a tech-forward single-location supplier. To make it
-unambiguously "the most accurate and easiest to use," close the four accuracy
-edges and the three usability last-mile gaps in §5–§6. None requires switching
-vendors or re-architecting.
+billing system for a tech-forward single-location supplier — materially more
+complete than the first pass of this research assumed. The single real accuracy
+gap is closed in this PR; what remains (§5–§6) is a short, well-scoped list, and
+none of it requires switching vendors or re-architecting.
+
+---
+
+## Verification update (2026-06-09, same day)
+
+> The gap analysis in the first draft was built from a **route-only** survey of
+> the codebase and **overstated what's missing**. A follow-up pass that traced
+> each capability through its full stack (library → mounted route → admin SPA
+> page) corrected it. The corrected verdicts are folded into §5–§7 below; the
+> raw findings:
+>
+> | Capability | First-draft claim | **Verified state** | Evidence |
+> | --- | --- | --- | --- |
+> | NTE narrative (NOC HCPCS) | missing | **shipped in this PR** | `edi/837p.ts`; `0248_claim_line_narrative.sql`; `claim-preflight.ts` |
+> | Line-level ordering provider (2420E) | missing | **builder shipped, off by default** | `edi/837p.ts` (gated pending live 277CA) |
+> | CMN / DWO form generation | "tracked only, manual" | **DONE** (PDF + route + worklist) | `lib/billing/dwo-pdf.ts:143` `renderDwoPdf()`; `routes/admin/dwo-documents.ts` `GET …/pdf`; `cmn-documents.ts`; `admin-billing-cmn-worklist.tsx`. _Refinement open:_ the full CMS-484 **clinical** questionnaire PDF (the cover renders today). |
+> | Line-level COGS | missing | **DONE** | `lib/billing/claim-builder.ts:314-325` stamps `unit_cost_cents`/`cost_source` (migration 0193) |
+> | 276/277 claim status | "no workflow" | **DONE** | `lib/billing/claim-status-checker.ts`; `routes/admin/claim-status.ts`; inbound-277 poller |
+> | Secondary-COB UI | "logic only" | **DONE** | `routes/admin/secondary-claims.ts` (worklist + one-click `generate-secondary` + line copy); `admin-secondary-claims.tsx` |
+> | Modifier stamping | "not on manual claims" | **DONE (auto); N/A for manual** | `claim-builder.ts:327-368` auto-applies `payer_modifier_rules`; manual claims are intentionally header-only (corrections/voids carry no lines) |
+> | Outbound fax | "missing" | **DONE for appeals; PA dispatch open** | `lib/resupply-telecom/src/telnyx-fax.ts`; `routes/fax/document.ts` renders appeal PDFs; `claim-appeals.ts` faxes. `prior-auth-request-form.ts` produces a faxable PDF + destination but doesn't auto-dispatch |
 
 ---
 
@@ -252,40 +280,47 @@ drugs) is correctly out of scope for CPAP/DME resupply.
 
 ---
 
-## 5. Accuracy gaps — prioritized, with file references
+## 5. Accuracy — the open list (post-verification)
 
-| # | Gap | DME impact | Effort | Where |
+After the verification pass the accuracy list collapses to one shipped fix and
+two follow-ons:
+
+| # | Item | DME impact | Status / effort | Where |
 | --- | --- | --- | --- | --- |
-| A1 | **NTE narrative for NOC/misc HCPCS** (E1399 etc.) — required by Medicare DME | Denial on every NOC line until added manually | **S** (additive `NTE*ADD`, unit-testable; then surface a narrative field on the claim line in the manual-claim route/UI) | `edi/837p.ts`; `routes/admin/manual-claim.ts`; `pages/admin/admin-billing-manual-claim.tsx` |
-| A2 | **Line-level ordering-provider loop 2420E (`DK`)** | Possible Medicare DME edit rejection; today relies on 2310D being accepted | **S–M** (validate against first live 277CA before building) | `edi/837p.ts` |
-| A3 | **CMN / DWO / SWO form generation** | Tracked for expiry only; the order document itself is produced by hand | **M** (PDF templates like the existing GFE/appeal renderers) | `routes/admin/cmn-documents.ts`; new PDF renderer |
-| A4 | **Line-level COGS denormalized onto claim lines** | Margin/revenue-integrity checks read a separate COGS snapshot; no per-line guard that billed ≥ cost | **S** (denormalize on draft build) | `insurance_claim_line_items` schema; `fulfillment-to-claim.ts` |
+| A1 | **NTE narrative for NOC/misc HCPCS** (E1399 etc.) — required by Medicare DME | Denial on every narrative-less NOC line | **DONE (this PR)** — `NTE*ADD` in builder; `narrative` column; preflight ERROR blocks submit until set | `edi/837p.ts`; `0248_claim_line_narrative.sql`; `office-ally-batch.ts`; `claim-preflight.ts` |
+| A2 | **Line-level ordering-provider loop 2420E (`DK`)** | Possible Medicare DME PECOS edit rejection; today relies on 2310D being accepted | **Built, dormant** — capability + tests shipped; activate the per-line wiring only after a live 277CA confirms 2310D is rejected | `edi/837p.ts` (`ServiceLine.orderingProvider`) |
+| A5 | **Full CMS-484 _clinical_ CMN PDF** | The DWO/CMN **cover** renders today; the answered clinical questionnaire doesn't | **S–M**, optional — most CMNs were retired by CMS; low frequency | `lib/billing/cmn-forms.ts` (Q&A model), `dwo-pdf.ts` (cover renderer to extend) |
 
-The **modifier/KX/capped-rental** traps from §1.2 are **already handled** by
-`payer_modifier_rules` (conditions `if_rental_month_le_3` / `_ge_4` /
-`if_compliant_90day` / …) + the capped-rental automation + the
-`admin-billing-capped-rentals` page. Same-or-Similar is a manual HETS entry
-today (documented; automating the HETS 270 needs a CMS HETS connection).
-**Eligibility** is enforced at order-confirm and claim-preflight via the cached
-271. So the high-frequency denial causes are covered; A1–A4 are the residue.
+**Already covered (do not re-build):** line-level COGS (`claim-builder.ts`,
+migration 0193); the **modifier/KX/capped-rental** traps from §1.2
+(`payer_modifier_rules` conditions `if_rental_month_le_3` / `_ge_4` /
+`if_compliant_90day` + capped-rental automation + `admin-billing-capped-rentals`);
+eligibility enforced at order-confirm and claim-preflight via the cached 271.
+Same-or-Similar stays a manual HETS entry (automating the HETS 270 needs a CMS
+HETS connection).
 
 ---
 
-## 6. Ease of use — the last-mile gaps that force manual work
+## 6. Ease of use — the open list (post-verification)
 
-The engine is strong; usability friction is concentrated in the **last mile**,
-where billers fall back to manual steps ~15–20% of the time:
+The last-mile is far more built than the first draft assumed. Verified present:
+the **276/277 claim-status** path (`claim-status-checker.ts` +
+`routes/admin/claim-status.ts` + inbound-277 poller), the **one-click
+secondary-COB worklist** (`secondary-claims.ts` + `admin-secondary-claims.tsx`),
+and **outbound fax for appeal letters** (`telnyx-fax.ts` + `routes/fax/document.ts`
++ `claim-appeals.ts`). Manual claims are intentionally header-only, so there is
+no "stamp modifiers on manual claims" gap — fulfillment-derived claims auto-stamp
+via `claim-builder.ts`. What's genuinely left:
 
 | # | Gap | Why it hurts usability | Effort | Where |
 | --- | --- | --- | --- | --- |
-| U1 | **No outbound fax.** ~40% of payers still require faxed appeals/PAs. Today: render PDF → print → fax by hand. | Breaks the otherwise one-click denial/PA flow | **M** (fax vendor — Twilio/Documo/Phaxio; appeal & PA PDFs already render) | `claim-appeals.ts`, `prior-auth-request-form.ts` |
-| U2 | **No proactive 276/277 "where's my claim?" workflow.** Builder + parser exist; no CSR queue to chase silent claims. | Billers wait for EOBs instead of asking | **S–M** (wire existing `276.ts`/`parse-277.ts` to a worklist, mirroring the eligibility worklist) | new `routes/admin/claim-status-worklist.ts`; reuse `edi/276.ts` |
-| U3 | **Secondary-claim routing is logic-only, no UI.** COB belt exists in `837p.ts`; no one-click "this is secondary-eligible → generate COB claim." | Manual to find + build secondary claims | **S–M** | `routes/admin/secondary-claims.ts`; new SPA panel |
-| U4 | **Modifier rules not one-click on manual claims.** Rules are exposed via API but the manual-claim screen doesn't stamp them. | Re-typing KX/RR/NU by hand invites the §1.2 modifier errors | **S** | `pages/admin/admin-billing-manual-claim.tsx` |
+| U1 | **Prior-auth request forms aren't auto-faxed.** The route renders a faxable PDF + returns the payer fax number, but a CSR still kicks off the send (appeal letters already auto-fax). | One manual step the appeal path doesn't have | **S** — mirror the `claim-appeals.ts` → `fax/document.ts` signed-URL + `sendFax()` pattern | `routes/admin/prior-auth-request-form.ts`; `lib/billing/pa-request-pdf.ts` |
+| U6 | **No admin UI field for the new line `narrative`.** A1 ships the API + preflight block; the SPA line editor doesn't expose the field yet. | CSR sets the narrative via API/scrubber, not a form input | **XS** | `artifacts/cpap-fitter/src/pages/admin/` claim line editor |
 
-NikoHealth's reputation as "easiest to use" is built almost entirely on
-automating exactly this last mile. Closing U1–U4 is what would let PennFit claim
-the same — on top of a denial-intelligence layer Niko doesn't have.
+NikoHealth's reputation as "easiest to use" is built on automating exactly this
+last mile — and PennFit is already there on the big pieces (claim status,
+secondary COB, appeal fax), on top of a denial-intelligence layer Niko doesn't
+have. U1 + U6 are the small remaining seams.
 
 ---
 
@@ -299,21 +334,29 @@ the same — on top of a denial-intelligence layer Niko doesn't have.
   transport) — it's why real-time eligibility was a contained add and why A1/A2
   are isolated changes.
 
-**Do next (highest value, lowest risk first):**
+**Done in this PR:**
 
-1. **U1 — outbound fax.** Single biggest usability unlock; the PDFs already
-   render. (M)
-2. **A1 — NTE narrative + manual-claim narrative field.** Closes a hard
-   Medicare-DME denial cause; additive and unit-testable. (S)
-3. **U4 — one-click modifier-rule stamping on manual claims.** Cheap; directly
-   prevents the most common denial class (modifier errors). (S)
-4. **U2 — 276/277 claim-status worklist.** Reuses built EDI; turns "wait for
-   EOB" into "chase silent claims." (S–M)
-5. **U3 — secondary-claim UI.** Activates dormant COB logic. (S–M)
-6. **A3 — CMN/DWO/SWO PDF generation.** (M)
-7. **A4 — line-level COGS guard.** (S)
-8. **A2 — line-level ordering-provider loop** — only after validating against a
-   live 277CA batch that 2310D is being rejected.
+- **A1 — NTE narrative end-to-end** (the one real accuracy gap): `NTE*ADD` in
+  the 837P builder, a `narrative` line column (migration 0248), the line PATCH
+  endpoint, the batch mapping, and a preflight **error** that blocks submit
+  when a NOC/miscellaneous HCPCS line has no narrative.
+- **A2 capability** — line-level ordering-provider loop 2420E in the builder,
+  off by default (tests included), ready to activate.
+
+**Do next (short, post-verification list — highest value first):**
+
+1. **U6 — surface the `narrative` field in the SPA line editor.** Finishes A1's
+   last mile so a CSR types the narrative in a form, not the API. (XS)
+2. **U1 — auto-fax prior-auth request forms.** Mirror the appeal-letter fax
+   path; the PA PDF + payer fax number already exist. (S)
+3. **A2 activation** — wire the per-line ordering provider into the live claim
+   path **only after** a live 277CA batch confirms 2310D is being rejected.
+4. **A5 — full CMS-484 clinical CMN PDF** — optional; the cover already renders
+   and CMNs are mostly retired. (S–M)
+
+Everything else the first draft listed (CMN/DWO cover PDF, line COGS, 276/277
+status, secondary COB, modifier auto-stamp) is **already shipped** — see the
+Verification update.
 
 **Operational (no code):**
 
