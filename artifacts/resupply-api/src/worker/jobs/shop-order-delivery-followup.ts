@@ -202,7 +202,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
     }
 
     const releaseClaim = async (): Promise<void> => {
-      await supabase
+      const { error: releaseErr } = await supabase
         .schema("resupply")
         .from("shop_orders")
         .update({
@@ -210,6 +210,12 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
           updated_at: new Date().toISOString(),
         })
         .eq("id", claimed.id);
+      if (releaseErr) {
+        logger.error(
+          { err: releaseErr.message, orderId: claimed.id },
+          "shop-order-delivery-followup: releaseClaim failed — order may remain claimed",
+        );
+      }
     };
 
     let recipient: ResolvedRecipient | null;
