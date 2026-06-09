@@ -575,7 +575,12 @@ export function demoSystemInfo() {
         authTokenConfigured: true,
         messagingServiceConfigured: true,
         voicePhoneConfigured: true,
-        faxPhoneConfigured: false,
+      },
+      telnyx: {
+        apiKeyConfigured: true,
+        faxConnectionConfigured: true,
+        faxFromConfigured: false,
+        webhookPublicKeyConfigured: true,
       },
       stripe: { secretKeyConfigured: true, webhookSecretConfigured: true },
       objectStorage: { privateBucketConfigured: true },

@@ -107,7 +107,13 @@ router.get(
             vendorEnv.TWILIO_MESSAGING_SERVICE_SID,
           ),
           voicePhoneConfigured: Boolean(vendorEnv.TWILIO_VOICE_PHONE_NUMBER),
-          faxPhoneConfigured: Boolean(vendorEnv.TWILIO_FAX_FROM_NUMBER),
+        },
+        // Fax runs on Telnyx (Twilio retired Programmable Fax).
+        telnyx: {
+          apiKeyConfigured: Boolean(vendorEnv.TELNYX_API_KEY),
+          faxConnectionConfigured: Boolean(vendorEnv.TELNYX_FAX_CONNECTION_ID),
+          faxFromConfigured: Boolean(vendorEnv.TELNYX_FAX_FROM_NUMBER),
+          webhookPublicKeyConfigured: Boolean(vendorEnv.TELNYX_PUBLIC_KEY),
         },
         stripe: {
           secretKeyConfigured: Boolean(vendorEnv.STRIPE_SECRET_KEY),

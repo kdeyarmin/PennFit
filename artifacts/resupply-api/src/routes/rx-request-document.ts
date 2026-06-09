@@ -1,7 +1,7 @@
 // GET /rx-request/document/:token — public token-gated endpoint
 // serving the fully-rendered prescription-request PDF.
 //
-// Twilio fetches this immediately after the dispatch call to obtain
+// Telnyx fetches this immediately after the dispatch call to obtain
 // the fax media. The token carries the packet row id + a short-lived
 // HMAC signature; no PHI in the URL itself.
 //
@@ -10,7 +10,7 @@
 //   * Response streams directly to res; PDF bytes never touch the
 //     application logger.
 //   * No per-request audit row — the dispatch audit on the admin
-//     create/send route is sufficient and Twilio fetch traffic
+//     create/send route is sufficient and Telnyx fetch traffic
 //     would otherwise flood the log.
 
 import { Router, type IRouter, type Request } from "express";

@@ -22,7 +22,7 @@
 //          admin session.
 //
 //   POST   /admin/prescription-requests/:id/send-fax
-//          Dispatch via Twilio. Idempotent: a packet already in
+//          Dispatch via Telnyx. Idempotent: a packet already in
 //          status=sent_fax returns 409 (CSR should use re-send
 //          which is a deliberate follow-up, not implemented yet).
 //
@@ -53,8 +53,8 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 import {
-  createTwilioFaxClient,
-  TwilioApiError,
+  createTelnyxFaxClient,
+  TelnyxApiError,
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
@@ -387,7 +387,7 @@ router.post(
       return;
     }
 
-    // Verify inputs render before dispatch so we don't fire a Twilio
+    // Verify inputs render before dispatch so we don't fire a Telnyx
     // bill on a packet that the public fetch would 422 on.
     const resolved = await resolvePrescriptionRequestInputs(
       supabase,
@@ -410,15 +410,15 @@ router.post(
     }
 
     // Configuration check: same posture as physician-fax-outreach
-    // (TWILIO_ACCOUNT_SID + AUTH_TOKEN + FAX_FROM_NUMBER + public base
-    // URL). When unconfigured, leave the packet in draft so the CSR
-    // can re-fire after env is set; surface a 503 so the UI can show
-    // an actionable error.
+    // (TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER
+    // + public base URL). When unconfigured, leave the packet in draft so
+    // the CSR can re-fire after env is set; surface a 503 so the UI can
+    // show an actionable error.
     const baseUrl = getFaxPublicBaseUrl();
-    const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER?.trim();
+    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER?.trim();
     if (
-      !process.env.TWILIO_ACCOUNT_SID?.trim() ||
-      !process.env.TWILIO_AUTH_TOKEN?.trim() ||
+      !process.env.TELNYX_API_KEY?.trim() ||
+      !process.env.TELNYX_FAX_CONNECTION_ID?.trim() ||
       !fromNumber ||
       !baseUrl
     ) {
@@ -429,7 +429,7 @@ router.post(
     const token = signPrescriptionRequestToken(packet.id);
     const mediaUrl = `${baseUrl}/resupply-api/rx-request/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
-    const faxClient = createTwilioFaxClient();
+    const faxClient = createTelnyxFaxClient();
     const nowIso = new Date().toISOString();
     try {
       const result = await faxClient.sendFax({
@@ -444,8 +444,8 @@ router.post(
         sent_at: nowIso,
         failed_at: null,
         failure_reason: null,
-        vendor_ref: result.sid,
-        vendor_name: "twilio",
+        vendor_ref: result.id,
+        vendor_name: "telnyx",
         updated_at: nowIso,
       };
       const { error: stampErr } = await supabase
@@ -457,7 +457,7 @@ router.post(
         logger.warn(
           {
             packet_id: packet.id,
-            vendor_ref: result.sid,
+            vendor_ref: result.id,
             err: stampErr.message,
           },
           "prescription_request.send.db_stamp_failed",
@@ -469,7 +469,7 @@ router.post(
         adminUserId: req.adminUserId ?? null,
         targetTable: "prescription_request_packets",
         targetId: packet.id,
-        metadata: { vendor_ref: result.sid },
+        metadata: { vendor_ref: result.id },
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       }).catch((err) => {
@@ -480,12 +480,12 @@ router.post(
       });
       res.status(200).json({
         status: "sent_fax",
-        vendorRef: result.sid,
+        vendorRef: result.id,
       });
     } catch (err) {
       const msg =
-        err instanceof TwilioApiError
-          ? `Twilio fax error: ${err.message}`
+        err instanceof TelnyxApiError
+          ? `Telnyx fax error: ${err.message}`
           : `Fax dispatch error: ${String(err)}`;
       await supabase
         .schema("resupply")

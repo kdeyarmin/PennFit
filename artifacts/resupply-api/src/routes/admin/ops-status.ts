@@ -40,10 +40,10 @@ function computeVendorFlags(env: NodeJS.ProcessEnv) {
       env.TWILIO_AUTH_TOKEN &&
       env.TWILIO_MESSAGING_SERVICE_SID,
     ),
-    twilioFax: Boolean(
-      env.TWILIO_ACCOUNT_SID &&
-      env.TWILIO_AUTH_TOKEN &&
-      env.TWILIO_FAX_FROM_NUMBER &&
+    telnyxFax: Boolean(
+      env.TELNYX_API_KEY &&
+      env.TELNYX_FAX_CONNECTION_ID &&
+      env.TELNYX_FAX_FROM_NUMBER &&
       (env.RESUPPLY_VOICE_PUBLIC_BASE_URL || env.RAILWAY_PUBLIC_DOMAIN),
     ),
     stripe: Boolean(env.STRIPE_SECRET_KEY),
@@ -70,10 +70,10 @@ const VENDOR_CONFIG_KEYS: Record<keyof VendorFlags, readonly string[]> = {
     "TWILIO_AUTH_TOKEN",
     "TWILIO_MESSAGING_SERVICE_SID",
   ],
-  twilioFax: [
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_AUTH_TOKEN",
-    "TWILIO_FAX_FROM_NUMBER",
+  telnyxFax: [
+    "TELNYX_API_KEY",
+    "TELNYX_FAX_CONNECTION_ID",
+    "TELNYX_FAX_FROM_NUMBER",
     "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   ],
   stripe: ["STRIPE_SECRET_KEY"],

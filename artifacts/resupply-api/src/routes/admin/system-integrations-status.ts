@@ -69,7 +69,12 @@ router.get(
       },
       twilio: {
         configured: !!env.TWILIO_ACCOUNT_SID && !!env.TWILIO_AUTH_TOKEN,
-        faxConfigured: !!env.TWILIO_FAX_FROM_NUMBER,
+      },
+      // Fax runs on Telnyx (Twilio retired Programmable Fax).
+      telnyx: {
+        configured: !!env.TELNYX_API_KEY && !!env.TELNYX_FAX_CONNECTION_ID,
+        faxConfigured: !!env.TELNYX_FAX_FROM_NUMBER,
+        webhookSigningConfigured: !!env.TELNYX_PUBLIC_KEY,
       },
       davinciPas: {
         // We treat the integration as configured if at least ONE

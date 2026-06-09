@@ -1,22 +1,19 @@
-// Fax routes — /fax/document/:token, /fax/status-callback,
-//              /fax/inbound.
+// Fax routes — the GET document route only.
 //
-// All routes are mounted unconditionally (same pattern as voice/sms):
-//   * /fax/document/:token  — serves the cover-letter PDF for Twilio
-//                             to transmit; HMAC-signed token gate.
-//   * /fax/status-callback  — Twilio outbound delivery lifecycle webhook.
-//   * /fax/inbound          — Twilio inbound fax webhook (physician
-//                             fax-backs); audit-only, no PHI stored.
+//   * /fax/document/:token  — serves the cover-letter PDF for Telnyx to
+//                             transmit; HMAC-signed token gate.
+//
+// The two Telnyx webhook routes (/fax/inbound, /fax/status-callback) are
+// NOT mounted here. They need the raw request body for Ed25519 signature
+// verification, so they're mounted directly on the app in app.ts (with
+// express.raw, before express.json) via routes/fax/webhooks.ts — the
+// same pattern as the Stripe webhook.
 
 import { Router, type IRouter } from "express";
 
 import documentRouter from "./document.js";
-import inboundRouter from "./inbound.js";
-import statusCallbackRouter from "./status-callback.js";
 
 const router: IRouter = Router();
 router.use(documentRouter);
-router.use(statusCallbackRouter);
-router.use(inboundRouter);
 
 export default router;

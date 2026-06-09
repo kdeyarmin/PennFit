@@ -57,7 +57,8 @@ const FORMAT_RULES: Readonly<Record<string, FormatRule>> = {
     hint: "MG + 32 hex chars",
   },
   TWILIO_PHONE_NUMBER: E164_RULE,
-  TWILIO_FAX_FROM_NUMBER: E164_RULE,
+  TELNYX_API_KEY: { test: /^KEY/, hint: "starts with KEY" },
+  TELNYX_FAX_FROM_NUMBER: E164_RULE,
   RESUPPLY_VOICE_PUBLIC_BASE_URL: URL_RULE,
 
   OFFICE_ALLY_USAGE_INDICATOR: { test: /^[PT]$/, hint: "P or T" },

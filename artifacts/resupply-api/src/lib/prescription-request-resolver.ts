@@ -83,7 +83,7 @@ export async function resolvePrescriptionRequestInputs(
 
   const supplierFax =
     process.env.RESUPPLY_SUPPLIER_FAX_E164?.trim() ||
-    process.env.TWILIO_FAX_FROM_NUMBER?.trim() ||
+    process.env.TELNYX_FAX_FROM_NUMBER?.trim() ||
     "";
 
   const inputs: PrescriptionRequestInputs = {

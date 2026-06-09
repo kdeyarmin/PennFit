@@ -1,36 +1,25 @@
-// Route tests for POST /fax/inbound (Twilio inbound fax webhook).
+// Route tests for the Telnyx inbound fax handler (faxInboundHandler).
 //
 // Coverage:
-//   * 200 + TwiML <Response/> ACK on every request (Twilio retries 5xx)
-//   * Missing FaxSid → no audit, logs warning
-//   * "receiving" status (mid-transfer) → no audit emitted
-//   * "received" status → audit emitted with non-PHI envelope
-//   * ingestInboundFax is invoked with the received-event params
-//   * Audit envelope contains fax_sid, num_pages, direction, outcome,
-//     media_persisted — never From or MediaUrl literal
-//   * NumPages defaults to null when absent
-//   * Direction defaults to "inbound" when absent
+//   * 200 ACK on every request (Telnyx retries non-2xx)
+//   * Missing fax_id → no audit/ingest, logs warning
+//   * Non-fax.received event (outbound status) → no audit/ingest
+//   * fax.received → ingestInboundFax invoked with mapped params
+//   * Audit envelope contains fax_id, num_pages, direction, outcome,
+//     media_persisted — never `from` or the media_url literal
+//   * already_recorded outcome → media_persisted null
 //   * Audit write failure is swallowed (logged, not surfaced)
 //
-// PHI invariant: From (sender fax number) and MediaUrl literal never
+// The Ed25519 signature middleware is exercised separately (telecom
+// unit tests + webhooks integration test); here we mount the handler
+// directly with express.json so the focus is the event handling.
+//
+// PHI invariant: `from` (sender fax number) and media_url literal never
 // appear in any audit call argument — asserted explicitly.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
-
-// Bypass Twilio signature validation — all inbound tests share this stub.
-vi.mock("@workspace/resupply-telecom", async () => {
-  const actual = await vi.importActual<
-    typeof import("@workspace/resupply-telecom")
-  >("@workspace/resupply-telecom");
-  return {
-    ...actual,
-    requireTwilioSignature:
-      () => (_req: unknown, _res: unknown, next: () => void) =>
-        next(),
-  };
-});
 
 const logAuditMock = vi.hoisted(() =>
   vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
@@ -44,15 +33,8 @@ vi.mock("../../lib/logger", () => ({
   logger: { warn: loggerWarnMock },
 }));
 
-// Mock the ingest helper so tests don't need a real Supabase client.
-// Default returns "inserted" with media_persisted=true; individual
-// tests override via mockResolvedValueOnce.
 type IngestOutcome =
-  | {
-      kind: "inserted";
-      id: string;
-      mediaPersisted: boolean;
-    }
+  | { kind: "inserted"; id: string; mediaPersisted: boolean }
   | { kind: "already_recorded"; id: string }
   | { kind: "errored" };
 const ingestInboundFaxMock = vi.hoisted(() =>
@@ -68,18 +50,21 @@ vi.mock("../../lib/fax/ingest-inbound.js", () => ({
   ingestInboundFax: ingestInboundFaxMock,
 }));
 
-import inboundRouter from "./inbound";
+import { faxInboundHandler } from "./inbound";
 
 function makeApp(): Express {
   const app = express();
-  app.use(express.urlencoded({ extended: false }));
-  app.use(inboundRouter);
+  app.use(express.json());
+  app.post("/fax/inbound", faxInboundHandler);
   return app;
 }
 
+/** Build a wrapped Telnyx fax.received event. */
+function receivedEvent(payload: Record<string, unknown>) {
+  return { data: { event_type: "fax.received", payload } };
+}
+
 async function flushMicrotasks() {
-  // The route does fire-and-forget on ingest + audit. Yield twice to
-  // let both promise chains resolve before we assert.
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
 }
@@ -96,42 +81,34 @@ beforeEach(() => {
 });
 
 describe("POST /fax/inbound — ACK", () => {
-  it("always returns 200 with TwiML ACK", async () => {
+  it("always returns 200 with a JSON ACK", async () => {
     const res = await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX001", Status: "received", NumPages: "2" });
+      .send(receivedEvent({ fax_id: "fx-001", page_count: 2 }));
     expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toMatch(/text\/xml/);
-    expect(res.text).toBe("<Response/>");
+    expect(res.body).toEqual({ received: true });
   });
 
-  it("still returns 200 even when FaxSid is missing (malformed body)", async () => {
+  it("still returns 200 when the event is malformed (no fax_id)", async () => {
     const res = await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ Status: "received" }); // no FaxSid
+      .send({ data: { event_type: "fax.received", payload: {} } });
     expect(res.status).toBe(200);
-    expect(res.text).toBe("<Response/>");
   });
 });
 
 describe("POST /fax/inbound — malformed body", () => {
-  it("does not emit an audit or ingest call when FaxSid is missing", async () => {
+  it("does not emit an audit or ingest call when fax_id is missing", async () => {
     await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ Status: "received" });
+      .send({ data: { event_type: "fax.received", payload: {} } });
     await flushMicrotasks();
     expect(logAuditMock).not.toHaveBeenCalled();
     expect(ingestInboundFaxMock).not.toHaveBeenCalled();
   });
 
-  it("logs a warning when FaxSid is missing", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({ Status: "received" });
+  it("logs a warning when the event is malformed", async () => {
+    await request(makeApp()).post("/fax/inbound").send({ nonsense: true });
     await flushMicrotasks();
     expect(loggerWarnMock).toHaveBeenCalledWith(
       expect.objectContaining({ event: "fax_inbound_malformed" }),
@@ -140,146 +117,97 @@ describe("POST /fax/inbound — malformed body", () => {
   });
 });
 
-describe("POST /fax/inbound — mid-transfer deduplication", () => {
-  it("does not emit an audit for 'receiving' status", async () => {
+describe("POST /fax/inbound — non-received events ignored", () => {
+  it("does not ingest an outbound fax.delivered event", async () => {
     await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX002", Status: "receiving", NumPages: "1" });
+      .send({
+        data: {
+          event_type: "fax.delivered",
+          payload: { fax_id: "fx-out", direction: "outbound" },
+        },
+      });
     await flushMicrotasks();
+    expect(ingestInboundFaxMock).not.toHaveBeenCalled();
     expect(logAuditMock).not.toHaveBeenCalled();
-    expect(ingestInboundFaxMock).not.toHaveBeenCalled();
-  });
-
-  it("does not ingest when Status is absent", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX003" });
-    await flushMicrotasks();
-    expect(ingestInboundFaxMock).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /fax/inbound — terminal received event", () => {
   it("calls ingestInboundFax with parsed params", async () => {
-    await request(makeApp()).post("/fax/inbound").type("form").send({
-      FaxSid: "FX004",
-      Status: "received",
-      NumPages: "3",
-      From: "+12155551212",
-      To: "+19785551234",
-      MediaUrl: "https://api.twilio.com/2010-04-01/x/Faxes/FX004/Media/ME9",
-    });
+    await request(makeApp())
+      .post("/fax/inbound")
+      .send(
+        receivedEvent({
+          fax_id: "fx-004",
+          page_count: 3,
+          from: "+12155551212",
+          to: "+19785551234",
+          media_url: "https://s3.amazonaws.com/telnyx/fx-004.pdf",
+        }),
+      );
     await flushMicrotasks();
     expect(ingestInboundFaxMock).toHaveBeenCalledOnce();
     const call = ingestInboundFaxMock.mock.calls[0]?.[0] as
       | Record<string, unknown>
       | undefined;
-    expect(call?.twilioFaxSid).toBe("FX004");
+    expect(call?.telnyxFaxId).toBe("fx-004");
     expect(call?.fromE164).toBe("+12155551212");
     expect(call?.toE164).toBe("+19785551234");
     expect(call?.numPages).toBe(3);
-    expect(call?.mediaUrl).toBe(
-      "https://api.twilio.com/2010-04-01/x/Faxes/FX004/Media/ME9",
-    );
+    expect(call?.mediaUrl).toBe("https://s3.amazonaws.com/telnyx/fx-004.pdf");
   });
 
-  it("emits an audit for 'received' status", async () => {
+  it("audit action is fax.inbound_received with fax_id + counts", async () => {
     await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX005", Status: "received" });
-    await flushMicrotasks();
-    expect(logAuditMock).toHaveBeenCalledOnce();
-  });
-
-  it("audit action is fax.inbound_received", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX006", Status: "received" });
+      .send(receivedEvent({ fax_id: "fx-006", page_count: 4 }));
     await flushMicrotasks();
     const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(call.action).toBe("fax.inbound_received");
-  });
-
-  it("audit metadata contains twilio_fax_sid", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX_AUDIT_SID", Status: "received", NumPages: "2" });
-    await flushMicrotasks();
-    const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
     const meta = call.metadata as Record<string, unknown>;
-    expect(meta.twilio_fax_sid).toBe("FX_AUDIT_SID");
-  });
-
-  it("audit metadata contains num_pages, outcome, media_persisted", async () => {
-    await request(makeApp())
-      .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX007", Status: "received", NumPages: "4" });
-    await flushMicrotasks();
-    const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    const meta = call.metadata as Record<string, unknown>;
+    expect(meta.fax_id).toBe("fx-006");
     expect(meta.num_pages).toBe(4);
     expect(meta.outcome).toBe("inserted");
     expect(meta.media_persisted).toBe(true);
   });
 
-  it("audit metadata records 'already_recorded' on Twilio replay", async () => {
+  it("records 'already_recorded' on a Telnyx replay", async () => {
     ingestInboundFaxMock.mockResolvedValueOnce({
       kind: "already_recorded",
       id: "00000000-0000-4000-8000-000000000abc",
     });
     await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX008", Status: "received" });
+      .send(receivedEvent({ fax_id: "fx-008" }));
     await flushMicrotasks();
-    const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    const meta = call.metadata as Record<string, unknown>;
+    const meta = (logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>)
+      .metadata as Record<string, unknown>;
     expect(meta.outcome).toBe("already_recorded");
     expect(meta.media_persisted).toBeNull();
   });
 });
 
 describe("POST /fax/inbound — PHI invariants", () => {
-  it("audit metadata never contains From or the literal phone digits", async () => {
-    await request(makeApp()).post("/fax/inbound").type("form").send({
-      FaxSid: "FX009",
-      Status: "received",
-      From: "+12155551212", // PHI — must not appear in audit
-      NumPages: "1",
-    });
+  it("audit metadata never contains the sender number or media_url", async () => {
+    await request(makeApp())
+      .post("/fax/inbound")
+      .send(
+        receivedEvent({
+          fax_id: "fx-009",
+          from: "+12155551212",
+          media_url: "https://s3.amazonaws.com/telnyx/SECRET-PATH.pdf",
+          page_count: 1,
+        }),
+      );
     await flushMicrotasks();
-    const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    const meta = call.metadata as Record<string, unknown>;
-    expect(Object.keys(meta)).not.toContain("From");
+    const meta = (logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>)
+      .metadata as Record<string, unknown>;
     expect(Object.keys(meta)).not.toContain("from");
     const serialized = JSON.stringify(meta);
     expect(serialized).not.toContain("+12155551212");
-  });
-
-  it("audit metadata never contains the MediaUrl literal", async () => {
-    await request(makeApp()).post("/fax/inbound").type("form").send({
-      FaxSid: "FX010",
-      Status: "received",
-      MediaUrl:
-        "https://api.twilio.com/2010-04-01/x/Faxes/FX010/Media/SECRET-PATH",
-    });
-    await flushMicrotasks();
-    const call = logAuditMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    const meta = call.metadata as Record<string, unknown>;
-    expect(Object.keys(meta)).not.toContain("MediaUrl");
-    expect(Object.keys(meta)).not.toContain("mediaUrl");
-    // The Twilio-auth URL itself must not appear anywhere in the
-    // audit metadata even though we DO record media_persisted as a
-    // boolean (intentional — we want to know if the bytes landed).
-    const serialized = JSON.stringify(meta);
     expect(serialized).not.toContain("SECRET-PATH");
-    expect(serialized).not.toContain("api.twilio.com");
+    expect(serialized).not.toContain("s3.amazonaws.com");
   });
 });
 
@@ -288,8 +216,7 @@ describe("POST /fax/inbound — audit failure resilience", () => {
     logAuditMock.mockRejectedValueOnce(new Error("DB down"));
     const res = await request(makeApp())
       .post("/fax/inbound")
-      .type("form")
-      .send({ FaxSid: "FX011", Status: "received" });
+      .send(receivedEvent({ fax_id: "fx-011" }));
     expect(res.status).toBe(200);
     await flushMicrotasks();
     expect(loggerWarnMock).toHaveBeenCalledWith(

@@ -1,32 +1,35 @@
-// POST /fax/status-callback — Twilio Programmable Fax delivery webhook.
+// POST /fax/status-callback — Telnyx Programmable Fax delivery webhook.
 //
-// Twilio POSTs lifecycle transitions for outbound faxes:
-//   queued → processing → sending → delivered   (happy path)
-//                                  ↘ no-answer | busy | failed | canceled
+// Telnyx posts outbound-fax lifecycle events here (we set this URL as
+// the per-fax webhook_url on dispatch). The event types:
+//   fax.queued → fax.media.processed → fax.sending.started →
+//     fax.delivered                              (happy path)
+//                                  ↘ fax.failed  (failure_reason set)
 //
 // Mapping to our DB status column:
-//   queued / processing / sending  → "sent"     (in transit)
-//   delivered                      → "delivered"
-//   no-answer / busy / failed /
-//     canceled                     → "failed"
+//   fax.queued / fax.media.processed /
+//     fax.sending.started            → "sent"      (in transit)
+//   fax.delivered                    → "delivered"
+//   fax.failed                       → "failed"
 //
-// Design choices mirror voice/status-callback.ts:
-//   * 200 every signed request immediately — Twilio retries 5xx with
-//     backoff; we want the lifecycle stream to flow even if the DB
-//     is briefly unhappy.
-//   * Twilio signature validated via requireTwilioSignature.
+// Design choices:
+//   * The Telnyx Ed25519 signature is validated by requireTelnyxSignature
+//     (mounted in app.ts with express.raw) BEFORE this handler — by here
+//     `req.body` is the parsed JSON event.
+//   * 200 every signed request immediately — Telnyx retries non-2xx with
+//     backoff; we want the lifecycle stream to flow even if the DB is
+//     briefly unhappy.
 //   * Audit emits ONLY structural metadata — no fax number, no physician
 //     name, no page count beyond "did it arrive?".
 
-import { Router, type IRouter } from "express";
-import { z } from "zod";
+import type { Request, Response } from "express";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
-import { requireTwilioSignature } from "@workspace/resupply-telecom";
+import { parseTelnyxFaxEvent } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
 
@@ -35,104 +38,60 @@ type FaxOutreachUpdate =
 type RxPacketUpdate =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Update"];
 
-const router: IRouter = Router();
-
-const signatureMiddleware = requireTwilioSignature({
-  getAuthToken: () => process.env.TWILIO_AUTH_TOKEN,
-  buildPublicUrl: (req) => {
-    const base = (
-      process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      (process.env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-        : "")
-    ).replace(/\/+$/u, "");
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
-    return `${base}${originalUrl}`;
-  },
-});
-
 type DbFaxStatus = "sent" | "delivered" | "failed";
 
-// Twilio's outbound-fax callback payload is form-encoded. Validating
-// it through Zod (rather than ad-hoc `as Record<string, string>`
-// casts) gives us:
-//   * a single source of truth for which fields the route actually
-//     consumes — anything else Twilio sends is ignored on purpose.
-//   * a guarantee at the route boundary that FaxSid / Status are
-//     non-empty strings, so the downstream WHERE clause cannot be
-//     fed a blank vendor_ref by a malformed payload.
-//   * an automatic 200-and-skip when the payload doesn't match (the
-//     same posture the route takes for unknown statuses) so Twilio
-//     does not retry a request our DB code couldn't have used.
-//
-// Allow-listing only the eight Twilio statuses we actually map keeps
-// noise out of audit logs: any future Twilio status that we haven't
-// taught the mapper about gets logged once at warn level and dropped.
-const TWILIO_STATUSES = [
-  "queued",
-  "processing",
-  "sending",
-  "delivered",
-  "no-answer",
-  "busy",
-  "failed",
-  "canceled",
-] as const;
-
-const faxStatusCallbackBody = z
-  .object({
-    FaxSid: z.string().trim().min(1).max(64),
-    Status: z.enum(TWILIO_STATUSES),
-    ErrorCode: z.string().trim().min(1).max(32).optional(),
-  })
-  .passthrough();
-
-function mapTwilioStatus(
-  twilioStatus: (typeof TWILIO_STATUSES)[number],
-): DbFaxStatus {
-  switch (twilioStatus) {
-    case "queued":
-    case "processing":
-    case "sending":
+// Map a Telnyx outbound fax event_type to our DB status, or null for an
+// event we don't act on (e.g. fax.received, which is handled by
+// /fax/inbound and should never reach here).
+function mapTelnyxEvent(eventType: string): DbFaxStatus | null {
+  switch (eventType) {
+    case "fax.queued":
+    case "fax.media.processed":
+    case "fax.sending.started":
       return "sent";
-    case "delivered":
+    case "fax.delivered":
       return "delivered";
-    case "no-answer":
-    case "busy":
-    case "failed":
-    case "canceled":
+    case "fax.failed":
       return "failed";
+    default:
+      return null;
   }
 }
 
-router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
-  // Respond 200 immediately — Twilio retries on 5xx.
-  res.status(200).type("text/xml").send("<Response/>");
+/**
+ * Handler for POST /fax/status-callback. Signature already verified by
+ * the upstream requireTelnyxSignature middleware.
+ */
+export async function faxStatusCallbackHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  // Respond 200 immediately — Telnyx retries on non-2xx.
+  res.status(200).json({ received: true });
 
-  const parsed = faxStatusCallbackBody.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    // Signature was already validated; a malformed body still 200s
-    // (otherwise Twilio retries forever) but we log so a real
-    // schema drift surfaces in ops dashboards.
+  const parsed = parseTelnyxFaxEvent(req.body);
+  if (!parsed.ok) {
     logger.warn(
-      {
-        event: "fax_status_body_invalid",
-        issues: parsed.error.issues.map((i) => ({
-          path: i.path.join("."),
-          code: i.code,
-        })),
-      },
-      "fax status-callback: body did not match expected shape",
+      { event: "fax_status_body_invalid" },
+      "fax status-callback: event missing event_type/fax_id",
     );
     return;
   }
-  const {
-    FaxSid: faxSid,
-    Status: twilioStatus,
-    ErrorCode: errorCode,
-  } = parsed.data;
-  const dbStatus = mapTwilioStatus(twilioStatus);
+
+  const event = parsed.event;
+  const dbStatus = mapTelnyxEvent(event.eventType);
+  if (!dbStatus) {
+    // An event type we don't map (e.g. a future Telnyx status). Log once
+    // and drop — we already 200'd so Telnyx won't retry.
+    logger.warn(
+      { event: "fax_status_unmapped", telnyx_event_type: event.eventType },
+      "fax status-callback: unmapped event type",
+    );
+    return;
+  }
+
+  const faxId = event.faxId;
+  const failureReason = event.failureReason;
 
   const supabase = getSupabaseServiceRoleClient();
   const nowIso = new Date().toISOString();
@@ -142,7 +101,7 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
     updates.delivered_at = nowIso;
   } else if (dbStatus === "failed") {
     updates.failed_at = nowIso;
-    if (errorCode) updates.failure_reason = `Twilio error ${errorCode}`;
+    if (failureReason) updates.failure_reason = `Telnyx: ${failureReason}`;
   }
 
   try {
@@ -150,22 +109,22 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
       .schema("resupply")
       .from("physician_fax_outreach")
       .update(updates)
-      .eq("vendor_ref", faxSid)
-      .eq("vendor_name", "twilio");
+      .eq("vendor_ref", faxId)
+      .eq("vendor_name", "telnyx");
     if (error) throw error;
   } catch (err) {
     logger.warn(
-      { event: "fax_status_db_failed", faxSid, err },
+      { event: "fax_status_db_failed", faxId, err },
       "fax status-callback: DB update failed",
     );
   }
 
-  // Same Twilio FaxSid may match a prescription_request_packets row
-  // (the faxable Rx packet feature). Twilio SIDs are globally unique
+  // The same Telnyx fax id may match a prescription_request_packets row
+  // (the faxable Rx packet feature). Telnyx fax ids are globally unique
   // so at most one of the two tables ever resolves. We update both
-  // unconditionally rather than checking which one to keep the
-  // callback handler simple — the UPDATE is a no-op on the table
-  // that didn't dispatch this SID.
+  // unconditionally rather than checking which one to keep the handler
+  // simple — the UPDATE is a no-op on the table that didn't dispatch
+  // this fax.
   const packetUpdates: RxPacketUpdate = { updated_at: nowIso };
   if (dbStatus === "delivered") {
     packetUpdates.status = "delivered";
@@ -173,23 +132,24 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
   } else if (dbStatus === "failed") {
     packetUpdates.status = "failed";
     packetUpdates.failed_at = nowIso;
-    if (errorCode) packetUpdates.failure_reason = `Twilio error ${errorCode}`;
+    if (failureReason)
+      packetUpdates.failure_reason = `Telnyx: ${failureReason}`;
   }
-  // "in transit" Twilio statuses leave packet.status alone — we
-  // already stamped sent_fax at dispatch time and intermediate
-  // queued/processing transitions don't add information.
+  // "in transit" statuses leave packet.status alone — we already stamped
+  // sent_fax at dispatch time and intermediate queued/sending
+  // transitions don't add information.
   if (dbStatus === "delivered" || dbStatus === "failed") {
     try {
       const { error } = await supabase
         .schema("resupply")
         .from("prescription_request_packets")
         .update(packetUpdates)
-        .eq("vendor_ref", faxSid)
-        .eq("vendor_name", "twilio");
+        .eq("vendor_ref", faxId)
+        .eq("vendor_name", "telnyx");
       if (error) throw error;
     } catch (err) {
       logger.warn(
-        { event: "rx_packet_status_db_failed", faxSid, err },
+        { event: "rx_packet_status_db_failed", faxId, err },
         "fax status-callback: prescription_request_packets update failed",
       );
     }
@@ -200,17 +160,15 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
       action: "physician_fax_outreach.status_updated",
       targetTable: "physician_fax_outreach",
       metadata: {
-        twilio_fax_sid: faxSid,
-        twilio_status: twilioStatus,
+        fax_id: faxId,
+        telnyx_event_type: event.eventType,
         db_status: dbStatus,
       },
     });
   } catch (err) {
     logger.warn(
-      { event: "fax_status_audit_failed", faxSid, err },
+      { event: "fax_status_audit_failed", faxId, err },
       "fax status-callback: audit failed",
     );
   }
-});
-
-export default router;
+}

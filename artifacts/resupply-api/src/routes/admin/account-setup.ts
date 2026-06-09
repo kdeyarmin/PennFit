@@ -390,19 +390,19 @@ export function buildChecklistItems(
         "a vendor's client id/secret + base/token URLs (AIRVIEW_*, CARE_ORCHESTRATOR_*, or REACT_HEALTH_*)",
     }),
     vendorItem({
-      id: "vendor-twilio-fax",
+      id: "vendor-telnyx-fax",
       group: "Fax",
-      title: "Twilio Fax",
+      title: "Telnyx Fax",
       description:
-        "Physician-fax Rx-renewal outreach. Requires the Twilio account vars plus a fax-enabled number and a public base URL.",
+        "Physician-fax Rx-renewal outreach. Requires the Telnyx API key + fax connection id, a fax-enabled number, and a public base URL.",
       configured:
-        isSet(env, "TWILIO_ACCOUNT_SID") &&
-        isSet(env, "TWILIO_AUTH_TOKEN") &&
-        isSet(env, "TWILIO_FAX_FROM_NUMBER") &&
+        isSet(env, "TELNYX_API_KEY") &&
+        isSet(env, "TELNYX_FAX_CONNECTION_ID") &&
+        isSet(env, "TELNYX_FAX_FROM_NUMBER") &&
         (isSet(env, "RESUPPLY_VOICE_PUBLIC_BASE_URL") ||
           isSet(env, "RAILWAY_PUBLIC_DOMAIN")),
       envHint:
-        "TWILIO_FAX_FROM_NUMBER (with the Twilio account vars + a public base URL)",
+        "TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID + TELNYX_FAX_FROM_NUMBER (with a public base URL)",
     }),
     vendorItem({
       id: "vendor-web-push",

@@ -64,6 +64,7 @@ export interface AppConfigSetting {
 // Category labels — ordering here is the render order in the UI.
 export const CATEGORY_AI = "AI vendors";
 export const CATEGORY_TWILIO = "Voice & telephony (Twilio)";
+export const CATEGORY_TELNYX = "Fax (Telnyx)";
 export const CATEGORY_SENDGRID = "Email (SendGrid)";
 export const CATEGORY_STRIPE = "Payments (Stripe)";
 export const CATEGORY_AIRVIEW = "Therapy cloud — ResMed AirView";
@@ -151,13 +152,43 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     placeholder: "MG…",
   },
   {
-    key: "TWILIO_FAX_FROM_NUMBER",
-    label: "Fax sender number",
-    category: CATEGORY_TWILIO,
+    key: "TELNYX_API_KEY",
+    label: "Telnyx API key",
+    category: CATEGORY_TELNYX,
+    secret: true,
+    applyMode: "restart",
+    description:
+      "Bearer key from the Telnyx portal (Keys & Credentials). Required to send faxes.",
+    placeholder: "KEY…",
+  },
+  {
+    key: "TELNYX_FAX_CONNECTION_ID",
+    label: "Fax connection ID",
+    category: CATEGORY_TELNYX,
     secret: false,
     applyMode: "restart",
-    description: "Optional. Outbound fax sender number, E.164 format.",
+    description:
+      "The Telnyx Fax Application (connection) ID that owns the fax number and inbound webhook.",
+    placeholder: "1234567890…",
+  },
+  {
+    key: "TELNYX_FAX_FROM_NUMBER",
+    label: "Fax sender number",
+    category: CATEGORY_TELNYX,
+    secret: false,
+    applyMode: "restart",
+    description: "Outbound fax sender number, E.164 format.",
     placeholder: "+1…",
+  },
+  {
+    key: "TELNYX_PUBLIC_KEY",
+    label: "Telnyx webhook public key",
+    category: CATEGORY_TELNYX,
+    secret: true,
+    applyMode: "restart",
+    description:
+      "Base64 Ed25519 public key from the Telnyx portal. Verifies inbound + status webhooks.",
+    placeholder: "base64…",
   },
   {
     // KEY === ENV VAR NAME. This is the single public origin every Twilio

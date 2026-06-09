@@ -34,23 +34,23 @@ vi.mock("@workspace/resupply-secrets", () => ({
     Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8"),
 }));
 
-// Control fax configuration + the Twilio client without env/network.
+// Control fax configuration + the Telnyx client without env/network.
 const faxConfigured = vi.hoisted(() => ({ current: true }));
 const sendFax = vi.hoisted(() => ({
-  current: vi.fn(async () => ({ sid: "FX123", status: "queued" })),
+  current: vi.fn(async () => ({ id: "tx-123", status: "queued" })),
 }));
 vi.mock("./physician-fax-outreach", () => ({
   isFaxConfigured: () => faxConfigured.current,
   getFaxPublicBaseUrl: () => "https://app.example.com",
   default: {},
 }));
-const { FakeTwilioApiError } = vi.hoisted(() => {
-  class FakeTwilioApiError extends Error {}
-  return { FakeTwilioApiError };
+const { FakeTelnyxApiError } = vi.hoisted(() => {
+  class FakeTelnyxApiError extends Error {}
+  return { FakeTelnyxApiError };
 });
 vi.mock("@workspace/resupply-telecom", () => ({
-  createTwilioFaxClient: () => ({ sendFax: sendFax.current }),
-  TwilioApiError: FakeTwilioApiError,
+  createTelnyxFaxClient: () => ({ sendFax: sendFax.current }),
+  TelnyxApiError: FakeTelnyxApiError,
 }));
 
 import claimAppealsRouter from "./claim-appeals";
@@ -75,8 +75,8 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   faxConfigured.current = true;
-  sendFax.current = vi.fn(async () => ({ sid: "FX123", status: "queued" }));
-  process.env.TWILIO_FAX_FROM_NUMBER = "+15555550100";
+  sendFax.current = vi.fn(async () => ({ id: "tx-123", status: "queued" }));
+  process.env.TELNYX_FAX_FROM_NUMBER = "+15555550100";
   supabaseMock.reset();
 });
 
@@ -143,17 +143,17 @@ describe("POST appeal-letter/:letterId/fax", () => {
       .post(url)
       .send({ faxNumber: "+18005551212" });
     expect(res.status).toBe(200);
-    expect(res.body.vendorRef).toBe("FX123");
+    expect(res.body.vendorRef).toBe("tx-123");
     expect(sendFax.current).toHaveBeenCalledOnce();
     // delivery_method=fax was written.
     const writes = supabaseMock.writePayloads("claim_appeal_letters", "update");
     expect(writes[0]).toMatchObject({ delivery_method: "fax" });
   });
 
-  it("502 when Twilio dispatch throws", async () => {
+  it("502 when Telnyx dispatch throws", async () => {
     mockAdmin.current = ADMIN;
     sendFax.current = vi.fn(async () => {
-      throw new FakeTwilioApiError("boom");
+      throw new FakeTelnyxApiError("boom");
     });
     stageSupabaseResponse("claim_appeal_letters", "select", {
       data: { id: LETTER_ID, claim_id: CLAIM_ID },
