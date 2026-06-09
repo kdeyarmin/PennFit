@@ -105,6 +105,40 @@ export function statementPdfUrl(statementId: string): string {
   return `/api/me/billing-statements/${statementId}/pdf`;
 }
 
+// ─── Statement delivery preference (emailed vs mailed) ──────────────
+
+export type StatementDeliveryMethod = "email" | "mail";
+
+export interface StatementPreferenceResponse {
+  statementDeliveryMethod: StatementDeliveryMethod;
+  email: string | null;
+  /** False when the account isn't linked to a patient billing record. */
+  linked?: boolean;
+}
+
+export function fetchStatementPreference(): Promise<StatementPreferenceResponse> {
+  return meGet<StatementPreferenceResponse>("/me/statement-preferences");
+}
+
+export async function updateStatementPreference(
+  statementDeliveryMethod: StatementDeliveryMethod,
+): Promise<StatementPreferenceResponse> {
+  const res = await fetch("/api/me/statement-preferences", {
+    method: "PUT",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify({ statementDeliveryMethod }),
+  });
+  if (!res.ok) {
+    throw new Error(`Update statement preference failed (${res.status})`);
+  }
+  return (await res.json()) as StatementPreferenceResponse;
+}
+
 export interface CheckoutSessionResponse {
   paymentId: string;
   url: string;

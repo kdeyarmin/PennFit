@@ -19,7 +19,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import { renderStatementPdf } from "../../lib/billing/statement-pdf";
@@ -272,6 +275,124 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
   // Discourage shared-cache storage of a per-patient PDF.
   res.setHeader("Cache-Control", "private, no-store");
   res.status(200).end(pdf);
+});
+
+// ── Statement delivery preference (emailed vs mailed). ─────────────
+//
+// Lets a signed-in patient choose how they receive their bills. Mirrors
+// the admin control (routes/admin/billing-statements.ts). When a patient
+// opts into emailed statements and the patient record has no email on
+// file, we backfill it from their account email so the bill has a
+// destination.
+
+const prefBody = z
+  .object({ statementDeliveryMethod: z.enum(["email", "mail"]) })
+  .strict();
+
+router.get("/me/statement-preferences", async (req, res) => {
+  const customerId =
+    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  if (!customerId) {
+    res.status(401).json({ error: "sign_in_required" });
+    return;
+  }
+  let link: { patientId: string } | null;
+  try {
+    link = await resolvePatientForCustomer(customerId);
+  } catch {
+    res.status(500).json({ error: "lookup_failed" });
+    return;
+  }
+  if (!link) {
+    res.json({ statementDeliveryMethod: "mail", email: null, linked: false });
+    return;
+  }
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: patient } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("email, statement_delivery_method")
+    .eq("id", link.patientId)
+    .limit(1)
+    .maybeSingle();
+  res.json({
+    statementDeliveryMethod:
+      (patient?.statement_delivery_method as string | null) || "mail",
+    email: (patient?.email as string | null) ?? null,
+    linked: true,
+  });
+});
+
+router.put("/me/statement-preferences", async (req, res) => {
+  const customerId =
+    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  if (!customerId) {
+    res.status(401).json({ error: "sign_in_required" });
+    return;
+  }
+  const parsed = prefBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+  let link: { patientId: string } | null;
+  try {
+    link = await resolvePatientForCustomer(customerId);
+  } catch {
+    res.status(500).json({ error: "lookup_failed" });
+    return;
+  }
+  if (!link) {
+    res.status(409).json({ error: "not_linked" });
+    return;
+  }
+  const supabase = getSupabaseServiceRoleClient();
+  const update: Database["resupply"]["Tables"]["patients"]["Update"] = {
+    statement_delivery_method: parsed.data.statementDeliveryMethod,
+    updated_at: new Date().toISOString(),
+  };
+  // Opting into email but no email on the patient record → backfill from
+  // the account email so the emailed bill has somewhere to go.
+  if (parsed.data.statementDeliveryMethod === "email") {
+    const { data: patient } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("email")
+      .eq("id", link.patientId)
+      .limit(1)
+      .maybeSingle();
+    if (!patient?.email) {
+      const { data: cust } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("email_lower")
+        .eq("customer_id", customerId)
+        .limit(1)
+        .maybeSingle();
+      if (cust?.email_lower) update.email = cust.email_lower as string;
+    }
+  }
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .update(update)
+    .eq("id", link.patientId)
+    .select("email, statement_delivery_method")
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn(
+      { err: error.message, patientId: link.patientId },
+      "me-billing.set_statement_preference: update failed",
+    );
+    res.status(500).json({ error: "update_failed" });
+    return;
+  }
+  res.json({
+    statementDeliveryMethod:
+      (row?.statement_delivery_method as string | null) || "mail",
+    email: (row?.email as string | null) ?? null,
+  });
 });
 
 export default router;
