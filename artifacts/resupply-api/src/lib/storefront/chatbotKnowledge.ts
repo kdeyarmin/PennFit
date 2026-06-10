@@ -735,7 +735,8 @@ What a family member CAN do:
   - Browse, compare masks, and ask anything here — no account needed.
   - Sit with the patient through the virtual fitter. The camera scan
     has to be of the PATIENT's face, with the patient present and
-    consenting (it never leaves their browser either way).
+    consenting (the photo itself never leaves the browser — only the
+    numeric facial measurements are sent).
   - Help place an order with the patient involved — the prescription
     and insurance details are the patient's own.
   - Own the practical side: machine setup, the cleaning routine, and
