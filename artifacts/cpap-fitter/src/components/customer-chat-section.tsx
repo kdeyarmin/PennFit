@@ -247,8 +247,8 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
   const greeting = useMemo(() => {
     const name = displayName?.split(" ")[0] ?? null;
     return name
-      ? `Hi ${name}, I'm PennBot. I can answer questions about your orders, subscriptions, device, and supplies. What can I help with?`
-      : "Hi, I'm PennBot. I can answer questions about your orders, subscriptions, device, and supplies. What can I help with?";
+      ? `Hi ${name}! I'm PennBot — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?`
+      : "Hi, I'm PennBot — happy to help with your orders, subscriptions, device, or supplies. And if you ever need a real person, I can pass you straight to the team. What can I do for you?";
   }, [displayName]);
 
   const sendMessage = useCallback(

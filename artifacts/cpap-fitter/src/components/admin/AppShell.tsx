@@ -77,6 +77,7 @@ import {
   FileLock2,
   Send,
   PlayCircle,
+  BookOpenCheck,
 } from "lucide-react";
 import {
   Sheet,
@@ -298,6 +299,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BellRing,
             matchPrefix: "/admin/bulk-campaigns",
             hint: "Resolve an audience, then draft and send a bulk email",
+          },
+          {
+            href: "/admin/playbooks",
+            label: "Playbooks",
+            icon: BookOpenCheck,
+            matchPrefix: "/admin/playbooks",
+            hint: "Situation-based contact templates — cadence + wording for SMS, email, and call outreach",
           },
           {
             href: "/admin/alerts",

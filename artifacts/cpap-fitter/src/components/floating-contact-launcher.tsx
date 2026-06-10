@@ -80,7 +80,7 @@ const PERSIST_TURN_CAP = 30;
 const GREETING: ChatMessage = {
   role: "assistant",
   content:
-    "Hi! I'm PennBot. Ask me about CPAP masks, supplies, insurance coverage, replacement schedules, returns, or how to order from PennPaps. For account-specific questions, I'll point you to our team.",
+    "Hi, I'm PennBot! Ask me anything CPAP — masks, supplies, insurance, replacement schedules, returns, or just getting started. What's on your mind?",
 };
 
 /**

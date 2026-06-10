@@ -34,6 +34,7 @@ import csrMacrosRouter from "./admin/csr-macros.js";
 import alertsRouter from "./admin/alerts.js";
 import alertMessageOverridesRouter from "./admin/alert-message-overrides.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
+import outreachPlaybooksRouter from "./admin/outreach-playbooks.js";
 import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
@@ -664,6 +665,12 @@ router.use(alertMessageOverridesRouter);
 // is journaled — see lib/resupply-db/drizzle/0067_message_templates.sql
 // for the journal posture.
 router.use(messageTemplatesRouter);
+// /admin/outreach-playbooks/* — situation-based contact templates:
+// a library of multi-touch outreach recipes (cadence + channel +
+// wording for SMS / email / staff call scripts) that CSRs start
+// per patient; the worker's outreach-playbooks.dispatcher executes
+// the scheduled touches.
+router.use(outreachPlaybooksRouter);
 // /admin/shop/customers/:userId/message-template-overrides/* —
 // per-customer overrides for the global library (Phase 3 of
 // docs/proposals/customer-message-templates.md). Same posture as
