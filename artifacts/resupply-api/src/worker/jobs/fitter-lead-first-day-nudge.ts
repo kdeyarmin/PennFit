@@ -284,13 +284,12 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
 
     // TCPA window: an SMS-opted-in lead must not be texted outside
     // 9am–8pm local (leads carry no timezone/ZIP, so this evaluates
-    // against the ET default — the 18–30h age window used to land
-    // some leads a ~3am text). Defer the WHOLE nudge, not just the
-    // SMS leg: the claim below covers both legs, so claiming now
-    // would burn the lead's one nudge on an email-only delivery. A
-    // later hourly tick inside the window sends both legs together;
-    // email-only leads are unaffected.
-    if (canSms && isOutsideSmsSendWindow(new Date())) {
+    // against the ET default). If the lead is also reachable via email,
+    // send the email leg now so the lead doesn't age past the 18–30h
+    // query window without any contact. If email is unavailable too,
+    // defer until the next tick inside the window so both legs fire
+    // together.
+    if (canSms && isOutsideSmsSendWindow(new Date()) && !canEmail) {
       stats.skippedQuietHours += 1;
       continue;
     }
@@ -360,10 +359,10 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     }
 
     // SMS leg — only for leads who explicitly opted in AND have a
-    // normalized phone number. The fitter_leads sms_opt_in column
-    // is itself gated server-side by phone presence in the
-    // recordFitterLead helper (Wave 2a).
-    if (lead.phone_e164 && lead.sms_opt_in) {
+    // normalized phone number AND are inside the TCPA send window.
+    // The fitter_leads sms_opt_in column is itself gated server-side
+    // by phone presence in the recordFitterLead helper (Wave 2a).
+    if (lead.phone_e164 && lead.sms_opt_in && !isOutsideSmsSendWindow(new Date())) {
       if (twilioSms) {
         try {
           await twilioSms.sendSms({

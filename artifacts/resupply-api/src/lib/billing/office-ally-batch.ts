@@ -321,7 +321,7 @@ export async function executeOfficeAllyBatchSubmit(
   // (docs/app-review-2026-06-10.md P1-1). With the conditional UPDATE
   // exactly one submitter wins each claim; a partial win means someone
   // else is mid-flight, so we release what we took and report the
-  // conflict. The 'submitting' state is admitted by migration 0263.
+  // conflict. The 'submitting' state is admitted by migration 0265.
   const claimedAtIso = new Date().toISOString();
   const batchClaimIds = claims.map((c) => c.id);
   const { data: claimedRows, error: batchClaimErr } = await supabase
@@ -361,19 +361,30 @@ export async function executeOfficeAllyBatchSubmit(
     previousHighest: priorHigh?.isa_control_number ?? undefined,
   });
 
-  const identity = await resolveBillingIdentity({ supabase });
-  const adapter = createOfficeAllyAdapter({
-    submitterOverride: identity.submitter,
-    billingProviderOverride: identity.billingProvider,
-    usageIndicatorOverride: identity.usageIndicator,
-  });
+  // Guard: any exception before the upload is purely pre-flight; nothing
+  // reached the clearinghouse, so release the claimed batch back to 'draft'.
   const fileName = `PF-BATCH-${control.interchangeControlNumber}.txt`;
-  const submission = await adapter.submitClaims({
-    control,
-    fileName,
-    usageIndicatorOverride: input.usageIndicator,
-    claims: detailEntries,
-  });
+  let identity: Awaited<ReturnType<typeof resolveBillingIdentity>>;
+  let submission: Awaited<ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>>;
+  try {
+    identity = await resolveBillingIdentity({ supabase });
+    const adapter = createOfficeAllyAdapter({
+      submitterOverride: identity.submitter,
+      billingProviderOverride: identity.billingProvider,
+      usageIndicatorOverride: identity.usageIndicator,
+    });
+    submission = await adapter.submitClaims({
+      control,
+      fileName,
+      usageIndicatorOverride: input.usageIndicator,
+      claims: detailEntries,
+    });
+  } catch (err) {
+    // Pre-upload failure — nothing was transmitted. Release the claims so
+    // the operator can retry the batch from a clean state.
+    await releaseClaimsToDraft(supabase, claimedIds);
+    throw err;
+  }
 
   const status = submission.upload.ok
     ? identity.source === "stub"
@@ -399,7 +410,28 @@ export async function executeOfficeAllyBatchSubmit(
     })
     .select("id")
     .single();
-  if (subErr) throw subErr;
+  if (subErr) {
+    if (submission.upload.ok) {
+      // The file was transmitted to the clearinghouse but we couldn't
+      // persist the submission row. The claims are still 'submitting' —
+      // releasing them to 'draft' here would risk a second transmission
+      // of the same batch. Log the ISA control number so an operator can
+      // reconcile the clearinghouse acknowledgement against the DB.
+      logger.error(
+        {
+          err: subErr.message,
+          claimIds: claimedIds,
+          isaControlNumber: submission.interchangeControlNumber,
+        },
+        "office-ally-batch: submission row insert failed after successful upload — claims left in 'submitting' for manual reconciliation",
+      );
+    } else {
+      // Upload did not succeed — release claims to draft so the operator
+      // can retry without manual intervention.
+      await releaseClaimsToDraft(supabase, claimedIds);
+    }
+    throw subErr;
+  }
 
   if (submission.upload.ok) {
     const nowIso = new Date().toISOString();
