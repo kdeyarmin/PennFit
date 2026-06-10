@@ -46,6 +46,8 @@ const router: IRouter = Router();
 
 // Per-admin cap on playbook mutations — same envelope as the other
 // non-financial admin write workflows (customer followups, macros).
+// Mounted AFTER requirePermission on every route so req.adminUserId is
+// populated and the limiter keys per actor (not one shared bucket).
 const playbookMutationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 120,
@@ -158,24 +160,40 @@ router.get(
   requirePermission("conversations.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
-    const [playbooksRes, stepsRes, activeRunsRes] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("outreach_playbooks")
-        .select(
-          "id, playbook_key, name, situation, description, category, is_active, is_seeded, updated_at",
-        )
-        .order("category", { ascending: true })
-        .order("name", { ascending: true })
-        .limit(200),
-      supabase
-        .schema("resupply")
-        .from("outreach_playbook_steps")
-        .select(
-          "id, playbook_id, step_index, day_offset, channel, subject, body",
-        )
-        .order("step_index", { ascending: true })
-        .limit(2000),
+    const playbooksRes = await supabase
+      .schema("resupply")
+      .from("outreach_playbooks")
+      .select(
+        "id, playbook_key, name, situation, description, category, is_active, is_seeded, updated_at",
+      )
+      .order("category", { ascending: true })
+      .order("name", { ascending: true })
+      .limit(200);
+    if (playbooksRes.error) {
+      res
+        .status(500)
+        .json({ error: "query_failed", message: playbooksRes.error.message });
+      return;
+    }
+    const playbookIds = ((playbooksRes.data ?? []) as PlaybookRow[]).map(
+      (p) => p.id,
+    );
+    // Steps are fetched for exactly the playbooks on this page so a
+    // large library can't truncate another playbook's cadence. The
+    // limit is the structural max for the page (200 playbooks × 20
+    // steps), not a global cap.
+    const [stepsRes, activeRunsRes] = await Promise.all([
+      playbookIds.length > 0
+        ? supabase
+            .schema("resupply")
+            .from("outreach_playbook_steps")
+            .select(
+              "id, playbook_id, step_index, day_offset, channel, subject, body",
+            )
+            .in("playbook_id", playbookIds)
+            .order("step_index", { ascending: true })
+            .limit(4000)
+        : Promise.resolve({ data: [], error: null }),
       supabase
         .schema("resupply")
         .from("outreach_playbook_runs")
@@ -183,12 +201,8 @@ router.get(
         .eq("status", "active")
         .limit(5000),
     ]);
-    if (playbooksRes.error || stepsRes.error || activeRunsRes.error) {
-      const message = (
-        playbooksRes.error ??
-        stepsRes.error ??
-        activeRunsRes.error
-      )?.message;
+    if (stepsRes.error || activeRunsRes.error) {
+      const message = (stepsRes.error ?? activeRunsRes.error)?.message;
       res.status(500).json({ error: "query_failed", message });
       return;
     }
@@ -229,8 +243,8 @@ router.get(
 
 router.post(
   "/admin/outreach-playbooks",
-  playbookMutationLimiter,
   requirePermission("admin.tools.manage"),
+  playbookMutationLimiter,
   async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -328,8 +342,8 @@ router.post(
 
 router.patch(
   "/admin/outreach-playbooks/:id",
-  playbookMutationLimiter,
   requirePermission("admin.tools.manage"),
+  playbookMutationLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params.id);
     if (!idParsed.success) {
@@ -394,8 +408,8 @@ router.patch(
 
 router.put(
   "/admin/outreach-playbooks/:id/steps",
-  playbookMutationLimiter,
   requirePermission("admin.tools.manage"),
+  playbookMutationLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params.id);
     if (!idParsed.success) {
@@ -441,6 +455,22 @@ router.put(
     // its next dispatcher tick. Already-scheduled next_step_at values
     // are unchanged — edits affect future steps' wording, not the
     // in-flight schedule.
+    //
+    // PostgREST has no multi-statement transaction, so delete + insert
+    // can't be atomic; snapshot the prior rows first and best-effort
+    // restore them if the insert fails, so a transient error can't
+    // leave the playbook with an empty cadence.
+    const { data: priorSteps, error: priorErr } = await supabase
+      .schema("resupply")
+      .from("outreach_playbook_steps")
+      .select("step_index, day_offset, channel, subject, body")
+      .eq("playbook_id", idParsed.data);
+    if (priorErr) {
+      res
+        .status(500)
+        .json({ error: "query_failed", message: priorErr.message });
+      return;
+    }
     const { error: delErr } = await supabase
       .schema("resupply")
       .from("outreach_playbook_steps")
@@ -464,6 +494,21 @@ router.put(
         })),
       );
     if (insErr) {
+      const { error: restoreErr } = await supabase
+        .schema("resupply")
+        .from("outreach_playbook_steps")
+        .insert(
+          ((priorSteps ?? []) as Array<Record<string, unknown>>).map((s) => ({
+            ...s,
+            playbook_id: idParsed.data,
+          })),
+        );
+      if (restoreErr) {
+        logger.error(
+          { err: restoreErr.message, playbookId: idParsed.data },
+          "outreach-playbooks: step replace failed AND prior steps could not be restored — playbook left with no cadence",
+        );
+      }
       res.status(500).json({ error: "update_failed", message: insErr.message });
       return;
     }
@@ -500,8 +545,8 @@ router.put(
 
 router.post(
   "/admin/outreach-playbooks/:id/start",
-  playbookMutationLimiter,
   requirePermission("conversations.manage"),
+  playbookMutationLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params.id);
     if (!idParsed.success) {
@@ -737,8 +782,8 @@ router.get(
 
 router.post(
   "/admin/outreach-playbooks/runs/:id/cancel",
-  playbookMutationLimiter,
   requirePermission("conversations.manage"),
+  playbookMutationLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params.id);
     if (!idParsed.success) {
@@ -908,8 +953,8 @@ router.get(
 
 router.post(
   "/admin/outreach-playbooks/call-tasks/:id/complete",
-  playbookMutationLimiter,
   requirePermission("conversations.manage"),
+  playbookMutationLimiter,
   async (req, res) => {
     const idParsed = idParam.safeParse(req.params.id);
     if (!idParsed.success) {
