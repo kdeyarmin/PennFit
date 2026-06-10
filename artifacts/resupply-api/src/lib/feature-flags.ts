@@ -36,7 +36,7 @@ import { logger } from "./logger";
 /**
  * Every feature flag the catalog supports. Keep this list in lockstep
  * with the seed migration in
- * lib/resupply-db/drizzle/0275_feature_flags.sql — a typo here vs.
+ * lib/resupply-db/drizzle/0149_feature_flags.sql — a typo here vs.
  * there means the toggle in the admin UI silently no-ops.
  */
 export const FEATURE_FLAG_KEYS = [
