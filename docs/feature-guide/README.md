@@ -13,8 +13,13 @@ operating roles in a DME business:
 4. **Respiratory Therapist** — therapy monitoring and compliance, clinical
    workflows, resupply and prescriptions, provider collaboration.
 
-A closing **Platform Foundations** section covers shared capabilities
-(storefront, AI mask fitter, voice agent, chatbots, security/privacy).
+A **Platform Foundations** section covers shared capabilities (storefront,
+AI mask fitter, voice agent, chatbots, security/privacy), and a closing
+**Competitive Feature Matrix** appendix positions PennFit's top features
+against leading DME/HME software (Brightree + ReSupply, NikoHealth, TIMS
+Software, Parachute Health), with a disclaimer that competitor entries
+summarize public product information and should be verified before
+customer-facing use.
 
 ## Regenerating
 

@@ -209,7 +209,120 @@ def feature_table(features, tint_offset=0, rule_after_last=False):
     return t
 
 
-# --------------------------------------------------------- page furniture --
+class Marker(Flowable):
+    """Comparison-matrix cell marker: full / half / open circle."""
+
+    R = 3.4
+
+    def __init__(self, kind):
+        super().__init__()
+        self.kind = kind
+        self.width = 12
+        self.height = 9
+        self.hAlign = "CENTER"
+
+    def draw(self):
+        c = self.canv
+        x, y, r = self.width / 2.0, self.height / 2.0, self.R
+        c.saveState()
+        if self.kind == "full":
+            c.setFillColor(NAVY)
+            c.setStrokeColor(NAVY)
+            c.circle(x, y, r, stroke=1, fill=1)
+        elif self.kind == "half":
+            c.setFillColor(NAVY_SOFT)
+            c.wedge(x - r, y - r, x + r, y + r, 90, 180, stroke=0, fill=1)
+            c.setStrokeColor(STEEL)
+            c.setLineWidth(0.9)
+            c.circle(x, y, r, stroke=1, fill=0)
+        else:
+            c.setStrokeColor(STEEL)
+            c.setLineWidth(0.9)
+            c.circle(x, y, r, stroke=1, fill=0)
+        c.restoreState()
+
+
+def matrix_legend():
+    items = [
+        ("full", "Included natively"),
+        ("half", "Partial, add-on, or via partner"),
+        ("none", "Not offered / not core"),
+    ]
+    label = ParagraphStyle("legendLabel", fontName="Helvetica", fontSize=8,
+                           leading=10, textColor=BODY_GRAY)
+    cells, widths = [], []
+    for kind, text in items:
+        cells.extend([Marker(kind), Paragraph(text, label)])
+        widths.extend([0.22 * inch, 1.85 * inch])
+    t = Table([cells], colWidths=widths, hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return t
+
+
+def matrix_table(vendors, groups):
+    """Competitive matrix with group bands and a repeating vendor header."""
+    feature_w = 2.55 * inch
+    vendor_w = (CONTENT_W - feature_w) / len(vendors)
+    head_style = ParagraphStyle(
+        "mxHead", fontName="Helvetica-Bold", fontSize=7.4, leading=9,
+        textColor=white, alignment=TA_CENTER)
+    feat_style = ParagraphStyle(
+        "mxFeat", fontName="Helvetica", fontSize=8.5, leading=10.5,
+        textColor=INK)
+    group_style = ParagraphStyle(
+        "mxGroup", fontName="Helvetica-Bold", fontSize=8, leading=10,
+        textColor=NAVY_DEEP)
+
+    data = [[Paragraph("Feature", ParagraphStyle(
+        "mxHeadL", parent=head_style, alignment=TA_LEFT))] +
+        [Paragraph(v, head_style) for v in vendors]]
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY_DEEP),
+        ("BACKGROUND", (1, 0), (1, 0), GOLD_DEEP),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (0, -1), 8),
+        ("RIGHTPADDING", (0, 0), (0, -1), 8),
+        ("LEFTPADDING", (1, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (1, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, PLATINUM),
+    ]
+    r = 1
+    body_start = r
+    for group_name, rows in groups:
+        data.append([Paragraph(group_name.upper(), group_style)] +
+                    [""] * len(vendors))
+        style.extend([
+            ("SPAN", (0, r), (-1, r)),
+            ("BACKGROUND", (0, r), (-1, r), PLATINUM),
+            ("TOPPADDING", (0, r), (-1, r), 3.5),
+            ("BOTTOMPADDING", (0, r), (-1, r), 3.5),
+        ])
+        r += 1
+        for label, marks in rows:
+            data.append([Paragraph(label, feat_style)] +
+                        [Marker(m) for m in marks])
+            if (r - body_start) % 2 == 0:
+                style.append(("BACKGROUND", (0, r), (-1, r), PEARL))
+            else:
+                style.append(("BACKGROUND", (0, r), (-1, r), MIST))
+            # PennFit column tint sits on top of the row stripe
+            style.append(("BACKGROUND", (1, r), (1, r), GOLD_SOFT))
+            r += 1
+    t = Table(data, colWidths=[feature_w] + [vendor_w] * len(vendors),
+              hAlign="LEFT", repeatRows=1)
+    t.setStyle(TableStyle(style))
+    return t
+
+
+
 
 
 def draw_cover(c, doc):
@@ -325,8 +438,9 @@ INTRO_2 = (
     "Access in PennFit is enforced by staff roles and thirty granular "
     "permissions, so each team member sees exactly the tools their job "
     "requires. Features below are listed under the role that uses them "
-    "most; many are shared. The closing section, Platform Foundations, "
-    "covers the capabilities every role relies on."
+    "most; many are shared. The guide closes with Platform Foundations — "
+    "the capabilities every role relies on — and a competitive matrix "
+    "placing PennFit's top features beside the leading DME software."
 )
 
 STATS = [
@@ -809,6 +923,76 @@ FOUNDATIONS = [
 ]
 
 
+MATRIX_VENDORS = ["PennFit", "Brightree + ReSupply", "NikoHealth",
+                  "TIMS Software", "Parachute Health"]
+
+MATRIX_INTRO = (
+    "The matrix below positions PennFit's marquee features against the "
+    "DME/HME platforms a resupply business is most likely to evaluate: "
+    "Brightree with its ReSupply module (the established business-"
+    "management incumbent), NikoHealth (a modern HME/DME billing and "
+    "operations platform), TIMS Software (a long-standing HME suite), and "
+    "Parachute Health (the e-ordering and documentation network)."
+)
+
+MATRIX_FOOTNOTE = (
+    "PennFit entries reflect the shipped platform described in this guide. "
+    "Competitor entries are a good-faith summary of publicly available "
+    "product information as of June 2026; offerings change frequently and "
+    "several vendors deliver additional capabilities through partners or "
+    "paid add-ons. Verify with each vendor before using this comparison in "
+    "customer-facing material."
+)
+
+# Mark order follows MATRIX_VENDORS.
+MATRIX = [
+    ("Patient Experience", [
+        ("AI camera-based mask fitting, in-browser and privacy-first",
+         ["full", "none", "none", "none", "none"]),
+        ("Patient e-commerce storefront, subscriptions, and cash-pay",
+         ["full", "half", "half", "half", "none"]),
+        ("Automated resupply outreach with one-tap confirm (SMS/email)",
+         ["full", "full", "half", "half", "none"]),
+        ("Conversational AI voice agent for reorders and check-ins",
+         ["full", "half", "none", "none", "none"]),
+        ("Patient AI chatbot and sleep coach",
+         ["full", "none", "none", "none", "none"]),
+    ]),
+    ("Clinical & Therapy", [
+        ("Therapy-cloud device data sync (ResMed, Philips, React Health)",
+         ["full", "full", "half", "half", "none"]),
+        ("CMS 90-day setup-adherence tracking",
+         ["full", "full", "half", "half", "none"]),
+        ("Clinical intervention, coaching, and mask-fit worklists",
+         ["full", "half", "none", "none", "none"]),
+        ("Inbound fax OCR and document triage",
+         ["full", "full", "half", "half", "half"]),
+    ]),
+    ("Revenue Cycle", [
+        ("Clearinghouse claims (837P/835) and real-time eligibility",
+         ["full", "full", "full", "full", "none"]),
+        ("AI claim scrubbing and denial recovery ranked by win probability",
+         ["full", "half", "half", "none", "none"]),
+        ("Electronic prior authorization (Da Vinci PAS)",
+         ["full", "half", "none", "none", "none"]),
+        ("DME A/R suite: capped rentals, secondary claims, timely filing",
+         ["full", "full", "full", "full", "none"]),
+        ("Patient statements, payment plans, and payment links",
+         ["full", "full", "full", "full", "none"]),
+    ]),
+    ("Operations & Intelligence", [
+        ("Unified omnichannel inbox (SMS, MMS, email)",
+         ["full", "half", "half", "none", "half"]),
+        ("Provider e-signature and e-ordering collaboration",
+         ["full", "half", "half", "none", "full"]),
+        ("Business analytics: margin, LTV/CAC, payer profitability",
+         ["full", "half", "half", "half", "none"]),
+        ("In-app AI staff assistant and no-code automation rules",
+         ["full", "half", "half", "none", "none"]),
+    ]),
+]
+
+
 # ------------------------------------------------------------------ build --
 
 
@@ -879,6 +1063,14 @@ def build():
         Paragraph("Platform Foundations", S_TOC_ROLE),
         Paragraph("The shared engine underneath every role.", S_TOC_DESC),
     ])
+    toc_rows.append([
+        Paragraph("+", ParagraphStyle(
+            "numPlus2", fontName="Helvetica-Bold", fontSize=13,
+            textColor=GOLD_DEEP)),
+        Paragraph("Competitive Matrix", S_TOC_ROLE),
+        Paragraph("PennFit's top features beside the leading DME software.",
+                  S_TOC_DESC),
+    ])
     toc = Table(toc_rows, colWidths=[0.5 * inch, 1.9 * inch,
                                      CONTENT_W - 2.4 * inch], hAlign="LEFT")
     toc.setStyle(TableStyle([
@@ -917,6 +1109,22 @@ def build():
     story.append(Paragraph(FOUNDATIONS_INTRO, S_INTRO))
     story.append(Spacer(1, 6))
     story.append(feature_table(FOUNDATIONS))
+
+    # ---- competitive matrix
+    story.append(SectionMarker("Competitive Matrix"))
+    story.append(PageBreak())
+    story.append(RoleBanner("Appendix", "Competitive Feature Matrix",
+                            "PennFit's top features beside the leading "
+                            "DME software."))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(MATRIX_INTRO, S_INTRO))
+    story.append(matrix_legend())
+    story.append(Spacer(1, 10))
+    story.append(matrix_table(MATRIX_VENDORS, MATRIX))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(MATRIX_FOOTNOTE, ParagraphStyle(
+        "footnote", fontName="Helvetica-Oblique", fontSize=7.8,
+        leading=10.5, textColor=STEEL)))
 
     doc.build(story)
     print(f"wrote {OUT_PATH}")
