@@ -32,6 +32,7 @@ const SITEMAP = readFileSync(
 );
 
 const ORIGIN = "https://pennpaps.com";
+const ORIGIN_URL = new URL(ORIGIN);
 
 // Routes that exist in App.tsx but must NOT be in the sitemap: anything
 // state-gated (the fitter funnel), tokenized (signed-link landings), auth,
@@ -94,8 +95,11 @@ function isExcluded(p: string): boolean {
 function sitemapPaths(): string[] {
   const locs = [...SITEMAP.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]!);
   return locs.map((loc) => {
-    expect(loc.startsWith(ORIGIN)).toBe(true);
-    const p = loc.slice(ORIGIN.length);
+    const parsed = new URL(loc);
+    expect(parsed.protocol).toBe(ORIGIN_URL.protocol);
+    expect(parsed.hostname).toBe(ORIGIN_URL.hostname);
+    expect(parsed.port).toBe(ORIGIN_URL.port);
+    const p = parsed.pathname;
     return p === "" ? "/" : p;
   });
 }
