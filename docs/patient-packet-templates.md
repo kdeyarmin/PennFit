@@ -117,6 +117,21 @@ can never produce an incomplete packet.
 - `POST   /admin/patient-packet-presets` `{ name, documentKeys, packetTitle?, description? }`
 - `DELETE /admin/patient-packet-presets/:presetId`
 
+## Provider portal: batch signing
+
+The provider queue offers checkboxes on pending documents plus a
+**Sign N selected** flow: one typed name + one ESIGN consent (+ one
+optional drawn signature) executed against every selected document via
+`POST /api/provider/queue/sign-batch` (max 50 ids). Each document is
+still signed **individually** server-side — its own status-guarded row
+update, its own attestation statement, its own hash-chained `signed`
+event (flagged `viaBatch: true`) — so certificates and audit trails are
+identical to one-at-a-time signing. Ineligible documents (already
+signed / declined / expired / not the provider's) are skipped and
+reported back, never silently signed. The single-document route and the
+batch route share one `executeSignature` helper so the captures can't
+drift.
+
 ## Provider portal: drawn signature (optional)
 
 _Migration 0302._ The provider signing screen now offers an optional
