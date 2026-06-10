@@ -79,7 +79,8 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
               {fullName(data.firstName, data.lastName)}
             </div>
             <div className="text-xs text-slate-500">
-              PACware #{data.pacwareId} · since {formatDate(data.createdAt)}
+              {data.pacwareId ? `PACware #${data.pacwareId} · ` : ""}since{" "}
+              {formatDate(data.createdAt)}
             </div>
           </div>
           <Badge variant={patientStatusVariant(data.status)}>
