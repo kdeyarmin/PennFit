@@ -143,13 +143,13 @@ Railpack resolves the **Node** version by priority:
 - `.nvmrc` and `.node-version` both = `24` — consistent secondary signals
   (also used by `nvm`/`fnm`/`asdf` for local dev).
 
-**Recommended operator pin:** set **`RAILPACK_NODE_VERSION=24`** in Railway
-→ service → Variables. It outranks `engines.node` and is the only fully
-authoritative pin, removing any chance of Railpack falling back to its
-default major. Confirm the resolved Node major in the next Railway **build
-log**. (This is optional — production is live and green on `24.x` — and it's
-the one remaining item from hosting review **R2**. It's an environment
-variable, not a repo file, so it can't be committed.)
+**Operator pin (set):** **`RAILPACK_NODE_VERSION=24`** is set on the
+production service (Railway → service → Variables, added 2026-06-10 —
+closes hosting review **R2**). It outranks `engines.node` and is the only
+fully authoritative pin, removing any chance of Railpack falling back to
+its default major. It's an environment variable, not a repo file, so it
+can't be committed — if the service is ever recreated, re-add it and
+confirm the resolved Node major in the next Railway **build log**.
 
 **pnpm** is pinned to `pnpm@11.5.2` via the root `packageManager` field;
 Corepack installs that exact version during the install phase.
@@ -172,6 +172,18 @@ The full table — required + every optional/feature-gated var and where it's
 read — is in [`README.md`](../README.md#environment-variables),
 [`.env.example`](../.env.example), and (for first launch, with production
 values) [production-launch.md §2](./runbooks/production-launch.md#2-set-every-production-secret-5-min).
+
+## Deploy trigger & check-suite gating
+
+Production deploys from `main` on `kdeyarmin/PennFit` with Railway's
+**"Wait for CI"** enabled. That setting waits for **every** GitHub check
+suite on the commit — not just `ci.yml`. Any other suite attached to the
+push (CodeQL, Pages builds, **Codespaces prebuilds**) holds the deploy in
+`WAITING` until it finishes; observed 2026-06-10, a Codespaces prebuild
+kept a release waiting ~45 minutes after CI itself was green. If a deploy
+sits in `WAITING` with green CI, check the commit's **Checks** tab for the
+straggler suite (and disable repo features that add slow suites to `main`
+pushes if the latency isn't worth it).
 
 ## Verifying a deploy
 
@@ -214,8 +226,16 @@ The `preDeployCommand` is **opt-in**: it runs the migrator only when
 `RUN_DB_MIGRATIONS=true`, and otherwise exits 0 (a no-op). When enabled it
 runs once per deploy, before the new release goes live, and **gates the
 deploy on success** — a migration error keeps the previous release running
-rather than taking the site down. Production has no migration ledger yet, so
-it must be **baselined once** before the flag is enabled; see
+rather than taking the site down.
+
+Production's ledger has been **adopted** (the one-time baseline ran —
+verified 2026-06-06) and `RUN_DB_MIGRATIONS=true` is set on the service,
+so every deploy auto-applies the pending migration tail. The one-shot
+adoption variables (`MIGRATIONS_BASELINE_THROUGH` /
+`MIGRATIONS_BASELINE_EXCEPT`) were removed from the service on 2026-06-10,
+per the post-cutover instruction in `deploy-migrate.mjs`. The historical
+adoption procedure (and how to baseline a brand-new environment against an
+existing database) is preserved in
 [`docs/runbooks/adopt-migration-ledger.md`](./runbooks/adopt-migration-ledger.md)
 and the `pennfit-migrations` skill.
 
