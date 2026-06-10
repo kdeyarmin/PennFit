@@ -156,10 +156,11 @@ describe("VoiceBridge", () => {
     expect(invocations[0]!.name).toBe("verify_patient_identity");
     // The summary MUST NOT carry the raw DOB
     expect(JSON.stringify(invocations[0]!.auditArgs)).not.toContain("1972");
-    expect(fake.submitToolResult).toHaveBeenCalledWith("c1", {
-      matched: true,
-      attempts_remaining: 2,
-    });
+    expect(fake.submitToolResult).toHaveBeenCalledWith(
+      "c1",
+      { matched: true, attempts_remaining: 2 },
+      { requestFollowUp: true },
+    );
   });
 
   it("rejects an unknown tool name with status='unknown_tool' and surfaces a model-readable error", () => {
@@ -259,6 +260,86 @@ describe("VoiceBridge", () => {
     });
     await new Promise((r) => setImmediate(r));
     expect(fake.close).toHaveBeenCalledWith(1000, "end_call_tool_invoked");
+  });
+
+  it("end_call does NOT request a follow-up response (the goodbye was already spoken)", async () => {
+    const dispatch = vi.fn(
+      async (call: DispatchToolCall) =>
+        ({
+          callId: call.callId,
+          name: call.name,
+          result: { ok: true },
+        }) as DispatchToolResult,
+    );
+    const dispatcher = { dispatch } as unknown as ToolDispatcher;
+    const { bridge: _bridge, fake } = buildBridge(dispatcher);
+    fake.emit("tool.call", {
+      callId: "c5",
+      name: "end_call",
+      argumentsJson: '{"outcome":"completed"}',
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(fake.submitToolResult).toHaveBeenCalledWith(
+      "c5",
+      { ok: true },
+      { requestFollowUp: false },
+    );
+    // Non-end_call tools DO request a follow-up.
+    fake.emit("tool.call", {
+      callId: "c6",
+      name: "lookup_resupply_inventory",
+      argumentsJson: "{}",
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(fake.submitToolResult).toHaveBeenCalledWith(
+      "c6",
+      { ok: true },
+      { requestFollowUp: true },
+    );
+  });
+
+  it("end_call waits for the sink's playback drain before closing (goodbye not clipped)", async () => {
+    const dispatch = vi.fn(
+      async (call: DispatchToolCall) =>
+        ({
+          callId: call.callId,
+          name: call.name,
+          result: { ok: true },
+        }) as DispatchToolResult,
+    );
+    const dispatcher = { dispatch } as unknown as ToolDispatcher;
+    const fake = new FakeRealtimeClient();
+    let releasePlayback: (() => void) | null = null;
+    const sink: MediaStreamSink = {
+      writeAudioBase64() {},
+      waitForPlaybackDone: () =>
+        new Promise<void>((resolve) => {
+          releasePlayback = resolve;
+        }),
+    };
+    new VoiceBridge({
+      client: fake as unknown as RealtimeClient,
+      sink,
+      dispatcher,
+    });
+    fake.emit("tool.call", {
+      callId: "c5",
+      name: "end_call",
+      argumentsJson: '{"outcome":"completed"}',
+    });
+    await new Promise((r) => setImmediate(r));
+    // Playback hasn't drained — the realtime client must still be open.
+    expect(fake.close).not.toHaveBeenCalled();
+    releasePlayback!();
+    await new Promise((r) => setImmediate(r));
+    expect(fake.close).toHaveBeenCalledWith(1000, "end_call_tool_invoked");
+  });
+
+  it("requestGreeting asks the model to speak first (inbound greeting kick)", () => {
+    const dispatcher: ToolDispatcher = { dispatch: vi.fn() };
+    const { bridge, fake } = buildBridge(dispatcher);
+    bridge.requestGreeting();
+    expect(fake.requestResponse).toHaveBeenCalledTimes(1);
   });
 
   it("propagates client-level errors as session.error with source='openai'", () => {
@@ -501,7 +582,10 @@ interface FakeStreamRecord {
   handlers: TtsStreamHandlers;
 }
 
-function buildBridgeWithStreamer(filler?: ToolCallFillerConfig): {
+function buildBridgeWithStreamer(
+  filler?: ToolCallFillerConfig,
+  dispatcherOverride?: ToolDispatcher,
+): {
   bridge: VoiceBridge;
   fake: FakeRealtimeClient;
   sink: ReturnType<typeof buildSink>;
@@ -509,7 +593,9 @@ function buildBridgeWithStreamer(filler?: ToolCallFillerConfig): {
 } {
   const fake = new FakeRealtimeClient();
   const sink = buildSink();
-  const dispatcher: ToolDispatcher = { dispatch: vi.fn() };
+  const dispatcher: ToolDispatcher = dispatcherOverride ?? {
+    dispatch: vi.fn(),
+  };
   const sessions: FakeStreamRecord[] = [];
   const streamer: TtsStreamer = {
     openSession(handlers) {
@@ -599,7 +685,7 @@ describe("VoiceBridge — streaming TTS path", () => {
     ]);
   });
 
-  it("drops late frames from a session that has been replaced by the next turn", () => {
+  it("delivers turns' audio strictly in order: the previous turn keeps streaming its tail, the next turn buffers until it finishes", () => {
     const { fake, sink, sessions } = buildBridgeWithStreamer();
 
     fake.emit("transcript.delta", {
@@ -608,7 +694,8 @@ describe("VoiceBridge — streaming TTS path", () => {
       done: true,
       itemId: "o1",
     });
-    // New turn → a second session opens and becomes current.
+    // New turn → a second session opens and becomes current — while the
+    // FIRST session's audio is still streaming back from the engine.
     fake.emit("transcript.delta", {
       source: "output",
       text: "Two ",
@@ -617,11 +704,32 @@ describe("VoiceBridge — streaming TTS path", () => {
     });
     expect(sessions).toHaveLength(2);
 
-    // A late frame from the FIRST (replaced) session must be dropped.
+    // The first turn's trailing audio still reaches the caller (dropping
+    // it — the old behaviour — clipped the previous sentence mid-word)…
+    sessions[0]!.handlers.onFrame("TAIL-1");
+    // …while the next turn's audio waits its turn (never interleaved).
+    sessions[1]!.handlers.onFrame("HELD-2");
+    expect(sink.written).toEqual(["TAIL-1"]);
+
+    // When the first turn finishes, the buffered second-turn audio
+    // flushes in order and the second session goes live.
+    sessions[0]!.handlers.onDone?.();
+    expect(sink.written).toEqual(["TAIL-1", "HELD-2"]);
+    sessions[1]!.handlers.onFrame("LIVE-2");
+    expect(sink.written).toEqual(["TAIL-1", "HELD-2", "LIVE-2"]);
+  });
+
+  it("drops late frames from a session that already finished", () => {
+    const { fake, sink, sessions } = buildBridgeWithStreamer();
+    fake.emit("transcript.delta", {
+      source: "output",
+      text: "One.",
+      done: true,
+      itemId: "o1",
+    });
+    sessions[0]!.handlers.onDone?.();
     sessions[0]!.handlers.onFrame("LATE");
-    // A frame from the current session is forwarded.
-    sessions[1]!.handlers.onFrame("OK");
-    expect(sink.written).toEqual(["OK"]);
+    expect(sink.written).toEqual([]);
   });
 
   it("barge-in aborts the open session and clears the sink; later frames are dropped", () => {
@@ -676,6 +784,46 @@ describe("VoiceBridge — streaming TTS path", () => {
       itemId: "i1",
     });
     expect(sessions).toEqual([]);
+  });
+
+  it("end_call waits for the goodbye's streaming audio to finish before closing", async () => {
+    vi.useFakeTimers();
+    try {
+      const okDispatch = vi.fn(
+        async (call: DispatchToolCall) =>
+          ({
+            callId: call.callId,
+            name: call.name,
+            result: { ok: true },
+          }) as DispatchToolResult,
+      );
+      const { fake, sessions } = buildBridgeWithStreamer(undefined, {
+        dispatch: okDispatch,
+      } as unknown as ToolDispatcher);
+      // The agent speaks its goodbye…
+      fake.emit("transcript.delta", {
+        source: "output",
+        text: "Alright, take care — bye now.",
+        done: true,
+        itemId: "o1",
+      });
+      expect(sessions).toHaveLength(1);
+      // …then the model invokes end_call while the engine is still
+      // streaming the goodbye's audio back.
+      fake.emit("tool.call", {
+        callId: "c9",
+        name: "end_call",
+        argumentsJson: '{"outcome":"completed"}',
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(fake.close).not.toHaveBeenCalled();
+      // The engine finishes delivering the goodbye → the bridge closes.
+      sessions[0]!.handlers.onDone?.();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(fake.close).toHaveBeenCalledWith(1000, "end_call_tool_invoked");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a streaming session error surfaces session.error(source='tts') without ending the call", () => {

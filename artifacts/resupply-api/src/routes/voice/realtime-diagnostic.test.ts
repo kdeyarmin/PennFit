@@ -137,6 +137,34 @@ describe("POST /voice/realtime-diagnostic", () => {
     );
   });
 
+  it("the registered diagnostic context builds a valid system prompt (and the agent speaks first)", async () => {
+    // Regression guard: buildSystemPrompt caps callContext at 250 chars
+    // and THROWS over it. The previous diagnostic context ran 392 chars,
+    // so the WS handler crashed on connect and every dial-in test call
+    // was hung up the moment it was answered.
+    const { buildSystemPrompt } = await import("@workspace/resupply-ai");
+    setVoiceEnv();
+    process.env.OPENAI_REALTIME_DIAGNOSTIC_ENABLED = "1";
+    await request(buildApp())
+      .post("/voice/realtime-diagnostic")
+      .send("CallSid=CA789");
+    const conversationId = capture.connect?.customParameters?.conversationId;
+    const entry = getPendingSessions().peek(conversationId!);
+    expect(entry).not.toBeNull();
+    expect(entry!.callContext).toBeTruthy();
+    expect(entry!.callContext!.length).toBeLessThanOrEqual(250);
+    expect(() =>
+      buildSystemPrompt({
+        practiceName: "PennPaps",
+        callContext: entry!.callContext!,
+        ...(entry!.greeting ? { greeting: entry!.greeting } : {}),
+      }),
+    ).not.toThrow();
+    // The operator dialed in — the agent must greet first, not wait in
+    // silence for the caller to speak.
+    expect(entry!.agentSpeaksFirst).toBe(true);
+  });
+
   it("rejects a payload with no CallSid (400 hangup), no session registered", async () => {
     setVoiceEnv();
     process.env.OPENAI_REALTIME_DIAGNOSTIC_ENABLED = "1";

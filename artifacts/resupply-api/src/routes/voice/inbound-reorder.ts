@@ -271,6 +271,9 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       shopCustomerId,
       callContext: INBOUND_SHOP_CALL_CONTEXT,
       greeting: INBOUND_SHOP_GREETING,
+      // The caller dialed US — the agent must greet first, not wait for
+      // the caller to break the silence.
+      agentSpeaksFirst: true,
     });
 
     // Best-effort metadata stamp — the TwiML response (and the call) must go
@@ -428,6 +431,9 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     episodeId,
     callContext: INBOUND_CALL_CONTEXT,
     greeting: INBOUND_GREETING,
+    // The caller dialed US — the agent must greet first, not wait for
+    // the caller to break the silence.
+    agentSpeaksFirst: true,
   });
 
   // Best-effort metadata stamp — the TwiML response must go out regardless.

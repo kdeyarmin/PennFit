@@ -239,6 +239,13 @@ export interface PlaceResupplyOrderResult {
   order_id: string;
   /** SKUs that were actually accepted (subset of the requested set). */
   accepted_skus: string[];
+  /**
+   * Optional non-PHI hint for the model: why an order could not be
+   * placed (e.g. an insurance-eligibility date) or that the order was
+   * already on the books ("already_confirmed"). Never carries patient
+   * identifiers — it is read aloud by the agent.
+   */
+  reason?: string;
 }
 
 export interface RequestHumanHandoffResult {

@@ -54,6 +54,17 @@ export interface MediaStreamSink {
    * previous response. Implementations may no-op.
    */
   clearQueuedAudio?(): void;
+  /**
+   * Optional — resolve once everything written so far has actually been
+   * PLAYED to the caller (or after `timeoutMs`, whichever comes first).
+   * Twilio buffers outbound audio and plays it at real-time pace, so
+   * "all frames sent" can run seconds ahead of "the caller heard it".
+   * The Twilio implementation rides a `mark` frame round-trip. Used by
+   * the graceful `end_call` hangup so the agent's goodbye is not cut
+   * off mid-word. Implementations must ALWAYS resolve (never reject,
+   * never hang past the timeout).
+   */
+  waitForPlaybackDone?(timeoutMs: number): Promise<void>;
 }
 
 export interface TranscriptTurn {
@@ -207,6 +218,22 @@ const DEFAULT_FILLER_GRACE_MS = 1500;
 // the next genuine turn always transitions off it cleanly.
 const FILLER_STREAM_ITEM_KEY = "__tool_call_filler__";
 
+// Graceful end_call hangup budget. After the model invokes end_call we
+// wait (bounded) for (a) the external TTS engine to finish delivering the
+// goodbye's audio frames and (b) Twilio to finish PLAYING its buffered
+// audio, before closing the Realtime session — otherwise the call drops
+// mid-goodbye, the single most jarring "that was a robot" moment possible.
+// Both waits always resolve; a wedged vendor costs at most the timeout.
+const END_CALL_TTS_IDLE_TIMEOUT_MS = 10_000;
+const END_CALL_PLAYBACK_TIMEOUT_MS = 10_000;
+const END_CALL_TTS_IDLE_POLL_MS = 50;
+
+// How long a streaming-TTS turn may keep the delivery queue's head spot
+// after a NEWER turn has queued behind it. Normal turns finish well inside
+// this; a vendor socket that hangs without closing would otherwise mute
+// every subsequent turn for the rest of the call.
+const TTS_DELIVERY_STALL_MS = 5_000;
+
 export interface BridgeOptions {
   client: RealtimeClient;
   sink: MediaStreamSink;
@@ -242,6 +269,16 @@ const KNOWN_TOOL_NAMES = new Set<ToolName>(TOOL_NAMES);
 
 function isKnownTool(name: string): name is ToolName {
   return KNOWN_TOOL_NAMES.has(name as ToolName);
+}
+
+/** One streaming-TTS session's slot in the ordered delivery queue. */
+interface TtsDeliveryEntry {
+  /** The vendor session — held so barge-in/close can abort it. */
+  session: TtsStreamSession;
+  /** Frames received while a prior entry still holds the head spot. */
+  buffered: string[];
+  /** Set once the session has fully delivered (or errored/aborted). */
+  finished: boolean;
 }
 
 // Sentence-boundary detector for streaming the agent's voice on the
@@ -309,6 +346,20 @@ export class VoiceBridge extends EventEmitter {
   private ttsStreamItemId: string | null = null;
   private ttsStreamPushed = 0;
 
+  // Ordered audio delivery for the streaming-TTS path. A new agent turn
+  // can open its session while the PREVIOUS turn's session is still
+  // streaming its last audio back — dropping the old session's frames
+  // (the old behaviour) clipped the tail of the previous sentence
+  // mid-word. Instead each session gets a queue entry: the head entry
+  // writes straight to the sink; entries behind it buffer until the head
+  // finishes, then flush in order. Barge-in / close aborts every entry.
+  private readonly ttsDelivery: TtsDeliveryEntry[] = [];
+  private ttsDeliveryStallTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // True once end_call has begun the graceful hangup, so a duplicate
+  // end_call (model retry) can't start a second countdown.
+  private farewellCloseStarted = false;
+
   // Tool-call dead-air filler state (only used when `this.filler` is set
   // AND an external TTS engine owns the voice). `fillerTimer` is the
   // pending "speak a filler if the gap runs long" timer; `lastOutputAt`
@@ -344,6 +395,18 @@ export class VoiceBridge extends EventEmitter {
     this.client.appendAudio(base64Mulaw);
   }
 
+  /**
+   * Ask the model to open the conversation. Inbound calls need this:
+   * semantic VAD only creates a response AFTER the caller speaks, so
+   * without an explicit kick a caller who dials in and politely waits
+   * is greeted by dead air. The ws-handler calls this once the Realtime
+   * session is open AND Twilio's media stream has started (so the
+   * greeting audio has somewhere to go).
+   */
+  requestGreeting(): void {
+    this.client.requestResponse();
+  }
+
   /** Stop both sides cleanly. Idempotent. */
   close(reason: string): void {
     // Abort any in-flight external-TTS synthesis and drop the queue so a
@@ -355,9 +418,10 @@ export class VoiceBridge extends EventEmitter {
       this.ttsAbort.abort();
       this.ttsAbort = null;
     }
-    // Tear down any open streaming-TTS session for the same reason.
+    // Tear down any open streaming-TTS sessions (current turn AND any
+    // prior turn still delivering through the ordered queue).
+    this.abortAllTtsDelivery();
     if (this.ttsStream) {
-      this.ttsStream.abort();
       this.resetTtsStream();
     }
     this.cancelFiller();
@@ -526,7 +590,7 @@ export class VoiceBridge extends EventEmitter {
 
   /** True when the agent currently has audio in flight to the caller. */
   private isSpeaking(): boolean {
-    if (this.ttsStreamer) return this.ttsStream !== null;
+    if (this.ttsStreamer) return this.ttsDelivery.length > 0;
     return this.ttsDraining || this.ttsQueue.length > 0;
   }
 
@@ -639,13 +703,20 @@ export class VoiceBridge extends EventEmitter {
         status: "ok",
         result: result.result,
       });
-      this.client.submitToolResult(callId, result.result);
+      // For end_call we do NOT request a follow-up response: the agent
+      // has already spoken its goodbye, and a stray extra turn would
+      // race the hangup.
+      this.client.submitToolResult(callId, result.result, {
+        requestFollowUp: name !== "end_call",
+      });
 
       // `end_call` is the canonical hangup signal — the model has
       // committed to terminating. Close upstream so the API can tear
-      // down the Twilio leg.
+      // down the Twilio leg — but GRACEFULLY: wait (bounded) for the
+      // goodbye's audio to be synthesised AND played before closing,
+      // otherwise the line drops mid-"take care now".
       if (name === "end_call") {
-        this.client.close(1000, "end_call_tool_invoked");
+        void this.closeAfterFarewell();
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -668,6 +739,58 @@ export class VoiceBridge extends EventEmitter {
         message,
       });
     }
+  }
+
+  // ---- Graceful end_call hangup ----------------------------------------
+
+  /**
+   * Close the Realtime session AFTER the agent's goodbye has actually
+   * reached the caller. Two bounded waits:
+   *   1. external-TTS idle — the goodbye's frames have all been handed to
+   *      the sink (no-op on the built-in cedar path, where the model's
+   *      audio deltas were already forwarded);
+   *   2. sink playback drain — Twilio has finished PLAYING its buffered
+   *      audio (a `mark` round-trip; Twilio plays at real-time pace, so
+   *      "frames sent" runs seconds ahead of "caller heard it").
+   * Every path resolves; a wedged vendor costs at most the two timeouts,
+   * and the ws-handler's max-duration timer remains the hard backstop.
+   * If the call is torn down externally mid-wait (caller hung up first),
+   * close() aborts the TTS work, the waits fall through, and the final
+   * client.close() is an idempotent no-op.
+   */
+  private async closeAfterFarewell(): Promise<void> {
+    if (this.farewellCloseStarted) return;
+    this.farewellCloseStarted = true;
+    try {
+      await this.waitForTtsIdle(END_CALL_TTS_IDLE_TIMEOUT_MS);
+      await this.sink.waitForPlaybackDone?.(END_CALL_PLAYBACK_TIMEOUT_MS);
+    } catch {
+      // Both waits are contractually non-throwing; this is belt and
+      // suspenders so a misbehaving sink can never block the hangup.
+    }
+    this.client.close(1000, "end_call_tool_invoked");
+  }
+
+  /**
+   * Resolve once no external-TTS audio remains in flight (or after
+   * `timeoutMs`). Resolves immediately on the built-in cedar path.
+   */
+  private waitForTtsIdle(timeoutMs: number): Promise<void> {
+    if (!this.tts && !this.ttsStreamer) return Promise.resolve();
+    if (!this.isSpeaking()) return Promise.resolve();
+    const deadline = Date.now() + timeoutMs;
+    return new Promise((resolve) => {
+      const tick = (): void => {
+        if (!this.isSpeaking() || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        const timer = setTimeout(tick, END_CALL_TTS_IDLE_POLL_MS);
+        timer.unref?.();
+      };
+      const timer = setTimeout(tick, END_CALL_TTS_IDLE_POLL_MS);
+      timer.unref?.();
+    });
   }
 
   // ---- Streaming external TTS (ElevenLabs stream-input WS) ------------
@@ -711,18 +834,24 @@ export class VoiceBridge extends EventEmitter {
     if (!this.ttsStreamer) return;
     this.ttsStreamItemId = itemId;
     this.ttsStreamPushed = 0;
+    // Queue entry first, session second: the entry must be discoverable
+    // by the handlers even if the engine emits a frame immediately.
+    const entry: TtsDeliveryEntry = {
+      session: null as unknown as TtsStreamSession,
+      buffered: [],
+      finished: false,
+    };
+    this.ttsDelivery.push(entry);
     const session = this.ttsStreamer.openSession({
       onFrame: (frame) => {
-        // Drop frames once this session has been replaced or aborted so we
-        // never talk over a newer turn or a barged-in caller.
-        if (this.ttsStream !== session) return;
-        this.sink.writeAudioBase64(frame);
+        this.deliverTtsFrame(entry, frame);
       },
       onError: (err) => {
         // Tear down the vendor connection — an errored session must not be
         // left open streaming audio we'd only discard for the rest of the
         // turn. abort() is idempotent and suppresses any trailing onClosed.
         session.abort();
+        this.finishTtsDelivery(entry);
         // Drop the session but KEEP `ttsStreamItemId` so the rest of this
         // (now voice-less) turn's deltas are ignored rather than reopening
         // a fresh session and re-speaking from the top.
@@ -735,13 +864,113 @@ export class VoiceBridge extends EventEmitter {
         });
       },
       onDone: () => {
-        // Natural completion — the turn is fully over, so forget the item
-        // id too; the next turn (new id, or the synthetic fallback key)
-        // opens a fresh session.
+        // Natural completion — all of this turn's audio has been handed
+        // to the delivery queue; release its head spot.
+        this.finishTtsDelivery(entry);
+        // Forget the item id too; the next turn (new id, or the synthetic
+        // fallback key) opens a fresh session.
         if (this.ttsStream === session) this.resetTtsStream();
       },
     });
+    entry.session = session;
     this.ttsStream = session;
+    // If an older turn still holds the head spot, make sure it can't hold
+    // it forever — a hung vendor socket would otherwise mute every
+    // subsequent turn for the rest of the call.
+    this.armTtsDeliveryStallGuard();
+  }
+
+  // ---- Ordered streaming-TTS audio delivery ---------------------------
+
+  /**
+   * Route one frame from a streaming session: the queue head writes
+   * straight to the sink; younger entries buffer until the head finishes
+   * (turns must reach the caller strictly in order — interleaving two
+   * sessions' frames garbles the audio, and dropping the older one clips
+   * the previous sentence mid-word).
+   */
+  private deliverTtsFrame(entry: TtsDeliveryEntry, frame: string): void {
+    if (entry.finished) return; // late frame after abort/error — drop
+    if (this.ttsDelivery[0] === entry) {
+      this.sink.writeAudioBase64(frame);
+      return;
+    }
+    entry.buffered.push(frame);
+  }
+
+  /** Mark an entry delivered; if it held the head spot, flush successors. */
+  private finishTtsDelivery(entry: TtsDeliveryEntry): void {
+    if (entry.finished) return;
+    entry.finished = true;
+    if (this.ttsDelivery[0] !== entry) return; // promoted later, in order
+    this.ttsDelivery.shift();
+    this.clearTtsDeliveryStallGuard();
+    // Promote: flush what the next turn buffered while waiting; if it had
+    // already finished too, keep cascading.
+    while (this.ttsDelivery.length > 0) {
+      const head = this.ttsDelivery[0]!;
+      for (const buffered of head.buffered) {
+        this.sink.writeAudioBase64(buffered);
+      }
+      head.buffered.length = 0;
+      if (!head.finished) {
+        this.armTtsDeliveryStallGuard();
+        return; // now live — future frames write straight through
+      }
+      this.ttsDelivery.shift();
+    }
+  }
+
+  /** Abort every queued/streaming session (barge-in or close). */
+  private abortAllTtsDelivery(): void {
+    for (const entry of this.ttsDelivery) {
+      entry.finished = true;
+      try {
+        entry.session?.abort();
+      } catch {
+        // best-effort — the vendor socket may already be gone
+      }
+    }
+    this.ttsDelivery.length = 0;
+    this.clearTtsDeliveryStallGuard();
+  }
+
+  /**
+   * Watchdog for the delivery queue's head: armed whenever a younger turn
+   * is waiting behind it. If the head hasn't finished inside
+   * TTS_DELIVERY_STALL_MS, abort it and promote — losing the tail of one
+   * stalled turn beats muting the rest of the call.
+   */
+  private armTtsDeliveryStallGuard(): void {
+    if (this.ttsDeliveryStallTimer !== null) return;
+    if (this.ttsDelivery.length < 2) return;
+    const head = this.ttsDelivery[0]!;
+    const timer = setTimeout(() => {
+      this.ttsDeliveryStallTimer = null;
+      if (this.ttsDelivery[0] === head && !head.finished) {
+        try {
+          head.session?.abort();
+        } catch {
+          // best-effort
+        }
+        this.emit("session.error", {
+          source: "tts",
+          code: "tts_delivery_stalled",
+          message: "streaming TTS turn stalled; promoting next turn",
+        });
+        this.finishTtsDelivery(head);
+      }
+    }, TTS_DELIVERY_STALL_MS);
+    timer.unref?.();
+    this.ttsDeliveryStallTimer = timer;
+  }
+
+  /** Clear the stall watchdog. Idempotent. */
+  private clearTtsDeliveryStallGuard(): void {
+    if (this.ttsDeliveryStallTimer !== null) {
+      clearTimeout(this.ttsDeliveryStallTimer);
+      this.ttsDeliveryStallTimer = null;
+    }
   }
 
   /** Drop the active session reference but remember which item it voiced. */
@@ -757,15 +986,15 @@ export class VoiceBridge extends EventEmitter {
   }
 
   /**
-   * Caller interrupted while a streaming session was playing: abort it (the
-   * session goes silent immediately) and flush whatever Twilio has buffered
-   * so the agent stops mid-word. Keep `ttsStreamItemId` so any in-flight
-   * deltas for the interrupted turn are ignored — never re-opened and
-   * re-spoken over the caller.
+   * Caller interrupted while a streaming session was playing: abort every
+   * queued/streaming session (they all go silent immediately) and flush
+   * whatever Twilio has buffered so the agent stops mid-word. Keep
+   * `ttsStreamItemId` so any in-flight deltas for the interrupted turn are
+   * ignored — never re-opened and re-spoken over the caller.
    */
   private bargeInStream(): void {
+    this.abortAllTtsDelivery();
     if (this.ttsStream) {
-      this.ttsStream.abort();
       this.clearTtsStreamRef();
     }
     this.sink.clearQueuedAudio?.();

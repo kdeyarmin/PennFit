@@ -11,7 +11,7 @@
 // the lockout guard, and the post-lockout allowlist
 // (request_human_handoff / end_call).
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import { createVoiceToolDispatcher } from "./tools-impl";
 
@@ -316,75 +316,39 @@ describe("tools-impl — prescriptions query filters by status='active' (PR chan
 });
 
 // ---------------------------------------------------------------------------
-// PR change: episode update gated on status='pending'
+// place_resupply_order rides the SHARED order-flow path
 // ---------------------------------------------------------------------------
-// The placeResupplyOrder implementation now adds a `.eq("status", "pending")`
-// guard to the episodes update, preventing a second confirm call (or a race
-// with a cancellation) from resurrecting an already-terminal episode.
-// The updated rows are SELECTed so the caller can detect a no-op update.
+// The voice tool used to flip episodes.status itself behind a
+// `.eq("status", "pending")` guard — but "pending" is not an episode
+// status (the lifecycle is outreach_pending → awaiting_response →
+// confirmed/declined/…), so the guard matched ZERO rows and every voice
+// order failed. It also created no fulfillment rows, so even a successful
+// claim would never have shipped. It now delegates to
+// placeResupplyOrderForConversation — the same path SMS/email confirms
+// ride (atomic claim of any non-terminal episode + entitlement/coverage
+// guards + queued fulfillments).
 
-describe("tools-impl — episode update gated on status='pending' (PR change)", () => {
-  it("adds .eq('status', 'pending') to the episodes update chain", () => {
-    // The guard must be present to prevent double-confirm.
-    const episodesUpdateIdx = TOOLS_SRC.indexOf('.from("episodes")');
-    expect(episodesUpdateIdx).toBeGreaterThan(-1);
-    const pendingIdx = TOOLS_SRC.indexOf(
-      '.eq("status", "pending")',
-      episodesUpdateIdx,
-    );
-    expect(pendingIdx).toBeGreaterThan(episodesUpdateIdx);
-  });
-
-  it("selects the updated rows after the episode update to detect no-ops", () => {
-    // `.select("id")` after the update returns the rows actually changed.
-    // An empty result means the episode was already in a terminal state.
-    const episodesUpdateIdx = TOOLS_SRC.indexOf('.from("episodes")');
-    const selectIdx = TOOLS_SRC.indexOf('.select("id")', episodesUpdateIdx);
-    expect(selectIdx).toBeGreaterThan(episodesUpdateIdx);
-  });
-
-  it("returns ok:false when the updated array is empty (no-op path)", () => {
-    // The guard `if (!updated || updated.length === 0)` must be present
-    // to short-circuit to the no-op return.
-    expect(TOOLS_SRC).toContain("updated.length === 0");
-    // And it must return ok:false.
-    const noopIdx = TOOLS_SRC.indexOf("updated.length === 0");
-    const noopBlock = TOOLS_SRC.slice(noopIdx, noopIdx + 200);
-    expect(noopBlock).toContain("ok: false");
-    expect(noopBlock).toContain('order_id: ""');
-    expect(noopBlock).toContain("accepted_skus: []");
-  });
-
-  it("does NOT return ok:true unless the update confirmed a pending episode", () => {
-    // The ok:true path must be after the empty-array guard, not before it.
-    const noopGuardIdx = TOOLS_SRC.indexOf("updated.length === 0");
-    const okTrueIdx = TOOLS_SRC.indexOf("ok: true", noopGuardIdx);
-    expect(noopGuardIdx).toBeGreaterThan(-1);
-    expect(okTrueIdx).toBeGreaterThan(noopGuardIdx);
+describe("tools-impl — place_resupply_order delegates to the shared order flow", () => {
+  it("calls placeResupplyOrderForConversation instead of writing episodes directly", () => {
+    expect(TOOLS_SRC).toContain("placeResupplyOrderForConversation");
+    // The broken voice-only episode write must be gone.
+    expect(TOOLS_SRC).not.toContain('.eq("status", "pending")');
+    expect(TOOLS_SRC).not.toContain('.from("episodes")');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Behavioural test: episode status guard via stub supabase
+// Behavioural tests: place_resupply_order result mapping
 // ---------------------------------------------------------------------------
-// We exercise the placeResupplyOrder path through the dispatcher using a
-// stub supabase that simulates the two outcomes:
-//   1. Episode is in "pending" — update returns a row → ok:true.
-//   2. Episode is NOT in "pending" (already confirmed / cancelled) — update
-//      returns an empty array → ok:false without mutating state.
+// The shared flow is injected through the `placeOrderForConversation` deps
+// seam; the stub supabase only has to serve the verify read and the
+// prescriptions eligibility read.
 
-/** Build a stub that returns `episodeUpdateResult` for the episodes update. */
-function buildStubSupabaseWithEpisode(
+/** Stub serving the patient verify read + a prescriptions list. */
+function buildStubSupabaseWithRx(
   patientRow: { date_of_birth: string | null; legal_first_name: string | null },
-  episodeUpdateResult: { data: Array<{ id: string }> | null; error: null },
   prescriptions?: Array<{ item_sku: string }>,
 ) {
-  // Track which table the current builder chain is targeting so the
-  // awaitable resolves to the matching response. place_resupply_order
-  // queries `prescriptions` BEFORE running the episode update; without
-  // per-table responses the prescriptions query would resolve to the
-  // episode-update payload and the eligibility filter would drop
-  // every SKU the model offered.
   let currentTable: string | null = null;
   const builder: Record<string, unknown> = {
     select: () => builder,
@@ -400,7 +364,7 @@ function buildStubSupabaseWithEpisode(
       const payload =
         currentTable === "prescriptions"
           ? { data: prescriptions ?? [], error: null }
-          : episodeUpdateResult;
+          : { data: null, error: null };
       return Promise.resolve(payload).then(onfulfilled, onrejected);
     },
   };
@@ -414,7 +378,9 @@ function buildStubSupabaseWithEpisode(
   } as unknown as never;
 }
 
-describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR change)", () => {
+describe("VoiceToolDispatcher — place_resupply_order result mapping", () => {
+  const PATIENT = { date_of_birth: "1980-01-01", legal_first_name: "Alex" };
+
   async function verifyIdentity(
     dispatcher: ReturnType<typeof createVoiceToolDispatcher>,
   ) {
@@ -425,37 +391,46 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
     });
   }
 
-  it("returns ok:false when episode update affects 0 rows (already confirmed/cancelled)", async () => {
-    const supabase = buildStubSupabaseWithEpisode(
-      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
-      { data: [], error: null }, // empty array = no-op update
-    );
+  it("returns ok:true with the fulfillment id and accepted SKUs on a clean order", async () => {
+    const placeOrder = vi.fn(async () => ({
+      status: "ok" as const,
+      patientId: "pat-1",
+      episodeId: "epi-1",
+      fulfillmentIds: ["ful-123"],
+    }));
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase,
+      supabase: buildStubSupabaseWithRx(PATIENT, [
+        { item_sku: "A7030" },
+        { item_sku: "A7034" },
+      ]),
+      placeOrderForConversation: placeOrder as never,
     });
     await verifyIdentity(dispatcher);
 
     const result = await dispatcher.dispatch({
       callId: "o1",
       name: "place_resupply_order",
-      args: { skus: ["A7030"], address_confirmed: true },
+      args: { skus: ["A7030", "A7034"], address_confirmed: true },
     });
+    expect(placeOrder).toHaveBeenCalledWith({ conversationId: "conv-1" });
     expect(result.result).toEqual({
-      ok: false,
-      order_id: "",
-      accepted_skus: [],
+      ok: true,
+      order_id: "ful-123",
+      accepted_skus: ["A7030", "A7034"],
     });
   });
 
-  it("returns ok:false when episode update result is null (DB returned no rows)", async () => {
-    const supabase = buildStubSupabaseWithEpisode(
-      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
-      { data: null, error: null }, // null = no rows updated
-    );
+  it("treats already_confirmed as an idempotent success (never tells the caller it failed)", async () => {
+    const placeOrder = vi.fn(async () => ({
+      status: "already_confirmed" as const,
+      patientId: "pat-1",
+      episodeId: "epi-1",
+    }));
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase,
+      supabase: buildStubSupabaseWithRx(PATIENT, [{ item_sku: "A7030" }]),
+      placeOrderForConversation: placeOrder as never,
     });
     await verifyIdentity(dispatcher);
 
@@ -465,70 +440,123 @@ describe("VoiceToolDispatcher — place_resupply_order episode status gate (PR c
       args: { skus: ["A7030"], address_confirmed: true },
     });
     expect(result.result).toEqual({
-      ok: false,
+      ok: true,
       order_id: "",
-      accepted_skus: [],
+      accepted_skus: ["A7030"],
+      reason: "already_confirmed",
     });
   });
 
-  it("returns ok:true with accepted_skus when episode update confirms a pending episode", async () => {
-    const supabase = buildStubSupabaseWithEpisode(
-      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
-      { data: [{ id: "epi-1" }], error: null }, // one row updated
-      // The eligibility filter requires an active prescription for
-      // each requested SKU — without these rows the implementation
-      // (correctly) drops every offered SKU as ineligible.
-      [{ item_sku: "A7030" }, { item_sku: "A7034" }],
-    );
+  it("maps an entitlement block to ok:false with a speakable, non-PHI reason", async () => {
+    const placeOrder = vi.fn(async () => ({
+      status: "not_eligible" as const,
+      patientId: "pat-1",
+      episodeId: "epi-1",
+      entitlement: {
+        status: "too_soon",
+        reason: "last dispense too recent",
+        eligibleOn: "2026-07-15T00:00:00.000Z",
+        daysUntilEligible: 35,
+        hcpcsCode: "A7030",
+      },
+    }));
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase,
+      supabase: buildStubSupabaseWithRx(PATIENT, [{ item_sku: "A7030" }]),
+      placeOrderForConversation: placeOrder as never,
     });
     await verifyIdentity(dispatcher);
 
     const result = await dispatcher.dispatch({
       callId: "o3",
       name: "place_resupply_order",
-      args: { skus: ["A7030", "A7034"], address_confirmed: true },
+      args: { skus: ["A7030"], address_confirmed: true },
     });
-    expect(result.result.ok).toBe(true);
-    expect(
-      (result.result as { ok: boolean; accepted_skus: string[] }).accepted_skus,
-    ).toEqual(["A7030", "A7034"]);
+    const r = result.result as {
+      ok: boolean;
+      accepted_skus: string[];
+      reason?: string;
+    };
+    expect(r.ok).toBe(false);
+    expect(r.accepted_skus).toEqual([]);
+    expect(r.reason).toContain("2026-07-15");
   });
 
-  it("returns ok:false when address_confirmed is false (pre-existing guard, unaffected by PR)", async () => {
-    const supabase = buildStubSupabaseWithEpisode(
-      { date_of_birth: "1980-01-01", legal_first_name: "Alex" },
-      { data: [{ id: "epi-1" }], error: null },
-    );
+  it("maps episode_not_found to ok:false with the status as the reason", async () => {
+    const placeOrder = vi.fn(async () => ({
+      status: "episode_not_found" as const,
+    }));
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase,
+      supabase: buildStubSupabaseWithRx(PATIENT, [{ item_sku: "A7030" }]),
+      placeOrderForConversation: placeOrder as never,
     });
     await verifyIdentity(dispatcher);
 
     const result = await dispatcher.dispatch({
       callId: "o4",
       name: "place_resupply_order",
-      // The arg schema is z.literal(true), so a runtime caller
-      // SHOULD never reach this branch — the model's JSON args
-      // would fail Zod validation upstream. But the dispatcher
-      // is structurally typed, and a non-conforming caller
-      // (test fixture, future code path) hits the defensive
-      // guard. Cast to bypass the literal-true type so the
-      // dead-code guard stays exercised.
+      args: { skus: ["A7030"], address_confirmed: true },
+    });
+    expect(result.result).toEqual({
+      ok: false,
+      order_id: "",
+      accepted_skus: [],
+      reason: "episode_not_found",
+    });
+  });
+
+  it("returns ok:false WITHOUT calling the shared flow when address_confirmed is false", async () => {
+    const placeOrder = vi.fn();
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabaseWithRx(PATIENT, [{ item_sku: "A7030" }]),
+      placeOrderForConversation: placeOrder as never,
+    });
+    await verifyIdentity(dispatcher);
+
+    const result = await dispatcher.dispatch({
+      callId: "o5",
+      name: "place_resupply_order",
+      // The arg schema is z.literal(true), so a runtime caller SHOULD
+      // never reach this branch — the model's JSON args would fail Zod
+      // validation upstream. Cast to keep the defensive guard exercised.
       args: { skus: ["A7030"], address_confirmed: false } as unknown as {
         skus: string[];
         address_confirmed: true;
       },
     });
-    // address_confirmed:false short-circuits before the DB update
+    expect(placeOrder).not.toHaveBeenCalled();
     expect(result.result).toEqual({
       ok: false,
       order_id: "",
       accepted_skus: [],
     });
+  });
+
+  it("only echoes SKUs backed by an active prescription in accepted_skus", async () => {
+    const placeOrder = vi.fn(async () => ({
+      status: "ok" as const,
+      patientId: "pat-1",
+      episodeId: "epi-1",
+      fulfillmentIds: ["ful-9"],
+    }));
+    const dispatcher = createVoiceToolDispatcher({
+      ...baseDeps,
+      supabase: buildStubSupabaseWithRx(PATIENT, [{ item_sku: "A7030" }]),
+      placeOrderForConversation: placeOrder as never,
+    });
+    await verifyIdentity(dispatcher);
+
+    const result = await dispatcher.dispatch({
+      callId: "o6",
+      name: "place_resupply_order",
+      // "A9999" is invented/misheard — must not be read back as ordered.
+      args: { skus: ["A7030", "A9999"], address_confirmed: true },
+    });
+    expect(
+      (result.result as { accepted_skus: string[] }).accepted_skus,
+    ).toEqual(["A7030"]);
   });
 });
 

@@ -19,6 +19,60 @@ describe("parseTwilioFrame — happy paths", () => {
     expect(frame?.event).toBe("connected");
   });
 
+  it("parses the REAL documented 'start' frame shape (tracks + accountSid + sequenceNumber)", () => {
+    // Regression guard: the start frame Twilio actually sends carries
+    // `tracks` (and other fields we don't read). The schemas used to be
+    // .strict(), so this exact production payload was rejected — the
+    // start frame was dropped, streamSid was never captured, and every
+    // byte of agent audio was silently discarded (a fully silent call).
+    const frame = parseTwilioFrame(
+      JSON.stringify({
+        event: "start",
+        sequenceNumber: "1",
+        start: {
+          accountSid: "AC0000000000000000000000000000cafe",
+          streamSid: "MZ0000000000000000000000000000abcd",
+          callSid: "CA0000000000000000000000000000beef",
+          tracks: ["inbound"],
+          mediaFormat: {
+            encoding: "audio/x-mulaw",
+            sampleRate: 8000,
+            channels: 1,
+          },
+          customParameters: {
+            conversationId: "11111111-1111-1111-1111-111111111111",
+          },
+        },
+        streamSid: "MZ0000000000000000000000000000abcd",
+      }),
+    );
+    expect(frame).toBeTruthy();
+    if (frame?.event !== "start") throw new Error("expected start frame");
+    expect(frame.start.streamSid).toBe("MZ0000000000000000000000000000abcd");
+    expect(frame.start.callSid).toBe("CA0000000000000000000000000000beef");
+  });
+
+  it("tolerates unknown extra fields on known events (Twilio adds fields out of band)", () => {
+    const frame = parseTwilioFrame(
+      JSON.stringify({
+        event: "media",
+        sequenceNumber: "4",
+        streamSid: "MZxxxx",
+        someFutureField: { nested: true },
+        media: {
+          track: "inbound",
+          chunk: "2",
+          timestamp: "5",
+          payload: "AAAA",
+          anotherFutureField: 1,
+        },
+      }),
+    );
+    expect(frame).toBeTruthy();
+    if (frame?.event !== "media") throw new Error("expected media frame");
+    expect(frame.media.payload).toBe("AAAA");
+  });
+
   it("parses a 'start' frame and exposes the customParameters", () => {
     const frame = parseTwilioFrame(
       JSON.stringify({
