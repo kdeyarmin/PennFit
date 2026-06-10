@@ -80,6 +80,35 @@ describe("demo router", () => {
     expect(sseRes!.headers.get("content-type")).toContain("text/event-stream");
   });
 
+  it("answers PennPilot (admin assistant) chat in JSON and SSE modes", async () => {
+    // Regression guard: without a handler this endpoint hits the
+    // `{ ok: true }` mutation fallback, which carries no SSE events —
+    // the widget then renders an empty bubble and toasts "Trouble
+    // connecting" (degraded). See AdminAssistantWidget.
+    const jsonRes = await post("/resupply-api/admin/assistant/chat", {
+      messages: [
+        {
+          role: "user",
+          content:
+            "Walk me through processing an insurance claim from eligibility to payment.",
+        },
+      ],
+    });
+    expect(jsonRes!.headers.get("content-type")).toContain("application/json");
+    const body = (await jsonRes!.json()) as { reply: string };
+    expect(body.reply).toContain("/admin/billing/eligibility");
+
+    const sseRes = await post(
+      "/resupply-api/admin/assistant/chat",
+      { messages: [{ role: "user", content: "hi" }] },
+      { headers: { accept: "text/event-stream" } },
+    );
+    expect(sseRes!.headers.get("content-type")).toContain("text/event-stream");
+    const raw = await sseRes!.text();
+    expect(raw).toContain('"type":"chunk"');
+    expect(raw).toContain('"type":"done"');
+  });
+
   it("answers /admin/system-info with a full shape (settings page derefs it)", async () => {
     // Regression guard: the Settings page reads data.server.uptimeSeconds,
     // data.secrets.linkHmacKeyConfigured, etc. directly. If this endpoint
@@ -103,6 +132,121 @@ describe("demo router", () => {
     }
     const server = body.server as Record<string, unknown>;
     expect(typeof server.uptimeSeconds).toBe("number");
+  });
+
+  it("answers the claims-workflow pages with shape-complete payloads", async () => {
+    // Regression guard: these pages dereference nested fields
+    // unconditionally (counts.total, totals.count, eraFiles.length,
+    // groups/excluded, pending.map, queued.map), so each endpoint
+    // falling through to the empty-object GET fallback crashes the page
+    // into the admin error boundary — the exact "Something went wrong"
+    // a demo visitor hit while following PennPilot's claims walkthrough.
+    const shapes: Array<[string, (body: Record<string, unknown>) => void]> = [
+      [
+        "/resupply-api/admin/billing/eligibility-recent",
+        (b) => {
+          expect(Array.isArray(b.checks)).toBe(true);
+          expect((b.counts as { total: number }).total).toBeGreaterThanOrEqual(
+            0,
+          );
+        },
+      ],
+      [
+        "/resupply-api/admin/billing/era-files",
+        (b) => expect(Array.isArray(b.eraFiles)).toBe(true),
+      ],
+      [
+        "/resupply-api/admin/billing/denials-worklist",
+        (b) => {
+          expect(Array.isArray(b.items)).toBe(true);
+          expect((b.totals as { count: number }).count).toBeGreaterThanOrEqual(
+            0,
+          );
+        },
+      ],
+      [
+        "/resupply-api/admin/billing/auto-submit/ready",
+        (b) => {
+          expect(Array.isArray(b.groups)).toBe(true);
+          expect(Array.isArray(b.excluded)).toBe(true);
+        },
+      ],
+      [
+        "/resupply-api/admin/billing/auto-submit/status",
+        (b) =>
+          expect(
+            (b.autoSubmit as { flagEnabled: boolean }).flagEnabled,
+          ).toBeTypeOf("boolean"),
+      ],
+      [
+        "/resupply-api/admin/billing/statements/pending",
+        (b) => expect(Array.isArray(b.pending)).toBe(true),
+      ],
+      [
+        "/resupply-api/admin/billing/statements/mail-queue",
+        (b) => {
+          expect(Array.isArray(b.queued)).toBe(true);
+          expect(typeof b.printCap).toBe("number");
+        },
+      ],
+    ];
+    for (const [path, check] of shapes) {
+      const res = await get(path);
+      expect(res, path).not.toBeNull();
+      expect(res!.status, path).toBe(200);
+      check((await res!.json()) as Record<string, unknown>);
+    }
+  });
+
+  it("answers the claims-workflow action POSTs with shape-complete payloads", async () => {
+    // Regression guard (PR review finding): the seeded GETs enable the
+    // pages' action buttons, whose POSTs would otherwise hit the
+    // `{ ok: true }` mutation fallback — and the pages deref the
+    // response (result.failures.length, summary.scanned, outcome.kind,
+    // marked), crashing on the very click the seed data invites.
+    const run = (await (await post(
+      "/resupply-api/admin/billing/auto-submit/run",
+      {},
+    ))!.json()) as { failures: unknown[]; skippedNotReady: unknown[] };
+    expect(Array.isArray(run.failures)).toBe(true);
+    expect(Array.isArray(run.skippedNotReady)).toBe(true);
+
+    const batch = (await (await post(
+      "/resupply-api/admin/billing/statements/batch-send",
+      {},
+    ))!.json()) as { summary: { scanned: number } };
+    expect(typeof batch.summary.scanned).toBe("number");
+
+    const send = (await (await post(
+      "/resupply-api/admin/billing/statements/demo-stmt-1/send",
+    ))!.json()) as { outcome: { kind: string } };
+    expect(typeof send.outcome.kind).toBe("string");
+
+    const marked = (await (await post(
+      "/resupply-api/admin/billing/statements/mark-mailed",
+      { statementIds: ["demo-stmt-9"] },
+    ))!.json()) as { marked: number };
+    expect(marked.marked).toBe(1);
+  });
+
+  it("includes appointmentsAssignedToMe in /admin/today (dashboard derefs .length)", async () => {
+    // Regression guard: TodayResponse grew this key; the stale fixture
+    // without it crashed /admin, /admin/today AND /admin/work-queue
+    // (all three render AssignedAppointmentsCard) in demo mode.
+    const res = await get("/resupply-api/admin/today");
+    const body = (await res!.json()) as Record<string, unknown>;
+    expect(Array.isArray(body.appointmentsAssignedToMe)).toBe(true);
+  });
+
+  it("filters the demo patient roster by search", async () => {
+    const res = await get("/resupply-api/patients?search=jordan&limit=10");
+    const body = (await res!.json()) as {
+      items: Array<{ firstName: string }>;
+    };
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const p of body.items) {
+      expect(p.firstName.toLowerCase()).toContain("jordan");
+    }
   });
 
   it("falls back to empty object for unmatched API GETs", async () => {
