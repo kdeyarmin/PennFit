@@ -39,7 +39,7 @@ vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: vi.fn(async () => featureEnabled.value),
 }));
 
-import productsRouter from "./products";
+import productsRouter, { invalidateShopProductsCache } from "./products";
 
 function makeApp(): Express {
   const app = express();
@@ -178,6 +178,39 @@ describe("GET /shop/products — degradation behaviour", () => {
     expect(third.status).toBe(503);
 
     vi.restoreAllMocks();
+  });
+
+  it("invalidateShopProductsCache forces the next request to re-fetch", async () => {
+    readStripeConfigOrNullMock.mockReturnValue({
+      secretKey: "skFFFFFF_invalidate",
+      publishableKey: "pk_test_x",
+    });
+
+    // 1) Prime the cache.
+    stripeProductsList.mockResolvedValueOnce({
+      data: [freshProduct("prod_3", "Mask C", 1999)],
+    });
+    const first = await request(makeApp()).get("/shop/products");
+    expect(first.status).toBe(200);
+    expect(stripeProductsList).toHaveBeenCalledTimes(1);
+
+    // 2) Within the TTL a second GET serves from cache — no new
+    //    Stripe round-trip.
+    const second = await request(makeApp()).get("/shop/products");
+    expect(second.status).toBe(200);
+    expect(stripeProductsList).toHaveBeenCalledTimes(1);
+
+    // 3) Invalidate — what the admin price PATCH calls after a
+    //    rotation — and the next GET re-fetches, serving the new
+    //    price immediately instead of waiting out the TTL.
+    invalidateShopProductsCache();
+    stripeProductsList.mockResolvedValueOnce({
+      data: [freshProduct("prod_3", "Mask C", 2499)],
+    });
+    const third = await request(makeApp()).get("/shop/products");
+    expect(third.status).toBe(200);
+    expect(stripeProductsList).toHaveBeenCalledTimes(2);
+    expect(third.body.products[0].price.unitAmount).toBe(2499);
   });
 });
 

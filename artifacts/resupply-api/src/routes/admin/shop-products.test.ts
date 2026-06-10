@@ -64,6 +64,17 @@ function readStripeConfig(): { secretKey: string } | null {
   return stripeConfigured ? { secretKey: "sk_test_x" } : null;
 }
 
+// The price PATCH drops the public catalog's in-process cache after
+// a successful default_price repoint (and again after a recurring
+// rotation) so the storefront stops serving the replaced price id —
+// which checkout validation rejects — for the rest of the 60s TTL.
+// Mocked so this admin-route test stays hermetic and the calls are
+// assertable.
+const invalidateCacheMock = vi.fn();
+vi.mock("../shop/products", () => ({
+  invalidateShopProductsCache: () => invalidateCacheMock(),
+}));
+
 // projectProduct stub — vi.fn() so individual tests can override
 // the result (e.g. return null to simulate a non-catalog product
 // that the catalog-membership guard must reject).
@@ -176,6 +187,7 @@ beforeEach(() => {
   stripePriceCreateMock.mockReset();
   stripePriceUpdateMock.mockReset();
   stripePriceListMock.mockReset();
+  invalidateCacheMock.mockReset();
   // Default: archive succeeds, no recurring prices to rotate. The
   // price-PATCH tests that exercise rotation override prices.list.
   stripePriceUpdateMock.mockResolvedValue({});
@@ -480,6 +492,9 @@ describe("PATCH /admin/shop/products/:productId/price", () => {
     expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_old", {
       active: false,
     });
+    // The public catalog cache was dropped, so the storefront stops
+    // serving the replaced price id without waiting out the 60s TTL.
+    expect(invalidateCacheMock).toHaveBeenCalledTimes(1);
     // Response carries the re-projected product at the new amount.
     expect(res.body.product.price.unitAmount).toBe(2499);
   });
@@ -492,10 +507,12 @@ describe("PATCH /admin/shop/products/:productId/price", () => {
       .send({ unitAmountCents: 1999 });
     expect(res.status).toBe(200);
     expect(res.body.product.price.unitAmount).toBe(1999);
-    // Critically: no Price churn in Stripe.
+    // Critically: no Price churn in Stripe, and the catalog cache
+    // keeps its (still-correct) snapshot.
     expect(stripePriceCreateMock).not.toHaveBeenCalled();
     expect(stripeUpdateMock).not.toHaveBeenCalled();
     expect(stripePriceUpdateMock).not.toHaveBeenCalled();
+    expect(invalidateCacheMock).not.toHaveBeenCalled();
   });
 
   it("rotates the Subscribe & Save price to the new amount at the same cadence", async () => {
@@ -534,6 +551,10 @@ describe("PATCH /admin/shop/products/:productId/price", () => {
     expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_rec_old", {
       active: false,
     });
+    // Cache dropped twice: once when default_price repointed, once
+    // after the recurring rotation (a GET between the two could have
+    // re-cached the old recurring price).
+    expect(invalidateCacheMock).toHaveBeenCalledTimes(2);
   });
 
   it("returns 502 and does NOT archive the old price when the repoint fails", async () => {
@@ -550,8 +571,10 @@ describe("PATCH /admin/shop/products/:productId/price", () => {
     expect(res.status).toBe(502);
     expect(res.body.error).toBe("stripe_set_default_price_failed");
     // The old price is still the live default — archiving it would
-    // take the SKU off the storefront entirely.
+    // take the SKU off the storefront entirely, and the cached
+    // catalog (still the old price) remains correct.
     expect(stripePriceUpdateMock).not.toHaveBeenCalled();
+    expect(invalidateCacheMock).not.toHaveBeenCalled();
   });
 
   it("still returns 200 when archiving the replaced price fails", async () => {

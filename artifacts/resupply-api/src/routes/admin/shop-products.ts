@@ -42,6 +42,7 @@ import {
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { invalidateShopProductsCache } from "../shop/products";
 
 const router: IRouter = Router();
 
@@ -92,6 +93,29 @@ const patchPriceBodySchema = z.object({
     .min(50, "Stripe minimum charge is $0.50")
     .max(10_000_000),
 });
+
+// Categorized fields for warn-logging a Stripe SDK failure. The log
+// layer redacts free-text `err.message` / `err.stack` on error
+// objects, and a message string smuggled under the `err` key would
+// dodge that redaction entirely (see the redact rationale in
+// lib/logger.ts — categorized failures are the prescribed shape).
+// Stripe's enumerated identifiers carry the "why" (status, code,
+// type) plus the Dashboard lookup handle (requestId) without the
+// free-text leak surface.
+function stripeErrLogFields(err: unknown): Record<string, string | number> {
+  const e = err as {
+    statusCode?: unknown;
+    code?: unknown;
+    type?: unknown;
+    requestId?: unknown;
+  } | null;
+  const fields: Record<string, string | number> = {};
+  if (typeof e?.statusCode === "number") fields.stripeStatus = e.statusCode;
+  if (typeof e?.code === "string") fields.stripeCode = e.code;
+  if (typeof e?.type === "string") fields.stripeType = e.type;
+  if (typeof e?.requestId === "string") fields.stripeRequestId = e.requestId;
+  return fields;
+}
 
 router.patch(
   "/admin/shop/products/:productId/stock",
@@ -472,10 +496,7 @@ router.patch(
         return;
       }
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe retrieve failed (price)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -512,10 +533,7 @@ router.patch(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe create price failed (price unchanged)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -539,11 +557,7 @@ router.patch(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId,
-          newPriceId: newPrice.id,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, newPriceId: newPrice.id, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe set default_price failed (price edit; orphaned price)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -553,6 +567,13 @@ router.patch(
       return;
     }
 
+    // The repoint is live in Stripe — drop the public catalog's
+    // in-process cache so the storefront's next request serves the
+    // new price immediately, instead of spending the rest of the 60s
+    // TTL building carts against the replaced price id that checkout
+    // validation is now rejecting.
+    invalidateShopProductsCache();
+
     // Step 3 — archive the previous default price. Best-effort: a
     // failure leaves an unused-but-active price object behind, which
     // validate-cart already refuses to sell.
@@ -560,11 +581,7 @@ router.patch(
       await stripe.prices.update(previousPrice.id, { active: false });
     } catch (err) {
       req.log?.warn?.(
-        {
-          productId,
-          priceId: previousPrice.id,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, priceId: previousPrice.id, ...stripeErrLogFields(err) },
         "shop/admin/products: archive of replaced default price failed",
       );
     }
@@ -614,24 +631,22 @@ router.patch(
               await stripe.prices.update(old.id, { active: false });
             } catch (err) {
               req.log?.warn?.(
-                {
-                  productId,
-                  priceId: old.id,
-                  err: err instanceof Error ? err.message : String(err),
-                },
+                { productId, priceId: old.id, ...stripeErrLogFields(err) },
                 "shop/admin/products: archive of replaced recurring price failed",
               );
             }
           }
           recurringRotated = true;
+          // The catalog's recurringPrice projection changed as well —
+          // a GET that landed between the repoint-invalidate above
+          // and this rotation may have cached the old recurring
+          // price, so drop the cache again.
+          invalidateShopProductsCache();
         }
       }
     } catch (err) {
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: recurring price rotation failed — subscription price is now stale vs one-time",
       );
     }
