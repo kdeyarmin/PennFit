@@ -38,6 +38,13 @@ export," and the clinical equipment registry is explicitly noted as
 warehouse system of record**; PennFit is the **patient-engagement +
 resupply engine**.
 
+> **Note:** `pacware_id` is nullable since migration 0303 — admin intake
+> (Patients → New customer) may create a patient before PacWare knows
+> them. The id stays **unique when present** and remains the join key for
+> every import/export here; patients without one simply never match an
+> import row, and roster exports emit a blank account-number cell for
+> them (the operator assigns the account in PacWare).
+
 ## Architecture
 
 ```
