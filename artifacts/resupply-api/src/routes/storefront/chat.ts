@@ -76,6 +76,7 @@ import {
   serializeToolResult,
 } from "../../lib/storefront/chatbotTools.js";
 import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
+import { tryConsumeChatBudget } from "../../lib/storefront/chat-budget.js";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getAnthropicClient,
@@ -403,6 +404,28 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       res.end();
     } else {
       res.json({ reply: OFFLINE_FALLBACK_REPLY, offline: true });
+    }
+    return;
+  }
+
+  // Global spend ceiling (app-review 2026-06-10, P1-7): the per-IP
+  // limiter above caps ONE client, but this endpoint is public — cap
+  // the aggregate LLM turns per minute across ALL callers. Consumed
+  // only after the cheap gates above, so feature-off / unconfigured
+  // traffic never burns the window. Exhausted → the same
+  // degraded-shaped reply the upstream-failure paths use.
+  if (!tryConsumeChatBudget()) {
+    logger.warn(
+      { event: "chat_global_budget_exhausted", streaming },
+      "chat: global per-minute turn budget exhausted — returning degraded fallback",
+    );
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      writeSseEvent(res, { type: "done", degraded: true });
+      res.end();
+    } else {
+      res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
     }
     return;
   }

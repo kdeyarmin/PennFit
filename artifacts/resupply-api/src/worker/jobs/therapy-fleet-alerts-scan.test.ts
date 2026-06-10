@@ -47,9 +47,15 @@ beforeEach(() => {
   supabaseMock.reset();
   featureEnabled.value = false;
   sendSmsMock.mockClear();
+  // Pin the clock inside the 9am–8pm patient-local TCPA send window
+  // (17:00 UTC = 1pm ET). The scan gate-skips SMS outside the window,
+  // so an unpinned clock made these tests pass or fail by wall-clock
+  // hour of the CI run.
+  vi.useFakeTimers({ now: new Date("2026-06-01T17:00:00Z"), toFake: ["Date"] });
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   process.env = { ...SAVED_ENV };
 });
 
