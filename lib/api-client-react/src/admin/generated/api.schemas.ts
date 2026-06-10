@@ -1288,6 +1288,13 @@ bulk tooling).
 
  */
 export interface PatientUpdate {
+  /** PacWare account number. Null / empty clears it; unique when
+present — a collision returns 409 `duplicate_pacware_id`. The
+backfill path for patients created before PacWare knew them.
+
+   * @maxLength 64
+   */
+  pacwareId?: string | null;
   /** @maxLength 120 */
   insurancePayer?: string | null;
   /**

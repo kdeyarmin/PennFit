@@ -21,6 +21,7 @@ import {
 import { AlertMessageOverridesPanel } from "@/components/admin/alert-message-overrides-panel";
 import { DocumentsTab } from "@/components/admin/DocumentsTab";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
+import { PacwareIdInlineEdit } from "@/components/admin/PacwareIdInlineEdit";
 import { PatientActionBar } from "@/components/admin/PatientActionBar";
 import { ClickToDialCard } from "@/components/admin/ClickToDialCard";
 import { LogInterventionCard } from "@/components/admin/LogInterventionCard";
@@ -163,9 +164,10 @@ export function PatientDetailPage({ id }: { id: string }) {
               {fullName(data.firstName, data.lastName)}
             </h1>
             <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              {data.pacwareId
-                ? `PACware ID #${data.pacwareId}`
-                : "No PacWare ID"}{" "}
+              <PacwareIdInlineEdit
+                patient={data}
+                onSaved={() => void refetch()}
+              />{" "}
               · Patient created {formatDate(data.createdAt)}
             </p>
           </div>
