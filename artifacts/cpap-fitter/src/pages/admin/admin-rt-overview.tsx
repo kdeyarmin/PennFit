@@ -591,7 +591,7 @@ function PatientRow({
           {patientName}
         </Link>
         <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          {row.pacwareId}
+          {row.pacwareId ?? "—"}
         </div>
       </Td>
       <Td>

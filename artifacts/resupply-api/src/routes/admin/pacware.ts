@@ -441,13 +441,13 @@ interface EpisodeJoinRow {
   prescriptions: { item_sku: string } | { item_sku: string }[] | null;
   patients:
     | {
-        pacware_id: string;
+        pacware_id: string | null;
         legal_first_name: string;
         legal_last_name: string;
         insurance_payer: string | null;
       }
     | {
-        pacware_id: string;
+        pacware_id: string | null;
         legal_first_name: string;
         legal_last_name: string;
         insurance_payer: string | null;
@@ -799,7 +799,10 @@ function toPatientExportRecord(
 ): PacwarePatientExportRecord {
   const addr = (r.address ?? null) as AddressBlob | null;
   return {
-    pacwareId: r.pacware_id as string,
+    // Blank cell for patients with no PacWare account number yet —
+    // the operator assigns one in PacWare; the roster importer only
+    // matches on non-blank ids, so a re-import can't collide.
+    pacwareId: (r.pacware_id as string | null) ?? "",
     legalFirstName: r.legal_first_name as string,
     legalLastName: r.legal_last_name as string,
     dateOfBirth: r.date_of_birth as string,
@@ -824,7 +827,7 @@ function toResupplyRecords(list: EpisodeJoinRow[]): PacwareResupplyDueRecord[] {
     const pt = first(ep.patients);
     if (!rx || !pt) continue;
     out.push({
-      pacwareId: pt.pacware_id,
+      pacwareId: pt.pacware_id ?? "",
       legalLastName: pt.legal_last_name,
       legalFirstName: pt.legal_first_name,
       itemSku: rx.item_sku,

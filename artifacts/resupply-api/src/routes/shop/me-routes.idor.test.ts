@@ -22,7 +22,7 @@
 // Supabase harness per file; this pins the boundary cheaply, in the same
 // spirit as insurance-claims-ai-idor.test.ts.
 //
-// allow-source-read: structural invariant across 25 route files with no
+// allow-source-read: structural invariant across 24 route files with no
 // behavioral equivalent short of a per-file integration harness; the
 // auth gate and session accessors are static facts of each source file.
 
@@ -53,8 +53,9 @@ function stripComments(src: string): string {
 describe("shop/me-* routes — signed-in scoping (IDOR guard)", () => {
   it("found the me-* route files", () => {
     // If the glob ever comes back empty the suite would pass vacuously;
-    // pin a floor (25 files as of 2026-06-09).
-    expect(ME_ROUTE_FILES.length).toBeGreaterThanOrEqual(25);
+    // pin a floor (24 files as of 2026-06-10, after the patient-facing
+    // appointment-request route was removed).
+    expect(ME_ROUTE_FILES.length).toBeGreaterThanOrEqual(24);
   });
 
   for (const file of ME_ROUTE_FILES) {

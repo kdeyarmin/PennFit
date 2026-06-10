@@ -7,6 +7,10 @@
 //   POST   /admin/team/:id/resend       — resend the invite email
 //   POST   /admin/team/:id/revoke       — revoke membership; future logins
 //                                           are denied immediately
+//   DELETE /admin/team/:id              — delete a pending/revoked invite
+//                                           entirely, as if it never
+//                                           happened (active members must
+//                                           be revoked first)
 //   PATCH  /admin/team/:id              — update role / display name / notes
 //
 // Why requireAdminOnly: granting / revoking admin access is an
@@ -19,7 +23,9 @@
 //      status='invited') AND an `admin_users` row linked via
 //      `auth_user_id`.
 //   3. We issue a 7-day `password_reset` email-token and send a
-//      "set your PennPaps password" email via SendGrid.
+//      welcome email via SendGrid — what the app is, their username
+//      (sign-in email) + role, the set-password link, and the
+//      role-specific getting-started guides attached as PDFs.
 //   4. The user clicks the link, sets a password through the
 //      existing /auth/reset-password handler, and signs in.
 //
@@ -41,6 +47,7 @@ import {
 } from "@workspace/resupply-db";
 
 import {
+  deleteTeamMember,
   inviteTeamMember,
   revokeTeamMember,
   updateTeamMemberRole,
@@ -136,6 +143,22 @@ const ROLE_VALUES: AdminRole[] = [
 function coarseAuthRoleFor(role: AdminRole): "admin" | "agent" {
   return role === "admin" ? "admin" : "agent";
 }
+
+/** Human-readable role labels for the welcome email's account-details
+ *  block. Same vocabulary the team page renders (admin-team.tsx
+ *  ROLE_LABEL), so the email matches what the new member will see in
+ *  the console; `rt` (not offered by that UI) labels as its rbac
+ *  effective role, clinician. */
+const ROLE_EMAIL_LABEL: Record<AdminRole, string> = {
+  admin: "Super admin",
+  supervisor: "Admin",
+  compliance_officer: "Admin",
+  csr: "Customer service rep",
+  fitter: "Customer service rep",
+  fulfillment: "Customer service rep",
+  agent: "Customer service rep",
+  rt: "Respiratory therapist",
+};
 
 const inviteBody = z
   .object({
@@ -309,6 +332,7 @@ router.post(
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: email,
       role: coarseAuthRoleFor(role),
+      roleLabel: ROLE_EMAIL_LABEL[role],
       displayName: displayName ?? prior?.display_name ?? null,
       productName: "Resupply",
       uiPathPrefix: "/admin",
@@ -434,6 +458,7 @@ router.post(
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: row.email_lower,
       role: coarseAuthRoleFor(row.role as AdminRole),
+      roleLabel: ROLE_EMAIL_LABEL[row.role as AdminRole],
       displayName: row.display_name,
       productName: "Resupply",
       uiPathPrefix: "/admin",
@@ -557,6 +582,108 @@ router.post(
     res.json({
       member: await serializeWithAuthLookup(supabase, updated ?? row),
     });
+  },
+);
+
+router.delete(
+  "/admin/team/:id",
+  requireAdminOnly,
+  adminTeamMutationLimiter,
+  async (req, res) => {
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .select(
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+      )
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!row) {
+      res.status(404).json({ error: "member_not_found" });
+      return;
+    }
+    // Defensive: an active self can't be deleted anyway (gate below),
+    // but keep the explicit guard so a revoked-self edge state can't
+    // erase the very account servicing this request.
+    if (row.auth_user_id && row.auth_user_id === req.adminUserId) {
+      res.status(409).json({
+        error: "cannot_delete_self",
+        message: "You can't delete your own seat.",
+      });
+      return;
+    }
+    // Only pending / revoked rows are deletable. An active member
+    // holds live access (sessions, credentials) — force the revoke
+    // path first, which carries the self-revoke and last-admin
+    // guards and terminates sessions.
+    let emailVerifiedAt: string | null = null;
+    if (row.auth_user_id) {
+      const { data: auth, error: authErr } = await supabase
+        .schema("resupply_auth")
+        .from("users")
+        .select("email_verified_at")
+        .eq("id", row.auth_user_id)
+        .limit(1)
+        .maybeSingle();
+      if (authErr) throw authErr;
+      emailVerifiedAt = auth?.email_verified_at ?? null;
+    }
+    if (effectiveStatus(row.status, emailVerifiedAt) === "active") {
+      res.status(409).json({
+        error: "member_active",
+        message:
+          "This member is active. Revoke their access first, then delete.",
+      });
+      return;
+    }
+
+    // Auth-side cleanup first: a crash between the two deletes then
+    // leaves a visible (re-deletable) roster row rather than an
+    // invisible orphaned identity. When the identity row is shared
+    // with any non-staff login, it is demoted back to 'customer'
+    // instead of deleted so the invite doesn't take the person's
+    // other account with it.
+    let authUserDeleted = false;
+    let authUserDemotedToCustomer = false;
+    if (row.auth_user_id) {
+      const preserve = await authUserHasNonStaffOwner(
+        supabase,
+        row.auth_user_id,
+      );
+      const cleanup = await deleteTeamMember(supabase, row.auth_user_id, {
+        preserveAsCustomer: preserve,
+      });
+      authUserDeleted = cleanup.authUserDeleted;
+      authUserDemotedToCustomer = cleanup.authUserDemotedToCustomer;
+    }
+
+    const { error: deleteErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .delete()
+      .eq("id", id);
+    if (deleteErr) throw deleteErr;
+
+    logger.info(
+      {
+        event: "admin_team_member_deleted",
+        memberId: id,
+        deletedBy: req.adminUserId ?? null,
+        priorStatus: row.status,
+        authUserDeleted,
+        authUserDemotedToCustomer,
+      },
+      "admin team invite deleted",
+    );
+    res.json({ deleted: true, id, authUserDeleted, authUserDemotedToCustomer });
   },
 );
 
@@ -729,6 +856,51 @@ function serialize(
     expiryReminderSentAt: freshStamp(fresh?.expiryReminderSentAt ?? null),
     expiredNoticeSentAt: freshStamp(fresh?.expiredNoticeSentAt ?? null),
   };
+}
+
+/**
+ * True when an auth identity row is shared with a non-staff login.
+ * Invites reuse any existing resupply_auth.users row by email_lower,
+ * so the row backing a staff invite may also back:
+ *   * a shop-customer account (shop_customers.auth_user_id),
+ *   * a patient-portal login (patients.portal_auth_user_id), or
+ *   * a provider-portal account (provider_portal_accounts.auth_user_id).
+ * The latter two are soft references (no FK), so a hard delete would
+ * silently break that person's portal sign-in. DELETE /admin/team/:id
+ * demotes the identity back to role='customer' (the role all three
+ * owners use) instead of deleting it whenever any of these exist.
+ */
+async function authUserHasNonStaffOwner(
+  supabase: ResupplySupabaseClient,
+  authUserId: string,
+): Promise<boolean> {
+  const [customer, patient, provider] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("id")
+      .eq("auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("portal_auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("provider_portal_accounts")
+      .select("id")
+      .eq("auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (customer.error) throw customer.error;
+  if (patient.error) throw patient.error;
+  if (provider.error) throw provider.error;
+  return Boolean(customer.data || patient.data || provider.data);
 }
 
 /**
