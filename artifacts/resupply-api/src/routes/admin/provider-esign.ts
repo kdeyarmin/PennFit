@@ -131,11 +131,12 @@ async function inviteProviderUser(
   if (existing) {
     // Re-activate a revoked row; never touch the role (could be staff).
     if (existing.status === "revoked") {
-      await supabase
+      const { error: reactivateErr } = await supabase
         .schema("resupply_auth")
         .from("users")
         .update({ status: "invited", updated_at: nowIso })
         .eq("id", existing.id);
+      if (reactivateErr) throw reactivateErr;
     }
     authUserId = existing.id;
   } else {
@@ -241,7 +242,7 @@ router.post(
       .maybeSingle();
     const nowIso = new Date().toISOString();
     if (existingAccount) {
-      await supabase
+      const { error: accountUpdateErr } = await supabase
         .schema("resupply")
         .from("provider_portal_accounts")
         .update({
@@ -253,8 +254,9 @@ router.post(
           updated_at: nowIso,
         })
         .eq("id", existingAccount.id);
+      if (accountUpdateErr) throw accountUpdateErr;
     } else {
-      await supabase
+      const { error: accountInsertErr } = await supabase
         .schema("resupply")
         .from("provider_portal_accounts")
         .insert({
@@ -264,6 +266,7 @@ router.post(
           status: "invited",
           invited_by_email: req.adminEmail ?? null,
         });
+      if (accountInsertErr) throw accountInsertErr;
     }
 
     res.json({ ok: true, email, emailSent, inviteLink });
@@ -302,12 +305,16 @@ router.post(
       return;
     }
     // Revoke any live sessions so an open provider tab loses access.
-    await supabase
+    // Security-relevant: a silent failure would leave a disabled
+    // provider's sessions usable — surface it as a 500 so the admin
+    // re-runs disable (idempotent).
+    const { error: revokeErr } = await supabase
       .schema("resupply_auth")
       .from("sessions")
       .update({ revoked_at: nowIso })
       .eq("user_id", data.auth_user_id)
       .is("revoked_at", null);
+    if (revokeErr) throw revokeErr;
     res.json({ ok: true });
   },
 );
