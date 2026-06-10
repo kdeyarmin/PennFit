@@ -155,6 +155,7 @@ export {
   renderTeamInviteEmail,
   renderVerifyEmail,
   type AuthEmailContext,
+  type PatientPortalInviteEmailArgs,
   type ProviderPortalInviteEmailArgs,
   type RenderedEmail,
   type TeamInviteEmailArgs,

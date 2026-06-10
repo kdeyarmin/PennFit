@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatTokenExpiry,
   renderPasswordResetEmail,
+  renderPatientPortalInviteEmail,
   renderProviderPortalInviteEmail,
   renderTeamInviteEmail,
   renderVerifyEmail,
@@ -131,6 +132,73 @@ describe("renderPasswordResetEmail", () => {
     expect(r.text).toContain(
       "https://shop.example.com/admin/reset-password?token=tok123",
     );
+  });
+});
+
+describe("renderPatientPortalInviteEmail", () => {
+  const ctx = {
+    productName: "PennPaps",
+    publicBaseUrl: "https://shop.example.com",
+  };
+  const args = {
+    rawToken: "tok123",
+    ttlMs: 7 * DAY_MS,
+    patientFirstName: "Pat Q",
+    attachmentFilenames: ["PennPaps-Patient-Portal-Guide.pdf"],
+  };
+
+  it("greets by first name and links the set-password step", () => {
+    const r = renderPatientPortalInviteEmail(ctx, args);
+    expect(r.subject).toBe("Set up your PennPaps patient portal");
+    expect(r.html).toContain("Hi Pat,");
+    expect(r.text).toContain("Hi Pat,");
+    expect(r.html).toContain(
+      "https://shop.example.com/reset-password?token=tok123",
+    );
+    expect(r.text).toContain(
+      "https://shop.example.com/reset-password?token=tok123",
+    );
+  });
+
+  it("derives the expiry from the TTL instead of hardcoding 7 days", () => {
+    expect(renderPatientPortalInviteEmail(ctx, args).text).toContain(
+      "expires in 7 days",
+    );
+    expect(
+      renderPatientPortalInviteEmail(ctx, { ...args, ttlMs: 2 * DAY_MS }).text,
+    ).toContain("expires in 2 days");
+  });
+
+  it("lists the attached guide and omits the section when absent", () => {
+    const r = renderPatientPortalInviteEmail(ctx, args);
+    expect(r.html).toContain("PennPaps-Patient-Portal-Guide.pdf");
+    expect(r.text).toContain("getting-started guide");
+
+    const none = renderPatientPortalInviteEmail(ctx, {
+      ...args,
+      attachmentFilenames: [],
+    });
+    expect(none.html).not.toContain("attached");
+    expect(none.text).not.toContain("attached");
+  });
+
+  it("keeps HTML entities out of the plain-text greeting", () => {
+    const r = renderPatientPortalInviteEmail(ctx, {
+      ...args,
+      patientFirstName: "O'Brien",
+    });
+    expect(r.text).toContain("Hi O'Brien,");
+    expect(r.text).not.toContain("&#39;");
+    expect(r.html).toContain("Hi O&#39;Brien,");
+  });
+
+  it("falls back to a neutral greeting for missing or blank names", () => {
+    const r = renderPatientPortalInviteEmail(ctx, {
+      ...args,
+      patientFirstName: "   ",
+    });
+    expect(r.html).toContain("Hello,");
+    expect(r.text).toContain("Hello,");
   });
 });
 

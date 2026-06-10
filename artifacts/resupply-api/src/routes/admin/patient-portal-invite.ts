@@ -354,10 +354,15 @@ router.post(
     const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
+    const attachments = await patientInviteAttachments();
     const rendered = renderPatientPortalInviteEmail(
       { productName: "PennPaps", publicBaseUrl: baseUrl },
-      token.raw,
-      patient.legal_first_name,
+      {
+        rawToken: token.raw,
+        ttlMs: INVITE_TOKEN_TTL_MS,
+        patientFirstName: patient.legal_first_name,
+        attachmentFilenames: attachments.map((a) => a.filename),
+      },
     );
 
     let emailSent = false;
@@ -367,7 +372,7 @@ router.post(
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
-        attachments: await patientInviteAttachments(),
+        attachments,
       });
       emailSent = true;
     } catch (err) {
@@ -477,10 +482,15 @@ router.post(
     const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
     const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
+    const attachments = await patientInviteAttachments();
     const rendered = renderPatientPortalInviteEmail(
       { productName: "PennPaps", publicBaseUrl: baseUrl },
-      token.raw,
-      patient.legal_first_name,
+      {
+        rawToken: token.raw,
+        ttlMs: INVITE_TOKEN_TTL_MS,
+        patientFirstName: patient.legal_first_name,
+        attachmentFilenames: attachments.map((a) => a.filename),
+      },
     );
 
     let emailSent = false;
@@ -490,7 +500,7 @@ router.post(
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
-        attachments: await patientInviteAttachments(),
+        attachments,
       });
       emailSent = true;
     } catch (err) {
