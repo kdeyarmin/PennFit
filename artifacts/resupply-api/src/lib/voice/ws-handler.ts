@@ -82,6 +82,47 @@ import {
 import { createVoiceToolDispatcher } from "./tools-impl";
 import { readVoiceConfigOrThrow, type VoiceConfig } from "./voice-config";
 
+const OUTBOUND_DEFAULT_CALL_CONTEXT =
+  "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
+  "review supplies due, confirm shipping address, and place the order.";
+
+const DIAGNOSTIC_DEFAULT_CALL_CONTEXT = "Voice connection diagnostic.";
+
+/**
+ * Build the system prompt, degrading to the flow's stock framing when the
+ * supplied context/greeting fails validation (e.g. a callContext over the
+ * 250-char cap). buildSystemPrompt throws on invalid input by design — but
+ * a throw HERE propagates to the WS upgrade handler, which closes the
+ * socket, which makes Twilio hang up on the caller the instant they
+ * answer. A bad context string must cost the call its custom framing, not
+ * the call itself. (This is exactly how the dial-in diagnostic broke: its
+ * stock context ran 392 chars and every test call died on connect.)
+ */
+function buildPromptOrFallback(
+  input: Parameters<typeof buildSystemPrompt>[0],
+  fallbackContext: string,
+  conversationId: string,
+): string {
+  try {
+    return buildSystemPrompt(input);
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_prompt_build_failed",
+        err: serializeErr(err),
+        conversationId,
+      },
+      "voice: system prompt build failed; retrying with the stock call context",
+    );
+    // Drop the custom context AND greeting — one of them is what failed.
+    return buildSystemPrompt({
+      practiceName: input.practiceName,
+      ...(input.callerKind ? { callerKind: input.callerKind } : {}),
+      callContext: fallbackContext,
+    });
+  }
+}
+
 /**
  * Wire one Twilio Media Stream WS to one OpenAI Realtime session.
  *
@@ -271,19 +312,20 @@ export async function handleVoiceWsConnection(
     // When ElevenLabs owns the voice, the model emits text (not audio)
     // and the bridge synthesises it. Otherwise the model speaks (cedar).
     generateAudio: !externalVoice,
-    instructions: buildSystemPrompt({
-      practiceName: config.practiceName ?? "PennPaps",
-      callerKind,
-      // Inbound calls (the reorder IVR) set their own context + greeting
-      // on the pending entry so the agent doesn't tell a caller who
-      // dialed in that we're calling them. Outbound (place-call) leaves
-      // both unset → the default check-in context + DEFAULT_GREETING.
-      callContext:
-        pending.callContext ??
-        "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
-          "review supplies due, confirm shipping address, and place the order.",
-      ...(pending.greeting ? { greeting: pending.greeting } : {}),
-    }),
+    instructions: buildPromptOrFallback(
+      {
+        practiceName: config.practiceName?.trim() || "PennPaps",
+        callerKind,
+        // Inbound calls (the reorder IVR) set their own context + greeting
+        // on the pending entry so the agent doesn't tell a caller who
+        // dialed in that we're calling them. Outbound (place-call) leaves
+        // both unset → the default check-in context + DEFAULT_GREETING.
+        callContext: pending.callContext ?? OUTBOUND_DEFAULT_CALL_CONTEXT,
+        ...(pending.greeting ? { greeting: pending.greeting } : {}),
+      },
+      OUTBOUND_DEFAULT_CALL_CONTEXT,
+      pending.conversationId,
+    ),
     tools: OPENAI_TOOL_DESCRIPTORS,
     allowedToolNames: new Set(
       callerKind === "shop_customer" ? SHOP_TOOL_NAMES : PATIENT_TOOL_NAMES,
@@ -853,16 +895,20 @@ export async function handleVoiceDiagnosticWsConnection(
     // The model produces the audio (cedar / gpt-realtime-2) so the
     // diagnostic exercises µ-law OUTPUT, not just the input side.
     generateAudio: true,
-    instructions: buildSystemPrompt({
-      practiceName: config.practiceName ?? "PennPaps",
-      callContext: pending.callContext ?? "Voice connection diagnostic.",
-      ...(pending.greeting ? { greeting: pending.greeting } : {}),
-      // Honor the caller kind so an admin test call can hear the
-      // shop-customer persona as well as the patient one. Tools stay
-      // disabled either way (diagnostic mode), so the agent exercises
-      // tone / greeting / scope / handoff without touching real data.
-      ...(pending.callerKind ? { callerKind: pending.callerKind } : {}),
-    }),
+    instructions: buildPromptOrFallback(
+      {
+        practiceName: config.practiceName?.trim() || "PennPaps",
+        callContext: pending.callContext ?? DIAGNOSTIC_DEFAULT_CALL_CONTEXT,
+        ...(pending.greeting ? { greeting: pending.greeting } : {}),
+        // Honor the caller kind so an admin test call can hear the
+        // shop-customer persona as well as the patient one. Tools stay
+        // disabled either way (diagnostic mode), so the agent exercises
+        // tone / greeting / scope / handoff without touching real data.
+        ...(pending.callerKind ? { callerKind: pending.callerKind } : {}),
+      },
+      DIAGNOSTIC_DEFAULT_CALL_CONTEXT,
+      pending.conversationId,
+    ),
     // No tools — the agent just converses to confirm two-way audio.
     tools: [],
     allowedToolNames: new Set<ToolName>(),
