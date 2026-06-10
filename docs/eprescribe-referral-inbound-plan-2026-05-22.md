@@ -106,7 +106,7 @@ Close the gap on Brightree/NikoHealth's patient-app strengths without going nati
 - **Push notifications:** `shop_customer_push_subscriptions` table (from migration 0045) already exists — add `worker/jobs/order-status-push.ts` to fan out on `shop_order.status_changed`.
 - **Apple Wallet** extend `artifacts/resupply-api/src/lib/apple-wallet/` to encode active inbound-referral status on the pass back.
 - **Clinician share link:** new public read-only route `/portal/clinician/:referralToken` showing the outbound timeline (single-link share for partners who do not consume webhooks). Token pattern from `lib/fax-document-token.ts`.
-- **Schema `0206_clinician_share_tokens.sql`:** `resupply.clinician_share_tokens` (referral_id FK, token_hash, expires_at, last_viewed_at).
+- **Schema `0275_clinician_share_tokens.sql`:** `resupply.clinician_share_tokens` (referral_id FK, token_hash, expires_at, last_viewed_at).
 - **Verify:** Lighthouse PWA ≥ 90; Cypress offline test on `/account`; manual end-to-end Web Push.
 
 ---
