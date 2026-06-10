@@ -200,6 +200,20 @@ describe("PATCH /patients/:id — PacWare id backfill", () => {
     expect(writes[0]).toMatchObject({ pacware_id: "PAC-777" });
   });
 
+  it("does not touch pacware_id when pacwareId is omitted", async () => {
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT, updated_at: "2026-06-10T00:00:00.000Z" }],
+    });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ insurancePayer: "Aetna" });
+
+    expect(res.status).toBe(200);
+    const writes = getSupabaseWritePayloads("patients", "update");
+    expect(writes[0]).not.toHaveProperty("pacware_id");
+  });
+
   it("clears pacware_id with null, and treats '' the same", async () => {
     stageSupabaseResponse("patients", "update", {
       data: [{ id: PATIENT, updated_at: "2026-06-10T00:00:00.000Z" }],
