@@ -643,7 +643,10 @@ export interface Database {
       patients: {
         Row: {
           id: string;
-          pacware_id: string;
+          /** PacWare account number. Nullable since migration 0303 —
+           * admin intake may create a patient before PacWare knows
+           * them; unique when present. */
+          pacware_id: string | null;
           legal_first_name: string;
           legal_last_name: string;
           date_of_birth: string;

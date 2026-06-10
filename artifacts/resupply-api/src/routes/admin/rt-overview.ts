@@ -50,7 +50,7 @@ const querySchema = z.object({
 
 interface RtOverviewRow {
   patientId: string;
-  pacwareId: string;
+  pacwareId: string | null;
   firstName: string;
   lastName: string;
   nightsInWindow: number;
@@ -96,7 +96,7 @@ interface RawSmartTriggerEvent {
 
 interface RawPatient {
   id: string;
-  pacware_id: string;
+  pacware_id: string | null;
   legal_first_name: string;
   legal_last_name: string;
 }
@@ -324,7 +324,7 @@ router.get(
       const alerts = r.activeAlerts.map((a) => a.label).join("; ");
       const sources = r.therapyLinks.map((l) => l.source).join("; ");
       const row = [
-        csvCell(r.pacwareId),
+        csvCell(r.pacwareId ?? ""),
         csvCell(r.lastName),
         csvCell(r.firstName),
         String(r.nightsInWindow),

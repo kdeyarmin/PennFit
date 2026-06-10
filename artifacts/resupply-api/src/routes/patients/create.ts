@@ -3,9 +3,11 @@
 // Lets a PennPaps admin enter a brand-new patient into the
 // system from the dashboard, without waiting for a Pacware CSV
 // import. The body carries every field the admin console
-// reasonably knows at intake — Pacware id, name, DOB, contact
-// methods, address, lifecycle status, and the optional outreach-
-// plan overrides (insurance payer, cadence, channel).
+// reasonably knows at intake — name, DOB, contact methods,
+// address, lifecycle status, the optional Pacware id (the patient
+// may not exist in PacWare yet — it can be backfilled later), and
+// the optional outreach-plan overrides (insurance payer, cadence,
+// channel).
 //
 // PHI handling:
 //   - First name, last name, DOB, phone, email, and address are
@@ -18,8 +20,10 @@
 //     metadata is precisely the place not to duplicate them.
 //
 // Conflict semantics:
-//   - pacware_id is unique. A duplicate returns 409 with a body
-//     the dashboard can render as "this Pacware id already exists".
+//   - pacware_id is unique when present (NULL is allowed — migration
+//     0303 — and any number of patients may have none). A duplicate
+//     returns 409 with a body the dashboard can render as "this
+//     Pacware id already exists".
 //
 // Why we don't accept dateOfBirth as a Date object:
 //   The patients table stores DOB as a YYYY-MM-DD string. Coercing
@@ -63,7 +67,13 @@ const addressSchema = z
 
 const bodySchema = z
   .object({
-    pacwareId: z.string().trim().min(1).max(64),
+    pacwareId: z
+      .string()
+      .trim()
+      .max(64)
+      .nullable()
+      .optional()
+      .transform((v) => (v === "" || v == null ? null : v)),
     legalFirstName: z.string().trim().min(1).max(80),
     legalLastName: z.string().trim().min(1).max(80),
     dateOfBirth: z.string().regex(ISO_DATE, "must be YYYY-MM-DD"),
@@ -134,7 +144,7 @@ router.post(
       .schema("resupply")
       .from("patients")
       .insert({
-        pacware_id: body.pacwareId,
+        pacware_id: body.pacwareId ?? null,
         legal_first_name: body.legalFirstName,
         legal_last_name: body.legalLastName,
         date_of_birth: body.dateOfBirth,
@@ -184,11 +194,11 @@ router.post(
     // values; the column names alone are safe — they're enums of
     // schema fields, not patient data.
     const populated: string[] = [
-      "pacwareId",
       "legalFirstName",
       "legalLastName",
       "dateOfBirth",
     ];
+    if (body.pacwareId) populated.push("pacwareId");
     if (body.phoneE164) populated.push("phoneE164");
     if (body.email) populated.push("email");
     if (body.address) populated.push("address");

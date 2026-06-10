@@ -31,11 +31,30 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { lookupNpi, NppesLookupError } from "../../lib/nppes";
+import {
+  lookupNpi,
+  nppesFailurePublicMessage,
+  NppesLookupError,
+} from "../../lib/nppes";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+// Walk an Error cause chain for the first syscall-style code
+// (ENOTFOUND, ETIMEDOUT, ECONNRESET, …). undici wraps the network
+// error two levels deep (`TypeError: fetch failed` → cause → syscall
+// error), and the bare code is a categorized identifier that is safe
+// to log where raw error messages are not.
+function errorChainCode(err: unknown, maxDepth = 5): string | undefined {
+  let cur: unknown = err;
+  for (let i = 0; i < maxDepth && cur instanceof Error; i++) {
+    const code = (cur as Error & { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    cur = cur.cause;
+  }
+  return undefined;
+}
 
 const NPI_RE = /^\d{10}$/;
 
@@ -459,8 +478,24 @@ router.post(
       res.json({ provider: projection });
     } catch (err) {
       if (err instanceof NppesLookupError) {
-        logger.warn({ err: err.message }, "NPPES lookup failed");
-        res.status(502).json({ error: "nppes_unavailable" });
+        // Categorized fields only — no raw error/cause message strings.
+        // The logger redacts `err.message` / `err.cause.*` by design
+        // (lib/logger.ts), and kind + upstream status + syscall code
+        // carry the same diagnostic value without that leak surface.
+        logger.warn(
+          {
+            kind: err.kind,
+            upstreamStatus: err.upstreamStatus ?? null,
+            causeName: err.cause instanceof Error ? err.cause.name : undefined,
+            causeCode: errorChainCode(err.cause),
+          },
+          "NPPES lookup failed",
+        );
+        res.status(502).json({
+          error: "nppes_unavailable",
+          upstreamStatus: err.upstreamStatus ?? null,
+          message: nppesFailurePublicMessage(err),
+        });
         return;
       }
       throw err;

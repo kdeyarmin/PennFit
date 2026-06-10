@@ -724,7 +724,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Verify insurance",
             icon: ShieldCheck,
             matchPrefix: "/admin/billing/verify",
-            hint: "Run an on-demand insurance verification (270/271) for any patient",
+            hint: "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
           },
           {
             href: "/admin/billing/eligibility",
