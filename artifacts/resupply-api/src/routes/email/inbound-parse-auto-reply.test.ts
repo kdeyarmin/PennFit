@@ -199,4 +199,91 @@ describe("POST /email/inbound-parse — auto-reply", () => {
     ) as Record<string, unknown>[];
     expect(updates.some((u) => u.status === "awaiting_admin")).toBe(true);
   });
+
+  // Replay + amplification guards (app-review 2026-06-10, P1-6). Both
+  // suppressions hand the thread to a human BEFORE the model runs — a
+  // replayed/spoofed inbound email must never trigger another LLM call
+  // or another outbound reply.
+
+  it("suppresses the auto-reply for a replayed Message-ID (held dedup key)", async () => {
+    generateEmailReplyMock.mockResolvedValue({ kind: "reply", reply: "hi" });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient-1" }],
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: "conv-1" },
+    });
+    stageSupabaseResponse("messages", "insert", { data: { id: "msg-in" } });
+    stageSupabaseResponse("conversations", "update", { error: null });
+    // Message-ID dedup claim: an UNEXPIRED key already owns it.
+    stageSupabaseResponse("worker_dedup_keys", "delete", { error: null });
+    stageSupabaseResponse("worker_dedup_keys", "insert", {
+      data: null,
+      error: { code: "23505", message: "duplicate key" },
+    });
+    // Final status flip.
+    stageSupabaseResponse("conversations", "update", { error: null });
+
+    const res = await request(buildApp())
+      .post("/email/inbound-parse")
+      .auth("sg_user", "correct-horse")
+      .field("from", "patient@example.com")
+      .field("subject", "Mask question")
+      .field("headers", "Message-ID: <replayed-id@example.com>\r\n")
+      .field("text", "Do nasal masks work for mouth breathers?");
+
+    expect(res.status).toBe(200);
+    // Suppressed BEFORE the model and before any send.
+    expect(generateEmailReplyMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    const updates = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates.some((u) => u.status === "awaiting_admin")).toBe(true);
+    // The key is a hash, never the raw Message-ID (joinable pseudo-id).
+    const keys = getSupabaseWritePayloads("worker_dedup_keys", "insert").map(
+      (p) => (p as { key: string }).key,
+    );
+    expect(keys[0]).toMatch(/^email-auto-reply:msgid:[0-9a-f]{64}$/);
+  });
+
+  it("caps a sender to one auto-reply per window (held sender bucket)", async () => {
+    generateEmailReplyMock.mockResolvedValue({ kind: "reply", reply: "hi" });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient-1" }],
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: "conv-1" },
+    });
+    stageSupabaseResponse("messages", "insert", { data: { id: "msg-in" } });
+    stageSupabaseResponse("conversations", "update", { error: null });
+    // No Message-ID header on this request → the first dedup claim IS
+    // the sender bucket; it's already held.
+    stageSupabaseResponse("worker_dedup_keys", "delete", { error: null });
+    stageSupabaseResponse("worker_dedup_keys", "insert", {
+      data: null,
+      error: { code: "23505", message: "duplicate key" },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
+
+    const res = await request(buildApp())
+      .post("/email/inbound-parse")
+      .auth("sg_user", "correct-horse")
+      .field("from", "patient@example.com")
+      .field("text", "Another question already?");
+
+    expect(res.status).toBe(200);
+    expect(generateEmailReplyMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    const updates = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates.some((u) => u.status === "awaiting_admin")).toBe(true);
+    const keys = getSupabaseWritePayloads("worker_dedup_keys", "insert").map(
+      (p) => (p as { key: string }).key,
+    );
+    expect(keys[0]).toMatch(/^email-auto-reply:sender:[0-9a-f]{64}:\d+$/);
+  });
 });

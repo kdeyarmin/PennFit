@@ -7,7 +7,7 @@
 //   * Skips rows with no email; counts increment correctly
 //   * SendGrid throw → counted as failed; row unclaimed for retry
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -113,7 +113,15 @@ function makeApp(): Express {
   return app;
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
+  // Pin the clock inside the 9am-8pm patient-local TCPA send window
+  // (17:00 UTC = 1pm ET) -- the dispatchers gate-skip SMS outside it,
+  // so an unpinned clock made these tests fail by wall-clock hour.
+  vi.useFakeTimers({ now: new Date("2026-06-01T17:00:00Z"), toFake: ["Date"] });
   mockAdmin.current = null;
   supabaseMock.reset();
   logAuditMock.mockClear();

@@ -59,6 +59,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
@@ -81,6 +82,9 @@ export interface FirstDayNudgeStats {
   skippedAlreadyClaimed: number;
   skippedNoEmailConfig: number;
   skippedNoSmsConfig: number;
+  /** SMS-opted-in leads deferred by the 9am–8pm TCPA send window —
+   *  retried by a later hourly tick inside the window. */
+  skippedQuietHours: number;
   errors: number;
 }
 
@@ -188,6 +192,7 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     skippedAlreadyClaimed: 0,
     skippedNoEmailConfig: 0,
     skippedNoSmsConfig: 0,
+    skippedQuietHours: 0,
     errors: 0,
   };
 
@@ -276,6 +281,19 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     // first_day_nudged_at if we can't reach the lead via any channel.
     const canEmail = sendgrid && lead.email;
     const canSms = twilioSms && lead.phone_e164 && lead.sms_opt_in;
+
+    // TCPA window: an SMS-opted-in lead must not be texted outside
+    // 9am–8pm local (leads carry no timezone/ZIP, so this evaluates
+    // against the ET default). If the lead is also reachable via email,
+    // send the email leg now so the lead doesn't age past the 18–30h
+    // query window without any contact. If email is unavailable too,
+    // defer until the next tick inside the window so both legs fire
+    // together.
+    if (canSms && isOutsideSmsSendWindow(new Date()) && !canEmail) {
+      stats.skippedQuietHours += 1;
+      continue;
+    }
+
     if (!canEmail && !canSms) {
       if (!sendgrid) stats.skippedNoEmailConfig += 1;
       if (!twilioSms && lead.phone_e164 && lead.sms_opt_in) {
@@ -341,10 +359,14 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     }
 
     // SMS leg — only for leads who explicitly opted in AND have a
-    // normalized phone number. The fitter_leads sms_opt_in column
-    // is itself gated server-side by phone presence in the
-    // recordFitterLead helper (Wave 2a).
-    if (lead.phone_e164 && lead.sms_opt_in) {
+    // normalized phone number AND are inside the TCPA send window.
+    // The fitter_leads sms_opt_in column is itself gated server-side
+    // by phone presence in the recordFitterLead helper (Wave 2a).
+    if (
+      lead.phone_e164 &&
+      lead.sms_opt_in &&
+      !isOutsideSmsSendWindow(new Date())
+    ) {
       if (twilioSms) {
         try {
           await twilioSms.sendSms({
