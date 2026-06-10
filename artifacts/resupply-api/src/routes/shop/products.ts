@@ -19,6 +19,7 @@ import {
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import {
   type ShopCategory,
   SHOP_CATEGORIES,
@@ -146,7 +147,7 @@ router.get("/shop/products", async (req, res) => {
         req.log?.warn(
           {
             event: "shop_products_stripe_list_failed",
-            err: err instanceof Error ? err.message : String(err),
+            ...stripeErrLogFields(err),
             servedStale: stale !== null,
             staleAgeSeconds:
               cache && stale
@@ -224,7 +225,7 @@ router.get("/shop/products", async (req, res) => {
           // Non-fatal — products still render with one-time prices, the
           // subscribe toggle simply won't appear.
           req.log?.warn(
-            { err: err instanceof Error ? err.message : String(err) },
+            { ...stripeErrLogFields(err) },
             "stripe prices.list failed; subscribe toggle disabled this request",
           );
         }
