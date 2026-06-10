@@ -122,37 +122,70 @@ This link expires in ${expiry}. If you didn't create this account, you can ignor
   };
 }
 
+export interface PatientPortalInviteEmailArgs {
+  /** Raw set-password token embedded in the invite link. */
+  rawToken: string;
+  /** Invite-token TTL — drives the "expires in …" copy. */
+  ttlMs: number;
+  /** Patient's first name for the greeting; null → "Hello,". */
+  patientFirstName?: string | null;
+  /** Filenames of the getting-started guides attached to this email,
+   *  listed in the body so the patient knows to look for them.
+   *  Empty/absent omits the attachments section. */
+  attachmentFilenames?: ReadonlyArray<string>;
+}
+
 export function renderPatientPortalInviteEmail(
   ctx: AuthEmailContext,
-  rawToken: string,
-  patientFirstName: string | null,
+  args: PatientPortalInviteEmailArgs,
 ): RenderedEmail {
   const link = makeLink(
     ctx.publicBaseUrl,
     ctx.uiPathPrefix,
     "/reset-password",
-    rawToken,
+    args.rawToken,
   );
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
-  const greeting = patientFirstName
-    ? `Hi ${escapeHtml(patientFirstName.split(/\s+/)[0] ?? patientFirstName)},`
-    : "Hello,";
+  const expiry = formatTokenExpiry(args.ttlMs);
+  const firstName = args.patientFirstName?.trim().split(/\s+/)[0] || null;
+  const greetingText = firstName ? `Hi ${firstName},` : "Hello,";
+  const greetingHtml = firstName ? `Hi ${escapeHtml(firstName)},` : "Hello,";
+  const files = args.attachmentFilenames ?? [];
+  const guideNoun = files.length === 1 ? "guide" : "guides";
+  const attachmentsHtml =
+    files.length > 0
+      ? `<p>We've attached a quick getting-started ${guideNoun} to this email:</p>
+<ul>
+${files.map((f) => `<li>${escapeHtml(f)}</li>`).join("\n")}
+</ul>
+`
+      : "";
+  const attachmentsText =
+    files.length > 0
+      ? `We've attached a quick getting-started ${guideNoun} to this email:
+${files.map((f) => `  * ${f}`).join("\n")}
+
+`
+      : "";
   return {
     subject: `Set up your ${safeSubjectValue(ctx.productName)} patient portal`,
-    html: `<p>${greeting}</p>
+    html: `<p>${greetingHtml}</p>
 <p>Your care team has invited you to set up your <strong>${safeName}</strong> patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.</p>
 <p>Click the link below to create your password and get started:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in 7 days. If you weren't expecting this invitation, you can safely ignore this email.</p>`,
-    text: `${greeting}
+<p>This link expires in ${expiry}.</p>
+${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>`,
+    text: `${greetingText}
 
 Your care team has invited you to set up your ${ctx.productName} patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.
 
 Create your password and get started by visiting:
 ${link}
 
-This link expires in 7 days. If you weren't expecting this invitation, you can safely ignore this email.`,
+This link expires in ${expiry}.
+
+${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.`,
   };
 }
 
