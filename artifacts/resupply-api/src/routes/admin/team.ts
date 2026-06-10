@@ -23,7 +23,9 @@
 //      status='invited') AND an `admin_users` row linked via
 //      `auth_user_id`.
 //   3. We issue a 7-day `password_reset` email-token and send a
-//      "set your PennPaps password" email via SendGrid.
+//      welcome email via SendGrid — what the app is, their username
+//      (sign-in email) + role, the set-password link, and the
+//      role-specific getting-started guides attached as PDFs.
 //   4. The user clicks the link, sets a password through the
 //      existing /auth/reset-password handler, and signs in.
 //
@@ -141,6 +143,22 @@ const ROLE_VALUES: AdminRole[] = [
 function coarseAuthRoleFor(role: AdminRole): "admin" | "agent" {
   return role === "admin" ? "admin" : "agent";
 }
+
+/** Human-readable role labels for the welcome email's account-details
+ *  block. Same vocabulary the team page renders (admin-team.tsx
+ *  ROLE_LABEL), so the email matches what the new member will see in
+ *  the console; `rt` (not offered by that UI) labels as its rbac
+ *  effective role, clinician. */
+const ROLE_EMAIL_LABEL: Record<AdminRole, string> = {
+  admin: "Super admin",
+  supervisor: "Admin",
+  compliance_officer: "Admin",
+  csr: "Customer service rep",
+  fitter: "Customer service rep",
+  fulfillment: "Customer service rep",
+  agent: "Customer service rep",
+  rt: "Respiratory therapist",
+};
 
 const inviteBody = z
   .object({
@@ -314,6 +332,7 @@ router.post(
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: email,
       role: coarseAuthRoleFor(role),
+      roleLabel: ROLE_EMAIL_LABEL[role],
       displayName: displayName ?? prior?.display_name ?? null,
       productName: "Resupply",
       uiPathPrefix: "/admin",
@@ -439,6 +458,7 @@ router.post(
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: row.email_lower,
       role: coarseAuthRoleFor(row.role as AdminRole),
+      roleLabel: ROLE_EMAIL_LABEL[row.role as AdminRole],
       displayName: row.display_name,
       productName: "Resupply",
       uiPathPrefix: "/admin",
