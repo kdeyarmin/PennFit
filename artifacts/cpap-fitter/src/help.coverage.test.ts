@@ -13,6 +13,11 @@
 //   1. create pages/help-<slug>.tsx,
 //   2. register <Route path="/help/<slug>"> in App.tsx,
 //   3. add a topic card for it in pages/help.tsx.
+//
+// allow-source-read: structural registry invariant (router ↔ help index
+// cross-check) with no behavioral equivalent — rendering the whole app
+// to enumerate registered routes would couple this guard to every
+// page's runtime dependencies. Same pattern as admin.scope.test.ts.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
