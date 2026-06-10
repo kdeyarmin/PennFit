@@ -248,13 +248,17 @@ describe("team.ts — DELETE /admin/team/:id guards", () => {
     );
   });
 
-  it("preserves a shared shop-customer identity instead of deleting it", () => {
-    // The route checks shop_customers for a row linked to the same
-    // auth user and passes preserveAsCustomer so deleteTeamMember
-    // demotes the identity back to 'customer' instead of erasing the
-    // person's store login.
+  it("preserves identities shared with any non-staff login instead of deleting them", () => {
+    // The route checks every non-staff owner of the auth identity —
+    // shop customers plus the two soft references (patient portal,
+    // provider portal) — and passes preserveAsCustomer so
+    // deleteTeamMember demotes the identity back to 'customer'
+    // instead of erasing the person's other login.
+    expect(SRC).toContain("authUserHasNonStaffOwner");
     expect(SRC).toContain('from("shop_customers")');
-    expect(SRC).toContain("preserveAsCustomer: Boolean(customer)");
+    expect(SRC).toContain('.eq("portal_auth_user_id", authUserId)');
+    expect(SRC).toContain('from("provider_portal_accounts")');
+    expect(SRC).toContain("preserveAsCustomer: preserve");
   });
 
   it("delegates auth-side cleanup to deleteTeamMember from @workspace/resupply-auth", () => {

@@ -648,22 +648,18 @@ router.delete(
     // Auth-side cleanup first: a crash between the two deletes then
     // leaves a visible (re-deletable) roster row rather than an
     // invisible orphaned identity. When the identity row is shared
-    // with a shop-customer account, it is demoted back to 'customer'
+    // with any non-staff login, it is demoted back to 'customer'
     // instead of deleted so the invite doesn't take the person's
-    // store login with it.
+    // other account with it.
     let authUserDeleted = false;
     let authUserDemotedToCustomer = false;
     if (row.auth_user_id) {
-      const { data: customer, error: customerErr } = await supabase
-        .schema("resupply")
-        .from("shop_customers")
-        .select("id")
-        .eq("auth_user_id", row.auth_user_id)
-        .limit(1)
-        .maybeSingle();
-      if (customerErr) throw customerErr;
+      const preserve = await authUserHasNonStaffOwner(
+        supabase,
+        row.auth_user_id,
+      );
       const cleanup = await deleteTeamMember(supabase, row.auth_user_id, {
-        preserveAsCustomer: Boolean(customer),
+        preserveAsCustomer: preserve,
       });
       authUserDeleted = cleanup.authUserDeleted;
       authUserDemotedToCustomer = cleanup.authUserDemotedToCustomer;
@@ -860,6 +856,51 @@ function serialize(
     expiryReminderSentAt: freshStamp(fresh?.expiryReminderSentAt ?? null),
     expiredNoticeSentAt: freshStamp(fresh?.expiredNoticeSentAt ?? null),
   };
+}
+
+/**
+ * True when an auth identity row is shared with a non-staff login.
+ * Invites reuse any existing resupply_auth.users row by email_lower,
+ * so the row backing a staff invite may also back:
+ *   * a shop-customer account (shop_customers.auth_user_id),
+ *   * a patient-portal login (patients.portal_auth_user_id), or
+ *   * a provider-portal account (provider_portal_accounts.auth_user_id).
+ * The latter two are soft references (no FK), so a hard delete would
+ * silently break that person's portal sign-in. DELETE /admin/team/:id
+ * demotes the identity back to role='customer' (the role all three
+ * owners use) instead of deleting it whenever any of these exist.
+ */
+async function authUserHasNonStaffOwner(
+  supabase: ResupplySupabaseClient,
+  authUserId: string,
+): Promise<boolean> {
+  const [customer, patient, provider] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("id")
+      .eq("auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("portal_auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("provider_portal_accounts")
+      .select("id")
+      .eq("auth_user_id", authUserId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (customer.error) throw customer.error;
+  if (patient.error) throw patient.error;
+  if (provider.error) throw provider.error;
+  return Boolean(customer.data || patient.data || provider.data);
 }
 
 /**

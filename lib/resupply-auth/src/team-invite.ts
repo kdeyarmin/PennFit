@@ -392,14 +392,16 @@ export interface DeleteTeamMemberResult {
  *     kills any outstanding invite link.
  *
  *   * `preserveAsCustomer: true` — the same resupply_auth.users row
- *     backs a shop-customer account (someone who bought from the
- *     store and was later invited to staff). Deleting it would
- *     destroy their customer login, so instead: demote the role back
- *     to 'customer', restore status from the email-verification
- *     state ('revoked'/'invited' would lock the customer out),
- *     delete any unconsumed password_reset tokens (dead invite
- *     links), and revoke live sessions so a staff-scoped cookie
- *     can't linger.
+ *     backs a non-staff login: a shop-customer account, a
+ *     patient-portal login, or a provider-portal account (all three
+ *     are created with role='customer' and may share the row with a
+ *     later staff invite, since invites reuse rows by email_lower).
+ *     Deleting it would destroy that login, so instead: demote the
+ *     role back to 'customer', restore status from the
+ *     email-verification state ('revoked'/'invited' would lock the
+ *     person out), expire any unconsumed password_reset tokens (dead
+ *     invite links, audit rows kept), and revoke live sessions so a
+ *     staff-scoped cookie can't linger.
  */
 export async function deleteTeamMember(
   supabase: ResupplySupabaseClient,
