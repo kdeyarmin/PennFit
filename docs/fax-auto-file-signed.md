@@ -112,7 +112,7 @@ outstanding signature before anything is filed.
 The feature ships **OFF**. To turn it on safely:
 
 1. **Deploy the migration.** On the next deploy the migrator applies
-   `0258_inbound_fax_auto_file.sql` (adds the `inbound_faxes` columns + seeds
+   `0294_inbound_fax_auto_file.sql` (adds the `inbound_faxes` columns + seeds
    the flag OFF). Confirm:
    `select key, enabled from resupply.feature_flags where key = 'fax.auto_file_signed';`
    → one row, `enabled = false`.
