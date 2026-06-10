@@ -66,21 +66,15 @@ for f in "${added[@]}"; do
   if [[ "$base" =~ ^([0-9]{4})_.+\.sql$ ]]; then
     prefix="${BASH_REMATCH[1]}"
     # Collision check: is the prefix already present in any tracked
-    # migration filename? Scan tracked files directly and exclude paths
-    # being added in this change so we do not count the new file(s)
-    # themselves.
+    # migration filename? Scan tracked files directly and exclude only
+    # the file currently being checked (self) so that two new files
+    # added in the same commit with the same prefix are caught.
     count=0
     while IFS= read -r existing_file; do
       [[ -z "$existing_file" ]] && continue
 
-      skip_added=0
-      for af in "${added[@]}"; do
-        if [[ "$existing_file" == "$af" ]]; then
-          skip_added=1
-          break
-        fi
-      done
-      (( skip_added == 1 )) && continue
+      # Skip only the file currently being checked, not all added files.
+      [[ "$existing_file" == "$f" ]] && continue
 
       existing_base="${existing_file##*/}"
       if [[ "$existing_base" =~ ^([0-9]{4})_.+\.sql$ ]] && [[ "${BASH_REMATCH[1]}" == "$prefix" ]]; then
