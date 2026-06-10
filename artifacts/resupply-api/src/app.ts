@@ -241,6 +241,26 @@ app.use(
   faxWebhooksRouter,
 );
 
+// SendGrid Event Webhook + vendor integration webhooks verify an
+// ECDSA/HMAC signature over the EXACT raw body bytes, same as Stripe
+// and fax above. Their routers register express.raw() locally, but
+// they are mounted inside the /resupply-api tree — AFTER the global
+// express.json() below, which would consume the stream first and turn
+// req.body into a parsed object (the router-level raw() then no-ops).
+// That shipped as "every SendGrid event 400s in production"
+// (docs/app-review-2026-06-10.md P0-2). Capture the raw Buffer here,
+// BEFORE the global parser; the router-level raw() and the global
+// json() both skip an already-read body, so req.body stays a Buffer
+// all the way to the signature middleware.
+app.use(
+  "/resupply-api/email/sendgrid-events",
+  express.raw({ type: "application/json", limit: "1mb" }),
+);
+app.use(
+  "/resupply-api/integrations/webhooks",
+  express.raw({ type: "application/json", limit: "1mb" }),
+);
+
 // The patient-packet signing endpoint can carry a drawn-signature PNG
 // data URL, which exceeds the default 100 KB body cap. Parse it with a
 // larger limit BEFORE the global parser; once parsed, express.json

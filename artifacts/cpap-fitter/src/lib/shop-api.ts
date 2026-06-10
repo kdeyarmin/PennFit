@@ -657,6 +657,9 @@ export async function resendOrderReceipt(
 ): Promise<{ sent: true; email: string }> {
   const headers = {
     Accept: "application/json",
+    // Signed-in POST — the app-level CSRF gate rejects any shop
+    // mutation that carries a pf_session cookie without this header.
+    ...csrfHeader(),
   };
   const res = await fetch(
     `/resupply-api/shop/me/orders/${encodeURIComponent(sessionId)}/resend-receipt`,
@@ -708,6 +711,9 @@ export async function updateOrderShippingAddress(
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
+    // Signed-in POST — the app-level CSRF gate rejects any shop
+    // mutation that carries a pf_session cookie without this header.
+    ...csrfHeader(),
   };
   const res = await fetch(
     `/resupply-api/shop/me/orders/${encodeURIComponent(orderId)}/shipping-address`,

@@ -63,11 +63,17 @@ async function mockCameraAndMediaPipe(page: Page, state: InterceptState) {
 
     // Canvas streams don't always fire `loadeddata` under headless;
     // override the srcObject setter so the capture page's
-    // `setVideoReady(true)` path runs.
-    const origSetter = Object.getOwnPropertyDescriptor(
+    // `setVideoReady(true)` path runs. Capture BOTH original accessors
+    // BEFORE the override — the getter used to re-read the descriptor
+    // after defineProperty, which resolved to itself and blew the
+    // stack the first time page code READ video.srcObject (the capture
+    // page's attach-stream identity guard does exactly that).
+    const origDesc = Object.getOwnPropertyDescriptor(
       HTMLMediaElement.prototype,
       "srcObject",
-    )?.set;
+    );
+    const origSetter = origDesc?.set;
+    const origGetter = origDesc?.get;
     Object.defineProperty(HTMLMediaElement.prototype, "srcObject", {
       configurable: true,
       set(value: MediaStream) {
@@ -84,11 +90,7 @@ async function mockCameraAndMediaPipe(page: Page, state: InterceptState) {
         }, 100);
       },
       get(this: HTMLMediaElement) {
-        const g = Object.getOwnPropertyDescriptor(
-          HTMLMediaElement.prototype,
-          "srcObject",
-        )?.get;
-        return g ? g.call(this) : null;
+        return origGetter ? origGetter.call(this) : null;
       },
     });
   });
