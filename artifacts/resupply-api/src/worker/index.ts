@@ -45,6 +45,7 @@ import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.j
 import { registerFitterConversionAttributionJob } from "./jobs/fitter-conversion-attribution.js";
 import { registerCartAbandonmentJob } from "./jobs/cart-abandonment-scan.js";
 import { registerFailedEmailDigestJob } from "./jobs/failed-order-emails-digest.js";
+import { registerPacwareReadyToSyncDigestJob } from "./jobs/pacware-ready-to-sync-digest.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify-batch.js";
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
@@ -452,6 +453,12 @@ async function doStartWorker(): Promise<void> {
   // + created_at; patient name, email, error text NEVER appear.
   // Off by default — requires the flag AND the recipient env var.
   await registerFailedEmailDigestJob(boss);
+  // Daily counts-only "N confirmed resupply orders are ready to sync
+  // to PacWare" reminder to RESUPPLY_ADMIN_ALERTS_EMAIL. PacWare has
+  // no API, so confirmed orders ship only after an operator exports
+  // the CSV — this closes the "patient said yes but nobody exported"
+  // gap. Runs only when the operator's pacware.auto_sync toggle is on.
+  await registerPacwareReadyToSyncDigestJob(boss);
   // Adherence coaching progress sweep — refresh latest_compliance_pct
   // on open plans and auto-flip outreach_made → improving when the
   // patient's recent 30-night adherence crosses target.

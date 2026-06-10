@@ -133,7 +133,8 @@ type NavLink = {
     | "pendingReviews"
     | "overdueFollowups"
     | "newPatientDocuments"
-    | "newInboundFaxes";
+    | "newInboundFaxes"
+    | "pacwareReadyToSync";
   /**
    * Granular RBAC permission key required to USE the destination page
    * (e.g. `admin.tools.manage`). When set, the nav entry is hidden for
@@ -1037,6 +1038,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Boxes,
             matchPrefix: "/admin/pacware",
             requiredPermission: "admin.tools.manage",
+            badgeKey: "pacwareReadyToSync",
             hint: "PacWare (DME billing) CSV import & export",
           },
           {
