@@ -51,6 +51,7 @@ import { registerEligibilityReverifyBatchJob } from "./jobs/eligibility-reverify
 import { registerAutoSubmitBatchJob } from "./jobs/auto-submit-batch.js";
 import { registerBillHoldSweepJob } from "./jobs/bill-hold-sweep.js";
 import { registerClinicalOutreachBatchJob } from "./jobs/clinical-outreach-batch.js";
+import { registerOutreachPlaybookTickJob } from "./jobs/outreach-playbook-tick.js";
 import { registerSlaEscalationSweepJob } from "./jobs/sla-escalation-sweep.js";
 import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snapshot.js";
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
@@ -524,6 +525,13 @@ async function doStartWorker(): Promise<void> {
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
   // (opt-in — it emits outbound patient contact).
   await registerClinicalOutreachBatchJob(boss);
+
+  // Outreach-playbook dispatcher — every 5 minutes. Executes the next
+  // due touch (SMS / email / staff call task) for playbook runs that
+  // staff explicitly started from /admin/playbooks. Runtime-gated by
+  // the outreach_playbooks.dispatcher feature flag; only ever acts on
+  // operator-initiated runs, so it registers unconditionally.
+  await registerOutreachPlaybookTickJob(boss);
 
   // SLA auto-escalation (CSR C2). Flags conversations past their SLA
   // deadline as escalated so they surface in the inbox "escalated" view.

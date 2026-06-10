@@ -245,6 +245,11 @@ const AdminEducationVideosPage = lazy(() =>
     default: m.AdminEducationVideosPage,
   })),
 );
+const AdminOutreachPlaybooksPage = lazy(() =>
+  import("@/pages/admin/admin-outreach-playbooks").then((m) => ({
+    default: m.AdminOutreachPlaybooksPage,
+  })),
+);
 const AdminBulkCampaignsPage = lazy(() =>
   import("@/pages/admin/admin-bulk-campaigns").then((m) => ({
     default: m.AdminBulkCampaignsPage,
@@ -520,6 +525,11 @@ const AdminBillingEligibilityPage = lazy(() =>
     default: m.AdminBillingEligibilityPage,
   })),
 );
+const AdminBillingVerifyPage = lazy(() =>
+  import("@/pages/admin/admin-billing-verify").then((m) => ({
+    default: m.AdminBillingVerifyPage,
+  })),
+);
 const AdminBillingEligibilityWorklistPage = lazy(() =>
   import("@/pages/admin/admin-billing-eligibility-worklist").then((m) => ({
     default: m.AdminBillingEligibilityWorklistPage,
@@ -763,6 +773,10 @@ function AdminConsole() {
               component={AdminBillingEligibilityPage}
             />
             <Route
+              path="/admin/billing/verify"
+              component={AdminBillingVerifyPage}
+            />
+            <Route
               path="/admin/billing/prior-auths"
               component={AdminBillingPriorAuthsPage}
             />
@@ -990,6 +1004,10 @@ function AdminConsole() {
             <Route
               path="/admin/bulk-campaigns"
               component={AdminBulkCampaignsPage}
+            />
+            <Route
+              path="/admin/playbooks"
+              component={AdminOutreachPlaybooksPage}
             />
             <Route path="/admin/security" component={AdminSecurityPage} />
             <Route path="/admin/macros" component={AdminMacrosPage} />

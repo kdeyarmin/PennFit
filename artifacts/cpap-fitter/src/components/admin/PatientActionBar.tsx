@@ -27,6 +27,7 @@ import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
 import { PatientPaymentLinkButton } from "@/components/admin/PatientPaymentLinkButton";
+import { VerifyInsuranceButton } from "@/components/admin/VerifyInsuranceButton";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 /**
@@ -312,6 +313,21 @@ export function PatientActionBar({
               No email on file — email disabled.
             </p>
           )}
+        </div>
+
+        <div>
+          <p
+            className="text-xs uppercase tracking-wider font-semibold mb-2"
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
+          >
+            Insurance
+          </p>
+          <VerifyInsuranceButton patientId={patient.id} />
+          <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            Runs a real-time eligibility check (270/271) against the
+            patient&apos;s primary coverage. Result history lives on the Billing
+            tab.
+          </p>
         </div>
 
         <div>

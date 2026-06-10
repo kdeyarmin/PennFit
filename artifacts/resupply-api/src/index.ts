@@ -164,6 +164,7 @@ function rejectUpgrade(socket: Socket, code: number, reason: string): void {
 
 function serializeErr(err: unknown): {
   name: string;
+  code?: string;
   message?: string;
   stack?: string;
   cause?: unknown;
@@ -174,16 +175,40 @@ function serializeErr(err: unknown): {
       message: err.message,
       stack: err.stack,
     };
+    // `code` (EADDRINUSE, EAFNOSUPPORT, a pg SQLSTATE, …) is the one
+    // diagnostic field the logger's redaction policy leaves visible —
+    // `err.message` / `err.stack` come out as [Redacted] on `{ err }`
+    // logs (see lib/logger.ts) — so without it a fatal boot failure
+    // like a bind error is indistinguishable from any other Error in
+    // production logs. Codes are fixed enum-like identifiers, never
+    // PHI or connection-string fragments.
+    const code = serializeErrCode(err);
+    if (code !== undefined) out.code = code;
     if ("cause" in err && err.cause != null) {
       const cause = err.cause;
-      out.cause =
-        cause instanceof Error
-          ? { name: cause.name, message: cause.message, stack: cause.stack }
-          : String(cause);
+      if (cause instanceof Error) {
+        const causeCode = serializeErrCode(cause);
+        out.cause = {
+          name: cause.name,
+          ...(causeCode !== undefined ? { code: causeCode } : {}),
+          message: cause.message,
+          stack: cause.stack,
+        };
+      } else {
+        out.cause = String(cause);
+      }
     }
     return out;
   }
   return { name: "unknown", message: String(err) };
+}
+
+function serializeErrCode(err: Error): string | undefined {
+  if (!("code" in err)) return undefined;
+  const code = err.code;
+  return typeof code === "string" || typeof code === "number"
+    ? String(code)
+    : undefined;
 }
 
 // Why we sleep before exit: pino with a transport (pino-pretty in

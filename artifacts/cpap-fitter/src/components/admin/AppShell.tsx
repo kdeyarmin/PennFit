@@ -77,6 +77,7 @@ import {
   FileLock2,
   Send,
   PlayCircle,
+  BookOpenCheck,
 } from "lucide-react";
 import {
   Sheet,
@@ -188,15 +189,19 @@ type NavGroup = {
  * of links. A section that owns several related pages declares them as
  * `tabs`; the sidebar shows only the section, and the pages surface as a
  * tab bar at the top of the content (SectionSubNav). This collapses what
- * used to be ~85 sidebar links into ~23 scannable entries while keeping
- * every route reachable and deep-linkable. The six groups:
+ * used to be ~85 sidebar links into 24 scannable entries while keeping
+ * every route reachable and deep-linkable. Sections are organized around
+ * WORKFLOWS (the paperwork pipeline, the schedule, money dashboards) so
+ * a rep finds the next step of a job under the same entry as the last
+ * one. The six groups:
  *
- *   1. WORKSPACE  — the daily driver: home, conversations, follow-ups, outreach
- *   2. PATIENTS & CLINICAL — records, RT clinical work, therapy monitoring
- *   3. ORDERS & SHOP — fulfillment, catalog, storefront growth, leads
- *   4. BILLING    — hub, claim worklists, A/R & revenue, claims tools
- *   5. ANALYTICS & REPORTS — exports, business, customer/clinical
- *   6. SYSTEM     — automation, operations health, configuration, account
+ *   1. WORKSPACE  — the daily driver: home, conversations, schedule, outreach
+ *   2. PATIENTS & CLINICAL — records, documents & e-sign, RT clinical work,
+ *      therapy monitoring, providers
+ *   3. ORDERS & SHOP — fulfillment, inventory, storefront & leads
+ *   4. BILLING    — money dashboards, claim worklists, A/R & collections, tools
+ *   5. ANALYTICS & REPORTS — exports, financial, performance, customer/clinical
+ *   6. SYSTEM     — automation, operations health, settings, setup & advanced
  */
 const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
@@ -208,13 +213,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin",
         matchPrefix: "/admin",
         hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
-      },
-      {
-        label: "Company Calendar",
-        icon: CalendarDays,
-        href: "/admin/company-calendar",
-        matchPrefix: "/admin/company-calendar",
-        hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
       },
       {
         label: "Conversations",
@@ -254,10 +252,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "Follow-ups",
-        icon: CalendarClock,
-        hint: "Scheduled callbacks and patient-requested appointments",
+        // One time-based home: the shared calendar plus the two
+        // date-driven queues (scheduled callbacks and appointment
+        // requests) that used to be separate sidebar entries.
+        label: "Schedule",
+        icon: CalendarDays,
+        hint: "The shared company calendar, scheduled callbacks, and patient appointment requests",
         tabs: [
+          {
+            href: "/admin/company-calendar",
+            label: "Company Calendar",
+            icon: CalendarDays,
+            matchPrefix: "/admin/company-calendar",
+            hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
+          },
           {
             href: "/admin/followups",
             label: "Follow-ups",
@@ -276,13 +284,15 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        // "Outreach" is now scoped to things you actively SEND to a
-        // patient. The reusable-content editors (canned replies +
-        // automated-message copy) moved to the "Templates" section
-        // below, so the section no longer mixes "send" with "author".
+        // Everything message-shaped that ISN'T an inbound thread. The
+        // send surfaces (campaigns, alerts, reminders) lead; the
+        // reusable content behind them (canned replies + automated
+        // message copy) trails as admin.tools.manage-gated tabs, so a
+        // plain CSR sees only the send tabs. One "messages out" entry
+        // instead of the old Outreach/Templates near-synonym pair.
         label: "Outreach",
         icon: Send,
-        hint: "Send messages to patients — bulk campaigns, one-off alerts, resupply reminders",
+        hint: "Send messages to patients — campaigns, alerts, reminders — and manage the reusable content behind them",
         tabs: [
           {
             href: "/admin/bulk-campaigns",
@@ -290,6 +300,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BellRing,
             matchPrefix: "/admin/bulk-campaigns",
             hint: "Resolve an audience, then draft and send a bulk email",
+          },
+          {
+            href: "/admin/playbooks",
+            label: "Playbooks",
+            icon: BookOpenCheck,
+            matchPrefix: "/admin/playbooks",
+            hint: "Situation-based contact templates — cadence + wording for SMS, email, and call outreach",
           },
           {
             href: "/admin/alerts",
@@ -306,18 +323,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/pennpaps/reminders",
             hint: "Scheduled patient resupply reminders",
           },
-        ],
-      },
-      {
-        // Reusable message CONTENT (authoring/config), split out from
-        // "Outreach" so the near-synonym labels stop competing: canned
-        // replies are snippets a CSR inserts manually; automated
-        // messages are the system-sent copy. Both are admin.tools.manage
-        // gated, so this whole section is hidden from plain CSRs.
-        label: "Templates",
-        icon: Mail,
-        hint: "Reusable message content — manual reply snippets and automated-message copy",
-        tabs: [
           {
             href: "/admin/macros",
             label: "Canned Replies",
@@ -344,38 +349,71 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Patients",
         icon: Users,
-        href: "/admin/patients",
-        matchPrefix: "/admin/patients",
-        hint: "Patient roster, profiles, and 360 view",
-        badgeKey: "newPatientDocuments",
+        hint: "Patient roster, profiles, 360 view, and duplicate-record cleanup",
+        tabs: [
+          {
+            href: "/admin/patients",
+            label: "Patients",
+            icon: Users,
+            matchPrefix: "/admin/patients",
+            hint: "Patient roster, profiles, and 360 view",
+            badgeKey: "newPatientDocuments",
+          },
+          {
+            href: "/admin/patients/duplicates",
+            label: "Duplicate review",
+            icon: CopyCheck,
+            matchPrefix: "/admin/patients/duplicates",
+            hint: "Find and reconcile likely-duplicate patient records",
+          },
+        ],
       },
       {
-        label: "Document packets",
-        icon: FileCheck2,
-        href: "/admin/patient-packets",
-        matchPrefix: "/admin/patient-packets",
-        hint: "Send & track e-signature packets for new patients",
-      },
-      {
-        label: "Documents",
-        icon: FilePlus2,
-        href: "/admin/documents",
-        matchPrefix: "/admin/documents",
-        hint: "Type out a CMN, prescription, agreement, or fax cover by hand",
-      },
-      {
-        label: "Awaiting signatures",
+        // The paperwork pipeline, in workflow order: draft a document →
+        // send a packet → track what's out for signature → the provider
+        // e-sign portal → returned faxes to file. These were five
+        // scattered sidebar entries; they're one job.
+        label: "Documents & e-sign",
         icon: FileSignature,
-        href: "/admin/signature-tracking",
-        matchPrefix: "/admin/signature-tracking",
-        hint: "Track documents out for a provider signature; scan returned faxes to file them",
-      },
-      {
-        label: "Duplicate review",
-        icon: CopyCheck,
-        href: "/admin/patients/duplicates",
-        matchPrefix: "/admin/patients/duplicates",
-        hint: "Find and reconcile likely-duplicate patient records",
+        hint: "The paperwork pipeline — draft documents, send packets, track signatures, file returned faxes",
+        tabs: [
+          {
+            href: "/admin/documents",
+            label: "Documents",
+            icon: FilePlus2,
+            matchPrefix: "/admin/documents",
+            hint: "Type out a CMN, prescription, agreement, or fax cover by hand",
+          },
+          {
+            href: "/admin/patient-packets",
+            label: "Document packets",
+            icon: FileCheck2,
+            matchPrefix: "/admin/patient-packets",
+            hint: "Send & track e-signature packets for new patients",
+          },
+          {
+            href: "/admin/signature-tracking",
+            label: "Awaiting signatures",
+            icon: FileSignature,
+            matchPrefix: "/admin/signature-tracking",
+            hint: "Track documents out for a provider signature; scan returned faxes to file them",
+          },
+          {
+            href: "/admin/provider-portal",
+            label: "E-signature portal",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/provider-portal",
+            hint: "Provider e-signatures — stage docs, track signed items, print the audit log",
+          },
+          {
+            href: "/admin/inbound-faxes",
+            label: "Inbound faxes",
+            icon: Inbox,
+            matchPrefix: "/admin/inbound-faxes",
+            hint: "Triage queue for inbound faxes — sleep studies, Rx renewals, chart notes",
+            badgeKey: "newInboundFaxes",
+          },
+        ],
       },
       {
         label: "Clinical work",
@@ -475,9 +513,9 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "Providers & records",
+        label: "Providers & recalls",
         icon: HeartHandshake,
-        hint: "Provider registry, inbound faxes, referrals, equipment recalls",
+        hint: "Physician/NP registry and the equipment-recall registry",
         tabs: [
           {
             href: "/admin/providers",
@@ -485,21 +523,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: HeartHandshake,
             matchPrefix: "/admin/providers",
             hint: "Central physician/NP registry — NPPES-backed",
-          },
-          {
-            href: "/admin/provider-portal",
-            label: "E-signature portal",
-            icon: ShieldCheck,
-            matchPrefix: "/admin/provider-portal",
-            hint: "Provider e-signatures — stage docs, track signed items, print the audit log",
-          },
-          {
-            href: "/admin/inbound-faxes",
-            label: "Inbound faxes",
-            icon: Inbox,
-            matchPrefix: "/admin/inbound-faxes",
-            hint: "Triage queue for inbound faxes — sleep studies, Rx renewals, chart notes",
-            badgeKey: "newInboundFaxes",
           },
           {
             href: "/admin/equipment-recalls",
@@ -573,9 +596,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        label: "Storefront",
+        // Customer-facing shop surfaces plus the new-customer funnel —
+        // one entry for "people who shop (or might)". The old separate
+        // Leads section lives on as the three trailing tabs.
+        label: "Storefront & leads",
         icon: ShoppingCart,
-        hint: "Shop accounts, reviews, product Q&A, abandoned carts, back-in-stock",
+        hint: "Shop accounts, reviews, product Q&A, carts to recover, and new-customer leads",
         tabs: [
           {
             href: "/admin/shop/customers",
@@ -613,13 +639,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/shop/back-in-stock",
             hint: "Customers waiting on restocked items",
           },
-        ],
-      },
-      {
-        label: "Leads",
-        icon: UsersRound,
-        hint: "Benefit-verification requests and fitter prospect funnel",
-        tabs: [
           {
             href: "/admin/shop/insurance-leads",
             label: "Insurance Leads",
@@ -649,16 +668,49 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     label: "Billing",
     items: [
       {
-        label: "Billing Hub",
+        // All the read-only money dashboards in one place: the AR
+        // director hub up front, the per-payer trend dashboards (the
+        // old Revenue analytics section) behind it as tabs.
+        label: "Dashboards",
         icon: CircleDollarSign,
-        href: "/admin/billing",
-        matchPrefix: "/admin/billing",
-        hint: "AR director dashboard — KPIs, money in flight, top payers",
+        hint: "Read-only money dashboards — AR hub, denial & DSO trends, collections forecast, payer profitability",
+        tabs: [
+          {
+            href: "/admin/billing",
+            label: "Billing Hub",
+            icon: CircleDollarSign,
+            matchPrefix: "/admin/billing",
+            hint: "AR director dashboard — KPIs, money in flight, top payers",
+          },
+          {
+            href: "/admin/billing/denials",
+            label: "Denials & DSO",
+            icon: TrendingDown,
+            matchPrefix: "/admin/billing/denials",
+            hint: "90-day denial rate + 180-day days-to-pay, per payer",
+          },
+          {
+            href: "/admin/billing/collections-forecast",
+            label: "Collections forecast",
+            icon: TrendingUp,
+            matchPrefix: "/admin/billing/collections-forecast",
+            requiredPermission: "reports.read",
+            hint: "Projected cash from claims in flight, bucketed by expected landing date",
+          },
+          {
+            href: "/admin/billing/payer-profitability",
+            label: "Payer profitability",
+            icon: Landmark,
+            matchPrefix: "/admin/billing/payer-profitability",
+            requiredPermission: "cost.read",
+            hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
+          },
+        ],
       },
       {
         label: "Worklists",
         icon: ListChecks,
-        hint: "Daily billing worklists — AI queue, eligibility, prior auths, denials, CMN",
+        hint: "Daily billing worklists — AI queue, verify insurance, eligibility, prior auths, denials, CMN",
         tabs: [
           {
             href: "/admin/billing/ai-queue",
@@ -666,6 +718,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Bot,
             matchPrefix: "/admin/billing/ai-queue",
             hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+          },
+          {
+            href: "/admin/billing/verify",
+            label: "Verify insurance",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/billing/verify",
+            hint: "Run an on-demand insurance verification (270/271) for any patient",
           },
           {
             href: "/admin/billing/eligibility",
@@ -726,7 +785,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         // Split out of the old "A/R & revenue" grab-bag: the actionable
         // money-collection worklists (work these to get paid). The pure
-        // revenue dashboards moved to "Revenue analytics" below, so this
+        // revenue dashboards live under "Dashboards" above, so this
         // section stops mixing "do something" with "read a metric".
         label: "A/R & collections",
         icon: Landmark,
@@ -768,36 +827,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: CalendarRange,
             matchPrefix: "/admin/billing/capped-rentals",
             hint: "13- and 36-month CMS rental cycle tracker + KH/KI/KX modifier rotation",
-          },
-        ],
-      },
-      {
-        label: "Revenue analytics",
-        icon: TrendingUp,
-        hint: "Read-only revenue dashboards — denial rate & DSO, collections forecast, payer profitability",
-        tabs: [
-          {
-            href: "/admin/billing/denials",
-            label: "Denials & DSO",
-            icon: TrendingDown,
-            matchPrefix: "/admin/billing/denials",
-            hint: "90-day denial rate + 180-day days-to-pay, per payer",
-          },
-          {
-            href: "/admin/billing/collections-forecast",
-            label: "Collections forecast",
-            icon: TrendingUp,
-            matchPrefix: "/admin/billing/collections-forecast",
-            requiredPermission: "reports.read",
-            hint: "Projected cash from claims in flight, bucketed by expected landing date",
-          },
-          {
-            href: "/admin/billing/payer-profitability",
-            label: "Payer profitability",
-            icon: Landmark,
-            matchPrefix: "/admin/billing/payer-profitability",
-            requiredPermission: "cost.read",
-            hint: "Net yield by payer: billed → allowed → collected, denial rate, net of cost",
           },
         ],
       },
@@ -1059,9 +1088,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
+        // Day-to-day practice settings — the things an admin touches in
+        // a normal month. The launch checklist, feature switches, and
+        // super-admin credential surfaces live under "Setup & advanced".
         label: "Settings",
         icon: Settings,
-        hint: "Practice settings, feature control center, closures, team accounts",
+        hint: "Practice settings, closures, team accounts, and your own security",
         tabs: [
           {
             href: "/admin/settings",
@@ -1069,44 +1101,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Settings,
             matchPrefix: "/admin/settings",
             hint: "Practice settings & integrations",
-          },
-          {
-            href: "/admin/account-setup",
-            label: "Account Setup",
-            icon: ClipboardCheck,
-            matchPrefix: "/admin/account-setup",
-            hint: "New-account / production launch checklist",
-          },
-          {
-            href: "/admin/control-center",
-            label: "Control Center",
-            icon: ToggleLeft,
-            matchPrefix: "/admin/control-center",
-            hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
-          },
-          {
-            href: "/admin/connection-tests",
-            label: "Connection tests",
-            icon: Plug,
-            matchPrefix: "/admin/connection-tests",
-            requiredPermission: "system.config.manage",
-            hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
-          },
-          {
-            href: "/admin/bot-playground",
-            label: "Bot playground",
-            icon: FlaskConical,
-            matchPrefix: "/admin/bot-playground",
-            requiredPermission: "admin.tools.manage",
-            hint: "Rehearse the chat & voice bots against scripted situations (synthetic data, simulated tools) to tune their prompts",
-          },
-          {
-            href: "/admin/system/configuration",
-            label: "Configuration & tests",
-            icon: SlidersHorizontal,
-            matchPrefix: "/admin/system/configuration",
-            requiredPermission: "system.config.manage",
-            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
           },
           {
             href: "/admin/closures",
@@ -1135,19 +1129,59 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             // nav-visibility key, like the rest of requiredPermission.)
             requiredPermission: MULTI_LOCATION_NAV_TOKEN,
           },
-        ],
-      },
-      {
-        label: "Account",
-        icon: ShieldCheck,
-        hint: "Your own security settings",
-        tabs: [
           {
             href: "/admin/security",
             label: "Account security",
             icon: ShieldCheck,
             matchPrefix: "/admin/security",
             hint: "Manage your own MFA / authenticator-app enrollment",
+          },
+        ],
+      },
+      {
+        // Set-and-forget surfaces: the launch checklist, the feature
+        // on/off switches, and the super-admin credential/test pages.
+        label: "Setup & advanced",
+        icon: SlidersHorizontal,
+        hint: "Launch checklist, feature switches, vendor credentials & connection tests, bot rehearsal",
+        tabs: [
+          {
+            href: "/admin/account-setup",
+            label: "Account Setup",
+            icon: ClipboardCheck,
+            matchPrefix: "/admin/account-setup",
+            hint: "New-account / production launch checklist",
+          },
+          {
+            href: "/admin/control-center",
+            label: "Control Center",
+            icon: ToggleLeft,
+            matchPrefix: "/admin/control-center",
+            hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
+          },
+          {
+            href: "/admin/connection-tests",
+            label: "Connection tests",
+            icon: Plug,
+            matchPrefix: "/admin/connection-tests",
+            requiredPermission: "system.config.manage",
+            hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
+          },
+          {
+            href: "/admin/system/configuration",
+            label: "Configuration & tests",
+            icon: SlidersHorizontal,
+            matchPrefix: "/admin/system/configuration",
+            requiredPermission: "system.config.manage",
+            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
+          },
+          {
+            href: "/admin/bot-playground",
+            label: "Bot playground",
+            icon: FlaskConical,
+            matchPrefix: "/admin/bot-playground",
+            requiredPermission: "admin.tools.manage",
+            hint: "Rehearse the chat & voice bots against scripted situations (synthetic data, simulated tools) to tune their prompts",
           },
         ],
       },
