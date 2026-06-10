@@ -2690,6 +2690,27 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0302: named, operator-managed bundles of packet
+      // documents for the send panel (e.g. Medicare vs commercial).
+      patient_packet_presets: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          document_keys: string[];
+          packet_title: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_presets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_presets"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0301: permanent operator edits to the built-in patient
       // packet document templates. One row per document key; deleting the
       // row reverts to the code default.

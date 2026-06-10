@@ -5,6 +5,9 @@ import {
   useListPatients,
   getListPatientsQueryKey,
   usePatientPacketTemplates,
+  usePatientPacketPresets,
+  useCreatePacketPreset,
+  useDeletePacketPreset,
   useAllPatientPackets,
   usePatientPacket,
   useSendPatientPacket,
@@ -12,8 +15,10 @@ import {
   useResendPatientPacket,
   useVoidPatientPacket,
   getAllPatientPacketsQueryKey,
+  getPatientPacketPresetsQueryKey,
   getPatientPacketQueryKey,
   patientPacketPdfUrl,
+  type PatientPacketPreset,
   type PatientPacketSummary,
   type PatientPacketStatus,
   type PatientPacketTemplate,
@@ -350,6 +355,20 @@ function SendPacketPanel({
 
   const toggleKey = (key: string) =>
     setSelectedKeys({ ...selectedKeys, [key]: !selectedKeys[key] });
+
+  // Apply a saved bundle preset: select its documents (the required set
+  // is folded in server-side regardless) and adopt its title.
+  const applyPreset = (preset: {
+    document_keys: string[];
+    packet_title: string | null;
+  }) => {
+    const next: Record<string, boolean> = {};
+    for (const t of templates) {
+      next[t.key] = preset.document_keys.includes(t.key);
+    }
+    setSelectedKeys(next);
+    if (preset.packet_title) setTitle(preset.packet_title);
+  };
 
   const handleSend = async () => {
     setError(null);
@@ -718,6 +737,10 @@ function SendPacketPanel({
             {/* Document selection */}
             <div>
               <Label htmlFor="docs">Documents</Label>
+              <PacketPresetBar
+                currentKeys={chosen.map((t) => t.key)}
+                onApply={applyPreset}
+              />
               {templatesQuery.isPending ? (
                 <Spinner label="Loading documents…" />
               ) : (
@@ -931,6 +954,141 @@ function SendPacketPanel({
         )}
       </div>
     </Card>
+  );
+}
+
+// ── Packet bundle presets bar ─────────────────────────────────────
+//
+// Sits above the document checkboxes in the send panel: apply a saved
+// bundle (e.g. "Medicare new patient") with one click, save the current
+// selection as a new preset, or delete one. Presets are a selection
+// convenience — the server still folds in every required document.
+function PacketPresetBar({
+  currentKeys,
+  onApply,
+}: {
+  currentKeys: string[];
+  onApply: (preset: PatientPacketPreset) => void;
+}) {
+  const qc = useQueryClient();
+  const presetsQuery = usePatientPacketPresets();
+  const createPreset = useCreatePacketPreset();
+  const deletePreset = useDeletePacketPreset();
+  const presets = presetsQuery.data?.presets ?? [];
+
+  const [selectedId, setSelectedId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: getPatientPacketPresetsQueryKey() });
+
+  const selected = presets.find((p) => p.id === selectedId) ?? null;
+
+  return (
+    <div
+      className="mb-2 rounded-md border p-2.5 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          id="presetSelect"
+          aria-label="Document bundle preset"
+          value={selectedId}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSelectedId(id);
+            setMsg(null);
+            const preset = presets.find((p) => p.id === id);
+            if (preset) {
+              onApply(preset);
+              setMsg(`Applied “${preset.name}”.`);
+            }
+          }}
+          emptyOptionLabel={
+            presets.length === 0 ? "No saved bundles yet" : "Apply a bundle…"
+          }
+          options={presets.map((p) => ({ value: p.id, label: p.name }))}
+        />
+        {selected && (
+          <Button
+            intent="ghost"
+            size="sm"
+            isLoading={deletePreset.isPending}
+            onClick={async () => {
+              if (!window.confirm(`Delete the “${selected.name}” bundle?`)) {
+                return;
+              }
+              setMsg(null);
+              try {
+                await deletePreset.mutateAsync({ id: selected.id });
+                setSelectedId("");
+                await refresh();
+                setMsg("Bundle deleted.");
+              } catch (err) {
+                setMsg(describeError(err).detail ?? "Delete failed.");
+              }
+            }}
+          >
+            Delete bundle
+          </Button>
+        )}
+        <Button
+          intent="ghost"
+          size="sm"
+          onClick={() => {
+            setSaving((s) => !s);
+            setMsg(null);
+          }}
+        >
+          {saving ? "Cancel" : "Save selection as bundle"}
+        </Button>
+      </div>
+      {saving && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            aria-label="Bundle name"
+            placeholder="e.g. Medicare new patient"
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            className="max-w-xs"
+          />
+          <Button
+            size="sm"
+            isLoading={createPreset.isPending}
+            disabled={presetName.trim().length < 2 || currentKeys.length === 0}
+            onClick={async () => {
+              setMsg(null);
+              try {
+                await createPreset.mutateAsync({
+                  name: presetName.trim(),
+                  documentKeys: currentKeys,
+                });
+                setPresetName("");
+                setSaving(false);
+                await refresh();
+                setMsg("Bundle saved.");
+              } catch (err) {
+                const detail = describeError(err).detail;
+                setMsg(
+                  detail === "name_taken"
+                    ? "A bundle with that name already exists."
+                    : (detail ?? "Save failed."),
+                );
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      )}
+      {msg && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          {msg}
+        </p>
+      )}
+    </div>
   );
 }
 

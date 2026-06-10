@@ -19,10 +19,10 @@ them, and automatically filled from data already in the app.
 
 ## Two levels of editing
 
-| Level         | Scope                              | Where stored                                              |
-| ------------- | ---------------------------------- | --------------------------------------------------------- |
-| **Permanent** | Every packet sent after the save   | `resupply.patient_packet_template_overrides` (one row/key) |
-| **Temporary** | One packet only                    | That packet's `patient_packet_documents.content_sections`  |
+| Level         | Scope                            | Where stored                                               |
+| ------------- | -------------------------------- | ---------------------------------------------------------- |
+| **Permanent** | Every packet sent after the save | `resupply.patient_packet_template_overrides` (one row/key) |
+| **Temporary** | One packet only                  | That packet's `patient_packet_documents.content_sections`  |
 
 Deleting the override row (the **Revert to default** button) restores
 the built-in wording. The code templates remain the single source of
@@ -100,6 +100,42 @@ preserving the signing UI's no-markup-injection property.
 
 Audit actions: `patient_packet_template.updated` / `.reverted` (key +
 revision only — never the content).
+
+## Packet bundle presets
+
+_Migration 0302._ Named bundles of documents (e.g. "Medicare new
+patient" vs "Commercial new patient") managed from the send panel on
+`/admin/patient-packets`: apply one with a click, save the current
+selection as a new bundle, or delete one. Stored in
+`resupply.patient_packet_presets`; reads need `patients.read`,
+save/delete need `admin.tools.manage` (audited). Presets are a
+selection convenience only — the send path still folds in every
+compliance-required document and re-validates keys, so a stale preset
+can never produce an incomplete packet.
+
+- `GET    /admin/patient-packet-presets`
+- `POST   /admin/patient-packet-presets` `{ name, documentKeys, packetTitle?, description? }`
+- `DELETE /admin/patient-packet-presets/:presetId`
+
+## Provider portal: drawn signature (optional)
+
+_Migration 0302._ The provider signing screen now offers an optional
+signature pad alongside the typed name + ESIGN consent (which remain
+the legally sufficient capture). When drawn, the PNG data URL is stored
+on `provider_signature_requests.signature_image` (never logged, never
+in the hash-chained event payload — the event records only
+`hasDrawnSignature: true`) and is embedded in the signature certificate
+and provider signature-log PDFs. A dedicated 1 MB JSON parser is
+mounted for `/api/provider/queue` in `app.ts`, mirroring the
+patient-packet sign route.
+
+## MFA enrollment QR codes
+
+Both MFA enrollment screens — the provider portal setup page and
+`/admin/security` — now render the `otpauth://` URI as a scannable QR
+code (`qrcode` package, rendered client-side in
+`src/components/QrCode.tsx`; the secret never leaves the browser). The
+manual-entry key and tap-to-open link remain as fallbacks.
 
 ## Manual-document prefill
 

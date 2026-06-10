@@ -308,6 +308,75 @@ export function usePatientPacket(
   });
 }
 
+// ── Packet bundle presets ─────────────────────────────────────────
+
+export interface PatientPacketPreset {
+  id: string;
+  name: string;
+  description: string | null;
+  document_keys: string[];
+  packet_title: string | null;
+  created_by_email: string | null;
+  created_at: string;
+}
+
+const PRESETS_URL = "/resupply-api/admin/patient-packet-presets";
+
+export const getPatientPacketPresetsQueryKey = () => [PRESETS_URL] as const;
+
+export function usePatientPacketPresets(options?: {
+  query?: Partial<
+    UseQueryOptions<{ presets: PatientPacketPreset[] }, PacketError>
+  >;
+}) {
+  return useQuery<{ presets: PatientPacketPreset[] }, PacketError>({
+    queryKey: getPatientPacketPresetsQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<{ presets: PatientPacketPreset[] }>(PRESETS_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+export interface CreatePacketPresetRequest {
+  name: string;
+  description?: string | null;
+  documentKeys: string[];
+  packetTitle?: string | null;
+}
+
+export function useCreatePacketPreset(options?: {
+  mutation?: UseMutationOptions<
+    { id: string },
+    PacketError,
+    CreatePacketPresetRequest
+  >;
+}) {
+  return useMutation<{ id: string }, PacketError, CreatePacketPresetRequest>({
+    mutationFn: (data) =>
+      customFetch(PRESETS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export function useDeletePacketPreset(options?: {
+  mutation?: UseMutationOptions<{ ok: boolean }, PacketError, { id: string }>;
+}) {
+  return useMutation<{ ok: boolean }, PacketError, { id: string }>({
+    mutationFn: ({ id }) =>
+      customFetch(`${PRESETS_URL}/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    ...options?.mutation,
+  });
+}
+
 // ── Template editing ──────────────────────────────────────────────
 
 export interface SavePacketTemplateRequest {

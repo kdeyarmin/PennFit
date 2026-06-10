@@ -11,6 +11,9 @@
 //   POST /admin/packets/:packetId/resend             — reissue link + resend email
 //   POST /admin/packets/:packetId/void               — void a packet
 //   GET  /admin/packets/:packetId/pdf                — download the signed PDF
+//   GET  /admin/patient-packet-presets               — named document bundles
+//   POST /admin/patient-packet-presets               — save a bundle preset
+//   DELETE /admin/patient-packet-presets/:presetId   — delete a preset
 //
 // Permission posture mirrors documentation-packets: reads require
 // `patients.read`, mutations require `patients.update`. The signing
@@ -1073,6 +1076,155 @@ router.post(
     });
 
     res.json({ status: "voided" });
+  },
+);
+
+// ── Packet bundle presets ─────────────────────────────────────────
+//
+// Named bundles of document keys (e.g. "Medicare new patient" vs
+// "Commercial new patient") the send panel can apply with one click.
+// Presets are a selection convenience only: the send path still folds
+// in every compliance-required document and re-validates keys, so a
+// stale preset can never produce an incomplete or invalid packet.
+const presetIdParam = z.object({ presetId: z.string().uuid() });
+
+const createPresetBody = z
+  .object({
+    name: z.string().trim().min(2).max(80),
+    description: z.string().trim().max(300).optional().nullable(),
+    documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20),
+    packetTitle: z.string().trim().min(1).max(160).optional().nullable(),
+  })
+  .strict();
+
+router.get(
+  "/admin/patient-packet-presets",
+  adminReadRateLimiter,
+  requirePermission("patients.read"),
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patient_packet_presets")
+      .select(
+        "id, name, description, document_keys, packet_title, created_by_email, created_at",
+      )
+      .order("name", { ascending: true })
+      .limit(100);
+    if (error) throw error;
+    res.json({ presets: data ?? [] });
+  },
+);
+
+router.post(
+  "/admin/patient-packet-presets",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({ name: "patient_packet_presets.save", preset: "sensitive" }),
+  async (req, res) => {
+    const parsed = createPresetBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const b = parsed.data;
+    const invalidKeys = b.documentKeys.filter(
+      (k) => !isValidPacketDocumentKey(k),
+    );
+    if (invalidKeys.length > 0) {
+      res.status(400).json({ error: "invalid_document_keys", invalidKeys });
+      return;
+    }
+    // Store in catalog order with required documents folded in, so the
+    // saved preset already reflects what a send would actually include.
+    const resolved = resolveDocumentKeys(b.documentKeys, undefined);
+    if (!resolved.ok) {
+      res.status(400).json({
+        error: "invalid_document_keys",
+        invalidKeys: resolved.invalidKeys,
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: created, error } = await supabase
+      .schema("resupply")
+      .from("patient_packet_presets")
+      .insert({
+        name: b.name,
+        description: b.description?.trim() || null,
+        document_keys: resolved.uniqueKeys,
+        packet_title: b.packetTitle?.trim() || null,
+        created_by_email: req.adminEmail ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      // Unique-index violation on lower(name) → friendly 409.
+      if ((error as { code?: string }).code === "23505") {
+        res.status(409).json({ error: "name_taken" });
+        return;
+      }
+      throw error;
+    }
+
+    await logAudit({
+      action: "patient_packet_preset.created",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packet_presets",
+      targetId: created.id,
+      metadata: { document_count: resolved.uniqueKeys.length },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient_packet_preset.created audit write failed");
+    });
+
+    res.status(201).json({ id: created.id });
+  },
+);
+
+router.delete(
+  "/admin/patient-packet-presets/:presetId",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "patient_packet_presets.delete",
+    preset: "sensitive",
+  }),
+  async (req, res) => {
+    const parsed = presetIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("patient_packet_presets")
+      .delete()
+      .eq("id", parsed.data.presetId);
+    if (error) throw error;
+
+    await logAudit({
+      action: "patient_packet_preset.deleted",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packet_presets",
+      targetId: parsed.data.presetId,
+      metadata: {},
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient_packet_preset.deleted audit write failed");
+    });
+
+    res.json({ ok: true });
   },
 );
 

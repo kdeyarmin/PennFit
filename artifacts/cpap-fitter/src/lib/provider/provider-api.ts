@@ -104,7 +104,13 @@ export const getProviderQueueItem = (id: string) =>
 
 export const signProviderDocument = (
   id: string,
-  body: { consentEsign: true; signerName: string; signerTitle?: string },
+  body: {
+    consentEsign: true;
+    signerName: string;
+    signerTitle?: string;
+    /** Optional drawn signature (PNG data URL). */
+    signatureImage?: string | null;
+  },
 ) =>
   jsonFetch<{ ok: true; status: string; signedAt: string }>(
     `/queue/${encodeURIComponent(id)}/sign`,

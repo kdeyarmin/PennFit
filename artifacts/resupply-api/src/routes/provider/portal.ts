@@ -231,11 +231,25 @@ router.get(
   },
 );
 
+// Drawn-signature cap mirrors the patient-packet signing route: keeps
+// the PNG data URL inside the dedicated 1 MB parser mounted for
+// /api/provider/queue in app.ts.
+const SIGNATURE_MAX_CHARS = 90_000;
+
 const signBody = z
   .object({
     consentEsign: z.literal(true),
     signerName: z.string().trim().min(2).max(120),
     signerTitle: z.string().trim().max(120).optional(),
+    // Optional drawn signature. Typed name + consent remains the legally
+    // sufficient ESIGN capture; the image is supplementary (some payers
+    // prefer a wet-look signature on faxed/printed copies).
+    signatureImage: z
+      .string()
+      .max(SIGNATURE_MAX_CHARS)
+      .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/u)
+      .optional()
+      .nullable(),
   })
   .strict();
 
@@ -304,6 +318,9 @@ router.post(
         signer_npi: npi,
         consent_esign: true,
         signature_statement: statement,
+        // The drawn image is the signed artifact — persisted, NEVER
+        // logged, and excluded from the hash-chained event payload.
+        signature_image: parsed.data.signatureImage ?? null,
         signer_ip: ip,
         signer_user_agent: userAgent,
         account_id: account.id,
@@ -335,6 +352,7 @@ router.post(
         signerTitle: parsed.data.signerTitle ?? null,
         signerNpi: npi,
         consentEsign: true,
+        hasDrawnSignature: Boolean(parsed.data.signatureImage),
         statement,
       },
       ip,

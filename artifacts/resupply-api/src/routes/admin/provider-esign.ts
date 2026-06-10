@@ -860,6 +860,7 @@ async function buildLogItem(
     signerTitle: (row.signer_title as string | null) ?? null,
     signerNpi: (row.signer_npi as string | null) ?? null,
     signatureStatement: (row.signature_statement as string | null) ?? null,
+    signatureImage: (row.signature_image as string | null) ?? null,
     signerIp: (row.signer_ip as string | null) ?? null,
     consentEsign: Boolean(row.consent_esign),
     chainOk: chain.ok,

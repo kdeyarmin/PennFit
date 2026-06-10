@@ -267,6 +267,10 @@ app.use(
 // below is a no-op for this request.
 app.use("/api/patient-packets/sign", express.json({ limit: "1mb" }));
 
+// The provider-portal sign route can carry the same drawn-signature PNG
+// data URL — same dedicated 1 MB parser, same reasoning as above.
+app.use("/api/provider/queue", express.json({ limit: "1mb" }));
+
 // The PacWare patient-roster import POSTs a whole report CSV as JSON
 // ({ csv: "..." }), which exceeds the default 100 KB cap. Parse it with a
 // larger limit BEFORE the global parser (the route + Zod also cap the
