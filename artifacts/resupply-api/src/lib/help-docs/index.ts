@@ -3,6 +3,7 @@
 export {
   HELP_DOC_VERSION,
   PATIENT_HELP_DOCS,
+  PROVIDER_HELP_DOCS,
   staffHelpDocs,
   type HelpDoc,
   type HelpDocSection,
