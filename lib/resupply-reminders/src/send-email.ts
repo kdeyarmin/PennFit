@@ -37,7 +37,56 @@ export interface SendReminderEmailInput {
   cfg: EmailSendConfig;
   patientId: string;
   episodeId?: string;
+  /**
+   * Optional custom content (mirrors send-sms's `body` override).
+   * When set, the resupply-reminder template (items list +
+   * confirm/edit/stop CTAs) is skipped and the email carries this
+   * subject/body instead, with a signed stop link in the footer so
+   * every outbound mail keeps a working opt-out. Bodies are
+   * operator-authored (outreach playbooks) and stored as-is in
+   * `messages.body` — never logged.
+   */
+  content?: { subject: string; bodyText: string };
   actor: SendActor;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Minimal HTML render for custom-content emails: escaped paragraphs
+ *  + an unsubscribe footer. Deliberately plain — custom content is
+ *  conversational service copy, not a marketing layout. */
+function renderCustomContent(opts: {
+  practiceName: string;
+  subject: string;
+  bodyText: string;
+  stopUrl: string;
+}): { subject: string; html: string; text: string } {
+  const paragraphs = opts.bodyText
+    .split(/\n{2,}/)
+    .map(
+      (p) =>
+        `<p style="margin:0 0 14px 0;">${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`,
+    )
+    .join("\n");
+  return {
+    subject: opts.subject,
+    html: `<!doctype html>
+<html lang="en"><body style="margin:0;padding:24px;background:#f4f6f8;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1f2a37;">
+<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:28px;font-size:15px;line-height:1.55;">
+${paragraphs}
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0 12px 0;"/>
+<p style="color:#6b7280;font-size:12px;margin:0;">${escapeHtml(opts.practiceName)} · <a href="${opts.stopUrl}" style="color:#6b7280;text-decoration:underline;">Stop these messages</a></p>
+</div>
+</body></html>`,
+    text: `${opts.bodyText}\n\n${opts.practiceName}\nStop these messages: ${opts.stopUrl}`,
+  };
 }
 
 const LINK_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -120,24 +169,34 @@ export async function sendReminderEmail(
 
   const expiresAt = Date.now() + LINK_TOKEN_TTL_MS;
   const baseClick = `${cfg.publicBaseUrl}/resupply-api/email/click`;
-  const confirmUrl = `${baseClick}?t=${encodeURIComponent(
-    signLinkToken({ conversationId, action: "confirm", expiresAt }),
-  )}`;
-  const editUrl = `${baseClick}?t=${encodeURIComponent(
-    signLinkToken({ conversationId, action: "edit", expiresAt }),
-  )}`;
   const stopUrl = `${baseClick}?t=${encodeURIComponent(
     signLinkToken({ conversationId, action: "stop", expiresAt }),
   )}`;
 
-  const rendered = renderResupplyReminder({
-    practiceName: cfg.practiceName,
-    firstName: patient.legal_first_name ?? "there",
-    items,
-    confirmUrl,
-    editUrl,
-    stopUrl,
-  });
+  let rendered: { subject: string; html: string; text: string };
+  if (input.content) {
+    rendered = renderCustomContent({
+      practiceName: cfg.practiceName,
+      subject: input.content.subject,
+      bodyText: input.content.bodyText,
+      stopUrl,
+    });
+  } else {
+    const confirmUrl = `${baseClick}?t=${encodeURIComponent(
+      signLinkToken({ conversationId, action: "confirm", expiresAt }),
+    )}`;
+    const editUrl = `${baseClick}?t=${encodeURIComponent(
+      signLinkToken({ conversationId, action: "edit", expiresAt }),
+    )}`;
+    rendered = renderResupplyReminder({
+      practiceName: cfg.practiceName,
+      firstName: patient.legal_first_name ?? "there",
+      items,
+      confirmUrl,
+      editUrl,
+      stopUrl,
+    });
+  }
 
   let messageId: string;
   try {

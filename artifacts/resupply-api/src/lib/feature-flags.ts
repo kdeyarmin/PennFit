@@ -51,6 +51,7 @@ export const FEATURE_FLAG_KEYS = [
   "storefront.reviews_collection",
   "storefront.nps",
   "bulk_campaigns.send",
+  "outreach_playbooks.dispatcher",
   "cart_abandonment.dispatcher",
   "ai_billing.suggestions",
   "billing.auto_submit_claims",

@@ -245,6 +245,11 @@ const AdminEducationVideosPage = lazy(() =>
     default: m.AdminEducationVideosPage,
   })),
 );
+const AdminOutreachPlaybooksPage = lazy(() =>
+  import("@/pages/admin/admin-outreach-playbooks").then((m) => ({
+    default: m.AdminOutreachPlaybooksPage,
+  })),
+);
 const AdminBulkCampaignsPage = lazy(() =>
   import("@/pages/admin/admin-bulk-campaigns").then((m) => ({
     default: m.AdminBulkCampaignsPage,
@@ -990,6 +995,10 @@ function AdminConsole() {
             <Route
               path="/admin/bulk-campaigns"
               component={AdminBulkCampaignsPage}
+            />
+            <Route
+              path="/admin/playbooks"
+              component={AdminOutreachPlaybooksPage}
             />
             <Route path="/admin/security" component={AdminSecurityPage} />
             <Route path="/admin/macros" component={AdminMacrosPage} />
