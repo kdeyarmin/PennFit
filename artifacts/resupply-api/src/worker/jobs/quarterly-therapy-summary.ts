@@ -289,7 +289,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     }
 
     const releaseClaim = async (): Promise<void> => {
-      await supabase
+      const { error: releaseErr } = await supabase
         .schema("resupply")
         .from("patients")
         .update({
@@ -297,6 +297,12 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
             patient.quarterly_summary_last_sent_at,
         })
         .eq("id", patient.id);
+      if (releaseErr) {
+        logger.error(
+          { err: releaseErr.message, patientId: patient.id },
+          "quarterly-summary: releaseClaim failed — patient timestamp stuck; summary will be skipped until next window",
+        );
+      }
     };
 
     try {

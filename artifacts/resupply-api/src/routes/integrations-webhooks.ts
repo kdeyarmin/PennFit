@@ -188,7 +188,7 @@ router.post(
         .maybeSingle();
       if (link) {
         nudgedLinkId = link.id;
-        await supabase
+        const { error: nudgeErr } = await supabase
           .schema("resupply")
           .from("patient_therapy_links")
           .update({
@@ -196,6 +196,12 @@ router.post(
             last_sync_error: null,
           })
           .eq("id", link.id);
+        if (nudgeErr) {
+          logger.warn(
+            { err: nudgeErr.message, linkId: link.id },
+            "integrations-webhooks: vendor_pushed nudge stamp failed (non-fatal)",
+          );
+        }
       }
     }
 

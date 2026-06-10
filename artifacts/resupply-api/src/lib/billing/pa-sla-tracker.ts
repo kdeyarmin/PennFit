@@ -75,12 +75,19 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
     if (pa.decision_at) {
       // Terminal — stamp once and move on.
       if (pa.mco_sla_status !== "decided") {
-        await supabase
+        const { error: decidedErr } = await supabase
           .schema("resupply")
           .from("prior_authorizations")
           .update({ mco_sla_status: "decided" })
           .eq("id", pa.id);
-        stats.updated += 1;
+        if (decidedErr) {
+          logger.warn(
+            { err: decidedErr.message, priorAuthId: pa.id },
+            "pa-mco-sla-sweep: decided status stamp failed (non-fatal)",
+          );
+        } else {
+          stats.updated += 1;
+        }
       }
       stats.byStatus.decided += 1;
       continue;
@@ -92,7 +99,7 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
     stats.byStatus[next] += 1;
 
     if (pa.mco_sla_status !== next || pa.mco_sla_target_date !== target) {
-      await supabase
+      const { error: stampErr } = await supabase
         .schema("resupply")
         .from("prior_authorizations")
         .update({
@@ -100,7 +107,14 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
           mco_sla_status: next,
         })
         .eq("id", pa.id);
-      stats.updated += 1;
+      if (stampErr) {
+        logger.warn(
+          { err: stampErr.message, priorAuthId: pa.id, slaStatus: next },
+          "pa-mco-sla-sweep: SLA status stamp failed (non-fatal)",
+        );
+      } else {
+        stats.updated += 1;
+      }
     }
 
     // Fire a CSR alert on transitions into at_risk or missed. Use
@@ -119,7 +133,7 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
         .filter("metric_snapshot->>priorAuthId", "eq", pa.id)
         .limit(1);
       if (existing && existing.length > 0) continue;
-      await supabase
+      const { error: alertErr } = await supabase
         .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
@@ -135,7 +149,14 @@ export async function runPaMcoSlaSweep(): Promise<SweepStats> {
             slaStatus: next,
           },
         });
-      stats.alertsCreated += 1;
+      if (alertErr) {
+        logger.warn(
+          { err: alertErr.message, priorAuthId: pa.id, alertType },
+          "pa-mco-sla-sweep: CSR alert insert failed (non-fatal)",
+        );
+      } else {
+        stats.alertsCreated += 1;
+      }
     }
   }
 

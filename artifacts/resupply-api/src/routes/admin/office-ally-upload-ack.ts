@@ -189,7 +189,7 @@ router.post(
           await dispatch271(supabase, row.id, content);
           break;
       }
-      await supabase
+      const { error: dispatchedErr } = await supabase
         .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
@@ -197,12 +197,18 @@ router.post(
           dispatched_at: new Date().toISOString(),
         })
         .eq("id", row.id);
+      if (dispatchedErr) {
+        logger.warn(
+          { err: dispatchedErr.message, inboundFileId: row.id },
+          "office-ally.upload-ack: dispatched stamp failed (non-fatal)",
+        );
+      }
     } catch (err) {
       logger.warn(
         { err, inboundFileId: row.id, kind },
         "office-ally.upload-ack: dispatch failed",
       );
-      await supabase
+      const { error: failStampErr } = await supabase
         .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
@@ -212,6 +218,12 @@ router.post(
           dispatched_at: new Date().toISOString(),
         })
         .eq("id", row.id);
+      if (failStampErr) {
+        logger.error(
+          { err: failStampErr.message, inboundFileId: row.id },
+          "office-ally.upload-ack: dispatch_failed stamp also failed",
+        );
+      }
       res.status(500).json({
         error: "dispatch_failed",
         inboundFileId: row.id,

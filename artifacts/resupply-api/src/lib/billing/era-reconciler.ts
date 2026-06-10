@@ -193,7 +193,7 @@ async function applyClaim(
           : hasDenial(eraLine.adjustments)
             ? "denied"
             : localLine.status;
-      await supabase
+      const { error: lineErr } = await supabase
         .schema("resupply")
         .from("insurance_claim_line_items")
         .update({
@@ -203,6 +203,13 @@ async function applyClaim(
           updated_at: new Date().toISOString(),
         })
         .eq("id", localLine.id);
+      if (lineErr) {
+        logger.error(
+          { err: lineErr.message, lineId: localLine.id, claimId: claim.id },
+          "era_reconciler: line item update failed — paid/allowed amounts not recorded",
+        );
+        continue;
+      }
       linesUpdated++;
     }
   }
@@ -226,7 +233,7 @@ async function applyClaim(
   }
 
   const nowIso = new Date().toISOString();
-  await supabase
+  const { error: claimErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .update({
@@ -249,6 +256,12 @@ async function applyClaim(
       updated_at: nowIso,
     })
     .eq("id", claim.id);
+  if (claimErr) {
+    logger.error(
+      { err: claimErr.message, claimId: claim.id },
+      "era_reconciler: claim totals/status update failed — ERA amounts not recorded on claim",
+    );
+  }
 
   // 4. Append the event row.
   // The event label drives the patient EOB email: "paid" = the patient
@@ -259,7 +272,7 @@ async function applyClaim(
   // reimburse the (lower) allowed amount, never the full billed charge.
   const eventType: Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]["event_type"] =
     eraClaim.isDenied ? "denied" : newPatientResp <= 0 ? "paid" : "partial_pay";
-  await supabase
+  const { error: eventErr } = await supabase
     .schema("resupply")
     .from("insurance_claim_events")
     .insert({
@@ -270,6 +283,12 @@ async function applyClaim(
       note: `ERA ${opts.fileName}${denialReason ? ` — ${denialReason}` : ""}`,
       actor_email: opts.actorEmail,
     });
+  if (eventErr) {
+    logger.warn(
+      { err: eventErr.message, claimId: claim.id },
+      "era_reconciler: event insert failed (non-fatal)",
+    );
+  }
 
   return {
     patientControlNumber: eraClaim.patientControlNumber,

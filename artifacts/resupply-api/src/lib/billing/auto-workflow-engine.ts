@@ -126,7 +126,7 @@ async function runScrubPass(
         .select("id")
         .single();
       if (row) {
-        await supabase
+        const { error: scrubLinkErr } = await supabase
           .schema("resupply")
           .from("insurance_claims")
           .update({
@@ -136,6 +136,12 @@ async function runScrubPass(
             updated_at: new Date().toISOString(),
           })
           .eq("id", claim.id);
+        if (scrubLinkErr) {
+          logger.warn(
+            { err: scrubLinkErr.message, claimId: claim.id },
+            "auto-workflow: scrub verdict link update failed (non-fatal)",
+          );
+        }
         void publishEvent({
           eventType: "claim.auto_scrubbed",
           payload: {
@@ -204,7 +210,7 @@ async function runDenialAnalysisPass(
         .select("id")
         .single();
       if (row) {
-        await supabase
+        const { error: analysisLinkErr } = await supabase
           .schema("resupply")
           .from("insurance_claims")
           .update({
@@ -212,6 +218,12 @@ async function runDenialAnalysisPass(
             updated_at: new Date().toISOString(),
           })
           .eq("id", claim.id);
+        if (analysisLinkErr) {
+          logger.warn(
+            { err: analysisLinkErr.message, claimId: claim.id },
+            "auto-workflow: denial analysis link update failed (non-fatal)",
+          );
+        }
         void publishEvent({
           eventType: "claim.denial_analyzed",
           payload: {

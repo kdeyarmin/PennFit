@@ -100,7 +100,7 @@ router.post(
       });
       const fetchedAtIso = new Date().toISOString();
       if (!result.ok) {
-        await supabase
+        const { error: markErr } = await supabase
           .schema("resupply")
           .from("patient_integration_snapshots")
           .update({
@@ -109,12 +109,18 @@ router.post(
             fetched_at: fetchedAtIso,
           })
           .eq("id", row.id);
+        if (markErr) {
+          logger.warn(
+            { err: markErr, snapshotId: row.id },
+            "errors.retry failed to mark snapshot fetch error",
+          );
+        }
         failed += 1;
         continue;
       }
       const parsedSnap = integrationSnapshotSchema.safeParse(result.snapshot);
       if (!parsedSnap.success) {
-        await supabase
+        const { error: markErr } = await supabase
           .schema("resupply")
           .from("patient_integration_snapshots")
           .update({
@@ -123,10 +129,16 @@ router.post(
             fetched_at: fetchedAtIso,
           })
           .eq("id", row.id);
+        if (markErr) {
+          logger.warn(
+            { err: markErr, snapshotId: row.id },
+            "errors.retry failed to mark snapshot schema_invalid",
+          );
+        }
         failed += 1;
         continue;
       }
-      await supabase
+      const { error: snapUpdateErr } = await supabase
         .schema("resupply")
         .from("patient_integration_snapshots")
         .update({
@@ -136,6 +148,15 @@ router.post(
           fetched_at: fetchedAtIso,
         })
         .eq("id", row.id);
+      if (snapUpdateErr) {
+        // The refreshed payload never landed — this retry did NOT succeed.
+        logger.error(
+          { err: snapUpdateErr, snapshotId: row.id },
+          "errors.retry snapshot payload update failed",
+        );
+        failed += 1;
+        continue;
+      }
       try {
         await persistTherapyNights(
           supabase,

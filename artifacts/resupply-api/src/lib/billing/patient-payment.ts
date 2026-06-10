@@ -157,7 +157,7 @@ export async function createPaymentIntent(
       { idempotencyKey: `pennpaps-patient-payment-${row.id}` },
     );
   } catch (err) {
-    await supabase
+    const { error: failStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({
@@ -166,6 +166,12 @@ export async function createPaymentIntent(
           err instanceof Error ? err.message.slice(0, 2000) : String(err),
       })
       .eq("id", row.id);
+    if (failStampErr) {
+      logger.error(
+        { err: failStampErr.message, paymentId: row.id },
+        "patient_payment: failed-status stamp failed — payment row stuck in created state",
+      );
+    }
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "patient_payment: stripe paymentIntents.create failed",
@@ -385,7 +391,7 @@ export async function createPaymentCheckoutSession(
       { idempotencyKey: `pennpaps-patient-checkout-${row.id}` },
     );
   } catch (err) {
-    await supabase
+    const { error: failStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({
@@ -394,6 +400,12 @@ export async function createPaymentCheckoutSession(
           err instanceof Error ? err.message.slice(0, 2000) : String(err),
       })
       .eq("id", row.id);
+    if (failStampErr) {
+      logger.error(
+        { err: failStampErr.message, paymentId: row.id },
+        "patient_payment: failed-status stamp failed — payment row stuck in created state",
+      );
+    }
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "patient_payment: stripe checkout.sessions.create failed",
@@ -408,7 +420,7 @@ export async function createPaymentCheckoutSession(
     // Stripe should always return a URL for hosted sessions; this
     // is belt-and-braces for the typed-as-nullable field. Mark the
     // row as failed before returning.
-    await supabase
+    const { error: noUrlStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({
@@ -416,6 +428,12 @@ export async function createPaymentCheckoutSession(
         failure_reason: "Stripe session missing url",
       })
       .eq("id", row.id);
+    if (noUrlStampErr) {
+      logger.error(
+        { err: noUrlStampErr.message, paymentId: row.id },
+        "patient_payment: missing-url failed stamp failed — payment row stuck in created state",
+      );
+    }
     return {
       error: "stripe_not_configured",
       message: "Stripe returned a session without a hosted URL",
@@ -555,7 +573,7 @@ export async function createAdhocPaymentCheckoutSession(
       { idempotencyKey: `pennpaps-patient-adhoc-${row.id}` },
     );
   } catch (err) {
-    await supabase
+    const { error: failStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({
@@ -564,6 +582,12 @@ export async function createAdhocPaymentCheckoutSession(
           err instanceof Error ? err.message.slice(0, 2000) : String(err),
       })
       .eq("id", row.id);
+    if (failStampErr) {
+      logger.error(
+        { err: failStampErr.message, paymentId: row.id },
+        "patient_payment: adhoc failed-status stamp failed — payment row stuck in created state",
+      );
+    }
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "patient_payment: stripe adhoc checkout.sessions.create failed",
@@ -575,7 +599,7 @@ export async function createAdhocPaymentCheckoutSession(
   }
 
   if (!session.url) {
-    await supabase
+    const { error: noUrlStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({
@@ -583,6 +607,12 @@ export async function createAdhocPaymentCheckoutSession(
         failure_reason: "Stripe session missing url",
       })
       .eq("id", row.id);
+    if (noUrlStampErr) {
+      logger.error(
+        { err: noUrlStampErr.message, paymentId: row.id },
+        "patient_payment: adhoc missing-url failed stamp failed — payment row stuck in created state",
+      );
+    }
     return {
       error: "stripe_rejected",
       message: "Stripe returned a session without a hosted URL",
@@ -666,9 +696,10 @@ export async function markPaymentStatus(
     await applySucceededPayment(supabase, input.paymentId);
     return;
   }
-  await supabase
+  const { error: statusErr } = await supabase
     .schema("resupply")
     .from("patient_payments")
     .update(update)
     .eq("id", input.paymentId);
+  if (statusErr) throw statusErr;
 }

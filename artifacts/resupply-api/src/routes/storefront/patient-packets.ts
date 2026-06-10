@@ -137,7 +137,7 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
 
   // First view? Stamp it (best-effort; never blocks the read).
   if (packet.status === "sent") {
-    await supabase
+    const { error: viewStampErr } = await supabase
       .schema("resupply")
       .from("patient_packets")
       .update({
@@ -147,6 +147,12 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
       })
       .eq("id", packet.id)
       .eq("status", "sent");
+    if (viewStampErr) {
+      logger.warn(
+        { err: viewStampErr.message, packetId: packet.id },
+        "patient-packets.get: first-view stamp failed (non-fatal)",
+      );
+    }
   }
 
   const docKeys = (docs ?? []).map((d) => d.document_key);

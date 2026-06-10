@@ -719,7 +719,7 @@ async function dispatchPacketFax(
       err instanceof TelnyxApiError
         ? `Telnyx fax error: ${err.message}`
         : `Fax dispatch error: ${String(err)}`;
-    await supabase
+    const { error: failStampErr } = await supabase
       .schema("resupply")
       .from("prescription_request_packets")
       .update({
@@ -729,6 +729,12 @@ async function dispatchPacketFax(
         updated_at: nowIso,
       })
       .eq("id", packet.id);
+    if (failStampErr) {
+      logger.error(
+        { err: failStampErr.message, packetId: packet.id },
+        "prescription_request.send.failed: could not stamp failure — packet may remain in sending state",
+      );
+    }
     logger.warn({ packet_id: packet.id }, "prescription_request.send.failed");
     res.status(502).json({ error: "fax_dispatch_failed", message: msg });
   }

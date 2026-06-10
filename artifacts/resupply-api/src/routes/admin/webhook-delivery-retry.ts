@@ -47,7 +47,7 @@ router.post(
       });
       return;
     }
-    await supabase
+    const { error: retryErr } = await supabase
       .schema("resupply")
       .from("webhook_deliveries")
       .update({
@@ -58,6 +58,14 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", delivery.id);
+    if (retryErr) {
+      logger.error(
+        { err: retryErr.message, deliveryId: delivery.id },
+        "webhook_delivery.retry_now: DB update failed",
+      );
+      res.status(500).json({ error: "requeue_failed" });
+      return;
+    }
     await logAudit({
       action: "webhook_delivery.retry_now",
       adminEmail: req.adminEmail ?? null,

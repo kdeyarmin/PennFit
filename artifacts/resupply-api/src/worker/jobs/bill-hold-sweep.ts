@@ -149,7 +149,14 @@ export async function runBillHoldSweep(
           updated_at: nowIso,
         })
         .eq("id", r.id);
-      if (!updErr) stats.remindersBumped += 1;
+      if (updErr) {
+        logger.warn(
+          { err: updErr.message, requirementId: r.id },
+          "bill-hold-sweep: reminder bump update failed",
+        );
+      } else {
+        stats.remindersBumped += 1;
+      }
     }
   }
 

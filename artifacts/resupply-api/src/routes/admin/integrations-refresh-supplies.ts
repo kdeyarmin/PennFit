@@ -105,7 +105,7 @@ router.post(
       const mergedPayload = priorPayload
         ? { ...priorPayload, supplies: parsed.data.supplies }
         : parsed.data;
-      await supabase
+      const { error: snapshotErr } = await supabase
         .schema("resupply")
         .from("patient_integration_snapshots")
         .upsert(
@@ -120,6 +120,14 @@ router.post(
           },
           { onConflict: "patient_id,source" },
         );
+      if (snapshotErr) {
+        logger.warn(
+          { err: snapshotErr.message, source },
+          "integrations-refresh-supplies: snapshot upsert failed",
+        );
+        failed += 1;
+        continue;
+      }
       refreshedSources.push(source);
     }
     await logAudit({

@@ -409,11 +409,17 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     }
 
     const releaseClaim = async (): Promise<void> => {
-      await supabase
+      const { error: releaseErr } = await supabase
         .schema("resupply")
         .from("patient_therapy_milestones")
         .update({ notified_at: null, notification_channel: null })
         .eq("id", claimed.id);
+      if (releaseErr) {
+        logger.error(
+          { err: releaseErr.message, milestoneId: claimed.id },
+          "therapy-milestones: releaseClaim failed — milestone may remain claimed",
+        );
+      }
     };
 
     // Recipient email + first name, resolved from the batch lookup above.

@@ -186,7 +186,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // Transfer the caller to a human (used by both the storefront and patient
   // flows on any fall-through). Records the outcome on the session first.
   const transferToHuman = async (reason: string): Promise<void> => {
-    await supabase
+    const { error: transferStampErr } = await supabase
       .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
@@ -194,6 +194,12 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         outcome_json: { routed: "human", reason } as unknown as Json,
       })
       .eq("id", session.id);
+    if (transferStampErr) {
+      logger.warn(
+        { err: transferStampErr.message, sessionId: session.id },
+        "voice.inbound-reorder: transfer outcome stamp failed (caller still transferred)",
+      );
+    }
     res
       .status(200)
       .type("text/xml")

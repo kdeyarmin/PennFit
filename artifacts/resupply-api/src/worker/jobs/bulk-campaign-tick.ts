@@ -299,21 +299,33 @@ export async function processTick(
       "bulk_campaigns.tick: template render failed; pausing campaign",
     );
     // Bail the campaign — every send would fail the same way.
-    await supabase
+    const { error: pauseErr } = await supabase
       .schema("resupply")
       .from("bulk_campaigns")
       .update({ status: "paused" })
       .eq("id", campaign.id);
+    if (pauseErr) {
+      log.error(
+        { err: pauseErr.message, campaignId: campaign.id },
+        "bulk_campaigns.tick: failed to pause campaign after template error — next tick will attempt to render again",
+      );
+    }
     // Roll the claimed batch back to pending so the resume can pick
     // them up. Chunk the `.in()` at 200 for the same URL-length reason
     // as the claim above.
     const winningIdList = Array.from(winningIds);
     for (let i = 0; i < winningIdList.length; i += 200) {
-      await supabase
+      const { error: rollbackErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({ status: "pending" })
         .in("id", winningIdList.slice(i, i + 200));
+      if (rollbackErr) {
+        log.error(
+          { err: rollbackErr.message, campaignId: campaign.id },
+          "bulk_campaigns.tick: recipient rollback chunk failed — stale-lease recovery will reclaim after expiry",
+        );
+      }
     }
     return;
   }
@@ -351,11 +363,17 @@ export async function processTick(
     if (!email) {
       // Should be impossible — resolver suppresses empty emails —
       // but defensively flip to failed if encountered.
-      await supabase
+      const { error: noEmailErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({ status: "failed", error: "no_email_at_send_time" })
         .eq("id", row.id);
+      if (noEmailErr) {
+        log.warn(
+          { err: noEmailErr.message, recipientId: row.id },
+          "bulk_campaigns.tick: failed to mark no-email recipient — stale-lease recovery will reclaim",
+        );
+      }
       failed += 1;
       continue;
     }
@@ -385,11 +403,21 @@ export async function processTick(
           { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
           "bulk_campaigns.tick: suppression update failed — marking recipient failed",
         );
-        await supabase
+        const { error: failMarkErr } = await supabase
           .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({ status: "failed", error: supErr.message.slice(0, 500) })
           .eq("id", row.id);
+        if (failMarkErr) {
+          log.error(
+            {
+              err: failMarkErr.message,
+              recipientId: row.id,
+              campaignId: campaign.id,
+            },
+            "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
+          );
+        }
         failed += 1;
         continue;
       }
@@ -471,7 +499,7 @@ export async function processTick(
         typeof (err as { retryable?: unknown })?.retryable === "boolean" &&
         (err as { retryable: boolean }).retryable;
       const willRetry = isRetryable && nextAttempts < MAX_SEND_ATTEMPTS;
-      await supabase
+      const { error: retryUpdateErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
@@ -480,6 +508,22 @@ export async function processTick(
           error: message,
         })
         .eq("id", row.id);
+      if (retryUpdateErr) {
+        // Recipient stays in 'sending'. The stale-lease recovery will flip it
+        // back to 'pending', which may cause a re-send. Log with enough context
+        // for manual reconciliation.
+        log.error(
+          {
+            err: retryUpdateErr.message,
+            recipientId: row.id,
+            campaignId: campaign.id,
+            willRetry,
+            sendAttempts: nextAttempts,
+            event: "bulk_campaign_retry_update_failed",
+          },
+          "bulk_campaigns.tick: failed to update recipient after send failure — recipient may be re-sent after lease expiry",
+        );
+      }
       if (willRetry) {
         retried += 1;
       } else {

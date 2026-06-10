@@ -274,7 +274,7 @@ export async function recomputeBillHold(
     // extra event.
     if (held) {
       const labels = outstandingLabels(reqRows);
-      await supabase
+      const { error: reasonErr } = await supabase
         .schema("resupply")
         .from("insurance_claims")
         .update({
@@ -282,13 +282,19 @@ export async function recomputeBillHold(
           bill_hold_updated_at: new Date().toISOString(),
         })
         .eq("id", claimId);
+      if (reasonErr) {
+        logger.warn(
+          { err: reasonErr.message, claimId },
+          "bill-hold: hold-reason refresh failed (non-fatal)",
+        );
+      }
     }
     return { claimId, held, changed: false, outstandingCount };
   }
 
   const nowIso = new Date().toISOString();
   const labels = outstandingLabels(reqRows);
-  await supabase
+  const { error: flipErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .update({
@@ -300,9 +306,16 @@ export async function recomputeBillHold(
       updated_at: nowIso,
     })
     .eq("id", claimId);
+  if (flipErr) {
+    logger.error(
+      { err: flipErr.message, claimId, held },
+      "bill-hold: bill_hold flip failed — claim hold state is stale",
+    );
+    return { claimId, held: wasHeld, changed: false, outstandingCount };
+  }
 
   if (opts.writeEvent) {
-    await supabase
+    const { error: eventErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -312,13 +325,13 @@ export async function recomputeBillHold(
           ? `Bill hold placed — waiting on: ${labels.join(", ")}.`
           : "Bill hold released — all required paperwork is on file.",
         actor_email: opts.actorEmail ?? "system",
-      })
-      .then(
-        () => undefined,
-        (err: unknown) => {
-          logger.warn({ err, claimId }, "bill-hold: claim event write failed");
-        },
+      });
+    if (eventErr) {
+      logger.warn(
+        { err: eventErr.message, claimId },
+        "bill-hold: claim event write failed",
       );
+    }
   }
 
   return { claimId, held, changed: true, outstandingCount };
