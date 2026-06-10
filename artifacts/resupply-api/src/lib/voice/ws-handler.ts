@@ -1038,12 +1038,12 @@ interface RunPostCallSummaryInput {
 async function runPostCallSummary(
   input: RunPostCallSummaryInput,
 ): Promise<void> {
-  const client = getAnthropicClient();
-  if (!client) {
-    // Nothing to do — summary is opt-in on ANTHROPIC_API_KEY.
-    return;
-  }
   try {
+    const client = getAnthropicClient();
+    if (!client) {
+      // Nothing to do — summary is opt-in on ANTHROPIC_API_KEY.
+      return;
+    }
     const summary: PostCallSummary | null = await summarizePostCall({
       client,
       turns: input.turns,
