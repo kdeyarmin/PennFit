@@ -625,8 +625,10 @@ router.post(
       }
       targetPatientId = patient.id;
     } else {
-      // Build a new chart. pacware_id is NOT NULL + UNIQUE; web-
-      // originated prospects have no EHR id yet, so mint a WEB- one.
+      // Build a new chart. pacware_id is nullable since migration
+      // 0303, but web-originated prospects still get a synthetic
+      // WEB- id (unique per invite) so ops can spot web-created
+      // charts at a glance in lists and PacWare exports.
       const cp = parsed.data.createPatient!;
       const newPatient: PatientsInsert = {
         pacware_id: `WEB-${idCheck.data.slice(0, 8)}`,
