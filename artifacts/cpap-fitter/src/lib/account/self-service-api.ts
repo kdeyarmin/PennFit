@@ -115,20 +115,6 @@ export const mintReferral = (body: {
     body: JSON.stringify(body),
   });
 
-// ---- Appointment request ----
-
-export const submitAppointmentRequest = (body: {
-  topic: string;
-  preferredWindow?: string | null;
-  notes?: string | null;
-  phone?: string | null;
-}) =>
-  jsonFetch<{ id: string }>("/shop/me/appointment-request", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
 // ---- Lost-shipment report ----
 
 export const reportLostShipment = (orderId: string, note: string) =>
