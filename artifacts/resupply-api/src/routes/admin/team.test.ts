@@ -202,6 +202,10 @@ describe("team.ts — route structure retained", () => {
     expect(SRC).toContain('"/admin/team/:id/revoke"');
   });
 
+  it("registers DELETE /admin/team/:id for deleting invites", () => {
+    expect(SRC).toContain('router.delete(\n  "/admin/team/:id"');
+  });
+
   it("registers PATCH /admin/team/:id for updating members", () => {
     expect(SRC).toContain('"/admin/team/:id"');
   });
@@ -209,7 +213,67 @@ describe("team.ts — route structure retained", () => {
   it("applies requireAdminOnly to all sensitive mutations", () => {
     // requireAdminOnly appears multiple times — once per protected route.
     const matches = SRC.split("requireAdminOnly");
-    expect(matches.length).toBeGreaterThanOrEqual(6); // at least 5 usages
+    expect(matches.length).toBeGreaterThanOrEqual(7); // at least 6 usages
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /admin/team/:id — hard-delete an invite as if it never happened
+// ---------------------------------------------------------------------------
+describe("team.ts — DELETE /admin/team/:id guards", () => {
+  // The DELETE handler sits between router.delete( and the
+  // router.patch( that follows it — scope assertions to that span so
+  // they don't accidentally match the other handlers.
+  const deleteRoute = SRC.slice(
+    SRC.indexOf("router.delete("),
+    SRC.indexOf("router.patch("),
+  );
+
+  it("rate-limits deletes with the shared team-mutation limiter", () => {
+    expect(deleteRoute).toContain("adminTeamMutationLimiter");
+  });
+
+  it("refuses to delete your own seat (cannot_delete_self)", () => {
+    expect(SRC).toContain("cannot_delete_self");
+  });
+
+  it("refuses to delete an active member (member_active) — revoke first", () => {
+    expect(SRC).toContain("member_active");
+    expect(SRC).toContain("Revoke their access first");
+  });
+
+  it("gates active-ness on effectiveStatus (email_verified_at aware)", () => {
+    expect(SRC).toContain(
+      'effectiveStatus(row.status, emailVerifiedAt) === "active"',
+    );
+  });
+
+  it("preserves a shared shop-customer identity instead of deleting it", () => {
+    // The route checks shop_customers for a row linked to the same
+    // auth user and passes preserveAsCustomer so deleteTeamMember
+    // demotes the identity back to 'customer' instead of erasing the
+    // person's store login.
+    expect(SRC).toContain('from("shop_customers")');
+    expect(SRC).toContain("preserveAsCustomer: Boolean(customer)");
+  });
+
+  it("delegates auth-side cleanup to deleteTeamMember from @workspace/resupply-auth", () => {
+    expect(SRC).toContain("deleteTeamMember");
+  });
+
+  it("deletes the admin_users roster row", () => {
+    expect(deleteRoute).toContain('from("admin_users")');
+    expect(deleteRoute).toContain(".delete()");
+  });
+
+  it("404s when the member row does not exist", () => {
+    expect(deleteRoute).toContain("member_not_found");
+  });
+
+  it("responds with a deletion summary (deleted + auth-side outcome flags)", () => {
+    expect(SRC).toContain(
+      "res.json({ deleted: true, id, authUserDeleted, authUserDemotedToCustomer });",
+    );
   });
 });
 

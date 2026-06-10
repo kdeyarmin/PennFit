@@ -7,6 +7,10 @@
 //   POST   /admin/team/:id/resend       — resend the invite email
 //   POST   /admin/team/:id/revoke       — revoke membership; future logins
 //                                           are denied immediately
+//   DELETE /admin/team/:id              — delete a pending/revoked invite
+//                                           entirely, as if it never
+//                                           happened (active members must
+//                                           be revoked first)
 //   PATCH  /admin/team/:id              — update role / display name / notes
 //
 // Why requireAdminOnly: granting / revoking admin access is an
@@ -41,6 +45,7 @@ import {
 } from "@workspace/resupply-db";
 
 import {
+  deleteTeamMember,
   inviteTeamMember,
   revokeTeamMember,
   updateTeamMemberRole,
@@ -557,6 +562,112 @@ router.post(
     res.json({
       member: await serializeWithAuthLookup(supabase, updated ?? row),
     });
+  },
+);
+
+router.delete(
+  "/admin/team/:id",
+  requireAdminOnly,
+  adminTeamMutationLimiter,
+  async (req, res) => {
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .select(
+        "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
+      )
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!row) {
+      res.status(404).json({ error: "member_not_found" });
+      return;
+    }
+    // Defensive: an active self can't be deleted anyway (gate below),
+    // but keep the explicit guard so a revoked-self edge state can't
+    // erase the very account servicing this request.
+    if (row.auth_user_id && row.auth_user_id === req.adminUserId) {
+      res.status(409).json({
+        error: "cannot_delete_self",
+        message: "You can't delete your own seat.",
+      });
+      return;
+    }
+    // Only pending / revoked rows are deletable. An active member
+    // holds live access (sessions, credentials) — force the revoke
+    // path first, which carries the self-revoke and last-admin
+    // guards and terminates sessions.
+    let emailVerifiedAt: string | null = null;
+    if (row.auth_user_id) {
+      const { data: auth, error: authErr } = await supabase
+        .schema("resupply_auth")
+        .from("users")
+        .select("email_verified_at")
+        .eq("id", row.auth_user_id)
+        .limit(1)
+        .maybeSingle();
+      if (authErr) throw authErr;
+      emailVerifiedAt = auth?.email_verified_at ?? null;
+    }
+    if (effectiveStatus(row.status, emailVerifiedAt) === "active") {
+      res.status(409).json({
+        error: "member_active",
+        message:
+          "This member is active. Revoke their access first, then delete.",
+      });
+      return;
+    }
+
+    // Auth-side cleanup first: a crash between the two deletes then
+    // leaves a visible (re-deletable) roster row rather than an
+    // invisible orphaned identity. When the identity row is shared
+    // with a shop-customer account, it is demoted back to 'customer'
+    // instead of deleted so the invite doesn't take the person's
+    // store login with it.
+    let authUserDeleted = false;
+    let authUserDemotedToCustomer = false;
+    if (row.auth_user_id) {
+      const { data: customer, error: customerErr } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("id")
+        .eq("auth_user_id", row.auth_user_id)
+        .limit(1)
+        .maybeSingle();
+      if (customerErr) throw customerErr;
+      const cleanup = await deleteTeamMember(supabase, row.auth_user_id, {
+        preserveAsCustomer: Boolean(customer),
+      });
+      authUserDeleted = cleanup.authUserDeleted;
+      authUserDemotedToCustomer = cleanup.authUserDemotedToCustomer;
+    }
+
+    const { error: deleteErr } = await supabase
+      .schema("resupply")
+      .from("admin_users")
+      .delete()
+      .eq("id", id);
+    if (deleteErr) throw deleteErr;
+
+    logger.info(
+      {
+        event: "admin_team_member_deleted",
+        memberId: id,
+        deletedBy: req.adminUserId ?? null,
+        priorStatus: row.status,
+        authUserDeleted,
+        authUserDemotedToCustomer,
+      },
+      "admin team invite deleted",
+    );
+    res.json({ deleted: true, id, authUserDeleted, authUserDemotedToCustomer });
   },
 );
 

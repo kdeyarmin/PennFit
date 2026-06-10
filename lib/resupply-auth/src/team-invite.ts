@@ -345,6 +345,106 @@ export async function revokeTeamMember(
   if (sessionsErr) throw sessionsErr;
 }
 
+export interface DeleteTeamMemberResult {
+  /** True iff the resupply_auth.users row was hard-deleted (the
+   *  cascading FKs from 0022 remove password_credentials, sessions,
+   *  and email_tokens with it). */
+  authUserDeleted: boolean;
+  /** True iff the identity row was kept because it is shared with a
+   *  customer account, and was demoted back to role='customer'
+   *  instead of deleted. */
+  authUserDemotedToCustomer: boolean;
+}
+
+/**
+ * Erase the auth-side footprint of a team invite / membership, as if
+ * the invite never happened. Counterpart to `revokeTeamMember`, which
+ * keeps the row around as an audit trail — this one removes it.
+ *
+ * Two modes, chosen by the caller (which owns the product-side
+ * roster and knows whether the identity is shared):
+ *
+ *   * `preserveAsCustomer: false` — the row exists only because of
+ *     the invite. Hard-delete it; `password_credentials`, `sessions`,
+ *     and `email_tokens` all CASCADE (migration 0022), which also
+ *     kills any outstanding invite link.
+ *
+ *   * `preserveAsCustomer: true` — the same resupply_auth.users row
+ *     backs a shop-customer account (someone who bought from the
+ *     store and was later invited to staff). Deleting it would
+ *     destroy their customer login, so instead: demote the role back
+ *     to 'customer', restore status from the email-verification
+ *     state ('revoked'/'invited' would lock the customer out),
+ *     delete any unconsumed password_reset tokens (dead invite
+ *     links), and revoke live sessions so a staff-scoped cookie
+ *     can't linger.
+ */
+export async function deleteTeamMember(
+  supabase: ResupplySupabaseClient,
+  authUserId: string,
+  opts: { preserveAsCustomer: boolean },
+): Promise<DeleteTeamMemberResult> {
+  if (!opts.preserveAsCustomer) {
+    const { error } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .delete()
+      .eq("id", authUserId);
+    if (error) throw error;
+    return { authUserDeleted: true, authUserDemotedToCustomer: false };
+  }
+
+  const { data: user, error: readErr } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .select("id, email_verified_at")
+    .eq("id", authUserId)
+    .limit(1)
+    .maybeSingle<{ id: string; email_verified_at: string | null }>();
+  if (readErr) throw readErr;
+  if (!user) {
+    return { authUserDeleted: false, authUserDemotedToCustomer: false };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: updErr } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .update({
+      role: "customer",
+      // A verified customer goes back to 'active'; an unverified one
+      // back to 'invited' (sign-in refuses unverified accounts either
+      // way). Leaving 'revoked' in place would lock them out of their
+      // own customer account.
+      status: user.email_verified_at ? "active" : "invited",
+      updated_at: nowIso,
+    })
+    .eq("id", authUserId);
+  if (updErr) throw updErr;
+
+  // Dead-letter the invite's set-password links. Only unconsumed
+  // password_reset tokens — consumed rows are audit trail, and the
+  // customer's own signup_verify tokens are untouched.
+  const { error: tokErr } = await supabase
+    .schema("resupply_auth")
+    .from("email_tokens")
+    .delete()
+    .eq("user_id", authUserId)
+    .eq("purpose", "password_reset")
+    .is("consumed_at", null);
+  if (tokErr) throw tokErr;
+
+  const { error: sessErr } = await supabase
+    .schema("resupply_auth")
+    .from("sessions")
+    .update({ revoked_at: nowIso })
+    .eq("user_id", authUserId)
+    .is("revoked_at", null);
+  if (sessErr) throw sessErr;
+
+  return { authUserDeleted: false, authUserDemotedToCustomer: true };
+}
+
 /**
  * Update the role on an existing resupply_auth.users row. Returns
  * true if a row was updated, false otherwise.
