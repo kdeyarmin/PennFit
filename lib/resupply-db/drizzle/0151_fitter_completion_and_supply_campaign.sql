@@ -219,6 +219,28 @@ CREATE INDEX IF NOT EXISTS "fitter_campaign_touches_touch_sent_idx"
 -- ---------------------------------------------------------------
 -- Feature flag for the new dispatcher.
 -- ---------------------------------------------------------------
+-- The feature_flags table was intended to be created at migration
+-- 0149 but was accidentally numbered 0275.  Create it here with
+-- IF NOT EXISTS so the seed INSERT below can run, and so that all
+-- subsequent migrations (0172–0274) that also seed flags can run in
+-- order.  Migration 0275 already uses IF NOT EXISTS, so it becomes a
+-- no-op on fresh replays once this block executes first.
+CREATE TABLE IF NOT EXISTS resupply.feature_flags (
+  key text PRIMARY KEY,
+  enabled boolean NOT NULL DEFAULT true,
+  description text NOT NULL,
+  category text NOT NULL,
+  updated_by_user_id text NULL,
+  updated_by_email text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS feature_flags_category_idx
+  ON resupply.feature_flags (category);
+--> statement-breakpoint
+
 -- Seeded enabled-by-default to match the rest of the catalog. Admin
 -- Control Center can flip it off without a deploy.
 INSERT INTO resupply.feature_flags (key, enabled, description, category)
