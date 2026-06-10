@@ -1,4 +1,4 @@
--- 0263_insurance_claims_submitting_state — close the claim batch
+-- 0265_insurance_claims_submitting_state — close the claim batch
 -- double-transmission race (app-review 2026-06-10, P1-1).
 --
 -- executeOfficeAllyBatchSubmit used to verify "all claims are draft"
