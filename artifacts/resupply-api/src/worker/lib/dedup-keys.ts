@@ -34,8 +34,9 @@ export async function claimDedupKey(
     .eq("key", key)
     .lte("expires_at", new Date().toISOString());
   if (expireErr) {
-    // Fall through to the insert anyway — worst case the stale row
-    // still blocks (the pre-fix behavior), never a double-send.
+    // Don't attempt the insert if the expiry sweep fails. Worst case the
+    // stale row still blocks (the pre-fix behavior); we never risk a
+    // double-send.
     return {
       outcome: "error",
       error: { code: expireErr.code, message: expireErr.message },
