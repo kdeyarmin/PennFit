@@ -78,6 +78,7 @@ export const FEATURE_FLAG_KEYS = [
   "inbound_referrals.dispatcher",
   "patient_packets.autosend_on_delivery",
   "patient_packets.autoremind",
+  "patient_packets.autofile_signed_pdf",
   "orders.require_signed_paperwork",
   "provider.portal_enabled",
   "multi_location.enabled",

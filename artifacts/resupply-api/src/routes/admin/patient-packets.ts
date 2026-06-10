@@ -41,10 +41,7 @@ import {
   packetSectionsSchema,
   renderPacketDocumentSections,
 } from "../../lib/patient-packet/content";
-import {
-  renderPatientPacketPdf,
-  type PacketPdfInput,
-} from "../../lib/patient-packet/packet-pdf";
+import { buildSignedPacketPdf } from "../../lib/patient-packet/signed-pdf";
 import {
   applyPacketDocumentOverrides,
   createAndSendPatientPacket,
@@ -1240,97 +1237,21 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { data: packet, error } = await supabase
-      .schema("resupply")
-      .from("patient_packets")
-      .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, recipient_phone, sent_at, completed_at, delivery_details",
-      )
-      .eq("id", parsed.data.packetId)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (!packet) {
+    // Shared loader (signed-pdf.ts) — the same bytes the auto-file hook
+    // writes to the chart, so the two can never drift.
+    const built = await buildSignedPacketPdf(supabase, parsed.data.packetId);
+    if (!built) {
       res.status(404).json({ error: "not_found" });
       return;
     }
 
-    const [docsRes, sigRes, company] = await Promise.all([
-      supabase
-        .schema("resupply")
-        .from("patient_packet_documents")
-        .select(
-          "document_key, title, requires_signature, content_version, content_sections, sort_order",
-        )
-        .eq("packet_id", packet.id)
-        .order("sort_order", { ascending: true }),
-      supabase
-        .schema("resupply")
-        .from("patient_packet_signatures")
-        .select("*")
-        .eq("packet_id", packet.id)
-        .order("signed_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      resolveCompanyProfile(supabase),
-    ]);
-    if (docsRes.error) throw docsRes.error;
-    if (sigRes.error) throw sigRes.error;
-
-    const sig = sigRes.data;
-    const deliveryDetails = (packet.delivery_details ??
-      null) as PacketPdfInput["deliveryDetails"];
-    const { pdf } = await renderPatientPacketPdf({
-      packetId: packet.id,
-      title: packet.title,
-      company,
-      patient: { name: packet.recipient_name },
-      status: packet.status,
-      sentAt: packet.sent_at,
-      completedAt: packet.completed_at,
-      documents: (docsRes.data ?? []).map((d) => ({
-        documentKey: d.document_key,
-        title: d.title,
-        requiresSignature: d.requires_signature,
-        contentVersion: d.content_version,
-        // Snapshot rows render their send-time content (tokens resolved
-        // here); legacy rows fall back to the code template inside the
-        // renderer.
-        sections: d.content_sections
-          ? renderPacketDocumentSections({
-              documentKey: d.document_key,
-              storedSections: d.content_sections,
-              company,
-              recipientName: packet.recipient_name,
-              recipientEmail: packet.recipient_email,
-              recipientPhone: packet.recipient_phone,
-              deliveryDetails,
-            })
-          : null,
-      })),
-      deliveryDetails,
-      signature: sig
-        ? {
-            signerName: sig.signer_name,
-            signerRelationship: sig.signer_relationship,
-            signatureImage: sig.signature_image,
-            consentEsign: sig.consent_esign,
-            signedAt: sig.signed_at,
-            signerIp: sig.signer_ip,
-            signerUserAgent: sig.signer_user_agent,
-            signerReason: sig.signer_reason,
-            dateReceived: sig.date_received,
-          }
-        : null,
-    });
-
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="patient-packet-${packet.id.slice(0, 8)}.pdf"`,
+      `attachment; filename="patient-packet-${built.packet.id.slice(0, 8)}.pdf"`,
     );
     res.setHeader("Cache-Control", "no-store");
-    res.status(200).end(pdf);
+    res.status(200).end(built.pdf);
   },
 );
 

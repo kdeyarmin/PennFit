@@ -152,6 +152,23 @@ code (`qrcode` package, rendered client-side in
 `src/components/QrCode.tsx`; the secret never leaves the browser). The
 manual-entry key and tap-to-open link remain as fallbacks.
 
+## Auto-file signed packets to the chart
+
+_Migration 0305._ When a patient completes a packet, the signed PDF
+(documents + signature certificate — the same bytes the admin download
+serves, via the shared `lib/patient-packet/signed-pdf.ts` loader) is
+automatically filed onto the patient's chart as a `patient_documents`
+row tagged `agreement` (retention: 7 years when the packet includes the
+Medicare POD, else the 6-year HIPAA floor). Best-effort and
+fire-and-forget — a rendering or storage failure never delays the
+patient's signing response, and the PDF stays downloadable on demand.
+Skipped for unlinked packets (no chart), when storage is unconfigured,
+or when already filed (`patient_packets.chart_document_id` guard).
+Gated by the `patient_packets.autofile_signed_pdf` flag (seeded **ON**
+— internal record-keeping, no outbound communication). The packet
+detail panel shows whether the filing happened. Audit:
+`patient_packet.chart_filed` (ids + size only).
+
 ## Manual-document prefill
 
 `GET /admin/manual-documents/prefill?patientId&documentType` suggests

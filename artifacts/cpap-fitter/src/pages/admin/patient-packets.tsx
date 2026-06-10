@@ -1274,6 +1274,23 @@ function PacketDetailPanel({
               ESIGN consent: {signature.consent_esign ? "Yes" : "No"}
               {signature.signer_ip ? ` · IP ${signature.signer_ip}` : ""}
             </p>
+            {packet.chart_document_id ? (
+              <p className="text-xs mt-1" style={{ color: "hsl(142 60% 30%)" }}>
+                Signed PDF filed to the patient’s chart
+                {packet.chart_filed_at
+                  ? ` on ${fmtDate(packet.chart_filed_at)}`
+                  : ""}
+                {" — see their Documents tab."}
+              </p>
+            ) : packet.patient_id ? (
+              <p
+                className="text-xs mt-1"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Not yet filed to the chart — download the PDF below to file it
+                manually if needed.
+              </p>
+            ) : null}
           </div>
         )}
 
