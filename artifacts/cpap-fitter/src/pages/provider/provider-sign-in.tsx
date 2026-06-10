@@ -76,6 +76,7 @@ export function ProviderSignIn() {
             err.code === "mfa_challenge_invalid")
         ) {
           setStep({ kind: "password" });
+          setPassword("");
           setError("Your session timed out. Please enter your password again.");
           return;
         }
@@ -111,7 +112,10 @@ export function ProviderSignIn() {
                 autoComplete="username"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError(null);
+                }}
                 className={inputClass}
               />
             </div>
@@ -124,7 +128,10 @@ export function ProviderSignIn() {
                 autoComplete="current-password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
                 className={inputClass}
               />
             </div>
