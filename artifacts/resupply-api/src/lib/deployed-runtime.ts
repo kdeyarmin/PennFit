@@ -13,6 +13,12 @@
 
 export function isDeployedRuntime(env: NodeJS.ProcessEnv): boolean {
   if (env.NODE_ENV === "production") return true;
+  // An explicit dev/test NODE_ENV wins over Railway markers: `railway
+  // run pnpm --filter @workspace/resupply-api dev` injects the linked
+  // service's variables (including RAILWAY_*) into a local shell, and
+  // the dev script exports NODE_ENV=development without building the
+  // SPA. Deployed containers never set these values.
+  if (env.NODE_ENV === "development" || env.NODE_ENV === "test") return false;
   return [
     env.RAILWAY_ENVIRONMENT,
     env.RAILWAY_ENVIRONMENT_NAME,
