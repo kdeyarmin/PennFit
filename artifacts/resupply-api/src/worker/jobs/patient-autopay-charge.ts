@@ -440,6 +440,15 @@ export async function registerPatientAutopayChargeJob(
       "patient-autopay-charge scheduled",
     );
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(PATIENT_AUTOPAY_CHARGE_JOB).catch(() => undefined);
+    }
     logger.info(
       { queue: PATIENT_AUTOPAY_CHARGE_JOB },
       "patient-autopay-charge registered (cron opt-in unset)",

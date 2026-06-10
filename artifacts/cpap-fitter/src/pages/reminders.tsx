@@ -155,11 +155,7 @@ export function Reminders() {
 
   if (success) {
     return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-2xl mx-auto px-4 py-12"
-      >
+      <div className="relative z-10 container max-w-2xl mx-auto px-4 py-12">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -190,7 +186,7 @@ export function Reminders() {
             </div>
           </CardContent>
         </Card>
-      </main>
+      </div>
     );
   }
 
@@ -207,11 +203,7 @@ export function Reminders() {
     : null;
 
   return (
-    <main
-      id="main-content"
-      tabIndex={-1}
-      className="relative z-10 container max-w-3xl mx-auto px-4 py-10"
-    >
+    <div className="relative z-10 container max-w-3xl mx-auto px-4 py-10">
       <div className="text-center space-y-3 mb-8">
         <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
           <Truck className="w-6 h-6" />
@@ -454,6 +446,6 @@ export function Reminders() {
           </form>
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }

@@ -16,7 +16,7 @@ import { z } from "zod";
 
 import {
   getSupabaseServiceRoleClient,
-  escapePostgRESTFilterValue,
+  escapePostgRESTContainsPattern,
 } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -76,9 +76,11 @@ export async function resolveEpisodesSearch(
 ): Promise<string[]> {
   // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
   // Escape commas/parentheses/quotes in the search value to
-  // prevent breaking the filter expression.
-  const escaped = escapePostgRESTFilterValue(needle);
-  const pattern = `*${escaped}*`;
+  // prevent breaking the filter expression. The wildcards must live
+  // INSIDE the quoting layer (see escapePostgRESTContainsPattern) —
+  // the previous hand-rolled `*${escaped}*` mis-parsed for
+  // delimiter-containing searches like "Smith, John" (PostgREST 400).
+  const pattern = escapePostgRESTContainsPattern(needle);
   const isUuid = UUID_RE.test(needle);
 
   const { data: matchedPatients, error: patientErr } = await supabase

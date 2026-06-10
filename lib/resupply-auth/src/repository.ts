@@ -126,12 +126,17 @@ export interface AuthRepository {
   /**
    * Atomically consume an email token: returns the row if it was
    * still valid (unconsumed AND not expired) at the time of the
-   * call AND marks it consumed, otherwise returns null. The
-   * atomicity matters — a concurrent double-click can't redeem the
-   * same token twice.
+   * call AND matched the expected purpose AND marks it consumed,
+   * otherwise returns null. The atomicity matters — a concurrent
+   * double-click can't redeem the same token twice. The purpose is
+   * part of the consume predicate (not checked after) so a valid
+   * token POSTed to the WRONG endpoint (a signup_verify token to
+   * /auth/reset-password, or vice versa) misses the WHERE clause and
+   * stays redeemable at the right endpoint instead of being burned.
    */
   consumeEmailToken(input: {
     tokenHash: Buffer;
+    purpose: EmailTokenPurpose;
     at: Date;
   }): Promise<AuthEmailTokenRow | null>;
 

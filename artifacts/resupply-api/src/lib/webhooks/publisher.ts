@@ -37,11 +37,22 @@ export interface PublishEventInput {
 export async function publishEvent(input: PublishEventInput): Promise<void> {
   const supabase = input.supabase ?? getSupabaseServiceRoleClient();
   try {
-    const { data: subs } = await supabase
+    const { data: subs, error: subsErr } = await supabase
       .schema("resupply")
       .from("webhook_subscriptions")
       .select("id, event_types")
       .eq("is_active", true);
+    if (subsErr) {
+      // Same warn shape as the insert failure below — without it a
+      // subscription-read error drops the event with zero trace, so
+      // partners silently miss events during a DB brownout and there
+      // is no log line to find/replay them from.
+      logger.warn(
+        { err: subsErr.message, eventType: input.eventType },
+        "webhook.publish: subscription read failed (event dropped)",
+      );
+      return;
+    }
     const matching = (subs ?? []).filter((s) =>
       ((s.event_types ?? []) as string[]).some(
         (t: string) => t === "*" || t === input.eventType,

@@ -77,7 +77,7 @@ export async function runWebhookDispatcher(
   // Step 1: find candidates. This SELECT is racy on its own — two
   // overlapping cron ticks would both see the same rows. The atomic
   // claim below filters down to the rows THIS tick actually owns.
-  const { data: candidates } = await supabase
+  const { data: candidates, error: candidatesErr } = await supabase
     .schema("resupply")
     .from("webhook_deliveries")
     .select("id")
@@ -85,6 +85,10 @@ export async function runWebhookDispatcher(
     .lte("next_attempt_at", nowIso)
     .order("next_attempt_at", { ascending: true })
     .limit(BATCH_SIZE);
+  // Throw — PostgREST returns errors in-band, and swallowing one here
+  // turns the every-minute dispatcher into a silent no-op (queued
+  // webhooks stall with zero failure signal until someone notices).
+  if (candidatesErr) throw candidatesErr;
   if (!candidates || candidates.length === 0) return stats;
 
   // Step 2: atomic claim. Bump next_attempt_at on these rows IF

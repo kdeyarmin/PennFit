@@ -245,6 +245,22 @@ router.post(
 
     let authUserId: string;
     if (existingAuth) {
+      // Staff accounts are off-limits to this flow entirely. Beyond
+      // never downgrading the role (the comment above), the
+      // 'revoked' → 'invited' resurrection below must only ever apply
+      // to CUSTOMER rows: flipping a revoked admin/agent to 'invited'
+      // and emailing it a password-reset link would fully re-enable a
+      // fired staff member's login (markEmailVerified flips
+      // invited→active, and requireAdmin reads the untouched role) —
+      // triggered by a CSR holding only patients.update.
+      if (existingAuth.role !== "customer") {
+        res.status(409).json({
+          error: "email_belongs_to_staff",
+          message:
+            "This email address belongs to a staff account and can't be used for a patient portal invite. Use a different email.",
+        });
+        return;
+      }
       const nextStatus =
         existingAuth.status === "revoked" ? "invited" : existingAuth.status;
       const { error: updateAuthErr } = await supabase

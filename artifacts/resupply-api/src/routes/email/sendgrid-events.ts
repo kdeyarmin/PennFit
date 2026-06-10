@@ -23,6 +23,7 @@ import {
 import {
   parseSendgridEventBatch,
   requireSendgridSignature,
+  type SendgridEvent,
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
@@ -86,97 +87,130 @@ router.post(
 
     const supabase = getSupabaseServiceRoleClient();
 
-    // SendGrid posts up to ~30 events per batch and we'd like the
-    // webhook to ack quickly so SendGrid doesn't queue retries. The
-    // per-event work — one UPDATE keyed on sg_message_id, plus an
-    // optional audit row for bounce/dropped — is independent across
-    // events (no row overlaps; safeAudit is event-scoped). Run each
-    // event's chain concurrently so a 30-event batch costs ~one
-    // round-trip instead of 30. Errors are still caught + logged per
-    // event so a single bad row doesn't poison the rest.
-    await Promise.all(
-      events.map(async (ev) => {
-        const sgMessageId = ev.sg_message_id ?? null;
-        // The send paths store the bare `X-Message-Id` response header
-        // in vendor_metadata, but the Event Webhook's `sg_message_id`
-        // appends filter-routing segments to it
-        // ("<X-Message-Id>.filterNNNN…"). Match on the first
-        // dot-segment — a full-string eq never matches a real
-        // production event, so delivery_status/delivered_at and
-        // bounce/drop errors silently never landed on the message row.
-        const vendorMessageId = sgMessageId?.split(".")[0] || null;
-        const conversationId = ev.conversation_id ?? null;
+    const handleEvent = async (ev: SendgridEvent): Promise<void> => {
+      const sgMessageId = ev.sg_message_id ?? null;
+      const vendorMessageId = bareMessageId(sgMessageId);
+      const conversationId = ev.conversation_id ?? null;
 
-        try {
-          // Map SendGrid event names to our delivery_status taxonomy.
-          const statusUpdate = mapEventToStatus(ev.event);
-          if (statusUpdate && vendorMessageId) {
-            // The original SQL path used `case when status='delivered'
-            // then now() else delivered_at end` to conditionally bump the
-            // delivered_at timestamp. PostgREST has no SQL CASE, so we
-            // compute the column JS-side: include `delivered_at` only
-            // when the new status is 'delivered'; otherwise omit it
-            // entirely so the existing value is left intact.
-            // JSONB predicate on `vendor_metadata->>sendgrid_message_id`
-            // becomes `.filter('vendor_metadata->>sendgrid_message_id',
-            // 'eq', X)` — PostgREST's JSON-path operator support.
-            const update: MessageUpdate = {
-              delivery_status: statusUpdate.deliveryStatus,
-              delivery_error: statusUpdate.deliveryError ?? null,
-            };
-            if (statusUpdate.deliveryStatus === "delivered") {
-              update.delivered_at = new Date().toISOString();
-            }
-            const { error: updateErr } = await supabase
-              .schema("resupply")
-              .from("messages")
-              .update(update)
-              .filter(
-                "vendor_metadata->>sendgrid_message_id",
-                "eq",
-                vendorMessageId,
-              );
-            if (updateErr) throw updateErr;
+      try {
+        // Map SendGrid event names to our delivery_status taxonomy.
+        const statusUpdate = mapEventToStatus(ev.event);
+        if (statusUpdate && vendorMessageId) {
+          // The original SQL path used `case when status='delivered'
+          // then now() else delivered_at end` to conditionally bump the
+          // delivered_at timestamp. PostgREST has no SQL CASE, so we
+          // compute the column JS-side: include `delivered_at` only
+          // when the new status is 'delivered'; otherwise omit it
+          // entirely so the existing value is left intact.
+          // JSONB predicate on `vendor_metadata->>sendgrid_message_id`
+          // becomes `.filter('vendor_metadata->>sendgrid_message_id',
+          // 'eq', X)` — PostgREST's JSON-path operator support.
+          const update: MessageUpdate = {
+            delivery_status: statusUpdate.deliveryStatus,
+            delivery_error: statusUpdate.deliveryError ?? null,
+          };
+          if (statusUpdate.deliveryStatus === "delivered") {
+            update.delivered_at = new Date().toISOString();
           }
-        } catch (err) {
-          logger.warn(
-            {
-              event: "sendgrid_events_update_failed",
-              sg_message_id: sgMessageId,
-              err: serializeErr(err),
-            },
-            "sendgrid-events: failed to update messages row",
-          );
+          let query = supabase
+            .schema("resupply")
+            .from("messages")
+            .update(update)
+            .filter(
+              "vendor_metadata->>sendgrid_message_id",
+              "eq",
+              vendorMessageId,
+            );
+          // Cross-batch ordering guard: SendGrid retries and re-orders
+          // webhook batches, so a stale `processed`/`deferred` can
+          // arrive AFTER the terminal `bounce`/`delivered` for the same
+          // message. Refuse to move a row back DOWN the status ladder —
+          // a bounced message reverting to "sent" would vanish from the
+          // /admin/delivery-failures triage queue. The `is.null` arm
+          // keeps NULL-status rows matchable (NOT IN excludes NULL by
+          // SQL three-valued logic; the column is nullable).
+          const outranking = statusesOutranking(statusUpdate.deliveryStatus);
+          if (outranking.length > 0) {
+            query = query.or(
+              `delivery_status.is.null,delivery_status.not.in.(${outranking.join(",")})`,
+            );
+          }
+          const { error: updateErr } = await query;
+          if (updateErr) throw updateErr;
         }
+      } catch (err) {
+        logger.warn(
+          {
+            event: "sendgrid_events_update_failed",
+            sg_message_id: sgMessageId,
+            err: serializeErr(err),
+          },
+          "sendgrid-events: failed to update messages row",
+        );
+      }
 
-        if (ev.event === "bounce" || ev.event === "dropped") {
-          // PHI safety: SendGrid `reason` is freeform vendor text and
-          // routinely echoes the recipient address (e.g. "550 5.1.1
-          // <patient@example.com>: User unknown"). We refuse to write it
-          // to the audit row. SendGrid `type` is a small enumerated set
-          // for bounce events (`bounce`, `blocked`, `expired`, etc.) —
-          // we whitelist it through a fixed vocabulary, falling back to
-          // `other` rather than echoing whatever the vendor sent.
-          // The freeform reason is preserved on the `messages` row above
-          // (encrypted at rest), where investigators can pull it via the
-          // bound conversation_id without it leaking into the admin
-          // audit feed.
-          await safeAudit({
-            action: "email.delivery.bounced",
-            adminEmail: null,
-            adminUserId: null,
-            targetTable: "messages",
-            targetId: null,
-            metadata: {
-              channel: "email",
-              conversation_id: conversationId,
-              sendgrid_message_id: sgMessageId,
-              event: ev.event,
-              bounce_classification: classifyBounceType(ev.type),
-            },
-            ip: req.ip ?? null,
-            userAgent: req.get("user-agent") ?? null,
-          });
+      if (ev.event === "bounce" || ev.event === "dropped") {
+        // PHI safety: SendGrid `reason` is freeform vendor text and
+        // routinely echoes the recipient address (e.g. "550 5.1.1
+        // <patient@example.com>: User unknown"). We refuse to write it
+        // to the audit row. SendGrid `type` is a small enumerated set
+        // for bounce events (`bounce`, `blocked`, `expired`, etc.) —
+        // we whitelist it through a fixed vocabulary, falling back to
+        // `other` rather than echoing whatever the vendor sent.
+        // The freeform reason is preserved on the `messages` row above
+        // (encrypted at rest), where investigators can pull it via the
+        // bound conversation_id without it leaking into the admin
+        // audit feed.
+        await safeAudit({
+          action: "email.delivery.bounced",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "messages",
+          targetId: null,
+          metadata: {
+            channel: "email",
+            conversation_id: conversationId,
+            sendgrid_message_id: sgMessageId,
+            event: ev.event,
+            bounce_classification: classifyBounceType(ev.type),
+          },
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        });
+      }
+    };
+
+    // SendGrid posts up to ~30 events per batch and we'd like the
+    // webhook to ack quickly so SendGrid doesn't queue retries — but
+    // events for the SAME message do overlap on one `messages` row
+    // (a batch routinely carries the processed→delivered/bounce
+    // sequence for a single send), and a batch's events are not
+    // guaranteed to be listed in chronological order. Group events by
+    // the message row they target, apply each group's events
+    // sequentially in event-timestamp order (stable sort keeps batch
+    // order for ties), and run the groups concurrently so a 30-event
+    // batch still costs ~one round-trip. Events with no sg_message_id
+    // can't collide on a row; each gets its own singleton group.
+    // Errors are still caught + logged per event so a single bad row
+    // doesn't poison the rest.
+    const eventGroups = new Map<string, SendgridEvent[]>();
+    let noMessageIdSeq = 0;
+    for (const ev of events) {
+      const key =
+        bareMessageId(ev.sg_message_id ?? null) ??
+        `__no-message-id:${noMessageIdSeq++}`;
+      const group = eventGroups.get(key);
+      if (group) group.push(ev);
+      else eventGroups.set(key, [ev]);
+    }
+    for (const group of eventGroups.values()) {
+      group.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    }
+
+    await Promise.all(
+      Array.from(eventGroups.values(), async (group) => {
+        for (const ev of group) {
+          await handleEvent(ev);
         }
       }),
     );
@@ -184,6 +218,41 @@ router.post(
     res.status(200).json({ ok: true });
   },
 );
+
+/**
+ * The send paths store the bare `X-Message-Id` response header in
+ * vendor_metadata, but the Event Webhook's `sg_message_id` appends
+ * filter-routing segments to it ("<X-Message-Id>.filterNNNN…"). Match
+ * on the first dot-segment — a full-string eq never matches a real
+ * production event, so delivery_status/delivered_at and bounce/drop
+ * errors silently never landed on the message row.
+ */
+function bareMessageId(sgMessageId: string | null): string | null {
+  return sgMessageId?.split(".")[0] || null;
+}
+
+/**
+ * Monotonic delivery-status ladder. An event may only move a message
+ * UP this ladder; `statusesOutranking()` lists the statuses an
+ * incoming write must not overwrite. Equal ranks may overwrite each
+ * other (idempotent webhook retries), and bounced/dropped outrank
+ * delivered so an asynchronous bounce still lands after a delivery
+ * receipt — but never the reverse.
+ */
+const DELIVERY_STATUS_RANK: Record<string, number> = {
+  sent: 1,
+  deferred: 2,
+  delivered: 3,
+  bounced: 4,
+  dropped: 4,
+};
+
+function statusesOutranking(deliveryStatus: string): string[] {
+  const incomingRank = DELIVERY_STATUS_RANK[deliveryStatus] ?? 0;
+  return Object.entries(DELIVERY_STATUS_RANK)
+    .filter(([, rank]) => rank > incomingRank)
+    .map(([status]) => status);
+}
 
 /**
  * Whitelist SendGrid bounce-event `type` strings into a small fixed

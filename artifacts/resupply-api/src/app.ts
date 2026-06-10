@@ -331,13 +331,14 @@ logger.info(
 // BEFORE the provider data router below so /api/provider/auth/* resolves
 // to the auth handlers.
 const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
-app.use("/api/provider", async (_req, res, next) => {
-  if (await isFeatureEnabled("provider.portal_enabled")) {
-    next();
-    return;
-  }
-  res.status(404).json({ error: "not_found" });
-});
+// NOTE: no blanket feature-flag gate in front of this mount. The
+// staged-rollout design (documented on providerPortalFeatureGate
+// below) keeps the AUTH surface reachable while the flag is OFF so
+// invited providers can sign in / enroll MFA before launch — only the
+// queue/sign/decline DATA surface stays dark. An earlier blanket
+// `app.use("/api/provider", flagGate)` here 404'd the auth router too,
+// making the gate's auth exemption dead code and blocking pre-launch
+// provider sign-in.
 app.use(
   "/api/provider/auth",
   makeAuthRouter(providerAuthDeps, {

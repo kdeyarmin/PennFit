@@ -102,11 +102,15 @@ router.get(
 // ---------------------------------------------------------------------------
 // POST /admin/pacware/import/patients — upload a PacWare patient report.
 //
-// Sync semantics: rows are matched to PennFit patients on pacware_id and
-// upserted. Only the columns PRESENT in the uploaded report are written,
-// so a report that omits a column never blanks that field — but a column
-// that IS present with an empty cell is treated as "cleared" (PacWare is
-// the demographics system of record).
+// Sync semantics: rows are matched to PennFit patients on pacware_id.
+// New patients are inserted; existing patients are FILL-ONLY patched —
+// only their BLANK fields are filled, an existing value is never
+// overwritten and never blanked (buildFillPatch skips blank incoming
+// values, and the parser drops empty cells before validation). This is
+// the documented invariant in docs/integrations/pacware.md and
+// CLAUDE.md. An earlier version of this comment claimed a
+// present-but-empty cell "clears" the field — the code has never done
+// that; do not introduce it (it would overwrite PHI).
 //
 //   mode: "preview" — parse + validate only; no DB writes. Returns counts,
 //                     per-row errors, and unmapped headers (NO patient rows

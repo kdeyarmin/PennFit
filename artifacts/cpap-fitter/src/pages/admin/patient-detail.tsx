@@ -434,7 +434,16 @@ export function PatientDetailPage({ id }: { id: string }) {
         </TabButton>
       </div>
 
-      <Card>
+      {/*
+        Keyed on the patient id: this page receives a NEW `id` prop
+        without remounting when the operator jumps patient→patient
+        (global lookup, back/forward), and a cached target skips the
+        spinner branch — so stateful tab bodies (e.g. FaxOutreachTab's
+        physician/cover-letter compose fields) would otherwise carry the
+        PREVIOUS patient's draft and submit it under the new patient.
+        The key remounts the active tab with fresh state on switch.
+      */}
+      <Card key={id}>
         {tab === "timeline" && (
           <TimelineTab
             patientId={id}

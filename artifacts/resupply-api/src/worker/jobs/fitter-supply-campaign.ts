@@ -102,6 +102,10 @@ import {
 } from "../../routes/shop/fitter-complete";
 
 const JOB_NAME = "fitter-lead.supply-campaign";
+/** Minimum spacing between consecutive touches to the same lead when
+ *  the anchor-based schedule has fallen behind (catch-up floor — see
+ *  the campaign_active / reorder_active scheduling below). */
+const MIN_TOUCH_SPACING_MS = 24 * 60 * 60 * 1000;
 /** Hourly at :43 — clear of every other resupply cron. */
 const JOB_CRON = "43 * * * *";
 const BATCH_SIZE = 200;
@@ -1059,21 +1063,36 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       // T10 just sent. Terminal converted.
       postSendStage = "converted";
     } else if (stage === "campaign_active") {
-      // T1-T5 — schedule next pre-purchase touch from completed_at.
+      // T1-T5 — schedule next pre-purchase touch from completed_at,
+      // floored at MIN_TOUCH_SPACING_MS from now. The anchor-based
+      // offsets all land in the PAST for a lead that fell behind
+      // (dispatcher flag re-enabled, campaign enabled on an existing
+      // lead base) — without the floor, the hourly cron then delivers
+      // T2/T3/T4(+SMS)/T5 on consecutive ticks: several marketing
+      // emails and texts within as many hours, with copy that reads
+      // wrong when collapsed ("Valid 7 days" an hour after the prior
+      // touch).
       const completedAtMs = lead.completed_at
         ? new Date(lead.completed_at).getTime()
         : Date.now();
       nextTouchAt = new Date(
-        completedAtMs + TOUCHPOINT_OFFSETS_MS[nextTouchIndex],
+        Math.max(
+          completedAtMs + TOUCHPOINT_OFFSETS_MS[nextTouchIndex],
+          Date.now() + MIN_TOUCH_SPACING_MS,
+        ),
       ).toISOString();
     } else if (stage === "reorder_active") {
-      // T7-T9 — schedule next re-order touch from first_order_placed_at.
+      // T7-T9 — schedule next re-order touch from first_order_placed_at,
+      // with the same catch-up spacing floor as the pre-purchase arm.
       const placedAtMs = lead.first_order_placed_at
         ? new Date(lead.first_order_placed_at).getTime()
         : Date.now();
       const nextReorderIdx = nextTouchIndex - TOTAL_TOUCHPOINTS;
       nextTouchAt = new Date(
-        placedAtMs + REORDER_TOUCHPOINT_OFFSETS_MS[nextReorderIdx],
+        Math.max(
+          placedAtMs + REORDER_TOUCHPOINT_OFFSETS_MS[nextReorderIdx],
+          Date.now() + MIN_TOUCH_SPACING_MS,
+        ),
       ).toISOString();
     }
 
@@ -1403,6 +1422,15 @@ export async function registerFitterSupplyCampaignJob(
       { event: "fitter-lead.supply-campaign.disabled" },
       "fitter-lead.supply-campaign: not registered (RESUPPLY_FITTER_SUPPLY_CAMPAIGN_ENABLED!=1)",
     );
+    // A previously persisted pg-boss schedule keeps enqueueing
+    // ticks into this now-worker-less queue (and replays them in
+    // a burst on re-enable). Clear it so disabling the flag
+    // actually stops the cron (table-guard pattern).
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB_NAME).catch(() => undefined);
+    }
     return;
   }
   await createQueueWithDlq(boss, JOB_NAME, VENDOR_SEND_QUEUE_OPTS);

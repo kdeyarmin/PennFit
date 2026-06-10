@@ -168,17 +168,40 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
   const sink = buildSupabaseSink(supabase);
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const { data: plans, error: planErr } = await supabase
-    .schema("resupply")
-    .from("patient_payment_plans")
-    .select(
-      "id, patient_id, autopay_status, stripe_customer_id, stripe_payment_method_id",
-    )
-    .eq("status", "active")
-    .eq("autopay_status", "authorized");
-  if (planErr) throw planErr;
+  // Keyset-paginate the plan scan. PostgREST silently caps un-limited
+  // reads at the server's max-rows (~1000): an unpaginated read would
+  // silently and permanently exclude every authorized plan past the
+  // cap — those patients' installments would just never be charged.
+  // Same pattern (and rationale) as patient-autopay-charge.ts.
+  const PLAN_PAGE_SIZE = 500;
+  const plans: Array<{
+    id: string;
+    patient_id: string;
+    stripe_customer_id: string | null;
+    stripe_payment_method_id: string | null;
+  }> = [];
+  let planCursor: string | null = null;
+  for (;;) {
+    let pageQuery = supabase
+      .schema("resupply")
+      .from("patient_payment_plans")
+      .select(
+        "id, patient_id, autopay_status, stripe_customer_id, stripe_payment_method_id",
+      )
+      .eq("status", "active")
+      .eq("autopay_status", "authorized")
+      .order("id", { ascending: true })
+      .limit(PLAN_PAGE_SIZE);
+    if (planCursor) pageQuery = pageQuery.gt("id", planCursor);
+    const { data: page, error: planErr } = await pageQuery;
+    if (planErr) throw planErr;
+    if (!page || page.length === 0) break;
+    plans.push(...page);
+    if (page.length < PLAN_PAGE_SIZE) break;
+    planCursor = page[page.length - 1]!.id;
+  }
 
-  for (const p of plans ?? []) {
+  for (const p of plans) {
     const plan: AutochargePlan = {
       id: p.id,
       patientId: p.patient_id,
@@ -282,6 +305,15 @@ export async function registerPaymentPlanAutochargeJob(
       "payment-plan-autocharge scheduled",
     );
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(PAYMENT_PLAN_AUTOCHARGE_JOB).catch(() => undefined);
+    }
     logger.info(
       { queue: PAYMENT_PLAN_AUTOCHARGE_JOB },
       "payment-plan-autocharge registered (cron opt-in unset)",

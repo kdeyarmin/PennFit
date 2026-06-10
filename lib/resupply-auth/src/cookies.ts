@@ -93,7 +93,21 @@ export function readCookie(req: Request, name: string): string | null {
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq);
     if (key === name) {
-      return decodeURIComponent(trimmed.slice(eq + 1));
+      const raw = trimmed.slice(eq + 1);
+      // decodeURIComponent throws URIError on malformed percent-escapes
+      // (e.g. a `pf_session=%` set by another app on a shared parent
+      // domain or a buggy intermediary). readCookie feeds requireSession,
+      // checkCsrf, AND sign-out — an uncaught throw turns all three into
+      // persistent 500s and the clear-cookie path never runs, wedging
+      // the browser until cookies are cleared by hand. Our own cookie
+      // values are base64url and never need decoding, so falling back
+      // to the raw slice is safe (it then simply fails session lookup
+      // as a 401, the correct outcome for a corrupt cookie).
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        return raw;
+      }
     }
   }
   return null;

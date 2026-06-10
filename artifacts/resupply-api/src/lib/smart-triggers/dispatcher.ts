@@ -249,11 +249,18 @@ export async function runSmartTriggerSendDue(
     .map((e) => e.toLowerCase());
   const prefsByEmail = new Map<string, CommunicationPreferences>();
   if (patientEmails.length > 0) {
-    const { data: custRows } = await supabase
+    const { data: custRows, error: custErr } = await supabase
       .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", patientEmails);
+    // Throw — never fall through. With prefsByEmail left empty the
+    // eligibility filter sees null prefs, which the channel gate
+    // treats as "couldn't have opted out" — so one transient read
+    // error here would nudge every patient INCLUDING those who
+    // explicitly opted out or configured a DND window (the exact
+    // HIPAA/TCPA exposure the comment above exists to prevent).
+    if (custErr) throw custErr;
     for (const c of custRows ?? []) {
       if (c.email_lower) {
         prefsByEmail.set(c.email_lower, readPrefs(c.communication_preferences));
