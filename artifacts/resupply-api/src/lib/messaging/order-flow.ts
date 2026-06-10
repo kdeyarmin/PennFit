@@ -665,7 +665,7 @@ async function raiseUsageReviewAlert(
       logger.warn(
         {
           event: "resupply.usage_compliance.alert_failed",
-          err: insertAlertErr.message,
+          err: insertAlertErr,
           patientId,
         },
         "resupply: failed to raise usage-review CSR alert (non-fatal)",
