@@ -1,4 +1,4 @@
--- 0303_secondary_claims_unique_per_primary.sql
+-- 0304_secondary_claims_unique_per_primary.sql
 --
 -- Close the generate-secondary check-then-insert race. The
 -- /admin/claims/:id/generate-secondary route dedupes with a SELECT

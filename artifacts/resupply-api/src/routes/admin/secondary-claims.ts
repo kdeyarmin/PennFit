@@ -329,7 +329,7 @@ router.post(
       .maybeSingle();
     if (insRes.error || !insRes.data) {
       // 23505 on insurance_claims_secondary_per_primary_unique
-      // (migration 0303): a concurrent generate won the race between
+      // (migration 0304): a concurrent generate won the race between
       // our SELECT dedupe and this INSERT. Surface the same 409 the
       // SELECT path produces instead of a 500 — the secondary exists.
       if (insRes.error?.code === "23505") {
