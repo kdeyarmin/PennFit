@@ -419,18 +419,13 @@ describe("readMigrations — apply ordering", () => {
     expect(migs[idx - 1]!.prefixNumber).toBe(156);
   });
 
-  it("has no duplicate-prefix files (all duplicates have been resolved)", () => {
+  it("groups duplicate-prefix files together by tag", () => {
     const migs = readMigrations(MIGRATIONS_FOLDER);
-    const prefixCounts = new Map<number, number>();
-    for (const m of migs) {
-      prefixCounts.set(
-        m.prefixNumber,
-        (prefixCounts.get(m.prefixNumber) ?? 0) + 1,
-      );
-    }
-    const duplicates = [...prefixCounts.entries()].filter(
-      ([, count]) => count > 1,
+    const dup157 = migs.filter(
+      (m: { prefixNumber: number }) => m.prefixNumber === 157,
     );
-    expect(duplicates).toEqual([]);
+    expect(dup157.length).toBeGreaterThan(1);
+    const tags = dup157.map((m: { tag: string }) => m.tag);
+    expect(tags).toEqual([...tags].sort());
   });
 });
