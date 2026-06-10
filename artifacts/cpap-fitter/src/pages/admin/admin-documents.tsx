@@ -417,7 +417,7 @@ export function AdminDocumentsPage() {
           ) : packets.length === 0 ? (
             <EmptyState
               title="No packets yet"
-              hint="Tick the checkboxes next to two or more documents above, then click “Create packet from selected” to bundle them."
+              hint="Tick the checkbox next to one or more documents above, then click “Create packet from selected” to bundle them."
             />
           ) : (
             <div className="overflow-x-auto">
@@ -1270,17 +1270,23 @@ function PacketEditorForm({
   const typeLabel = (t: ManualDocumentType) =>
     types.find((d) => d.type === t)?.label ?? t;
 
+  // The send paths persist the form first so the rendered packet (cover
+  // sheet recipient, document list/order) always matches what's typed —
+  // otherwise an edited recipient could receive a PDF naming the
+  // previous one.
+  const persistPacket = () =>
+    updateManualDocumentPacket(packet.id, {
+      title: title.trim(),
+      documentIds: docIds,
+      includeCoverSheet,
+      recipientName: recipientName.trim() || null,
+      recipientAddress: recipientAddress.trim() || null,
+      recipientEmail: recipientEmail.trim() || null,
+      recipientFaxE164: recipientFax.trim() || null,
+    });
+
   const save = useMutation({
-    mutationFn: () =>
-      updateManualDocumentPacket(packet.id, {
-        title: title.trim(),
-        documentIds: docIds,
-        includeCoverSheet,
-        recipientName: recipientName.trim() || null,
-        recipientAddress: recipientAddress.trim() || null,
-        recipientEmail: recipientEmail.trim() || null,
-        recipientFaxE164: recipientFax.trim() || null,
-      }),
+    mutationFn: persistPacket,
     onSuccess: () => {
       setMsg({ kind: "ok", text: "Saved." });
       onSaved();
@@ -1306,12 +1312,14 @@ function PacketEditorForm({
   });
 
   const emailMut = useMutation({
-    mutationFn: () =>
-      sendManualDocumentPacketEmail(packet.id, {
+    mutationFn: async () => {
+      await persistPacket();
+      return sendManualDocumentPacketEmail(packet.id, {
         email: recipientEmail.trim() || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Packet emailed to the recipient." });
+      setMsg({ kind: "ok", text: "Saved and emailed to the recipient." });
       onSaved();
     },
     onError: (err) =>
@@ -1322,12 +1330,14 @@ function PacketEditorForm({
   });
 
   const faxMut = useMutation({
-    mutationFn: () =>
-      sendManualDocumentPacketFax(packet.id, {
+    mutationFn: async () => {
+      await persistPacket();
+      return sendManualDocumentPacketFax(packet.id, {
         fax: recipientFax.trim() || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Packet fax queued." });
+      setMsg({ kind: "ok", text: "Saved and queued the fax." });
       onSaved();
     },
     onError: (err) =>
@@ -1352,7 +1362,7 @@ function PacketEditorForm({
 
   return (
     <Card
-      title={packet.title}
+      title={title.trim() || packet.title}
       subtitle={`Packet · ${docIds.length} document${docIds.length === 1 ? "" : "s"}`}
       action={
         <div className="flex items-center gap-2">
@@ -1593,8 +1603,8 @@ function PacketEditorForm({
           </Button>
         </div>
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          Sending uses the email / fax number typed above. Changes to the
-          document list, order, or cover sheet apply after “Save”.
+          “Email packet” and “Fax packet” save your edits first, then send to
+          the email / fax number typed above.
         </p>
       </div>
     </Card>

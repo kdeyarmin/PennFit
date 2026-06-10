@@ -609,7 +609,7 @@ router.post(
       });
     } catch (err) {
       logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: err instanceof Error ? err : new Error(String(err)) },
         "manual_document_packet.send_email failed",
       );
       res.status(502).json({ error: "email_send_failed" });
