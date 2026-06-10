@@ -128,8 +128,11 @@ export function nppesFailurePublicMessage(err: NppesLookupError): string {
   const manualFallback =
     "Fill out the provider manually, or try the lookup again later.";
   switch (err.kind) {
-    case "http":
-      return `The NPPES registry rejected the request (HTTP ${err.upstreamStatus}). ${manualFallback}`;
+    case "http": {
+      const status =
+        err.upstreamStatus != null ? ` (HTTP ${err.upstreamStatus})` : "";
+      return `The NPPES registry rejected the request${status}. ${manualFallback}`;
+    }
     case "timeout":
       return `The NPPES registry did not respond in time. ${manualFallback}`;
     case "parse":

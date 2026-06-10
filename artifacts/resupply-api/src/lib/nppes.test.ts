@@ -187,6 +187,14 @@ describe("nppesFailurePublicMessage", () => {
     expect(msg).toContain("manually");
   });
 
+  it("omits the status clause (not 'HTTP undefined') when kind=http has no status", () => {
+    const msg = nppesFailurePublicMessage(
+      new NppesLookupError("x", { kind: "http" }),
+    );
+    expect(msg).not.toContain("undefined");
+    expect(msg).toContain("rejected the request");
+  });
+
   it("never leaks internals for network failures", () => {
     const msg = nppesFailurePublicMessage(
       new NppesLookupError("getaddrinfo ENOTFOUND", {
