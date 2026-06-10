@@ -105,11 +105,21 @@ const inviteBody = z
   .strict();
 
 /** Mint/refresh an auth user for the provider and email a set-password
- *  link. Returns the auth user id + whether the email was delivered. */
+ *  link. Returns the auth user id + whether the email was delivered,
+ *  or `{ staffConflict: true }` when the email belongs to a staff
+ *  (non-customer) auth row — the caller must 409, not invite. */
 async function inviteProviderUser(
   emailLower: string,
   displayName: string | null,
-): Promise<{ authUserId: string; emailSent: boolean; inviteLink: string }> {
+): Promise<
+  | { staffConflict: true }
+  | {
+      staffConflict?: undefined;
+      authUserId: string;
+      emailSent: boolean;
+      inviteLink: string;
+    }
+> {
   const supabase = getSupabaseServiceRoleClient();
   const deps = getAuthDeps();
   const now = new Date();
@@ -121,15 +131,24 @@ async function inviteProviderUser(
   const { data: existing, error: readErr } = await supabase
     .schema("resupply_auth")
     .from("users")
-    .select("id, status")
+    .select("id, status, role")
     .eq("email_lower", emailLower)
     .limit(1)
-    .maybeSingle<{ id: string; status: string }>();
+    .maybeSingle<{ id: string; status: string; role: string }>();
   if (readErr) throw readErr;
 
   let authUserId: string;
   if (existing) {
-    // Re-activate a revoked row; never touch the role (could be staff).
+    // Staff accounts are off-limits. The revoked→invited resurrection
+    // below must only apply to CUSTOMER rows: flipping a revoked
+    // admin/agent to 'invited' and emailing it a set-password link
+    // would fully re-enable a fired staff member's login (the role is
+    // deliberately never touched, and markEmailVerified flips
+    // invited→active) — triggered by a provider_portal.manage holder.
+    if (existing.role !== "customer") {
+      return { staffConflict: true };
+    }
+    // Re-activate a revoked CUSTOMER row; never touch the role.
     if (existing.status === "revoked") {
       const { error: reactivateErr } = await supabase
         .schema("resupply_auth")
@@ -227,10 +246,19 @@ router.post(
       return;
     }
 
-    const { authUserId, emailSent, inviteLink } = await inviteProviderUser(
+    const invite = await inviteProviderUser(
       email,
       (provider.legal_name as string | null) ?? null,
     );
+    if (invite.staffConflict) {
+      res.status(409).json({
+        error: "email_belongs_to_staff",
+        message:
+          "This email address belongs to a staff account and can't be used for a provider portal invite. Use a different email.",
+      });
+      return;
+    }
+    const { authUserId, emailSent, inviteLink } = invite;
 
     // Link (or refresh) the portal account.
     const { data: existingAccount } = await supabase

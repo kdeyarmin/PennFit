@@ -191,6 +191,11 @@ export async function registerBillHoldSweepJob(boss: PgBoss): Promise<void> {
     await boss.schedule(BILL_HOLD_SWEEP_JOB, cron);
     logger.info({ cron }, "bill-hold-sweep scheduled");
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    await boss.unschedule(BILL_HOLD_SWEEP_JOB).catch(() => undefined);
     logger.info(
       { queue: BILL_HOLD_SWEEP_JOB },
       "bill-hold-sweep registered (cron opt-in unset; manual-trigger only)",

@@ -41,6 +41,43 @@ function getSessionIdFromQuery(): string | null {
   return params.get("session_id");
 }
 
+// Per-Stripe-session "already finalized" marker. Lives in localStorage
+// (like the cart it protects) so it survives new tabs — the success URL
+// gets revisited via the back button, browser history, and the receipt
+// email, sometimes days later. Values are epoch-ms timestamps so stale
+// markers can be pruned.
+const FINALIZED_KEY_PREFIX = "pennpaps_checkout_finalized_v1:";
+const FINALIZED_MARKER_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+function wasFinalized(sessionId: string): boolean {
+  try {
+    return (
+      window.localStorage.getItem(FINALIZED_KEY_PREFIX + sessionId) !== null
+    );
+  } catch {
+    return false;
+  }
+}
+
+function markFinalized(sessionId: string): void {
+  try {
+    const now = Date.now();
+    window.localStorage.setItem(FINALIZED_KEY_PREFIX + sessionId, String(now));
+    // Prune markers older than the TTL so the namespace stays bounded.
+    for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+      const key = window.localStorage.key(i);
+      if (!key?.startsWith(FINALIZED_KEY_PREFIX)) continue;
+      const stamp = Number(window.localStorage.getItem(key));
+      if (!Number.isFinite(stamp) || now - stamp > FINALIZED_MARKER_TTL_MS) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Private-mode/storage failure — worst case we re-finalize on a
+    // revisit, which is the pre-marker behavior.
+  }
+}
+
 export function ShopCheckoutSuccess() {
   useDocumentTitle("Order confirmed");
   const sessionId = getSessionIdFromQuery();
@@ -50,21 +87,27 @@ export function ShopCheckoutSuccess() {
   const [loading, setLoading] = useState(true);
   const [pollCount, setPollCount] = useState(0);
 
-  // Fire the conversion event + clear the cart exactly once — when (and
-  // only when) Stripe reports the session PAID. Shared by the initial
-  // fetch and the pending re-poll so the side effects can't double-fire
-  // (the poll stops the moment the status flips to paid).
+  // Fire the conversion event + clear the cart exactly once per Stripe
+  // session — when (and only when) Stripe reports the session PAID.
+  // "Once" must hold across MOUNTS, not just within one: this page is
+  // re-entered via back button / history / the receipt email, and
+  // re-running here would wipe whatever NEW cart the customer has built
+  // since the order (and double-count the conversion). The localStorage
+  // marker is what carries that guarantee across visits; within a visit
+  // the pending re-poll stops the moment the status flips to paid.
   const finalizeIfPaid = React.useCallback(
     (o: OrderSummaryResponse) => {
       if (o.paymentStatus !== "paid") return;
+      if (sessionId && wasFinalized(sessionId)) return;
       track("checkout_completed", {
         lineItems: o.lineItems.length,
         amountTotalCents: o.amountTotalCents,
         currency: o.currency,
       });
       clear();
+      if (sessionId) markFinalized(sessionId);
     },
-    [clear],
+    [clear, sessionId],
   );
 
   useEffect(() => {

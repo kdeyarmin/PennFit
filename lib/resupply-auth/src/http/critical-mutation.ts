@@ -41,5 +41,15 @@ export async function enforceCriticalMutationPolicy(
     authError(res, 429, "rate_limited", "Too many requests.");
     return false;
   }
+  // Record the attempt against the sentinel — mirroring every sibling
+  // sentinel-bucket handler (reset/forgot/verify/MFA), which record
+  // up-front. Without this write the count above is always 0 and the
+  // 429 branch is unreachable: the limiter silently does only the CSRF
+  // half of its job for whoever wires it up.
+  await deps.repo.recordLoginAttempt({
+    emailLower: ipSentinel,
+    ip,
+    success: false,
+  });
   return true;
 }

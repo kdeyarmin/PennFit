@@ -174,6 +174,11 @@ export async function registerPacwareReadyToSyncDigestJob(
       { event: "pacware.ready-to-sync-digest.no_recipient" },
       "pacware.ready-to-sync-digest: RESUPPLY_ADMIN_ALERTS_EMAIL is empty; not registered",
     );
+    // A previously persisted pg-boss schedule keeps enqueueing ticks
+    // into this now-worker-less queue (and replays them in a burst on
+    // re-enable). Clear it so unsetting the recipient actually stops
+    // the cron (table-guard pattern).
+    await boss.unschedule(PACWARE_DIGEST_JOB).catch(() => undefined);
     return;
   }
   await createQueueWithDlq(boss, PACWARE_DIGEST_JOB, VENDOR_SEND_QUEUE_OPTS);

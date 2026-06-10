@@ -254,6 +254,11 @@ export async function registerFailedEmailDigestJob(
       { event: "failed-order-emails.digest.disabled" },
       "failed-order-emails.digest: not registered (RESUPPLY_FAILED_EMAIL_DIGEST_ENABLED!=1)",
     );
+    // A previously persisted pg-boss schedule keeps enqueueing
+    // ticks into this now-worker-less queue (and replays them in
+    // a burst on re-enable). Clear it so disabling the flag
+    // actually stops the cron (table-guard pattern).
+    await boss.unschedule(FAILED_EMAIL_DIGEST_JOB).catch(() => undefined);
     return;
   }
   if (!process.env.RESUPPLY_ADMIN_ALERTS_EMAIL?.trim()) {

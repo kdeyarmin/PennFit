@@ -92,6 +92,11 @@ export async function registerAutoSubmitBatchJob(boss: PgBoss): Promise<void> {
       "auto-submit-batch scheduled",
     );
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    await boss.unschedule(AUTO_SUBMIT_BATCH_JOB).catch(() => undefined);
     logger.info(
       { queue: AUTO_SUBMIT_BATCH_JOB },
       "auto-submit-batch registered (cron opt-in unset; manual-trigger only)",

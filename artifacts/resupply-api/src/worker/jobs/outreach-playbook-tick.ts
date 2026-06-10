@@ -55,6 +55,7 @@ import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import {
   isInDndWindow,
+  isOutsideSmsSendWindow,
   shouldSendEmail,
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
@@ -296,7 +297,9 @@ export async function runOutreachPlaybookSweep(
     const { data: patient, error: patientErr } = await supabase
       .schema("resupply")
       .from("patients")
-      .select("id, status, legal_first_name, communication_preferences")
+      .select(
+        "id, status, legal_first_name, communication_preferences, timezone, address",
+      )
       .eq("id", run.patient_id)
       .maybeSingle();
     if (patientErr) {
@@ -311,6 +314,8 @@ export async function runOutreachPlaybookSweep(
       status: string;
       legal_first_name: string | null;
       communication_preferences?: unknown;
+      timezone?: string | null;
+      address?: { zip?: string } | null;
     } | null;
     if (!patientRow || patientRow.status !== "active") {
       const { error } = await supabase
@@ -343,7 +348,24 @@ export async function runOutreachPlaybookSweep(
     // DND defer — push the touch out without consuming the step.
     // Call tasks are exempt: they're staff-initiated later, and
     // click-to-dial enforces the call window at dial time.
-    if (step.channel !== "call" && isInDndWindow(prefs, now)) {
+    //
+    // SMS steps additionally defer outside the hard TCPA send window
+    // (9am–8pm local; isOutsideSmsSendWindow). The dispatcher runs
+    // every 5 minutes around the clock, and the patient-configured DND
+    // window defaults to null — without this gate a run started at
+    // 11pm fires its day-0 text at 11:05pm, and every later touch
+    // lands at the same overnight hour (stepDueAt anchors to
+    // started_at). Deferring (not skipping) walks the touch into the
+    // next legal window without consuming the step.
+    if (
+      step.channel !== "call" &&
+      (isInDndWindow(prefs, now) ||
+        (step.channel === "sms" &&
+          isOutsideSmsSendWindow(now, {
+            timezone: patientRow.timezone ?? null,
+            shippingZip: patientRow.address?.zip ?? null,
+          })))
+    ) {
       const { error } = await supabase
         .schema("resupply")
         .from("outreach_playbook_runs")

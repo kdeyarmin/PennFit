@@ -124,11 +124,7 @@ export function RemindersManage() {
 
   if (!token) {
     return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-xl mx-auto px-4 py-16"
-      >
+      <div className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -146,21 +142,17 @@ export function RemindersManage() {
             </Link>
           </CardContent>
         </Card>
-      </main>
+      </div>
     );
   }
 
   if (isLoading) {
     return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-4"
-      >
+      <div className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-4">
         <Skeleton className="h-10 w-72" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
-      </main>
+      </div>
     );
   }
 
@@ -168,11 +160,7 @@ export function RemindersManage() {
     const apiError = error as ApiError | null;
     const status = apiError?.status ?? 0;
     return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-xl mx-auto px-4 py-16"
-      >
+      <div className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -195,17 +183,13 @@ export function RemindersManage() {
             </Link>
           </CardContent>
         </Card>
-      </main>
+      </div>
     );
   }
 
   if (unsubscribed) {
     return (
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="relative z-10 container max-w-xl mx-auto px-4 py-16"
-      >
+      <div className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -223,7 +207,7 @@ export function RemindersManage() {
             </Link>
           </CardContent>
         </Card>
-      </main>
+      </div>
     );
   }
 
@@ -298,11 +282,7 @@ export function RemindersManage() {
   }
 
   return (
-    <main
-      id="main-content"
-      tabIndex={-1}
-      className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-6"
-    >
+    <div className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">
           Manage reminders
@@ -465,6 +445,6 @@ export function RemindersManage() {
         </CardContent>
       </Card>
       {ConfirmDialogEl}
-    </main>
+    </div>
   );
 }

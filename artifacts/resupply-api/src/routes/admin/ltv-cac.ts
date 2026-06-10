@@ -56,12 +56,18 @@ router.get(
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
-    // Paid-order revenue per customer (the LTV numerator).
+    // Paid-order revenue per customer (the LTV numerator). Refunded
+    // orders keep paid_at set, so they must be excluded explicitly —
+    // the Customer-360 rollup documents the same rule ("refunded
+    // orders are excluded — money was returned"); counting them here
+    // inflated the finance-facing LTV:CAC ratio relative to the rest
+    // of the app.
     const { data: orders, error: ordersErr } = await supabase
       .schema("resupply")
       .from("shop_orders")
-      .select("customer_id, amount_total_cents, paid_at")
+      .select("customer_id, amount_total_cents, paid_at, status")
       .not("paid_at", "is", null)
+      .neq("status", "refunded")
       .limit(20000);
     if (ordersErr) {
       res

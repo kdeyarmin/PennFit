@@ -63,7 +63,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  escapePostgRESTFilterValue,
+  escapePostgRESTContainsPattern,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
@@ -164,11 +164,13 @@ router.get(
       // Match on email OR display name so the directory is searchable by
       // who the person is, not just their address (this also powers the
       // "find this person in Customers" jump from a patient record).
-      // escapePostgRESTFilterValue handles both LIKE metacharacters and
-      // .or() delimiters. ILIKE is case-insensitive, so a lowercased
-      // needle still matches a mixed-case display_name; email_lower is
-      // already stored lowercase.
-      const pattern = `*${escapePostgRESTFilterValue(q.toLowerCase())}*`;
+      // escapePostgRESTContainsPattern handles LIKE metacharacters and
+      // .or() delimiters, with the `*` wildcards INSIDE the quoting
+      // layer (a hand-rolled `*${escaped}*` mis-parses for searches
+      // containing commas/parens/quotes). ILIKE is case-insensitive,
+      // so a lowercased needle still matches a mixed-case
+      // display_name; email_lower is already stored lowercase.
+      const pattern = escapePostgRESTContainsPattern(q.toLowerCase());
       customersQuery = customersQuery.or(
         `email_lower.ilike.${pattern},display_name.ilike.${pattern}`,
       );
@@ -586,11 +588,13 @@ router.get(
     // Lifetime-stats rollup over EVERY order (not just the recent 25).
     const allOrders = statsOrdersRes.data ?? [];
     let lifetimeValueCents = 0;
+    let paidOrdersCount = 0;
     let firstOrderAt: string | null = null;
     let lastOrderAt: string | null = null;
     for (const o of allOrders) {
       if (o.paid_at && o.status !== "refunded") {
         lifetimeValueCents += o.amount_total_cents ?? 0;
+        paidOrdersCount += 1;
         if (!firstOrderAt || o.created_at < firstOrderAt) {
           firstOrderAt = o.created_at;
         }
@@ -601,8 +605,14 @@ router.get(
     }
     const ordersCount = allOrders.length;
     const pendingReviewsCount = statsPendingReviewsRes.count ?? 0;
+    // AOV divides by the orders that CONTRIBUTED to the numerator
+    // (paid, non-refunded). Dividing by allOrders.length mixed
+    // populations — abandoned/pending checkout rows and refunds
+    // dragged the average toward zero.
     const avgOrderValueCents =
-      ordersCount > 0 ? Math.round(lifetimeValueCents / ordersCount) : 0;
+      paidOrdersCount > 0
+        ? Math.round(lifetimeValueCents / paidOrdersCount)
+        : 0;
 
     // Synthesize a minimal customer object for guest-only userIds.
     const guestSynth = !customerRow && orderRows.length > 0;

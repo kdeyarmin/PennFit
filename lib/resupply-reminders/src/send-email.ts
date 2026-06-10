@@ -150,6 +150,21 @@ export async function sendReminderEmail(
     ? [{ name: itemSku, quantity: 1 }]
     : [];
 
+  // Construct the vendor client BEFORE inserting the conversation row.
+  // Construction is pure config validation (EmailConfigError, no
+  // network); when it lived inside the post-insert try block a
+  // missing/rotated key threw AFTER the row existed, leaving an orphan
+  // whose `last_message_at = now()` fed the quiet-period check and
+  // silently suppressed the patient's next reminder. (sendEmail can
+  // still throw EmailConfigError at SEND time — e.g. a CR/LF in an
+  // operator-typed custom subject — which the catch below now also
+  // cleans up after.)
+  const sg = createSendgridClient({
+    apiKey: cfg.sendgridApiKey,
+    fromEmail: cfg.sendgridFromEmail,
+    fromName: cfg.sendgridFromName,
+  });
+
   const { data: insertedConv, error: insertConvErr } = await supabase
     .schema("resupply")
     .from("conversations")
@@ -166,6 +181,32 @@ export async function sendReminderEmail(
   if (insertConvErr) throw insertConvErr;
   const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
+
+  // Best-effort orphan-row teardown shared by every post-insert
+  // failure exit (vendor error, send-time config error, unexpected
+  // throw) — see the quiet-period rationale above.
+  const deleteOrphanConversation = async (): Promise<void> => {
+    const { error: deleteConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .delete()
+      .eq("id", conversationId);
+    if (deleteConvErr) {
+      // Same structured-stderr convention as the post-send DB-write
+      // failure below (this lib must not import pino directly).
+      // Leave the row; ops can reconcile from the audit row.
+      process.stderr.write(
+        JSON.stringify({
+          level: 40,
+          event: "send_email_orphan_conversation_delete_failed",
+          conversationId,
+          errCode: deleteConvErr.code ?? null,
+          errMessage: deleteConvErr.message,
+          msg: "orphan conversation row not deleted after send failure (non-fatal)",
+        }) + "\n",
+      );
+    }
+  };
 
   const expiresAt = Date.now() + LINK_TOKEN_TTL_MS;
   const baseClick = `${cfg.publicBaseUrl}/resupply-api/email/click`;
@@ -200,11 +241,6 @@ export async function sendReminderEmail(
 
   let messageId: string;
   try {
-    const sg = createSendgridClient({
-      apiKey: cfg.sendgridApiKey,
-      fromEmail: cfg.sendgridFromEmail,
-      fromName: cfg.sendgridFromName,
-    });
     const r = await sg.sendEmail({
       to: patient.email,
       subject: rendered.subject,
@@ -219,34 +255,19 @@ export async function sendReminderEmail(
     messageId = r.messageId;
   } catch (err) {
     if (err instanceof EmailConfigError) {
-      // Surface to caller — see send-sms for rationale.
+      // Surface to caller — see send-sms for rationale. Nothing was
+      // sent, so clean up the orphan row first (a send-time config
+      // error like a CR/LF subject would otherwise orphan one row per
+      // recipient of a bulk campaign, muting each for the quiet
+      // period).
+      await deleteOrphanConversation();
       throw err;
     }
     if (err instanceof EmailApiError) {
-      // Best-effort: tear down the orphan conversation row we just
-      // created. Otherwise its `last_message_at = now()` feeds the
-      // quiet-period check on later ticks and silently suppresses
-      // the patient's next reminder even though no email was sent.
-      const { error: deleteConvErr } = await supabase
-        .schema("resupply")
-        .from("conversations")
-        .delete()
-        .eq("id", conversationId);
-      if (deleteConvErr) {
-        // Same structured-stderr convention as the post-send DB-write
-        // failure below (this lib must not import pino directly).
-        // Leave the row; ops can reconcile from the audit row below.
-        process.stderr.write(
-          JSON.stringify({
-            level: 40,
-            event: "send_email_orphan_conversation_delete_failed",
-            conversationId,
-            errCode: deleteConvErr.code ?? null,
-            errMessage: deleteConvErr.message,
-            msg: "orphan conversation row not deleted after SendGrid API error (non-fatal)",
-          }) + "\n",
-        );
-      }
+      // Tear down the orphan conversation row we just created (see
+      // deleteOrphanConversation above for the quiet-period
+      // rationale).
+      await deleteOrphanConversation();
       await safeAuditFromActor({
         action: "messaging.reminder.sent",
         actor,
@@ -268,6 +289,9 @@ export async function sendReminderEmail(
         vendorCode: null,
       };
     }
+    // Unexpected throw — nothing was delivered, so the orphan row has
+    // the same quiet-period side effect as the vendor-error path.
+    await deleteOrphanConversation();
     throw err;
   }
 

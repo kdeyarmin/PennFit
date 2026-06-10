@@ -569,14 +569,22 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * the redirect tick.
  */
 /**
- * Email + marketing-consent gate that fronts every fitter step. The
- * `/consent` page collects both before navigating to `/capture`; a
- * patient who deep-links into `/capture` (or refreshes a tab whose
- * sessionStorage was cleared) gets bounced back here.
+ * Email gate that fronts every fitter step. The `/consent` page stores
+ * the email when the patient clicks Continue, so "email present" means
+ * "the consent step was completed"; a patient who deep-links into
+ * `/capture` (or refreshes a tab whose sessionStorage was cleared)
+ * gets bounced back here.
+ *
+ * Deliberately does NOT require `emailConsent`: that flag is the
+ * OPTIONAL marketing opt-in checkbox, which the consent page does not
+ * require to continue (forcing it would be a consent dark pattern —
+ * see consent.tsx). Gating on it sent every patient who declined
+ * marketing email into a silent /consent redirect loop. The flag's
+ * only consumer is the marketing-gated completion ping in results.tsx.
  */
 function useFitterEmailGate(): boolean {
-  const { email, emailConsent } = useFitterStore();
-  return Boolean(email && emailConsent);
+  const { email } = useFitterStore();
+  return Boolean(email);
 }
 
 function GuardedCapture() {

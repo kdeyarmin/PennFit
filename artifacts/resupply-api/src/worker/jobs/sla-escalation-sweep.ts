@@ -201,6 +201,11 @@ export async function registerSlaEscalationSweepJob(
     await boss.schedule(SWEEP_JOB, cron);
     logger.info({ queue: SWEEP_JOB, cron }, "sla-escalation-sweep scheduled");
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    await boss.unschedule(SWEEP_JOB).catch(() => undefined);
     logger.info(
       { queue: SWEEP_JOB },
       "sla-escalation-sweep registered (cron opt-in unset; manual-trigger only)",

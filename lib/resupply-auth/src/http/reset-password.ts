@@ -128,6 +128,7 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
     const t = now();
     const consumed = await deps.repo.consumeEmailToken({
       tokenHash: hash,
+      purpose: "password_reset",
       at: t,
     });
     if (!consumed || consumed.purpose !== "password_reset") {

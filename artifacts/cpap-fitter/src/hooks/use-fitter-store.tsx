@@ -19,8 +19,11 @@ interface FitterState {
   /**
    * Email + marketing-consent captured at the start of the fitter flow
    * (on the /consent page). Downstream routes (/capture, /measure,
-   * /questionnaire, /results, /order) refuse to render until both are
-   * set, so the email backs every recommendation the patient sees.
+   * /questionnaire, /results, /order) refuse to render until the email
+   * is set, so the email backs every recommendation the patient sees.
+   * `emailConsent` is the OPTIONAL marketing opt-in — it does not gate
+   * the flow (see useFitterEmailGate in App.tsx); its only consumer is
+   * the marketing-gated completion ping in results.tsx.
    */
   email: string | null;
   emailConsent: boolean;

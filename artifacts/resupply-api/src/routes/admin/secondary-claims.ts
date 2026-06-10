@@ -328,6 +328,24 @@ router.post(
       .select("id")
       .maybeSingle();
     if (insRes.error || !insRes.data) {
+      // 23505 on insurance_claims_secondary_per_primary_unique
+      // (migration 0303): a concurrent generate won the race between
+      // our SELECT dedupe and this INSERT. Surface the same 409 the
+      // SELECT path produces instead of a 500 — the secondary exists.
+      if (insRes.error?.code === "23505") {
+        const winner = await supabase
+          .schema("resupply")
+          .from("insurance_claims")
+          .select("id")
+          .eq("payer_sequence", "secondary")
+          .eq("primary_claim_id", primaryId)
+          .maybeSingle();
+        res.status(409).json({
+          error: "secondary_exists",
+          secondaryClaimId: (winner.data as { id: string } | null)?.id ?? null,
+        });
+        return;
+      }
       res.status(500).json({ error: "secondary_create_failed" });
       return;
     }

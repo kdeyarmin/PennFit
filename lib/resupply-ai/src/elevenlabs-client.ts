@@ -366,13 +366,25 @@ export function createElevenLabsClient(
           };
         }
         const reader = upstream.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value && value.byteLength > 0) {
-            totalBytes += value.byteLength;
-            onChunk(value);
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value && value.byteLength > 0) {
+              totalBytes += value.byteLength;
+              onChunk(value);
+            }
           }
+        } finally {
+          // Mirror anthropic-client's read-loop cleanup: if onChunk
+          // throws (it does µ-law re-framing in the voice path), the
+          // loop exits with the body locked and unconsumed, and the
+          // undici per-host connection stays reserved until GC — under
+          // repeated errors the pool slowly exhausts and the process
+          // wedges. cancel() frees the connection; abort paths are
+          // already safe (the abort itself frees it).
+          await reader.cancel().catch(() => undefined);
+          reader.releaseLock();
         }
         return {
           ok: true,

@@ -115,9 +115,11 @@ describe("era-reconciler — ReconciliationOutcome.linesUpdated field", () => {
   it("includes linesUpdated: 0 in the unmatched-claim return object", () => {
     // When no local claim is found the reconciler must still return
     // linesUpdated: 0 so callers don't have to handle undefined.
+    // Anchor on the object-literal form (`matched: false,`) — the
+    // doc comment above reconcileEra also mentions "matched: false`".
     const unmatchedBlock = SRC.slice(
-      SRC.indexOf("matched: false"),
-      SRC.indexOf("matched: false") + 400,
+      SRC.indexOf("matched: false,"),
+      SRC.indexOf("matched: false,") + 400,
     );
     expect(unmatchedBlock).toContain("linesUpdated: 0");
   });

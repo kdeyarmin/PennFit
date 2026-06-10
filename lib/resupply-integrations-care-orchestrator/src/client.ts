@@ -113,7 +113,7 @@ async function getAccessToken(config: CareOrchestratorConfig): Promise<string> {
   return json.access_token;
 }
 
-async function request<T>(
+async function requestOnce<T>(
   config: CareOrchestratorConfig,
   path: string,
 ): Promise<T> {
@@ -130,12 +130,38 @@ async function request<T>(
     API_TIMEOUT_MS,
   );
   if (res.status === 404) throw new ClientError("not_found");
-  if (res.status === 401 || res.status === 403)
+  if (res.status === 401 || res.status === 403) {
+    // The cached token outlives a server-side revocation/rotation by
+    // up to its full TTL. Drop it (when it's the one we used) and let
+    // the caller's single retry mint a fresh one — otherwise every
+    // fetch for the rest of the nightly sync fails auth_failed even
+    // though a new token would succeed.
+    if (cachedToken && cachedToken.configKey === configKey(config)) {
+      cachedToken = null;
+    }
     throw new ClientError("auth_failed");
+  }
   if (res.status === 429) throw new ClientError("rate_limited");
   if (res.status >= 500) throw new ClientError("unavailable");
   if (!res.ok) throw new ClientError("unknown_error");
   return (await res.json()) as T;
+}
+
+async function request<T>(
+  config: CareOrchestratorConfig,
+  path: string,
+): Promise<T> {
+  try {
+    return await requestOnce<T>(config, path);
+  } catch (err) {
+    // One retry on auth_failed: requestOnce cleared the stale cached
+    // token, so this attempt mints a fresh one. Any further failure
+    // is a real credential problem and propagates.
+    if (err instanceof ClientError && err.kind === "auth_failed") {
+      return await requestOnce<T>(config, path);
+    }
+    throw err;
+  }
 }
 
 interface CoDeviceResponse {

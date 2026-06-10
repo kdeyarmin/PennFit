@@ -158,13 +158,20 @@ export async function verifyEligibility(
 
   // Allocate monotonic control numbers vs. the office_ally_submissions
   // ISA13 history. Eligibility and claim ISA13s share the same pool.
-  const { data: priorHigh } = await supabase
+  const { data: priorHigh, error: priorHighErr } = await supabase
     .schema("resupply")
     .from("office_ally_submissions")
     .select("isa_control_number")
     .order("isa_control_number", { ascending: false })
     .limit(1)
     .maybeSingle();
+  // Throw on a read error rather than allocating blind: the allocator's
+  // monotonicity guarantee DEPENDS on previousHighest (its own doc says
+  // the persistence layer must supply the MAX ISA13). A swallowed error
+  // here falls back to the time-derived base alone, which can re-mint a
+  // used interchange control number — Office Ally rejects the reused
+  // ISA13 at the 999 and the file needs manual replay.
+  if (priorHighErr) throw priorHighErr;
   const control = allocateControlNumbers({
     submittedAt: Date.now(),
     sequence: 1,

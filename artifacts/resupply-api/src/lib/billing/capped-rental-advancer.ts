@@ -44,7 +44,7 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
     errored: 0,
     byHcpcs: {},
   };
-  const { data: cycles } = await supabase
+  const { data: cycles, error: cyclesErr } = await supabase
     .schema("resupply")
     .from("capped_rental_cycles")
     .select(
@@ -52,6 +52,13 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
     )
     .eq("status", "active")
     .limit(2000);
+  // Throw — not fall through. PostgREST returns errors in-band, so a
+  // swallowed error here makes `cycles` null, the loop a no-op, and
+  // the job report "completed { scanned: 0 }": monthly Medicare rental
+  // claims silently stop being drafted with zero failure signal for as
+  // long as the error persists. Throwing fails the pg-boss job so the
+  // DLQ/monitor sees it.
+  if (cyclesErr) throw cyclesErr;
   for (const cycle of cycles ?? []) {
     stats.scanned += 1;
     try {
@@ -293,13 +300,17 @@ async function isPatientCompliant(
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
     .toISOString()
     .slice(0, 10);
-  const { data: nights } = await supabase
+  const { data: nights, error: nightsErr } = await supabase
     .schema("resupply")
     .from("patient_therapy_nights")
     .select("usage_minutes")
     .eq("patient_id", patientId)
     .gte("night_date", since)
     .limit(60);
+  // Throw: a swallowed read error would silently classify the patient
+  // non-compliant, dropping the KX modifier from a real claim (payer
+  // denial). The caller's per-cycle catch counts it as errored instead.
+  if (nightsErr) throw nightsErr;
   const compliant = (nights ?? []).filter(
     (n) => (n.usage_minutes ?? 0) >= 240,
   ).length;
@@ -313,7 +324,7 @@ async function defaultBilledForHcpcs(
   onDate: string,
 ): Promise<number> {
   if (payerProfileId) {
-    const { data: fee } = await supabase
+    const { data: fee, error: feeErr } = await supabase
       .schema("resupply")
       .from("payer_fee_schedules")
       .select("allowed_cents")
@@ -328,9 +339,12 @@ async function defaultBilledForHcpcs(
       .order("effective_from", { ascending: false })
       .limit(1)
       .maybeSingle();
+    // Throw: swallowing a read error here would silently fall through
+    // to a 0-cent draft claim. The caller's per-cycle catch counts it.
+    if (feeErr) throw feeErr;
     if (fee) return fee.allowed_cents;
   }
-  const { data: map } = await supabase
+  const { data: map, error: mapErr } = await supabase
     .schema("resupply")
     .from("product_hcpcs_map")
     .select("default_billed_cents")
@@ -338,5 +352,6 @@ async function defaultBilledForHcpcs(
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
+  if (mapErr) throw mapErr;
   return map?.default_billed_cents ?? 0;
 }

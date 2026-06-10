@@ -63,15 +63,26 @@ router.post(
 
     // Dedupe by SHA-256. Office Ally redelivers files on retry; an
     // operator may also re-upload the same file accidentally.
+    //
+    // 'partial' files are deliberately EXEMPT from the dedupe: the
+    // header contract ("CSRs can replay the reconcile by re-uploading
+    // the original file") was unkeepable when ANY existing row 409'd —
+    // a transient DB error mid-reconcile left the file 'partial' with
+    // its unmatched claims permanently unappliable. The reconciler is
+    // now per-claim idempotent (insurance_claim_events marker keyed on
+    // claim_id + check number), so re-running a partial file only
+    // applies the claim blocks that were missed; we reuse the existing
+    // era_files row rather than inserting (unique sha index).
     const sha256 = createHash("sha256").update(payload, "utf8").digest("hex");
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .schema("resupply")
       .from("era_files")
       .select("id, status")
       .eq("file_sha256", sha256)
       .limit(1)
       .maybeSingle();
-    if (existing) {
+    if (existingErr) throw existingErr;
+    if (existing && existing.status !== "partial") {
       res.status(409).json({
         error: "duplicate",
         message: "an ERA file with this content has already been ingested",
@@ -118,28 +129,46 @@ router.post(
     }
 
     // Persist the file row up front in 'partial' state; we promote to
-    // 'processed' after the reconciler returns.
-    const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
-      .from("era_files")
-      .insert({
-        file_name: fileName,
-        file_sha256: sha256,
-        file_size_bytes: Buffer.byteLength(payload, "utf8"),
-        payer_check_number: parsedEra.checkOrEftNumber,
-        payer_paid_date: parsedEra.paymentDate,
-        total_paid_cents: parsedEra.totalPaidCents,
-        claims_paid_count: 0,
-        claims_denied_count: 0,
-        lines_processed_count: 0,
-        matched_submission_id: matchedSubmissionId ?? null,
-        payer_profile_id: resolvedPayer?.payerProfileId ?? null,
-        status: "partial",
-        ingested_by_email: req.adminEmail ?? "unknown",
-      })
-      .select("id")
-      .single();
-    if (insertErr) throw insertErr;
+    // 'processed' after the reconciler returns. A replay of a
+    // 'partial' file reuses its existing row (see the dedupe above).
+    let eraFileId: string;
+    if (existing) {
+      eraFileId = existing.id;
+      const { error: refreshErr } = await supabase
+        .schema("resupply")
+        .from("era_files")
+        .update({
+          file_name: fileName,
+          matched_submission_id: matchedSubmissionId ?? null,
+          payer_profile_id: resolvedPayer?.payerProfileId ?? null,
+          ingested_by_email: req.adminEmail ?? "unknown",
+        })
+        .eq("id", existing.id);
+      if (refreshErr) throw refreshErr;
+    } else {
+      const { data: row, error: insertErr } = await supabase
+        .schema("resupply")
+        .from("era_files")
+        .insert({
+          file_name: fileName,
+          file_sha256: sha256,
+          file_size_bytes: Buffer.byteLength(payload, "utf8"),
+          payer_check_number: parsedEra.checkOrEftNumber,
+          payer_paid_date: parsedEra.paymentDate,
+          total_paid_cents: parsedEra.totalPaidCents,
+          claims_paid_count: 0,
+          claims_denied_count: 0,
+          lines_processed_count: 0,
+          matched_submission_id: matchedSubmissionId ?? null,
+          payer_profile_id: resolvedPayer?.payerProfileId ?? null,
+          status: "partial",
+          ingested_by_email: req.adminEmail ?? "unknown",
+        })
+        .select("id")
+        .single();
+      if (insertErr) throw insertErr;
+      eraFileId = row.id;
+    }
 
     const summary = await reconcileEra(parsedEra, {
       actorEmail: `system:era_ingest:${req.adminEmail ?? "unknown"}`,
@@ -162,7 +191,7 @@ router.post(
           ? null
           : `${summary.unmatchedClaims} claim block(s) had no local match`,
       })
-      .eq("id", row.id);
+      .eq("id", eraFileId);
     if (eraUpdateErr) throw eraUpdateErr;
 
     await logAudit({
@@ -170,7 +199,7 @@ router.post(
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "era_files",
-      targetId: row.id,
+      targetId: eraFileId,
       metadata: {
         file_name: fileName,
         payer_check_number: parsedEra.checkOrEftNumber,
@@ -191,7 +220,7 @@ router.post(
     void publishEvent({
       eventType: "era.ingested",
       payload: {
-        era_file_id: row.id,
+        era_file_id: eraFileId,
         file_name: fileName,
         total_paid_cents: parsedEra.totalPaidCents,
         claims_paid: summary.paidClaims,
@@ -201,7 +230,7 @@ router.post(
     });
 
     res.status(201).json({
-      eraFileId: row.id,
+      eraFileId,
       status: finalStatus,
       summary,
     });

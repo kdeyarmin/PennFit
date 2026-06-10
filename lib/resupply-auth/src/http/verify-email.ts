@@ -102,6 +102,7 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     const t = now();
     const consumed = await deps.repo.consumeEmailToken({
       tokenHash: hash,
+      purpose: "signup_verify",
       at: t,
     });
     if (!consumed || consumed.purpose !== "signup_verify") {

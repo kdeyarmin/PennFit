@@ -94,6 +94,22 @@ export type ConfirmFn = (opts: ConfirmDialogOptions) => Promise<boolean>;
 export function useConfirmDialog(): [ConfirmFn, React.ReactNode] {
   const [state, setState] = React.useState<InternalState>(INITIAL_STATE);
 
+  // Admin-theme scoping. Radix portals the dialog content to
+  // document.body — OUTSIDE any `.admin-root` wrapper — so on admin
+  // pages the content's `bg-background` / destructive-button tokens
+  // would resolve to the storefront palette (the hard rule every other
+  // admin portal handles by re-applying `admin-root` on its content;
+  // see AdminModal). The hook is shared with storefront pages, so we
+  // can't hardcode the class: a hidden sentinel rendered where the
+  // caller mounts the dialog element detects whether we're inside
+  // `.admin-root` and re-scopes the portal content only then.
+  const [inAdminScope, setInAdminScope] = React.useState(false);
+  const sentinelRef = React.useCallback((node: HTMLSpanElement | null) => {
+    if (!node) return;
+    const scoped = node.closest(".admin-root") !== null;
+    setInAdminScope((prev) => (prev === scoped ? prev : scoped));
+  }, []);
+
   // Keep a ref to the resolver so the action handlers below can settle
   // it without re-binding on every render (which would otherwise
   // re-create the Action/Cancel onClick props every time and defeat
@@ -140,7 +156,11 @@ export function useConfirmDialog(): [ConfirmFn, React.ReactNode] {
           if (!open) settle(false);
         }}
       >
-        <AlertDialogContent>
+        {/* Scope sentinel — see the admin-theme note above. Rendered
+            in the caller's tree (NOT portalled) so closest() sees the
+            real ancestor chain. */}
+        <span ref={sentinelRef} hidden aria-hidden="true" />
+        <AlertDialogContent className={inAdminScope ? "admin-root" : undefined}>
           <AlertDialogHeader>
             <AlertDialogTitle>{opts?.title ?? ""}</AlertDialogTitle>
             {opts?.description ? (
@@ -168,7 +188,7 @@ export function useConfirmDialog(): [ConfirmFn, React.ReactNode] {
         </AlertDialogContent>
       </AlertDialog>
     );
-  }, [state.open, state.options, settle]);
+  }, [state.open, state.options, settle, inAdminScope, sentinelRef]);
 
   return [confirm, dialogEl];
 }
