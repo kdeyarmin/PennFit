@@ -13,6 +13,7 @@ import { accountHandlers } from "./handlers/account";
 import { fitflowHandlers } from "./handlers/fitflow";
 import { miscHandlers } from "./handlers/misc";
 import { adminHandlers } from "./handlers/admin";
+import { billingClaimsHandlers } from "./handlers/billing-claims";
 
 // Order matters only where patterns could overlap; within a surface
 // the more specific routes are declared first in their module.
@@ -23,6 +24,7 @@ const handlers: DemoHandler[] = [
   ...fitflowHandlers,
   ...miscHandlers,
   ...adminHandlers,
+  ...billingClaimsHandlers,
 ];
 
 /** API paths the demo sandbox is responsible for answering. */

@@ -81,6 +81,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
@@ -123,6 +124,9 @@ export interface SupplyCampaignStats {
   skippedNoSmsConfig: number;
   skippedFlagDisabled: number;
   skippedClaimLost: number;
+  /** SMS-eligible touches deferred by the 9am–8pm TCPA send window —
+   *  retried by a later hourly tick inside the window. */
+  skippedQuietHours: number;
   expired: number;
   errors: number;
   /** Mig 0156 — leads where the dispatcher short-circuited T5+T6
@@ -873,6 +877,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     skippedNoSmsConfig: 0,
     skippedFlagDisabled: 0,
     skippedClaimLost: 0,
+    skippedQuietHours: 0,
     expired: 0,
     errors: 0,
     coldSkipped: 0,
@@ -1073,6 +1078,23 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     }
 
     const isAnyFinal = isPrePurchaseFinal || isReorderFinal || isFinalCallTouch;
+
+    // TCPA window: when this touch would text the lead (SMS-eligible
+    // touch index + consent + Twilio configured), defer the WHOLE
+    // touch to a later hourly tick inside 9am–8pm (ET default — leads
+    // carry no timezone/ZIP). The claim below covers both legs, so
+    // claiming now would burn the touch as email-only. Email-only
+    // touches and leads without SMS consent are unaffected.
+    if (
+      twilioSms &&
+      SMS_TOUCH_INDEXES.has(nextTouchIndex) &&
+      lead.phone_e164 &&
+      lead.sms_opt_in &&
+      isOutsideSmsSendWindow(new Date())
+    ) {
+      stats.skippedQuietHours += 1;
+      continue;
+    }
 
     // Atomic claim — bump campaign_touch_count BEFORE the send, with
     // an optimistic WHERE pinning the prior value AND the prior

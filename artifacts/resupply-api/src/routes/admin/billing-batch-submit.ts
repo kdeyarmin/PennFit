@@ -71,7 +71,8 @@ router.post(
               result.kind === "payer_not_electronic" ||
               result.kind === "claim_missing_required_data" ||
               result.kind === "eligibility_blocked" ||
-              result.kind === "bill_hold"
+              result.kind === "bill_hold" ||
+              result.kind === "concurrent_submission"
             ? 409
             : 400;
       res.status(status).json({ error: result.kind, ...result.detail });

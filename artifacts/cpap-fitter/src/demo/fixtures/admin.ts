@@ -88,8 +88,8 @@ const LAST_NAMES = [
 
 type PatientStatus = "active" | "paused" | "closed";
 
-export function demoPatients(limit = 25, offset = 0) {
-  const all = FIRST_NAMES.map((first, i) => {
+export function demoPatients(limit = 25, offset = 0, search?: string | null) {
+  let all = FIRST_NAMES.map((first, i) => {
     const status: PatientStatus =
       i % 7 === 0 ? "paused" : i % 11 === 0 ? "closed" : "active";
     return {
@@ -110,6 +110,12 @@ export function demoPatients(limit = 25, offset = 0) {
           : null,
     };
   });
+  const q = (search ?? "").trim().toLowerCase();
+  if (q.length > 0) {
+    all = all.filter((p) =>
+      `${p.firstName} ${p.lastName} ${p.pacwareId}`.toLowerCase().includes(q),
+    );
+  }
   const items = all.slice(offset, offset + limit);
   return { items, total: all.length, limit, offset };
 }
@@ -319,8 +325,11 @@ export function demoToday() {
     complianceAlerts: [
       {
         id: "demo-ca-1",
+        alert_type: "low_usage" as const,
+        severity: "warning" as const,
         summary: "Usage dropped below 4 hrs/night for 5 consecutive nights.",
         patient_id: "demo-patient-4",
+        status: "open" as const,
         created_at: daysAgo(1),
       },
     ],
@@ -349,6 +358,19 @@ export function demoToday() {
         from_e164: "+12155550173",
         num_pages: 3,
         received_at: hoursAgo(8),
+      },
+    ],
+    // TodayResponse grew this key (today-api.ts); the dashboard derefs
+    // `.length` on it unconditionally, so omitting it crashes /admin
+    // (and /admin/today) into the error boundary in demo mode.
+    appointmentsAssignedToMe: [
+      {
+        id: "demo-appt-1",
+        patient_id: "demo-patient-3",
+        event_type: "mask_fitting",
+        starts_at: daysFromNow(1),
+        ends_at: daysFromNow(1),
+        location: "Main office",
       },
     ],
   };

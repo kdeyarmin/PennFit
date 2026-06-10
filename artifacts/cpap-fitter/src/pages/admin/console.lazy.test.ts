@@ -227,13 +227,16 @@ describe("console.tsx — Suspense boundary wrapping the Switch", () => {
 // ---------------------------------------------------------------------------
 
 describe("console.tsx — ErrorBoundary wraps the Suspense", () => {
-  it("ErrorBoundary is present in the JSX", () => {
-    expect(SRC).toContain("<ErrorBoundary>");
+  // The boundary is re-keyed on the current location so a crashed page
+  // resets when the operator navigates away (same pattern as the
+  // storefront Layout boundary in App.tsx) — hence the key attribute.
+  it("ErrorBoundary is present in the JSX and re-keyed per route", () => {
+    expect(SRC).toContain("<ErrorBoundary key={location}>");
     expect(SRC).toContain("</ErrorBoundary>");
   });
 
   it("ErrorBoundary opens before the Suspense (ErrorBoundary is the outer wrapper)", () => {
-    const errorBoundaryIdx = SRC.indexOf("<ErrorBoundary>");
+    const errorBoundaryIdx = SRC.indexOf("<ErrorBoundary key={location}>");
     const suspenseIdx = SRC.indexOf("<Suspense");
     expect(errorBoundaryIdx).toBeGreaterThan(0);
     expect(suspenseIdx).toBeGreaterThan(errorBoundaryIdx);

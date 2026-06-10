@@ -20,7 +20,7 @@
 // under /admin/*.
 
 import { Suspense } from "react";
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import {
   useGetAdminMe,
   getGetAdminMeQueryKey,
@@ -663,6 +663,11 @@ import "@/admin.css";
  * @returns The admin console UI: an authorization gate (error or loading) or the routed admin pages inside the app shell.
  */
 function AdminConsole() {
+  // Re-key the per-page error boundary on every route change (same
+  // pattern as the storefront Layout boundary in App.tsx) so a single
+  // crashed page doesn't trap the operator on "Something went wrong"
+  // for every subsequent admin page until a full reload.
+  const [location] = useLocation();
   const { data, isPending, isError, error } = useGetAdminMe({
     query: {
       queryKey: getGetAdminMeQueryKey(),
@@ -708,7 +713,7 @@ function AdminConsole() {
       adminRole={data?.role}
       adminPermissions={data?.permissions}
     >
-      <ErrorBoundary>
+      <ErrorBoundary key={location}>
         {/* Suspense boundary for the per-page lazy chunks declared at
             the top of this file. Without it, a navigation to any
             non-Dashboard route would crash with "Component suspended
