@@ -62,6 +62,15 @@ export interface PendingSessionEntry {
    * one. `patientId`/`episodeId` are empty for these.
    */
   diagnostic?: boolean;
+  /**
+   * The agent should open the conversation (speak the greeting without
+   * waiting for the caller). Set by INBOUND flows — a caller who dials
+   * in expects "thanks for calling…" immediately, and semantic VAD only
+   * creates a response after caller speech, so without this kick an
+   * inbound caller is met with dead air. Outbound (place-call) leaves it
+   * unset: the callee answers with "Hello?", which is the natural cue.
+   */
+  agentSpeaksFirst?: boolean;
   createdAt: number;
   expiresAt: number;
 }
@@ -117,6 +126,7 @@ export class PendingSessions {
     diagnostic?: boolean;
     callerKind?: "patient" | "shop_customer";
     shopCustomerId?: string;
+    agentSpeaksFirst?: boolean;
   }): PendingSessionEntry {
     this.sweep();
     const t = this.now();
@@ -129,6 +139,7 @@ export class PendingSessions {
       ...(args.diagnostic ? { diagnostic: true } : {}),
       ...(args.callerKind ? { callerKind: args.callerKind } : {}),
       ...(args.shopCustomerId ? { shopCustomerId: args.shopCustomerId } : {}),
+      ...(args.agentSpeaksFirst ? { agentSpeaksFirst: true } : {}),
       createdAt: t,
       expiresAt: t + this.ttlMs,
     };

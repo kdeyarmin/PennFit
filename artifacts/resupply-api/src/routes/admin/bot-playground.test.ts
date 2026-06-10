@@ -265,3 +265,37 @@ describe("/admin/bot-playground", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Every voice scenario's resolved call context must build a VALID system
+// prompt. buildSystemPrompt caps callContext at 250 chars and throws over
+// it — and a throw inside the voice WS handler hangs the live test call up
+// the instant it connects (this is exactly how the dial-in diagnostic
+// route's over-long stock context broke). Sweeping the catalog here means
+// a future scenario edit can't reintroduce the bug.
+// ---------------------------------------------------------------------------
+describe("bot playground — voice scenario contexts build valid prompts", () => {
+  it("resolves every voice scenario (and the default) to a prompt-safe context", async () => {
+    const { PLAYGROUND_SCENARIOS, resolveVoiceCallSetup } =
+      await import("../../lib/bot-playground/playground");
+    const { buildSystemPrompt } = await import("@workspace/resupply-ai");
+    const voiceScenarioIds = PLAYGROUND_SCENARIOS.filter(
+      (s) => s.bot === "voice",
+    ).map((s) => s.id);
+    expect(voiceScenarioIds.length).toBeGreaterThan(0);
+    // Default (no scenario) plus every catalog entry.
+    for (const scenarioId of [undefined, ...voiceScenarioIds]) {
+      const setup = resolveVoiceCallSetup(
+        scenarioId === undefined ? {} : { scenarioId },
+      );
+      expect(setup.callContext.length).toBeLessThanOrEqual(250);
+      expect(() =>
+        buildSystemPrompt({
+          practiceName: "PennPaps",
+          callerKind: setup.callerKind,
+          callContext: setup.callContext,
+        }),
+      ).not.toThrow();
+    }
+  });
+});

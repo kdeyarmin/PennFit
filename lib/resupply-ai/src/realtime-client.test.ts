@@ -445,6 +445,62 @@ describe("RealtimeClient", () => {
     });
   });
 
+  it("buffers caller audio sent BEFORE the WS opens and flushes it after session.update", () => {
+    // Twilio starts streaming the caller's audio before the OpenAI
+    // handshake completes; dropping those frames loses the caller's
+    // opening "Hello?" and the agent sits silent until they speak again.
+    const { client, fake } = build();
+    fake.readyState = 0; // CONNECTING
+    client.appendAudio("EARLY-1");
+    client.appendAudio("EARLY-2");
+    expect(fake.received).toHaveLength(0); // nothing sent while connecting
+    fake.readyState = 1;
+    fake.fakeOpen();
+    const types = fake.received.map(
+      (r) => (JSON.parse(r) as { type: string }).type,
+    );
+    // session.update FIRST, then the buffered audio in arrival order.
+    expect(types).toEqual([
+      "session.update",
+      "input_audio_buffer.append",
+      "input_audio_buffer.append",
+    ]);
+    expect(
+      fake.received
+        .slice(1)
+        .map((r) => (JSON.parse(r) as { audio: string }).audio),
+    ).toEqual(["EARLY-1", "EARLY-2"]);
+  });
+
+  it("caps the pre-open audio buffer (drops oldest first)", () => {
+    const { client, fake } = build();
+    fake.readyState = 0;
+    for (let i = 0; i < 260; i += 1) client.appendAudio(`F${i}`);
+    fake.readyState = 1;
+    fake.fakeOpen();
+    const audio = fake.received
+      .slice(1)
+      .map((r) => (JSON.parse(r) as { audio: string }).audio);
+    expect(audio).toHaveLength(250); // MAX_PRE_OPEN_AUDIO_FRAMES
+    expect(audio[0]).toBe("F10"); // oldest 10 dropped
+    expect(audio[audio.length - 1]).toBe("F259");
+  });
+
+  it("submitToolResult with requestFollowUp:false does NOT request a response", () => {
+    const { client, fake } = build();
+    fake.fakeOpen();
+    fake.received.length = 0;
+    client.submitToolResult(
+      "call_end",
+      { ok: true },
+      {
+        requestFollowUp: false,
+      },
+    );
+    expect(fake.received).toHaveLength(1);
+    expect(JSON.parse(fake.received[0]!).type).toBe("conversation.item.create");
+  });
+
   it("submitToolResult round-trips the call id and stringifies the result, then requests a follow-up response", () => {
     const { client, fake } = build();
     fake.fakeOpen();

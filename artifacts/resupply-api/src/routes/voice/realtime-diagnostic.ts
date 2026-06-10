@@ -39,13 +39,15 @@ import {
   readVoicePublicBaseUrlOrNull,
 } from "../../lib/voice/voice-config";
 
+// NOTE: buildSystemPrompt caps callContext at 250 chars and THROWS over
+// it — the previous, longer wording crashed the diagnostic WS handler,
+// which closed the socket and hung the call up the moment it connected.
+// Keep this under 250 (there's a pin test on the length).
 const DIAGNOSTIC_CALL_CONTEXT =
-  "CONNECTION TEST — this is an automated voice diagnostic, not a real " +
-  "patient call. There is no account to look up and no tools are available. " +
-  "Greet the caller warmly, make brief natural conversation to confirm " +
-  "two-way audio is working, and answer anything they ask conversationally. " +
-  "Do NOT ask for identity, date of birth, or any personal information. " +
-  "If the caller says goodbye, end the call.";
+  "Connection test - an automated voice diagnostic, not a real patient " +
+  "call. No account exists and no tools are available. Greet warmly, " +
+  "chat briefly to confirm two-way audio works, and never ask for " +
+  "identity, date of birth, or personal details.";
 
 const DIAGNOSTIC_GREETING =
   "Hi there — this is a quick voice connection test. Can you hear me okay? " +
@@ -113,6 +115,10 @@ router.post("/voice/realtime-diagnostic", signatureMiddleware, (req, res) => {
     callContext: DIAGNOSTIC_CALL_CONTEXT,
     greeting: DIAGNOSTIC_GREETING,
     diagnostic: true,
+    // The operator dialed in — greet immediately, same as the inbound
+    // production flows (this also makes the diagnostic exercise the
+    // agent-speaks-first path before it ships).
+    agentSpeaksFirst: true,
   });
 
   const wsUrl =

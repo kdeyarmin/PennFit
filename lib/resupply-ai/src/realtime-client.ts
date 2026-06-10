@@ -202,6 +202,15 @@ export interface WebSocketLike {
 
 const OPEN: number = 1;
 
+// Caller-audio frames buffered while the OpenAI WS is still connecting.
+// Twilio starts streaming the caller's audio the moment the call leg
+// connects, but the OpenAI handshake takes a beat — without a buffer the
+// caller's FIRST utterance ("Hello?") is silently dropped, the server VAD
+// never sees it, and the agent sits silent until the caller speaks again.
+// 250 frames ≈ 5s of Twilio's 20ms µ-law frames; beyond that we drop
+// oldest-first (the model only needs the most recent speech to respond).
+const MAX_PRE_OPEN_AUDIO_FRAMES = 250;
+
 // Standard typed-EventEmitter pattern (class + same-name interface).
 // See VoiceBridge for the rationale on disabling no-unsafe-declaration-merging.
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -226,6 +235,10 @@ export class RealtimeClient extends EventEmitter {
    * dropped Twilio media frame (50 frames/sec).
    */
   private lastBackpressureWarnAt = 0;
+  /** Caller audio queued while the WS is still connecting — see
+   *  MAX_PRE_OPEN_AUDIO_FRAMES for why. Flushed right after the
+   *  session.update on open. */
+  private readonly preOpenAudio: string[] = [];
 
   constructor(opts: RealtimeClientOptions) {
     super();
@@ -291,6 +304,7 @@ export class RealtimeClient extends EventEmitter {
 
     this.ws.on("open", () => {
       this.sendSessionUpdate();
+      this.flushPreOpenAudio();
       this.emit("open");
     });
     this.ws.on("message", (data) => this.handleMessage(data));
@@ -307,6 +321,16 @@ export class RealtimeClient extends EventEmitter {
 
   /** Forward base64-encoded µ-law audio captured from Twilio. */
   appendAudio(base64Mulaw: string): void {
+    // Still connecting? Buffer (bounded) instead of dropping — the
+    // caller's opening words land before the OpenAI handshake completes
+    // on most calls, and losing them makes the agent open with silence.
+    if (!this.closed && this.ws.readyState !== OPEN) {
+      if (this.preOpenAudio.length >= MAX_PRE_OPEN_AUDIO_FRAMES) {
+        this.preOpenAudio.shift();
+      }
+      this.preOpenAudio.push(base64Mulaw);
+      return;
+    }
     // Drop audio frames when the WS send buffer is already deep —
     // a stalled OpenAI socket (network blip, vendor throttle)
     // otherwise lets every 20ms Twilio frame queue up unbounded.
@@ -356,8 +380,18 @@ export class RealtimeClient extends EventEmitter {
    * Reply to a prior `tool.call` event with a JSON-serialisable result.
    * The Realtime API expects the result as a STRING — we stringify
    * here so callers don't accidentally double-stringify.
+   *
+   * `requestFollowUp` (default true) controls whether we ask the model
+   * to speak the next turn after the result lands. The bridge passes
+   * false for `end_call` — the agent has already said its goodbye, and
+   * requesting another response there would generate a stray turn that
+   * races the hangup.
    */
-  submitToolResult(callId: string, output: unknown): void {
+  submitToolResult(
+    callId: string,
+    output: unknown,
+    opts?: { requestFollowUp?: boolean },
+  ): void {
     this.sendJson({
       type: "conversation.item.create",
       item: {
@@ -370,7 +404,9 @@ export class RealtimeClient extends EventEmitter {
     // so the model speaks the next turn. Without this, server VAD
     // alone won't trigger a response since the patient hasn't spoken
     // since the tool call.
-    this.requestResponse();
+    if (opts?.requestFollowUp ?? true) {
+      this.requestResponse();
+    }
   }
 
   requestResponse(): void {
@@ -379,10 +415,22 @@ export class RealtimeClient extends EventEmitter {
 
   close(code = 1000, reason = "client_close"): void {
     if (this.closed) return;
+    this.preOpenAudio.length = 0;
     try {
       this.ws.close(code, reason);
     } finally {
       this.closed = true;
+    }
+  }
+
+  /** Drain audio buffered during the handshake, oldest first, so the
+   *  model hears the caller's opening words. Runs right after the
+   *  session.update on open (the append verb is valid from then on). */
+  private flushPreOpenAudio(): void {
+    if (this.preOpenAudio.length === 0) return;
+    const frames = this.preOpenAudio.splice(0, this.preOpenAudio.length);
+    for (const frame of frames) {
+      this.sendJson({ type: "input_audio_buffer.append", audio: frame });
     }
   }
 

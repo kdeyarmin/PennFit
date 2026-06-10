@@ -382,7 +382,7 @@ fire-and-forget after `voice.call.completed` — a flaky model call
 NEVER delays hangup.
 
 Voice agent prompt: `lib/resupply-ai/src/prompts.ts` (version
-`2026-06-09.v7`). Tuned for natural prosody — contractions,
+`2026-06-10.v9`). Tuned for natural prosody — contractions,
 backchannels, brief empathy, natural hesitations, reacting before moving
 on, varied openers, one question at a time, and conversational
 (non-list) read-back. The Realtime

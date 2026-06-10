@@ -22,83 +22,82 @@
 // Why zod for the inbound parse: we get a typed discriminated union for
 // free, and a `safeParse` failure becomes "ignore frame, log shape" —
 // the bridge stays up.
+//
+// Tolerance posture: the schemas validate the fields we READ and strip
+// everything else (zod's default object behaviour). They are
+// deliberately NOT `.strict()`: Twilio's real payloads carry fields we
+// don't use (`start.tracks`, per-frame `sequenceNumber`, …) and adds
+// more out of band — a strict schema turned the documented
+// `start.tracks` field into a dropped start frame in production, which
+// meant `streamSid` was never captured and every byte of agent audio
+// was silently discarded (a fully silent call). Unknown fields must
+// never invalidate a known event.
 
 import { z } from "zod";
 
 // ---- Inbound frame schemas -----------------------------------------------
 
-const connectedFrameSchema = z
-  .object({
-    event: z.literal("connected"),
-    protocol: z.string().optional(),
-    version: z.string().optional(),
-  })
-  .strict();
+const connectedFrameSchema = z.object({
+  event: z.literal("connected"),
+  protocol: z.string().optional(),
+  version: z.string().optional(),
+});
 
-const startFrameSchema = z
-  .object({
-    event: z.literal("start"),
-    sequenceNumber: z.string().optional(),
+const startFrameSchema = z.object({
+  event: z.literal("start"),
+  sequenceNumber: z.string().optional(),
+  streamSid: z.string().min(1),
+  start: z.object({
     streamSid: z.string().min(1),
-    start: z
+    callSid: z.string().min(1),
+    accountSid: z.string().min(1).optional(),
+    // Which audio tracks the stream carries ("inbound" for the
+    // caller-side stream we request). Present in every real start
+    // frame; we don't branch on it but accept it explicitly.
+    tracks: z.array(z.string()).optional(),
+    // Custom parameters set in the TwiML `<Stream>` block. Twilio
+    // sends them as a flat Record<string,string>.
+    customParameters: z.record(z.string(), z.string()).optional(),
+    mediaFormat: z
       .object({
-        streamSid: z.string().min(1),
-        callSid: z.string().min(1),
-        accountSid: z.string().min(1).optional(),
-        // Custom parameters set in the TwiML `<Stream>` block. Twilio
-        // sends them as a flat Record<string,string>.
-        customParameters: z.record(z.string(), z.string()).optional(),
-        mediaFormat: z
-          .object({
-            encoding: z.string(),
-            sampleRate: z.number().int(),
-            channels: z.number().int(),
-          })
-          .optional(),
+        encoding: z.string(),
+        sampleRate: z.number().int(),
+        channels: z.number().int(),
       })
-      .strict(),
-  })
-  .strict();
-
-const mediaFrameSchema = z
-  .object({
-    event: z.literal("media"),
-    sequenceNumber: z.string().optional(),
-    streamSid: z.string().min(1),
-    media: z
-      .object({
-        track: z.string().optional(),
-        chunk: z.string().optional(),
-        timestamp: z.string().optional(),
-        payload: z.string().min(1),
-      })
-      .strict(),
-  })
-  .strict();
-
-const markFrameSchema = z
-  .object({
-    event: z.literal("mark"),
-    sequenceNumber: z.string().optional(),
-    streamSid: z.string().min(1),
-    mark: z.object({ name: z.string().min(1) }).strict(),
-  })
-  .strict();
-
-const stopFrameSchema = z
-  .object({
-    event: z.literal("stop"),
-    sequenceNumber: z.string().optional(),
-    streamSid: z.string().min(1),
-    stop: z
-      .object({
-        accountSid: z.string().optional(),
-        callSid: z.string().optional(),
-      })
-      .strict()
       .optional(),
-  })
-  .strict();
+  }),
+});
+
+const mediaFrameSchema = z.object({
+  event: z.literal("media"),
+  sequenceNumber: z.string().optional(),
+  streamSid: z.string().min(1),
+  media: z.object({
+    track: z.string().optional(),
+    chunk: z.string().optional(),
+    timestamp: z.string().optional(),
+    payload: z.string().min(1),
+  }),
+});
+
+const markFrameSchema = z.object({
+  event: z.literal("mark"),
+  sequenceNumber: z.string().optional(),
+  streamSid: z.string().min(1),
+  mark: z.object({ name: z.string().min(1) }),
+});
+
+const stopFrameSchema = z.object({
+  event: z.literal("stop"),
+  sequenceNumber: z.string().optional(),
+  streamSid: z.string().min(1),
+  stop: z
+    .object({
+      accountSid: z.string().optional(),
+      callSid: z.string().optional(),
+    })
+    .optional(),
+});
 
 const inboundFrameSchema = z.discriminatedUnion("event", [
   connectedFrameSchema,
