@@ -264,7 +264,7 @@ describe("Migration SQL content — 0141_phase_9_compliance_machinery (oig_leie_
 });
 
 describe("Migration SQL content — 0143_inventory_reconciliation_submit_fn (service_role guard)", () => {
-  const sql = readMigration("0143_inventory_reconciliation_submit_fn.sql");
+  const sql = readMigration("0273_inventory_reconciliation_submit_fn.sql");
 
   it("includes a DO block that creates service_role if it does not exist", () => {
     expect(sql).toMatch(/DO \$\$/);

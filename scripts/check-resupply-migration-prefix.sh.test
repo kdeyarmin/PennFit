@@ -8,14 +8,14 @@
 #
 # Scenarios:
 #   A. clean tree (no migration changes)                            — pass
-#   B. add a migration with forbidden prefix (0050)                 — fail
-#   C. add a migration at the threshold boundary (0066)             — fail
-#   D. add a migration just above the threshold (0067)              — pass
+#   B. add a migration with a novel low prefix (0050, no collision) — pass
+#   C. add a migration with another novel prefix (0066)             — pass
+#   D. add a migration with another novel prefix (0067)             — pass
 #   E. modify (not add) an existing low-prefix migration            — pass
 #   F. add an unrelated file                                        — pass
 #   G. duplicate-prefix add (0049 again)                            — fail
-#   H. working-tree mode (DIFF_TARGET="") still detects forbidden   — fail
-#   I. high-prefix add far above threshold (0099)                   — pass
+#   H. working-tree mode (DIFF_TARGET="") detects collision         — fail
+#   I. high-prefix add far above existing (0099)                    — pass
 
 set -euo pipefail
 
@@ -58,29 +58,29 @@ if ! run_check >/dev/null 2>&1; then
   exit 1
 fi
 
-# --- B: forbidden prefix 0050 -----------------------------------------------
-echo "[self-test] scenario B: adding 0050_*.sql should fail"
-echo "-- new" > lib/resupply-db/drizzle/0050_forbidden.sql
-git add lib/resupply-db/drizzle/0050_forbidden.sql
-if run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: B (0050 add should have failed)" >&2
+# --- B: novel low prefix (0050) — no collision, should pass -----------------
+echo "[self-test] scenario B: adding 0050_*.sql (no collision) should pass"
+echo "-- new" > lib/resupply-db/drizzle/0050_ok.sql
+git add lib/resupply-db/drizzle/0050_ok.sql
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: B (0050 add should have passed — no collision)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0050_forbidden.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0050_forbidden.sql
+git restore --staged lib/resupply-db/drizzle/0050_ok.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/drizzle/0050_ok.sql
 
-# --- C: threshold boundary 0066 ---------------------------------------------
-echo "[self-test] scenario C: adding 0066_*.sql should fail (boundary)"
-echo "-- new" > lib/resupply-db/drizzle/0066_boundary.sql
-git add lib/resupply-db/drizzle/0066_boundary.sql
-if run_check >/dev/null 2>&1; then
-  echo "[self-test] FAIL: C (0066 add should have failed)" >&2
+# --- C: novel prefix 0066 — no collision, should pass -----------------------
+echo "[self-test] scenario C: adding 0066_*.sql (no collision) should pass"
+echo "-- new" > lib/resupply-db/drizzle/0066_ok.sql
+git add lib/resupply-db/drizzle/0066_ok.sql
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: C (0066 add should have passed — no collision)" >&2
   exit 1
 fi
-git restore --staged lib/resupply-db/drizzle/0066_boundary.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0066_boundary.sql
+git restore --staged lib/resupply-db/drizzle/0066_ok.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/drizzle/0066_ok.sql
 
-# --- D: just above threshold 0067 -------------------------------------------
+# --- D: novel prefix 0067 -------------------------------------------
 echo "[self-test] scenario D: adding 0067_*.sql should pass"
 echo "-- new" > lib/resupply-db/drizzle/0067_ok.sql
 git add lib/resupply-db/drizzle/0067_ok.sql
@@ -125,17 +125,17 @@ fi
 git restore --staged lib/resupply-db/drizzle/0049_duplicate.sql >/dev/null 2>&1 || true
 rm -f lib/resupply-db/drizzle/0049_duplicate.sql
 
-# --- H: working-tree mode (DIFF_TARGET="") detects unstaged forbidden add ---
-echo "[self-test] scenario H: DIFF_TARGET= mode should fail on unstaged forbidden add"
-echo "-- unstaged forbidden" > lib/resupply-db/drizzle/0050_unstaged.sql
-git add -N lib/resupply-db/drizzle/0050_unstaged.sql
+# --- H: working-tree mode (DIFF_TARGET="") detects unstaged collision --------
+echo "[self-test] scenario H: DIFF_TARGET= mode should fail on unstaged collision add"
+echo "-- unstaged collision" > lib/resupply-db/drizzle/0049_unstaged.sql
+git add -N lib/resupply-db/drizzle/0049_unstaged.sql
 if BASE_REF=HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh \
    >/dev/null 2>&1; then
-  echo "[self-test] FAIL: H (working-tree mode should have detected forbidden add)" >&2
+  echo "[self-test] FAIL: H (working-tree mode should have detected collision)" >&2
   exit 1
 fi
-git rm -f --cached lib/resupply-db/drizzle/0050_unstaged.sql >/dev/null 2>&1 || true
-rm -f lib/resupply-db/drizzle/0050_unstaged.sql
+git rm -f --cached lib/resupply-db/drizzle/0049_unstaged.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/drizzle/0049_unstaged.sql
 
 # --- I: high prefix far above threshold -------------------------------------
 echo "[self-test] scenario I: adding 0099_*.sql should pass"
