@@ -5,8 +5,10 @@ origins with false"). Scope: every artifact and workspace package —
 public API, admin API (187 route files), pg-boss worker (50 jobs), auth
 stack, DB layer + 262-prefix migration corpus, storefront SPA, admin
 console SPA (127 pages), AI/voice/messaging stack, integrations layer,
-and deploy/boot posture. Review only — **no fixes applied in this PR**;
-each finding cites file:line so fixes can land as focused follow-ups.
+and deploy/boot posture. The **five P0 fixes ship in this same PR**
+(Wave 1), each with a regression test; everything from P1 down is
+report-only — each finding cites file:line so fixes can land as
+focused follow-ups.
 
 Verification levels used below:
 
@@ -39,7 +41,21 @@ small; they are listed in recommended order at the end.
 
 ---
 
-## P0 — broken in production today
+## P0 — broken in production today (all five FIXED in this PR)
+
+Fixes + regression tests, in this PR:
+
+- P0-1 → `camera=(self)` in `securityHeaders.ts` + `securityHeaders.test.ts`.
+- P0-2 → app-level `express.raw()` mounts for both webhook paths ahead
+  of the global parser in `app.ts` +
+  `app-webhook-raw-body-ordering.test.ts` (goes through the real app).
+- P0-3 → `csrfHeader()` on both wrappers in `shop-api.ts` +
+  `shop-api-csrf.test.ts`.
+- P0-4 → reactive `attachStream()` effect in `capture.tsx` +
+  `capture.retry.render.test.tsx`.
+- P0-5 → `readQueryParam` reads `window.location.search` in
+  `conversations.tsx` / `episodes.tsx` +
+  `conversations.deeplink.render.test.tsx`.
 
 ### P0-1. `Permissions-Policy: camera=()` blocks the face-scan [verified-live]
 

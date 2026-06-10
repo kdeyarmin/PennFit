@@ -31,10 +31,13 @@ import type { NextFunction, Request, Response } from "express";
  *     ever serves HTML.
  *   * Cross-Origin-Resource-Policy: same-origin. Stops cross-origin
  *     <img>/<script> tags from loading API responses as resources.
- *   * Permissions-Policy: minimal. We don't use any browser
- *     capabilities from API responses; a tight allowlist is
- *     defense-in-depth in case a future error page leaks into a
- *     browser context.
+ *   * Permissions-Policy: minimal, EXCEPT camera=(self). Since the
+ *     May 2026 consolidation this process also serves the cpap-fitter
+ *     SPA's HTML, and the face-scan capture page calls getUserMedia —
+ *     an empty camera allowlist on the top-level document makes
+ *     Chromium reject it with NotAllowedError (this is what broke the
+ *     production face-scan; see docs/app-review-2026-06-10.md P0-1).
+ *     Same-origin only; everything else stays denied.
  *   * X-DNS-Prefetch-Control: off. Don't preemptively resolve DNS
  *     for any links the response body might contain — same
  *     leak-prevention reasoning as Referrer-Policy.
@@ -74,7 +77,7 @@ export function securityHeaders(
   res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   res.setHeader(
     "Permissions-Policy",
-    "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+    "geolocation=(), microphone=(), camera=(self), payment=(), usb=()",
   );
   res.setHeader("X-DNS-Prefetch-Control", "off");
   next();
