@@ -205,15 +205,11 @@ export function Results() {
     const apiError = error as ApiError<{ error?: string; details?: string[] }>;
     const message =
       apiError.data?.error ?? apiError.message ?? "An unknown error occurred.";
-    // A 4xx means the payload itself was rejected — retrying the same
-    // measurements/answers will fail the same way, so the only honest
-    // way forward is restarting the fit. Anything else (5xx, mid-deploy
-    // proxy blip, offline — a network failure isn't an ApiError at all)
-    // is transient: this is the most expensive drop-off point in the
-    // funnel, so offer a retry that re-submits the same payload instead
-    // of sending the patient back through capture.
     const isPermanent =
-      error instanceof ApiError && error.status >= 400 && error.status < 500;
+      error instanceof ApiError &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.status !== 429;
     return (
       <div className="container max-w-2xl mx-auto px-4 py-12">
         <Alert variant="destructive">
