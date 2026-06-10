@@ -4,10 +4,13 @@
  * The bot answers product / insurance / replacement-schedule / FAQ
  * questions for prospective and current PennPaps patients. It is
  * grounded in the static knowledge base (`./chatbotKnowledge.ts`),
- * which embeds a generated summary of the live mask catalog, plus a
- * pair of tools (`recommend_masks`, `find_masks` — see
- * `./chatbotTools.ts`) so it can run the same scoring engine the
- * fitter uses and filter the catalog by structured criteria.
+ * which embeds a generated summary of the live mask catalog, plus
+ * tools (`recommend_masks`, `find_masks`, `compare_masks`,
+ * `track_order` — see `./chatbotTools.ts`) so it can run the same
+ * scoring engine the fitter uses, filter the catalog by structured
+ * criteria, and run the same guest order-status lookup as the public
+ * /track-order page (reference + email; the email never reaches the
+ * model — see ChatToolContext).
  *
  * Response modes (content negotiated):
  *   - Default JSON mode: returns `{ reply, offline?, degraded? }`.
@@ -74,8 +77,12 @@ import {
   MAX_TOOL_ROUNDS,
   executeChatTool,
   serializeToolResult,
+  type ChatToolContext,
 } from "../../lib/storefront/chatbotTools.js";
-import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
+import {
+  extractEmails,
+  redactPiiForOutbound,
+} from "../../lib/storefront/chatbotPii.js";
 import { tryConsumeChatBudget } from "../../lib/storefront/chat-budget.js";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
@@ -280,12 +287,14 @@ function buildInitialMessages(
 /**
  * Run all tool calls from one round and append the resulting messages
  * to the conversation. Returns the new messages array. We log per-call
- * timings so a slow tool surfaces in the audit trail.
+ * timings so a slow tool surfaces in the audit trail. Async because
+ * track_order reads the database.
  */
-function applyToolCalls(
+async function applyToolCalls(
   messages: OpenAiMessage[],
   toolCalls: OpenAiToolCall[],
-): OpenAiMessage[] {
+  toolCtx: ChatToolContext,
+): Promise<OpenAiMessage[]> {
   const next: OpenAiMessage[] = [
     ...messages,
     { role: "assistant", content: null, tool_calls: toolCalls },
@@ -300,7 +309,11 @@ function applyToolCalls(
       parsedArgs = {};
     }
     const startedAt = Date.now();
-    const result = executeChatTool(call.function.name, parsedArgs);
+    const result = await executeChatTool(
+      call.function.name,
+      parsedArgs,
+      toolCtx,
+    );
     logger.info(
       {
         event: "chat_tool_invoked",
@@ -441,6 +454,22 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     );
   }
 
+  // Tool context for track_order: harvest emails from the RAW user
+  // turns (the model only ever receives the redacted copies above),
+  // and reuse the /orders/track per-IP rate bucket key so the chatbot
+  // surface shares the same brute-force budget as the HTTP endpoint.
+  const clientIp =
+    req.ip ||
+    req.socket?.remoteAddress ||
+    req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
+    "unknown";
+  const toolCtx: ChatToolContext = {
+    candidateEmails: messages
+      .filter((m) => m.role === "user")
+      .flatMap((m) => extractEmails(m.content)),
+    rateLimitKey: clientIp + ":track",
+  };
+
   // Claude path — preferred when Anthropic is configured. Sonnet 4.6
   // writes noticeably warmer patient-facing copy than gpt-4o-mini and
   // is at least as strong on tool selection.
@@ -448,8 +477,14 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     const client = getAnthropicClient();
     if (client) {
       return streaming
-        ? handleAnthropicStreaming(res, initial, client, messages.length)
-        : handleAnthropicJson(res, initial, client, messages.length);
+        ? handleAnthropicStreaming(
+            res,
+            initial,
+            client,
+            messages.length,
+            toolCtx,
+          )
+        : handleAnthropicJson(res, initial, client, messages.length, toolCtx);
     }
   }
 
@@ -465,8 +500,8 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     return;
   }
   return streaming
-    ? handleStreaming(res, initial, apiKey, messages.length)
-    : handleJson(res, initial, apiKey, messages.length);
+    ? handleStreaming(res, initial, apiKey, messages.length, toolCtx)
+    : handleJson(res, initial, apiKey, messages.length, toolCtx);
 });
 
 async function handleJson(
@@ -474,6 +509,7 @@ async function handleJson(
   initialMessages: OpenAiMessage[],
   apiKey: string,
   turns: number,
+  toolCtx: ChatToolContext,
 ): Promise<void> {
   // Circuit breaker: during a SUSTAINED OpenAI outage, skip the upstream
   // entirely and degrade instantly rather than making every request wait
@@ -572,7 +608,7 @@ async function handleJson(
       const message = json.choices?.[0]?.message;
       const toolCalls = message?.tool_calls;
       if (toolCalls && toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
-        messages = applyToolCalls(messages, toolCalls);
+        messages = await applyToolCalls(messages, toolCalls, toolCtx);
         continue;
       }
 
@@ -785,6 +821,7 @@ async function handleStreaming(
   initialMessages: OpenAiMessage[],
   apiKey: string,
   turns: number,
+  toolCtx: ChatToolContext,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -848,7 +885,7 @@ async function handleStreaming(
         round < MAX_TOOL_ROUNDS &&
         result.finishReason === "tool_calls"
       ) {
-        messages = applyToolCalls(messages, result.toolCalls);
+        messages = await applyToolCalls(messages, result.toolCalls, toolCtx);
         continue;
       }
       // No more tool calls — round produced the final content.
@@ -1036,6 +1073,7 @@ async function handleAnthropicJson(
   initialMessages: OpenAiMessage[],
   client: AnthropicClient,
   turns: number,
+  toolCtx: ChatToolContext,
 ): Promise<void> {
   let messages = initialMessages;
   try {
@@ -1082,7 +1120,7 @@ async function handleAnthropicJson(
         // which we just appended above — so drop the last entry and
         // let applyToolCalls re-add it for consistency.
         messages = messages.slice(0, -1);
-        messages = applyToolCalls(messages, openAiToolCalls);
+        messages = await applyToolCalls(messages, openAiToolCalls, toolCtx);
         continue;
       }
       if (text.length === 0) {
@@ -1132,6 +1170,7 @@ async function handleAnthropicStreaming(
   initialMessages: OpenAiMessage[],
   client: AnthropicClient,
   turns: number,
+  toolCtx: ChatToolContext,
 ): Promise<void> {
   startSseHeaders(res);
 
@@ -1227,7 +1266,7 @@ async function handleAnthropicStreaming(
           function: { name: c.name, arguments: JSON.stringify(c.input) },
         }));
         messages = messages.slice(0, -1);
-        messages = applyToolCalls(messages, openAiToolCalls);
+        messages = await applyToolCalls(messages, openAiToolCalls, toolCtx);
         continue;
       }
       // No more tool calls — round produced the final content.
