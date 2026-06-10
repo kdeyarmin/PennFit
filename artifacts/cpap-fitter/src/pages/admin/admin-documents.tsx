@@ -151,6 +151,9 @@ export function AdminDocumentsPage() {
           <NewDocumentPanel
             types={types}
             loadingTypes={catalogQuery.isPending}
+            typesError={catalogQuery.isError ? catalogQuery.error : null}
+            retryingTypes={catalogQuery.isFetching}
+            onRetryTypes={() => void catalogQuery.refetch()}
             onCreated={(id) => {
               setComposing(false);
               setSelectedId(id);
@@ -289,11 +292,17 @@ export function AdminDocumentsPage() {
 function NewDocumentPanel({
   types,
   loadingTypes,
+  typesError,
+  retryingTypes,
+  onRetryTypes,
   onCreated,
   onClose,
 }: {
   types: ManualDocumentTypeDef[];
   loadingTypes: boolean;
+  typesError: unknown;
+  retryingTypes: boolean;
+  onRetryTypes: () => void;
   onCreated: (id: string) => void;
   onClose: () => void;
 }) {
@@ -335,6 +344,21 @@ function NewDocumentPanel({
           <Label htmlFor="docType">Document type</Label>
           {loadingTypes ? (
             <Spinner label="Loading types…" />
+          ) : typesError != null ? (
+            <div className="flex items-center gap-3">
+              <span className="text-sm" style={{ color: "hsl(0 70% 45%)" }}>
+                Couldn’t load the document types.{" "}
+                {describeError(typesError).detail}
+              </span>
+              <Button
+                intent="secondary"
+                size="sm"
+                isLoading={retryingTypes}
+                onClick={onRetryTypes}
+              >
+                Try again
+              </Button>
+            </div>
           ) : (
             <Select
               id="docType"

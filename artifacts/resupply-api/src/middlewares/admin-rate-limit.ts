@@ -115,12 +115,25 @@ export function adminRateLimit(opts: AdminRateLimitOptions): RequestHandler {
 // site — it can't trace our factory wrappers — so the wrapped limiters
 // kept re-flagging authenticated GET handlers as "missing rate
 // limiting" / "sensitive data read from GET". This direct instance is
-// recognized, while a generous 600/window cap means normal dashboard
-// polling never trips it. Keyed per admin actor (req.adminUserId) once
-// auth runs, with an IP fallback for the pre-auth window.
+// recognized.
+//
+// Sizing: this is ONE shared bucket — a single express-rate-limit
+// instance (one MemoryStore) reused by 200+ admin GET registrations —
+// and because it runs before the auth gate, `req.adminUserId` is never
+// populated yet, so the key is in practice ALWAYS the IP. Behind
+// Cloudflare (custom domain) `trust proxy: 1` resolves req.ip to a
+// Cloudflare egress IP, so an entire office of staff can pool into a
+// handful of buckets (docs/railway-hosting-review-2026-05-29.md R7).
+// The admin shell alone polls two endpoints every 60s per open tab
+// (~120 reads/hr) before anyone clicks anything, so the original
+// 600/hr cap starved honest consoles: once the bucket drained, every
+// admin GET 429'd and surfaced as random broken widgets (e.g. the
+// Documents page type dropdown rendering empty). 6000/hr (~1.7 req/s
+// sustained) still bounds scraping/abuse while absorbing a busy
+// multi-tab, multi-staff office on one IP.
 export const adminReadRateLimiter: RequestHandler = expressRateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 600,
+  max: 6000,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) =>
@@ -150,15 +163,18 @@ export const adminReadRateLimiter: RequestHandler = expressRateLimit({
 // line, and a stolen-session flood still hits the DB). Running first
 // also caps an unauthenticated flood before it reaches the auth lookup.
 //
-// Keyed per admin actor once auth runs, with an IP fallback for the
-// pre-auth window (the same posture the mfa.ts IP limiter uses).
-// 300/hr is well above any honest CSR mutation cadence while bounding a
-// runaway client or a stolen session. Routes that need a tighter,
-// action-specific budget (e.g. episodes/bulk-send's 10/hr per-admin cap)
-// keep their own limiter AFTER `requireAdmin`, layered on top of this net.
+// Because it runs pre-auth, `req.adminUserId` is never populated yet,
+// so the key is in practice ALWAYS the IP (same caveat as the read
+// limiter above: behind Cloudflare a whole office can pool into a few
+// egress-IP buckets, and this is one shared bucket across every route
+// that mounts it). 1500/hr is well above any honest office's combined
+// CSR mutation cadence while still bounding a runaway client or a
+// stolen session. Routes that need a tighter, action-specific budget
+// (e.g. episodes/bulk-send's 10/hr per-admin cap) keep their own
+// limiter AFTER `requireAdmin`, layered on top of this net.
 export const adminWriteRateLimiter: RequestHandler = expressRateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 300,
+  limit: 1500,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) =>
