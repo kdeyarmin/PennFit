@@ -23,6 +23,13 @@ import {
   PhoneCall,
   KeyRound,
   Heart,
+  Repeat,
+  CreditCard,
+  Bell,
+  FileText,
+  UserPlus,
+  Stethoscope,
+  Phone,
 } from "lucide-react";
 import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact";
 
@@ -125,6 +132,26 @@ const categories: HelpCategory[] = [
         keywords: "return refund exchange comfort guarantee money back",
         tone: "navy",
       },
+      {
+        href: "/help/manage-subscriptions",
+        Icon: Repeat,
+        title: "Manage auto-ship subscriptions",
+        blurb:
+          "Pause for a trip, change how often supplies ship, or cancel anytime.",
+        keywords:
+          "subscription auto-ship autoship recurring pause resume cancel cadence travel",
+        tone: "gold",
+      },
+      {
+        href: "/help/order-by-phone",
+        Icon: Phone,
+        title: "Order by phone with the voice assistant",
+        blurb:
+          "Call the resupply line and reorder in a natural conversation, 24/7.",
+        keywords:
+          "phone call voice assistant ai reorder telephone speak person agent",
+        tone: "navy",
+      },
     ],
   },
   {
@@ -159,6 +186,46 @@ const categories: HelpCategory[] = [
         keywords: "reminders resupply replacement schedule sms email notify",
         tone: "navy",
       },
+      {
+        href: "/help/communication-preferences",
+        Icon: Bell,
+        title: "Communication preferences & opting out",
+        blurb:
+          "Control every email and text we send, set quiet hours, and opt out.",
+        keywords:
+          "communication preferences email text sms opt out stop unsubscribe quiet hours notifications push",
+        tone: "gold",
+      },
+      {
+        href: "/help/documents-and-forms",
+        Icon: FileText,
+        title: "Upload documents & sign forms",
+        blurb:
+          "Send us insurance cards and prescriptions, and e-sign required forms.",
+        keywords:
+          "documents upload insurance card prescription referral esign sign forms hipaa acknowledge",
+        tone: "navy",
+      },
+      {
+        href: "/help/caregiver-access",
+        Icon: UserPlus,
+        title: "Share updates with a caregiver",
+        blurb:
+          "Add one trusted person who gets shipping updates alongside you.",
+        keywords:
+          "caregiver designated contact family spouse aide share updates",
+        tone: "navy",
+      },
+      {
+        href: "/help/equipment-and-recalls",
+        Icon: Stethoscope,
+        title: "Register equipment & get recall alerts",
+        blurb:
+          "Register your machine's serial number so recall notices reach you fast.",
+        keywords:
+          "equipment register device serial number recall cpap machine bipap philips",
+        tone: "gold",
+      },
     ],
   },
   {
@@ -177,6 +244,16 @@ const categories: HelpCategory[] = [
         keywords:
           "insurance estimate cost out of pocket medicare coverage deductible price",
         tone: "gold",
+      },
+      {
+        href: "/help/payment-methods",
+        Icon: CreditCard,
+        title: "Payment methods & billing",
+        blurb:
+          "See the card on file, update it securely, and fix a past-due payment.",
+        keywords:
+          "payment card credit billing stripe update saved hsa fsa past due",
+        tone: "navy",
       },
     ],
   },

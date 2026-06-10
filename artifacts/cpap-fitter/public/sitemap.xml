@@ -236,7 +236,42 @@
     <priority>0.5</priority>
   </url>
   <url>
+    <loc>https://pennpaps.com/help/caregiver-access</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://pennpaps.com/help/communication-preferences</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
     <loc>https://pennpaps.com/help/create-an-account</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://pennpaps.com/help/documents-and-forms</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://pennpaps.com/help/equipment-and-recalls</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://pennpaps.com/help/manage-subscriptions</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://pennpaps.com/help/order-by-phone</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://pennpaps.com/help/payment-methods</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>

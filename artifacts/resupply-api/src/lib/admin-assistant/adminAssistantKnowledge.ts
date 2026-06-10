@@ -290,6 +290,71 @@ See how the program is doing:
     (/admin/productivity); for satisfaction use Customer NPS (/admin/nps).
 `;
 
+const BEST_PRACTICES_SECTION = `
+Best practices & playbooks (share these when staff ask "how should I…"):
+
+Denial management:
+  - Work the Denials worklist (/admin/billing/denials-worklist) top-down —
+    it is already ranked by recoverable dollars weighted by win
+    probability, so the first row is always the best use of the next
+    hour. Check Filing deadlines (/admin/billing/timely-filing) daily;
+    a denial you can win is still lost if the payer's window closes.
+  - Before resubmitting, fix the root cause in the AI queue
+    (/admin/billing/ai-queue) suggestion, and check whether the same
+    error pattern is queued on other claims.
+  - If paperwork is the blocker (unsigned CMN, missing Rx), move it to
+    Bill hold (/admin/billing/bill-hold) rather than letting it ride —
+    release the moment the document lands.
+
+Automation-rule safety:
+  - ALWAYS dry-run a new or edited rule in the Rule tester
+    (/admin/rule-tester) against sample input before enabling it. A
+    misconfigured rule can message real patients.
+  - Scope triggers narrowly (specific keyword/event), prefer one action
+    per rule, and re-test after every edit. Review what fired via the
+    delivery/system pages if results look off.
+
+Campaign etiquette:
+  - Build the audience with filters first and sanity-check the count
+    before drafting in Bulk campaigns (/admin/bulk-campaigns). Consent and
+    quiet hours are enforced by the platform, but content and frequency
+    are on you — one clear message beats three reminders.
+  - Send a one-off to a single patient from the Alert library
+    (/admin/alerts) instead of a campaign of one. Track what converted
+    in Outreach attribution (/admin/analytics/outreach-attribution).
+
+Escalation path:
+  - Conversation → Case: when a thread needs more than a reply (an
+    order issue + a fax + a billing question), open a Case
+    (/admin/cases) and link the pieces so it is tracked to closure.
+    Episodes (/admin/episodes) hold dated follow-up promises — if you
+    told a patient "we'll call Tuesday", it belongs there.
+
+Inventory & PacWare hygiene:
+  - Run the monthly count via Inventory reconcile
+    (/admin/shop/inventory/reconcile) and record variance reasons.
+  - For PacWare CSV syncs, always use the verify/preview step before
+    downloading or committing; import is fill-only and never overwrites
+    existing patient fields, so re-running is safe.
+`;
+
+const RUNBOOKS_SECTION = `
+Operator runbooks (step-by-step manuals in the repo under docs/runbooks/ —
+point staff at these for setup and incident procedures; summarize the
+relevant steps when asked):
+  - pacware-import-export.md — full PacWare CSV import/export manual
+    (column mapping, formats, preview/commit).
+  - production-launch.md — first-launch: keys → secrets → preflight →
+    migrations → first admin.
+  - voice-agent-go-live.md — enabling the phone voice agent.
+  - office-ally-go-live.md — clearinghouse (eligibility/claims) launch.
+  - enabling-automated-alerts.md — turning on automated alert messaging.
+  - link-hmac-key-rotation.md — rotating signed-link keys (invalidates
+    in-flight reminder links).
+  - worker-recovery.md — background-job worker stuck/down.
+  - auth-credentials-store-outage.md — sign-in outage recovery.
+`;
+
 const SAFETY_SECTION = `
 Safety & privacy rules (non-negotiable):
   - Never give medical/clinical advice. Therapy decisions (pressure,
@@ -366,6 +431,8 @@ export function buildAdminAssistantSystemPrompt(
     APP_MAP_SECTION,
     ROLES_SECTION,
     WORKFLOWS_SECTION,
+    BEST_PRACTICES_SECTION,
+    RUNBOOKS_SECTION,
     SAFETY_SECTION,
   ]
     .map((s) => s.trim())
