@@ -31,7 +31,11 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { lookupNpi, NppesLookupError } from "../../lib/nppes";
+import {
+  lookupNpi,
+  nppesFailurePublicMessage,
+  NppesLookupError,
+} from "../../lib/nppes";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -459,8 +463,22 @@ router.post(
       res.json({ provider: projection });
     } catch (err) {
       if (err instanceof NppesLookupError) {
-        logger.warn({ err: err.message }, "NPPES lookup failed");
-        res.status(502).json({ error: "nppes_unavailable" });
+        // NPIs are not PHI; the cause is a network/HTTP error from a
+        // public registry — safe to log in full.
+        logger.warn(
+          {
+            err: err.message,
+            kind: err.kind,
+            upstreamStatus: err.upstreamStatus ?? null,
+            cause: err.cause instanceof Error ? err.cause.message : undefined,
+          },
+          "NPPES lookup failed",
+        );
+        res.status(502).json({
+          error: "nppes_unavailable",
+          upstreamStatus: err.upstreamStatus ?? null,
+          message: nppesFailurePublicMessage(err),
+        });
         return;
       }
       throw err;
