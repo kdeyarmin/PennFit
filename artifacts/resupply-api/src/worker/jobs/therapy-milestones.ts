@@ -302,35 +302,71 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     if (ALL_MILESTONE_KINDS.every((k) => existingKinds.has(k))) continue;
 
     // Pull the patient's night history from the start (sorted
-    // ascending), capped at 400 rows to keep the read bounded. The
-    // first-400 view is correct for the COUNT milestones (their
-    // achievedOn is the patient's literal 100th/365th night), but NOT
-    // for first_adherence_month: adherence is a rolling ≥70% ratio, so
-    // a patient who was sub-70% through their first 400 nights and
-    // later improved would never earn it from this view — the
-    // watermark would re-read the same first 400 rows forever. The
-    // supplemental latest-window read below covers that case.
-    const { data: nights, error: nightsErr } = await supabase
-      .schema("resupply")
-      .from("patient_therapy_nights")
-      .select("night_date, usage_minutes")
-      .eq("patient_id", patientId)
-      .order("night_date", { ascending: true })
-      .limit(400);
-    if (nightsErr) {
-      logger.warn(
-        { err: nightsErr.message, patientId },
-        "therapy-milestones: night read failed",
-      );
-      continue;
+    // ascending) until we hold enough DISTINCT night dates for the
+    // count milestones, paging in bounded chunks. A single raw
+    // `.limit(400)` read was NOT enough: patient_therapy_nights is
+    // keyed per source, so a patient synced from two clouds yields two
+    // rows per real night — the first 400 raw rows collapse to ~200
+    // distinct dates, the watermark re-reads the same first slice
+    // forever, and `365_nights` becomes unreachable (the supplemental
+    // recent-window pass below deliberately masks count milestones,
+    // so it can't rescue them). Offset paging on a deterministic
+    // (night_date, id) order is safe here — the table is append-only
+    // per (patient, source, date) during the scan.
+    //
+    // The first-distinct-400 view is correct for the COUNT milestones
+    // (their achievedOn is the patient's literal 100th/365th night),
+    // but NOT for first_adherence_month: adherence is a rolling ≥70%
+    // ratio, so a patient who was sub-70% through their first 400
+    // nights and later improved would never earn it from this view.
+    // The supplemental latest-window read below covers that case.
+    const DISTINCT_TARGET = 400;
+    const NIGHT_PAGE = 400;
+    // 8 pages = 3200 raw rows ≈ 8 sources × 400 nights before the
+    // bound truncates — far past any realistic source fan-out.
+    const MAX_NIGHT_PAGES = 8;
+    const nightsByDate = new Map<string, NightRow>();
+    let exhaustedHistory = false;
+    let nightReadFailed = false;
+    for (let page = 0; page < MAX_NIGHT_PAGES; page++) {
+      const { data: rows, error: nightsErr } = await supabase
+        .schema("resupply")
+        .from("patient_therapy_nights")
+        .select("night_date, usage_minutes")
+        .eq("patient_id", patientId)
+        .order("night_date", { ascending: true })
+        .order("id", { ascending: true })
+        .range(page * NIGHT_PAGE, page * NIGHT_PAGE + NIGHT_PAGE - 1);
+      if (nightsErr) {
+        logger.warn(
+          { err: nightsErr.message, patientId },
+          "therapy-milestones: night read failed",
+        );
+        nightReadFailed = true;
+        break;
+      }
+      for (const n of rows ?? []) {
+        const prev = nightsByDate.get(n.night_date);
+        if (!prev || (n.usage_minutes ?? -1) > (prev.usage_minutes ?? -1)) {
+          nightsByDate.set(n.night_date, n);
+        }
+      }
+      if (!rows || rows.length < NIGHT_PAGE) {
+        exhaustedHistory = true;
+        break;
+      }
+      if (nightsByDate.size >= DISTINCT_TARGET) break;
     }
-    let detected = detectMilestones(nights ?? [], existingKinds);
+    if (nightReadFailed) continue;
+    const nights = [...nightsByDate.values()];
+    let detected = detectMilestones(nights, existingKinds);
 
     // Supplemental adherence pass over the LATEST window when the
-    // first-400 view is exhausted (cap hit) and adherence is still
-    // unearned — see the read comment above.
+    // from-the-start view was truncated (distinct target or page bound
+    // hit before history ran out) and adherence is still unearned —
+    // see the read comment above.
     if (
-      (nights ?? []).length >= 400 &&
+      !exhaustedHistory &&
       !existingKinds.has("first_adherence_month") &&
       !detected.some((m) => m.kind === "first_adherence_month")
     ) {

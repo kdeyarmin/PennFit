@@ -317,14 +317,21 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
     result.created = created;
   }
 
-  // Auto-resolve open alerts the patient no longer trips.
+  // Auto-resolve open alerts the patient no longer trips. Chunked:
+  // with the paginated open read above, staleIds can exceed one
+  // PostgREST page — a single `.in()` with thousands of UUIDs blows
+  // the querystring/URL limit and the whole update throws before
+  // resolving ANYTHING, re-wedging exactly the large-fleet case the
+  // pagination fixed. ~200 UUIDs stays comfortably under the 8KB cap.
   const staleIds = openRows
     .filter(
       (r: { patient_id: string; alert_type: string }) =>
         !detectedKeys.has(`${r.patient_id}|${r.alert_type}`),
     )
     .map((r: { id: string }) => r.id);
-  if (staleIds.length > 0) {
+  const STALE_CHUNK = 200;
+  for (let i = 0; i < staleIds.length; i += STALE_CHUNK) {
+    const chunk = staleIds.slice(i, i + STALE_CHUNK);
     const upd = await supabase
       .schema("resupply")
       .from("therapy_fleet_alerts")
@@ -334,9 +341,9 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
         resolved_by_email: "system:worker:fleet-alerts",
         updated_at: nowIso,
       })
-      .in("id", staleIds);
+      .in("id", chunk);
     if (upd.error) throw upd.error;
-    result.resolved = staleIds.length;
+    result.resolved += chunk.length;
   }
 
   // ── 3. opt-in patient auto-outreach (flag-gated) ───────────────
