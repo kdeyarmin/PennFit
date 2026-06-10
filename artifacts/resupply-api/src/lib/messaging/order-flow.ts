@@ -602,16 +602,27 @@ async function consultRecentTherapyUsage(
   const { data: nights, error: nightsErr } = await supabase
     .schema("resupply")
     .from("patient_therapy_nights")
-    .select("usage_minutes")
+    .select("night_date, usage_minutes")
     .eq("patient_id", patientId)
-    .gte("night_date", sinceDate)
-    .limit(USAGE_WINDOW_DAYS + 1);
+    .gte("night_date", sinceDate);
   if (nightsErr) throw nightsErr;
 
-  const rows = nights ?? [];
+  // Deduplicate by calendar night — multiple source rows for the same
+  // night_date (e.g. during a device/provider migration) must not inflate
+  // the night count or skew the compliance ratio. Keep the best (max)
+  // usage_minutes per night so a patient with ANY source showing 4+ hours
+  // is counted compliant for that night.
+  const nightMap = new Map<string, number>();
+  for (const row of nights ?? []) {
+    const key = row.night_date as string;
+    const mins = row.usage_minutes ?? 0;
+    nightMap.set(key, Math.max(nightMap.get(key) ?? 0, mins));
+  }
+
+  const rows = [...nightMap.values()];
   if (rows.length < USAGE_MIN_DATA_NIGHTS) return null; // sparse data → no opinion
   const compliantNights = rows.filter(
-    (n) => (n.usage_minutes ?? 0) >= USAGE_COMPLIANT_NIGHT_MINUTES,
+    (mins) => mins >= USAGE_COMPLIANT_NIGHT_MINUTES,
   ).length;
   if (compliantNights / rows.length >= USAGE_MIN_COMPLIANT_RATIO) return null;
 

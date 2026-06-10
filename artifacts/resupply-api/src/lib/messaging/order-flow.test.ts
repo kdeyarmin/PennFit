@@ -533,10 +533,14 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
   function nightsRows(
     total: number,
     compliant: number,
-  ): Array<{ usage_minutes: number | null }> {
-    return Array.from({ length: total }, (_, i) => ({
-      usage_minutes: i < compliant ? 300 : 30,
-    }));
+  ): Array<{ night_date: string; usage_minutes: number | null }> {
+    return Array.from({ length: total }, (_, i) => {
+      const d = new Date(Date.UTC(2024, 0, i + 1));
+      return {
+        night_date: d.toISOString().slice(0, 10),
+        usage_minutes: i < compliant ? 300 : 30,
+      };
+    });
   }
 
   /** Stage the post-guard happy path: claim succeeds, no existing
