@@ -415,11 +415,15 @@ router.post(
         "provider mfa: recovery cleanup failed",
       );
     }
-    await supabase
+    // Security-relevant: the secrets are already deleted, so a silent
+    // failure here would leave the account flagged as enrolled with no
+    // working factor — surface it instead of lying with ok:true.
+    const { error: accountUpdateErr } = await supabase
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({ mfa_enrolled_at: null, updated_at: nowIso })
       .eq("id", account.id);
+    if (accountUpdateErr) throw accountUpdateErr;
     res.json({ ok: true, enrolled: false });
   },
 );

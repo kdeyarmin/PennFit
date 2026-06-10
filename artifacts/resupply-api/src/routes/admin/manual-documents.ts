@@ -558,7 +558,9 @@ router.post(
     }
 
     const nowIso = new Date().toISOString();
-    await supabase
+    // Best-effort stamp — the email already went out, so a failed status
+    // write must not 500 (a retry would send a duplicate email).
+    const { error: emailStampErr } = await supabase
       .schema("resupply")
       .from("manual_documents")
       .update({
@@ -567,6 +569,12 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", row.id);
+    if (emailStampErr) {
+      logger.warn(
+        { err: emailStampErr, id: row.id },
+        "manual_document.send_email status stamp failed",
+      );
+    }
 
     await recordTrackingSent(
       supabase,
@@ -658,7 +666,9 @@ router.post(
     }
 
     const nowIso = new Date().toISOString();
-    await supabase
+    // Best-effort stamp — the fax was already dispatched, so a failed
+    // status write must not 500 (a retry would send a duplicate fax).
+    const { error: faxStampErr } = await supabase
       .schema("resupply")
       .from("manual_documents")
       .update({
@@ -667,6 +677,12 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", row.id);
+    if (faxStampErr) {
+      logger.warn(
+        { err: faxStampErr, id: row.id },
+        "manual_document.send_fax status stamp failed",
+      );
+    }
 
     await recordTrackingSent(supabase, "manual_document", row.id, "fax").catch(
       (err) => logger.warn({ err }, "manual_document.tracking_sent failed"),
@@ -791,7 +807,7 @@ router.post(
       .maybeSingle();
     if (insertErr) throw insertErr;
 
-    await supabase
+    const { error: attachErr } = await supabase
       .schema("resupply")
       .from("manual_documents")
       .update({
@@ -802,6 +818,7 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", row.id);
+    if (attachErr) throw attachErr;
 
     await logAudit({
       action: "manual_document.attached",
