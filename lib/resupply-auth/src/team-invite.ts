@@ -434,6 +434,7 @@ export async function deleteTeamMember(
     .eq("user_id", authUserId)
     .eq("purpose", "password_reset")
     .is("consumed_at", null);
+  if (tokErr) throw tokErr;
 
   const { error: sessErr } = await supabase
     .schema("resupply_auth")

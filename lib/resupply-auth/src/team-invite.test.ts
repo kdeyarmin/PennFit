@@ -8,8 +8,8 @@
 //     table cleanup in this mode.
 //   * preserveAsCustomer: true — the identity row is shared with a
 //     shop-customer account: demote role back to 'customer', restore
-//     status from the email-verification state, delete unconsumed
-//     password_reset tokens, revoke live sessions.
+//     status from the email-verification state, expire unconsumed
+//     password_reset tokens (audit trail preserved), revoke live sessions.
 
 import { describe, expect, it } from "vitest";
 
@@ -188,15 +188,15 @@ describe("deleteTeamMember — preserveAsCustomer: true", () => {
     });
   });
 
-  it("deletes only unconsumed password_reset tokens", async () => {
+  it("expires unconsumed password_reset tokens instead of deleting them", async () => {
     const { supabase, calls } = makeFakeSupabase({
       "users.select": { data: { id: "u-1", email_verified_at: null } },
     });
 
     await deleteTeamMember(supabase, "u-1", { preserveAsCustomer: true });
 
-    const tokenCalls = callsFor(calls, "email_tokens", "delete");
-    expect(tokenCalls.some((c) => c.method === "delete")).toBe(true);
+    const tokenCalls = callsFor(calls, "email_tokens", "update");
+    expect(tokenCalls.some((c) => c.method === "update")).toBe(true);
     expect(
       tokenCalls.some(
         (c) =>
@@ -219,6 +219,8 @@ describe("deleteTeamMember — preserveAsCustomer: true", () => {
           c.args[1] === null,
       ),
     ).toBe(true);
+    // Rows are NOT deleted — the audit trail is preserved.
+    expect(callsFor(calls, "email_tokens", "delete")).toHaveLength(0);
   });
 
   it("revokes live sessions instead of deleting them", async () => {
