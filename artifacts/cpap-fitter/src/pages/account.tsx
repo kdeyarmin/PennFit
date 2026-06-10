@@ -61,7 +61,6 @@ import {
   EquipmentRegistrySection,
   EsignFormsSection,
   ReferralProgramSection,
-  RequestAppointmentSection,
 } from "@/components/self-service-sections";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
@@ -437,7 +436,6 @@ function AccountInner() {
             {activeTab === "account" && (
               <>
                 <DocumentsSection />
-                <RequestAppointmentSection />
                 <EsignFormsSection />
                 <ReferralProgramSection />
                 <CaregiverSection />

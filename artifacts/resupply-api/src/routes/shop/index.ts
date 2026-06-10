@@ -46,7 +46,6 @@ import meMaintenanceRouter from "./me-maintenance";
 import meSubstitutionsRouter from "./me-substitutions";
 import meEducationFeedRouter from "./me-education-feed";
 import meQuarterlySummaryRouter from "./me-quarterly-summary";
-import meAppointmentRequestRouter from "./me-appointment-request";
 import meLossClaimRouter from "./me-loss-claim";
 import validateAddressRouter from "./validate-address";
 import meEquipmentRouter from "./me-equipment";
@@ -111,10 +110,6 @@ router.use(meEducationFeedRouter);
 // /shop/me/quarterly-summary — print-friendly 90-day therapy
 // rollup the patient can share with their sleep MD.
 router.use(meQuarterlySummaryRouter);
-// /shop/me/appointment-request — patient-initiated request for a
-// fitting / telehealth / general appointment. Writes to the
-// appointment_requests CSR queue.
-router.use(meAppointmentRequestRouter);
 // /shop/me/orders/:orderId/loss-claim — patient self-reports a paid
 // shipped order never arrived. Opens a shop_order_loss_claims row
 // for the CSR queue (does not auto-issue a refund).
