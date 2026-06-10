@@ -59,6 +59,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
@@ -81,6 +82,9 @@ export interface FirstDayNudgeStats {
   skippedAlreadyClaimed: number;
   skippedNoEmailConfig: number;
   skippedNoSmsConfig: number;
+  /** SMS-opted-in leads deferred by the 9am–8pm TCPA send window —
+   *  retried by a later hourly tick inside the window. */
+  skippedQuietHours: number;
   errors: number;
 }
 
@@ -188,6 +192,7 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     skippedAlreadyClaimed: 0,
     skippedNoEmailConfig: 0,
     skippedNoSmsConfig: 0,
+    skippedQuietHours: 0,
     errors: 0,
   };
 
@@ -276,6 +281,20 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     // first_day_nudged_at if we can't reach the lead via any channel.
     const canEmail = sendgrid && lead.email;
     const canSms = twilioSms && lead.phone_e164 && lead.sms_opt_in;
+
+    // TCPA window: an SMS-opted-in lead must not be texted outside
+    // 9am–8pm local (leads carry no timezone/ZIP, so this evaluates
+    // against the ET default — the 18–30h age window used to land
+    // some leads a ~3am text). Defer the WHOLE nudge, not just the
+    // SMS leg: the claim below covers both legs, so claiming now
+    // would burn the lead's one nudge on an email-only delivery. A
+    // later hourly tick inside the window sends both legs together;
+    // email-only leads are unaffected.
+    if (canSms && isOutsideSmsSendWindow(new Date())) {
+      stats.skippedQuietHours += 1;
+      continue;
+    }
+
     if (!canEmail && !canSms) {
       if (!sendgrid) stats.skippedNoEmailConfig += 1;
       if (!twilioSms && lead.phone_e164 && lead.sms_opt_in) {

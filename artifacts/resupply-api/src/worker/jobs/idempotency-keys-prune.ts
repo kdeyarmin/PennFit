@@ -56,7 +56,25 @@ export async function registerIdempotencyKeysPruneJob(
         .delete({ count: "exact" })
         .lte("expires_at", new Date().toISOString());
       if (error) throw error;
-      logger.info({ deleted: count ?? 0 }, "idempotency-keys.prune: completed");
+
+      // worker_dedup_keys carries the same TTL shape (migration 0160
+      // even promised "a separate sweeper job prunes expired rows") but
+      // no sweeper ever existed: date-scoped reminder keys accumulated
+      // one row per patient/episode/channel/day forever, and the
+      // claim-time fix in worker/lib/dedup-keys.ts only clears expired
+      // rows for keys that are actively re-claimed. This DELETE is the
+      // promised sweeper (app-review 2026-06-10, P1-2).
+      const { count: dedupCount, error: dedupError } = await supabase
+        .schema("resupply")
+        .from("worker_dedup_keys")
+        .delete({ count: "exact" })
+        .lte("expires_at", new Date().toISOString());
+      if (dedupError) throw dedupError;
+
+      logger.info(
+        { deleted: count ?? 0, dedupDeleted: dedupCount ?? 0 },
+        "idempotency-keys.prune: completed",
+      );
     } catch (err) {
       logger.error(
         {

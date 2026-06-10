@@ -5,8 +5,9 @@ origins with false"). Scope: every artifact and workspace package —
 public API, admin API (187 route files), pg-boss worker (50 jobs), auth
 stack, DB layer + 262-prefix migration corpus, storefront SPA, admin
 console SPA (127 pages), AI/voice/messaging stack, integrations layer,
-and deploy/boot posture. The **five P0 fixes (Wave 1)** and the **three
-money-safety P1 fixes — P1-1, P1-8, P1-9 (Wave 2)** ship in this same
+and deploy/boot posture. The **five P0 fixes (Wave 1)**, the **three
+money-safety P1 fixes — P1-1, P1-8, P1-9 (Wave 2)**, and the **three
+TCPA/consent P1 fixes — P1-2, P1-3, P1-4 (Wave 3)** ship in this same
 PR, each with regression tests; everything else is report-only — each
 finding cites file:line so fixes can land as focused follow-ups.
 
@@ -177,6 +178,27 @@ Wave 2 (this PR) fixed the three money-safety items:
   enabled/revoked re-check) before any Stripe call in
   `patient-autopay-charge.ts`; the losing tick backs out before a
   payment row / idempotency key exists.
+
+Wave 3 (this PR) fixed the three TCPA/consent items:
+
+- **P1-2** → `worker/lib/dedup-keys.ts:claimDedupKey` clears EXPIRED
+  rows before claiming (the plain INSERT conflicted on stale rows too,
+  making the "14-day" therapy-SMS cap permanent), both therapy jobs use
+  it, and the daily `idempotency-keys.prune` job now also sweeps
+  `worker_dedup_keys` — the sweeper migration 0160 promised.
+- **P1-3** → shared `isOutsideSmsSendWindow` gate in `lib/comm-prefs.ts`
+  (9am–8pm patient-local; timezone → ZIP → ET fallback), applied to the
+  rx-renewal dispatcher, smart-trigger dispatcher, both therapy jobs,
+  the onboarding check-in dispatcher (mirroring its voice guard), and
+  both fitter jobs (deferring the WHOLE touch so the one-nudge claim
+  isn't burned email-only). The six daily night-UTC SMS crons moved to
+  staggered 19:xx UTC slots (afternoon in every US timezone) — a gate
+  alone on a fixed night-UTC daily cron would skip the same patients
+  at the same local hour forever. Quiet-hours skips never claim, so
+  the next in-window run sends.
+- **P1-4** → the rx-renewal patient resolve now filters
+  `status='active'`, so STOP'd/paused patients are never claimed or
+  contacted on either channel.
 
 ### P1-1. Office Ally claim batch submit can double-transmit claims [verified]
 

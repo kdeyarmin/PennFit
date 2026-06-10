@@ -37,9 +37,14 @@ import {
   sendReminderSms,
 } from "@workspace/resupply-reminders";
 
-import { isInDndWindow, shouldSendSms } from "../../lib/comm-prefs.js";
+import {
+  isInDndWindow,
+  isOutsideSmsSendWindow,
+  shouldSendSms,
+} from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { claimDedupKey } from "../lib/dedup-keys.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -98,8 +103,13 @@ export async function registerTherapyFleetAlertsJob(
   await boss.work(THERAPY_FLEET_ALERTS_JOB, async () => {
     await runTherapyFleetAlertsScan();
   });
-  // 05:15 UTC — after the 05:00 daily snapshot (and 04:30 nightly sync).
-  await boss.schedule(THERAPY_FLEET_ALERTS_JOB, "15 5 * * *");
+  // 19:15 UTC — afternoon across every US timezone, because this scan
+  // can text patients (the old 05:15 UTC slot was ~midnight ET, and a
+  // daily cron outside the 9am–8pm send window pairs badly with the
+  // per-patient quiet-hours gate: the same patients would be skipped at
+  // the same local hour forever). Still hours after the 05:00 daily
+  // snapshot and 04:30 nightly sync, so it scans today's fresh data.
+  await boss.schedule(THERAPY_FLEET_ALERTS_JOB, "15 19 * * *");
   logger.info(
     { queue: THERAPY_FLEET_ALERTS_JOB },
     "therapy fleet alerts-scan worker registered",
@@ -361,10 +371,15 @@ async function maybeSendAdherenceSms(
   const patientRes = await supabase
     .schema("resupply")
     .from("patients")
-    .select("email")
+    .select("email, timezone, address")
     .eq("id", patientId)
     .maybeSingle();
-  const email = (patientRes.data as { email?: string | null } | null)?.email;
+  const patientRow = patientRes.data as {
+    email?: string | null;
+    timezone?: string | null;
+    address?: { zip?: string } | null;
+  } | null;
+  const email = patientRow?.email;
   if (!email) return false;
   const prefsRes = await supabase
     .schema("resupply")
@@ -379,30 +394,41 @@ async function maybeSendAdherenceSms(
   const now = new Date();
   if (!shouldSendSms(prefs, "transactional", now)) return false;
   if (isInDndWindow(prefs, now)) return false;
+  // Hard 9am–8pm patient-local TCPA window — the DND check above only
+  // protects patients who configured a window (default null/null).
+  // Evaluated BEFORE the cap claim, so a quiet-hours skip never burns
+  // the 14-day cooldown.
+  if (
+    isOutsideSmsSendWindow(now, {
+      timezone: patientRow?.timezone ?? null,
+      shippingZip: patientRow?.address?.zip ?? null,
+    })
+  ) {
+    return false;
+  }
 
   // Frequency cap: claim a 14-day dedup key now that the patient is
-  // eligible. If the row already exists, we messaged this patient within
-  // the window — skip.
+  // eligible. "Held" means an UNEXPIRED row exists — we messaged this
+  // patient within the window — skip. claimDedupKey clears an expired
+  // row first; the old plain INSERT conflicted on the stale row too,
+  // which made the 14-day cap permanent (P1-2).
   const capKey = `therapy-alert-sms:${patientId}`;
   const expiresAt = new Date(
     Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claim = await supabase
-    .schema("resupply")
-    .from("worker_dedup_keys")
-    .insert({ key: capKey, expires_at: expiresAt });
-  if (claim.error) {
-    // 23505 = unique violation (cap already claimed) → already messaged recently.
-    if (claim.error.code === "23505") return false;
-    logger.warn(
-      {
-        event: "therapy_fleet_adherence_cap_claim_failed",
-        err: { code: claim.error.code, message: claim.error.message },
-        queue: THERAPY_FLEET_ALERTS_JOB,
-        dedup_key: capKey,
-      },
-      "therapy fleet: failed to claim adherence cap key",
-    );
+  const claim = await claimDedupKey(supabase, capKey, expiresAt);
+  if (claim.outcome !== "claimed") {
+    if (claim.outcome === "error") {
+      logger.warn(
+        {
+          event: "therapy_fleet_adherence_cap_claim_failed",
+          err: claim.error,
+          queue: THERAPY_FLEET_ALERTS_JOB,
+          dedup_key: capKey,
+        },
+        "therapy fleet: failed to claim adherence cap key",
+      );
+    }
     return false;
   }
 

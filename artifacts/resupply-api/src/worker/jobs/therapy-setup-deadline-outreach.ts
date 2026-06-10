@@ -36,7 +36,12 @@ import {
   sendReminderSms,
 } from "@workspace/resupply-reminders";
 
-import { isInDndWindow, shouldSendSms } from "../../lib/comm-prefs.js";
+import {
+  isInDndWindow,
+  isOutsideSmsSendWindow,
+  shouldSendSms,
+} from "../../lib/comm-prefs.js";
+import { claimDedupKey } from "../lib/dedup-keys.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import {
@@ -73,9 +78,14 @@ export async function registerSetupDeadlineOutreachJob(
   await boss.work(SETUP_DEADLINE_OUTREACH_JOB, async () => {
     await runSetupDeadlineOutreach();
   });
-  // 05:05 UTC — after the 04:30 nightly therapy sync, and BEFORE the
-  // 05:15 alerts-scan so the deadline message wins the shared cap key.
-  await boss.schedule(SETUP_DEADLINE_OUTREACH_JOB, "5 5 * * *");
+  // 19:05 UTC — afternoon across every US timezone, because this job
+  // texts patients (the old 05:05 UTC slot was ~midnight ET; a daily
+  // cron outside the 9am–8pm send window pairs badly with the
+  // per-patient quiet-hours gate — the same patients would be skipped
+  // at the same local hour forever). Still hours after the 04:30
+  // nightly therapy sync, and still BEFORE the 19:15 alerts-scan so
+  // the deadline message wins the shared cap key.
+  await boss.schedule(SETUP_DEADLINE_OUTREACH_JOB, "5 19 * * *");
   logger.info(
     { queue: SETUP_DEADLINE_OUTREACH_JOB },
     "therapy setup-deadline-outreach worker registered",
@@ -253,10 +263,15 @@ async function maybeSendDeadlineSms(
   const patientRes = await supabase
     .schema("resupply")
     .from("patients")
-    .select("email")
+    .select("email, timezone, address")
     .eq("id", patientId)
     .maybeSingle();
-  const email = (patientRes.data as { email?: string | null } | null)?.email;
+  const patientRow = patientRes.data as {
+    email?: string | null;
+    timezone?: string | null;
+    address?: { zip?: string } | null;
+  } | null;
+  const email = patientRow?.email;
   if (!email) return false;
   const prefsRes = await supabase
     .schema("resupply")
@@ -271,29 +286,41 @@ async function maybeSendDeadlineSms(
   const now = new Date();
   if (!shouldSendSms(prefs, "transactional", now)) return false;
   if (isInDndWindow(prefs, now)) return false;
+  // Hard 9am–8pm patient-local TCPA window — the DND check above only
+  // protects patients who configured a window (default null/null).
+  // Evaluated BEFORE the cap claim, so a quiet-hours skip never burns
+  // the 14-day cooldown.
+  if (
+    isOutsideSmsSendWindow(now, {
+      timezone: patientRow?.timezone ?? null,
+      shippingZip: patientRow?.address?.zip ?? null,
+    })
+  ) {
+    return false;
+  }
 
   // Shared 14-day cap key — identical to therapy-fleet.alerts-scan, so a
   // patient never receives both a deadline nudge and a generic adherence
-  // nudge inside the window.
+  // nudge inside the window. claimDedupKey clears an expired row first;
+  // the old plain INSERT conflicted on the stale row too, which made the
+  // 14-day cap permanent (P1-2).
   const capKey = `therapy-alert-sms:${patientId}`;
   const expiresAt = new Date(
     Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claim = await supabase
-    .schema("resupply")
-    .from("worker_dedup_keys")
-    .insert({ key: capKey, expires_at: expiresAt });
-  if (claim.error) {
-    if (claim.error.code === "23505") return false; // already messaged recently
-    logger.warn(
-      {
-        event: "setup_deadline_cap_claim_failed",
-        err: { code: claim.error.code, message: claim.error.message },
-        queue: SETUP_DEADLINE_OUTREACH_JOB,
-        dedup_key: capKey,
-      },
-      "setup-deadline: failed to claim cap key",
-    );
+  const claim = await claimDedupKey(supabase, capKey, expiresAt);
+  if (claim.outcome !== "claimed") {
+    if (claim.outcome === "error") {
+      logger.warn(
+        {
+          event: "setup_deadline_cap_claim_failed",
+          err: claim.error,
+          queue: SETUP_DEADLINE_OUTREACH_JOB,
+          dedup_key: capKey,
+        },
+        "setup-deadline: failed to claim cap key",
+      );
+    }
     return false;
   }
 
