@@ -205,7 +205,11 @@ export async function registerSlaEscalationSweepJob(
     // re-scheduling does NOT stop a previously-attached schedule.
     // Clear any stale row so removing the env var actually turns
     // the cron off (same pattern as worker/lib/table-guard.ts).
-    await boss.unschedule(SWEEP_JOB).catch(() => undefined);
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(SWEEP_JOB).catch(() => undefined);
+    }
     logger.info(
       { queue: SWEEP_JOB },
       "sla-escalation-sweep registered (cron opt-in unset; manual-trigger only)",

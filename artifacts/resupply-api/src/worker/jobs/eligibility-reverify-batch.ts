@@ -76,9 +76,13 @@ export async function registerEligibilityReverifyBatchJob(
     // re-scheduling does NOT stop a previously-attached schedule.
     // Clear any stale row so removing the env var actually turns
     // the cron off (same pattern as worker/lib/table-guard.ts).
-    await boss
-      .unschedule(ELIGIBILITY_REVERIFY_BATCH_JOB)
-      .catch(() => undefined);
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss
+        .unschedule(ELIGIBILITY_REVERIFY_BATCH_JOB)
+        .catch(() => undefined);
+    }
     logger.info(
       { queue: ELIGIBILITY_REVERIFY_BATCH_JOB },
       "eligibility reverify-batch registered (cron opt-in unset; manual-trigger only)",

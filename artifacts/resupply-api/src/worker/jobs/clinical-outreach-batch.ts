@@ -74,7 +74,11 @@ export async function registerClinicalOutreachBatchJob(
     // re-scheduling does NOT stop a previously-attached schedule.
     // Clear any stale row so removing the env var actually turns
     // the cron off (same pattern as worker/lib/table-guard.ts).
-    await boss.unschedule(CLINICAL_OUTREACH_BATCH_JOB).catch(() => undefined);
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(CLINICAL_OUTREACH_BATCH_JOB).catch(() => undefined);
+    }
     logger.info(
       { queue: CLINICAL_OUTREACH_BATCH_JOB },
       "clinical outreach batch registered (cron opt-in unset; manual-trigger only)",

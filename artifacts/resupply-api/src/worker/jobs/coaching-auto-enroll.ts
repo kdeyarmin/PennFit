@@ -42,7 +42,11 @@ export async function registerCoachingAutoEnrollJob(
     // ticks into this now-worker-less queue (and replays them in
     // a burst on re-enable). Clear it so disabling the flag
     // actually stops the cron (table-guard pattern).
-    await boss.unschedule(COACHING_AUTO_ENROLL_JOB).catch(() => undefined);
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(COACHING_AUTO_ENROLL_JOB).catch(() => undefined);
+    }
     return;
   }
   await createQueueWithDlq(

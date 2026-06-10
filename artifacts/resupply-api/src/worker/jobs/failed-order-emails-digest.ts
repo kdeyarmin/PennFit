@@ -258,7 +258,11 @@ export async function registerFailedEmailDigestJob(
     // ticks into this now-worker-less queue (and replays them in
     // a burst on re-enable). Clear it so disabling the flag
     // actually stops the cron (table-guard pattern).
-    await boss.unschedule(FAILED_EMAIL_DIGEST_JOB).catch(() => undefined);
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(FAILED_EMAIL_DIGEST_JOB).catch(() => undefined);
+    }
     return;
   }
   if (!process.env.RESUPPLY_ADMIN_ALERTS_EMAIL?.trim()) {
