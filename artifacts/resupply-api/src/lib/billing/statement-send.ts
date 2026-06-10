@@ -246,7 +246,7 @@ async function persistOutcome(
       : outcome.kind === "failed"
         ? "failed"
         : "skipped";
-  await supabase
+  const { error: persistErr } = await supabase
     .schema("resupply")
     .from("patient_billing_statements")
     .update({
@@ -257,6 +257,12 @@ async function persistOutcome(
         outcome.kind === "failed" ? outcome.reason.slice(0, 500) : null,
     })
     .eq("id", statementId);
+  if (persistErr) {
+    logger.error(
+      { err: persistErr.message, statementId, deliveryStatus: status },
+      "statement-send: delivery status not recorded — statement may be re-sent",
+    );
+  }
 }
 
 /**
@@ -268,11 +274,17 @@ async function routeToMail(
   supabase: SupabaseClient,
   statementId: string,
 ): Promise<void> {
-  await supabase
+  const { error: routeErr } = await supabase
     .schema("resupply")
     .from("patient_billing_statements")
     .update({ delivery_method: "mail" })
     .eq("id", statementId);
+  if (routeErr) {
+    logger.error(
+      { err: routeErr.message, statementId },
+      "statement-send: mail routing not recorded — statement will miss the mail worklist",
+    );
+  }
 }
 
 /**

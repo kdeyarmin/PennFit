@@ -340,7 +340,7 @@ export async function executeOfficeAllyBatchSubmit(
   if (submission.upload.ok) {
     const nowIso = new Date().toISOString();
     for (const claim of claims) {
-      await supabase
+      const { error: claimUpdateErr } = await supabase
         .schema("resupply")
         .from("insurance_claims")
         .update({
@@ -351,7 +351,17 @@ export async function executeOfficeAllyBatchSubmit(
           updated_at: nowIso,
         })
         .eq("id", claim.id);
-      await supabase
+      if (claimUpdateErr) {
+        logger.error(
+          {
+            err: claimUpdateErr.message,
+            claimId: claim.id,
+            submissionId: subRow.id,
+          },
+          "office-ally-batch: claim status update failed — claim uploaded but not marked submitted",
+        );
+      }
+      const { error: claimEventErr } = await supabase
         .schema("resupply")
         .from("insurance_claim_events")
         .insert({
@@ -364,6 +374,16 @@ export async function executeOfficeAllyBatchSubmit(
               : `Submitted in batch of ${claims.length} (${submission.transport}).`,
           actor_email: input.adminEmail ?? "unknown",
         });
+      if (claimEventErr) {
+        logger.warn(
+          {
+            err: claimEventErr.message,
+            claimId: claim.id,
+            submissionId: subRow.id,
+          },
+          "office-ally-batch: claim event insert failed (non-fatal)",
+        );
+      }
       void publishEvent({
         eventType: "claim.submitted",
         payload: {

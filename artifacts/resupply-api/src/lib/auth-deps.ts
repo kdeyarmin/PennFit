@@ -360,17 +360,40 @@ function makeMfaProbe(): MfaProbe {
       const supabase = getSupabaseServiceRoleClient();
       const usedAt = new Date().toISOString();
       // The row lives in exactly one table; update both by id (the
-      // non-owning update is a no-op).
-      await supabase
+      // non-owning update is a no-op). A failed update means the code
+      // is NOT burned and could be replayed — log at error level.
+      const { error: adminErr } = await supabase
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
         .eq("id", rowId);
-      await supabase
+      if (adminErr) {
+        logger.error(
+          {
+            event: "mfa_recovery_code_mark_used_failed",
+            table: "admin_mfa_recovery_codes",
+            rowId,
+            err: adminErr.message,
+          },
+          "mfa markRecoveryCodeUsed: update failed — recovery code may be reusable",
+        );
+      }
+      const { error: provErr } = await supabase
         .schema("resupply")
         .from("provider_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
         .eq("id", rowId);
+      if (provErr) {
+        logger.error(
+          {
+            event: "mfa_recovery_code_mark_used_failed",
+            table: "provider_mfa_recovery_codes",
+            rowId,
+            err: provErr.message,
+          },
+          "mfa markRecoveryCodeUsed: update failed — recovery code may be reusable",
+        );
+      }
     },
     async consumeRecoveryCode(userId, codeHash, ip) {
       const supabase = getSupabaseServiceRoleClient();

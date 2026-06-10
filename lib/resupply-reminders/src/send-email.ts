@@ -168,14 +168,25 @@ export async function sendReminderEmail(
       // created. Otherwise its `last_message_at = now()` feeds the
       // quiet-period check on later ticks and silently suppresses
       // the patient's next reminder even though no email was sent.
-      try {
-        await supabase
-          .schema("resupply")
-          .from("conversations")
-          .delete()
-          .eq("id", conversationId);
-      } catch {
-        /* leave the row; ops can reconcile from the audit row below */
+      const { error: deleteConvErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .delete()
+        .eq("id", conversationId);
+      if (deleteConvErr) {
+        // Same structured-stderr convention as the post-send DB-write
+        // failure below (this lib must not import pino directly).
+        // Leave the row; ops can reconcile from the audit row below.
+        process.stderr.write(
+          JSON.stringify({
+            level: 40,
+            event: "send_email_orphan_conversation_delete_failed",
+            conversationId,
+            errCode: deleteConvErr.code ?? null,
+            errMessage: deleteConvErr.message,
+            msg: "orphan conversation row not deleted after SendGrid API error (non-fatal)",
+          }) + "\n",
+        );
       }
       await safeAuditFromActor({
         action: "messaging.reminder.sent",

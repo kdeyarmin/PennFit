@@ -220,7 +220,7 @@ export async function scoreAndPersistAdherence(
   const score = await scorePatientAdherence(patientId);
   if (!score) return null;
   const supabase = getSupabaseServiceRoleClient();
-  await supabase
+  const { error: persistErr } = await supabase
     .schema("resupply")
     .from("adherence_predictions")
     .insert({
@@ -230,14 +230,12 @@ export async function scoreAndPersistAdherence(
       probability_compliant: score.probabilityCompliant,
       factors_json: score.factors as unknown as never,
       scored_at: score.scoredAt,
-    })
-    .then(
-      () => undefined,
-      (err) =>
-        logger.warn(
-          { err: err instanceof Error ? err.message : String(err), patientId },
-          "adherence-predictor: persist failed (non-fatal)",
-        ),
+    });
+  if (persistErr) {
+    logger.warn(
+      { err: persistErr.message, patientId },
+      "adherence-predictor: persist failed (non-fatal)",
     );
+  }
   return score;
 }

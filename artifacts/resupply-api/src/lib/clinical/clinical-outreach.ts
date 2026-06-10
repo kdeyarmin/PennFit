@@ -281,7 +281,7 @@ export async function sendOneOutreach(
     outcome = await deliver(pick.channel, { email, phoneE164 }, msg, cfg, deps);
   }
 
-  await supabase
+  const { error: outreachLogErr } = await supabase
     .schema("resupply")
     .from("clinical_outreach_log")
     .insert({
@@ -293,6 +293,12 @@ export async function sendOneOutreach(
       status: outcome.kind,
       error: outcome.kind === "failed" ? outcome.reason.slice(0, 500) : null,
     } as never);
+  if (outreachLogErr) {
+    logger.warn(
+      { err: outreachLogErr.message, patientId: target.patientId },
+      "clinical-outreach: outreach log insert failed (non-fatal)",
+    );
+  }
 
   logger.info(
     {

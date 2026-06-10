@@ -387,7 +387,7 @@ async function raiseTooSoonAlert(
       .limit(1)
       .maybeSingle();
     if (existing) return;
-    await supabase
+    const { error: insertAlertErr } = await supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
@@ -403,6 +403,16 @@ async function raiseTooSoonAlert(
           eligibleOn: entitlement.eligibleOn.toISOString(),
         } as unknown as Json,
       });
+    if (insertAlertErr) {
+      logger.warn(
+        {
+          event: "resupply.entitlement.alert_failed",
+          err: insertAlertErr.message,
+          patientId,
+        },
+        "resupply: failed to raise too-soon CSR alert (non-fatal)",
+      );
+    }
   } catch (err) {
     logger.warn(
       {
@@ -475,7 +485,7 @@ async function raiseCoverageAlert(
       block.reason === "inactive"
         ? `Reorder held — ${block.payerName} coverage is inactive on the last eligibility check. Verify coverage before shipping.`
         : `Reorder held — ${block.payerName} requires prior authorization on the last eligibility check. Confirm PA before shipping.`;
-    await supabase
+    const { error: insertAlertErr } = await supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
@@ -489,6 +499,16 @@ async function raiseCoverageAlert(
           eligibilityCheckId: block.eligibilityCheckId,
         } as unknown as Json,
       });
+    if (insertAlertErr) {
+      logger.warn(
+        {
+          event: "resupply.coverage.alert_failed",
+          err: insertAlertErr.message,
+          patientId,
+        },
+        "resupply: failed to raise coverage-blocked CSR alert (non-fatal)",
+      );
+    }
   } catch (err) {
     logger.warn(
       {

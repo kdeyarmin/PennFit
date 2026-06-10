@@ -72,7 +72,8 @@ router.get(
       .from("dwo_documents")
       .select("*")
       .eq("patient_id", parsed.data.patientId)
-      .order("expires_on", { ascending: false });
+      .order("expires_on", { ascending: false })
+      .limit(500);
     res.json({ documents: data ?? [] });
   },
 );
