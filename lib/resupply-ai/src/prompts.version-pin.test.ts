@@ -84,6 +84,12 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // too.
   "2026-06-09.v8":
     "71961b3b5eab3baa82f406f93a6fcc5a012c231510af38e5f91adcec35e82529",
+  // v9 teaches the patient Tools clause to read the place_resupply_order
+  // result honestly (only accepted_skus were ordered; relay the `reason`
+  // on failure; reassure rather than apologise on already_confirmed).
+  // Patient-only clause, so the shop variant hash is unchanged.
+  "2026-06-10.v9":
+    "4a391e87b41122ef5cd4a9361457c4385835ebf51f7690206c4413c0dc8ed1fe",
 };
 
 function renderCanonicalPrompt(): string {

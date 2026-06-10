@@ -113,6 +113,10 @@ router.post("/voice/realtime-diagnostic", signatureMiddleware, (req, res) => {
     callContext: DIAGNOSTIC_CALL_CONTEXT,
     greeting: DIAGNOSTIC_GREETING,
     diagnostic: true,
+    // The operator dialed in — greet immediately, same as the inbound
+    // production flows (this also makes the diagnostic exercise the
+    // agent-speaks-first path before it ships).
+    agentSpeaksFirst: true,
   });
 
   const wsUrl =

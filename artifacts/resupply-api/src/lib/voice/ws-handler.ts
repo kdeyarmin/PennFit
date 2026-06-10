@@ -17,8 +17,9 @@
 //      b. mark the conversation `closed`, audit `voice.call.completed`
 //      c. write the Deepgram-side transcript as `voice.call.deepgram_transcript`
 //         (when Deepgram was enabled)
-//      d. fire-and-forget Claude post-call summary →
-//         `voice.call.summary` audit row.
+//      d. fire-and-forget Claude post-call summary → ONE system
+//         `messages` row on the conversation thread (+ CSR routing
+//         when it recommends a handoff).
 //      Steps (c) and (d) are detached from the WS close so a flaky
 //      vendor call NEVER delays hangup.
 //
@@ -64,6 +65,7 @@ import {
 } from "@workspace/resupply-ai";
 import {
   encodeClearFrame,
+  encodeMarkFrame,
   encodeMediaFrame,
   parseTwilioFrame,
 } from "@workspace/resupply-telecom";
@@ -126,6 +128,18 @@ export async function handleVoiceWsConnection(
   const MAX_CALL_DURATION_MS = 15 * 60 * 1000;
   let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Pending playback `mark`s: the graceful end_call hangup writes a mark
+  // frame after the goodbye's audio and waits for Twilio to echo it back
+  // (Twilio echoes a mark once playback reaches it). Resolvers are kept
+  // here so the message handler / teardown can settle them.
+  const pendingPlaybackMarks = new Map<string, () => void>();
+  let playbackMarkSeq = 0;
+  const settleAllPlaybackMarks = (): void => {
+    const resolvers = [...pendingPlaybackMarks.values()];
+    pendingPlaybackMarks.clear();
+    for (const resolve of resolvers) resolve();
+  };
+
   // Sink Twilio side. We only know `streamSid` after the `start`
   // frame, so audio deltas before that are silently dropped (the
   // model can't realistically produce audio before we've sent it the
@@ -154,6 +168,31 @@ export async function handleVoiceWsConnection(
       } catch {
         // best-effort; barge-in clears are not load-bearing
       }
+    },
+    waitForPlaybackDone(timeoutMs: number): Promise<void> {
+      // Already torn down (or never started) — nothing is playing.
+      if (closed || !streamSid) return Promise.resolve();
+      playbackMarkSeq += 1;
+      const name = `pf-playback-${playbackMarkSeq}`;
+      const sid = streamSid;
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingPlaybackMarks.delete(name);
+          resolve();
+        }, timeoutMs);
+        timer.unref?.();
+        pendingPlaybackMarks.set(name, () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        try {
+          ws.send(encodeMarkFrame(sid, name));
+        } catch {
+          pendingPlaybackMarks.delete(name);
+          clearTimeout(timer);
+          resolve();
+        }
+      });
     },
   };
 
@@ -271,6 +310,26 @@ export async function handleVoiceWsConnection(
   // We declare it here so the `bridge.on("session.closed")` handler
   // can null it out without a forward-reference warning.
   let forceCleanupTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Agent-speaks-first (inbound calls). Semantic VAD only creates a
+  // response after the CALLER speaks, so a caller who dials in and
+  // politely waits would be greeted by dead air. Once BOTH the Realtime
+  // session is open AND Twilio's media stream has started (so the
+  // greeting audio has somewhere to go), kick exactly one response.
+  let realtimeOpened = false;
+  let twilioStarted = false;
+  let greetingRequested = false;
+  const maybeSpeakFirst = (): void => {
+    if (!pending.agentSpeaksFirst || greetingRequested || closed) return;
+    if (!realtimeOpened || !twilioStarted) return;
+    greetingRequested = true;
+    bridge.requestGreeting();
+  };
+
+  // Whether the model successfully placed an order this call — drives the
+  // voice_reorder_sessions terminal status (completed_order vs
+  // completed_no_order) for inbound IVR analytics.
+  let orderPlaced = false;
 
   // Arm the max-duration timer now that `bridge` exists. See declaration
   // above for rationale.
@@ -437,6 +496,9 @@ export async function handleVoiceWsConnection(
       },
       "voice session closed",
     );
+    // Settle any in-flight playback wait — once we're tearing down there
+    // is nothing left to play.
+    settleAllPlaybackMarks();
     void finalizeConversation(
       supabase,
       pending.conversationId,
@@ -452,6 +514,11 @@ export async function handleVoiceWsConnection(
         "voice conversation finalise failed",
       );
     });
+    // Inbound IVR analytics: move the voice_reorder_sessions row (keyed by
+    // CallSid) out of `in_progress` to its terminal status. No-op for
+    // outbound calls (no session row) and for rows a route already stamped
+    // (e.g. transferred_to_human). Best-effort — never blocks teardown.
+    void finalizeReorderSession(supabase, twilioCallSid, orderPlaced);
     // Close Deepgram cleanly (sends a CloseStream frame; the accumulated
     // final transcripts in `deepgramTurns` are already captured).
     if (deepgramSession) {
@@ -510,6 +577,8 @@ export async function handleVoiceWsConnection(
       { event: "voice_session_opened", conversationId: pending.conversationId },
       "voice session opened",
     );
+    realtimeOpened = true;
+    maybeSpeakFirst();
   });
 
   bridge.on("transcript.turn", (turn) => {
@@ -536,6 +605,13 @@ export async function handleVoiceWsConnection(
   });
 
   bridge.on("tool.invoked", (invocation) => {
+    if (
+      invocation.name === "place_resupply_order" &&
+      invocation.status === "ok"
+    ) {
+      const result = invocation.result as { ok?: boolean } | undefined;
+      if (result?.ok === true) orderPlaced = true;
+    }
     void logAudit({
       action: "voice.tool.invoked",
       targetTable: "conversations",
@@ -588,6 +664,8 @@ export async function handleVoiceWsConnection(
       case "start":
         streamSid = frame.start.streamSid;
         twilioCallSid = frame.start.callSid;
+        twilioStarted = true;
+        maybeSpeakFirst();
         return;
       case "media":
         bridge.forwardCallerAudio(frame.media.payload);
@@ -608,8 +686,16 @@ export async function handleVoiceWsConnection(
       case "stop":
         bridge.close("twilio-stop");
         return;
-      case "mark":
+      case "mark": {
+        // Playback marker echoed back by Twilio — settles the graceful
+        // end_call hangup's "goodbye finished playing" wait.
+        const resolveMark = pendingPlaybackMarks.get(frame.mark.name);
+        if (resolveMark) {
+          pendingPlaybackMarks.delete(frame.mark.name);
+          resolveMark();
+        }
         return;
+      }
     }
   });
 
@@ -643,6 +729,9 @@ export async function handleVoiceWsConnection(
   };
 
   ws.on("close", () => {
+    // No more frames will arrive — settle any in-flight playback wait so
+    // the graceful end_call hangup isn't left running out its timeout.
+    settleAllPlaybackMarks();
     bridge.close("twilio-ws-closed");
     scheduleForceCleanup("twilio-ws-closed");
   });
@@ -656,6 +745,7 @@ export async function handleVoiceWsConnection(
       },
       "voice ws error",
     );
+    settleAllPlaybackMarks();
     bridge.close("twilio-ws-error");
     scheduleForceCleanup("twilio-ws-error");
   });
@@ -780,6 +870,18 @@ export async function handleVoiceDiagnosticWsConnection(
 
   const bridge = new VoiceBridge({ client, sink, dispatcher });
 
+  // Same agent-speaks-first kick as the production handler: the operator
+  // dialed in, so the agent greets the moment both legs are ready.
+  let realtimeOpened = false;
+  let twilioStarted = false;
+  let greetingRequested = false;
+  const maybeSpeakFirst = (): void => {
+    if (!pending.agentSpeaksFirst || greetingRequested || closed) return;
+    if (!realtimeOpened || !twilioStarted) return;
+    greetingRequested = true;
+    bridge.requestGreeting();
+  };
+
   logger.info(
     {
       event: "voice_realtime_diagnostic_opened",
@@ -814,12 +916,14 @@ export async function handleVoiceDiagnosticWsConnection(
     }
   };
 
-  bridge.on("session.opened", () =>
+  bridge.on("session.opened", () => {
     logger.info(
       { event: "voice_session_opened", conversationId: pending.conversationId },
       "voice diagnostic: session opened",
-    ),
-  );
+    );
+    realtimeOpened = true;
+    maybeSpeakFirst();
+  });
   // Surface OpenAI session rejections (bad audio format, unknown field) as
   // the SAME `voice_session_error` event the validator watches for.
   bridge.on("session.error", (err) =>
@@ -848,6 +952,8 @@ export async function handleVoiceDiagnosticWsConnection(
     switch (frame.event) {
       case "start":
         streamSid = frame.start.streamSid;
+        twilioStarted = true;
+        maybeSpeakFirst();
         return;
       case "media":
         bridge.forwardCallerAudio(frame.media.payload);
@@ -903,6 +1009,47 @@ async function persistTranscript(
     direction,
     messageAt: sentAt,
   });
+}
+
+/**
+ * Move an inbound IVR's voice_reorder_sessions row to its terminal
+ * status when the bridge ends the call. The inbound-reorder route
+ * creates the row as `in_progress` and stamps it `transferred_to_human`
+ * on the human-fallback paths, but nothing previously closed out the
+ * bridge-handled sessions — they sat `in_progress` forever, skewing the
+ * IVR funnel analytics. Keyed by the (unique) Twilio CallSid; the
+ * status guard means a route-stamped terminal row is never clobbered.
+ * Outbound calls have no session row, so this is a clean no-op there.
+ *
+ * Always resolves — a failed stamp is an analytics gap, not a broken
+ * call.
+ */
+async function finalizeReorderSession(
+  supabase: ResupplySupabaseClient,
+  twilioCallSid: string | null,
+  orderPlaced: boolean,
+): Promise<void> {
+  if (!twilioCallSid) return;
+  try {
+    const { error } = await supabase
+      .schema("resupply")
+      .from("voice_reorder_sessions")
+      .update({
+        status: orderPlaced ? "completed_order" : "completed_no_order",
+        ended_at: new Date().toISOString(),
+      })
+      .eq("twilio_call_sid", twilioCallSid)
+      .eq("status", "in_progress");
+    if (error) throw error;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_reorder_session_finalize_failed",
+        err: serializeErr(err),
+      },
+      "voice: reorder session finalize failed",
+    );
+  }
 }
 
 async function finalizeConversation(
@@ -1079,10 +1226,19 @@ async function runPostCallSummary(
       "voice: post-call summary written",
     );
 
+    // Persist the summary where staff actually read the call: as a
+    // system message on the conversation thread. The legacy logAudit
+    // call above is a retired no-op stub — without this row the
+    // summary's outcome/concerns/follow-ups were computed and then
+    // dropped on the floor. The summarizer's own prompt forbids PHI in
+    // any field, and `messages` is the RLS-scoped store that already
+    // holds the call transcript, so this is the right home for it.
+    await persistSummaryMessage(input, summary);
+
     // Route the conversation into the CSR escalated-queue when the
-    // model flagged a handoff. The audit row above is the durable
-    // record; this is the routing — without it the flag sits in
-    // the audit log and no supervisor sees it in time.
+    // model flagged a handoff. The summary message above is the durable
+    // record; this is the routing — without it the flag sits on the
+    // thread and no supervisor sees it in time.
     if (summary.recommendsHandoff) {
       await routeVoiceHandoffToCsrQueue({
         conversationId: input.conversationId,
@@ -1098,6 +1254,66 @@ async function runPostCallSummary(
         conversationId: input.conversationId,
       },
       "voice: post-call summary failed",
+    );
+  }
+}
+
+/**
+ * Write the post-call summary as ONE `messages` row (sender_role
+ * 'system') so it renders at the end of the conversation thread the
+ * staff already use to review calls. Structured fields ride in
+ * vendor_metadata for any future dashboard. Always resolves — a missed
+ * summary message is a degraded review surface, not a broken call.
+ */
+async function persistSummaryMessage(
+  input: RunPostCallSummaryInput,
+  summary: PostCallSummary,
+): Promise<void> {
+  const lines = [
+    `Post-call summary (automated): ${summary.outcome}`,
+    `Caller sentiment: ${summary.sentiment}`,
+  ];
+  if (summary.concerns.length > 0) {
+    lines.push(`Concerns raised: ${summary.concerns.join("; ")}`);
+  }
+  if (summary.followUps.length > 0) {
+    lines.push(`Agent committed to: ${summary.followUps.join("; ")}`);
+  }
+  if (summary.recommendsHandoff) {
+    lines.push("Human follow-up recommended.");
+  }
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .insert({
+        conversation_id: input.conversationId,
+        direction: "outbound",
+        sender_role: "system",
+        body: lines.join("\n"),
+        sent_at: new Date().toISOString(),
+        vendor_metadata: {
+          kind: "voice_post_call_summary",
+          twilio_call_sid: input.twilioCallSid,
+          prompt_version: PROMPT_VERSION,
+          outcome: summary.outcome,
+          sentiment: summary.sentiment,
+          concerns: summary.concerns,
+          follow_ups: summary.followUps,
+          recommends_handoff: summary.recommendsHandoff,
+          complete: summary.complete,
+        },
+      });
+    if (error) throw error;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "voice_summary_message_insert_failed",
+        err: serializeErr(err),
+        conversationId: input.conversationId,
+      },
+      "voice: post-call summary message insert failed",
     );
   }
 }

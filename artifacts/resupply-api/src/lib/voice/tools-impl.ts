@@ -33,6 +33,7 @@ import type {
   ToolName,
 } from "@workspace/resupply-ai";
 
+import { placeResupplyOrderForConversation } from "../messaging/order-flow";
 import { describeHcpcsPlain } from "../swo-pdf";
 
 const MAX_VERIFY_ATTEMPTS = 3;
@@ -147,6 +148,13 @@ export interface VoiceToolDispatcherDeps {
   episodeId?: string;
   /** Set for shop_customer callers — the storefront customer id. */
   shopCustomerId?: string;
+  /**
+   * Seam for the shared order-placement flow (the SAME path the SMS and
+   * email confirms ride: atomic episode claim + entitlement/coverage
+   * guards + queued fulfillment rows). Tests inject a stub; production
+   * callers leave it unset and get the real implementation.
+   */
+  placeOrderForConversation?: typeof placeResupplyOrderForConversation;
 }
 
 export interface VoiceToolDispatcher extends ToolDispatcher {
@@ -178,12 +186,6 @@ class Impl implements VoiceToolDispatcher {
   private requirePatientId(): string {
     const id = this.deps.patientId;
     if (!id) throw new Error("patientId is required for patient-flow tools");
-    return id;
-  }
-
-  private requireEpisodeId(): string {
-    const id = this.deps.episodeId;
-    if (!id) throw new Error("episodeId is required for place_resupply_order");
     return id;
   }
 
@@ -662,9 +664,9 @@ class Impl implements VoiceToolDispatcher {
     // Validate the model's requested SKUs against the patient's active
     // prescriptions. The model can mis-hear or invent a SKU; without
     // this filter the agent would read back ineligible items as
-    // "ordered". Fulfillment is driven downstream from the
-    // prescriptions (not this echo), so we still confirm the episode —
-    // we just never claim an ineligible SKU was accepted.
+    // "ordered". Fulfillment is driven by the episode's prescription
+    // (not this echo) — we just never claim an ineligible SKU was
+    // accepted.
     const { data: rxRows, error: rxErr } = await this.supabase
       .schema("resupply")
       .from("prescriptions")
@@ -683,39 +685,90 @@ class Impl implements VoiceToolDispatcher {
       new Set(args.skus.map(normalizeSku).filter((s) => eligibleSkus.has(s))),
     );
 
-    // Mark the episode as `confirmed`. Actual order placement against
-    // Pacware is a downstream worker job; the admin dashboard will
-    // pick this episode up in the "ready to fulfil" queue. The .eq on
-    // status gates the transition so a second tool call (or a call
-    // that races a prior cancellation) can't resurrect an already-
-    // terminal episode.
-    const orderId = randomUUID();
-    const nowIso = new Date().toISOString();
-    const { data: updated, error } = await this.supabase
-      .schema("resupply")
-      .from("episodes")
-      .update({ status: "confirmed", updated_at: nowIso })
-      .eq("id", this.requireEpisodeId())
-      .eq("status", "pending")
-      .select("id");
-    if (error) throw error;
-    if (!updated || updated.length === 0) {
-      return {
-        callId: call.callId,
-        name: call.name,
-        result: { ok: false, order_id: "", accepted_skus: [] },
-      };
+    // Place the order through the SAME shared path the SMS and email
+    // confirms ride (order-flow.ts): it resolves the bound episode,
+    // atomically claims it (any non-terminal status → `confirmed`), runs
+    // the feature-flagged entitlement/coverage guards, and creates the
+    // `queued` fulfillment rows the PacWare exporter actually ships
+    // from. The previous voice-only implementation flipped
+    // episodes.status behind a guard requiring the status to equal
+    // "pending" — which is not an episode status (the lifecycle is
+    // outreach_pending → awaiting_response → confirmed/declined/…), so
+    // the guard matched zero rows and EVERY voice order failed; and it
+    // created no fulfillment rows, so even a successful claim would
+    // never have shipped.
+    const placeOrder =
+      this.deps.placeOrderForConversation ?? placeResupplyOrderForConversation;
+    const placed = await placeOrder({
+      conversationId: this.deps.conversationId,
+    });
+    switch (placed.status) {
+      case "ok":
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: true,
+            order_id: placed.fulfillmentIds[0] ?? randomUUID(),
+            accepted_skus: acceptedSkus,
+          },
+        };
+      case "already_confirmed":
+        // The order is already on the books (e.g. the patient confirmed
+        // by SMS earlier today). Telling the caller their order "failed"
+        // would be wrong and alarming — report success idempotently and
+        // let the model reassure them it's in the queue.
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: true,
+            order_id: "",
+            accepted_skus: acceptedSkus,
+            reason: "already_confirmed",
+          },
+        };
+      case "not_eligible":
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: false,
+            order_id: "",
+            accepted_skus: [],
+            reason:
+              "Insurance will not cover this item again until " +
+              `${placed.entitlement.eligibleOn.slice(0, 10)}. Offer to have ` +
+              "a teammate follow up rather than placing the order now.",
+          },
+        };
+      case "coverage_blocked":
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: false,
+            order_id: "",
+            accepted_skus: [],
+            reason:
+              "The insurance coverage on file needs review before this " +
+              "order can ship. Offer to have a teammate follow up.",
+          },
+        };
+      default:
+        // conversation_not_found / episode_not_found /
+        // no_active_prescription — all "we can't place this by phone".
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: false,
+            order_id: "",
+            accepted_skus: [],
+            reason: placed.status,
+          },
+        };
     }
-
-    return {
-      callId: call.callId,
-      name: call.name,
-      result: {
-        ok: true,
-        order_id: orderId,
-        accepted_skus: acceptedSkus,
-      },
-    };
   }
 
   private async requestHumanHandoff(
