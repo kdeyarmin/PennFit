@@ -19,6 +19,7 @@ import type { EmailAttachment } from "@workspace/resupply-auth";
 import {
   HELP_DOC_VERSION,
   PATIENT_HELP_DOCS,
+  PROVIDER_HELP_DOCS,
   staffHelpDocs,
   type HelpDoc,
   type HelpDocSection,
@@ -34,12 +35,18 @@ const renderedCache = new Map<string, Buffer>();
 /** Audience descriptor for {@link buildInviteHelpAttachments}. */
 export type HelpDocAudience =
   | { kind: "patient" }
+  | { kind: "provider" }
   | { kind: "staff"; role: AdminRole };
 
 function docsFor(audience: HelpDocAudience): ReadonlyArray<HelpDoc> {
-  return audience.kind === "patient"
-    ? PATIENT_HELP_DOCS
-    : staffHelpDocs(audience.role);
+  switch (audience.kind) {
+    case "patient":
+      return PATIENT_HELP_DOCS;
+    case "provider":
+      return PROVIDER_HELP_DOCS;
+    case "staff":
+      return staffHelpDocs(audience.role);
+  }
 }
 
 /**

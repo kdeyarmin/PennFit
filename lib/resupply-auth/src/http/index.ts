@@ -151,7 +151,11 @@ export { makeRequireSession, makeRequireRole } from "./middleware";
 export {
   renderPasswordResetEmail,
   renderPatientPortalInviteEmail,
+  renderProviderPortalInviteEmail,
+  renderTeamInviteEmail,
   renderVerifyEmail,
   type AuthEmailContext,
+  type ProviderPortalInviteEmailArgs,
   type RenderedEmail,
+  type TeamInviteEmailArgs,
 } from "./email-templates";
