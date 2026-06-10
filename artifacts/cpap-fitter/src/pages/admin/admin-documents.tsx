@@ -1,8 +1,9 @@
 // /admin/documents — staff-authored, manually-typed PDF documents.
 //
 // CSRs type out one-off documents (CMN, prescription/order, agreement,
-// delivery ticket, fax cover letter, or a free-form letter) by hand —
-// deliberately without pre-populating any patient record — then
+// delivery ticket, fax cover letter, or a free-form letter) by hand,
+// optionally prefilling blank inputs from a patient's chart (the
+// "Prefill from chart" picker — nothing is ever filled silently), then
 // download, email, fax, or file each one to a patient chart.
 
 import { useMemo, useState } from "react";
@@ -25,6 +26,7 @@ import {
   getManualDocument,
   getManualDocumentCatalog,
   getManualDocumentPacket,
+  getManualDocumentPrefill,
   listManualDocumentPackets,
   listManualDocuments,
   manualDocumentPacketPdfUrl,
@@ -38,6 +40,7 @@ import {
   updateManualDocumentPacket,
   type ManualDocumentPacketDetail,
   type ManualDocumentPacketStatus,
+  type ManualDocumentPrefill,
   type ManualDocumentPacketSummary,
   type ManualDocumentStatus,
   type ManualDocumentSummary,
@@ -759,6 +762,26 @@ function DocumentEditorForm({
   const setField = (key: string, value: string) =>
     setFields((prev) => ({ ...prev, [key]: value }));
 
+  // Merge chart suggestions into BLANK inputs only — anything the
+  // operator already typed is never overwritten.
+  const applyPrefill = (prefill: ManualDocumentPrefill) => {
+    setFields((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of Object.entries(prefill.fields)) {
+        if (!next[key]?.trim()) next[key] = value;
+      }
+      return next;
+    });
+    if (!recipientName.trim() && prefill.recipient.name)
+      setRecipientName(prefill.recipient.name);
+    if (!recipientAddress.trim() && prefill.recipient.address)
+      setRecipientAddress(prefill.recipient.address);
+    if (!recipientEmail.trim() && prefill.recipient.email)
+      setRecipientEmail(prefill.recipient.email);
+    if (!recipientFax.trim() && prefill.recipient.fax)
+      setRecipientFax(prefill.recipient.fax);
+  };
+
   return (
     <Card
       title={doc.title}
@@ -784,6 +807,12 @@ function DocumentEditorForm({
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>
+
+        {/* Prefill from chart (suggestions only; blanks-only merge) */}
+        <PrefillFromChart
+          documentType={doc.document_type}
+          onApply={applyPrefill}
+        />
 
         {/* Recipient block */}
         <div
@@ -928,6 +957,123 @@ function DocumentEditorForm({
         />
       </div>
     </Card>
+  );
+}
+
+// ── Prefill from a patient's chart ────────────────────────────────
+//
+// Opt-in: the operator picks a patient and the app suggests values from
+// data already on file (demographics, latest prescription + provider,
+// sleep-study diagnosis). The parent merges suggestions into BLANK
+// inputs only — anything already typed is never overwritten.
+function PrefillFromChart({
+  documentType,
+  onApply,
+}: {
+  documentType: ManualDocumentType;
+  onApply: (prefill: ManualDocumentPrefill) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    null,
+  );
+
+  const patientsQuery = useQuery({
+    queryKey: ["manual-documents", "prefill-search", search.trim()],
+    queryFn: () => searchPatientsForAttach(search.trim()),
+    enabled: search.trim().length >= 2,
+  });
+
+  const prefillMut = useMutation({
+    mutationFn: (patientId: string) =>
+      getManualDocumentPrefill({ patientId, documentType }),
+    onSuccess: (prefill) => {
+      onApply(prefill);
+      setSearch("");
+      setMsg({
+        kind: "ok",
+        text: "Filled from the chart — only blank inputs were filled; edit anything you like.",
+      });
+    },
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: describeError(err).detail ?? "Prefill failed.",
+      }),
+  });
+
+  return (
+    <div
+      className="rounded-md border p-3 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <Label htmlFor="prefillSearch">Prefill from a patient’s chart</Label>
+      <Input
+        id="prefillSearch"
+        placeholder="Search by name or Pacware ID…"
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setMsg(null);
+        }}
+      />
+      {search.trim().length >= 2 && (
+        <div
+          className="rounded-md border divide-y max-h-48 overflow-y-auto"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          {patientsQuery.isPending ? (
+            <div
+              className="px-3 py-2 text-sm"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              Searching…
+            </div>
+          ) : (patientsQuery.data ?? []).length === 0 ? (
+            <div
+              className="px-3 py-2 text-sm"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              No matches.
+            </div>
+          ) : (
+            (patientsQuery.data ?? []).map((pt) => (
+              <button
+                key={pt.id}
+                type="button"
+                disabled={prefillMut.isPending}
+                className="block w-full text-left px-3 py-2 text-sm hover:bg-black/5"
+                style={{ color: "hsl(var(--ink-1))" }}
+                onClick={() => {
+                  setMsg(null);
+                  prefillMut.mutate(pt.id);
+                }}
+              >
+                {pt.firstName} {pt.lastName}
+                {pt.pacwareId && (
+                  <span
+                    className="ml-2 text-xs"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {pt.pacwareId}
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      {msg && (
+        <div
+          className="text-sm"
+          style={{
+            color: msg.kind === "ok" ? "hsl(142 60% 30%)" : "hsl(0 70% 45%)",
+          }}
+        >
+          {msg.text}
+        </div>
+      )}
+    </div>
   );
 }
 
