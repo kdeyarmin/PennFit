@@ -24,6 +24,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { autofileSignedPacketPdf } from "../../lib/patient-packet/autofile";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPacketDocumentSections } from "../../lib/patient-packet/content";
 import {
@@ -353,6 +354,12 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   }).catch((err) => {
     logger.warn({ err }, "patient_packet.signed audit write failed");
   });
+
+  // File the signed PDF onto the patient's chart — fire-and-forget,
+  // best-effort (autofile.ts logs and swallows its own failures). The
+  // patient's signing response must never wait on PDF rendering or
+  // object storage.
+  void autofileSignedPacketPdf(supabase, packet.id);
 
   res.json({ status: "completed", completedAt: nowIso });
 });

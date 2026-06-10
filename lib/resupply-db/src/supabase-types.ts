@@ -2500,6 +2500,14 @@ export interface Database {
           reminder_count: number;
           last_reminded_at: string | null;
           delivery_details: Json | null;
+          /**
+           * Migration 0305: the patient_documents row holding the
+           * auto-filed signed PDF (soft pointer, app-enforced), and
+           * when it was filed. NULL until the packet is completed and
+           * the best-effort auto-file succeeds.
+           */
+          chart_document_id: string | null;
+          chart_filed_at: string | null;
           created_at: string;
           updated_at: string;
         };
