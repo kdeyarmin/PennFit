@@ -97,7 +97,6 @@ export async function recordIntegrationFailure(
       "integration-health: failure write failed (non-fatal)",
     );
   }
-  }
 
   const shouldAlert =
     newCount >= ALERT_THRESHOLD &&
