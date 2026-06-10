@@ -1,20 +1,37 @@
 // Capture storefront screenshots for the feature-guide PDF.
-// Usage: node e2e/capture-screens.mjs
+//
+// Usage:
+//   PORT=5173 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter dev &
+//   node e2e/capture-screens.mjs
+//
+// Env overrides:
+//   E2E_BASE_URL — dev-server origin (default http://localhost:5173,
+//                  matching e2e/playwright.config.ts)
+//   SCREENSHOT_OUT_DIR — where PNGs are written (default /tmp/shots)
+//
+// The first four entries are named to match the files the PDF generator
+// consumes from docs/feature-guide/screenshots/ (home, mask-fitter,
+// reminders, privacy) — downscale those four to 2000px wide and copy
+// them over (see docs/feature-guide/README.md). The rest are extra
+// candidates for future use.
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
-const OUT = "/tmp/shots";
+const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
+const OUT = process.env.SCREENSHOT_OUT_DIR ?? "/tmp/shots";
 mkdirSync(OUT, { recursive: true });
 
 const PAGES = [
+  // Canonical feature-guide assets (names match the generator's inputs).
   ["home", "/"],
-  ["fitter", "/cpap-masks"],
-  ["measure", "/measure"],
+  ["mask-fitter", "/how-it-works"],
+  ["reminders", "/reminders"],
+  ["privacy", "/measure"],
+  // Extra candidates.
+  ["fitter-landing", "/cpap-masks"],
   ["capture", "/capture"],
   ["shop", "/shop"],
-  ["reminders", "/reminders"],
   ["learn", "/learn"],
-  ["how-it-works", "/how-it-works"],
   ["insurance", "/insurance/estimate"],
   ["track-order", "/track-order"],
 ];
@@ -30,7 +47,7 @@ const page = await ctx.newPage();
 
 for (const [name, path] of PAGES) {
   try {
-    await page.goto(`http://localhost:5173${path}`, {
+    await page.goto(`${BASE_URL}${path}`, {
       waitUntil: "networkidle",
       timeout: 30000,
     });

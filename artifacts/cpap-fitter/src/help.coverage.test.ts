@@ -39,11 +39,15 @@ function extract(pattern: RegExp, src: string): Set<string> {
   return out;
 }
 
-// Routes registered in the router: path="/help/<slug>".
-const routedArticles = extract(/path="(\/help\/[^"]+)"/g, APP_TSX);
+// Routes registered in the router: path="/help/<slug>". Tolerates either
+// quote style and whitespace so a formatting refactor can't false-fail.
+const routedArticles = extract(/path\s*=\s*["'](\/help\/[^"']+)["']/g, APP_TSX);
 
 // Topics listed (or cross-promoted) on the help hub: href: "/help/<slug>".
-const indexedArticles = extract(/href: "(\/help\/[^"]+)"/g, HELP_TSX);
+const indexedArticles = extract(
+  /href\s*:\s*["'](\/help\/[^"']+)["']/g,
+  HELP_TSX,
+);
 
 describe("help center coverage", () => {
   it("registers at least the original ten articles (sanity)", () => {

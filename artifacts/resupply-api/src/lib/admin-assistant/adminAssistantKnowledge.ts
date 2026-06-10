@@ -316,7 +316,7 @@ Automation-rule safety:
 
 Campaign etiquette:
   - Build the audience with filters first and sanity-check the count
-    before drafting (Bulk campaigns /admin/bulk-campaigns). Consent and
+    before drafting in Bulk campaigns (/admin/bulk-campaigns). Consent and
     quiet hours are enforced by the platform, but content and frequency
     are on you — one clear message beats three reminders.
   - Send a one-off to a single patient from the Alert library
