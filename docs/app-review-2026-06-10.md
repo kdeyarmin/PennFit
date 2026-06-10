@@ -5,10 +5,10 @@ origins with false"). Scope: every artifact and workspace package —
 public API, admin API (187 route files), pg-boss worker (50 jobs), auth
 stack, DB layer + 262-prefix migration corpus, storefront SPA, admin
 console SPA (127 pages), AI/voice/messaging stack, integrations layer,
-and deploy/boot posture. The **five P0 fixes ship in this same PR**
-(Wave 1), each with a regression test; everything from P1 down is
-report-only — each finding cites file:line so fixes can land as
-focused follow-ups.
+and deploy/boot posture. The **five P0 fixes (Wave 1)** and the **three
+money-safety P1 fixes — P1-1, P1-8, P1-9 (Wave 2)** ship in this same
+PR, each with regression tests; everything else is report-only — each
+finding cites file:line so fixes can land as focused follow-ups.
 
 Verification levels used below:
 
@@ -162,6 +162,21 @@ right (`window.location.search`), which is why patient deep links work.
 ---
 
 ## P1 — high: money safety, TCPA/consent, security posture
+
+Wave 2 (this PR) fixed the three money-safety items:
+
+- **P1-1** → atomic draft → `'submitting'` batch claim before the SFTP
+  transmit, with conflict release and transport-failure release back to
+  `'draft'` (`office-ally-batch.ts`, migration 0263, new
+  `concurrent_submission` result kind mapped to 409).
+- **P1-8** → claim-then-send on electronic statements: conditional
+  pending/failed → `'sending'` claim in `deliverOnChannel`, conditional
+  outcome persist (`statement-send.ts`, migration 0262). A side effect:
+  an already-`sent` statement can no longer be re-dispatched at all.
+- **P1-9** → CAS claim on the scanned `last_charge_attempt_at` (plus an
+  enabled/revoked re-check) before any Stripe call in
+  `patient-autopay-charge.ts`; the losing tick backs out before a
+  payment row / idempotency key exists.
 
 ### P1-1. Office Ally claim batch submit can double-transmit claims [verified]
 

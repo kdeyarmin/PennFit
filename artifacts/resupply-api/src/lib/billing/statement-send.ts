@@ -246,7 +246,11 @@ async function persistOutcome(
       : outcome.kind === "failed"
         ? "failed"
         : "skipped";
-  const { error: persistErr } = await supabase
+  // Conditional on the states this function legitimately transitions
+  // FROM: 'sending' (a claimed electronic send recording its outcome)
+  // and 'pending' (an unclaimed gate-skip — zero balance / no channel).
+  // Anything else means another writer got here first; never stomp it.
+  const { data: updated, error: persistErr } = await supabase
     .schema("resupply")
     .from("patient_billing_statements")
     .update({
@@ -256,13 +260,46 @@ async function persistOutcome(
       delivery_error:
         outcome.kind === "failed" ? outcome.reason.slice(0, 500) : null,
     })
-    .eq("id", statementId);
+    .eq("id", statementId)
+    .in("delivery_status", ["pending", "sending"])
+    .select("id");
   if (persistErr) {
     logger.error(
       { err: persistErr.message, statementId, deliveryStatus: status },
       "statement-send: delivery status not recorded — statement may be re-sent",
     );
+  } else if ((updated ?? []).length === 0) {
+    logger.warn(
+      { statementId, deliveryStatus: status },
+      "statement-send: outcome not recorded — row was no longer pending/sending",
+    );
   }
+}
+
+/**
+ * Atomically claim a statement for electronic delivery: flip
+ * pending/failed → 'sending' with a conditional UPDATE. This is the
+ * concurrency gate that closes the double-send race — of two
+ * concurrent senders (an operator's single-send click racing the
+ * batch sweep), exactly one gets the row back and dispatches; the
+ * loser sees zero rows and skips. 'failed' is claimable so an
+ * operator can retry a failed send; 'sent' is NOT — re-sending a
+ * delivered bill is the double-billing bug this guards against.
+ * The 'sending' state is admitted by migration 0262.
+ */
+async function claimStatementForSend(
+  supabase: SupabaseClient,
+  statementId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("patient_billing_statements")
+    .update({ delivery_status: "sending" })
+    .eq("id", statementId)
+    .in("delivery_status", ["pending", "failed"])
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).length > 0;
 }
 
 /**
@@ -337,6 +374,14 @@ async function deliverOnChannel(
   send: NonNullable<StatementSendDeps["send"]>,
   deps: StatementSendDeps,
 ): Promise<SendOutcome> {
+  // Claim BEFORE building/sending anything. A statement that is
+  // already 'sending' (another sender in flight) or 'sent' must never
+  // be dispatched again.
+  const claimed = await claimStatementForSend(supabase, stmt.id);
+  if (!claimed) {
+    return { kind: "skipped", reason: "already_claimed_or_sent" };
+  }
+
   let pdfUrl: string | null = null;
   if (stmt.statement_pdf_object_key && deps.signPdfUrl) {
     try {
