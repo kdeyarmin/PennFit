@@ -93,9 +93,10 @@ export async function recordIntegrationFailure(
 
   if (writeErr) {
     logger.warn(
-      { err: writeErr.message, key },
+      { err: writeErr, key },
       "integration-health: failure write failed (non-fatal)",
     );
+  }
   }
 
   const shouldAlert =
