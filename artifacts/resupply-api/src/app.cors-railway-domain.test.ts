@@ -57,14 +57,24 @@ function resolveAllowedOrigins(env: {
   ];
 }
 
-/** Mirrors the cors `origin` callback in app.ts. */
+/**
+ * Mirrors the cors `origin` callback in app.ts.
+ *
+ * A disallowed origin resolves to `false` (CORS headers omitted; the
+ * browser enforces the block) — NEVER an Error. Passing an Error to the
+ * cors callback sends the request through the Express error handler,
+ * which 500s every request carrying an unlisted Origin header. Vite
+ * emits `<script type="module" crossorigin>`, so the SPA's own
+ * same-origin asset fetches always send Origin — an Error here took
+ * down every page on the *.up.railway.app host once the custom domain
+ * displaced it from RAILWAY_PUBLIC_DOMAIN.
+ */
 function checkOrigin(
   allowedOrigins: string[],
   origin: string | undefined,
-): true | Error {
+): boolean {
   if (!origin) return true;
-  if (allowedOrigins.includes(origin)) return true;
-  return new Error(`Origin ${origin} not allowed by CORS policy`);
+  return allowedOrigins.includes(origin);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,10 +95,8 @@ describe("resolveAllowedOrigins — RAILWAY_PUBLIC_DOMAIN as sole source", () =>
     expect(checkOrigin(origins, "https://myapp.up.railway.app")).toBe(true);
   });
 
-  it("rejects an origin not in the allowlist", () => {
-    expect(checkOrigin(origins, "https://evil.example.com")).toBeInstanceOf(
-      Error,
-    );
+  it("rejects an origin not in the allowlist (false, never an Error)", () => {
+    expect(checkOrigin(origins, "https://evil.example.com")).toBe(false);
   });
 
   it("allows requests with no Origin (same-origin / server-to-server)", () => {
@@ -118,13 +126,11 @@ describe("resolveAllowedOrigins — https:// scheme wrapping", () => {
   });
 
   it("rejects bare-hostname origin via CORS callback", () => {
-    expect(checkOrigin(origins, "myapp.up.railway.app")).toBeInstanceOf(Error);
+    expect(checkOrigin(origins, "myapp.up.railway.app")).toBe(false);
   });
 
   it("rejects http:// origin via CORS callback", () => {
-    expect(checkOrigin(origins, "http://myapp.up.railway.app")).toBeInstanceOf(
-      Error,
-    );
+    expect(checkOrigin(origins, "http://myapp.up.railway.app")).toBe(false);
   });
 });
 
@@ -152,9 +158,7 @@ describe("resolveAllowedOrigins — RESUPPLY_ALLOWED_ORIGINS alone", () => {
   });
 
   it("rejects an origin not in the explicit list", () => {
-    expect(checkOrigin(origins, "https://unknown.example.com")).toBeInstanceOf(
-      Error,
-    );
+    expect(checkOrigin(origins, "https://unknown.example.com")).toBe(false);
   });
 });
 
@@ -196,9 +200,7 @@ describe("resolveAllowedOrigins — both sources, merged and de-duped", () => {
   });
 
   it("rejects an unlisted origin via the CORS callback", () => {
-    expect(checkOrigin(origins, "https://unlisted.example.com")).toBeInstanceOf(
-      Error,
-    );
+    expect(checkOrigin(origins, "https://unlisted.example.com")).toBe(false);
   });
 });
 
@@ -282,9 +284,48 @@ describe("resolveAllowedOrigins — dev localhost fallback", () => {
   });
 
   it("rejects a non-localhost attacker origin even in dev", () => {
-    expect(checkOrigin(origins, "https://attacker.example.com")).toBeInstanceOf(
-      Error,
-    );
+    expect(checkOrigin(origins, "https://attacker.example.com")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6b. Regression: disallowed origins must NOT produce an Error (2026-06-10
+// demo-site outage). When pennpaps.com was bound as the Railway custom
+// domain, RAILWAY_PUBLIC_DOMAIN stopped covering pennfit.up.railway.app.
+// The old callback passed `new Error(...)` to the cors callback for the
+// now-unlisted origin, which Express turned into a 500 for EVERY request
+// carrying that Origin header — including the SPA's own same-origin
+// <script type="module" crossorigin> asset fetches. Result: every page on
+// the Railway-domain site died at the error boundary. The callback must
+// resolve disallowed origins to `false` (headers omitted, browser
+// enforces) so same-origin traffic keeps flowing on any fronting host.
+// ---------------------------------------------------------------------------
+describe("checkOrigin — disallowed origin degrades, never errors", () => {
+  const origins = resolveAllowedOrigins({
+    RESUPPLY_ALLOWED_ORIGINS: "https://pennpaps.com",
+    RAILWAY_PUBLIC_DOMAIN: "pennpaps.com",
+    NODE_ENV: "production",
+  });
+
+  it("resolves the unlisted Railway host origin to false, not an Error", () => {
+    const result = checkOrigin(origins, "https://pennfit.up.railway.app");
+    expect(result).toBe(false);
+    expect(result).not.toBeInstanceOf(Error);
+  });
+
+  it("never returns an Error for any unlisted origin shape", () => {
+    for (const origin of [
+      "https://www.pennpaps.com",
+      "https://evil.example.com",
+      "http://pennpaps.com",
+      "pennpaps.com",
+    ]) {
+      expect(checkOrigin(origins, origin)).toBe(false);
+    }
+  });
+
+  it("still allows the listed custom-domain origin", () => {
+    expect(checkOrigin(origins, "https://pennpaps.com")).toBe(true);
   });
 });
 

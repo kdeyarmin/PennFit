@@ -125,12 +125,25 @@ const allowedOrigins = (() => {
 // this safe (browsers refuse `Access-Control-Allow-Origin: *`
 // when credentials are enabled, so every allowed origin is
 // vetted hostname-by-hostname).
+//
+// A disallowed Origin must be rejected with `cb(null, false)` — NEVER an
+// Error. `cb(new Error(...))` routes the request into the Express error
+// handler, turning the response into a 500 for EVERY request that carries
+// an unlisted Origin header — including same-origin ones: Vite emits
+// `<script type="module" crossorigin>`, so the SPA's own asset fetches
+// always send `Origin: https://<host>`. When the site is served from a
+// host that isn't in the allowlist (e.g. the *.up.railway.app domain
+// after a custom domain takes over RAILWAY_PUBLIC_DOMAIN), every script,
+// stylesheet, and font 500s and the whole app dies at the error boundary.
+// `cb(null, false)` simply omits the CORS response headers: the browser
+// still blocks cross-origin reads (that's CORS working as designed), and
+// same-origin requests — which never needed CORS approval — keep working
+// no matter which hostname fronts the process.
 app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
+      return cb(null, allowedOrigins.includes(origin));
     },
     credentials: true,
   }),

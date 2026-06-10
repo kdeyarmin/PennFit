@@ -155,3 +155,22 @@ describe("app.ts CORS allowedOrigins — dev fallback unchanged", () => {
     expect(prodGuardIdx).toBeLessThan(localhostIdx);
   });
 });
+
+describe("app.ts CORS origin callback — rejects with false, never an Error", () => {
+  // Regression guard for the 2026-06-10 demo-site outage: passing an
+  // Error to the cors origin callback sends every request with an
+  // unlisted Origin header through the Express error handler as a 500 —
+  // including the SPA's own same-origin module-script fetches (Vite
+  // emits `<script type="module" crossorigin>`, which always sends
+  // Origin). Disallowed origins must resolve to `false` so the response
+  // simply omits CORS headers and the browser enforces the block.
+  it("resolves disallowed origins via cb(null, ...includes(origin)) — no Error construction", () => {
+    // The callback body must delegate the verdict to the allowlist
+    // membership check rather than branching into an Error.
+    expect(CODE).toMatch(/cb\(null,\s*allowedOrigins\.includes\(origin\)\)/);
+  });
+
+  it("never passes a new Error to the cors callback", () => {
+    expect(CODE).not.toMatch(/cb\(\s*new Error/);
+  });
+});
