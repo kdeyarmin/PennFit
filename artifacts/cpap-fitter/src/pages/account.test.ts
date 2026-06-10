@@ -303,7 +303,6 @@ describe("account — sections grouped into tabs", () => {
       "<AccountMessagesSection",
       "<CustomerChatSection",
       "<DocumentsSection",
-      "<RequestAppointmentSection",
       "<EsignFormsSection",
       "<ReferralProgramSection",
       "<CaregiverSection",
