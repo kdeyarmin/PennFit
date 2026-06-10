@@ -1,7 +1,11 @@
 # PennFit Platform Feature Guide (by role)
 
 `PennFit-Feature-Guide-by-Role.pdf` is a professionally formatted,
-business-facing catalog of the platform's features, organized by the four
+buyer-facing catalog of the platform's features. It opens with a
+**Why PennFit** highlights page — eight marquee differentiators (AI mask
+fitting, the reorder voice agent, dollar-ranked denial recovery, no
+per-user licensing, etc.) designed to capture a prospective buyer's
+attention — followed by the full feature catalog organized by the four
 operating roles in a DME business:
 
 1. **DME Owner** — command center, growth/financial analytics, team and

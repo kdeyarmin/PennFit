@@ -265,6 +265,65 @@ def matrix_legend():
     return t
 
 
+def hexc(color):
+    return "#%02x%02x%02x" % (int(color.red * 255), int(color.green * 255),
+                              int(color.blue * 255))
+
+
+def highlight_grid(cards):
+    """Two-column grid of gold-topped highlight cards."""
+    title_style = ParagraphStyle(
+        "hlTitle", fontName="Helvetica-Bold", fontSize=10.5, leading=13,
+        textColor=NAVY_DEEP)
+    body_style = ParagraphStyle(
+        "hlBody", fontName="Helvetica", fontSize=8.6, leading=11.6,
+        textColor=BODY_GRAY)
+    gold_hex = hexc(GOLD_DEEP)
+
+    def cell(idx, title, body):
+        return [
+            Paragraph(
+                f'<font color="{gold_hex}">{idx:02d}</font>'
+                f'&nbsp;&nbsp;{title}', title_style),
+            Spacer(1, 3.5),
+            Paragraph(body, body_style),
+        ]
+
+    card_w = (CONTENT_W - 0.3 * inch) / 2.0
+    rows, row_heights, style = [], [], [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 11),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 11),
+        ("TOPPADDING", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
+    ]
+    for i in range(0, len(cards), 2):
+        r = len(rows)
+        left = cell(i + 1, *cards[i])
+        right = cell(i + 2, *cards[i + 1]) if i + 1 < len(cards) else ""
+        rows.append([left, "", right])
+        row_heights.append(None)
+        for col in (0, 2):
+            if col == 2 and i + 1 >= len(cards):
+                continue
+            style.extend([
+                ("BACKGROUND", (col, r), (col, r), PEARL),
+                ("LINEABOVE", (col, r), (col, r), 2, GOLD),
+            ])
+        if i + 2 < len(cards):
+            g = len(rows)
+            rows.append(["", "", ""])
+            row_heights.append(11)
+            style.extend([
+                ("TOPPADDING", (0, g), (-1, g), 0),
+                ("BOTTOMPADDING", (0, g), (-1, g), 0),
+            ])
+    t = Table(rows, colWidths=[card_w, 0.3 * inch, card_w],
+              rowHeights=row_heights, hAlign="LEFT")
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def pricing_table(headers, rows):
     """Vendor-per-row pricing snapshot with text cells."""
     head_style = ParagraphStyle(
@@ -425,7 +484,8 @@ def draw_cover(c, doc):
     c.setFillColor(PLATINUM)
     c.setFont("Helvetica", 9.5)
     c.drawString(MARGIN_X, 1.06 * inch, DOC_DATE)
-    c.drawRightString(PAGE_W - MARGIN_X, 1.06 * inch, "Internal training & reference")
+    c.drawRightString(PAGE_W - MARGIN_X, 1.06 * inch,
+                      "Product overview & competitive comparison")
     c.restoreState()
 
 
@@ -464,6 +524,62 @@ def draw_page(c, doc):
 # ---------------------------------------------------------------- content --
 
 DOC_DATE = date.today().strftime("%B %Y")
+
+HIGHLIGHTS_HEADLINE = "Why PennFit"
+
+HIGHLIGHTS_SUB = (
+    "One platform for the storefront, the resupply program, the clinic, "
+    "and the revenue cycle — with AI working in every seat."
+)
+
+HIGHLIGHTS_LEDE = (
+    "Most DME operations run on a patchwork: a billing system here, a "
+    "resupply vendor there, phone scripts everywhere. PennFit replaces the "
+    "patchwork with one AI-native platform built specifically for CPAP "
+    "resupply. Eight capabilities set it apart."
+)
+
+HIGHLIGHTS = [
+    ("AI mask fitting, no appointment",
+     "A patient's phone camera measures their face right in the browser "
+     "and scores every available mask for fit. Images never leave the "
+     "device — and none of the compared platforms offer anything like it."),
+    ("A voice agent that takes reorders",
+     "Patients call and a natural AI voice confirms identity, takes the "
+     "resupply order, and writes a structured summary with sentiment and "
+     "clinical flags — 24/7, with no hold queue."),
+    ("Resupply that runs itself",
+     "Device-reported usage and supply schedules trigger SMS and email "
+     "reminders with signed one-tap confirm links; confirmed orders flow "
+     "straight to fulfillment and billing."),
+    ("Denial recovery ranked by dollars",
+     "AI claim scrubbing catches problems before submission, and the "
+     "denials worklist ranks every denial by recoverable value weighted "
+     "by win probability — billers always work the highest-payoff claim "
+     "first."),
+    ("Every channel, one inbox",
+     "SMS, MMS, email, chat, and call summaries land in a single triage "
+     "queue with assignment, priorities, and consent and quiet hours "
+     "enforced automatically."),
+    ("Therapy data from all three clouds",
+     "Nightly sync from ResMed AirView, Philips Care Orchestrator, and "
+     "React Health drives CMS 90-day compliance tracking, clinical "
+     "worklists, and resupply timing."),
+    ("One platform, end to end",
+     "Storefront, patient engagement, clinical adherence, claims, and "
+     "analytics in one system — not a bundle of separately priced "
+     "add-ons stitched together."),
+    ("No per-user license",
+     "PennFit is an owned platform: add staff without adding seat fees, "
+     "and pay vendors only for usage (telecom, email, payments, AI) — "
+     "see the pricing snapshot in the appendix."),
+]
+
+HIGHLIGHTS_CLOSE = (
+    "A feature-by-feature comparison against Brightree + ReSupply, "
+    "NikoHealth, and TIMS Software — including pricing — appears in the "
+    "appendix."
+)
 
 INTRO = (
     "PennFit is the operating platform for a modern CPAP/DME resupply "
@@ -1081,9 +1197,27 @@ def build():
         PageTemplate(id="Body", frames=[body_frame], onPage=draw_page),
     ])
 
-    story = [NextPageTemplate("Body"), SectionMarker("Overview"), PageBreak()]
+    story = [NextPageTemplate("Body"), SectionMarker("Highlights"),
+             PageBreak()]
+
+    # ---- highlights page (buyer-facing opener)
+    story.append(Paragraph(HIGHLIGHTS_HEADLINE, ParagraphStyle(
+        "hlHead", fontName="Helvetica-Bold", fontSize=24, leading=28,
+        textColor=NAVY_DEEP, spaceAfter=4)))
+    story.append(Paragraph(HIGHLIGHTS_SUB, ParagraphStyle(
+        "hlSub", fontName="Helvetica", fontSize=11.5, leading=15.5,
+        textColor=STEEL, spaceAfter=10)))
+    story.append(Paragraph(HIGHLIGHTS_LEDE, S_INTRO))
+    story.append(Spacer(1, 10))
+    story.append(highlight_grid(HIGHLIGHTS))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(HIGHLIGHTS_CLOSE, ParagraphStyle(
+        "hlClose", fontName="Helvetica-Oblique", fontSize=9, leading=12.5,
+        textColor=STEEL)))
 
     # ---- overview page
+    story.append(SectionMarker("Overview"))
+    story.append(PageBreak())
     story.append(Paragraph("About this guide", S_H1))
     story.append(Paragraph(INTRO, S_INTRO))
     story.append(Paragraph(INTRO_2, S_INTRO))
