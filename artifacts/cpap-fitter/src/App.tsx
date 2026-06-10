@@ -236,6 +236,41 @@ const HelpSaveToWishlist = lazyWithRetry(() =>
     default: m.HelpSaveToWishlist,
   })),
 );
+const HelpManageSubscriptions = lazyWithRetry(() =>
+  import("@/pages/help-manage-subscriptions").then((m) => ({
+    default: m.HelpManageSubscriptions,
+  })),
+);
+const HelpPaymentMethods = lazyWithRetry(() =>
+  import("@/pages/help-payment-methods").then((m) => ({
+    default: m.HelpPaymentMethods,
+  })),
+);
+const HelpCommunicationPreferences = lazyWithRetry(() =>
+  import("@/pages/help-communication-preferences").then((m) => ({
+    default: m.HelpCommunicationPreferences,
+  })),
+);
+const HelpDocumentsAndForms = lazyWithRetry(() =>
+  import("@/pages/help-documents-and-forms").then((m) => ({
+    default: m.HelpDocumentsAndForms,
+  })),
+);
+const HelpCaregiverAccess = lazyWithRetry(() =>
+  import("@/pages/help-caregiver-access").then((m) => ({
+    default: m.HelpCaregiverAccess,
+  })),
+);
+const HelpEquipmentAndRecalls = lazyWithRetry(() =>
+  import("@/pages/help-equipment-and-recalls").then((m) => ({
+    default: m.HelpEquipmentAndRecalls,
+  })),
+);
+const HelpOrderByPhone = lazyWithRetry(() =>
+  import("@/pages/help-order-by-phone").then((m) => ({
+    default: m.HelpOrderByPhone,
+  })),
+);
 
 // Educational long-form articles under /learn/*. Lazy-loaded — these are
 // shareable awareness pages, not entry points for the fitter flow, so
@@ -825,6 +860,31 @@ function PatientRouter() {
               path="/help/save-to-wishlist"
               component={HelpSaveToWishlist}
             />
+            <Route
+              path="/help/manage-subscriptions"
+              component={HelpManageSubscriptions}
+            />
+            <Route
+              path="/help/payment-methods"
+              component={HelpPaymentMethods}
+            />
+            <Route
+              path="/help/communication-preferences"
+              component={HelpCommunicationPreferences}
+            />
+            <Route
+              path="/help/documents-and-forms"
+              component={HelpDocumentsAndForms}
+            />
+            <Route
+              path="/help/caregiver-access"
+              component={HelpCaregiverAccess}
+            />
+            <Route
+              path="/help/equipment-and-recalls"
+              component={HelpEquipmentAndRecalls}
+            />
+            <Route path="/help/order-by-phone" component={HelpOrderByPhone} />
             <Route path="/help" component={Help} />
             <Route path="/learn" component={Learn} />
             <Route path="/learn/videos" component={LearnVideos} />

@@ -73,6 +73,7 @@ export function AdminPacwarePage() {
         </p>
       </header>
 
+      <HowToCard />
       <ImportCard />
       <SyncCard />
 
@@ -91,6 +92,81 @@ export function AdminPacwarePage() {
         )}
       </Card>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// How-to (condensed from docs/runbooks/pacware-import-export.md so the
+// steps are readable where the work happens; the runbook stays the
+// authoritative long-form manual)
+// ---------------------------------------------------------------------------
+function HowToCard() {
+  const muted = { color: "hsl(var(--ink-3))" } as const;
+  return (
+    <Card>
+      <details>
+        <summary className="cursor-pointer select-none text-lg font-semibold">
+          How to run a sync (step by step)
+        </summary>
+        <div className="mt-3 grid gap-6 md:grid-cols-2 text-sm">
+          <div>
+            <h3 className="font-semibold mb-1">
+              Import: PacWare → PennFit (patients)
+            </h3>
+            <ol className="list-decimal pl-5 space-y-1" style={muted}>
+              <li>
+                In PacWare, run the <strong>Patient List</strong> report and
+                export it as CSV.
+              </li>
+              <li>
+                Check the headers against the Column reference below — dates as
+                YYYY-MM-DD, phones with area code. Common header aliases are
+                accepted.
+              </li>
+              <li>
+                Upload it under <strong>Import patient roster</strong>, review
+                the preview (created / updated / unchanged), then commit. Up to
+                5,000 rows per upload.
+              </li>
+              <li>
+                Re-running is safe: rows match on{" "}
+                <code className="text-xs">pacware_id</code> and the sync is
+                fill-only — existing PennFit values are never overwritten.
+              </li>
+            </ol>
+          </div>
+          <div>
+            <h3 className="font-semibold mb-1">
+              Export: PennFit → PacWare (roster / resupply-due)
+            </h3>
+            <ol className="list-decimal pl-5 space-y-1" style={muted}>
+              <li>
+                Pick the export under <strong>Sync to PacWare</strong> — patient
+                roster or the resupply-due worklist.
+              </li>
+              <li>
+                Always run <strong>Verify</strong> first to preview the row
+                count and a sample of exactly what will be sent.
+              </li>
+              <li>
+                Download the CSV and import it in PacWare. Values are
+                formula-injection-guarded and round-trip losslessly.
+              </li>
+              <li>
+                Nothing is ever pushed automatically — PacWare has no API, so
+                every sync is a deliberate, verified file exchange.
+              </li>
+            </ol>
+          </div>
+        </div>
+        <p className="mt-4 text-xs" style={muted}>
+          Full manual with column mapping and troubleshooting:{" "}
+          <code className="text-xs">
+            docs/runbooks/pacware-import-export.md
+          </code>
+        </p>
+      </details>
+    </Card>
   );
 }
 
