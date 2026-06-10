@@ -23,53 +23,22 @@
 // for that reference. Per-IP rate limit is tight (10/15min) to
 // prevent brute-forcing the (reference × email) pair.
 //
-// Privacy
-// -------
-// No PHI fields are returned — only the operational status (paid /
-// shipped / delivered), the mask the patient picked, and the
-// tracking number/carrier if shipped. We deliberately don't return
-// the shipping address, physician info, or insurance — those need
-// a real session.
-
-import { timingSafeEqual } from "node:crypto";
+// The lookup, the email-mismatch-as-not-found behavior, and the rate
+// bucket all live in lib/storefront/orderTracking.ts — shared with
+// the chatbot's `track_order` tool so both surfaces draw from the
+// same per-IP budget and return the same fields.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  ORDER_REFERENCE_PATTERN,
+  lookupTrackedOrder,
+  normalizeOrderReference,
+  trackOrderRateLimited,
+} from "../../lib/storefront/orderTracking.js";
 
 const router: IRouter = Router();
-
-const RATE_WINDOW_MS = 15 * 60 * 1000;
-const RATE_MAX = 10;
-const rateBucket = new Map<string, number[]>();
-const RATE_SWEEP_EVERY = 200;
-let rateBucketSweepCounter = 0;
-
-function sweepRateBucket(now: number): void {
-  for (const [key, timestamps] of rateBucket) {
-    if (timestamps.every((t) => now - t >= RATE_WINDOW_MS)) {
-      rateBucket.delete(key);
-    }
-  }
-}
-
-function rateLimited(key: string): boolean {
-  const now = Date.now();
-  if (++rateBucketSweepCounter % RATE_SWEEP_EVERY === 0) {
-    sweepRateBucket(now);
-  }
-  const arr = (rateBucket.get(key) ?? []).filter(
-    (t) => now - t < RATE_WINDOW_MS,
-  );
-  if (arr.length >= RATE_MAX) {
-    rateBucket.set(key, arr);
-    return true;
-  }
-  arr.push(now);
-  rateBucket.set(key, arr);
-  return false;
-}
 
 const body = z
   .object({
@@ -77,13 +46,10 @@ const body = z
       .string()
       .trim()
       .toUpperCase()
-      // Reference is "PENN-" + 6 alphanumerics; allow either the
-      // full thing or just the 6-char tail. The regex was previously
-      // {4,12} which accepted shorter references — a 4-char tail
-      // is brute-forceable in tens of thousands of guesses, where
-      // 6 alphanumerics is ~36^6 ≈ 2B (combined with rate limiting
-      // + the email guard, that's the deterrent we want).
-      .regex(/^(PENN-)?[A-Z0-9]{6}$/, "must be a PennPaps order reference"),
+      // Exactly "PENN-" + 6 alphanumerics, or just the 6-char tail.
+      // A shorter tail is brute-forceable in tens of thousands of
+      // guesses; see ORDER_REFERENCE_PATTERN for the full rationale.
+      .regex(ORDER_REFERENCE_PATTERN, "must be a PennPaps order reference"),
     email: z.string().trim().toLowerCase().email().max(200),
   })
   .strict();
@@ -94,7 +60,7 @@ router.post("/orders/track", async (req, res) => {
     req.socket?.remoteAddress ||
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     "unknown";
-  if (rateLimited(ip + ":track")) {
+  if (trackOrderRateLimited(ip + ":track")) {
     res.status(429).json({ error: "rate_limited" });
     return;
   }
@@ -110,93 +76,42 @@ router.post("/orders/track", async (req, res) => {
     });
     return;
   }
-  const normalizedRef = parsed.data.orderReference.startsWith("PENN-")
-    ? parsed.data.orderReference
-    : `PENN-${parsed.data.orderReference}`;
+  // The zod regex above guarantees normalization can't fail here.
+  const normalizedRef =
+    normalizeOrderReference(parsed.data.orderReference) ??
+    parsed.data.orderReference;
 
-  const supabase = getSupabaseServiceRoleClient();
-
-  // Fitter orders live in public.orders; the shop orders live in
-  // resupply.shop_orders. We probe public.orders first (fitter is
-  // the only path that mints a PENN- reference today) and fall back
-  // to checking shop_orders by stripe_session_id only if a future
-  // shop-side path starts emitting the same reference shape.
-  const { data: legacyRow, error: legacyErr } = await supabase
-    .schema("public")
-    .from("orders")
-    .select(
-      // mask_model_number is included so that a session-storage-loss
-      // recovery on /order-success can render the same confirmation
-      // card the patient saw the first time (which references the
-      // model number). Not PHI; the patient already chose the mask
-      // by model number on /results.
-      "order_reference, patient_email, mask_name, mask_manufacturer, mask_model_number, email_status, email_delivered_at, created_at",
-    )
-    .eq("order_reference", normalizedRef)
-    .limit(1)
-    .maybeSingle();
-  if (legacyErr) {
+  const result = await lookupTrackedOrder(normalizedRef, parsed.data.email);
+  if (result.outcome === "lookup_failed") {
     req.log?.warn?.(
-      { err: legacyErr.message },
+      { err: result.detail },
       "orders.track: legacy read failed",
     );
     res.status(500).json({ error: "lookup_failed" });
     return;
   }
-
-  // Treat "found but email doesn't match" the same as "not found"
-  // so an attacker who guesses a reference can't infer which email
-  // it belongs to.
-  //
-  // Constant-time compare on the email string so the response time
-  // doesn't leak letter-by-letter how close the attacker's guess
-  // got. `!==` short-circuits on the first divergent byte, which
-  // a determined attacker can measure across many tries even with
-  // the IP rate limit (distributed sources). Pad to a fixed buffer
-  // length so timingSafeEqual doesn't itself leak length information
-  // via its length-mismatch fast-path.
-  const storedEmail = (legacyRow?.patient_email ?? "").toLowerCase();
-  const probedEmail = parsed.data.email;
-  let emailMatches = false;
-  if (legacyRow) {
-    const pad = Math.max(storedEmail.length, probedEmail.length, 320);
-    const a = Buffer.alloc(pad);
-    const b = Buffer.alloc(pad);
-    a.write(storedEmail, "utf8");
-    b.write(probedEmail, "utf8");
-    emailMatches = timingSafeEqual(a, b);
-  }
-  if (!legacyRow || !emailMatches) {
+  if (result.outcome === "not_found") {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
   // Counts-only log — never the reference or the email.
   req.log?.info?.(
-    { event: "orders.track.served", emailStatus: legacyRow.email_status },
+    { event: "orders.track.served", emailStatus: result.order.emailStatus },
     "orders.track: order surfaced",
   );
 
   res.json({
-    orderReference: legacyRow.order_reference,
-    mask: {
-      name: legacyRow.mask_name,
-      manufacturer: legacyRow.mask_manufacturer,
-      modelNumber: legacyRow.mask_model_number,
-    },
-    createdAt: legacyRow.created_at,
-    emailStatus: legacyRow.email_status,
-    emailDeliveredAt: legacyRow.email_delivered_at,
-    // Future expansion: shop_orders linkage for shipped/delivered
-    // timestamps + tracking carrier/number. Today public.orders
-    // doesn't store fulfillment-side state.
+    orderReference: result.order.orderReference,
+    mask: result.order.mask,
+    createdAt: result.order.createdAt,
+    emailStatus: result.order.emailStatus,
+    emailDeliveredAt: result.order.emailDeliveredAt,
   });
 });
 
 export default router;
 
-// Test-only seam — clears the in-memory rate bucket between vitest runs.
-export function _resetTrackOrderRateBucketForTests(): void {
-  rateBucket.clear();
-  rateBucketSweepCounter = 0;
-}
+// Test-only seam — kept exported from this module because the route
+// tests import it from here; clears the shared in-memory rate bucket.
+export { _resetTrackOrderRateBucketForTests } from "../../lib/storefront/orderTracking.js";

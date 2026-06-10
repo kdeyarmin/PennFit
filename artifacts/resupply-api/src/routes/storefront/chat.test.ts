@@ -576,6 +576,7 @@ describe("POST /chat", () => {
         "compare_masks",
         "find_masks",
         "recommend_masks",
+        "track_order",
       ]);
       expect(payload.tool_choice).toBe("auto");
     });

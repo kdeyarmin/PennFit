@@ -493,16 +493,18 @@ export function simulateToolResult(
 }
 
 /**
- * Run one tool call. Storefront tools touch only the public catalog, so
- * we execute them for real; every other bot's tools are simulated.
+ * Run one tool call. Storefront tools are executed for real — the
+ * catalog tools touch only public data, and track_order without the
+ * chat route's request context short-circuits to needs_email before
+ * any lookup. Every other bot's tools are simulated.
  */
-function executeOrSimulate(
+async function executeOrSimulate(
   bot: BotKind,
   name: string,
   input: Record<string, unknown>,
-): { content: string; simulated: boolean } {
+): Promise<{ content: string; simulated: boolean }> {
   if (bot === "storefront") {
-    const result = executeChatTool(name, input);
+    const result = await executeChatTool(name, input);
     return { content: serializeToolResult(result), simulated: false };
   }
   return { content: simulateToolResult(name, input), simulated: true };
@@ -659,7 +661,7 @@ async function runAnthropic(
       messages.push({ role: "assistant", content: assistantBlocks });
       const resultBlocks: AnthropicContentBlock[] = [];
       for (const c of calls) {
-        const { content, simulated } = executeOrSimulate(bot, c.name, c.input);
+        const { content, simulated } = await executeOrSimulate(bot, c.name, c.input);
         toolCalls.push({
           name: c.name,
           input: c.input,
@@ -777,7 +779,7 @@ async function runOpenAi(
           } catch {
             parsed = {};
           }
-          const { content, simulated } = executeOrSimulate(
+          const { content, simulated } = await executeOrSimulate(
             bot,
             c.function.name,
             parsed,
