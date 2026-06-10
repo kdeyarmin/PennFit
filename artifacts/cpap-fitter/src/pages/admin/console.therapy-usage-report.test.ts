@@ -16,8 +16,10 @@ const SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 // ─── Lazy loading ─────────────────────────────────────────────────────────────
 
 describe("console.tsx — AdminTherapyUsageReportPage lazy loading", () => {
-  it("declares AdminTherapyUsageReportPage as a lazy() component", () => {
-    expect(SRC).toMatch(/const\s+AdminTherapyUsageReportPage\s*=\s*lazy\s*\(/);
+  it("declares AdminTherapyUsageReportPage as a lazyWithRetry() component", () => {
+    expect(SRC).toMatch(
+      /const\s+AdminTherapyUsageReportPage\s*=\s*lazyWithRetry\s*\(/,
+    );
   });
 
   it("imports the page from @/pages/admin/admin-therapy-usage-report", () => {
