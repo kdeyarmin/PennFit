@@ -30,20 +30,33 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import {
+  defaultTemplateSections,
+  effectiveTemplateContent,
+  findUnknownTokens,
+  listMergeTokens,
+  loadTemplateOverrides,
+  packetSectionsSchema,
+  renderPacketDocumentSections,
+} from "../../lib/patient-packet/content";
+import {
   renderPatientPacketPdf,
   type PacketPdfInput,
 } from "../../lib/patient-packet/packet-pdf";
 import {
+  applyPacketDocumentOverrides,
   createAndSendPatientPacket,
   createAndSendPatientPacketToContact,
   deliverPacketLink,
+  findInvalidOverrideKeys,
   reconcilePacketDocuments,
   resolveDocumentKeys,
   PACKET_CHANNELS,
 } from "../../lib/patient-packet/send";
 import {
   PACKET_TEMPLATES,
+  getPacketTemplate,
   isRequiredPacketDocumentKey,
+  isValidPacketDocumentKey,
 } from "../../lib/patient-packet/templates";
 import { signPatientPacketToken } from "../../lib/patient-packet-token";
 import {
@@ -86,10 +99,34 @@ const deliveryDetailsSchema = z
   })
   .strict();
 
+// One-off content edits applied to this packet alone. Sections are in
+// token form; unknown {{tokens}} are rejected below with the valid list.
+const documentOverridesSchema = z
+  .array(
+    z
+      .object({
+        documentKey: z.string().min(1).max(64),
+        title: z.string().trim().min(1).max(200).optional(),
+        sections: packetSectionsSchema,
+      })
+      .strict(),
+  )
+  .max(20)
+  .optional();
+
+/** 400 helper: reject overrides whose sections carry unknown tokens. */
+function findOverrideUnknownTokens(
+  overrides: { sections: z.infer<typeof packetSectionsSchema> }[] | undefined,
+): string[] {
+  if (!overrides) return [];
+  return [...new Set(overrides.flatMap((o) => findUnknownTokens(o.sections)))];
+}
+
 const createBody = z
   .object({
     documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
     title: z.string().trim().min(1).max(160).optional(),
+    documentOverrides: documentOverridesSchema,
     recipientEmail: z
       .string()
       .trim()
@@ -122,6 +159,7 @@ const sendToContactBody = z
     recipientName: z.string().trim().min(1).max(160).optional().nullable(),
     documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
     title: z.string().trim().min(1).max(160).optional(),
+    documentOverrides: documentOverridesSchema,
     channels: channelsSchema,
     deliveryDetails: deliveryDetailsSchema.optional().nullable(),
     expiresInDays: z.number().int().min(1).max(90).optional(),
@@ -140,13 +178,15 @@ const updateBody = z
     documentKeys: z.array(z.string().min(1).max(64)).min(1).max(20).optional(),
     title: z.string().trim().min(1).max(160).optional(),
     deliveryDetails: deliveryDetailsSchema.optional().nullable(),
+    documentOverrides: documentOverridesSchema,
   })
   .strict()
   .refine(
     (b) =>
       b.documentKeys !== undefined ||
       b.title !== undefined ||
-      b.deliveryDetails !== undefined,
+      b.deliveryDetails !== undefined ||
+      b.documentOverrides !== undefined,
     { message: "Provide at least one field to update." },
   );
 
@@ -156,23 +196,256 @@ function signingUrl(baseUrl: string, token: string): string {
   return `${baseUrl.replace(/\/$/, "")}/patient-packet-sign?token=${encodeURIComponent(token)}`;
 }
 
-// ── Document catalog ──────────────────────────────────────────────
+// ── Document catalog (with effective, editable content) ──────────
+//
+// Returns each template's EFFECTIVE content: the operator's permanent
+// override when one exists, else the code default — both in token form
+// ({{merge_tokens}} resolve at send/render time). `defaultSections` is
+// always the code default so the editor can show a diff / offer revert.
 router.get(
   "/admin/patient-packet-templates",
   adminReadRateLimiter,
   requirePermission("patients.read"),
-  (_req, res) => {
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const overrides = await loadTemplateOverrides(supabase);
     res.json({
-      templates: PACKET_TEMPLATES.map((t) => ({
-        key: t.key,
-        title: t.title,
-        category: t.category,
-        version: t.version,
-        summary: t.summary,
-        requiresSignature: t.requiresSignature,
-        defaultIncluded: t.defaultIncluded,
-        required: isRequiredPacketDocumentKey(t.key),
-      })),
+      templates: PACKET_TEMPLATES.map((t) => {
+        const effective = effectiveTemplateContent(t.key, overrides)!;
+        const override = overrides.get(t.key);
+        return {
+          key: t.key,
+          title: effective.title,
+          defaultTitle: t.title,
+          category: t.category,
+          version: effective.version,
+          summary: t.summary,
+          requiresSignature: t.requiresSignature,
+          defaultIncluded: t.defaultIncluded,
+          required: isRequiredPacketDocumentKey(t.key),
+          customized: effective.customized,
+          sections: effective.sections,
+          defaultSections: defaultTemplateSections(t.key),
+          updatedAt: effective.customized
+            ? (override?.updated_at ?? null)
+            : null,
+          updatedByEmail: effective.customized
+            ? (override?.updated_by_email ?? null)
+            : null,
+        };
+      }),
+      mergeTokens: listMergeTokens(),
+    });
+  },
+);
+
+// ── Edit a template (permanent, all future packets) ───────────────
+//
+// Saves an override row for the document key; every packet sent after
+// the save snapshots the new content. Already-sent packets are NEVER
+// rewritten (their content was snapshotted at send time). Gated on the
+// supervisor-tier tools permission — template wording affects every
+// patient, unlike sending a packet.
+const templateKeyParam = z.object({ key: z.string().min(1).max(64) });
+
+const saveTemplateBody = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    sections: packetSectionsSchema,
+  })
+  .strict();
+
+router.put(
+  "/admin/patient-packet-templates/:key",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "patient_packet_templates.save",
+    preset: "sensitive",
+  }),
+  async (req, res) => {
+    const keyParsed = templateKeyParam.safeParse(req.params);
+    if (!keyParsed.success || !isValidPacketDocumentKey(keyParsed.data.key)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const key = keyParsed.data.key;
+    const parsed = saveTemplateBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const unknownTokens = findUnknownTokens(parsed.data.sections);
+    if (unknownTokens.length > 0) {
+      res.status(400).json({
+        error: "unknown_merge_tokens",
+        unknownTokens,
+        validTokens: listMergeTokens().map((t) => t.token),
+      });
+      return;
+    }
+
+    const template = getPacketTemplate(key)!;
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: readErr } = await supabase
+      .schema("resupply")
+      .from("patient_packet_template_overrides")
+      .select("revision")
+      .eq("document_key", key)
+      .limit(1)
+      .maybeSingle();
+    if (readErr) throw readErr;
+
+    const revision = (existing?.revision ?? 0) + 1;
+    const nowIso = new Date().toISOString();
+    const { error: upsertErr } = await supabase
+      .schema("resupply")
+      .from("patient_packet_template_overrides")
+      .upsert(
+        {
+          document_key: key,
+          title: parsed.data.title?.trim() || template.title,
+          sections: parsed.data.sections as unknown as Json,
+          revision,
+          updated_by_email: req.adminEmail ?? null,
+          updated_at: nowIso,
+        },
+        { onConflict: "document_key" },
+      );
+    if (upsertErr) throw upsertErr;
+
+    await logAudit({
+      action: "patient_packet_template.updated",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packet_template_overrides",
+      targetId: key,
+      // PHI-safe: the key + revision only, never the content.
+      metadata: { document_key: key, revision },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "patient_packet_template.updated audit write failed",
+      );
+    });
+
+    res.json({ key, revision, customized: true });
+  },
+);
+
+// ── Revert a template to the built-in default ─────────────────────
+router.delete(
+  "/admin/patient-packet-templates/:key",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "patient_packet_templates.revert",
+    preset: "sensitive",
+  }),
+  async (req, res) => {
+    const keyParsed = templateKeyParam.safeParse(req.params);
+    if (!keyParsed.success || !isValidPacketDocumentKey(keyParsed.data.key)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const key = keyParsed.data.key;
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("patient_packet_template_overrides")
+      .delete()
+      .eq("document_key", key);
+    if (error) throw error;
+
+    await logAudit({
+      action: "patient_packet_template.reverted",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packet_template_overrides",
+      targetId: key,
+      metadata: { document_key: key },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "patient_packet_template.reverted audit write failed",
+      );
+    });
+
+    res.json({ key, customized: false });
+  },
+);
+
+// ── Preview a template as a patient would see it ──────────────────
+//
+// Resolves merge tokens against the live company profile and sample
+// patient values so the operator can VIEW the finished document without
+// sending anything. Accepts optional draft sections in the body so the
+// editor can preview unsaved edits (POST, but read-only — nothing is
+// persisted).
+const previewBody = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    sections: packetSectionsSchema.optional(),
+  })
+  .strict();
+
+router.post(
+  "/admin/patient-packet-templates/:key/preview",
+  adminReadRateLimiter,
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const keyParsed = templateKeyParam.safeParse(req.params);
+    if (!keyParsed.success || !isValidPacketDocumentKey(keyParsed.data.key)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const key = keyParsed.data.key;
+    const parsed = previewBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const [company, overrides] = await Promise.all([
+      resolveCompanyProfile(supabase),
+      loadTemplateOverrides(supabase),
+    ]);
+    const effective = effectiveTemplateContent(key, overrides)!;
+    const sections = renderPacketDocumentSections({
+      documentKey: key,
+      storedSections: parsed.data.sections ?? effective.sections,
+      company,
+      recipientName: "Jordan Sample",
+      recipientEmail: "jordan@example.com",
+      recipientPhone: "+12155550123",
+      // A representative POD itemization so the preview shows where the
+      // dynamic delivery list lands.
+      deliveryDetails:
+        key === "proof_of_delivery"
+          ? {
+              items: [
+                {
+                  description: "CPAP device (sample)",
+                  hcpcs: "E0601",
+                  quantity: 1,
+                },
+              ],
+              deliveryDate: new Date().toISOString().slice(0, 10),
+            }
+          : null,
+    });
+    res.json({
+      key,
+      title: parsed.data.title?.trim() || effective.title,
+      sections,
     });
   },
 );
@@ -257,6 +530,15 @@ router.post(
       return;
     }
     const b = parsed.data;
+    const unknownTokens = findOverrideUnknownTokens(b.documentOverrides);
+    if (unknownTokens.length > 0) {
+      res.status(400).json({
+        error: "unknown_merge_tokens",
+        unknownTokens,
+        validTokens: listMergeTokens().map((t) => t.token),
+      });
+      return;
+    }
 
     const supabase = getSupabaseServiceRoleClient();
     const result = await createAndSendPatientPacket({
@@ -268,13 +550,17 @@ router.post(
       recipientPhoneOverride: b.recipientPhone,
       channels: b.channels,
       deliveryDetails: b.deliveryDetails ?? null,
+      documentOverrides: b.documentOverrides,
       expiresInDays: b.expiresInDays,
       createdByEmail: req.adminEmail ?? null,
     });
     if (!result.ok) {
-      if (result.code === "invalid_document_keys") {
+      if (
+        result.code === "invalid_document_keys" ||
+        result.code === "invalid_document_overrides"
+      ) {
         res.status(400).json({
-          error: "invalid_document_keys",
+          error: result.code,
           invalidKeys: result.invalidKeys,
         });
         return;
@@ -333,6 +619,15 @@ router.post(
       return;
     }
     const b = parsed.data;
+    const unknownTokens = findOverrideUnknownTokens(b.documentOverrides);
+    if (unknownTokens.length > 0) {
+      res.status(400).json({
+        error: "unknown_merge_tokens",
+        unknownTokens,
+        validTokens: listMergeTokens().map((t) => t.token),
+      });
+      return;
+    }
 
     const supabase = getSupabaseServiceRoleClient();
     const result = await createAndSendPatientPacketToContact({
@@ -344,13 +639,17 @@ router.post(
       title: b.title,
       channels: b.channels,
       deliveryDetails: b.deliveryDetails ?? null,
+      documentOverrides: b.documentOverrides,
       expiresInDays: b.expiresInDays,
       createdByEmail: req.adminEmail ?? null,
     });
     if (!result.ok) {
-      if (result.code === "invalid_document_keys") {
+      if (
+        result.code === "invalid_document_keys" ||
+        result.code === "invalid_document_overrides"
+      ) {
         res.status(400).json({
-          error: "invalid_document_keys",
+          error: result.code,
           invalidKeys: result.invalidKeys,
         });
         return;
@@ -507,6 +806,16 @@ router.patch(
       return;
     }
 
+    const unknownTokens = findOverrideUnknownTokens(b.documentOverrides);
+    if (unknownTokens.length > 0) {
+      res.status(400).json({
+        error: "unknown_merge_tokens",
+        unknownTokens,
+        validTokens: listMergeTokens().map((t) => t.token),
+      });
+      return;
+    }
+
     // Reconcile the document set first so an invalid key fails before any
     // write — the same validation + required-folding the send paths use.
     let documentCount: number | null = null;
@@ -521,6 +830,32 @@ router.patch(
       }
       await reconcilePacketDocuments(supabase, packet.id, docs.uniqueKeys);
       documentCount = docs.uniqueKeys.length;
+    }
+
+    // One-off content edits for this packet's documents. Validated
+    // against the packet's CURRENT document set (post-reconcile).
+    if (b.documentOverrides !== undefined && b.documentOverrides.length > 0) {
+      const { data: currentDocs, error: curErr } = await supabase
+        .schema("resupply")
+        .from("patient_packet_documents")
+        .select("document_key")
+        .eq("packet_id", packet.id);
+      if (curErr) throw curErr;
+      const invalidKeys = findInvalidOverrideKeys(
+        b.documentOverrides,
+        (currentDocs ?? []).map((d) => d.document_key),
+      );
+      if (invalidKeys.length > 0) {
+        res
+          .status(400)
+          .json({ error: "invalid_document_overrides", invalidKeys });
+        return;
+      }
+      await applyPacketDocumentOverrides(
+        supabase,
+        packet.id,
+        b.documentOverrides,
+      );
     }
 
     // Apply the scalar/JSONB column edits.
@@ -554,6 +889,7 @@ router.patch(
         document_count: documentCount,
         title_changed: b.title !== undefined,
         delivery_details_changed: b.deliveryDetails !== undefined,
+        content_overrides: b.documentOverrides?.length ?? 0,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -756,7 +1092,7 @@ router.get(
       .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, sent_at, completed_at, delivery_details",
+        "id, patient_id, title, status, recipient_name, recipient_email, recipient_phone, sent_at, completed_at, delivery_details",
       )
       .eq("id", parsed.data.packetId)
       .limit(1)
@@ -772,7 +1108,7 @@ router.get(
         .schema("resupply")
         .from("patient_packet_documents")
         .select(
-          "document_key, title, requires_signature, content_version, sort_order",
+          "document_key, title, requires_signature, content_version, content_sections, sort_order",
         )
         .eq("packet_id", packet.id)
         .order("sort_order", { ascending: true }),
@@ -790,6 +1126,8 @@ router.get(
     if (sigRes.error) throw sigRes.error;
 
     const sig = sigRes.data;
+    const deliveryDetails = (packet.delivery_details ??
+      null) as PacketPdfInput["deliveryDetails"];
     const { pdf } = await renderPatientPacketPdf({
       packetId: packet.id,
       title: packet.title,
@@ -803,9 +1141,22 @@ router.get(
         title: d.title,
         requiresSignature: d.requires_signature,
         contentVersion: d.content_version,
+        // Snapshot rows render their send-time content (tokens resolved
+        // here); legacy rows fall back to the code template inside the
+        // renderer.
+        sections: d.content_sections
+          ? renderPacketDocumentSections({
+              documentKey: d.document_key,
+              storedSections: d.content_sections,
+              company,
+              recipientName: packet.recipient_name,
+              recipientEmail: packet.recipient_email,
+              recipientPhone: packet.recipient_phone,
+              deliveryDetails,
+            })
+          : null,
       })),
-      deliveryDetails: (packet.delivery_details ??
-        null) as PacketPdfInput["deliveryDetails"],
+      deliveryDetails,
       signature: sig
         ? {
             signerName: sig.signer_name,

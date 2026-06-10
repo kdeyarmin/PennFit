@@ -109,6 +109,39 @@ export async function getManualDocumentCatalog(): Promise<{
   return (await res.json()) as { types: ManualDocumentTypeDef[] };
 }
 
+export interface ManualDocumentPrefill {
+  /** Suggested values for the type's catalog fields (only known keys,
+   *  only non-empty values). */
+  fields: Record<string, string>;
+  /** Suggested recipient block (provider for CMN / prescription / fax
+   *  cover, the patient otherwise). */
+  recipient: {
+    name: string | null;
+    address: string | null;
+    email: string | null;
+    fax: string | null;
+  };
+}
+
+/** Chart-sourced suggestions so the author only types what they want to
+ *  change. Read-only; nothing is persisted. */
+export async function getManualDocumentPrefill(params: {
+  patientId: string;
+  documentType: ManualDocumentType;
+}): Promise<ManualDocumentPrefill> {
+  const qs = new URLSearchParams({
+    patientId: params.patientId,
+    documentType: params.documentType,
+  });
+  const url = `${BASE}/prefill?${qs.toString()}`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as ManualDocumentPrefill;
+}
+
 export async function listManualDocuments(params?: {
   patientId?: string;
   status?: ManualDocumentStatus;

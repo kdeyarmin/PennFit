@@ -28,6 +28,12 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { DeliveryItemsEditor } from "@/components/admin/DeliveryItemsEditor";
 import { PacketEditForm } from "@/components/admin/PacketEditForm";
+import {
+  PacketDocumentCustomizer,
+  PacketTemplatesPanel,
+  buildDocumentOverrides,
+  type PacketCustomization,
+} from "@/components/admin/PacketTemplatesPanel";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 type BadgeVariant =
@@ -73,6 +79,7 @@ export function AdminPatientPacketsPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showSend, setShowSend] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const packetsQuery = useAllPatientPackets(statusFilter || undefined);
@@ -99,10 +106,22 @@ export function AdminPatientPacketsPage() {
               track who has signed.
             </p>
           </div>
-          <Button onClick={() => setShowSend((s) => !s)}>
-            {showSend ? "Close" : "Send new packet"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              intent="secondary"
+              onClick={() => setShowTemplates((s) => !s)}
+            >
+              {showTemplates ? "Close templates" : "Document templates"}
+            </Button>
+            <Button onClick={() => setShowSend((s) => !s)}>
+              {showSend ? "Close" : "Send new packet"}
+            </Button>
+          </div>
         </div>
+
+        {showTemplates && (
+          <PacketTemplatesPanel onClose={() => setShowTemplates(false)} />
+        )}
 
         {showSend && (
           <SendPacketPanel
@@ -278,6 +297,10 @@ function SendPacketPanel({
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<Record<string, boolean>>({});
+  // One-off content edits keyed by document key (null = not customizing).
+  const [customizations, setCustomizations] = useState<
+    Record<string, PacketCustomization | null>
+  >({});
   const [useEmail, setUseEmail] = useState(true);
   const [useSms, setUseSms] = useState(true);
   const [title, setTitle] = useState("");
@@ -335,6 +358,11 @@ function SendPacketPanel({
       setError("Select at least one document.");
       return;
     }
+    const documentOverrides = buildDocumentOverrides(
+      customizations,
+      templates,
+      chosen.map((t) => t.key),
+    );
     try {
       if (mode === "patient") {
         if (!selectedPatient) {
@@ -357,6 +385,7 @@ function SendPacketPanel({
             recipientPhone: recipientPhone.trim() || undefined,
             channels,
             deliveryDetails,
+            documentOverrides,
           },
         });
         setResult({
@@ -384,6 +413,7 @@ function SendPacketPanel({
           title: title.trim() || undefined,
           channels,
           deliveryDetails,
+          documentOverrides,
         });
         setResult({
           link: res.signingLink,
@@ -490,6 +520,7 @@ function SendPacketPanel({
                   setContactEmail("");
                   setContactPhone("");
                   setDeliveryDetails(null);
+                  setCustomizations({});
                 }}
               >
                 Send another
@@ -691,40 +722,65 @@ function SendPacketPanel({
                 <Spinner label="Loading documents…" />
               ) : (
                 <div className="space-y-2">
-                  {templates.map((t: PatientPacketTemplate) => (
-                    <label
-                      key={t.key}
-                      className="flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer"
-                      style={{ borderColor: "hsl(var(--line-1))" }}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={t.required || Boolean(selectedKeys[t.key])}
-                        disabled={t.required}
-                        onChange={() => toggleKey(t.key)}
-                      />
-                      <span>
-                        <span
-                          className="font-medium text-sm"
-                          style={{ color: "hsl(var(--ink-1))" }}
-                        >
-                          {t.title}
-                        </span>{" "}
-                        {t.required ? (
-                          <Badge variant="info">Required</Badge>
-                        ) : !t.requiresSignature ? (
-                          <Badge variant="muted">Informational</Badge>
-                        ) : null}
-                        <span
-                          className="block text-xs mt-0.5"
-                          style={{ color: "hsl(var(--ink-3))" }}
-                        >
-                          {t.summary}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
+                  {templates.map((t: PatientPacketTemplate) => {
+                    const included = t.required || Boolean(selectedKeys[t.key]);
+                    return (
+                      <div
+                        key={t.key}
+                        className="rounded-md border px-3 py-2"
+                        style={{ borderColor: "hsl(var(--line-1))" }}
+                      >
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={included}
+                            disabled={t.required}
+                            onChange={() => toggleKey(t.key)}
+                          />
+                          <span>
+                            <span
+                              className="font-medium text-sm"
+                              style={{ color: "hsl(var(--ink-1))" }}
+                            >
+                              {t.title}
+                            </span>{" "}
+                            {t.required ? (
+                              <Badge variant="info">Required</Badge>
+                            ) : !t.requiresSignature ? (
+                              <Badge variant="muted">Informational</Badge>
+                            ) : null}
+                            {t.customized && (
+                              <Badge variant="info">Customized</Badge>
+                            )}
+                            <span
+                              className="block text-xs mt-0.5"
+                              style={{ color: "hsl(var(--ink-3))" }}
+                            >
+                              {t.summary}
+                            </span>
+                          </span>
+                        </label>
+                        {included && (
+                          <div className="mt-1 pl-7">
+                            <PacketDocumentCustomizer
+                              template={t}
+                              mergeTokens={
+                                templatesQuery.data?.mergeTokens ?? []
+                              }
+                              value={customizations[t.key] ?? null}
+                              onChange={(v) =>
+                                setCustomizations((prev) => ({
+                                  ...prev,
+                                  [t.key]: v,
+                                }))
+                              }
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
