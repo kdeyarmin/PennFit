@@ -186,6 +186,7 @@ BILLING (the claims + revenue-cycle hub):
         Payer profitability (/admin/billing/payer-profitability).
   - Worklists:
       * AI queue (/admin/billing/ai-queue),
+        Verify insurance (/admin/billing/verify) — run an on-demand 270/271 for any patient,
         Eligibility (/admin/billing/eligibility), Re-verification (/admin/billing/eligibility-recheck),
         Auto-submit (/admin/billing/auto-submit), Prior auths (/admin/billing/prior-auths),
         Denials worklist (/admin/billing/denials-worklist), CMN / DIF worklist (/admin/billing/cmn),
@@ -261,6 +262,12 @@ Send an outbound campaign:
   - Bulk Campaigns (/admin/bulk-campaigns) to batch SMS/email. The
     Alert Library (/admin/alerts) and Automated messages
     (/admin/templates) hold the reusable content.
+
+Verify a patient's insurance right now:
+  - Verify insurance (/admin/billing/verify) — search any patient, pick
+    the coverage, and run a 270/271 on demand. The same one-click check
+    lives on the patient chart: Quick actions → Verify insurance, or the
+    Billing tab → Check eligibility.
 
 Process a claim end to end:
   - Eligibility (/admin/billing/eligibility) → confirm coverage →

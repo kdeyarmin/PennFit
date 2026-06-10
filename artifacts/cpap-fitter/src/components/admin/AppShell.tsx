@@ -701,7 +701,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Worklists",
         icon: ListChecks,
-        hint: "Daily billing worklists — AI queue, eligibility, prior auths, denials, CMN",
+        hint: "Daily billing worklists — AI queue, verify insurance, eligibility, prior auths, denials, CMN",
         tabs: [
           {
             href: "/admin/billing/ai-queue",
@@ -709,6 +709,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Bot,
             matchPrefix: "/admin/billing/ai-queue",
             hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+          },
+          {
+            href: "/admin/billing/verify",
+            label: "Verify insurance",
+            icon: ShieldCheck,
+            matchPrefix: "/admin/billing/verify",
+            hint: "Run an on-demand insurance verification (270/271) for any patient",
           },
           {
             href: "/admin/billing/eligibility",

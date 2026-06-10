@@ -111,18 +111,28 @@ export function AdminBillingEligibilityPage() {
       className="admin-root space-y-6 max-w-6xl"
       data-testid="admin-billing-eligibility"
     >
-      <header>
-        <h1
-          className="text-2xl font-semibold mb-1"
-          style={{ color: "hsl(var(--ink-1))" }}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1
+            className="text-2xl font-semibold mb-1"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            Eligibility worklist
+          </h1>
+          <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
+            Every 270/271 round-trip in the selected window. Rejected and
+            transport-failed checks are where the team's time pays off — those
+            are coverage rows about to bite us.
+          </p>
+        </div>
+        <Link
+          href="/admin/billing/verify"
+          className="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-white"
+          style={{ backgroundColor: "hsl(var(--penn-navy))" }}
+          data-testid="eligibility-run-verification-link"
         >
-          Eligibility worklist
-        </h1>
-        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Every 270/271 round-trip in the selected window. Rejected and
-          transport-failed checks are where the team's time pays off — those are
-          coverage rows about to bite us.
-        </p>
+          Run a verification
+        </Link>
       </header>
 
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
