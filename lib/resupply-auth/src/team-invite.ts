@@ -428,11 +428,12 @@ export async function deleteTeamMember(
   const { error: tokErr } = await supabase
     .schema("resupply_auth")
     .from("email_tokens")
-    .delete()
+    // Preserve audit trail: dead-letter invite/reset links by expiring them,
+    // rather than deleting rows.
+    .update({ expires_at: nowIso })
     .eq("user_id", authUserId)
     .eq("purpose", "password_reset")
     .is("consumed_at", null);
-  if (tokErr) throw tokErr;
 
   const { error: sessErr } = await supabase
     .schema("resupply_auth")
