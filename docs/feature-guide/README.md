@@ -17,9 +17,11 @@ A **Platform Foundations** section covers shared capabilities (storefront,
 AI mask fitter, voice agent, chatbots, security/privacy), and a closing
 **Competitive Feature Matrix** appendix positions PennFit's top features
 against leading DME/HME software (Brightree + ReSupply, NikoHealth, TIMS
-Software, Parachute Health), with a disclaimer that competitor entries
-summarize public product information and should be verified before
-customer-facing use.
+Software) and includes a pricing snapshot (all three vendors sell on
+custom quotes; figures shown are third-party directory estimates from
+ITQlick/SelectHub as of June 2026). A disclaimer notes that competitor
+entries summarize public product information and should be verified
+before customer-facing use.
 
 ## Regenerating
 

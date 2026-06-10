@@ -265,6 +265,48 @@ def matrix_legend():
     return t
 
 
+def pricing_table(headers, rows):
+    """Vendor-per-row pricing snapshot with text cells."""
+    head_style = ParagraphStyle(
+        "prHead", fontName="Helvetica-Bold", fontSize=7.4, leading=9,
+        textColor=white)
+    vendor_style = ParagraphStyle(
+        "prVendor", fontName="Helvetica-Bold", fontSize=8, leading=10,
+        textColor=NAVY_DEEP)
+    cell_style = ParagraphStyle(
+        "prCell", fontName="Helvetica", fontSize=8, leading=10,
+        textColor=BODY_GRAY)
+    data = [[Paragraph(h, head_style) for h in headers]]
+    for vendor, model, price, impl in rows:
+        data.append([
+            Paragraph(vendor, vendor_style),
+            Paragraph(model, cell_style),
+            Paragraph(price, cell_style),
+            Paragraph(impl, cell_style),
+        ])
+    t = Table(data, colWidths=[1.30 * inch, 1.85 * inch, 2.30 * inch,
+                               CONTENT_W - 5.45 * inch],
+              hAlign="LEFT", repeatRows=1)
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY_DEEP),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, PLATINUM),
+    ]
+    for i in range(1, len(data)):
+        if data[i][0].text.startswith("PennFit"):
+            style.append(("BACKGROUND", (0, i), (-1, i), GOLD_SOFT))
+        elif i % 2 == 0:
+            style.append(("BACKGROUND", (0, i), (-1, i), MIST))
+        else:
+            style.append(("BACKGROUND", (0, i), (-1, i), PEARL))
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def matrix_table(vendors, groups):
     """Competitive matrix with group bands and a repeating vendor header."""
     feature_w = 2.55 * inch
@@ -924,72 +966,99 @@ FOUNDATIONS = [
 
 
 MATRIX_VENDORS = ["PennFit", "Brightree + ReSupply", "NikoHealth",
-                  "TIMS Software", "Parachute Health"]
+                  "TIMS Software"]
 
 MATRIX_INTRO = (
     "The matrix below positions PennFit's marquee features against the "
     "DME/HME platforms a resupply business is most likely to evaluate: "
     "Brightree with its ReSupply module (the established business-"
     "management incumbent), NikoHealth (a modern HME/DME billing and "
-    "operations platform), TIMS Software (a long-standing HME suite), and "
-    "Parachute Health (the e-ordering and documentation network)."
+    "operations platform), and TIMS Software (a long-standing HME suite). "
+    "A pricing snapshot follows the capability matrix."
 )
 
 MATRIX_FOOTNOTE = (
     "PennFit entries reflect the shipped platform described in this guide. "
-    "Competitor entries are a good-faith summary of publicly available "
-    "product information as of June 2026; offerings change frequently and "
-    "several vendors deliver additional capabilities through partners or "
-    "paid add-ons. Verify with each vendor before using this comparison in "
-    "customer-facing material."
+    "Competitor capability and pricing entries are a good-faith summary of "
+    "vendor materials and third-party software directories (ITQlick, "
+    "SelectHub) as of June 2026. All three vendors sell on custom quotes — "
+    "published figures are directory estimates, not vendor list prices — "
+    "and offerings change frequently. Verify with each vendor before using "
+    "this comparison in customer-facing material."
 )
 
 # Mark order follows MATRIX_VENDORS.
 MATRIX = [
     ("Patient Experience", [
         ("AI camera-based mask fitting, in-browser and privacy-first",
-         ["full", "none", "none", "none", "none"]),
+         ["full", "none", "none", "none"]),
         ("Patient e-commerce storefront, subscriptions, and cash-pay",
-         ["full", "half", "half", "half", "none"]),
+         ["full", "half", "half", "half"]),
         ("Automated resupply outreach with one-tap confirm (SMS/email)",
-         ["full", "full", "half", "half", "none"]),
+         ["full", "full", "half", "half"]),
         ("Conversational AI voice agent for reorders and check-ins",
-         ["full", "half", "none", "none", "none"]),
+         ["full", "half", "none", "none"]),
         ("Patient AI chatbot and sleep coach",
-         ["full", "none", "none", "none", "none"]),
+         ["full", "none", "none", "none"]),
     ]),
     ("Clinical & Therapy", [
         ("Therapy-cloud device data sync (ResMed, Philips, React Health)",
-         ["full", "full", "half", "half", "none"]),
+         ["full", "full", "half", "half"]),
         ("CMS 90-day setup-adherence tracking",
-         ["full", "full", "half", "half", "none"]),
+         ["full", "full", "half", "half"]),
         ("Clinical intervention, coaching, and mask-fit worklists",
-         ["full", "half", "none", "none", "none"]),
+         ["full", "half", "none", "none"]),
         ("Inbound fax OCR and document triage",
-         ["full", "full", "half", "half", "half"]),
+         ["full", "full", "half", "half"]),
     ]),
     ("Revenue Cycle", [
         ("Clearinghouse claims (837P/835) and real-time eligibility",
-         ["full", "full", "full", "full", "none"]),
+         ["full", "full", "full", "full"]),
         ("AI claim scrubbing and denial recovery ranked by win probability",
-         ["full", "half", "half", "none", "none"]),
+         ["full", "half", "half", "none"]),
         ("Electronic prior authorization (Da Vinci PAS)",
-         ["full", "half", "none", "none", "none"]),
+         ["full", "half", "none", "none"]),
         ("DME A/R suite: capped rentals, secondary claims, timely filing",
-         ["full", "full", "full", "full", "none"]),
+         ["full", "full", "full", "full"]),
         ("Patient statements, payment plans, and payment links",
-         ["full", "full", "full", "full", "none"]),
+         ["full", "full", "full", "full"]),
     ]),
     ("Operations & Intelligence", [
         ("Unified omnichannel inbox (SMS, MMS, email)",
-         ["full", "half", "half", "none", "half"]),
+         ["full", "half", "half", "none"]),
         ("Provider e-signature and e-ordering collaboration",
-         ["full", "half", "half", "none", "full"]),
+         ["full", "half", "half", "none"]),
         ("Business analytics: margin, LTV/CAC, payer profitability",
-         ["full", "half", "half", "half", "none"]),
+         ["full", "half", "half", "half"]),
         ("In-app AI staff assistant and no-code automation rules",
-         ["full", "half", "half", "none", "none"]),
+         ["full", "half", "half", "none"]),
     ]),
+]
+
+PRICING_HEADERS = ["Vendor", "Pricing model", "Published starting point",
+                   "Implementation (est.)"]
+
+PRICING_ROWS = [
+    ("PennFit",
+     "Owned in-house platform — no per-user license",
+     "No license fee; infrastructure plus usage-based vendor fees "
+     "(telecom, email, payments, AI)",
+     "Already deployed"),
+    ("Brightree + ReSupply",
+     "Quote-based SaaS; modules priced separately (ReSupply is an add-on "
+     "program)",
+     "None published; directory estimates ~$100–$250+ per user/month "
+     "(~$1,500/month at 10 users)",
+     "~$5K–$30K (estimate)"),
+    ("NikoHealth",
+     "Quote-based SaaS, sized per organization",
+     "None published; custom quote only",
+     "Not disclosed"),
+    ("TIMS Software",
+     "Quote-based SaaS, sized per organization",
+     "None published; directory estimates ~$150–$800/month for small "
+     "teams, $5,000+/month at enterprise scale",
+     "~$5K–$20K (estimate)"),
 ]
 
 
@@ -1121,6 +1190,12 @@ def build():
     story.append(matrix_legend())
     story.append(Spacer(1, 10))
     story.append(matrix_table(MATRIX_VENDORS, MATRIX))
+    story.append(KeepTogether([
+        Spacer(1, 14),
+        GroupHeading("Pricing Snapshot"),
+        Spacer(1, 2),
+        pricing_table(PRICING_HEADERS, PRICING_ROWS),
+    ]))
     story.append(Spacer(1, 10))
     story.append(Paragraph(MATRIX_FOOTNOTE, ParagraphStyle(
         "footnote", fontName="Helvetica-Oblique", fontSize=7.8,
