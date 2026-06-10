@@ -25,7 +25,7 @@ the same "next" prefix without knowing about each other. They caused
 
 All duplicates were resolved by renaming the lexicographically-second (and
 third/fourth) file in each group to a fresh prefix in the 0264–0293 range.
-File *content* was not changed, so the SHA256 hashes are unchanged; production
+File _content_ was not changed, so the SHA256 hashes are unchanged; production
 databases already record those hashes in `drizzle.resupply_migrations` and
 the migrator correctly treats the renamed files as already-applied.
 

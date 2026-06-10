@@ -423,9 +423,14 @@ describe("readMigrations — apply ordering", () => {
     const migs = readMigrations(MIGRATIONS_FOLDER);
     const prefixCounts = new Map<number, number>();
     for (const m of migs) {
-      prefixCounts.set(m.prefixNumber, (prefixCounts.get(m.prefixNumber) ?? 0) + 1);
+      prefixCounts.set(
+        m.prefixNumber,
+        (prefixCounts.get(m.prefixNumber) ?? 0) + 1,
+      );
     }
-    const duplicates = [...prefixCounts.entries()].filter(([, count]) => count > 1);
+    const duplicates = [...prefixCounts.entries()].filter(
+      ([, count]) => count > 1,
+    );
     expect(duplicates).toEqual([]);
   });
 });
