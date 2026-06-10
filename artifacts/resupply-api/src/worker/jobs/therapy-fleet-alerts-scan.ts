@@ -44,7 +44,7 @@ import {
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
-import { claimDedupKey } from "../lib/dedup-keys.js";
+import { claimDedupKey } from "../../lib/dedup-keys.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,

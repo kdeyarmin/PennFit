@@ -362,7 +362,11 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     // normalized phone number AND are inside the TCPA send window.
     // The fitter_leads sms_opt_in column is itself gated server-side
     // by phone presence in the recordFitterLead helper (Wave 2a).
-    if (lead.phone_e164 && lead.sms_opt_in && !isOutsideSmsSendWindow(new Date())) {
+    if (
+      lead.phone_e164 &&
+      lead.sms_opt_in &&
+      !isOutsideSmsSendWindow(new Date())
+    ) {
       if (twilioSms) {
         try {
           await twilioSms.sendSms({

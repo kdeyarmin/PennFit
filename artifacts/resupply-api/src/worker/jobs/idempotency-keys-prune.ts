@@ -61,7 +61,7 @@ export async function registerIdempotencyKeysPruneJob(
       // even promised "a separate sweeper job prunes expired rows") but
       // no sweeper ever existed: date-scoped reminder keys accumulated
       // one row per patient/episode/channel/day forever, and the
-      // claim-time fix in worker/lib/dedup-keys.ts only clears expired
+      // claim-time fix in lib/dedup-keys.ts only clears expired
       // rows for keys that are actively re-claimed. This DELETE is the
       // promised sweeper (app-review 2026-06-10, P1-2).
       const { count: dedupCount, error: dedupError } = await supabase

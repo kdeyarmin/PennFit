@@ -41,7 +41,7 @@ import {
   isOutsideSmsSendWindow,
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
-import { claimDedupKey } from "../lib/dedup-keys.js";
+import { claimDedupKey } from "../../lib/dedup-keys.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import {

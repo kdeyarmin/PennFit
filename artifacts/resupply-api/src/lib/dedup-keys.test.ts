@@ -8,7 +8,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
-} from "../../test-helpers/supabase-mock";
+} from "../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
 

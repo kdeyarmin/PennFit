@@ -6,10 +6,12 @@ public API, admin API (187 route files), pg-boss worker (50 jobs), auth
 stack, DB layer + 262-prefix migration corpus, storefront SPA, admin
 console SPA (127 pages), AI/voice/messaging stack, integrations layer,
 and deploy/boot posture. The **five P0 fixes (Wave 1)**, the **three
-money-safety P1 fixes — P1-1, P1-8, P1-9 (Wave 2)**, and the **three
-TCPA/consent P1 fixes — P1-2, P1-3, P1-4 (Wave 3)** ship in this same
-PR, each with regression tests; everything else is report-only — each
-finding cites file:line so fixes can land as focused follow-ups.
+money-safety P1 fixes — P1-1, P1-8, P1-9 (Wave 2)**, the **three
+TCPA/consent P1 fixes — P1-2, P1-3, P1-4 (Wave 3)**, and the **two
+AI-cost P1 fixes — P1-6, P1-7 (Wave 4)** ship in this same PR, each
+with regression tests. P1-5 (trust proxy) is deliberately deferred —
+see its entry. Everything else is report-only — each finding cites
+file:line so fixes can land as focused follow-ups.
 
 Verification levels used below:
 
@@ -199,6 +201,31 @@ Wave 3 (this PR) fixed the three TCPA/consent items:
 - **P1-4** → the rx-renewal patient resolve now filters
   `status='active'`, so STOP'd/paused patients are never claimed or
   contacted on either channel.
+
+Wave 4 (this PR) fixed the two AI-cost items:
+
+- **P1-6** → email auto-reply now claims a hashed RFC-822 Message-ID
+  dedup key (14-day TTL) AND a hashed per-sender 15-minute bucket
+  before the model runs (`inbound-parse.ts`, reusing
+  `lib/dedup-keys.ts`, which moved out of `worker/lib`). Every
+  non-claimed outcome falls to the human-handoff path — exactly the
+  pre-auto-reply behavior. The flag is still seeded OFF; enable when
+  ready.
+- **P1-7** → `lib/storefront/chat-budget.ts`: a process-wide turns-per-
+  minute ceiling on the public `/api/chat` (default 120/min aggregate,
+  `RESUPPLY_CHAT_GLOBAL_TURNS_PER_MINUTE` to tune). Exhausted →
+  the same `degraded: true` reply the upstream-failure paths use,
+  without touching any LLM vendor.
+
+**P1-5 (trust proxy) is deferred, deliberately:** the correct fix
+needs the live XFF chain verified on both hosts first. Naïvely
+trusting `CF-Connecting-IP` (or `trust proxy = 2`) would let a
+direct-to-`railway.app` client spoof its rate-limit identity — a
+worse failure mode than today's over-blocking. Operator step: capture
+`X-Forwarded-For` + `CF-Connecting-IP` on one request via each host,
+then either pin a `trust proxy` function that validates the CF hop or
+derive the client from `CF-Connecting-IP` only behind the custom
+domain.
 
 ### P1-1. Office Ally claim batch submit can double-transmit claims [verified]
 

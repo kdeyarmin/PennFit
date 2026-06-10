@@ -365,7 +365,9 @@ export async function executeOfficeAllyBatchSubmit(
   // reached the clearinghouse, so release the claimed batch back to 'draft'.
   const fileName = `PF-BATCH-${control.interchangeControlNumber}.txt`;
   let identity: Awaited<ReturnType<typeof resolveBillingIdentity>>;
-  let submission: Awaited<ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>>;
+  let submission: Awaited<
+    ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>
+  >;
   try {
     identity = await resolveBillingIdentity({ supabase });
     const adapter = createOfficeAllyAdapter({
