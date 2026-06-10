@@ -129,28 +129,32 @@ appear for staff who hold the matching permission.
 
 WORKSPACE — the day-to-day desk:
   - Home (/admin) — landing dashboard: today's work, queues, signals.
-  - Company Calendar (/admin/company-calendar) — shared schedule/closures view.
   - Conversations:
       * Conversations (/admin/conversations) — unified patient message threads (SMS/email/chat).
       * Email Inbox (/admin/email-inbox) — inbound patient email, with AI draft replies.
       * Cases (/admin/cases) — tracked multi-step issues (permission: cases.read).
       * Episodes (/admin/episodes) — grouped interaction episodes.
-  - Follow-ups:
+  - Schedule (everything time-based):
+      * Company Calendar (/admin/company-calendar) — shared team schedule.
       * Follow-ups (/admin/followups) — scheduled callbacks/tasks.
       * Appointment requests (/admin/appointment-requests).
-  - Outreach:
+  - Outreach (send surfaces + the reusable content behind them):
       * Bulk Campaigns (/admin/bulk-campaigns) — batch SMS/email sends.
-      * Alert Library (/admin/alerts) — reusable alert messages (permission: admin.tools.manage).
+      * Alert Library (/admin/alerts) — curated one-off alerts (permission: admin.tools.manage).
       * Reminders (/admin/pennpaps/reminders) — resupply reminder schedule.
-  - Templates:
       * Canned Replies (/admin/macros) — CSR quick-reply macros (permission: admin.tools.manage).
-      * Automated messages (/admin/templates) — message templates (permission: admin.tools.manage).
+      * Automated messages (/admin/templates) — system-sent message copy (permission: admin.tools.manage).
 
 PATIENTS & CLINICAL:
-  - Patients (/admin/patients) — the patient roster; click a patient for their full timeline.
-  - Document packets (/admin/patient-packets) — assembled patient document bundles.
-  - Documents (/admin/documents) — uploaded files (Rx, insurance cards, POD photos).
-  - Duplicate review (/admin/patients/duplicates) — merge likely-duplicate patient records.
+  - Patients:
+      * Patients (/admin/patients) — the patient roster; click a patient for their full timeline.
+      * Duplicate review (/admin/patients/duplicates) — merge likely-duplicate patient records.
+  - Documents & e-sign (the paperwork pipeline, in workflow order):
+      * Documents (/admin/documents) — draft a CMN, prescription, agreement, or fax cover.
+      * Document packets (/admin/patient-packets) — send & track patient e-signature packets.
+      * Awaiting signatures (/admin/signature-tracking) — documents out for a provider signature.
+      * E-signature portal (/admin/provider-portal) — provider e-sign staging + signed items.
+      * Inbound faxes (/admin/inbound-faxes) — triage returned faxes, sleep studies, Rx renewals.
   - Clinical work (permission: clinical.read for most tabs):
       * Clinical encounters (/admin/clinical), Interventions (/admin/clinical/interventions),
         Mask-fit feedback (/admin/clinical/mask-fit), Clinical outreach (/admin/clinical/outreach),
@@ -159,9 +163,8 @@ PATIENTS & CLINICAL:
       * RT Overview (/admin/rt-overview), RT outcomes (/admin/rt-outcomes),
         Therapy Fleet (/admin/therapy-fleet) — device-cloud adherence data,
         Resupply Opportunities (/admin/therapy-resupply), Setup Adherence (/admin/therapy-compliance).
-  - Providers & records:
-      * Providers (/admin/providers), Inbound faxes (/admin/inbound-faxes),
-        Recalls (/admin/equipment-recalls).
+  - Providers & recalls:
+      * Providers (/admin/providers), Recalls (/admin/equipment-recalls).
 
 ORDERS & SHOP:
   - Orders:
@@ -170,27 +173,27 @@ ORDERS & SHOP:
       * Returns & RMAs (/admin/shop/returns), Backorders & subs (/admin/shop/backorders).
   - Inventory:
       * Inventory (/admin/shop/inventory), Reconcile (/admin/shop/inventory/reconcile).
-  - Storefront:
+  - Storefront & leads:
       * Customers (/admin/shop/customers), Reviews (/admin/shop/reviews),
         Product Q&A (/admin/shop/product-questions), Abandoned Carts (/admin/shop/abandoned-carts),
-        Back-in-Stock (/admin/shop/back-in-stock).
-  - Leads:
-      * Insurance Leads (/admin/shop/insurance-leads), Fitter Prospects (/admin/fitter-leads),
-        Fitter Invites (/admin/fitter-invites).
+        Back-in-Stock (/admin/shop/back-in-stock), Insurance Leads (/admin/shop/insurance-leads),
+        Fitter Prospects (/admin/fitter-leads), Fitter Invites (/admin/fitter-invites).
 
 BILLING (the claims + revenue-cycle hub):
+  - Dashboards (read-only money views):
+      * Billing Hub (/admin/billing), Denials & DSO (/admin/billing/denials),
+        Collections forecast (/admin/billing/collections-forecast),
+        Payer profitability (/admin/billing/payer-profitability).
   - Worklists:
-      * Billing Hub (/admin/billing), AI queue (/admin/billing/ai-queue),
+      * AI queue (/admin/billing/ai-queue),
         Eligibility (/admin/billing/eligibility), Re-verification (/admin/billing/eligibility-recheck),
         Auto-submit (/admin/billing/auto-submit), Prior auths (/admin/billing/prior-auths),
-        Denials worklist (/admin/billing/denials-worklist), CMN / DIF worklist (/admin/billing/cmn).
+        Denials worklist (/admin/billing/denials-worklist), CMN / DIF worklist (/admin/billing/cmn),
+        Bill hold (/admin/billing/bill-hold).
   - A/R & collections:
       * A/R aging (/admin/billing/aging), Filing deadlines (/admin/billing/timely-filing),
         Secondary claims (/admin/billing/secondary), Statement send (/admin/billing/statements),
         Capped rentals (/admin/billing/capped-rentals).
-  - Revenue analytics:
-      * Denials & DSO (/admin/billing/denials), Collections forecast (/admin/billing/collections-forecast),
-        Payer profitability (/admin/billing/payer-profitability).
   - Tools:
       * ERA files (/admin/billing/era), Manual claim (/admin/billing/manual-claim),
         Config (/admin/billing/config) — HCPCS maps, payer/modifier rules, claim templates.
@@ -198,7 +201,8 @@ BILLING (the claims + revenue-cycle hub):
 ANALYTICS & REPORTS:
   - Reports (/admin/reports) — the report catalog.
   - Financial: Margin & COGS (/admin/analytics/margin), Outreach Attribution
-    (/admin/analytics/outreach-attribution), Revenue by source (/admin/analytics/revenue-by-source),
+    (/admin/analytics/outreach-attribution), Acquisition funnel (/admin/analytics/acquisition-funnel),
+    Revenue by source (/admin/analytics/revenue-by-source),
     Channel engagement (/admin/analytics/channel-engagement), LTV & CAC (/admin/analytics/ltv-cac),
     Inventory turnover (/admin/analytics/inventory-turnover).
   - Performance & goals: Team throughput (/admin/productivity), Live staffing (/admin/live-staffing),
@@ -212,12 +216,13 @@ SYSTEM (mostly admin / super-admin):
   - Operations: Operations (/admin/operations), Integrations (/admin/integrations) — therapy-cloud /
     payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange with the legacy billing
     system, Delivery Failures (/admin/delivery-failures), Webhook Deliveries (/admin/webhook-deliveries).
-  - Settings: Settings (/admin/settings), Account Setup (/admin/account-setup),
+  - Settings (day-to-day): Settings (/admin/settings), Closures (/admin/closures),
+    Team (/admin/team) — invite/role management (admin-only), Locations (/admin/locations) —
+    only with multi-branch enabled, Account security (/admin/security) — your own password + MFA.
+  - Setup & advanced: Account Setup (/admin/account-setup) — launch checklist,
     Control Center (/admin/control-center) — feature flags, Connection tests (/admin/connection-tests),
-    Bot playground (/admin/bot-playground), Configuration & tests (/admin/system/configuration) —
-    SUPER-ADMIN ONLY: where vendor API keys/secrets are entered, Closures (/admin/closures),
-    Team (/admin/team) — invite/role management (admin-only).
-  - Account: Account security (/admin/security) — your own password + MFA.
+    Configuration & tests (/admin/system/configuration) — SUPER-ADMIN ONLY: where vendor API
+    keys/secrets are entered, Bot playground (/admin/bot-playground).
 `;
 
 const ROLES_SECTION = `
