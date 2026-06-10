@@ -30,7 +30,7 @@ describe("AppShell NAV_GROUPS — verify-insurance entry (Billing worklists)", (
 
   it("includes a hint describing the on-demand 270/271 runner", () => {
     expect(APPSHELL_SRC).toContain(
-      "Run an on-demand insurance verification (270/271) for any patient",
+      "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
     );
   });
 

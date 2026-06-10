@@ -548,14 +548,15 @@ in any response.
  */
 export interface CreatePatientRequest {
   /**
-   * Pacware patient id. Plaintext, indexed, unique. The same
-id used by the legacy DME system; required so future CSV
-imports correlate cleanly.
+   * Pacware patient id. Plaintext, indexed, unique when present.
+The same id used by the legacy DME system. Optional — the
+patient may not exist in PacWare yet; null / omitted / empty
+means "no PacWare id" and it can be backfilled later (CSV
+imports correlate on it when set).
 
-   * @minLength 1
    * @maxLength 64
    */
-  pacwareId: string;
+  pacwareId?: string | null;
   /**
    * @minLength 1
    * @maxLength 80
@@ -668,7 +669,8 @@ the messages table.
  */
 export interface PatientListItem {
   id: string;
-  pacwareId: string;
+  /** Null when the patient has no PacWare account number yet. */
+  pacwareId: string | null;
   firstName: string;
   lastName: string;
   status: PatientListItemStatus;
@@ -860,7 +862,8 @@ firstName + lastName for display; phone + email never returned.
  */
 export interface PatientDetail {
   id: string;
-  pacwareId: string;
+  /** Null when the patient has no PacWare account number yet. */
+  pacwareId: string | null;
   firstName: string;
   lastName: string;
   status: PatientDetailStatus;

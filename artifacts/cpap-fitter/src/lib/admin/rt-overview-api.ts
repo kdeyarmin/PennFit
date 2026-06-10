@@ -20,7 +20,7 @@ export interface RtOverviewTherapyLink {
 
 export interface RtOverviewRow {
   patientId: string;
-  pacwareId: string;
+  pacwareId: string | null;
   firstName: string;
   lastName: string;
   nightsInWindow: number;
@@ -166,7 +166,8 @@ export function filterRtRows(
       if (!match) return false;
     }
     if (search.length > 0) {
-      const hay = `${r.lastName} ${r.firstName} ${r.pacwareId}`.toLowerCase();
+      const hay =
+        `${r.lastName} ${r.firstName} ${r.pacwareId ?? ""}`.toLowerCase();
       if (!hay.includes(search)) return false;
     }
     return true;

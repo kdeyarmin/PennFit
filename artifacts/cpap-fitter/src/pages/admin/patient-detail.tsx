@@ -163,8 +163,10 @@ export function PatientDetailPage({ id }: { id: string }) {
               {fullName(data.firstName, data.lastName)}
             </h1>
             <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              PACware ID #{data.pacwareId} · Patient created{" "}
-              {formatDate(data.createdAt)}
+              {data.pacwareId
+                ? `PACware ID #${data.pacwareId}`
+                : "No PacWare ID"}{" "}
+              · Patient created {formatDate(data.createdAt)}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">

@@ -1081,7 +1081,9 @@ dashboard navigates to /patients/{id} on success.
 
 409 with `error: "duplicate_pacware_id"` when the supplied
 Pacware id is already in use — pacware_id is the unique join
-key for CSV imports and may not be reused.
+key for CSV imports and may not be reused. The id itself is
+optional: omit / null / empty when the patient isn't in
+PacWare yet.
 
  * @summary Create a new patient
  */
