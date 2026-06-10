@@ -414,6 +414,51 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
             );
           return;
         }
+        if (result.status === "usage_review") {
+          // Continued-use guard held the reship (recent therapy data
+          // shows the device is effectively unused — a continued-use
+          // claim-denial risk). order-flow already raised a CSR alert
+          // and left the episode pending. Same handling as the other
+          // two guards: CSR queue, audit, truthful "we'll review" page.
+          const { error: usageErr } = await supabase
+            .schema("resupply")
+            .from("conversations")
+            .update({
+              status: "awaiting_admin",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (usageErr) throw usageErr;
+          await safeAudit({
+            action: "messaging.order.blocked_usage_review",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "episodes",
+            targetId: result.episodeId,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              patient_id: result.patientId,
+              episode_id: result.episodeId,
+              data_nights: result.usage.dataNights,
+              compliant_nights: result.usage.compliantNights,
+              window_days: result.usage.windowDays,
+              via: "email_link",
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+          res
+            .status(200)
+            .type("text/html")
+            .send(
+              renderClickConfirmation({
+                practiceName: cfg.practiceName,
+                action: "review",
+              }),
+            );
+          return;
+        }
         res
           .status(400)
           .type("text/html")

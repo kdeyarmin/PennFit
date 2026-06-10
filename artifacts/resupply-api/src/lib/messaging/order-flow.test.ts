@@ -480,3 +480,218 @@ describe("placeResupplyOrderForConversation — coverage guard", () => {
     expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// placeResupplyOrderForConversation — continued-use guard (#3)
+// ---------------------------------------------------------------------------
+// The guard only holds an order when the patient's own therapy data
+// AFFIRMATIVELY shows non-use: ≥21 reported nights in the 30-day
+// window AND fewer than half of them at 4+ hours. No data, sparse
+// data, healthy data, and lookup errors all proceed (fail open).
+
+describe("placeResupplyOrderForConversation — continued-use guard", () => {
+  const CONV_ID = "00000000-0000-4000-8000-0000000000c1";
+  const EPISODE_ID = "00000000-0000-4000-8000-0000000000e2";
+  const RX_ID = "00000000-0000-4000-8000-0000000000r1";
+
+  /** Stage conversation → episode → prescription, then the three
+      feature-flag reads in call order: entitlement OFF, eligibility
+      OFF, usage-compliance ON. */
+  function stageLookupChain(): void {
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONV_ID, patient_id: PATIENT_ID, episode_id: EPISODE_ID },
+      error: null,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: RX_ID,
+        status: "outreach_pending",
+      },
+      error: null,
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+      error: null,
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: false },
+      error: null,
+    });
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+      error: null,
+    });
+  }
+
+  /** Build N therapy-night rows, the first `compliant` of which are 4h+. */
+  function nightsRows(
+    total: number,
+    compliant: number,
+  ): Array<{ usage_minutes: number | null }> {
+    return Array.from({ length: total }, (_, i) => ({
+      usage_minutes: i < compliant ? 300 : 30,
+    }));
+  }
+
+  /** Stage the post-guard happy path: claim succeeds, no existing
+      fulfillments, insert returns one row. */
+  function stageClaimAndFulfillment(): void {
+    stageSupabaseResponse("episodes", "update", {
+      data: [{ id: EPISODE_ID }],
+      error: null,
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [],
+      error: null,
+    });
+    stageSupabaseResponse("fulfillments", "insert", {
+      data: [{ id: "00000000-0000-4000-8000-0000000000f1" }],
+      error: null,
+    });
+  }
+
+  it("holds the order and raises a usage-review CSR alert on affirmative non-use", async () => {
+    stageLookupChain();
+    // 30 reported nights, only 5 at 4h+ → well under the 50% bar.
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: nightsRows(30, 5),
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "select", {
+      data: null,
+      error: null,
+    });
+    stageSupabaseResponse("csr_compliance_alerts", "insert", {
+      data: null,
+      error: null,
+    });
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("usage_review");
+    if (result.status === "usage_review") {
+      expect(result.usage.dataNights).toBe(30);
+      expect(result.usage.compliantNights).toBe(5);
+      expect(result.usage.windowDays).toBe(30);
+    }
+    // The episode must NOT be claimed/confirmed — the order is held.
+    expect(supabaseMock.callCount("episodes", "update")).toBe(0);
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(1);
+    const [alert] = supabaseMock.writePayloads(
+      "csr_compliance_alerts",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(alert!.alert_type).toBe("resupply_usage_review");
+    expect(alert!.patient_id).toBe(PATIENT_ID);
+    // Counts only in the snapshot — never per-night detail.
+    expect(alert!.metric_snapshot).toMatchObject({
+      dataNights: 30,
+      compliantNights: 5,
+    });
+  });
+
+  it("proceeds when the patient has NO therapy data (fail open)", async () => {
+    stageLookupChain();
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [],
+      error: null,
+    });
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
+  });
+
+  it("proceeds on a sparse window (under 21 reported nights) even when all nights are low", async () => {
+    stageLookupChain();
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: nightsRows(10, 0),
+      error: null,
+    });
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+  });
+
+  it("proceeds when usage is healthy (half or more nights at 4h+)", async () => {
+    stageLookupChain();
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: nightsRows(30, 15),
+      error: null,
+    });
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+  });
+
+  it("proceeds when the therapy-nights lookup errors (fail open)", async () => {
+    stageLookupChain();
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: null,
+      error: { message: "boom" },
+    });
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(supabaseMock.callCount("csr_compliance_alerts", "insert")).toBe(0);
+  });
+
+  it("skips the lookup entirely when the flag is OFF", async () => {
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONV_ID, patient_id: PATIENT_ID, episode_id: EPISODE_ID },
+      error: null,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: RX_ID,
+        status: "outreach_pending",
+      },
+      error: null,
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: RX_ID, item_sku: "CUSHION-NASAL-MED" },
+      error: null,
+    });
+    // All three guard flags OFF.
+    for (let i = 0; i < 3; i++) {
+      stageSupabaseResponse("feature_flags", "select", {
+        data: { enabled: false },
+        error: null,
+      });
+    }
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(supabaseMock.callCount("patient_therapy_nights", "select")).toBe(0);
+  });
+});
