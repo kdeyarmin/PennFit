@@ -31,7 +31,9 @@
  *
  * Hand-rolled OpenAI Chat Completions call (mirrors
  * `lib/messaging/ai-fallback-impl.ts`):
- *   - One endpoint, low temperature, modest max_tokens.
+ *   - One endpoint, moderate temperature (0.5-0.6 — enough phrasing
+ *     variation to sound human, low enough to stay factual), modest
+ *     max_tokens.
  *   - No `openai` SDK — keeps transitive deps small and the request
  *     shape auditable.
  *   - 15s abort to bound the worst case if upstream is slow.
@@ -488,7 +490,7 @@ async function handleJson(
               },
               body: JSON.stringify({
                 model: DEFAULT_MODEL,
-                temperature: 0.2,
+                temperature: 0.5,
                 max_tokens: 500,
                 tools: CHAT_TOOLS,
                 tool_choice: "auto",
@@ -638,7 +640,7 @@ async function runStreamingRound(
     },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
-      temperature: 0.2,
+      temperature: 0.5,
       max_tokens: 500,
       stream: true,
       tools: CHAT_TOOLS,
@@ -1020,7 +1022,7 @@ async function handleAnthropicJson(
       const result = await client.send({
         model: DEFAULT_ANTHROPIC_MODEL_CHAT,
         max_tokens: 600,
-        temperature: 0.4,
+        temperature: 0.6,
         // cache_control on the system prompt — saves ~90% of input
         // token cost on the second and subsequent turns of any
         // conversation that uses the same system prompt prefix.
@@ -1155,7 +1157,7 @@ async function handleAnthropicStreaming(
         {
           model: DEFAULT_ANTHROPIC_MODEL_CHAT,
           max_tokens: 600,
-          temperature: 0.4,
+          temperature: 0.6,
           system: [
             {
               type: "text",

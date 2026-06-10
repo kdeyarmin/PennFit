@@ -558,7 +558,7 @@ async function handleJson(
         },
         body: JSON.stringify({
           model: DEFAULT_MODEL,
-          temperature: 0.2,
+          temperature: 0.4,
           max_tokens: 600,
           tools: CUSTOMER_CHAT_TOOLS,
           tool_choice: "auto",
@@ -656,7 +656,7 @@ async function runStreamingRound(
     },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
-      temperature: 0.2,
+      temperature: 0.4,
       max_tokens: 600,
       stream: true,
       tools: CUSTOMER_CHAT_TOOLS,
@@ -992,7 +992,7 @@ async function handleAnthropicJson(
       const result = await client.send({
         model: DEFAULT_ANTHROPIC_MODEL_CHAT,
         max_tokens: 600,
-        temperature: 0.2,
+        temperature: 0.4,
         system: [
           { type: "text", text: system, cache_control: { type: "ephemeral" } },
         ],
@@ -1104,7 +1104,7 @@ async function handleAnthropicStreaming(
         {
           model: DEFAULT_ANTHROPIC_MODEL_CHAT,
           max_tokens: 600,
-          temperature: 0.2,
+          temperature: 0.4,
           system: [
             {
               type: "text",

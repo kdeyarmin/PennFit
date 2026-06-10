@@ -41,6 +41,29 @@ describe("buildChatSystemPrompt (public PennBot)", () => {
     expect(prompt).toMatch(/consent decree/i);
     expect(prompt).toMatch(/\$1\.1 billion/);
   });
+
+  it("includes the first-30-nights new-user coaching section", () => {
+    expect(prompt).toContain("The first 30 nights");
+    expect(prompt).toMatch(/REM rebound/i);
+  });
+
+  it("includes the plain-English insurance glossary", () => {
+    expect(prompt).toContain("Insurance words, translated into plain English");
+    expect(prompt).toMatch(/Coinsurance/);
+    expect(prompt).toMatch(/Capped rental/);
+  });
+
+  it("includes the caregivers / family section", () => {
+    expect(prompt).toContain("caregivers and family");
+    expect(prompt).toMatch(/reluctant partner/i);
+  });
+
+  it("includes the voice/personality section with example exchanges", () => {
+    expect(prompt).toContain("PennBot's voice and personality");
+    expect(prompt).toContain("Empathy playbook");
+    expect(prompt).toContain("Honesty about being an AI");
+    expect(prompt).toContain("Example exchanges");
+  });
 });
 
 describe("buildCustomerChatSystemPrompt (signed-in PennBot)", () => {
@@ -60,5 +83,11 @@ describe("buildCustomerChatSystemPrompt (signed-in PennBot)", () => {
 
   it("includes the softer-cushion guidance for face marks / irritation", () => {
     expect(prompt).toMatch(/memory-foam|AirTouch/);
+  });
+
+  it("includes the human-voice guidance and AI-honesty rule", () => {
+    expect(prompt).toContain("this is what makes you feel human");
+    expect(prompt).toMatch(/virtual assistant/);
+    expect(prompt).toContain("Example exchanges");
   });
 });
