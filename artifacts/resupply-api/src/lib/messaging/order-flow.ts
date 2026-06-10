@@ -69,6 +69,17 @@ export interface NotEligibleEntitlement {
   hcpcsCode: string;
 }
 
+/**
+ * Continued-use snapshot that flagged a confirmation for CSR review.
+ * Counts only — never per-night detail — so it's safe in logs and
+ * alert snapshots.
+ */
+export interface UsageReviewBlock {
+  windowDays: number;
+  dataNights: number;
+  compliantNights: number;
+}
+
 export type PlaceOrderResult =
   | {
       status: "ok";
@@ -88,6 +99,12 @@ export type PlaceOrderResult =
       patientId: string;
       episodeId: string;
       coverage: CoverageBlock;
+    }
+  | {
+      status: "usage_review";
+      patientId: string;
+      episodeId: string;
+      usage: UsageReviewBlock;
     }
   | { status: "conversation_not_found" }
   | { status: "episode_not_found" }
@@ -233,6 +250,44 @@ export async function placeResupplyOrderForConversation(
           errName: err instanceof Error ? err.name : "unknown",
         },
         "resupply: coverage check failed; allowing confirmation (fail open)",
+      );
+    }
+  }
+
+  // 3d. Continued-use guard (feature-flagged). Medicare (and most
+  // payers) require evidence the patient is still USING the device
+  // for a resupply claim to be payable. When the patient's own
+  // therapy-cloud data over the last 30 days affirmatively shows the
+  // device is effectively unused, hold the confirmation for a CSR
+  // check-in instead of auto-shipping a claim that risks denial /
+  // claw-back. FAIL OPEN: no therapy data on file (most patients —
+  // cloud integrations are optional), a sparse window, or ANY lookup
+  // error allows the confirmation through. Runs before the atomic
+  // claim so a held episode stays pending for the CSR, exactly like
+  // the two guards above.
+  if (await isFeatureEnabled("resupply.usage_compliance_check")) {
+    try {
+      const usage = await consultRecentTherapyUsage(
+        supabase,
+        episode.patient_id,
+      );
+      if (usage) {
+        await raiseUsageReviewAlert(supabase, episode.patient_id, usage);
+        return {
+          status: "usage_review",
+          patientId: episode.patient_id,
+          episodeId: episode.id,
+          usage,
+        };
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply.usage_compliance.check_failed",
+          episodeId: episode.id,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "resupply: continued-use check failed; allowing confirmation (fail open)",
       );
     }
   }
@@ -516,6 +571,113 @@ async function raiseCoverageAlert(
         errName: err instanceof Error ? err.name : "unknown",
       },
       "resupply: failed to raise coverage-blocked CSR alert",
+    );
+  }
+}
+
+// Continued-use thresholds. Medicare's classic adherence yardstick is
+// ≥4 hours/night; we hold a reorder only when a statistically useful
+// sample (≥21 reported nights in the 30-day window) shows the patient
+// under 4 hours on more than half of those nights. Patients with no
+// cloud integration report zero nights and are never held.
+const USAGE_WINDOW_DAYS = 30;
+const USAGE_MIN_DATA_NIGHTS = 21;
+const USAGE_COMPLIANT_NIGHT_MINUTES = 240;
+const USAGE_MIN_COMPLIANT_RATIO = 0.5;
+
+/**
+ * Read the patient's last 30 days of therapy nights and decide whether
+ * the data AFFIRMATIVELY shows non-use. Returns a `UsageReviewBlock`
+ * when the reorder should be held for CSR review, else null (no
+ * opinion — proceed). A thrown DB error propagates to the caller's
+ * fail-open catch.
+ */
+async function consultRecentTherapyUsage(
+  supabase: ResupplySupabaseClient,
+  patientId: string,
+): Promise<UsageReviewBlock | null> {
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - USAGE_WINDOW_DAYS);
+  const sinceDate = since.toISOString().slice(0, 10);
+  const { data: nights, error: nightsErr } = await supabase
+    .schema("resupply")
+    .from("patient_therapy_nights")
+    .select("usage_minutes")
+    .eq("patient_id", patientId)
+    .gte("night_date", sinceDate)
+    .limit(USAGE_WINDOW_DAYS + 1);
+  if (nightsErr) throw nightsErr;
+
+  const rows = nights ?? [];
+  if (rows.length < USAGE_MIN_DATA_NIGHTS) return null; // sparse data → no opinion
+  const compliantNights = rows.filter(
+    (n) => (n.usage_minutes ?? 0) >= USAGE_COMPLIANT_NIGHT_MINUTES,
+  ).length;
+  if (compliantNights / rows.length >= USAGE_MIN_COMPLIANT_RATIO) return null;
+
+  return {
+    windowDays: USAGE_WINDOW_DAYS,
+    dataNights: rows.length,
+    compliantNights,
+  };
+}
+
+/**
+ * Best-effort CSR alert when the continued-use guard holds a reorder.
+ * Mirrors `raiseTooSoonAlert` / `raiseCoverageAlert`: NEVER throws
+ * into the caller, and de-dupes against the existing open alert via
+ * the `(patient_id, alert_type) WHERE status='open'` partial unique
+ * index so a repeat confirm doesn't 23505. Snapshot carries counts
+ * only — no per-night therapy detail.
+ */
+async function raiseUsageReviewAlert(
+  supabase: ResupplySupabaseClient,
+  patientId: string,
+  usage: UsageReviewBlock,
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .select("id")
+      .eq("patient_id", patientId)
+      .eq("alert_type", "resupply_usage_review")
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (existing) return;
+    const { error: insertAlertErr } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        alert_type: "resupply_usage_review",
+        severity: "warning",
+        summary: `Reorder held — recent therapy data shows low device use (${usage.compliantNights} of ${usage.dataNights} reported nights at 4+ hours in the last ${usage.windowDays} days). Verify continued use before shipping.`,
+        metric_snapshot: {
+          windowDays: usage.windowDays,
+          dataNights: usage.dataNights,
+          compliantNights: usage.compliantNights,
+          minNightMinutes: USAGE_COMPLIANT_NIGHT_MINUTES,
+        } as unknown as Json,
+      });
+    if (insertAlertErr) {
+      logger.warn(
+        {
+          event: "resupply.usage_compliance.alert_failed",
+          err: insertAlertErr.message,
+          patientId,
+        },
+        "resupply: failed to raise usage-review CSR alert (non-fatal)",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.usage_compliance.alert_failed",
+        errName: err instanceof Error ? err.name : "unknown",
+      },
+      "resupply: failed to raise usage-review CSR alert",
     );
   }
 }

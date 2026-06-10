@@ -64,6 +64,7 @@ export const FEATURE_FLAG_KEYS = [
   "fitter_supply_campaign.dispatcher",
   "resupply.entitlement_enforcement",
   "resupply.eligibility_enforcement",
+  "resupply.usage_compliance_check",
   "reminder_escalation.dispatcher",
   "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
