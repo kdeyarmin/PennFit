@@ -89,6 +89,20 @@ export class PayerProfileNotFoundError extends Error {
   }
 }
 
+// In-second sequence rotation. Quick checks persist nothing, so two
+// checks fired in the same second would otherwise read the same
+// previousHighest AND pass the same sequence — yielding a duplicate
+// ISA13. Rotating 1..10 (the allocator keeps `sequence % 10`) gives
+// same-second requests from this process distinct interchange numbers;
+// the API runs as a single process, and the rate limiter caps the
+// burst well under 10/sec. The TRN trace nonce already keeps
+// request/response matching unambiguous regardless.
+let quickCheckSequence = 0;
+function nextQuickCheckSequence(): number {
+  quickCheckSequence = (quickCheckSequence % 10) + 1;
+  return quickCheckSequence;
+}
+
 /**
  * Run an ad-hoc real-time eligibility check (X12 270/271) from typed-in
  * subscriber details, without creating any patient / coverage /
@@ -137,7 +151,7 @@ export async function quickCheckEligibility(
   }
 
   // Same monotonic ISA13 pool as the patient-attached verifier; the
-  // trace nonce inside build270 disambiguates bursts.
+  // rotating sequence de-collides same-second bursts (see above).
   const { data: priorHigh } = await supabase
     .schema("resupply")
     .from("office_ally_submissions")
@@ -147,7 +161,7 @@ export async function quickCheckEligibility(
     .maybeSingle();
   const control = allocateControlNumbers({
     submittedAt: Date.now(),
-    sequence: 1,
+    sequence: nextQuickCheckSequence(),
     previousHighest: priorHigh?.isa_control_number ?? undefined,
   });
 

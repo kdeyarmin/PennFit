@@ -77,6 +77,7 @@ vi.mock("./identity-resolver", () => ({
 }));
 
 import {
+  allocateControlNumbers,
   build270,
   createRealtimeEligibilityTransport,
 } from "@workspace/resupply-integrations-office-ally";
@@ -233,6 +234,25 @@ describe("quickCheckEligibility — real-time only, no persistence", () => {
       organizationName: "ACME HEALTH PLANS INC",
       payerId: "OA123",
     });
+  });
+
+  it("rotates the in-second sequence so same-second checks get distinct ISA13 inputs", async () => {
+    stageElectronicPayer();
+    vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
+    await quickCheckEligibility({
+      payerProfileId: PAYER_PROFILE_ID,
+      subscriber: SUBSCRIBER,
+    });
+    stageElectronicPayer();
+    vi.mocked(resolveClearinghouse).mockResolvedValueOnce(REALTIME_RESOLVED);
+    await quickCheckEligibility({
+      payerProfileId: PAYER_PROFILE_ID,
+      subscriber: SUBSCRIBER,
+    });
+
+    const calls = vi.mocked(allocateControlNumbers).mock.calls.slice(-2);
+    const sequences = calls.map(([input]) => input.sequence);
+    expect(sequences[0]).not.toBe(sequences[1]);
   });
 
   it("surfaces a transport failure as status=failed with no fallback writes", async () => {

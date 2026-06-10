@@ -588,7 +588,10 @@ function QuickCheckSection() {
     hcpcsValid;
 
   const selectedPayer = electronicPayers.find((p) => p.id === payerProfileId);
-  const today = new Date().toISOString().slice(0, 10);
+  // Local-time max for the DOB picker — toISOString() is UTC and can be
+  // a day off near midnight.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
   const check = useMutation({
     mutationFn: () =>
