@@ -1,12 +1,22 @@
 # PennFit Platform Feature Guide (by role)
 
 `PennFit-Feature-Guide-by-Role.pdf` is a professionally formatted,
-buyer-facing catalog of the platform's features. It opens with a
-**Why PennFit** highlights page — eight marquee differentiators (AI mask
-fitting, the reorder voice agent, dollar-ranked denial recovery, no
-per-user licensing, etc.) designed to capture a prospective buyer's
-attention — followed by the full feature catalog organized by the four
-operating roles in a DME business:
+buyer-facing catalog of the platform's features. It opens with:
+
+1. **Why PennFit** — seven marquee differentiators in a highlight-card
+   grid, closing on the one-software message: inventory, billing, the
+   customer database, clinical care, and documentation in a single
+   system that runs the whole PAP department.
+2. **PennFit in action** — live product screenshots (storefront, virtual
+   mask fitter, resupply program, privacy consent) captured from the
+   running app.
+3. **One platform. Hours back, every day.** — illustrative time-savings
+   estimates by feature and by role, rolled up to ~9.25 staff-hours/day,
+   ~200 hours/month, ~\$5,000/month (~\$60K/year) at a \$25/hr blended
+   rate, with all assumptions footnoted.
+
+Then the full feature catalog organized by the four operating roles in a
+DME business:
 
 1. **DME Owner** — command center, growth/financial analytics, team and
    performance, platform control.
@@ -37,7 +47,22 @@ pip install reportlab
 python3 docs/feature-guide/build_feature_guide.py
 ```
 
-Feature content lives in the `ROLES` / `FOUNDATIONS` structures at the top
+Content lives in the `HIGHLIGHTS` / `SCREENSHOTS` / `SAVINGS_*` /
+`ROLES` / `FOUNDATIONS` / `MATRIX` / `PRICING_ROWS` structures at the top
 of the script; brand colors mirror the storefront theme tokens in
 `artifacts/cpap-fitter/src/index.css`. When features ship or retire,
 update the content structures and re-run the script.
+
+### Refreshing screenshots
+
+`screenshots/*.png` are captured from the running storefront with
+`e2e/capture-screens.mjs`:
+
+```bash
+pnpm exec playwright install chromium          # once
+PORT=5173 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter dev &
+node e2e/capture-screens.mjs                   # writes /tmp/shots/*.png
+```
+
+Then downscale the keepers to 2000px wide into
+`docs/feature-guide/screenshots/` and re-run the generator.

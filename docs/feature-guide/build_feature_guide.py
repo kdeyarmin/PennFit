@@ -21,6 +21,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Flowable,
     Frame,
+    Image as RLImage,
     KeepTogether,
     NextPageTemplate,
     PageBreak,
@@ -299,16 +300,22 @@ def highlight_grid(cards):
     ]
     for i in range(0, len(cards), 2):
         r = len(rows)
-        left = cell(i + 1, *cards[i])
-        right = cell(i + 2, *cards[i + 1]) if i + 1 < len(cards) else ""
-        rows.append([left, "", right])
-        row_heights.append(None)
-        for col in (0, 2):
-            if col == 2 and i + 1 >= len(cards):
-                continue
+        if i + 1 < len(cards):
+            rows.append([cell(i + 1, *cards[i]), "", cell(i + 2, *cards[i + 1])])
+            row_heights.append(None)
+            for col in (0, 2):
+                style.extend([
+                    ("BACKGROUND", (col, r), (col, r), PEARL),
+                    ("LINEABOVE", (col, r), (col, r), 2, GOLD),
+                ])
+        else:
+            # odd count: final card spans the full width
+            rows.append([cell(i + 1, *cards[i]), "", ""])
+            row_heights.append(None)
             style.extend([
-                ("BACKGROUND", (col, r), (col, r), PEARL),
-                ("LINEABOVE", (col, r), (col, r), 2, GOLD),
+                ("SPAN", (0, r), (2, r)),
+                ("BACKGROUND", (0, r), (2, r), PEARL),
+                ("LINEABOVE", (0, r), (2, r), 2, GOLD),
             ])
         if i + 2 < len(cards):
             g = len(rows)
@@ -322,6 +329,34 @@ def highlight_grid(cards):
               rowHeights=row_heights, hAlign="LEFT")
     t.setStyle(TableStyle(style))
     return t
+
+
+def screenshot_card(path, title, desc, width=5.0 * inch):
+    """Framed screenshot with a branded caption bar."""
+    img = RLImage(path, width=width, height=width * 1250.0 / 2000.0)
+    cap_title = ParagraphStyle(
+        "shotTitle", fontName="Helvetica-Bold", fontSize=9.5, leading=12,
+        textColor=NAVY_DEEP)
+    cap_desc = ParagraphStyle(
+        "shotDesc", fontName="Helvetica", fontSize=8, leading=10.5,
+        textColor=BODY_GRAY)
+    caption = [Paragraph(title, cap_title), Spacer(1, 1.5),
+               Paragraph(desc, cap_desc)]
+    t = Table([[img], [caption]], colWidths=[width], hAlign="CENTER")
+    t.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (0, 0), 2, GOLD),
+        ("BOX", (0, 0), (-1, -1), 0.75, PLATINUM),
+        ("BACKGROUND", (0, 1), (0, 1), PEARL),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (0, 0), 0),
+        ("BOTTOMPADDING", (0, 0), (0, 0), 0),
+        ("LEFTPADDING", (0, 1), (0, 1), 10),
+        ("RIGHTPADDING", (0, 1), (0, 1), 10),
+        ("TOPPADDING", (0, 1), (0, 1), 6),
+        ("BOTTOMPADDING", (0, 1), (0, 1), 8),
+    ]))
+    return KeepTogether(t)
 
 
 def pricing_table(headers, rows):
@@ -363,6 +398,65 @@ def pricing_table(headers, rows):
         else:
             style.append(("BACKGROUND", (0, i), (-1, i), PEARL))
     t.setStyle(TableStyle(style))
+    return t
+
+
+def savings_table(headers, rows, col_widths, bold_last=True):
+    """Three-column text table for the time-savings estimates."""
+    head_style = ParagraphStyle(
+        "svHead", fontName="Helvetica-Bold", fontSize=7.4, leading=9,
+        textColor=white)
+    first_style = ParagraphStyle(
+        "svFirst", fontName="Helvetica-Bold", fontSize=8.5, leading=10.5,
+        textColor=NAVY_DEEP)
+    cell_style = ParagraphStyle(
+        "svCell", fontName="Helvetica", fontSize=8.5, leading=10.5,
+        textColor=BODY_GRAY)
+    last_style = ParagraphStyle(
+        "svLast", fontName="Helvetica-Bold" if bold_last else "Helvetica",
+        fontSize=8.5, leading=10.5, textColor=GOLD_DEEP)
+    data = [[Paragraph(h, head_style) for h in headers]]
+    for a, b, c in rows:
+        data.append([Paragraph(a, first_style), Paragraph(b, cell_style),
+                     Paragraph(c, last_style)])
+    t = Table(data, colWidths=col_widths, hAlign="LEFT", repeatRows=1)
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY_DEEP),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, PLATINUM),
+    ]
+    for i in range(1, len(data)):
+        style.append(("BACKGROUND", (0, i), (-1, i),
+                      PEARL if i % 2 == 1 else MIST))
+    t.setStyle(TableStyle(style))
+    return t
+
+
+def totals_band(stats):
+    """Navy roll-up band with big numbers."""
+    num_style = ParagraphStyle(
+        "tbNum", fontName="Helvetica-Bold", fontSize=16, leading=19,
+        textColor=white, alignment=TA_CENTER)
+    label_style = ParagraphStyle(
+        "tbLabel", fontName="Helvetica-Bold", fontSize=6.8, leading=9,
+        textColor=GOLD_SOFT, alignment=TA_CENTER)
+    cells = [[Paragraph(n, num_style) for n, _ in stats],
+             [Paragraph(l.upper(), label_style) for _, l in stats]]
+    t = Table(cells, colWidths=[CONTENT_W / len(stats)] * len(stats),
+              hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), NAVY_DEEP),
+        ("LINEABOVE", (0, 0), (-1, 0), 2.5, GOLD),
+        ("LINEAFTER", (0, 0), (-2, -1), 0.7, NAVY_SOFT),
+        ("TOPPADDING", (0, 0), (-1, 0), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
+        ("TOPPADDING", (0, 1), (-1, 1), 1),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 11),
+    ]))
     return t
 
 
@@ -536,7 +630,7 @@ HIGHLIGHTS_LEDE = (
     "Most DME operations run on a patchwork: a billing system here, a "
     "resupply vendor there, phone scripts everywhere. PennFit replaces the "
     "patchwork with one AI-native platform built specifically for CPAP "
-    "resupply. Eight capabilities set it apart."
+    "resupply. Seven capabilities set it apart."
 )
 
 HIGHLIGHTS = [
@@ -565,20 +659,128 @@ HIGHLIGHTS = [
      "Nightly sync from ResMed AirView, Philips Care Orchestrator, and "
      "React Health drives CMS 90-day compliance tracking, clinical "
      "worklists, and resupply timing."),
-    ("One platform, end to end",
-     "Storefront, patient engagement, clinical adherence, claims, and "
-     "analytics in one system — not a bundle of separately priced "
-     "add-ons stitched together."),
-    ("No per-user license",
-     "PennFit is an owned platform: add staff without adding seat fees, "
-     "and pay vendors only for usage (telecom, email, payments, AI) — "
-     "see the pricing snapshot in the appendix."),
+    ("One software for the whole PAP department",
+     "Inventory, billing, the customer database, clinical care, and "
+     "documentation in a single system — from attracting patients, to "
+     "fitting them, to ordering supplies, to billing and customer "
+     "service. No swivel-chair between systems, no per-module pricing, "
+     "no integration projects."),
 ]
 
 HIGHLIGHTS_CLOSE = (
     "A feature-by-feature comparison against Brightree + ReSupply, "
     "NikoHealth, and TIMS Software — including pricing — appears in the "
     "appendix."
+)
+
+SCREENSHOTS_LEDE = (
+    "The screens below are the live product — the storefront a patient "
+    "lands on, the fitting flow they complete in minutes, and the "
+    "resupply program that keeps supplies arriving."
+)
+
+SCREENSHOTS = [
+    ("home.png", "The patient storefront — fit, shop, resupply",
+     "One front door for the whole journey: patients get fitted, order "
+     "supplies, and manage resupply — with the PennBot assistant one tap "
+     "away."),
+    ("mask-fitter.png", "The virtual mask fitter",
+     "A guided, on-device fitting flow patients complete in minutes — "
+     "no appointment, no photos uploaded, measurements scored against "
+     "every mask in the catalog."),
+    ("reminders.png", "Resupply on autopilot",
+     "Patients subscribe once; scheduled reminders and auto-ship keep "
+     "replacements arriving on the cadence their insurance allows."),
+    ("privacy.png", "Privacy patients can read",
+     "Camera processing happens entirely on the patient's device — no "
+     "image is ever stored or transmitted. The consent screen says so in "
+     "plain language."),
+]
+
+SAVINGS_HEADLINE = "One platform. Hours back, every day."
+
+SAVINGS_SUB = (
+    "Run the entire PAP department — attracting patients, fitting, "
+    "ordering supplies, billing, and customer service — from one system."
+)
+
+SAVINGS_LEDE = (
+    "Because PennFit is one software — inventory, billing, the customer "
+    "database, clinical care, and documentation together — the handoffs "
+    "that used to mean re-keying, portal-hopping, and phone tag simply "
+    "disappear. The estimates below are illustrative for a typical "
+    "single-location PAP operation (about 1,500 active resupply patients; "
+    "a team of one owner, one biller, two CSRs, and one respiratory "
+    "therapist). Tune them to your volumes."
+)
+
+SAVINGS_BY_FEATURE = [
+    ("AI mask fitter",
+     "In-person fitting appointments and trial-and-error exchanges",
+     "15–30 min per new setup"),
+    ("Reminder engine + voice agent",
+     "Outbound reorder calls and voicemail loops",
+     "6–10 min per resupply order"),
+    ("Real-time eligibility",
+     "Payer phone calls and portal checks",
+     "10–15 min per verification"),
+    ("AI scrubbing + ranked denials",
+     "Hunting denial causes claim by claim",
+     "~15 min per denial worked"),
+    ("Therapy-cloud sync",
+     "Pulling three vendor portals for compliance data",
+     "~10 min per patient per month"),
+    ("Unified inbox + patient 360",
+     "Cross-referencing phone logs, email, fax, and the billing system",
+     "30–60 min per rep per day"),
+    ("Fax OCR + e-signature packets",
+     "Manual filing, printing, and signature chasing",
+     "5–10 min per document"),
+    ("PacWare sync",
+     "Re-keying patients and orders into the billing system",
+     "3–5 min per record"),
+]
+
+SAVINGS_BY_ROLE = [
+    ("DME Owner",
+     "Live dashboards and KPI alerts replace hand-built reports and "
+     "spreadsheet checks",
+     "~45 min"),
+    ("Biller",
+     "Eligibility runs itself; claims arrive scrubbed and denials arrive "
+     "ranked",
+     "~2.0 hrs"),
+    ("Customer Service Rep (each of 2)",
+     "Reorders confirm themselves by text, link, or the AI phone agent; "
+     "one inbox replaces five tools",
+     "~2.5 hrs"),
+    ("Respiratory Therapist",
+     "Compliance data lands nightly and worklists build themselves",
+     "~1.5 hrs"),
+]
+
+SAVINGS_TOTALS = [
+    ("~9.25", "staff-hours back per day"),
+    ("~200", "hours back per month"),
+    ("~$5,000", "per month (~$60K/yr) at $25/hr"),
+]
+
+SAVINGS_CLOSE = (
+    "And that is labor alone. Consolidating onto one platform also "
+    "retires the rest of the stack — the business-management system, the "
+    "resupply add-on, the e-ordering tool, and the spreadsheets between "
+    "them (directory estimates put incumbent stacks at ~$1,500+ per month "
+    "for a ten-user shop before add-ons; see the Pricing Snapshot in the "
+    "appendix)."
+)
+
+SAVINGS_FOOTNOTE = (
+    "Illustrative planning estimates, not a guarantee. Actual savings "
+    "depend on patient volume, payer mix, and current workflows. "
+    "Per-task figures reflect the manual workflows each feature replaces; "
+    "the roll-up assumes the team mix above, 21.7 workdays per month, and "
+    "a $25/hour fully loaded labor rate (9.25 hrs/day × 21.7 days = ~200 "
+    "hrs; 200 hrs × $25 = ~$5,000/month, ~$60,000/year)."
 )
 
 INTRO = (
@@ -1214,6 +1416,56 @@ def build():
     story.append(Paragraph(HIGHLIGHTS_CLOSE, ParagraphStyle(
         "hlClose", fontName="Helvetica-Oblique", fontSize=9, leading=12.5,
         textColor=STEEL)))
+
+    # ---- screenshots: the product in action
+    shots_dir = os.path.join(HERE, "screenshots")
+    story.append(SectionMarker("PennFit in Action"))
+    story.append(PageBreak())
+    story.append(Paragraph("PennFit in action", S_H1))
+    story.append(Paragraph(SCREENSHOTS_LEDE, S_INTRO))
+    story.append(Spacer(1, 8))
+    for i, (fname, title, desc) in enumerate(SCREENSHOTS):
+        story.append(screenshot_card(os.path.join(shots_dir, fname),
+                                     title, desc))
+        if i < len(SCREENSHOTS) - 1:
+            story.append(Spacer(1, 12))
+
+    # ---- time & cost savings
+    story.append(SectionMarker("Time & Cost Savings"))
+    story.append(PageBreak())
+    story.append(Paragraph(SAVINGS_HEADLINE, ParagraphStyle(
+        "svHeadline", fontName="Helvetica-Bold", fontSize=24, leading=28,
+        textColor=NAVY_DEEP, spaceAfter=4)))
+    story.append(Paragraph(SAVINGS_SUB, ParagraphStyle(
+        "svSub", fontName="Helvetica", fontSize=11.5, leading=15.5,
+        textColor=STEEL, spaceAfter=10)))
+    story.append(Paragraph(SAVINGS_LEDE, S_INTRO))
+    story.append(Spacer(1, 8))
+    story.append(KeepTogether([
+        GroupHeading("Where the time comes from — by feature"),
+        Spacer(1, 2),
+        savings_table(
+            ["Feature", "What it replaces", "Typical time saved"],
+            SAVINGS_BY_FEATURE,
+            [1.85 * inch, 3.30 * inch, CONTENT_W - 5.15 * inch]),
+    ]))
+    story.append(Spacer(1, 12))
+    story.append(KeepTogether([
+        GroupHeading("What a day gets back — by role"),
+        Spacer(1, 2),
+        savings_table(
+            ["Role", "What changes", "Saved per person per day"],
+            SAVINGS_BY_ROLE,
+            [1.85 * inch, 3.30 * inch, CONTENT_W - 5.15 * inch]),
+        Spacer(1, 12),
+        totals_band(SAVINGS_TOTALS),
+    ]))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(SAVINGS_CLOSE, S_INTRO))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(SAVINGS_FOOTNOTE, ParagraphStyle(
+        "svFootnote", fontName="Helvetica-Oblique", fontSize=7.8,
+        leading=10.5, textColor=STEEL)))
 
     # ---- overview page
     story.append(SectionMarker("Overview"))
