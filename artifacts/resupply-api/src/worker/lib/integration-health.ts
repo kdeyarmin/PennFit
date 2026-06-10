@@ -27,26 +27,27 @@ const REPEAT_EVERY = 5;
 
 export async function recordIntegrationSuccess(key: string): Promise<void> {
   const supabase = getSupabaseServiceRoleClient();
-  await supabase
+  const nowIso = new Date().toISOString();
+
+  const { error } = await supabase
     .schema("resupply")
     .from("integration_run_health")
     .upsert(
       {
         key,
         consecutive_failures: 0,
-        last_success_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        last_success_at: nowIso,
+        updated_at: nowIso,
       },
       { onConflict: "key" },
-    )
-    .then(
-      () => undefined,
-      (err) =>
-        logger.warn(
-          { err: err instanceof Error ? err.message : String(err), key },
-          "integration-health: recordSuccess write failed (non-fatal)",
-        ),
     );
+
+  if (error) {
+    logger.warn(
+      { err: error, key },
+      "integration-health: recordSuccess write failed (non-fatal)",
+    );
+  }
 }
 
 export async function recordIntegrationFailure(
