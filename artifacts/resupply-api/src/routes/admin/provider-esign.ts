@@ -25,10 +25,11 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   bufferToHexBytea,
   issueToken,
-  renderPasswordResetEmail,
+  renderProviderPortalInviteEmail,
 } from "@workspace/resupply-auth";
 
 import { getAuthDeps } from "../../lib/auth-deps";
+import { buildInviteHelpAttachments } from "../../lib/help-docs";
 import { logger } from "../../lib/logger";
 import {
   appendSignatureEvent,
@@ -171,10 +172,34 @@ async function inviteProviderUser(
 
   const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
   const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
-  const rendered = renderPasswordResetEmail(
+
+  // Attach the provider portal getting-started guide. Best-effort —
+  // an invite must never fail because the PDF didn't render.
+  let attachments: Awaited<ReturnType<typeof buildInviteHelpAttachments>> = [];
+  try {
+    attachments = await buildInviteHelpAttachments({ kind: "provider" });
+  } catch (err) {
+    logger.warn(
+      { err, event: "provider_invite_help_docs_render_failed" },
+      "failed to render provider invite help documents; sending invite without them",
+    );
+  }
+
+  // A welcome / account-setup email, NOT the password-reset template —
+  // the provider has never had a password, and the email should explain
+  // what they're being invited to (reviewing + e-signing their
+  // patients' documents).
+  const rendered = renderProviderPortalInviteEmail(
     { productName: "PennFit Provider Portal", publicBaseUrl: baseUrl },
-    token.raw,
-    INVITE_TOKEN_TTL_MS,
+    {
+      rawToken: token.raw,
+      ttlMs: INVITE_TOKEN_TTL_MS,
+      email: emailLower,
+      providerName: displayName,
+      practiceName: practiceName(),
+      portalPath: "/provider",
+      attachmentFilenames: attachments.map((a) => a.filename),
+    },
   );
   let emailSent = false;
   try {
@@ -183,6 +208,7 @@ async function inviteProviderUser(
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
     emailSent = true;
   } catch {

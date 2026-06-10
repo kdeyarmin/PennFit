@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   formatTokenExpiry,
   renderPasswordResetEmail,
+  renderProviderPortalInviteEmail,
+  renderTeamInviteEmail,
   renderVerifyEmail,
 } from "./email-templates";
 
@@ -129,5 +131,190 @@ describe("renderPasswordResetEmail", () => {
     expect(r.text).toContain(
       "https://shop.example.com/admin/reset-password?token=tok123",
     );
+  });
+});
+
+describe("renderTeamInviteEmail", () => {
+  const ctx = {
+    productName: "TestProduct",
+    publicBaseUrl: "https://shop.example.com",
+    uiPathPrefix: "/admin",
+  };
+  const args = {
+    rawToken: "tok123",
+    ttlMs: 7 * DAY_MS,
+    email: "jane@example.com",
+    displayName: "Jane Smith",
+    roleLabel: "Customer service rep",
+    attachmentFilenames: ["Guide-One.pdf", "Guide-Two.pdf"],
+  };
+
+  it("is a welcome email, not a password reset", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.subject).toBe(
+      "Welcome to the TestProduct team — set up your account",
+    );
+    expect(r.html).not.toMatch(/reset your/i);
+    expect(r.text).not.toMatch(/request to reset/i);
+    expect(r.html).toContain("You've been invited to join");
+    expect(r.text).toContain("You've been invited to join");
+  });
+
+  it("greets by first name and explains what the app is", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.html).toContain("Hi Jane,");
+    expect(r.text).toContain("Hi Jane,");
+    expect(r.text).toContain("CPAP resupply");
+  });
+
+  it("falls back to a neutral greeting without a display name", () => {
+    const r = renderTeamInviteEmail(ctx, { ...args, displayName: null });
+    expect(r.html).toContain("Hello,");
+    expect(r.text).toContain("Hello,");
+  });
+
+  it("includes the username, role label, and sign-in page", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.html).toContain("jane@example.com");
+    expect(r.html).toContain("Customer service rep");
+    expect(r.html).toContain("https://shop.example.com/admin/sign-in");
+    expect(r.text).toContain("Username (your sign-in email): jane@example.com");
+    expect(r.text).toContain("Role: Customer service rep");
+    expect(r.text).toContain("https://shop.example.com/admin/sign-in");
+  });
+
+  it("omits the role line when no label is supplied", () => {
+    const r = renderTeamInviteEmail(ctx, { ...args, roleLabel: null });
+    expect(r.html).not.toContain("Role:");
+    expect(r.text).not.toContain("Role:");
+  });
+
+  it("links the set-password step with the expiry derived from the TTL", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.html).toContain(
+      "https://shop.example.com/admin/reset-password?token=tok123",
+    );
+    expect(r.text).toContain(
+      "https://shop.example.com/admin/reset-password?token=tok123",
+    );
+    expect(r.html).toContain("expires in 7 days");
+    expect(r.text).toContain("expires in 7 days");
+
+    const bootstrap = renderTeamInviteEmail(ctx, { ...args, ttlMs: HOUR_MS });
+    expect(bootstrap.text).toContain("expires in 1 hour");
+  });
+
+  it("lists the attached getting-started guides by filename", () => {
+    const r = renderTeamInviteEmail(ctx, args);
+    expect(r.html).toContain("getting-started guides");
+    expect(r.html).toContain("Guide-One.pdf");
+    expect(r.html).toContain("Guide-Two.pdf");
+    expect(r.text).toContain("Guide-One.pdf");
+    expect(r.text).toContain("Guide-Two.pdf");
+  });
+
+  it("uses the singular noun for a single attached guide", () => {
+    const r = renderTeamInviteEmail(ctx, {
+      ...args,
+      attachmentFilenames: ["Guide-One.pdf"],
+    });
+    expect(r.text).toContain("getting-started guide for your role");
+    expect(r.text).not.toContain("guides");
+  });
+
+  it("omits the attachments section when there are none", () => {
+    const r = renderTeamInviteEmail(ctx, {
+      ...args,
+      attachmentFilenames: [],
+    });
+    expect(r.html).not.toContain("attached");
+    expect(r.text).not.toContain("attached");
+  });
+
+  it("escapes HTML in the display name, role label, and filenames", () => {
+    const r = renderTeamInviteEmail(ctx, {
+      ...args,
+      displayName: "<b>Eve</b>",
+      roleLabel: "<script>",
+      attachmentFilenames: ["<img>.pdf"],
+    });
+    expect(r.html).not.toContain("<b>Eve</b>");
+    expect(r.html).not.toContain("<script>");
+    expect(r.html).not.toContain("<img>");
+    expect(r.html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("renderProviderPortalInviteEmail", () => {
+  const ctx = {
+    productName: "PennFit Provider Portal",
+    publicBaseUrl: "https://shop.example.com",
+  };
+  const args = {
+    rawToken: "tok123",
+    ttlMs: 7 * DAY_MS,
+    email: "dr.jones@clinic.example.com",
+    providerName: "Dr. Casey Jones",
+    practiceName: "Penn Home Medical Supply",
+    portalPath: "/provider",
+    attachmentFilenames: ["PennPaps-Provider-Portal-Guide.pdf"],
+  };
+
+  it("is an invitation, not a password reset", () => {
+    const r = renderProviderPortalInviteEmail(ctx, args);
+    expect(r.subject).toBe("You're invited to the PennFit Provider Portal");
+    expect(r.html).not.toMatch(/reset your/i);
+    expect(r.text).not.toMatch(/request to reset/i);
+  });
+
+  it("greets the provider by full name and names the inviting practice", () => {
+    const r = renderProviderPortalInviteEmail(ctx, args);
+    expect(r.html).toContain("Hello Dr. Casey Jones,");
+    expect(r.text).toContain("Hello Dr. Casey Jones,");
+    expect(r.text).toContain("Penn Home Medical Supply has invited you");
+  });
+
+  it("explains the e-sign purpose and includes the username", () => {
+    const r = renderProviderPortalInviteEmail(ctx, args);
+    expect(r.text).toContain("electronically sign documents");
+    expect(r.text).toContain(
+      "Your username is your email address: dr.jones@clinic.example.com",
+    );
+  });
+
+  it("links set-password with TTL-derived expiry and the portal sign-in", () => {
+    const r = renderProviderPortalInviteEmail(ctx, args);
+    expect(r.html).toContain(
+      "https://shop.example.com/reset-password?token=tok123",
+    );
+    expect(r.text).toContain("expires in 7 days");
+    expect(r.html).toContain("https://shop.example.com/provider");
+    expect(r.text).toContain("https://shop.example.com/provider");
+  });
+
+  it("lists attached guides and tolerates absent optional fields", () => {
+    const r = renderProviderPortalInviteEmail(ctx, args);
+    expect(r.text).toContain("PennPaps-Provider-Portal-Guide.pdf");
+
+    const minimal = renderProviderPortalInviteEmail(ctx, {
+      rawToken: "t",
+      ttlMs: 7 * DAY_MS,
+      email: "a@b.test",
+    });
+    expect(minimal.html).toContain("Hello,");
+    expect(minimal.text).toContain("You've been invited");
+    expect(minimal.html).not.toContain("sign in any time");
+    expect(minimal.html).not.toContain("attached");
+  });
+
+  it("escapes HTML in the provider and practice names", () => {
+    const r = renderProviderPortalInviteEmail(ctx, {
+      ...args,
+      providerName: "<i>Dr</i>",
+      practiceName: "<b>Practice</b>",
+    });
+    expect(r.html).not.toContain("<i>Dr</i>");
+    expect(r.html).not.toContain("<b>Practice</b>");
+    expect(r.html).toContain("&lt;i&gt;Dr&lt;/i&gt;");
   });
 });
