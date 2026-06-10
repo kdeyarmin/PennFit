@@ -60,14 +60,21 @@ export async function recordIntegrationFailure(
 
   // Read current count so we can increment correctly — PostgREST upsert
   // doesn't support col + 1 expressions.
-  const { data: existing } = await supabase
+  const { data: existing, error: readErr } = await supabase
     .schema("resupply")
     .from("integration_run_health")
     .select("consecutive_failures")
     .eq("key", key)
     .maybeSingle();
 
-  const prevCount = existing?.consecutive_failures ?? 0;
+  if (readErr) {
+    logger.warn(
+      { err: readErr, key },
+      "integration-health: failure read failed (non-fatal)",
+    );
+  }
+
+  const prevCount = readErr ? 0 : (existing?.consecutive_failures ?? 0);
   const newCount = prevCount + 1;
 
   const { error: writeErr } = await supabase
