@@ -77,6 +77,67 @@ export function isInDndWindow(
   return localHour >= prefs.dndStartHour || localHour < prefs.dndEndHour;
 }
 
+/**
+ * Hard TCPA send-window gate for automated SMS — independent of the
+ * user-configurable DND window above, whose null default protects
+ * nobody who hasn't configured it. TCPA's legal window for automated
+ * texts is 8am–9pm local to the recipient; internal policy is the
+ * narrower 9am–8pm (half-open: 9 <= hour < 20 allowed). This mirrors
+ * the gate the reminders scan has always applied, lifted here so every
+ * SMS-dispatching job shares it (app-review 2026-06-10, P1-3).
+ *
+ * Timezone resolution: explicit patient/pref timezone → ZIP inference
+ * → America/New_York (the practice's home timezone and the
+ * conservative default for an Eastern-US patient base). An
+ * unrecognized tz string also falls back to ET.
+ *
+ * NOTE for daily cron callers: a fixed-UTC daily job that gate-skips a
+ * patient will land on the same local hour tomorrow and skip them
+ * again, forever. Pair this gate with a cron hour that is inside
+ * 9am–8pm for every US timezone (≈ 19:00–20:00 UTC) — the gate is the
+ * backstop, not the schedule.
+ */
+export const SMS_SEND_WINDOW_START_HOUR = 9;
+export const SMS_SEND_WINDOW_END_HOUR = 20;
+
+export interface SmsSendWindowOptions {
+  /** IANA timezone (e.g. patients.timezone / prefs.timezone). */
+  timezone?: string | null;
+  /** 5-digit US ZIP for inference when no explicit timezone is set. */
+  shippingZip?: string | null;
+}
+
+export function isOutsideSmsSendWindow(
+  now: Date = new Date(),
+  opts: SmsSendWindowOptions = {},
+): boolean {
+  const tz =
+    opts.timezone ??
+    (opts.shippingZip ? inferTimezoneFromZip(opts.shippingZip) : null) ??
+    "America/New_York";
+  const localHour = (timeZone: string): number => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const hour = Number.parseInt(
+      parts.find((p) => p.type === "hour")?.value ?? "",
+      10,
+    );
+    if (!Number.isFinite(hour)) throw new Error("non-numeric hour");
+    // Some ICU versions render midnight as "24" under hour12:false.
+    return hour % 24;
+  };
+  let hour: number;
+  try {
+    hour = localHour(tz);
+  } catch {
+    hour = localHour("America/New_York");
+  }
+  return hour < SMS_SEND_WINDOW_START_HOUR || hour >= SMS_SEND_WINDOW_END_HOUR;
+}
+
 export function shouldSendEmail(
   prefs: CommunicationPreferences,
   kind:

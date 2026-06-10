@@ -8,11 +8,14 @@
 //
 // Schedule
 // --------
-// 04:13 UTC daily — 50 minutes after the evaluator (03:23 UTC) so
-// the evaluator's batch is durable before this job tries to send
-// it. Off-hours globally; far enough from the reminders cron
-// (hourly :07) and attachment-sweep (Sunday 03:13) to avoid
-// resource contention spikes.
+// 19:13 UTC daily — 2:13/3:13pm ET, inside the 9am–8pm TCPA send
+// window for every US timezone, because this job texts patients. The
+// old 04:13 UTC slot was ~midnight ET; with the dispatcher's
+// per-patient send-window gate a night-time daily cron would skip
+// the same patients at the same local hour forever (app-review
+// 2026-06-10, P1-3). The evaluator (03:23 UTC) still runs long
+// before this, so its batch is durable; rx-renewal follows at 19:43
+// so the two pipelines don't double-burst the vendors.
 //
 // Channel ordering: email first (cheaper, higher delivery rate),
 // then SMS (mops up patients without an email on file). Both
@@ -50,9 +53,10 @@ import {
 } from "../../lib/smart-triggers/renderers";
 
 const SEND_JOB = "smart-triggers.send-due";
-/** Daily 04:13 UTC. Sequenced 50 min after the evaluator cron
- *  (03:23) so its insert batch has settled before we dispatch. */
-const SEND_CRON = "13 4 * * *";
+/** Daily 19:13 UTC (afternoon across all US timezones — see the
+ *  Schedule note above). The evaluator cron (03:23) ran hours
+ *  earlier, so its insert batch has long settled by dispatch time. */
+const SEND_CRON = "13 19 * * *";
 
 const SYSTEM_ACTOR_EMAIL = "system:cron:smart-trigger-send";
 
