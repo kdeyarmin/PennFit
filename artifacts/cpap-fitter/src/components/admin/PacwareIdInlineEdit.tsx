@@ -81,7 +81,6 @@ export function PacwareIdInlineEdit({
         setError(
           "This patient was changed by someone else since you opened it. Refreshing — please retry.",
         );
-        setEditing(false);
         onSaved();
         return;
       }
