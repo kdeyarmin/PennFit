@@ -105,16 +105,23 @@ describe("POST /patients", () => {
   it("treats a blank pacwareId ('' / null) as NULL", async () => {
     stubVerifiedAdmin();
     stageSupabaseResponse("patients", "insert", { data: { id: NEW_ID } });
+    stageSupabaseResponse("patients", "insert", { data: { id: NEW_ID } });
 
-    const res = await request(makeApp())
+    const resBlank = await request(makeApp())
       .post("/resupply-api/patients")
       .send({ ...BASE_BODY, pacwareId: "" });
+    expect(resBlank.status).toBe(201);
 
-    expect(res.status).toBe(201);
-    const [payload] = getSupabaseWritePayloads("patients", "insert") as Array<
+    const resNull = await request(makeApp())
+      .post("/resupply-api/patients")
+      .send({ ...BASE_BODY, pacwareId: null });
+    expect(resNull.status).toBe(201);
+
+    const payloads = getSupabaseWritePayloads("patients", "insert") as Array<
       Record<string, unknown>
     >;
-    expect(payload.pacware_id).toBeNull();
+    expect(payloads[0].pacware_id).toBeNull();
+    expect(payloads[1].pacware_id).toBeNull();
   });
 
   it("round-trips a provided pacwareId and audits the field", async () => {

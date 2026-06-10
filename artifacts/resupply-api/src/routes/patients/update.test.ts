@@ -177,6 +177,72 @@ describe("PATCH /patients/:id (optimistic concurrency)", () => {
   });
 });
 
+describe("PATCH /patients/:id — PacWare id backfill", () => {
+  beforeEach(() => {
+    process.env.NODE_ENV = "test";
+    mockAdmin.current = null;
+    supabaseMock.reset();
+    stubVerifiedAdmin();
+  });
+
+  it("sets pacware_id on a patient that had none", async () => {
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT, updated_at: "2026-06-10T00:00:00.000Z" }],
+    });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ pacwareId: "PAC-777" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.changed).toContain("pacware_id");
+    const writes = getSupabaseWritePayloads("patients", "update");
+    expect(writes[0]).toMatchObject({ pacware_id: "PAC-777" });
+  });
+
+  it("clears pacware_id with null, and treats '' the same", async () => {
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT, updated_at: "2026-06-10T00:00:00.000Z" }],
+    });
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT, updated_at: "2026-06-10T00:00:01.000Z" }],
+    });
+
+    const resNull = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ pacwareId: null });
+    expect(resNull.status).toBe(200);
+
+    const resBlank = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ pacwareId: "" });
+    expect(resBlank.status).toBe(200);
+
+    const writes = getSupabaseWritePayloads("patients", "update");
+    expect(writes[0]).toMatchObject({ pacware_id: null });
+    expect(writes[1]).toMatchObject({ pacware_id: null });
+  });
+
+  it("409s duplicate_pacware_id when the id belongs to another patient", async () => {
+    stageSupabaseResponse("patients", "update", {
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "patients_pacware_id_unique"',
+        details: "Key (pacware_id)=(PAC-777) already exists.",
+      },
+    });
+
+    const res = await request(makeApp())
+      .patch(`/resupply-api/patients/${PATIENT}`)
+      .send({ pacwareId: "PAC-777" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("duplicate_pacware_id");
+  });
+});
+
 describe("PATCH /patients/:id — location assignment (multi-location)", () => {
   const LOCATION = "99999999-9999-4999-8999-999999999999";
 

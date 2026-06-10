@@ -1272,11 +1272,15 @@ export function useGetPatient<
 
 /**
  * Partial update of a patient's admin-editable fields:
-`insurancePayer`, `cadenceOverrideDays`, and
+`pacwareId`, `insurancePayer`, `cadenceOverrideDays`, and
 `channelPreference`. Each field is independently optional;
 sending `null` explicitly clears the field, omitting it leaves
 the column unchanged. PHI columns (name, phone, email) are
 NOT writable through this endpoint.
+
+`pacwareId` is the backfill path for patients created before
+PacWare knew them; it must be unique when present, and a
+collision returns 409 `duplicate_pacware_id`.
 
 Supports optional optimistic-concurrency via the
 `expectedUpdatedAt` body field. When supplied, a stale write
@@ -1304,7 +1308,7 @@ export const updatePatient = async (
 
 export const getUpdatePatientMutationOptions = <
   TError = ErrorType<
-    ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+    ConsoleValidationError | AuthError | NotFoundError | StalePatientError | DuplicatePacwareIdError
   >,
   TContext = unknown,
 >(options?: {
@@ -1347,7 +1351,7 @@ export type UpdatePatientMutationResult = NonNullable<
 >;
 export type UpdatePatientMutationBody = BodyType<PatientUpdate>;
 export type UpdatePatientMutationError = ErrorType<
-  ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+  ConsoleValidationError | AuthError | NotFoundError | StalePatientError | DuplicatePacwareIdError
 >;
 
 /**
@@ -1355,7 +1359,7 @@ export type UpdatePatientMutationError = ErrorType<
  */
 export const useUpdatePatient = <
   TError = ErrorType<
-    ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+    ConsoleValidationError | AuthError | NotFoundError | StalePatientError | DuplicatePacwareIdError
   >,
   TContext = unknown,
 >(options?: {
