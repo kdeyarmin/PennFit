@@ -590,6 +590,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
           install: "false"
+          # The explicit "Install (frozen)" step below populates the pnpm
+          # store, so the store cache is safe here (unlike the audit job,
+          # which never installs and must leave the cache off — see the
+          # `cache` input in .github/actions/setup/action.yml).
+          cache: "true"
 
       - name: Toolchain + env
         run: node -v && pnpm -v && echo "NODE_ENV=$NODE_ENV"

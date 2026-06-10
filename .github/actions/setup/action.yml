@@ -28,6 +28,17 @@ inputs:
       for jobs that only need the toolchain on PATH.
     required: false
     default: "true"
+  cache:
+    description: >-
+      Whether setup-node caches the pnpm store. "auto" (default) enables
+      it only when `install` is "true". Set to "true" alongside
+      install: "false" ONLY for jobs that run their own `pnpm install`
+      step (the Railway prod-build job mirrors Railpack's install as an
+      explicit step). A job that never installs must keep the cache off:
+      the store directory is never created, and setup-node's post-job
+      cache save hard-fails the job on every cache miss.
+    required: false
+    default: "auto"
 
 runs:
   using: composite
@@ -40,7 +51,7 @@ runs:
     #
     # ORDERING IS LOAD-BEARING: pnpm MUST be installed before
     # actions/setup-node runs. setup-node enables the pnpm package-manager
-    # cache (cache: "pnpm" below), and that cache step shells out to the
+    # cache (the cache inputs below), and that cache step shells out to the
     # `pnpm` binary to locate the store — so pnpm has to be on PATH first.
     # Putting setup-node ahead of this step breaks EVERY CI job with
     # "Unable to locate executable file: pnpm" (the PR #531 regression).
@@ -67,14 +78,22 @@ runs:
     - uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
-        # Only enable the pnpm store cache when we actually install. A
-        # toolchain-only job (install: false — e.g. the dependency audit)
-        # never populates the store, so on a cache MISS (any lockfile
-        # change) setup-node's save post-step fails the job with
-        # "Path Validation Error: Path(s) specified ... do(es) not exist".
-        # Disabling the cache for those jobs avoids that and costs nothing
-        # (they don't install). install: true jobs are unchanged ("pnpm").
-        cache: ${{ inputs.install == 'true' && 'pnpm' || '' }}
+        # Only enable the pnpm store cache when this job populates the
+        # store (see the `cache` input above). A job that never installs
+        # leaves the store directory absent, so on a cache MISS (any
+        # lockfile change) setup-node's save post-step fails the whole
+        # job with "Path Validation Error: Path(s) specified ... do(es)
+        # not exist" — this is what turned main red on 2026-06-10, when
+        # the first main run after a lockfile change hit the (by then
+        # blocking) audit job with a cold cache key.
+        #
+        # BOTH inputs below must be set: setup-node@v5's
+        # `package-manager-cache` defaults to TRUE and auto-enables the
+        # store cache even when `cache:` is empty, which is why the
+        # earlier empty-`cache:` guard (#635) did not actually disable
+        # anything.
+        cache: ${{ (inputs.cache == 'true' || (inputs.cache == 'auto' && inputs.install == 'true')) && 'pnpm' || '' }}
+        package-manager-cache: ${{ inputs.cache == 'true' || (inputs.cache == 'auto' && inputs.install == 'true') }}
         cache-dependency-path: pnpm-lock.yaml
 
     - name: Install dependencies
