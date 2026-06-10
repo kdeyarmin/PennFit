@@ -1,32 +1,33 @@
-// Manual-document PDF renderer.
+// Manual-document packet PDF renderer.
 //
-// Renders a staff-authored manual document (see catalog.ts) to a clean,
-// printable/faxable PDF. The same renderer is used by the admin
-// download route, the email-attachment path, the fax media path, and
-// the chart-attachment path so every channel produces identical bytes.
+// Renders a packet — an ordered bundle of staff-authored manual
+// documents — to ONE combined PDF: an optional generated cover sheet
+// (packet title, recipient, contents list) followed by each member
+// document starting on a fresh page. Reuses drawManualDocument from
+// pdf.ts so a document's pages inside a packet are laid out exactly
+// like its individual render (including the signature-tracking
+// barcode), and a signed page faxed back can still be scanned and
+// filed against the right document.
 //
-// PHI posture: the PDF can contain PHI (the author types it in). The
-// banner + HIPAA footer render for clinical document kinds (catalog
-// `phi: true`). Bytes are streamed/attached, never logged.
+// No external PDF merging (pdf-lib) is needed: every member document
+// is drawn from structured data, so the whole packet renders in a
+// single PDFKit pass.
 //
-// Same PDFKit pattern as lib/billing/dwo-pdf.ts.
+// PHI posture: same as pdf.ts — content can contain PHI; the cover
+// sheet carries the CONFIDENTIAL banner when any member document is a
+// PHI kind. Bytes are streamed/attached, never logged.
 
 import PDFDocument from "pdfkit";
 import type PDFKit from "pdfkit";
 
-import { drawSignatureTrackingStamp } from "../barcode/tracking-stamp";
-import {
-  getManualDocumentTypeDef,
-  normalizeManualDocumentFields,
-  type ManualDocumentType,
-} from "./catalog";
+import { getManualDocumentTypeDef } from "./catalog";
+import { drawManualDocument, type ManualDocumentPdfInput } from "./pdf";
 
 const MARGIN = 72;
 const PAGE_WIDTH = 612;
 const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
-export interface ManualDocumentPdfInput {
-  documentType: ManualDocumentType;
+export interface ManualDocumentPacketPdfInput {
   title: string;
   recipient: {
     name?: string | null;
@@ -34,25 +35,23 @@ export interface ManualDocumentPdfInput {
     email?: string | null;
     fax?: string | null;
   };
-  /** Raw typed fields (key→value); normalized against the catalog here. */
-  fields: Record<string, unknown> | null;
-  body?: string | null;
-  /** Practice / supplier name for the letterhead. */
+  /** Member documents, in packet order. Must be non-empty. */
+  documents: ManualDocumentPdfInput[];
+  /** Render the generated cover sheet as page one. */
+  includeCoverSheet: boolean;
+  /** Practice / supplier name for the cover-sheet letterhead. */
   supplierName: string;
   /** Passed in (not derived) so tests are deterministic. */
   generatedOn: Date;
-  /**
-   * Signature-tracking code (migration 0253). When set, printed as a
-   * Code 128 barcode top-right so a signed copy faxed back can be scanned
-   * and filed. Only signable document kinds carry one.
-   */
-  trackingCode?: string | null;
 }
 
-/** Render the manual document to a Buffer (same pattern as dwo-pdf). */
-export async function renderManualDocumentPdf(
-  input: ManualDocumentPdfInput,
+/** Render the packet to a Buffer (same pattern as renderManualDocumentPdf). */
+export async function renderManualDocumentPacketPdf(
+  input: ManualDocumentPacketPdfInput,
 ): Promise<Buffer> {
+  if (input.documents.length === 0) {
+    throw new Error("Cannot render an empty packet");
+  }
   const doc = new PDFDocument({ size: "LETTER", margin: MARGIN });
   const chunks: Buffer[] = [];
   return new Promise<Buffer>((resolve, reject) => {
@@ -60,7 +59,16 @@ export async function renderManualDocumentPdf(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
     try {
-      drawManualDocument(doc, input);
+      let first = true;
+      if (input.includeCoverSheet) {
+        drawPacketCoverSheet(doc, input);
+        first = false;
+      }
+      for (const member of input.documents) {
+        if (!first) doc.addPage();
+        first = false;
+        drawManualDocument(doc, member);
+      }
       doc.end();
     } catch (err) {
       reject(err);
@@ -68,23 +76,15 @@ export async function renderManualDocumentPdf(
   });
 }
 
-/**
- * Draw one manual document into an existing PDFKit doc, starting at the
- * current page. Exported so the packet renderer (packet-pdf.ts) can draw
- * several documents into a single combined PDF — each on a fresh page —
- * without re-implementing the per-document layout.
- */
-export function drawManualDocument(
+function drawPacketCoverSheet(
   doc: PDFKit.PDFDocument,
-  input: ManualDocumentPdfInput,
+  input: ManualDocumentPacketPdfInput,
 ): void {
-  const def = getManualDocumentTypeDef(input.documentType);
+  const anyPhi = input.documents.some(
+    (m) => getManualDocumentTypeDef(m.documentType).phi,
+  );
 
-  // Top-right signature-tracking barcode (absolute-positioned in the top
-  // margin; no-op when there's no code).
-  drawSignatureTrackingStamp(doc, input.trackingCode);
-
-  if (def.phi) {
+  if (anyPhi) {
     doc
       .fontSize(9)
       .font("Helvetica-Bold")
@@ -126,7 +126,7 @@ export function drawManualDocument(
     .fontSize(10)
     .font("Helvetica")
     .fillColor("#555555")
-    .text(`${def.label} · ${formatDate(input.generatedOn)}`, {
+    .text(`Document Packet · ${formatDate(input.generatedOn)}`, {
       width: USABLE_WIDTH,
     })
     .fillColor("#000000");
@@ -154,59 +154,24 @@ export function drawManualDocument(
     doc.moveDown(0.8);
   }
 
-  // ── Structured typed fields (only the filled ones) ──────────────
-  const values = normalizeManualDocumentFields(
-    input.documentType,
-    input.fields,
-  );
-  const filled = def.fields.filter((f) => values[f.key]);
-  if (filled.length > 0) {
-    header(doc, "Details");
-    for (const f of filled) {
-      const value = values[f.key]!;
-      if (f.kind === "textarea") {
-        doc
-          .fontSize(10)
-          .font("Helvetica-Bold")
-          .text(`${f.label}:`, { width: USABLE_WIDTH });
-        doc.font("Helvetica").text(value, { width: USABLE_WIDTH, lineGap: 2 });
-        doc.moveDown(0.4);
-      } else {
-        field(doc, f.label, value);
-      }
-    }
-    doc.moveDown(0.6);
-  }
-
-  // ── Free-form body ──────────────────────────────────────────────
-  const body = (input.body ?? "").trim();
-  if (body) {
-    if (filled.length > 0) {
-      rule(doc);
-      doc.moveDown(0.8);
-    }
-    doc
-      .fontSize(11)
-      .font("Helvetica")
-      .text(body, { width: USABLE_WIDTH, lineGap: 4 });
-    doc.moveDown(1);
-  }
-
-  // ── Signature line ──────────────────────────────────────────────
-  if (def.requiresSignature) {
-    doc.moveDown(1.2);
+  // ── Contents ────────────────────────────────────────────────────
+  header(doc, `Contents (${input.documents.length})`);
+  input.documents.forEach((m, i) => {
+    const def = getManualDocumentTypeDef(m.documentType);
     doc
       .fontSize(10)
+      .font("Helvetica-Bold")
+      .text(`${i + 1}. ${m.title}`, { continued: true, width: USABLE_WIDTH });
+    doc
       .font("Helvetica")
-      .text("Signature: ____________________________________", {
-        width: USABLE_WIDTH,
-      });
-    doc.moveDown(0.4);
-    doc.text("Date: __________________", { width: USABLE_WIDTH });
-  }
+      .fillColor("#555555")
+      .text(`  — ${def.label}`, { width: USABLE_WIDTH })
+      .fillColor("#000000");
+    doc.moveDown(0.2);
+  });
 
   // ── Footer ──────────────────────────────────────────────────────
-  if (def.phi) {
+  if (anyPhi) {
     const footerY = 720;
     doc
       .moveTo(MARGIN, footerY)
@@ -223,7 +188,7 @@ export function drawManualDocument(
       .font("Helvetica")
       .fillColor("#555555")
       .text(
-        "This document contains protected health information governed by " +
+        "This packet contains protected health information governed by " +
           "HIPAA. It is intended only for the named recipient.",
         MARGIN,
         footerY + 6,
