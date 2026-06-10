@@ -73,6 +73,17 @@ describe("buildInviteHelpAttachments", () => {
     ]);
   });
 
+  it("renders the provider portal guide for provider invites", async () => {
+    const attachments = await buildInviteHelpAttachments({ kind: "provider" });
+    expect(attachments.map((a) => a.filename)).toEqual([
+      "PennPaps-Provider-Portal-Guide.pdf",
+    ]);
+    const a = attachments[0]!;
+    expect(a.contentType).toBe("application/pdf");
+    expect(a.content.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect(a.content.length).toBeGreaterThan(500);
+  });
+
   it("caches rendered bytes across calls (same buffer reused)", async () => {
     const first = await buildInviteHelpAttachments({ kind: "patient" });
     const second = await buildInviteHelpAttachments({ kind: "patient" });

@@ -2,10 +2,16 @@
 //
 // Mirrors the pattern used by `scripts/src/auth-bootstrap-admin.ts`:
 // upsert a `resupply_auth.users` row (idempotent on email_lower),
-// issue a long-TTL `password_reset` email-token, send a "set your
-// password" email via the configured EmailSender, and return the
-// resolved `resupply_auth.users.id` so the caller can link any
-// product-level roster row (e.g. `resupply.admin_users.auth_user_id`).
+// issue a long-TTL `password_reset` email-token, send a welcome /
+// "set up your account" email via the configured EmailSender, and
+// return the resolved `resupply_auth.users.id` so the caller can link
+// any product-level roster row (e.g. `resupply.admin_users.auth_user_id`).
+//
+// The email is `renderTeamInviteEmail` — a proper welcome that
+// explains the app, the member's username + role, and the attached
+// getting-started guides. (It historically reused the password-RESET
+// template, so brand-new employees were told "we received a request
+// to reset your password" — wrong task, confusing first touch.)
 //
 // Ported from raw `pg.Pool.query` to the Supabase JS service-role
 // client. The original three-statement
@@ -22,7 +28,7 @@ import { issueToken } from "./token";
 import { hashPassword } from "./password";
 import { validatePassword } from "./password-policy";
 import type { AuthDeps, EmailAttachment } from "./http/types";
-import { renderPasswordResetEmail } from "./http/email-templates";
+import { renderTeamInviteEmail } from "./http/email-templates";
 import { stripTrailingSlashes } from "./string-utils";
 import { bufferToHexBytea } from "./bytea";
 import type { ResupplySupabaseClient } from "@workspace/resupply-db";
@@ -62,6 +68,14 @@ export interface InviteArgs {
   role: "admin" | "agent";
   displayName: string | null;
   productName: string;
+  /**
+   * Human-readable role label shown in the welcome email's
+   * account-details block (e.g. "Customer service rep"). Callers with
+   * a granular role catalog should pass the same label their UI
+   * renders; when omitted, a default is derived from the coarse
+   * `role` ("Super admin" / "Customer service rep").
+   */
+  roleLabel?: string;
   /**
    * Public base URL for the app the invite link should point at.
    * Falls back to `deps.publicBaseUrl` when omitted.
@@ -279,14 +293,22 @@ export async function inviteTeamMember(
 
   const safePrefix = stripTrailingSlashes(args.uiPathPrefix ?? "");
   const inviteLink = `${baseUrl}${safePrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
-  const rendered = renderPasswordResetEmail(
+  const rendered = renderTeamInviteEmail(
     {
       productName: args.productName,
       publicBaseUrl: baseUrl,
       uiPathPrefix: args.uiPathPrefix,
     },
-    token.raw,
-    INVITE_TOKEN_TTL_MS,
+    {
+      rawToken: token.raw,
+      ttlMs: INVITE_TOKEN_TTL_MS,
+      email: args.emailLower,
+      displayName: args.displayName,
+      roleLabel:
+        args.roleLabel ??
+        (args.role === "admin" ? "Super admin" : "Customer service rep"),
+      attachmentFilenames: args.attachments?.map((a) => a.filename),
+    },
   );
 
   let emailSent = false;

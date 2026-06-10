@@ -1,7 +1,7 @@
 // auth:bootstrap-admin — seed an in-house auth user with admin (or
 // agent) role, issue a one-time set-password token, and (when
-// SendGrid is configured) email a reset link to the supplied
-// address.
+// SendGrid is configured) email a welcome / account-setup link to
+// the supplied address.
 //
 // This is the chicken-and-egg solution for ADR 014 / the Stage 3
 // cutover described in docs/resupply/AUTH-MIGRATION-PLAN.md:
@@ -39,7 +39,7 @@ import {
   issueToken,
   normalizeEmail,
   readAuthEnv,
-  renderPasswordResetEmail,
+  renderTeamInviteEmail,
   supabaseAuthRepository,
 } from "@workspace/resupply-auth";
 import {
@@ -217,11 +217,18 @@ async function main(): Promise<void> {
       publicBaseUrl: argsParsed.publicBaseUrl,
       uiPathPrefix: argsParsed.uiPathPrefix,
     };
-    const rendered = renderPasswordResetEmail(
-      ctx,
-      token.raw,
-      RESET_TOKEN_TTL_MS,
-    );
+    // Welcome / account-setup email, not the password-reset template:
+    // this account has never had a password, and "we received a request
+    // to reset your password" would be the wrong message to bootstrap
+    // the very first admin with. Expiry copy derives from the 1h TTL.
+    const rendered = renderTeamInviteEmail(ctx, {
+      rawToken: token.raw,
+      ttlMs: RESET_TOKEN_TTL_MS,
+      email: emailLower,
+      displayName: null,
+      roleLabel:
+        argsParsed.role === "admin" ? "Super admin" : "Customer service rep",
+    });
     try {
       const client = createSendgridClient();
       await client.sendEmail({
