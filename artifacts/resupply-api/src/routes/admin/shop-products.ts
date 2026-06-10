@@ -1,13 +1,16 @@
 // /admin/shop/products/* — admin tools for the cash-pay catalog.
 //
-// Today this module owns exactly one endpoint: PATCH the stock count
-// on a Stripe Product. The shop catalog reads inventory from
-// `metadata.stock_count` (parsed by lib/stripe/products-meta.ts), so
-// "set the stock count" is "write to Stripe metadata". We deliberately
-// don't introduce a separate inventory table; Stripe stays the single
-// source of truth and an admin editing the value in the Stripe
-// Dashboard directly produces the same on-storefront result as
-// editing it from our admin console.
+// This module owns the catalog mutations: PATCH the stock count /
+// low-stock threshold / price on a Stripe Product, and POST a new SKU.
+// The shop catalog reads inventory from `metadata.stock_count` (parsed
+// by lib/stripe/products-meta.ts), so "set the stock count" is "write
+// to Stripe metadata"; the storefront price is the product's
+// `default_price`, so "edit the price" is "create a new Stripe Price
+// and repoint default_price" (Stripe Prices are immutable). We
+// deliberately don't introduce a separate inventory table; Stripe
+// stays the single source of truth and an admin editing the value in
+// the Stripe Dashboard directly produces the same on-storefront result
+// as editing it from our admin console.
 //
 // Why metadata (not Stripe's catalog inventory feature):
 //   Stripe's hosted "inventory" is part of Stripe Tax / Stripe Terminal
@@ -43,8 +46,8 @@ import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
 const router: IRouter = Router();
 
 // Per-admin rate limit on every catalog mutation (B-07). Each call
-// hits Stripe (products.update / products.create / prices.create) and
-// can fan out a back-in-stock notification, so a compromised account
+// hits Stripe (products.update / products.create / prices.create /
+// prices.update) and can fan out a back-in-stock notification, so a compromised account
 // looping on the endpoint can both burn Stripe quota and spam
 // subscribers. 30/hour per-admin covers legitimate catalog work
 // without bounding ops review or onboarding bursts. Keyed by
@@ -77,6 +80,17 @@ const patchThresholdBodySchema = z.object({
     .describe(
       "Integer ≥0, or null to clear the threshold (storefront uses default of 5).",
     ),
+});
+
+// New storefront price in whole-dollar cents. Bounds mirror the
+// create endpoint's unitAmountCents: Stripe's $0.50 minimum charge
+// and a $100,000 sanity cap.
+const patchPriceBodySchema = z.object({
+  unitAmountCents: z
+    .number()
+    .int()
+    .min(50, "Stripe minimum charge is $0.50")
+    .max(10_000_000),
 });
 
 router.patch(
@@ -376,6 +390,266 @@ router.patch(
     req.log?.info?.(
       { productId, lowStockThreshold },
       "shop/admin/products: low-stock threshold updated",
+    );
+    res.json({ product: projected });
+  },
+);
+
+// PATCH /admin/shop/products/:productId/price — change the storefront
+// price of an existing SKU.
+//
+// Stripe Prices are immutable (unit_amount can never change on an
+// existing Price object), so "edit the price" is a three-step write:
+//   1. create a new one-time Price at the new amount (same currency)
+//   2. repoint the product's `default_price` at it — this is the
+//      moment the storefront (and checkout validation) switch over
+//   3. archive the old default Price (hygiene; in-flight carts that
+//      still hold the old price id are already rejected by
+//      validate-cart's "must equal default_price" rule, archiving
+//      just makes the rejection reason cleaner)
+// The order matters: Stripe refuses to archive a Price that is still
+// a product's default_price, so the repoint must land first.
+//
+// Subscribe & Save: v1 policy is "subscription price == one-time
+// price" (no modeled discount — see products-meta.ts). When the SKU
+// has active recurring Price(s), we mirror the storefront-selected
+// one (cheapest active, id tie-break — same rule as validate-cart)
+// onto a new recurring Price at the new amount and archive the old
+// ones. Existing subscriptions are NOT touched: archiving a Price
+// only prevents new use; Stripe keeps billing current subscribers on
+// the price they signed up at.
+//
+// Failure posture mirrors the create endpoint: nothing before the
+// default_price repoint has visible effect (a non-default price is
+// not purchasable), and every step after it is best-effort hygiene —
+// logged, never fatal — so a partial failure can't leave the SKU in
+// a worse state than "old price object still active but unused".
+router.patch(
+  "/admin/shop/products/:productId/price",
+  requirePermission("admin.tools.manage"),
+  adminProductMutationLimiter,
+  async (req, res) => {
+    const productId = String(req.params.productId ?? "");
+    if (!productId.startsWith("prod_")) {
+      res.status(400).json({ error: "invalid_product_id" });
+      return;
+    }
+    const parsed = patchPriceBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { unitAmountCents } = parsed.data;
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    // Catalog-membership guard — same fence as the stock/threshold
+    // handlers. Also gives us the current default price (id, amount,
+    // currency) that steps 1–3 below need.
+    let existing;
+    try {
+      existing = await stripe.products.retrieve(productId, {
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      if (status === 404) {
+        res.status(404).json({ error: "product_not_found" });
+        return;
+      }
+      req.log?.warn?.(
+        {
+          productId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: stripe retrieve failed (price)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_retrieve_failed",
+      });
+      return;
+    }
+    const existingProjected: ShopProductView | null = projectProduct(existing);
+    if (!existingProjected) {
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+
+    const previousPrice = existingProjected.price;
+    if (previousPrice.unitAmount === unitAmountCents) {
+      // Idempotent no-op: saving the already-current amount must not
+      // churn out duplicate Price objects in Stripe.
+      res.json({ product: existingProjected });
+      return;
+    }
+
+    // Step 1 — new one-time price at the new amount. Currency follows
+    // the existing default price so a non-USD catalog round-trips.
+    let newPrice: { id: string };
+    try {
+      newPrice = await stripe.prices.create({
+        product: productId,
+        unit_amount: unitAmountCents,
+        currency: previousPrice.currency,
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        {
+          productId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: stripe create price failed (price unchanged)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_price_create_failed",
+      });
+      return;
+    }
+
+    // Step 2 — repoint default_price. This is the commit point: once
+    // it lands, the storefront's next cache flush serves the new
+    // price and checkout only accepts it.
+    let updated;
+    try {
+      updated = await stripe.products.update(productId, {
+        default_price: newPrice.id,
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        {
+          productId,
+          newPriceId: newPrice.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: stripe set default_price failed (price edit; orphaned price)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_set_default_price_failed",
+        productId,
+      });
+      return;
+    }
+
+    // Step 3 — archive the previous default price. Best-effort: a
+    // failure leaves an unused-but-active price object behind, which
+    // validate-cart already refuses to sell.
+    try {
+      await stripe.prices.update(previousPrice.id, { active: false });
+    } catch (err) {
+      req.log?.warn?.(
+        {
+          productId,
+          priceId: previousPrice.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: archive of replaced default price failed",
+      );
+    }
+
+    // Subscribe & Save rotation. Best-effort end to end: the one-time
+    // price is already switched, so the worst outcome of a failure
+    // here is a stale subscription price (logged loudly below) that
+    // the operator can fix in the Stripe Dashboard.
+    let recurringRotated = false;
+    try {
+      const recurringList = await stripe.prices.list({
+        product: productId,
+        active: true,
+        type: "recurring",
+        limit: 100,
+      });
+      const oldRecurring = recurringList.data;
+      if (oldRecurring.length > 0) {
+        // Mirror the cadence of the price the storefront actually
+        // surfaces: cheapest active recurring, id tie-break — the
+        // exact selection rule in validate-cart.ts / shop products.
+        const mirrored = oldRecurring
+          .filter((p) => p.unit_amount != null && p.recurring)
+          .reduce<Stripe.Price | null>((best, p) => {
+            if (!best) return p;
+            const pa = p.unit_amount ?? Infinity;
+            const ba = best.unit_amount ?? Infinity;
+            if (pa !== ba) return pa < ba ? p : best;
+            return p.id < best.id ? p : best;
+          }, null);
+        if (mirrored?.recurring) {
+          const newRecurring = await stripe.prices.create({
+            product: productId,
+            unit_amount: unitAmountCents,
+            currency: previousPrice.currency,
+            recurring: {
+              interval: mirrored.recurring.interval,
+              interval_count: mirrored.recurring.interval_count ?? 1,
+            },
+          });
+          // Only retire the old recurring prices once the replacement
+          // exists — otherwise the SKU would lose its Subscribe toggle
+          // entirely on a mid-flight failure.
+          for (const old of oldRecurring) {
+            if (old.id === newRecurring.id) continue;
+            try {
+              await stripe.prices.update(old.id, { active: false });
+            } catch (err) {
+              req.log?.warn?.(
+                {
+                  productId,
+                  priceId: old.id,
+                  err: err instanceof Error ? err.message : String(err),
+                },
+                "shop/admin/products: archive of replaced recurring price failed",
+              );
+            }
+          }
+          recurringRotated = true;
+        }
+      }
+    } catch (err) {
+      req.log?.warn?.(
+        {
+          productId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: recurring price rotation failed — subscription price is now stale vs one-time",
+      );
+    }
+
+    const projected: ShopProductView | null = projectProduct(updated);
+    if (!projected) {
+      res.status(422).json({ error: "unprojectable_product" });
+      return;
+    }
+
+    req.log?.info?.(
+      {
+        productId,
+        previousUnitAmountCents: previousPrice.unitAmount,
+        unitAmountCents,
+        recurringRotated,
+      },
+      "shop/admin/products: price updated",
     );
     res.json({ product: projected });
   },
