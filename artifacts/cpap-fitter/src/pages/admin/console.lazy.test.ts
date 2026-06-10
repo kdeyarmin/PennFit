@@ -1,18 +1,23 @@
-// Tests for the per-page React.lazy() refactor in console.tsx.
+// Tests for the per-page lazy-chunk refactor in console.tsx.
 //
 // PR change (admin perf): all ~70 admin pages were converted from
-// eager static imports to per-page lazy() chunks so that a staff user
+// eager static imports to per-page lazy chunks so that a staff user
 // who only opens 3 pages downloads 3 chunks instead of the full 70+.
+// A follow-up converted the wrapper from bare React.lazy to
+// lazyWithRetry (lib/lazy-with-retry.ts) so a chunk that 404s after a
+// deploy recovers with one guarded reload instead of stranding the
+// staff user on the ErrorBoundary.
 //
 // This file guards the structural invariants of that refactor:
 //   1. DashboardPage stays eager (it's the /admin default — a Suspense
 //      flash there is the FIRST thing a staff user sees).
-//   2. All other pages are wrapped in lazy().
+//   2. All other pages are wrapped in lazyWithRetry().
 //   3. The Suspense boundary with the correct fallback spinner is present.
 //   4. ErrorBoundary still wraps the Suspense (error paths unchanged).
 //   5. Pennpaps pages use the renamed source exports.
-//   6. lazy() + import().then({ default: m.X }) pattern — not bare dynamic
-//      imports — so the .then() re-export avoids Vite's name-mangling.
+//   6. lazyWithRetry() + import().then({ default: m.X }) pattern — not bare
+//      dynamic imports — so the .then() re-export avoids Vite's
+//      name-mangling.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -26,17 +31,24 @@ const SRC = readFileSync(path.join(__dirname, "console.tsx"), "utf8");
 // React imports: Suspense and lazy must be imported
 // ---------------------------------------------------------------------------
 
-describe("console.tsx — Suspense + lazy React imports", () => {
+describe("console.tsx — Suspense + lazyWithRetry imports", () => {
   it("imports Suspense from react", () => {
     expect(SRC).toMatch(
       /import\s*\{[^}]*\bSuspense\b[^}]*\}\s*from\s*["']react["']/,
     );
   });
 
-  it("imports lazy from react", () => {
+  it("imports lazyWithRetry from the stale-chunk-aware wrapper", () => {
     expect(SRC).toMatch(
+      /import\s*\{[^}]*\blazyWithRetry\b[^}]*\}\s*from\s*["']@\/lib\/lazy-with-retry["']/,
+    );
+  });
+
+  it("does NOT use bare React.lazy (every page chunk gets retry recovery)", () => {
+    expect(SRC).not.toMatch(
       /import\s*\{[^}]*\blazy\b[^}]*\}\s*from\s*["']react["']/,
     );
+    expect(SRC).not.toMatch(/=\s*lazy\s*\(/);
   });
 });
 
@@ -51,11 +63,13 @@ describe("console.tsx — DashboardPage stays eager", () => {
     );
   });
 
-  it("does NOT wrap DashboardPage in lazy()", () => {
-    // The lazy() declarations all follow the pattern `const X = lazy(…)`
-    // DashboardPage must never appear on the right-hand side of such a
-    // declaration.
-    expect(SRC).not.toMatch(/const\s+DashboardPage\s*=\s*lazy\s*\(/);
+  it("does NOT wrap DashboardPage in lazyWithRetry()", () => {
+    // The lazy declarations all follow the pattern
+    // `const X = lazyWithRetry(…)`. DashboardPage must never appear on
+    // the right-hand side of such a declaration.
+    expect(SRC).not.toMatch(
+      /const\s+DashboardPage\s*=\s*lazy(WithRetry)?\s*\(/,
+    );
   });
 });
 
@@ -84,10 +98,10 @@ describe("console.tsx — core admin pages are lazy-loaded", () => {
   ];
 
   for (const [symbolName, modulePath] of lazyPages) {
-    it(`${symbolName} is declared as a lazy() component`, () => {
-      // Must appear as `const X = lazy(…)`
+    it(`${symbolName} is declared as a lazyWithRetry() component`, () => {
+      // Must appear as `const X = lazyWithRetry(…)`
       expect(SRC).toMatch(
-        new RegExp(`const\\s+${symbolName}\\s*=\\s*lazy\\s*\\(`),
+        new RegExp(`const\\s+${symbolName}\\s*=\\s*lazyWithRetry\\s*\\(`),
       );
       // The factory must import from the expected module path
       expect(SRC).toContain(`import("${modulePath}")`);
@@ -120,9 +134,9 @@ describe("console.tsx — billing pages are lazy-loaded", () => {
   ];
 
   for (const [symbolName, modulePath] of billingLazyPages) {
-    it(`${symbolName} is declared as a lazy() component`, () => {
+    it(`${symbolName} is declared as a lazyWithRetry() component`, () => {
       expect(SRC).toMatch(
-        new RegExp(`const\\s+${symbolName}\\s*=\\s*lazy\\s*\\(`),
+        new RegExp(`const\\s+${symbolName}\\s*=\\s*lazyWithRetry\\s*\\(`),
       );
       expect(SRC).toContain(`import("${modulePath}")`);
       expect(SRC).toContain(`default: m.${symbolName}`);
@@ -140,25 +154,31 @@ describe("console.tsx — billing pages are lazy-loaded", () => {
 
 describe("console.tsx — Pennpaps pages use renamed source exports", () => {
   it("PennpapsOrdersPage factory maps m.AdminOrders → default", () => {
-    expect(SRC).toMatch(/const\s+PennpapsOrdersPage\s*=\s*lazy\s*\(/);
+    expect(SRC).toMatch(/const\s+PennpapsOrdersPage\s*=\s*lazyWithRetry\s*\(/);
     expect(SRC).toContain('import("@/pages/admin/pennpaps-orders")');
     expect(SRC).toContain("default: m.AdminOrders");
   });
 
   it("PennpapsOrderDetailPage factory maps m.AdminOrderDetail → default", () => {
-    expect(SRC).toMatch(/const\s+PennpapsOrderDetailPage\s*=\s*lazy\s*\(/);
+    expect(SRC).toMatch(
+      /const\s+PennpapsOrderDetailPage\s*=\s*lazyWithRetry\s*\(/,
+    );
     expect(SRC).toContain('import("@/pages/admin/pennpaps-order-detail")');
     expect(SRC).toContain("default: m.AdminOrderDetail");
   });
 
   it("PennpapsRemindersPage factory maps m.AdminReminders → default", () => {
-    expect(SRC).toMatch(/const\s+PennpapsRemindersPage\s*=\s*lazy\s*\(/);
+    expect(SRC).toMatch(
+      /const\s+PennpapsRemindersPage\s*=\s*lazyWithRetry\s*\(/,
+    );
     expect(SRC).toContain('import("@/pages/admin/pennpaps-reminders")');
     expect(SRC).toContain("default: m.AdminReminders");
   });
 
   it("PennpapsAnalyticsPage factory maps m.AdminAnalytics → default", () => {
-    expect(SRC).toMatch(/const\s+PennpapsAnalyticsPage\s*=\s*lazy\s*\(/);
+    expect(SRC).toMatch(
+      /const\s+PennpapsAnalyticsPage\s*=\s*lazyWithRetry\s*\(/,
+    );
     expect(SRC).toContain('import("@/pages/admin/pennpaps-analytics")');
     expect(SRC).toContain("default: m.AdminAnalytics");
   });
