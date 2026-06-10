@@ -19,6 +19,7 @@ import type { Mock } from "vitest";
 import { ApiError } from "@workspace/api-client-react/admin";
 
 import {
+  deleteMember,
   inviteMember,
   listTeam,
   patchMember,
@@ -714,5 +715,93 @@ describe("patchMember — throws ApiError (not plain Error) on failure", () => {
     );
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(422);
+  });
+});
+
+// ─── deleteMember ────────────────────────────────────────────────────────────
+
+describe("deleteMember", () => {
+  const DELETE_RESPONSE = {
+    deleted: true,
+    id: "m-1",
+    authUserDeleted: true,
+    authUserDemotedToCustomer: false,
+  };
+
+  it("DELETEs /resupply-api/admin/team/:id with credentials:include", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => DELETE_RESPONSE,
+    });
+
+    await deleteMember("m-1");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/admin/team/m-1");
+    expect(init.method).toBe("DELETE");
+    expect(init.credentials).toBe("include");
+    expect((init.headers as Record<string, string>)["Accept"]).toBe(
+      "application/json",
+    );
+  });
+
+  it("URL-encodes special characters in the id", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => DELETE_RESPONSE,
+    });
+
+    await deleteMember("id/with/slashes");
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("id%2Fwith%2Fslashes");
+  });
+
+  it("includes X-PF-CSRF when pf_csrf cookie is present", async () => {
+    setDocumentCookie("pf_csrf=delete-csrf");
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => DELETE_RESPONSE,
+    });
+
+    await deleteMember("m-1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["X-PF-CSRF"]).toBe(
+      "delete-csrf",
+    );
+  });
+
+  it("returns the deletion summary on success", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => DELETE_RESPONSE,
+    });
+
+    const result = await deleteMember("m-1");
+
+    expect(result).toEqual(DELETE_RESPONSE);
+  });
+
+  it("throws an ApiError instance on non-OK response (e.g. 409 member_active)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      headers: new Headers(),
+      url: "",
+      json: async () => ({
+        error: "member_active",
+        message: "This member is active. Revoke their access first.",
+      }),
+    });
+    const err = await deleteMember("m-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(409);
   });
 });
