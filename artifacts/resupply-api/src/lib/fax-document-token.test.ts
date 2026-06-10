@@ -27,6 +27,7 @@ import {
   signAppealFaxToken,
   signFaxDocumentToken,
   signManualDocumentFaxToken,
+  signManualDocumentPacketFaxToken,
   signPaRequestFaxToken,
   verifyFaxDocumentToken,
 } from "./fax-document-token";
@@ -53,6 +54,17 @@ describe("fax document kind", () => {
     if (r.valid) {
       expect(r.kind).toBe("manual_document");
       expect(r.outreachId).toBe("doc-1");
+    }
+  });
+
+  it("round-trips a packet token with kind=manual_document_packet", () => {
+    const r = verifyFaxDocumentToken(
+      signManualDocumentPacketFaxToken("packet-1"),
+    );
+    expect(r.valid).toBe(true);
+    if (r.valid) {
+      expect(r.kind).toBe("manual_document_packet");
+      expect(r.outreachId).toBe("packet-1");
     }
   });
 

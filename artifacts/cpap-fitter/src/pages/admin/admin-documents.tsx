@@ -19,15 +19,26 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   attachManualDocument,
   createManualDocument,
+  createManualDocumentPacket,
   deleteManualDocument,
+  deleteManualDocumentPacket,
   getManualDocument,
   getManualDocumentCatalog,
+  getManualDocumentPacket,
+  listManualDocumentPackets,
   listManualDocuments,
+  manualDocumentPacketPdfUrl,
   manualDocumentPdfUrl,
   searchPatientsForAttach,
   sendManualDocumentEmail,
   sendManualDocumentFax,
+  sendManualDocumentPacketEmail,
+  sendManualDocumentPacketFax,
   updateManualDocument,
+  updateManualDocumentPacket,
+  type ManualDocumentPacketDetail,
+  type ManualDocumentPacketStatus,
+  type ManualDocumentPacketSummary,
   type ManualDocumentStatus,
   type ManualDocumentSummary,
   type ManualDocumentType,
@@ -52,6 +63,17 @@ const STATUS_LABEL: Record<ManualDocumentStatus, string> = {
   draft: "Draft",
   sent: "Sent",
   attached: "Filed to chart",
+};
+
+const PACKET_STATUS_VARIANT: Record<ManualDocumentPacketStatus, BadgeVariant> =
+  {
+    draft: "muted",
+    sent: "info",
+  };
+
+const PACKET_STATUS_LABEL: Record<ManualDocumentPacketStatus, string> = {
+  draft: "Draft",
+  sent: "Sent",
 };
 
 function fmtDate(iso: string | null): string {
@@ -98,6 +120,9 @@ export function AdminDocumentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [composing, setComposing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [openPacketId, setOpenPacketId] = useState<string | null>(null);
+  const [packetError, setPacketError] = useState<string | null>(null);
 
   const catalogQuery = useQuery({
     queryKey: ["manual-documents", "catalog"],
@@ -120,11 +145,46 @@ export function AdminDocumentsPage() {
   });
   const documents = listQuery.data?.documents ?? [];
 
+  const packetsQuery = useQuery({
+    queryKey: ["manual-document-packets", "list"],
+    queryFn: () => listManualDocumentPackets(),
+  });
+  const packets = packetsQuery.data?.packets ?? [];
+
   const refreshList = () =>
     qc.invalidateQueries({ queryKey: ["manual-documents", "list"] });
+  const refreshPackets = () =>
+    qc.invalidateQueries({ queryKey: ["manual-document-packets"] });
 
   const typeLabel = (t: ManualDocumentType) =>
     types.find((d) => d.type === t)?.label ?? t;
+
+  const toggleChecked = (id: string) =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const createPacket = useMutation({
+    mutationFn: (documentIds: string[]) =>
+      createManualDocumentPacket({
+        title: `Document packet — ${new Date().toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })}`,
+        documentIds,
+      }),
+    onSuccess: (res) => {
+      setCheckedIds(new Set());
+      setOpenPacketId(res.id);
+      void refreshPackets();
+    },
+    onError: (err) =>
+      setPacketError(describeError(err).detail ?? "Failed to create packet."),
+  });
 
   return (
     <div className="admin-root">
@@ -139,7 +199,8 @@ export function AdminDocumentsPage() {
             </h1>
             <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
               Type out a CMN, prescription, agreement, delivery ticket, or fax
-              cover by hand, then download, email, fax, or file it to a chart.
+              cover by hand, then send each one on its own — or select several
+              and send them together as a packet.
             </p>
           </div>
           <Button onClick={() => setComposing((s) => !s)}>
@@ -169,6 +230,21 @@ export function AdminDocumentsPage() {
           />
         )}
 
+        {openPacketId && (
+          <PacketEditor
+            packetId={openPacketId}
+            types={types}
+            allDocuments={documents}
+            checkedIds={checkedIds}
+            onClearChecked={() => setCheckedIds(new Set())}
+            onClose={() => setOpenPacketId(null)}
+            onChanged={() => {
+              void refreshPackets();
+              void refreshList();
+            }}
+          />
+        )}
+
         <Card
           title="All documents"
           action={
@@ -185,6 +261,40 @@ export function AdminDocumentsPage() {
             />
           }
         >
+          {checkedIds.size > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-3 border-b px-5 py-3"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <span className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
+                {checkedIds.size} selected
+              </span>
+              {!openPacketId && (
+                <Button
+                  size="sm"
+                  isLoading={createPacket.isPending}
+                  onClick={() => {
+                    setPacketError(null);
+                    createPacket.mutate([...checkedIds]);
+                  }}
+                >
+                  Create packet from selected
+                </Button>
+              )}
+              <Button
+                intent="ghost"
+                size="sm"
+                onClick={() => setCheckedIds(new Set())}
+              >
+                Clear selection
+              </Button>
+              {packetError && (
+                <span className="text-sm" style={{ color: "hsl(0 70% 45%)" }}>
+                  {packetError}
+                </span>
+              )}
+            </div>
+          )}
           {listQuery.isPending ? (
             <div className="p-6">
               <Spinner label="Loading documents…" />
@@ -196,7 +306,7 @@ export function AdminDocumentsPage() {
           ) : documents.length === 0 ? (
             <EmptyState
               title="No documents yet"
-              hint="Click “New document” to type one out."
+              hint="Click “New document” to type out a Certificate of Medical Necessity, prescription/order, agreement, delivery ticket, fax cover, or free-form letter. Each can be sent on its own or bundled into a packet."
             />
           ) : (
             <div className="overflow-x-auto">
@@ -206,6 +316,9 @@ export function AdminDocumentsPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
+                    <th className="pl-5 pr-2 py-2 font-medium">
+                      <span className="sr-only">Select</span>
+                    </th>
                     <th className="px-5 py-2 font-medium">Title</th>
                     <th className="px-5 py-2 font-medium">Type</th>
                     <th className="px-5 py-2 font-medium">Status</th>
@@ -222,6 +335,14 @@ export function AdminDocumentsPage() {
                       className="border-t"
                       style={{ borderColor: "hsl(var(--line-1))" }}
                     >
+                      <td className="pl-5 pr-2 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${d.title}`}
+                          checked={checkedIds.has(d.id)}
+                          onChange={() => toggleChecked(d.id)}
+                        />
+                      </td>
                       <td className="px-5 py-3">
                         <div
                           className="font-medium"
@@ -269,6 +390,106 @@ export function AdminDocumentsPage() {
                           intent="ghost"
                           size="sm"
                           onClick={() => setSelectedId(d.id)}
+                        >
+                          Open
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Packets"
+          subtitle="Bundles of the documents above, sent as one combined PDF — generated cover sheet first, then each document."
+        >
+          {packetsQuery.isPending ? (
+            <div className="p-6">
+              <Spinner label="Loading packets…" />
+            </div>
+          ) : packetsQuery.isError ? (
+            <div className="p-4">
+              <ErrorPanel error={packetsQuery.error} />
+            </div>
+          ) : packets.length === 0 ? (
+            <EmptyState
+              title="No packets yet"
+              hint="Tick the checkboxes next to two or more documents above, then click “Create packet from selected” to bundle them."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr
+                    className="text-left"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    <th className="px-5 py-2 font-medium">Title</th>
+                    <th className="px-5 py-2 font-medium">Documents</th>
+                    <th className="px-5 py-2 font-medium">Status</th>
+                    <th className="px-5 py-2 font-medium">Created</th>
+                    <th className="px-5 py-2 font-medium text-right">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {packets.map((p: ManualDocumentPacketSummary) => (
+                    <tr
+                      key={p.id}
+                      className="border-t"
+                      style={{ borderColor: "hsl(var(--line-1))" }}
+                    >
+                      <td className="px-5 py-3">
+                        <div
+                          className="font-medium"
+                          style={{ color: "hsl(var(--ink-1))" }}
+                        >
+                          {p.title}
+                        </div>
+                        {p.recipient_name && (
+                          <div
+                            className="text-xs"
+                            style={{ color: "hsl(var(--ink-3))" }}
+                          >
+                            To: {p.recipient_name}
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        className="px-5 py-3"
+                        style={{ color: "hsl(var(--ink-2))" }}
+                      >
+                        {p.document_ids.length}
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge variant={PACKET_STATUS_VARIANT[p.status]}>
+                          {PACKET_STATUS_LABEL[p.status]}
+                        </Badge>
+                      </td>
+                      <td
+                        className="px-5 py-3"
+                        style={{ color: "hsl(var(--ink-2))" }}
+                      >
+                        {fmtDate(p.created_at)}
+                      </td>
+                      <td className="px-5 py-3 text-right whitespace-nowrap">
+                        <a
+                          href={manualDocumentPacketPdfUrl(p.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-semibold mr-3"
+                          style={{ color: "hsl(var(--penn-navy))" }}
+                        >
+                          PDF
+                        </a>
+                        <Button
+                          intent="ghost"
+                          size="sm"
+                          onClick={() => setOpenPacketId(p.id)}
                         >
                           Open
                         </Button>
@@ -912,6 +1133,471 @@ function SendActions({
         </div>
       )}
     </div>
+  );
+}
+
+// ── Packet editor ─────────────────────────────────────────────────
+function PacketEditor({
+  packetId,
+  types,
+  allDocuments,
+  checkedIds,
+  onClearChecked,
+  onClose,
+  onChanged,
+}: {
+  packetId: string;
+  types: ManualDocumentTypeDef[];
+  allDocuments: ManualDocumentSummary[];
+  checkedIds: Set<string>;
+  onClearChecked: () => void;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const qc = useQueryClient();
+  const detailKey = ["manual-document-packets", "detail", packetId] as const;
+  const detailQuery = useQuery({
+    queryKey: detailKey,
+    queryFn: () => getManualDocumentPacket(packetId),
+  });
+
+  if (detailQuery.isPending) {
+    return (
+      <Card
+        title="Packet"
+        action={
+          <Button intent="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        }
+      >
+        <div className="p-6">
+          <Spinner label="Loading…" />
+        </div>
+      </Card>
+    );
+  }
+  if (detailQuery.isError || !detailQuery.data) {
+    return (
+      <Card
+        title="Packet"
+        action={
+          <Button intent="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        }
+      >
+        <div className="p-4">
+          <ErrorPanel error={detailQuery.error} />
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <PacketEditorForm
+      key={packetId}
+      detail={detailQuery.data}
+      types={types}
+      allDocuments={allDocuments}
+      checkedIds={checkedIds}
+      onClearChecked={onClearChecked}
+      onClose={onClose}
+      onSaved={() => {
+        void qc.invalidateQueries({ queryKey: detailKey });
+        onChanged();
+      }}
+    />
+  );
+}
+
+function PacketEditorForm({
+  detail,
+  types,
+  allDocuments,
+  checkedIds,
+  onClearChecked,
+  onClose,
+  onSaved,
+}: {
+  detail: ManualDocumentPacketDetail;
+  types: ManualDocumentTypeDef[];
+  allDocuments: ManualDocumentSummary[];
+  checkedIds: Set<string>;
+  onClearChecked: () => void;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const packet = detail.packet;
+  const [title, setTitle] = useState(packet.title);
+  const [includeCoverSheet, setIncludeCoverSheet] = useState(
+    packet.include_cover_sheet,
+  );
+  const [recipientName, setRecipientName] = useState(
+    packet.recipient_name ?? "",
+  );
+  const [recipientAddress, setRecipientAddress] = useState(
+    packet.recipient_address ?? "",
+  );
+  const [recipientEmail, setRecipientEmail] = useState(
+    packet.recipient_email ?? "",
+  );
+  const [recipientFax, setRecipientFax] = useState(
+    packet.recipient_fax_e164 ?? "",
+  );
+  // Member order starts from the SURVIVING documents — saving heals a
+  // packet whose members were deleted since it was assembled.
+  const [docIds, setDocIds] = useState<string[]>(
+    detail.documents.map((d) => d.id),
+  );
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    null,
+  );
+
+  // Title/type lookup: packet detail first, then the page's document list
+  // (for documents just added from the table).
+  const memberInfo = useMemo(() => {
+    const map = new Map<string, { title: string; type: ManualDocumentType }>();
+    for (const d of allDocuments) {
+      map.set(d.id, { title: d.title, type: d.document_type });
+    }
+    for (const d of detail.documents) {
+      map.set(d.id, { title: d.title, type: d.document_type });
+    }
+    return map;
+  }, [allDocuments, detail.documents]);
+
+  const typeLabel = (t: ManualDocumentType) =>
+    types.find((d) => d.type === t)?.label ?? t;
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateManualDocumentPacket(packet.id, {
+        title: title.trim(),
+        documentIds: docIds,
+        includeCoverSheet,
+        recipientName: recipientName.trim() || null,
+        recipientAddress: recipientAddress.trim() || null,
+        recipientEmail: recipientEmail.trim() || null,
+        recipientFaxE164: recipientFax.trim() || null,
+      }),
+    onSuccess: () => {
+      setMsg({ kind: "ok", text: "Saved." });
+      onSaved();
+    },
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: describeError(err).detail ?? "Save failed.",
+      }),
+  });
+
+  const del = useMutation({
+    mutationFn: () => deleteManualDocumentPacket(packet.id),
+    onSuccess: () => {
+      onSaved();
+      onClose();
+    },
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: describeError(err).detail ?? "Delete failed.",
+      }),
+  });
+
+  const emailMut = useMutation({
+    mutationFn: () =>
+      sendManualDocumentPacketEmail(packet.id, {
+        email: recipientEmail.trim() || undefined,
+      }),
+    onSuccess: () => {
+      setMsg({ kind: "ok", text: "Packet emailed to the recipient." });
+      onSaved();
+    },
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: describeError(err).detail ?? "Email failed.",
+      }),
+  });
+
+  const faxMut = useMutation({
+    mutationFn: () =>
+      sendManualDocumentPacketFax(packet.id, {
+        fax: recipientFax.trim() || undefined,
+      }),
+    onSuccess: () => {
+      setMsg({ kind: "ok", text: "Packet fax queued." });
+      onSaved();
+    },
+    onError: (err) =>
+      setMsg({ kind: "err", text: describeError(err).detail ?? "Fax failed." }),
+  });
+
+  const move = (index: number, delta: -1 | 1) =>
+    setDocIds((prev) => {
+      const next = [...prev];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return prev;
+      const tmp = next[index]!;
+      next[index] = next[target]!;
+      next[target] = tmp;
+      return next;
+    });
+
+  const remove = (id: string) =>
+    setDocIds((prev) => prev.filter((d) => d !== id));
+
+  const addable = [...checkedIds].filter((id) => !docIds.includes(id));
+
+  return (
+    <Card
+      title={packet.title}
+      subtitle={`Packet · ${docIds.length} document${docIds.length === 1 ? "" : "s"}`}
+      action={
+        <div className="flex items-center gap-2">
+          <Badge variant={PACKET_STATUS_VARIANT[packet.status]}>
+            {PACKET_STATUS_LABEL[packet.status]}
+          </Badge>
+          <Button intent="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      }
+    >
+      <div className="p-5 space-y-5">
+        {detail.missingDocumentIds.length > 0 && (
+          <div className="text-sm" style={{ color: "hsl(0 70% 45%)" }}>
+            {detail.missingDocumentIds.length} document
+            {detail.missingDocumentIds.length === 1
+              ? " in this packet has"
+              : "s in this packet have"}{" "}
+            been deleted. Saving removes them from the packet.
+          </div>
+        )}
+
+        {/* Title */}
+        <div>
+          <Label htmlFor="packetTitle">Packet title</Label>
+          <Input
+            id="packetTitle"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+
+        {/* Members, in send order */}
+        <div className="space-y-2">
+          <h3
+            className="text-sm font-semibold"
+            style={{ color: "hsl(var(--ink-2))" }}
+          >
+            Documents in this packet (send order)
+          </h3>
+          {docIds.length === 0 ? (
+            <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+              Empty — select documents in the table below and click “Add
+              selected”.
+            </p>
+          ) : (
+            <ol
+              className="rounded-md border divide-y"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              {docIds.map((id, i) => {
+                const info = memberInfo.get(id);
+                return (
+                  <li
+                    key={id}
+                    className="flex items-center justify-between gap-3 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <span
+                        className="text-sm font-medium"
+                        style={{ color: "hsl(var(--ink-1))" }}
+                      >
+                        {i + 1}. {info?.title ?? `Document ${id.slice(0, 8)}…`}
+                      </span>
+                      {info && (
+                        <span
+                          className="ml-2 text-xs"
+                          style={{ color: "hsl(var(--ink-3))" }}
+                        >
+                          {typeLabel(info.type)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        aria-label="Move up"
+                        onClick={() => move(i, -1)}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        aria-label="Move down"
+                        onClick={() => move(i, 1)}
+                      >
+                        ↓
+                      </Button>
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        onClick={() => remove(id)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {addable.length > 0 && (
+            <Button
+              intent="secondary"
+              size="sm"
+              onClick={() => {
+                setDocIds((prev) => [...prev, ...addable]);
+                onClearChecked();
+              }}
+            >
+              Add selected ({addable.length})
+            </Button>
+          )}
+        </div>
+
+        {/* Cover sheet */}
+        <label
+          className="flex items-center gap-2 text-sm"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          <input
+            type="checkbox"
+            checked={includeCoverSheet}
+            onChange={(e) => setIncludeCoverSheet(e.target.checked)}
+          />
+          Start with a generated cover sheet (title, recipient, contents list)
+        </label>
+
+        {/* Recipient block */}
+        <div
+          className="rounded-md border p-3 space-y-3"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <h3
+            className="text-sm font-semibold"
+            style={{ color: "hsl(var(--ink-2))" }}
+          >
+            Recipient (optional)
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="pktRecName">Name</Label>
+              <Input
+                id="pktRecName"
+                value={recipientName}
+                onChange={(e) => setRecipientName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="pktRecEmail">Email</Label>
+              <Input
+                id="pktRecEmail"
+                type="email"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="pktRecFax">Fax (+1…)</Label>
+              <Input
+                id="pktRecFax"
+                placeholder="+12155551234"
+                value={recipientFax}
+                onChange={(e) => setRecipientFax(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="pktRecAddr">Address</Label>
+              <Input
+                id="pktRecAddr"
+                value={recipientAddress}
+                onChange={(e) => setRecipientAddress(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {msg && (
+          <div
+            className="text-sm"
+            style={{
+              color: msg.kind === "ok" ? "hsl(142 60% 30%)" : "hsl(0 70% 45%)",
+            }}
+          >
+            {msg.text}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => save.mutate()} isLoading={save.isPending}>
+            Save
+          </Button>
+          <a
+            href={manualDocumentPacketPdfUrl(packet.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button intent="secondary">Download PDF</Button>
+          </a>
+          <Button
+            intent="secondary"
+            isLoading={emailMut.isPending}
+            onClick={() => {
+              setMsg(null);
+              emailMut.mutate();
+            }}
+          >
+            Email packet
+          </Button>
+          <Button
+            intent="secondary"
+            isLoading={faxMut.isPending}
+            onClick={() => {
+              setMsg(null);
+              faxMut.mutate();
+            }}
+          >
+            Fax packet
+          </Button>
+          <Button
+            intent="ghost"
+            isLoading={del.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Delete this packet? The documents inside it are not deleted.",
+                )
+              ) {
+                setMsg(null);
+                del.mutate();
+              }
+            }}
+          >
+            Delete packet
+          </Button>
+        </div>
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Sending uses the email / fax number typed above. Changes to the
+          document list, order, or cover sheet apply after “Save”.
+        </p>
+      </div>
+    </Card>
   );
 }
 
