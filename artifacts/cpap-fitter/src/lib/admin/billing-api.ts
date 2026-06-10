@@ -321,6 +321,58 @@ export function fetchEligibilityRecent(params?: {
   );
 }
 
+// ─── Quick eligibility check (no patient record) ────────────────────
+
+export interface QuickCheckBenefits {
+  isActive: boolean;
+  inNetwork: boolean | null;
+  deductibleCents: number | null;
+  deductibleMetCents: number | null;
+  deductibleRemainingCents: number | null;
+  oopMaxCents: number | null;
+  oopMetCents: number | null;
+  oopRemainingCents: number | null;
+  copayCents: number | null;
+  coinsurancePct: number | null;
+  requiresPriorAuth: boolean;
+  messages: string[];
+}
+
+export interface QuickCheckResult {
+  status: "parsed";
+  payerName: string;
+  traceReference: string;
+  latencyMs: number;
+  benefits: QuickCheckBenefits;
+}
+
+export interface QuickCheckRequest {
+  payerProfileId: string;
+  firstName: string;
+  lastName: string;
+  memberId: string;
+  /** YYYY-MM-DD */
+  dateOfBirth: string;
+  gender?: "M" | "F" | "U";
+  hcpcsCode?: string;
+}
+
+/**
+ * Fire a patient-less real-time 270/271 from typed-in subscriber
+ * details. Nothing is persisted server-side — the parsed answer only
+ * lives in this response. Non-2xx surfaces as ApiError whose body
+ * carries { error, message } (realtime_not_configured /
+ * quick_check_failed / payer_not_found).
+ */
+export function quickCheckEligibility(
+  body: QuickCheckRequest,
+): Promise<QuickCheckResult> {
+  return postJSON<QuickCheckResult>(
+    "/admin/billing/eligibility-quick-check",
+    body,
+  );
+}
+
 // ─── Prior-auth queue (system-wide) ─────────────────────────────────
 
 export type PriorAuthStatus =
