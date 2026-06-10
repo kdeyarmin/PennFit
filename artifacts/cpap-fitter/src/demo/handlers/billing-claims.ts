@@ -9,12 +9,15 @@ import { route, type DemoHandler } from "../types";
 import { json } from "../respond";
 import {
   demoAutoSubmitReady,
+  demoAutoSubmitRun,
   demoAutoSubmitStatus,
   demoDenialsWorklist,
   demoEligibilityRecent,
   demoEraFiles,
   demoPendingStatements,
+  demoStatementBatchSend,
   demoStatementMailQueue,
+  demoStatementSend,
 } from "../fixtures/billing-claims";
 
 export const billingClaimsHandlers: DemoHandler[] = [
@@ -39,4 +42,23 @@ export const billingClaimsHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/admin/billing/statements/mail-queue", () =>
     json(demoStatementMailQueue()),
   ),
+
+  // The action buttons the seeded GETs enable. Each page derefs the
+  // mutation response (result.failures.length, summary.scanned,
+  // outcome.kind, marked), so the generic `{ ok: true }` mutation
+  // fallback would crash the page the moment a visitor clicks the
+  // very action the seed data invites them to try.
+  route("POST", "/resupply-api/admin/billing/auto-submit/run", () =>
+    json(demoAutoSubmitRun()),
+  ),
+  route("POST", "/resupply-api/admin/billing/statements/batch-send", () =>
+    json(demoStatementBatchSend()),
+  ),
+  route("POST", "/resupply-api/admin/billing/statements/:id/send", () =>
+    json(demoStatementSend()),
+  ),
+  route("POST", "/resupply-api/admin/billing/statements/mark-mailed", (req) => {
+    const body = req.json<{ statementIds?: string[] }>() ?? {};
+    return json({ marked: (body.statementIds ?? []).length });
+  }),
 ];

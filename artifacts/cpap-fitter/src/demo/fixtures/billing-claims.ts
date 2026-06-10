@@ -289,6 +289,34 @@ export function demoAutoSubmitStatus() {
   };
 }
 
+/**
+ * AutoSubmitRunResult for the "Submit all ready" button on
+ * /admin/billing/auto-submit. The seeded ready fixture enables the
+ * button, and the result panel derefs `result.failures.length` /
+ * `result.skippedNotReady.length` unconditionally — the generic
+ * `{ ok: true }` mutation fallback would crash the page on click.
+ * Mirrors the two seeded ready claims "submitting" in one batch.
+ */
+export function demoAutoSubmitRun() {
+  return {
+    triggeredBy: "operator" as const,
+    batchesAttempted: 1,
+    claimsSubmitted: 2,
+    submissions: [
+      {
+        submissionId: "demo-sub-2",
+        payerProfileId: "demo-payer-1",
+        claimCount: 2,
+        uploadOk: true,
+        isaControlNumber: "000000042",
+      },
+    ],
+    failures: [],
+    skippedNotReady: [],
+    readyClaimCount: 2,
+  };
+}
+
 /** PendingStatementsResponse for /admin/billing/statements. */
 export function demoPendingStatements() {
   const pending = [
@@ -328,4 +356,22 @@ export function demoStatementMailQueue() {
     totalCents: 7_800,
     printCap: 50,
   };
+}
+
+/**
+ * `{ summary: StatementBatchSummary }` for the "Send all pending"
+ * button on /admin/billing/statements — the page derefs
+ * `batch.data.summary.scanned` on success, so the `{ ok: true }`
+ * fallback would crash on click. Mirrors the two seeded pending
+ * statements: one sends by email, one falls to the mail queue.
+ */
+export function demoStatementBatchSend() {
+  return {
+    summary: { scanned: 2, sent: 1, failed: 0, skipped: 0, mailQueued: 1 },
+  };
+}
+
+/** `{ outcome: StatementSendOutcome }` for the per-row Send button. */
+export function demoStatementSend() {
+  return { outcome: { kind: "sent" as const, channel: "email" as const } };
 }

@@ -198,6 +198,37 @@ describe("demo router", () => {
     }
   });
 
+  it("answers the claims-workflow action POSTs with shape-complete payloads", async () => {
+    // Regression guard (PR review finding): the seeded GETs enable the
+    // pages' action buttons, whose POSTs would otherwise hit the
+    // `{ ok: true }` mutation fallback — and the pages deref the
+    // response (result.failures.length, summary.scanned, outcome.kind,
+    // marked), crashing on the very click the seed data invites.
+    const run = (await (await post(
+      "/resupply-api/admin/billing/auto-submit/run",
+      {},
+    ))!.json()) as { failures: unknown[]; skippedNotReady: unknown[] };
+    expect(Array.isArray(run.failures)).toBe(true);
+    expect(Array.isArray(run.skippedNotReady)).toBe(true);
+
+    const batch = (await (await post(
+      "/resupply-api/admin/billing/statements/batch-send",
+      {},
+    ))!.json()) as { summary: { scanned: number } };
+    expect(typeof batch.summary.scanned).toBe("number");
+
+    const send = (await (await post(
+      "/resupply-api/admin/billing/statements/demo-stmt-1/send",
+    ))!.json()) as { outcome: { kind: string } };
+    expect(typeof send.outcome.kind).toBe("string");
+
+    const marked = (await (await post(
+      "/resupply-api/admin/billing/statements/mark-mailed",
+      { statementIds: ["demo-stmt-9"] },
+    ))!.json()) as { marked: number };
+    expect(marked.marked).toBe(1);
+  });
+
   it("includes appointmentsAssignedToMe in /admin/today (dashboard derefs .length)", async () => {
     // Regression guard: TodayResponse grew this key; the stale fixture
     // without it crashed /admin, /admin/today AND /admin/work-queue
