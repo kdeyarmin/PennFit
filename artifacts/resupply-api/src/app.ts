@@ -20,6 +20,7 @@ import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
+import { isDeployedRuntime } from "./lib/deployed-runtime";
 import { isFeatureEnabled } from "./lib/feature-flags";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
@@ -653,10 +654,17 @@ if (existsSync(SPA_INDEX_HTML)) {
     "serving cpap-fitter SPA + history fallback from this process",
   );
 } else {
-  if (process.env.NODE_ENV === "production") {
+  // Deployed runtime (NODE_ENV=production OR any Railway-injected
+  // marker): refuse to start. Crashing before the listener binds fails
+  // the deploy's health check, so Railway keeps the previous (working)
+  // release serving. Keying this on NODE_ENV alone let a dist-less
+  // image go live on 2026-06-10 — Railway doesn't inject NODE_ENV, the
+  // guard stayed quiet, and the liveness probe (deliberately
+  // dependency-free) waved the broken image through.
+  if (isDeployedRuntime(process.env)) {
     logger.error(
       { event: "spa_dist_missing", spa_dist: SPA_DIST },
-      "cpap-fitter dist not found in production — refusing to start",
+      "cpap-fitter dist not found in a deployed runtime — refusing to start",
     );
     throw new Error(
       "Refusing to start: cpap-fitter dist/public/index.html missing",
