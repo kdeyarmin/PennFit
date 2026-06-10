@@ -176,6 +176,7 @@ import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
 import eligibilityRecentRouter from "./admin/eligibility-recent.js";
+import eligibilityQuickCheckRouter from "./admin/eligibility-quick-check.js";
 import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
@@ -571,6 +572,9 @@ router.use(billingDirectorRouter);
 // eligibility checks (last 30 days by default), feeding the
 // verification team's daily worklist.
 router.use(eligibilityRecentRouter);
+// /admin/billing/eligibility-quick-check — patient-less real-time
+// 270/271 from typed-in subscriber details; persists nothing.
+router.use(eligibilityQuickCheckRouter);
 // /admin/billing/prior-auth-queue — system-wide PA queue grouped
 // by at-risk / missed SLA / awaiting decision / expiring soon /
 // drafts. Source for the admin PA director page.
