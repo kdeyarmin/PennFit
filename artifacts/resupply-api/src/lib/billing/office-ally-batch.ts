@@ -321,7 +321,7 @@ export async function executeOfficeAllyBatchSubmit(
   // (docs/app-review-2026-06-10.md P1-1). With the conditional UPDATE
   // exactly one submitter wins each claim; a partial win means someone
   // else is mid-flight, so we release what we took and report the
-  // conflict. The 'submitting' state is admitted by migration 0265.
+  // conflict. The 'submitting' state is admitted by migration 0298.
   const claimedAtIso = new Date().toISOString();
   const batchClaimIds = claims.map((c) => c.id);
   const { data: claimedRows, error: batchClaimErr } = await supabase

@@ -285,7 +285,7 @@ async function persistOutcome(
  * loser sees zero rows and skips. 'failed' is claimable so an
  * operator can retry a failed send; 'sent' is NOT — re-sending a
  * delivered bill is the double-billing bug this guards against.
- * The 'sending' state is admitted by migration 0264.
+ * The 'sending' state is admitted by migration 0297.
  */
 async function claimStatementForSend(
   supabase: SupabaseClient,
