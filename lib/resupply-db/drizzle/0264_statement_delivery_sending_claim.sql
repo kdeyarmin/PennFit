@@ -1,5 +1,7 @@
--- 0262_statement_delivery_sending_claim — close the statement
+-- 0264_statement_delivery_sending_claim — close the statement
 -- double-send race (app-review 2026-06-10, P1-8).
+-- (Authored as 0262; renumbered to 0264 after a prefix collision with
+-- main's 0262_messages_sender_role_deepgram_transcript.)
 --
 -- `sendOneStatement` used to read the row, dispatch email/SMS, and
 -- only then flip delivery_status → sent (unconditionally). Two

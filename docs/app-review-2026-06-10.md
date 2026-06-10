@@ -172,7 +172,7 @@ Wave 2 (this PR) fixed the three money-safety items:
   `concurrent_submission` result kind mapped to 409).
 - **P1-8** → claim-then-send on electronic statements: conditional
   pending/failed → `'sending'` claim in `deliverOnChannel`, conditional
-  outcome persist (`statement-send.ts`, migration 0262). A side effect:
+  outcome persist (`statement-send.ts`, migration 0264). A side effect:
   an already-`sent` statement can no longer be re-dispatched at all.
 - **P1-9** → CAS claim on the scanned `last_charge_attempt_at` (plus an
   enabled/revoked re-check) before any Stripe call in
