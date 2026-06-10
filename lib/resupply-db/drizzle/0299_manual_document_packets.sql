@@ -1,4 +1,4 @@
--- 0294_manual_document_packets — bundle manual documents into a packet.
+-- 0299_manual_document_packets — bundle manual documents into a packet.
 --
 -- Staff on /admin/documents author one-off documents (CMN, prescription,
 -- agreement, delivery ticket, fax cover, free-form letter — see
