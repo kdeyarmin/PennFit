@@ -24,6 +24,9 @@ export function QrCode({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // Reset failed state on new render attempt so transient errors can
+    // recover when value/size changes.
+    setFailed(false);
     let cancelled = false;
     QRCodeLib.toCanvas(canvas, value, {
       width: size,

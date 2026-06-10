@@ -24,9 +24,10 @@ export interface PacketPdfDocument {
   requiresSignature: boolean;
   contentVersion?: string | null;
   /**
-   * Pre-resolved sections (send-time snapshot with merge tokens already
-   * substituted — see content.ts). When null/absent the renderer builds
-   * from the code template by key (legacy rows).
+   * Send-time snapshot in TOKEN form (merge tokens like {{company_name}}
+   * still present — see content.ts). Substitution happens at render time.
+   * When null/absent the renderer builds from the code template by key
+   * (legacy rows).
    */
   sections?: PacketDocumentSection[] | null;
 }
