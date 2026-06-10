@@ -83,8 +83,10 @@ router.post("/orders/track", async (req, res) => {
 
   const result = await lookupTrackedOrder(normalizedRef, parsed.data.email);
   if (result.outcome === "lookup_failed") {
+    // Structured under err.message so the logger's path-keyed
+    // redaction applies to the PostgREST error text.
     req.log?.warn?.(
-      { err: result.detail },
+      { err: { message: result.detail } },
       "orders.track: legacy read failed",
     );
     res.status(500).json({ error: "lookup_failed" });

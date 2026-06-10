@@ -602,22 +602,38 @@ async function consultRecentTherapyUsage(
   const { data: nights, error: nightsErr } = await supabase
     .schema("resupply")
     .from("patient_therapy_nights")
-    .select("usage_minutes")
+    .select("night_date, usage_minutes")
     .eq("patient_id", patientId)
     .gte("night_date", sinceDate)
-    .limit(USAGE_WINDOW_DAYS + 1);
+    // One row per (night, source); a few cloud sources × a 30-day
+    // window stays well under this safety cap.
+    .limit(200);
   if (nightsErr) throw nightsErr;
 
-  const rows = nights ?? [];
-  if (rows.length < USAGE_MIN_DATA_NIGHTS) return null; // sparse data → no opinion
-  const compliantNights = rows.filter(
-    (n) => (n.usage_minutes ?? 0) >= USAGE_COMPLIANT_NIGHT_MINUTES,
-  ).length;
-  if (compliantNights / rows.length >= USAGE_MIN_COMPLIANT_RATIO) return null;
+  // The table allows one row per (night, source) — a patient who
+  // migrated between cloud providers can report the same calendar
+  // night more than once. Dedupe to nights, keeping each night's BEST
+  // usage: any source showing 4+ hours makes that night compliant.
+  // Counting raw rows would let duplicates inflate a sparse window
+  // past the minimum-sample bar or skew the compliant ratio.
+  const byNight = new Map<string, number>();
+  for (const n of nights ?? []) {
+    const minutes = n.usage_minutes ?? 0;
+    const prev = byNight.get(n.night_date);
+    if (prev === undefined || minutes > prev) {
+      byNight.set(n.night_date, minutes);
+    }
+  }
+  if (byNight.size < USAGE_MIN_DATA_NIGHTS) return null; // sparse data → no opinion
+  let compliantNights = 0;
+  for (const minutes of byNight.values()) {
+    if (minutes >= USAGE_COMPLIANT_NIGHT_MINUTES) compliantNights++;
+  }
+  if (compliantNights / byNight.size >= USAGE_MIN_COMPLIANT_RATIO) return null;
 
   return {
     windowDays: USAGE_WINDOW_DAYS,
-    dataNights: rows.length,
+    dataNights: byNight.size,
     compliantNights,
   };
 }
