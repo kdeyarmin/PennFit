@@ -81,6 +81,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@workspace/resupply-auth-react": "workspace:*"
+    "@workspace/resupply-auth-react": "workspace:*",
+    "web-vitals": "^5.3.0"
   }
 }

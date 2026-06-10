@@ -195,6 +195,9 @@ importers:
       '@workspace/resupply-auth-react':
         specifier: workspace:*
         version: link:../../lib/resupply-auth-react
+      web-vitals:
+        specifier: ^5.3.0
+        version: 5.3.0
     devDependencies:
       '@hookform/resolvers':
         specifier: ^5.2.2
@@ -4093,6 +4096,9 @@ packages:
     engines: {node: '>= 16'}
     hasBin: true
 
+  web-vitals@5.3.0:
+    resolution: {integrity: sha512-q6LWsLatGYZp5VGBIOvbTj6JBV2nOmC8KvWztXBmwJcfFAzhwKwbOxhUH306XY3CcaZDUlSmSuNPBsCn0bFu+g==}
+
   webidl-conversions@8.0.1:
     resolution: {integrity: sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==}
     engines: {node: '>=20'}
@@ -7440,6 +7446,8 @@ snapshots:
       minimist: 1.2.8
     transitivePeerDependencies:
       - supports-color
+
+  web-vitals@5.3.0: {}
 
   webidl-conversions@8.0.1: {}
 

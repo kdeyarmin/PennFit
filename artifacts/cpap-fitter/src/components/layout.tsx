@@ -55,10 +55,25 @@ function WishlistNavLink() {
 // down the document — they often miss the new page's hero entirely.
 function ScrollToTop() {
   const [location] = useLocation();
+  // Skip the focus reset on the very first render: stealing focus on
+  // initial page load would override the browser's default (and break
+  // e.g. autofocus on a deep-linked form). Only client-side navigations
+  // need the reset.
+  const isFirstRender = useRef(true);
   useEffect(() => {
     // Use "auto" (instant) — animated scroll on route change is jarring
     // and can race with route-mount animations.
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    // Move focus into the new page's <main> landmark so screen-reader and
+    // keyboard users start at the new content instead of being stranded on
+    // the previous page's (now-stale) focus position. The landmark already
+    // has tabIndex={-1} for the skip link, and its outline is
+    // focus-visible-only, so pointer users see no change.
+    document.getElementById("main-content")?.focus({ preventScroll: true });
   }, [location]);
   return null;
 }

@@ -82,6 +82,10 @@ import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
 } from "../lib/queue-options";
+import {
+  recordIntegrationSuccess,
+  recordIntegrationFailure,
+} from "../lib/integration-health";
 
 const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
@@ -139,10 +143,14 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
   const outboundDir = clearinghouse.row.remote_outbound_dir || "outbound";
   const list = await listOutboundFiles(clearinghouse.config, outboundDir);
   if (!list.ok) {
-    logger.warn(
+    logger.error(
       { kind: list.kind, message: list.message },
-      "office-ally.inbound-poll: list failed",
+      "office-ally.inbound-poll: SFTP list failed — EDI ingest pipeline stalled",
     );
+    await recordIntegrationFailure(
+      JOB,
+      `SFTP list failed: ${list.kind} — ${list.message}`,
+    ).catch(() => undefined);
     return stats;
   }
   stats.listed = list.files.length;
@@ -187,6 +195,9 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
       "office-ally.inbound-poll: audit write failed",
     );
   });
+
+  // A successful list resets the consecutive-failure counter.
+  await recordIntegrationSuccess(JOB).catch(() => undefined);
 
   return stats;
 }

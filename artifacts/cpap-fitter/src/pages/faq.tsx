@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useSearchShortcut } from "@/hooks/use-search-shortcut";
 import {
   Accordion,
@@ -480,6 +481,22 @@ export function Faq() {
     "Frequently asked questions",
     "Answers about CPAP fitting, supplies, prescriptions, insurance, and resupply from Penn Home Medical Supply.",
   );
+  useDocumentMeta({
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: sections.flatMap((s) =>
+        s.items.map((item) => ({
+          "@type": "Question",
+          name: item.q,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: nodeToText(item.a),
+          },
+        })),
+      ),
+    },
+  });
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const trimmed = query.trim();

@@ -617,12 +617,13 @@ jobs:
 
     # Surfaces known high-severity transitive CVEs in the dependency
     # tree. This is a PHI-adjacent app, so a vulnerable transitive dep
-    # is worth knowing about — but advisory churn (a fresh CVE published
-    # against a dep with no patch yet) shouldn't block an unrelated PR,
-    # so it starts SOFT-gated like the integration / a11y jobs. The
-    # signal is visible on every run; flip `continue-on-error` to false
-    # once the tree is reliably clean and the team wants it to block.
-    continue-on-error: true
+    # is worth knowing about. Started soft-gated during the initial
+    # advisory triage; promoted to BLOCKING 2026-06-09 with the tree
+    # clean (`pnpm audit --audit-level=high` → no known vulnerabilities).
+    # If a fresh unpatchable advisory ever blocks an unrelated PR, prefer
+    # a scoped `pnpm.auditConfig.ignoreCves` entry in package.json (with
+    # a comment linking the advisory) over flipping this back to soft.
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v5
 

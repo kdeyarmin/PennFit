@@ -53,6 +53,8 @@ const KNOWN_STEPS = [
   "chat_sent",
   "chat_replied",
   "chat_feedback",
+  // Web Vitals (CLS, LCP, FID, FCP, TTFB, INP) reported by the RUM reporter.
+  "web_vital",
 ] as const;
 
 const usageEventSchema = z.object({
