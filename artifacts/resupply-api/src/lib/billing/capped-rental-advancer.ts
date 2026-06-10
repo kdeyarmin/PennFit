@@ -113,7 +113,7 @@ async function advanceCycle(
 
   // Ownership transfer at month max+1.
   if (cycle.current_month >= cycle.max_months) {
-    await supabase
+    const { error: transferErr } = await supabase
       .schema("resupply")
       .from("capped_rental_cycles")
       .update({
@@ -122,6 +122,13 @@ async function advanceCycle(
         updated_at: new Date().toISOString(),
       })
       .eq("id", cycle.id);
+    if (transferErr) {
+      logger.error(
+        { err: transferErr.message, cycleId: cycle.id },
+        "capped-rental: ownership transfer stamp failed — cycle stays active",
+      );
+      return "noop";
+    }
     return "transferred";
   }
 
@@ -235,7 +242,7 @@ async function advanceCycle(
     // run rather than silently skipping this rental month's claim. The
     // `current_month = nextMonth` guard ensures we never clobber a
     // concurrent further-advance.
-    await supabase
+    const { error: rollbackErr } = await supabase
       .schema("resupply")
       .from("capped_rental_cycles")
       .update({
@@ -244,6 +251,12 @@ async function advanceCycle(
       })
       .eq("id", cycle.id)
       .eq("current_month", nextMonth);
+    if (rollbackErr) {
+      logger.error(
+        { err: rollbackErr.message, cycleId: cycle.id, nextMonth },
+        "capped-rental: month rollback failed — this rental month's claim may be skipped",
+      );
+    }
     throw err;
   }
 }

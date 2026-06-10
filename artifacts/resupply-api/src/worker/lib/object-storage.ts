@@ -117,10 +117,19 @@ export async function deleteAttachmentObject(
       `Failed to delete ${bucketName}/${objectName}: ${error.message}`,
     ) as Error & { code?: number; status?: number; cause?: unknown };
     wrapped.cause = error;
+    // storage-js StorageApiError carries `statusCode` as a STRING
+    // ("404"); normalize to a number so the sweep's strict
+    // `code === 404` → not_found mapping actually fires.
+    const rawCode =
+      (error as { code?: unknown; statusCode?: unknown; status?: unknown })
+        .code ??
+      (error as { statusCode?: unknown }).statusCode ??
+      (error as { status?: unknown }).status;
+    const numericCode = typeof rawCode === "string" ? Number(rawCode) : rawCode;
     wrapped.code =
-      (error as { code?: number; statusCode?: number; status?: number }).code ??
-      (error as { statusCode?: number }).statusCode ??
-      (error as { status?: number }).status;
+      typeof numericCode === "number" && Number.isFinite(numericCode)
+        ? numericCode
+        : undefined;
     throw wrapped;
   }
 }

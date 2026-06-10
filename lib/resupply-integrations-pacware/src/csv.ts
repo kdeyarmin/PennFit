@@ -106,7 +106,15 @@ export function safeCsvCell(value: unknown): string {
   } else {
     s = String(value);
   }
-  if (/^[=+\-@\t\r]/.test(s)) {
+  // Guard a leading trigger char — and ALSO a leading apostrophe-run
+  // ending in a trigger char (e.g. a genuine stored value `'=note`).
+  // Without the second case such a value exports verbatim and then
+  // loses its apostrophe to stripCsvFormulaGuard on re-import; with
+  // it, export adds one apostrophe and import strips exactly one, so
+  // the round trip is lossless for every value class. (This is the
+  // one deliberate divergence from the API-side safe-csv-cell.ts
+  // mirror, which has no paired importer.)
+  if (/^'*[=+\-@\t\r]/.test(s)) {
     s = `'${s}`;
   }
   if (/[",\n\r]/.test(s)) {
@@ -146,11 +154,13 @@ export function normalizeHeader(h: string): string {
  * round-trip losslessly — without it, an E.164 phone "+14155551212"
  * exported as the spreadsheet-safe "'+14155551212" would fail re-import.
  *
- * It is deliberately surgical: a leading apostrophe NOT followed by a
- * trigger char (a genuine value like "'tis") is left untouched, so real
- * data is never mangled.
+ * It is deliberately surgical: a leading apostrophe NOT eventually
+ * followed by a trigger char (a genuine value like "'tis") is left
+ * untouched, so real data is never mangled. An apostrophe-run ending
+ * in a trigger ("''=x") loses exactly ONE apostrophe — the inverse of
+ * safeCsvCell, which adds exactly one to any such run.
  */
 export function stripCsvFormulaGuard(value: string): string {
-  if (/^'[=+\-@\t\r]/.test(value)) return value.slice(1);
+  if (/^'+[=+\-@\t\r]/.test(value)) return value.slice(1);
   return value;
 }

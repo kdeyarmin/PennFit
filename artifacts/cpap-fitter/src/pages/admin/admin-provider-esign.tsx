@@ -197,7 +197,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: (r) => {
       setResult({ emailSent: r.emailSent, inviteLink: r.inviteLink });
-      qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] });
     },
   });
   return (
@@ -279,7 +279,7 @@ function CreateRequestModal({ onClose }: { onClose: () => void }) {
         subjectId: subjectId.trim() || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
       onClose();
     },
   });
@@ -361,7 +361,7 @@ function ReleaseModal({
         note: note.trim() || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
       onClose();
     },
   });

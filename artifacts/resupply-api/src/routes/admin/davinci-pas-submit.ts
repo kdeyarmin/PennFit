@@ -356,11 +356,12 @@ router.post(
         responded_at:
           outcome.status === "responded" ? new Date().toISOString() : null,
       };
-    await supabase
+    const { error: subUpdateErr } = await supabase
       .schema("resupply")
       .from("davinci_pas_submissions")
       .update(update)
       .eq("id", subRow.id);
+    if (subUpdateErr) throw subUpdateErr;
 
     // When the PAS response carries an in-band approval/denial AND
     // its identifier matches what we sent, update the parent
@@ -383,11 +384,12 @@ router.post(
         paUpdate.status = "submitted";
         paUpdate.submitted_at = new Date().toISOString();
       }
-      await supabase
+      const { error: paUpdateErr } = await supabase
         .schema("resupply")
         .from("prior_authorizations")
         .update(paUpdate)
         .eq("id", pa.id);
+      if (paUpdateErr) throw paUpdateErr;
     }
 
     await logAudit({

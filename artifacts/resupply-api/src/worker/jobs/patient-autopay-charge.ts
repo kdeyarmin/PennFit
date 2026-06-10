@@ -140,25 +140,41 @@ export async function runPatientAutopayCharge(): Promise<PatientAutopayRunStats>
   const charger = buildStripeOffSessionCharger(getStripeClient(config));
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const { data: rows, error } = await supabase
-    .schema("resupply")
-    .from("patient_autopay_authorizations")
-    .select(
-      "id, patient_id, stripe_customer_id, stripe_payment_method_id, autopay_enabled, charge_attempts, last_charge_attempt_at",
-    )
-    .is("revoked_at", null)
-    .eq("autopay_enabled", true);
-  if (error) throw error;
-
-  const candidates: ChargeableAuthorization[] = (rows ?? []).map((r) => ({
-    id: r.id,
-    patientId: r.patient_id,
-    stripeCustomerId: r.stripe_customer_id,
-    stripePaymentMethodId: r.stripe_payment_method_id,
-    autopayEnabled: r.autopay_enabled,
-    chargeAttempts: r.charge_attempts ?? 0,
-    lastChargeAttemptAt: r.last_charge_attempt_at,
-  }));
+  // Keyset-page the enabled authorizations: PostgREST caps each
+  // response at ~1000 rows, and an unpaginated read would silently
+  // and permanently exclude every authorization past the cap.
+  const PAGE_SIZE = 1000;
+  const candidates: ChargeableAuthorization[] = [];
+  let lastId: string | null = null;
+  for (;;) {
+    let query = supabase
+      .schema("resupply")
+      .from("patient_autopay_authorizations")
+      .select(
+        "id, patient_id, stripe_customer_id, stripe_payment_method_id, autopay_enabled, charge_attempts, last_charge_attempt_at",
+      )
+      .is("revoked_at", null)
+      .eq("autopay_enabled", true)
+      .order("id", { ascending: true })
+      .limit(PAGE_SIZE);
+    if (lastId !== null) query = query.gt("id", lastId);
+    const { data: rows, error } = await query;
+    if (error) throw error;
+    if (!rows || rows.length === 0) break;
+    lastId = rows[rows.length - 1]!.id;
+    for (const r of rows) {
+      candidates.push({
+        id: r.id,
+        patientId: r.patient_id,
+        stripeCustomerId: r.stripe_customer_id,
+        stripePaymentMethodId: r.stripe_payment_method_id,
+        autopayEnabled: r.autopay_enabled,
+        chargeAttempts: r.charge_attempts ?? 0,
+        lastChargeAttemptAt: r.last_charge_attempt_at,
+      });
+    }
+    if (rows.length < PAGE_SIZE) break;
+  }
   const due = selectChargeableAuthorizations(candidates, todayIso);
 
   for (const auth of due) {
@@ -203,6 +219,41 @@ async function chargeOneAuthorization(
     stats.noBalance += 1;
     return;
   }
+
+  // Double-charge guard: patient_responsibility_cents is only
+  // decremented when a payment SETTLES, so a patient with an
+  // unsettled manual payment in flight (a Stripe Checkout session can
+  // stay completable for 24h, a requires_action PI even longer) still
+  // shows the full balance here — charging now would collect it twice.
+  // Skip the patient for this tick; pending rows are self-healing
+  // (checkout.session.expired / payment_intent.* webhooks settle them)
+  // and the next tick picks the patient up again. Skipping does not
+  // consume the attempt budget or stamp last_charge_attempt_at. The
+  // 7-day window bounds the guard: an orphaned PI-less pending row
+  // (crash between insert and charge) has no webhook to settle it and
+  // must not block the patient's autopay forever, while anything a
+  // patient could still complete (24h checkout session, 3DS challenge)
+  // is comfortably inside the window.
+  const sevenDaysAgoIso = new Date(
+    Date.now() - 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const { data: unsettled, error: unsettledErr } = await supabase
+    .schema("resupply")
+    .from("patient_payments")
+    .select("id")
+    .eq("patient_id", auth.patientId)
+    .in("status", ["pending", "requires_action"])
+    .gte("created_at", sevenDaysAgoIso)
+    .limit(1);
+  if (unsettledErr) throw unsettledErr;
+  if (unsettled && unsettled.length > 0) {
+    logger.info(
+      { authorizationId: auth.id, patientPaymentId: unsettled[0]!.id },
+      "patient-autopay-charge: unsettled payment in flight — skipping this tick",
+    );
+    stats.noBalance += 1;
+    return;
+  }
   stats.authorizationsConsidered += 1;
 
   // Reserve the patient_payments row first so the PI metadata can
@@ -237,15 +288,21 @@ async function chargeOneAuthorization(
   });
 
   if (result.outcome === "succeeded") {
-    await supabase
+    const { error: piStampErr } = await supabase
       .schema("resupply")
       .from("patient_payments")
       .update({ stripe_payment_intent_id: result.paymentIntentId })
       .eq("id", payRow.id);
+    if (piStampErr) {
+      logger.warn(
+        { err: piStampErr.message, paymentId: payRow.id },
+        "autopay: failed to stamp payment_intent_id on success — charge already captured",
+      );
+    }
     // Flip to succeeded + apply the allocation (idempotent; the webhook
     // redelivery completes it too if this is interrupted).
     await markPaymentStatus({ paymentId: payRow.id, status: "succeeded" });
-    await supabase
+    const { error: authResetErr } = await supabase
       .schema("resupply")
       .from("patient_autopay_authorizations")
       .update({
@@ -255,6 +312,12 @@ async function chargeOneAuthorization(
         updated_at: now,
       })
       .eq("id", auth.id);
+    if (authResetErr) {
+      logger.warn(
+        { err: authResetErr.message, authId: auth.id },
+        "autopay: failed to reset charge_attempts after success — retry counter may be stale",
+      );
+    }
     stats.charged += 1;
     return;
   }
@@ -263,7 +326,7 @@ async function chargeOneAuthorization(
     result.outcome === "requires_action" ? "requires_action" : "failed";
   const reason =
     result.outcome === "requires_action" ? "requires_action" : result.reason;
-  await supabase
+  const { error: payFailErr } = await supabase
     .schema("resupply")
     .from("patient_payments")
     .update({
@@ -273,7 +336,13 @@ async function chargeOneAuthorization(
       updated_at: now,
     })
     .eq("id", payRow.id);
-  await supabase
+  if (payFailErr) {
+    logger.error(
+      { err: payFailErr.message, paymentId: payRow.id, failureStatus },
+      "autopay: failed to update payment status after charge failure — payment row may be stuck in pending",
+    );
+  }
+  const { error: authFailErr } = await supabase
     .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({
@@ -283,6 +352,12 @@ async function chargeOneAuthorization(
       updated_at: now,
     })
     .eq("id", auth.id);
+  if (authFailErr) {
+    logger.warn(
+      { err: authFailErr.message, authId: auth.id },
+      "autopay: failed to record charge failure on authorization — retry cadence may be incorrect",
+    );
+  }
   if (result.outcome === "requires_action") stats.requiresAction += 1;
   else stats.failed += 1;
 }

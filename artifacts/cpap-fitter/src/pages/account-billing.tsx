@@ -52,6 +52,7 @@ import {
   type PatientPayment,
   type StatementDeliveryMethod,
 } from "@/lib/me-billing-api";
+import { formatDateOnly } from "@/lib/utils";
 
 function paymentTone(status: PatientPayment["status"]): {
   color: string;
@@ -111,7 +112,8 @@ function AccountBillingInner() {
   // matching reminders-manage) so a later in-app navigation can't flip the
   // banner state; dismissal is tracked separately (and also strips the
   // query — see dismissBanner).
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [justPaidDismissed, setJustPaidDismissed] = useState(false);
+  const [cancelledDismissed, setCancelledDismissed] = useState(false);
   const [{ justPaid, cancelled, cardAdded }] = useState(() => {
     const params = new URLSearchParams(
       typeof window === "undefined" ? "" : window.location.search,
@@ -188,8 +190,13 @@ function AccountBillingInner() {
   // Dismiss the success/cancel banner: hide it for this view AND strip the
   // query string (so a refresh/bookmark won't re-show it), without a full
   // reload.
-  function dismissBanner() {
-    setBannerDismissed(true);
+  function dismissJustPaid() {
+    setJustPaidDismissed(true);
+    setLocation("/account/billing", { replace: true });
+  }
+
+  function dismissCancelled() {
+    setCancelledDismissed(true);
     setLocation("/account/billing", { replace: true });
   }
 
@@ -211,7 +218,7 @@ function AccountBillingInner() {
         </p>
       </header>
 
-      {justPaid && !bannerDismissed && (
+      {justPaid && !justPaidDismissed && (
         <div
           className="rounded-lg border bg-emerald-50 border-emerald-200 p-4 flex items-start gap-3"
           data-testid="payment-success-banner"
@@ -228,7 +235,7 @@ function AccountBillingInner() {
           </div>
           <button
             type="button"
-            onClick={dismissBanner}
+            onClick={dismissJustPaid}
             className="text-xs underline text-emerald-700"
           >
             Dismiss
@@ -236,7 +243,7 @@ function AccountBillingInner() {
         </div>
       )}
 
-      {cancelled && !bannerDismissed && (
+      {cancelled && !cancelledDismissed && (
         <div
           className="rounded-lg border bg-amber-50 border-amber-200 p-4 flex items-start gap-3"
           data-testid="payment-cancelled-banner"
@@ -252,7 +259,7 @@ function AccountBillingInner() {
           </div>
           <button
             type="button"
-            onClick={dismissBanner}
+            onClick={dismissCancelled}
             className="text-xs underline text-amber-700"
           >
             Dismiss
@@ -341,9 +348,7 @@ function AccountBillingInner() {
                     <p className="font-medium text-slate-900">{c.payerName}</p>
                     <p className="text-xs text-slate-500">
                       Date of service:{" "}
-                      {c.dateOfService
-                        ? new Date(c.dateOfService).toLocaleDateString()
-                        : "—"}
+                      {c.dateOfService ? formatDateOnly(c.dateOfService) : "—"}
                     </p>
                   </div>
                   <span className="font-semibold tabular-nums text-slate-900">
@@ -769,7 +774,7 @@ function ClaimsSection() {
                       </p>
                       <p className="text-xs text-slate-500">
                         {c.dateOfService
-                          ? new Date(c.dateOfService).toLocaleDateString()
+                          ? formatDateOnly(c.dateOfService)
                           : "—"}{" "}
                         · <span className="capitalize">{c.status}</span>
                       </p>

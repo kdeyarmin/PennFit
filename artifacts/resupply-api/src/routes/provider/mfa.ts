@@ -208,7 +208,58 @@ router.post(
       .maybeSingle();
     if (error) throw error;
     if (!row) {
-      res.status(404).json({ error: "no_enrollment_in_progress" });
+      // No UNVERIFIED enrollment in progress. If a previous verify
+      // attempt stamped the secret verified but failed before the
+      // account-activation writes landed, the provider used to be
+      // wedged: secret verified (so this lookup 404s forever) while
+      // the account stayed 'invited'. Self-heal: accept a fresh code
+      // against the VERIFIED secret and re-run the conditioned
+      // activation updates. (Recovery codes are not re-minted — the
+      // original batch exists; /recovery-codes/regenerate covers the
+      // case where the provider never saw them.)
+      const { data: verifiedRow, error: vErr } = await supabase
+        .schema("resupply")
+        .from("provider_mfa_secrets")
+        .select("id, secret_base32, last_used_counter")
+        .eq("account_id", account.id)
+        .not("verified_at", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (vErr) throw vErr;
+      const needsActivation =
+        account.status === "invited" || account.mfaEnrolledAt == null;
+      if (!verifiedRow || !needsActivation) {
+        res.status(404).json({ error: "no_enrollment_in_progress" });
+        return;
+      }
+      const repair = verifyTotpCode(
+        verifiedRow.secret_base32,
+        parsed.data.code,
+        {
+          window: 1,
+          minCounter: verifiedRow.last_used_counter ?? undefined,
+        },
+      );
+      if (!repair.ok || repair.counter == null) {
+        res.status(400).json({
+          error: "invalid_code",
+          message: "Code didn't match. Check the time on your phone and retry.",
+        });
+        return;
+      }
+      const repairNowIso = new Date().toISOString();
+      const { error: repairBurnErr } = await supabase
+        .schema("resupply")
+        .from("provider_mfa_secrets")
+        .update({
+          last_used_counter: repair.counter,
+          last_used_at: repairNowIso,
+        })
+        .eq("id", verifiedRow.id);
+      if (repairBurnErr) throw repairBurnErr;
+      await activateProviderAccount(supabase, account.id, repairNowIso);
+      res.json({ ok: true, enrolled: true });
       return;
     }
     const result = verifyTotpCode(row.secret_base32, parsed.data.code, {
@@ -223,32 +274,9 @@ router.post(
       return;
     }
     const nowIso = new Date().toISOString();
-    const { error: updErr } = await supabase
-      .schema("resupply")
-      .from("provider_mfa_secrets")
-      .update({
-        verified_at: nowIso,
-        last_used_at: nowIso,
-        last_used_counter: result.counter,
-      })
-      .eq("id", row.id);
-    if (updErr) throw updErr;
-
-    // Mark the account active + record enrollment timestamp.
-    await supabase
-      .schema("resupply")
-      .from("provider_portal_accounts")
-      .update({ mfa_enrolled_at: nowIso, status: "active", updated_at: nowIso })
-      .eq("id", account.id)
-      .eq("status", "invited");
-    await supabase
-      .schema("resupply")
-      .from("provider_portal_accounts")
-      .update({ mfa_enrolled_at: nowIso, updated_at: nowIso })
-      .eq("id", account.id)
-      .is("mfa_enrolled_at", null);
-
-    // Mint a one-time recovery-code batch (shown once).
+    // Mint the recovery-code batch BEFORE stamping the secret verified
+    // so a mid-route failure stays fully retryable (the secret is still
+    // unverified, so the retry re-enters the normal path).
     let recoveryCodes: string[] | undefined;
     const { error: delStaleErr } = await supabase
       .schema("resupply")
@@ -277,9 +305,56 @@ router.post(
       recoveryCodes = batch.map((c) => c.display);
     }
 
+    // Stamp the secret verified + burn the counter. Error-checked: a
+    // silently failed burn would leave this code replayable.
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("provider_mfa_secrets")
+      .update({
+        verified_at: nowIso,
+        last_used_at: nowIso,
+        last_used_counter: result.counter,
+      })
+      .eq("id", row.id);
+    if (updErr) throw updErr;
+
+    // Activate the account LAST (fail-closed: an account must never be
+    // 'active' before its MFA secret is verified). A failure here is
+    // recoverable via the self-heal branch above.
+    await activateProviderAccount(supabase, account.id, nowIso);
+
     res.json({ ok: true, enrolled: true, recoveryCodes });
   },
 );
+
+/**
+ * Mark a provider account active + record the MFA enrollment
+ * timestamp. Both updates are conditioned so the call is idempotent
+ * (re-running after a partial failure is a no-op for whatever already
+ * landed). Throws on a failed write — callers treat activation as a
+ * required step, and the enroll/verify self-heal branch makes a failed
+ * activation retryable.
+ */
+async function activateProviderAccount(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  accountId: string,
+  nowIso: string,
+): Promise<void> {
+  const { error: activateErr } = await supabase
+    .schema("resupply")
+    .from("provider_portal_accounts")
+    .update({ mfa_enrolled_at: nowIso, status: "active", updated_at: nowIso })
+    .eq("id", accountId)
+    .eq("status", "invited");
+  if (activateErr) throw activateErr;
+  const { error: stampEnrollErr } = await supabase
+    .schema("resupply")
+    .from("provider_portal_accounts")
+    .update({ mfa_enrolled_at: nowIso, updated_at: nowIso })
+    .eq("id", accountId)
+    .is("mfa_enrolled_at", null);
+  if (stampEnrollErr) throw stampEnrollErr;
+}
 
 router.post(
   "/api/provider/mfa/disable",
@@ -340,11 +415,15 @@ router.post(
         "provider mfa: recovery cleanup failed",
       );
     }
-    await supabase
+    // Security-relevant: the secrets are already deleted, so a silent
+    // failure here would leave the account flagged as enrolled with no
+    // working factor — surface it instead of lying with ok:true.
+    const { error: accountUpdateErr } = await supabase
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({ mfa_enrolled_at: null, updated_at: nowIso })
       .eq("id", account.id);
+    if (accountUpdateErr) throw accountUpdateErr;
     res.json({ ok: true, enrolled: false });
   },
 );
@@ -383,7 +462,10 @@ router.post(
       res.status(400).json({ error: "invalid_code" });
       return;
     }
-    await supabase
+    // Burn the counter advance from this verify so the same code
+    // can't be replayed against /disable. Fail closed — a silently
+    // failed burn would leave the code replayable.
+    const { error: burnErr } = await supabase
       .schema("resupply")
       .from("provider_mfa_secrets")
       .update({
@@ -391,6 +473,7 @@ router.post(
         last_used_at: new Date().toISOString(),
       })
       .eq("id", row.id);
+    if (burnErr) throw burnErr;
     const { error: delErr } = await supabase
       .schema("resupply")
       .from("provider_mfa_recovery_codes")

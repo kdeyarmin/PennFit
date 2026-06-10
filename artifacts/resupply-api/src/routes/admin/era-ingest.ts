@@ -150,7 +150,7 @@ router.post(
     // Update with the parser+reconciler counts and promote status.
     const allMatched = summary.unmatchedClaims === 0;
     const finalStatus = allMatched ? "processed" : "partial";
-    await supabase
+    const { error: eraUpdateErr } = await supabase
       .schema("resupply")
       .from("era_files")
       .update({
@@ -163,6 +163,7 @@ router.post(
           : `${summary.unmatchedClaims} claim block(s) had no local match`,
       })
       .eq("id", row.id);
+    if (eraUpdateErr) throw eraUpdateErr;
 
     await logAudit({
       action: "era_file.ingest",

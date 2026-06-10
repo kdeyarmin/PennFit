@@ -761,8 +761,9 @@ router.post(
     }
 
     // Burn the counter advance from this verify so the same code
-    // can't be replayed against /disable.
-    await supabase
+    // can't be replayed against /disable. Fail closed — a silently
+    // failed burn would leave the code replayable.
+    const { error: burnErr } = await supabase
       .schema("resupply")
       .from("admin_mfa_secrets")
       .update({
@@ -770,6 +771,7 @@ router.post(
         last_used_at: new Date().toISOString(),
       })
       .eq("id", row.id);
+    if (burnErr) throw burnErr;
 
     // Wipe the entire old batch (used + spendable). Surveyors are
     // OK with this: the audit_log entry records the regenerate

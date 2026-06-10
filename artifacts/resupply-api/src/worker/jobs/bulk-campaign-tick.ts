@@ -309,21 +309,33 @@ export async function processTick(
       "bulk_campaigns.tick: template render failed; pausing campaign",
     );
     // Bail the campaign — every send would fail the same way.
-    await supabase
+    const { error: pauseErr } = await supabase
       .schema("resupply")
       .from("bulk_campaigns")
       .update({ status: "paused" })
       .eq("id", campaign.id);
+    if (pauseErr) {
+      log.error(
+        { err: pauseErr.message, campaignId: campaign.id },
+        "bulk_campaigns.tick: failed to pause campaign after template error — next tick will attempt to render again",
+      );
+    }
     // Roll the claimed batch back to pending so the resume can pick
     // them up. Chunk the `.in()` at 200 for the same URL-length reason
     // as the claim above.
     const winningIdList = Array.from(winningIds);
     for (let i = 0; i < winningIdList.length; i += 200) {
-      await supabase
+      const { error: rollbackErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({ status: "pending" })
         .in("id", winningIdList.slice(i, i + 200));
+      if (rollbackErr) {
+        log.error(
+          { err: rollbackErr.message, campaignId: campaign.id },
+          "bulk_campaigns.tick: recipient rollback chunk failed — stale-lease recovery will reclaim after expiry",
+        );
+      }
     }
     return;
   }
@@ -361,11 +373,17 @@ export async function processTick(
     if (!email) {
       // Should be impossible — resolver suppresses empty emails —
       // but defensively flip to failed if encountered.
-      await supabase
+      const { error: noEmailErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({ status: "failed", error: "no_email_at_send_time" })
         .eq("id", row.id);
+      if (noEmailErr) {
+        log.warn(
+          { err: noEmailErr.message, recipientId: row.id },
+          "bulk_campaigns.tick: failed to mark no-email recipient — stale-lease recovery will reclaim",
+        );
+      }
       failed += 1;
       continue;
     }
@@ -395,11 +413,21 @@ export async function processTick(
           { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
           "bulk_campaigns.tick: suppression update failed — marking recipient failed",
         );
-        await supabase
+        const { error: failMarkErr } = await supabase
           .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({ status: "failed", error: supErr.message.slice(0, 500) })
           .eq("id", row.id);
+        if (failMarkErr) {
+          log.error(
+            {
+              err: failMarkErr.message,
+              recipientId: row.id,
+              campaignId: campaign.id,
+            },
+            "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
+          );
+        }
         failed += 1;
         continue;
       }
@@ -415,7 +443,7 @@ export async function processTick(
         text: renderable.bodyText,
         customArgs: customArgsFor(campaign.id, row.id),
       });
-      await supabase
+      const { error: finalizeErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
@@ -424,6 +452,43 @@ export async function processTick(
           vendor_message_id: result.messageId,
         })
         .eq("id", row.id);
+      if (finalizeErr) {
+        // SendGrid already accepted this email. If the row stays in
+        // 'sending', the tick-entry stale-lease reclaim flips it back
+        // to 'pending' and a later tick RE-SENDS to the patient. Park
+        // it in the terminal 'failed' state with the vendor id so an
+        // operator can reconcile, never re-send.
+        log.error(
+          {
+            err: finalizeErr.message,
+            recipientId: row.id,
+            campaignId: campaign.id,
+            vendorMessageId: result.messageId,
+            event: "bulk_campaign_finalize_failed_after_vendor_accept",
+          },
+          "bulk_campaigns.tick: 'sent' finalize failed after vendor accept — parking recipient as failed to prevent duplicate send",
+        );
+        const { error: parkErr } = await supabase
+          .schema("resupply")
+          .from("bulk_campaign_recipients")
+          .update({
+            status: "failed",
+            error:
+              `db_finalize_failed_after_vendor_accept: ${finalizeErr.message}`.slice(
+                0,
+                500,
+              ),
+          })
+          .eq("id", row.id);
+        if (parkErr) {
+          log.error(
+            { err: parkErr.message, recipientId: row.id },
+            "bulk_campaigns.tick: park-as-failed also failed — recipient may be re-sent after lease expiry",
+          );
+        }
+        failed += 1;
+        continue;
+      }
       sent += 1;
     } catch (err) {
       const message =
@@ -444,7 +509,7 @@ export async function processTick(
         typeof (err as { retryable?: unknown })?.retryable === "boolean" &&
         (err as { retryable: boolean }).retryable;
       const willRetry = isRetryable && nextAttempts < MAX_SEND_ATTEMPTS;
-      await supabase
+      const { error: retryUpdateErr } = await supabase
         .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
@@ -453,6 +518,22 @@ export async function processTick(
           error: message,
         })
         .eq("id", row.id);
+      if (retryUpdateErr) {
+        // Recipient stays in 'sending'. The stale-lease recovery will flip it
+        // back to 'pending', which may cause a re-send. Log with enough context
+        // for manual reconciliation.
+        log.error(
+          {
+            err: retryUpdateErr.message,
+            recipientId: row.id,
+            campaignId: campaign.id,
+            willRetry,
+            sendAttempts: nextAttempts,
+            event: "bulk_campaign_retry_update_failed",
+          },
+          "bulk_campaigns.tick: failed to update recipient after send failure — recipient may be re-sent after lease expiry",
+        );
+      }
       if (willRetry) {
         retried += 1;
       } else {
@@ -568,7 +649,20 @@ async function finalizeOrReschedule(
     return;
   }
   if (!remaining || remaining === 0) {
-    await markCampaignSent(supabase, campaignId);
+    const finalized = await markCampaignSent(supabase, campaignId);
+    if (!finalized) {
+      // The status UPDATE failed transiently. Without a reschedule the
+      // tick chain dies here and the campaign is wedged in 'sending'
+      // forever (no cron re-driver exists; recovery would need a
+      // manual pause→resume). Re-tick so the next drain check retries
+      // the finalize.
+      log.error(
+        { campaignId },
+        "bulk_campaigns.tick: campaign finalize failed — rescheduling",
+      );
+      await enqueueNextTick(boss, campaignId);
+      return;
+    }
     log.info(
       { campaignId },
       "bulk_campaigns.tick: drained — campaign marked sent",
@@ -635,21 +729,34 @@ async function isRecipientOptedOut(
   }
 }
 
+/**
+ * Returns false when the status UPDATE itself errored (caller must
+ * reschedule so the finalize is retried); true when it succeeded —
+ * including the zero-row case where the campaign was paused/cancelled
+ * mid-tick, which needs no retry.
+ */
 async function markCampaignSent(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   campaignId: string,
-): Promise<void> {
+): Promise<boolean> {
   const update: CampaignUpdate = {
     status: "sent",
     completed_at: new Date().toISOString(),
   };
-  const { data: updated } = await supabase
+  const { data: updated, error } = await supabase
     .schema("resupply")
     .from("bulk_campaigns")
     .update(update)
     .eq("id", campaignId)
     .eq("status", "sending")
     .select("id");
+  if (error) {
+    logger.error(
+      { err: error.message, campaignId },
+      "bulk_campaigns.tick: markCampaignSent update failed",
+    );
+    return false;
+  }
   // Only audit if the update actually happened (i.e., campaign was
   // still in 'sending' state). If it was paused/cancelled during
   // the final tick, skip the completion audit.
@@ -667,6 +774,7 @@ async function markCampaignSent(
       logger.warn({ err }, "bulk_campaign.completed audit failed");
     });
   }
+  return true;
 }
 
 export async function enqueueNextTick(

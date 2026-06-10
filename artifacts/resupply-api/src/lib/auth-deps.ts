@@ -274,40 +274,54 @@ function makeMfaProbe(): MfaProbe {
     async recordVerify(userId, counter, secretId) {
       const supabase = getSupabaseServiceRoleClient();
       const nowIso = new Date().toISOString();
+      // Per the MfaProbe contract this is best-effort (a failure must
+      // not block the sign-in — the 30s TOTP step still bounds the
+      // replay) but failures MUST be logged: a silently dropped
+      // counter bump is the replay-protection failing dark.
+      const logBumpError = (table: string, error: { message: string }) => {
+        logger.warn(
+          { event: "mfa_counter_bump_failed", table, err: error.message },
+          "mfa recordVerify: last_used_counter update failed",
+        );
+      };
       // When the verify path tells us WHICH secret matched (secretId),
       // scope the counter bump to that row. The id is unique to its
       // table; updating both tables by id is a no-op on the one that
       // doesn't own it, so we don't need to know the population.
       if (secretId) {
-        await supabase
+        const { error: adminErr } = await supabase
           .schema("resupply")
           .from("admin_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
           .eq("id", secretId);
-        await supabase
+        if (adminErr) logBumpError("admin_mfa_secrets", adminErr);
+        const { error: provErr } = await supabase
           .schema("resupply")
           .from("provider_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
           .eq("id", secretId);
+        if (provErr) logBumpError("provider_mfa_secrets", provErr);
         return;
       }
       // User-scoped fallback (single-device callers).
       const adminId = await adminIdForAuthUser(supabase, userId);
       if (adminId) {
-        await supabase
+        const { error: adminErr } = await supabase
           .schema("resupply")
           .from("admin_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
           .eq("staff_user_id", adminId);
+        if (adminErr) logBumpError("admin_mfa_secrets", adminErr);
         return;
       }
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return;
-      await supabase
+      const { error: provErr } = await supabase
         .schema("resupply")
         .from("provider_mfa_secrets")
         .update({ last_used_counter: counter, last_used_at: nowIso })
         .eq("account_id", accountId);
+      if (provErr) logBumpError("provider_mfa_secrets", provErr);
     },
     async findRecoveryCodeMatch(userId, codeHash) {
       const supabase = getSupabaseServiceRoleClient();
@@ -346,17 +360,40 @@ function makeMfaProbe(): MfaProbe {
       const supabase = getSupabaseServiceRoleClient();
       const usedAt = new Date().toISOString();
       // The row lives in exactly one table; update both by id (the
-      // non-owning update is a no-op).
-      await supabase
+      // non-owning update is a no-op). A failed update means the code
+      // is NOT burned and could be replayed — log at error level.
+      const { error: adminErr } = await supabase
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
         .eq("id", rowId);
-      await supabase
+      if (adminErr) {
+        logger.error(
+          {
+            event: "mfa_recovery_code_mark_used_failed",
+            table: "admin_mfa_recovery_codes",
+            rowId,
+            err: adminErr.message,
+          },
+          "mfa markRecoveryCodeUsed: update failed — recovery code may be reusable",
+        );
+      }
+      const { error: provErr } = await supabase
         .schema("resupply")
         .from("provider_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
         .eq("id", rowId);
+      if (provErr) {
+        logger.error(
+          {
+            event: "mfa_recovery_code_mark_used_failed",
+            table: "provider_mfa_recovery_codes",
+            rowId,
+            err: provErr.message,
+          },
+          "mfa markRecoveryCodeUsed: update failed — recovery code may be reusable",
+        );
+      }
     },
     async consumeRecoveryCode(userId, codeHash, ip) {
       const supabase = getSupabaseServiceRoleClient();

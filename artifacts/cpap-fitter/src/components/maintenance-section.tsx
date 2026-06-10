@@ -9,6 +9,7 @@ import {
   type MaintenanceDueBucket,
   type MaintenanceTask,
 } from "@/lib/account-api";
+import { formatDateOnly } from "@/lib/utils";
 
 /**
  * "Hygiene maintenance" section on /account.
@@ -185,7 +186,7 @@ function bucketLabel(task: MaintenanceTask): string {
       : "Due today";
   }
   if (task.bucket === "due_soon") return "Due tomorrow";
-  return `Next ${new Date(task.nextDueDate).toLocaleDateString(undefined, {
+  return `Next ${formatDateOnly(task.nextDueDate, {
     month: "short",
     day: "numeric",
   })}`;

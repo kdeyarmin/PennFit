@@ -308,13 +308,23 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       const sent = await maybeSendAdherenceSms(supabase, cfg, d.patientId);
       if (sent) {
         result.messaged += 1;
-        await supabase
+        const { error: outreachStampErr } = await supabase
           .schema("resupply")
           .from("therapy_fleet_alerts")
           .update({ outreach_sent_at: new Date().toISOString() })
           .eq("patient_id", d.patientId)
           .eq("alert_type", d.alertType)
           .eq("status", "open");
+        if (outreachStampErr) {
+          logger.warn(
+            {
+              err: outreachStampErr.message,
+              patientId: d.patientId,
+              alertType: d.alertType,
+            },
+            "therapy-fleet-alerts: outreach_sent_at stamp failed (non-fatal)",
+          );
+        }
       }
     }
   }

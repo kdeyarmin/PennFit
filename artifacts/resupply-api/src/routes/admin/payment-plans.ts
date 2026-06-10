@@ -134,11 +134,17 @@ router.post(
       );
     if (instErr) {
       // Best-effort cleanup: avoid leaving an orphaned plan if the schedule insert fails.
-      await supabase
+      const { error: cleanupErr } = await supabase
         .schema("resupply")
         .from("patient_payment_plans")
         .delete()
         .eq("id", plan.id);
+      if (cleanupErr) {
+        logger.error(
+          { err: cleanupErr.message, planId: plan.id },
+          "payment-plans.create: orphan plan cleanup failed",
+        );
+      }
       throw instErr;
     }
 
@@ -323,12 +329,18 @@ router.patch(
       .select("amount_cents, status, due_date")
       .eq("plan_id", inst.plan_id);
     const planStatus = derivePlanStatus((siblings ?? []).map(toInstallmentRow));
-    await supabase
+    const { error: planStatusErr } = await supabase
       .schema("resupply")
       .from("patient_payment_plans")
       .update({ status: planStatus, updated_at: new Date().toISOString() })
       .eq("id", inst.plan_id)
       .neq("status", "cancelled");
+    if (planStatusErr) {
+      logger.error(
+        { err: planStatusErr.message, planId: inst.plan_id },
+        "payment-plans.settle: plan status update failed",
+      );
+    }
 
     await audit(
       req,

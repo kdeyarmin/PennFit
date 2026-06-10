@@ -192,16 +192,27 @@ export async function sendReminderSms(
       // value would otherwise feed into the 48h quiet-period check
       // on subsequent ticks and silently suppress the patient's next
       // reminder even though no message was actually delivered. We
-      // ignore delete errors here so a transient Supabase blip
+      // log-and-continue on delete errors so a transient Supabase blip
       // doesn't make the vendor-error path itself fail.
-      try {
-        await supabase
-          .schema("resupply")
-          .from("conversations")
-          .delete()
-          .eq("id", conversationId);
-      } catch {
-        /* leave the row; ops can reconcile from the audit row below */
+      const { error: deleteConvErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .delete()
+        .eq("id", conversationId);
+      if (deleteConvErr) {
+        // Same structured-stderr convention as the post-send DB-write
+        // failure below (this lib must not import pino directly).
+        // Leave the row; ops can reconcile from the audit row below.
+        process.stderr.write(
+          JSON.stringify({
+            level: 40,
+            event: "send_sms_orphan_conversation_delete_failed",
+            conversationId,
+            errCode: deleteConvErr.code ?? null,
+            errMessage: deleteConvErr.message,
+            msg: "orphan conversation row not deleted after Twilio API error (non-fatal)",
+          }) + "\n",
+        );
       }
       await safeAuditFromActor({
         action: "messaging.reminder.sent",

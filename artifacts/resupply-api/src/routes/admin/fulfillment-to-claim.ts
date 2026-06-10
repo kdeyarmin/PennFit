@@ -133,7 +133,7 @@ router.post(
     if (proposed.builderNotes.length > 0) {
       noteParts.push(`Builder notes: ${proposed.builderNotes.join(" ")}`);
     }
-    await supabase
+    const { error: claimEventErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -142,6 +142,12 @@ router.post(
         note: noteParts.join(" "),
         actor_email: req.adminEmail ?? "unknown",
       });
+    if (claimEventErr) {
+      logger.warn(
+        { err: claimEventErr.message, claimId: claimRow.id },
+        "fulfillment-to-claim: event insert failed (non-fatal)",
+      );
+    }
 
     await logAudit({
       action: "insurance_claim.create_from_fulfillment",

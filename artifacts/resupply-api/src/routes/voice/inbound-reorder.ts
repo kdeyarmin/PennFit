@@ -186,7 +186,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // Transfer the caller to a human (used by both the storefront and patient
   // flows on any fall-through). Records the outcome on the session first.
   const transferToHuman = async (reason: string): Promise<void> => {
-    await supabase
+    const { error: transferStampErr } = await supabase
       .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
@@ -194,6 +194,12 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         outcome_json: { routed: "human", reason } as unknown as Json,
       })
       .eq("id", session.id);
+    if (transferStampErr) {
+      logger.warn(
+        { err: transferStampErr.message, sessionId: session.id },
+        "voice.inbound-reorder: transfer outcome stamp failed (caller still transferred)",
+      );
+    }
     res
       .status(200)
       .type("text/xml")
@@ -267,7 +273,9 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       greeting: INBOUND_SHOP_GREETING,
     });
 
-    await supabase
+    // Best-effort metadata stamp — the TwiML response (and the call) must go
+    // out regardless, so log a warning on failure rather than throwing.
+    const { error: shopStampErr } = await supabase
       .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
@@ -282,6 +290,12 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         } as unknown as Json,
       })
       .eq("id", session.id);
+    if (shopStampErr) {
+      logger.warn(
+        { err: shopStampErr.message, sessionId: session.id },
+        "inbound-reorder: failed to stamp shop session in_progress",
+      );
+    }
 
     const shopWsUrl =
       `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +
@@ -416,7 +430,8 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     greeting: INBOUND_GREETING,
   });
 
-  await supabase
+  // Best-effort metadata stamp — the TwiML response must go out regardless.
+  const { error: patientStampErr } = await supabase
     .schema("resupply")
     .from("voice_reorder_sessions")
     .update({
@@ -427,6 +442,12 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       } as unknown as Json,
     })
     .eq("id", session.id);
+  if (patientStampErr) {
+    logger.warn(
+      { err: patientStampErr.message, sessionId: session.id },
+      "inbound-reorder: failed to stamp patient session outcome",
+    );
+  }
 
   const wsUrl =
     `${publicWsOriginFromBaseUrl(config.publicBaseUrl)}` +

@@ -6,6 +6,7 @@ import {
   type ReorderSuggestion,
 } from "@/lib/account-api";
 import { Button } from "@/components/ui/button";
+import { formatDateOnly } from "@/lib/utils";
 
 /**
  * "Time to reorder?" section on /account. Renders only when the
@@ -82,7 +83,7 @@ function ReorderCard({ item }: { item: ReorderSuggestion }) {
     day: "numeric",
     year: "numeric",
   });
-  const dueOn = new Date(item.dueOn).toLocaleDateString(undefined, {
+  const dueOn = formatDateOnly(item.dueOn, {
     month: "short",
     day: "numeric",
   });

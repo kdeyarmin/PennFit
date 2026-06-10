@@ -86,9 +86,19 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
     .select("id, patient_email, patient_first_name, created_at")
     .gte("created_at", sinceIso)
     .not("patient_email", "is", null)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(1000);
   if (ordErr) throw ordErr;
   stats.ordersScanned = orders?.length ?? 0;
+  if (stats.ordersScanned === 1000) {
+    // PostgREST caps responses at 1000 rows; hitting the cap means the
+    // window had MORE orders than we scanned and some were skipped this
+    // pass (the lookback overlap re-covers them next run).
+    logger.warn(
+      { sinceIso },
+      "fitter-attribution: order scan hit the 1000-row cap — window truncated",
+    );
+  }
   if (!orders || orders.length === 0) return stats;
 
   // Build a map from lowercased email → most-recent order id +
@@ -150,7 +160,8 @@ export async function runFitterConversionAttribution(): Promise<AttributionStats
       .from("fitter_leads")
       .select("id, email, journey_stage, first_order_id, created_at")
       .or(orClauses)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(1000);
     if (leadErr) throw leadErr;
     for (const l of leads ?? []) {
       const e = typeof l.email === "string" ? l.email.toLowerCase() : null;

@@ -87,11 +87,19 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   // Lazily mark a past-TTL invite expired (no sweep job needed).
   if (new Date(invite.expires_at).getTime() <= Date.now()) {
     if (invite.status !== "expired") {
-      await supabase
+      // Best-effort lazy stamp — the expired response is correct
+      // regardless, and a DB hiccup must not 500 the patient.
+      const { error: expireErr } = await supabase
         .schema("resupply")
         .from("fitter_invites")
         .update({ status: "expired", updated_at: new Date().toISOString() })
         .eq("id", invite.id);
+      if (expireErr) {
+        logger.warn(
+          { err: expireErr, inviteId: invite.id },
+          "fitter-invite: expired stamp failed",
+        );
+      }
     }
     res.status(200).json({ valid: false, reason: "expired" });
     return;
@@ -104,12 +112,20 @@ router.get("/shop/fitter-invite/resolve", resolveLimiter, async (req, res) => {
   // First open flips sent → opened (don't downgrade completed/attached).
   if (invite.status === "sent") {
     const nowIso = new Date().toISOString();
-    await supabase
+    // Best-effort — failing to record the open must not block the
+    // patient from starting the fitter.
+    const { error: openErr } = await supabase
       .schema("resupply")
       .from("fitter_invites")
       .update({ status: "opened", opened_at: nowIso, updated_at: nowIso })
       .eq("id", invite.id)
       .eq("status", "sent");
+    if (openErr) {
+      logger.warn(
+        { err: openErr, inviteId: invite.id },
+        "fitter-invite: opened stamp failed",
+      );
+    }
   }
 
   res.json({

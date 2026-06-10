@@ -168,19 +168,17 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
   }
 
   // Stamp last_polled_at regardless of per-file outcomes.
-  await supabase
+  const { error: polledStampErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_credentials")
     .update({ last_polled_at: new Date().toISOString() })
-    .eq("id", clearinghouse.row.id)
-    .then(
-      () => undefined,
-      (err) =>
-        logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
-        ),
+    .eq("id", clearinghouse.row.id);
+  if (polledStampErr) {
+    logger.warn(
+      { err: polledStampErr.message },
+      "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
     );
+  }
 
   await logAudit({
     action: "office_ally_inbound_poll.completed",
@@ -214,8 +212,11 @@ async function processRemoteFile(
   fileName: string,
   stats: PollStats,
 ): Promise<boolean> {
-  // 1. Cheap dedupe by remote_path BEFORE downloading.
-  const { data: existing } = await supabase
+  // 1. Cheap dedupe by remote_path BEFORE downloading. A transient
+  //    read failure must not be treated as "not seen before" — skip
+  //    this file for the run (the next poll retries) rather than
+  //    proceed to a download/insert on a blind dedupe.
+  const { data: existing, error: existingErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
     .select("id, dispatch_status")
@@ -223,6 +224,13 @@ async function processRemoteFile(
     .eq("remote_path", remotePath)
     .limit(1)
     .maybeSingle();
+  if (existingErr) {
+    logger.warn(
+      { remotePath, err: existingErr.message },
+      "office-ally.inbound-poll: remote_path dedupe lookup failed — deferring file to next poll",
+    );
+    return false;
+  }
   if (existing) {
     stats.skippedDuplicates += 1;
     return false;
@@ -248,7 +256,7 @@ async function processRemoteFile(
   const sha256 = createHash("sha256")
     .update(download.content, "utf8")
     .digest("hex");
-  const { data: sameContent } = await supabase
+  const { data: sameContent, error: sameContentErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
     .select("id")
@@ -256,10 +264,18 @@ async function processRemoteFile(
     .eq("file_sha256", sha256)
     .limit(1)
     .maybeSingle();
+  if (sameContentErr) {
+    logger.warn(
+      { remotePath, err: sameContentErr.message },
+      "office-ally.inbound-poll: sha256 dedupe lookup failed — deferring file to next poll",
+    );
+    return false;
+  }
   if (sameContent) {
     // Persist a skipped row so the audit shows the redelivery without
-    // re-processing.
-    await supabase
+    // re-processing. Best-effort: a failed insert only loses the audit
+    // breadcrumb, never blocks the skip.
+    const { error: dupRowErr } = await supabase
       .schema("resupply")
       .from("clearinghouse_inbound_files")
       .insert({
@@ -271,11 +287,13 @@ async function processRemoteFile(
         file_kind: "unknown",
         dispatch_status: "skipped",
         error_message: `Redelivery of already-processed sha256 ${sha256}`,
-      })
-      .then(
-        () => undefined,
-        () => undefined,
+      });
+    if (dupRowErr) {
+      logger.warn(
+        { err: dupRowErr.message, remotePath },
+        "office-ally.inbound-poll: duplicate-redelivery audit row insert failed (non-fatal)",
       );
+    }
     stats.skippedDuplicates += 1;
     return false;
   }
@@ -334,9 +352,9 @@ async function processRemoteFile(
         await dispatch277(supabase, row.id, download.content);
         stats.dispatch277 += 1;
         break;
-      default:
+      default: {
         stats.dispatchUnknown += 1;
-        await supabase
+        const { error: unknownSkipErr } = await supabase
           .schema("resupply")
           .from("clearinghouse_inbound_files")
           .update({
@@ -345,9 +363,16 @@ async function processRemoteFile(
             dispatched_at: new Date().toISOString(),
           })
           .eq("id", row.id);
+        if (unknownSkipErr) {
+          logger.warn(
+            { err: unknownSkipErr.message, rowId: row.id },
+            "office-ally.inbound-poll: unknown-kind skip stamp failed (non-fatal)",
+          );
+        }
         return false;
+      }
     }
-    await supabase
+    const { error: dispatchedErr } = await supabase
       .schema("resupply")
       .from("clearinghouse_inbound_files")
       .update({
@@ -355,6 +380,12 @@ async function processRemoteFile(
         dispatched_at: new Date().toISOString(),
       })
       .eq("id", row.id);
+    if (dispatchedErr) {
+      logger.warn(
+        { err: dispatchedErr.message, rowId: row.id },
+        "office-ally.inbound-poll: dispatched stamp failed (non-fatal)",
+      );
+    }
     return true;
   } catch (err) {
     stats.dispatchErrors += 1;
@@ -366,7 +397,7 @@ async function processRemoteFile(
       },
       "office-ally.inbound-poll: dispatch failed",
     );
-    await supabase
+    const { error: dispatchFailErr } = await supabase
       .schema("resupply")
       .from("clearinghouse_inbound_files")
       .update({
@@ -377,6 +408,12 @@ async function processRemoteFile(
             : String(err).slice(0, 2000),
       })
       .eq("id", row.id);
+    if (dispatchFailErr) {
+      logger.error(
+        { err: dispatchFailErr.message, rowId: row.id },
+        "office-ally.inbound-poll: dispatch_failed stamp also failed",
+      );
+    }
     return false;
   }
 }
@@ -403,7 +440,7 @@ export async function dispatch999(
       .limit(1)
       .maybeSingle();
     if (submission) {
-      await supabase
+      const { error: sub999Err } = await supabase
         .schema("resupply")
         .from("office_ally_submissions")
         .update({
@@ -422,7 +459,13 @@ export async function dispatch999(
               : null,
         })
         .eq("id", submission.id);
-      await supabase
+      if (sub999Err) {
+        logger.warn(
+          { err: sub999Err.message, submissionId: submission.id },
+          "office_ally: 999 ack update failed",
+        );
+      }
+      const { error: file999Err } = await supabase
         .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
@@ -430,6 +473,12 @@ export async function dispatch999(
           parse_summary_json: summarise999(parsed) as unknown as Json,
         })
         .eq("id", inboundFileId);
+      if (file999Err) {
+        logger.warn(
+          { err: file999Err.message, inboundFileId },
+          "office_ally: 999 inbound file link update failed",
+        );
+      }
     }
   }
 }
@@ -441,7 +490,13 @@ export async function dispatch277ca(
 ): Promise<void> {
   const parsed = parse277CA(content);
   // Walk each claim block; match by traceNumber (which we put on
-  // CLM01 == insurance_claims.id) and update status.
+  // CLM01 == insurance_claims.id) and update status. The submission
+  // roll-up is aggregated across blocks first and written ONCE per
+  // submission: one 837 carries many claims, and writing per-block
+  // let a later accepted block overwrite an earlier rejected one —
+  // the submission worklist then showed accepted_277ca while a claim
+  // inside it had been rejected.
+  const submissionHasRejection = new Map<string, boolean>();
   for (const block of parsed.claims) {
     if (!block.traceNumber) continue;
     const { data: claim } = await supabase
@@ -458,13 +513,19 @@ export async function dispatch277ca(
         updated_at: new Date().toISOString(),
       };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
-    await supabase
+    const { error: claimUpdateErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update(update)
       .eq("id", claim.id);
+    if (claimUpdateErr) {
+      logger.warn(
+        { err: claimUpdateErr.message, claimId: claim.id },
+        "office_ally: 277CA claim update failed",
+      );
+    }
     // Append an event for the audit trail.
-    await supabase
+    const { error: eventInsertErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -477,27 +538,53 @@ export async function dispatch277ca(
         ),
         actor_email: SYSTEM_ACTOR_EMAIL,
       });
-    // Roll-up onto the office_ally_submissions row.
+    if (eventInsertErr) {
+      logger.warn(
+        { err: eventInsertErr.message, claimId: claim.id },
+        "office_ally: 277CA claim event insert failed",
+      );
+    }
+    // Accumulate for the per-submission roll-up below.
     if (claim.office_ally_submission_id) {
-      const newStatus =
-        block.outcome === "rejected" ? "rejected_277ca" : "accepted_277ca";
-      await supabase
-        .schema("resupply")
-        .from("office_ally_submissions")
-        .update({
-          status: newStatus,
-          ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
-          ack_277ca_received_at: new Date().toISOString(),
-        })
-        .eq("id", claim.office_ally_submission_id);
-      await supabase
-        .schema("resupply")
-        .from("clearinghouse_inbound_files")
-        .update({
-          applied_to_submission_id: claim.office_ally_submission_id,
-          parse_summary_json: summarise277(parsed) as unknown as Json,
-        })
-        .eq("id", inboundFileId);
+      submissionHasRejection.set(
+        claim.office_ally_submission_id,
+        (submissionHasRejection.get(claim.office_ally_submission_id) ??
+          false) ||
+          block.outcome === "rejected",
+      );
+    }
+  }
+  // Roll-up onto the office_ally_submissions row — any rejected claim
+  // marks the whole submission rejected_277ca.
+  for (const [submissionId, hasRejection] of submissionHasRejection) {
+    const { error: sub277Err } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .update({
+        status: hasRejection ? "rejected_277ca" : "accepted_277ca",
+        ack_277ca_file_name: `inbound:${inboundFileId.slice(0, 8)}`,
+        ack_277ca_received_at: new Date().toISOString(),
+      })
+      .eq("id", submissionId);
+    if (sub277Err) {
+      logger.warn(
+        { err: sub277Err.message, submissionId },
+        "office_ally: 277CA submission roll-up update failed",
+      );
+    }
+    const { error: file277Err } = await supabase
+      .schema("resupply")
+      .from("clearinghouse_inbound_files")
+      .update({
+        applied_to_submission_id: submissionId,
+        parse_summary_json: summarise277(parsed) as unknown as Json,
+      })
+      .eq("id", inboundFileId);
+    if (file277Err) {
+      logger.warn(
+        { err: file277Err.message, inboundFileId, submissionId },
+        "office_ally: 277CA inbound file link update failed",
+      );
     }
   }
 }
@@ -562,7 +649,7 @@ export async function dispatch835(
   });
 
   const finalStatus = summary.unmatchedClaims === 0 ? "processed" : "partial";
-  await supabase
+  const { error: eraStatusErr } = await supabase
     .schema("resupply")
     .from("era_files")
     .update({
@@ -576,8 +663,14 @@ export async function dispatch835(
           : `${summary.unmatchedClaims} claim block(s) had no local match`,
     })
     .eq("id", eraFileId);
+  if (eraStatusErr) {
+    logger.error(
+      { err: eraStatusErr.message, eraFileId },
+      "office-ally.inbound-poll: era_files status update failed",
+    );
+  }
 
-  await supabase
+  const { error: parseSummaryErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
     .update({
@@ -585,6 +678,12 @@ export async function dispatch835(
       parse_summary_json: summarise835(parsed) as unknown as Json,
     })
     .eq("id", inboundFileId);
+  if (parseSummaryErr) {
+    logger.warn(
+      { err: parseSummaryErr.message, inboundFileId },
+      "office-ally.inbound-poll: clearinghouse parse_summary_json update failed (non-fatal)",
+    );
+  }
 
   // Kick off the AI denial analyzer for each newly-denied claim.
   // Fire-and-forget so a slow OpenAI call doesn't stall the worker
@@ -637,7 +736,7 @@ async function runDenialAnalysisQuietly(
       .single();
     if (error) throw error;
     if (row) {
-      await supabase
+      const { error: analysisLinkErr } = await supabase
         .schema("resupply")
         .from("insurance_claims")
         .update({
@@ -645,6 +744,12 @@ async function runDenialAnalysisQuietly(
           updated_at: new Date().toISOString(),
         })
         .eq("id", claimId);
+      if (analysisLinkErr) {
+        logger.warn(
+          { err: analysisLinkErr.message, claimId, analysisId: row.id },
+          "office-ally.inbound-poll: denial analysis link update failed (non-fatal)",
+        );
+      }
     }
   } catch (err) {
     logger.warn(
@@ -692,7 +797,7 @@ export async function dispatch271(
     .limit(1)
     .maybeSingle();
   if (!check) return;
-  await supabase
+  const { error: eligCheckErr } = await supabase
     .schema("resupply")
     .from("eligibility_checks")
     .update({
@@ -702,7 +807,13 @@ export async function dispatch271(
       applied_to_inbound_file_id: inboundFileId,
     })
     .eq("id", check.id);
-  await supabase
+  if (eligCheckErr) {
+    logger.error(
+      { err: eligCheckErr.message, checkId: check.id, inboundFileId },
+      "office-ally.inbound-poll: eligibility_checks update failed",
+    );
+  }
+  const { error: eligSummaryErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_inbound_files")
     .update({
@@ -714,6 +825,12 @@ export async function dispatch271(
       } as unknown as Json,
     })
     .eq("id", inboundFileId);
+  if (eligSummaryErr) {
+    logger.warn(
+      { err: eligSummaryErr.message, inboundFileId },
+      "office-ally.inbound-poll: eligibility parse_summary_json update failed (non-fatal)",
+    );
+  }
   // 271-arrival signal — fire a webhook event so the CSR queue /
   // subscribers can react the moment coverage detail lands, instead of
   // polling the eligibility worklist. IDs + flags only, no PHI in the
@@ -759,7 +876,7 @@ export async function dispatch277(
       .limit(1)
       .maybeSingle();
     if (!check) continue;
-    await supabase
+    const { error: statusCheckErr } = await supabase
       .schema("resupply")
       .from("claim_status_checks")
       .update({
@@ -774,6 +891,12 @@ export async function dispatch277(
         applied_to_inbound_file_id: inboundFileId,
       })
       .eq("id", check.id);
+    if (statusCheckErr) {
+      logger.error(
+        { err: statusCheckErr.message, checkId: check.id, inboundFileId },
+        "office-ally.inbound-poll: claim_status_checks update failed",
+      );
+    }
     // IDs + coarse outcome only — no PHI in the webhook payload.
     void publishEvent({
       eventType: "claim_status.completed",

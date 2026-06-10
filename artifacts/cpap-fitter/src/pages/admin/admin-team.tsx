@@ -483,7 +483,7 @@ function InviteCard() {
     mutationFn: (body: Parameters<typeof inviteMember>[0]) =>
       inviteMember(body),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ["admin-team"] });
+      void qc.invalidateQueries({ queryKey: ["admin-team"] });
       const invitedEmail = email;
       setEmail("");
       setDisplayName("");

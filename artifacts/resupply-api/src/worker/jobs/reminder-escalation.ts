@@ -274,7 +274,7 @@ async function raiseUnresponsiveAlert(
       .limit(1)
       .maybeSingle();
     if (existing) return;
-    await supabase
+    const { error: alertInsertErr } = await supabase
       .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
@@ -285,6 +285,7 @@ async function raiseUnresponsiveAlert(
           "Unresponsive after SMS + email refill reminders — recommend a call.",
         metric_snapshot: { episodeId, escalation: "channels_exhausted" },
       });
+    if (alertInsertErr) throw alertInsertErr;
   } catch (err) {
     logger.warn(
       {

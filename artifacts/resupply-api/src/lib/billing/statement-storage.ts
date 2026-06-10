@@ -96,15 +96,18 @@ export async function persistStatementPdfCopy(
 
   // 2. Link the stored PDF on the statement row (so the email send can
   //    sign a real download link instead of a bare balance notice).
-  try {
-    await supabase
-      .schema("resupply")
-      .from("patient_billing_statements")
-      .update({ statement_pdf_object_key: objectKey })
-      .eq("id", input.statementId);
-  } catch (err) {
+  const { error: linkErr } = await supabase
+    .schema("resupply")
+    .from("patient_billing_statements")
+    .update({ statement_pdf_object_key: objectKey })
+    .eq("id", input.statementId);
+  if (linkErr) {
     logger.warn(
-      { event: "billing.statement.persist", err },
+      {
+        event: "billing.statement.persist",
+        err: linkErr.message,
+        statementId: input.statementId,
+      },
       "statement pdf object-key link failed",
     );
     // Non-fatal — keep going to file the chart copy.

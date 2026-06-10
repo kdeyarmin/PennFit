@@ -455,7 +455,7 @@ async function recomputeTotals(
     }),
     { billed: 0, allowed: 0, paid: 0 },
   );
-  await supabase
+  const { error: totalsErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .update({
@@ -465,4 +465,10 @@ async function recomputeTotals(
       updated_at: new Date().toISOString(),
     })
     .eq("id", claimId);
+  if (totalsErr) {
+    logger.error(
+      { err: totalsErr.message, claimId },
+      "ai-patch: claim totals recompute update failed — totals out of sync with line items",
+    );
+  }
 }

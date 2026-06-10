@@ -8,7 +8,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Copy, Check } from "lucide-react";
 
 import {
@@ -27,6 +27,7 @@ export function ProviderMfaSetup({
   providerName?: string | null;
 }) {
   const [, setLocation] = useLocation();
+  const qc = useQueryClient();
   const [begin, setBegin] = useState<ProviderMfaBegin | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +48,9 @@ export function ProviderMfaSetup({
     onSuccess: (data) => {
       setRecoveryCodes(data.recoveryCodes ?? []);
       setError(null);
+      // Bust the provider-me cache so ProviderPortalRoute re-reads
+      // mfaEnrolled: true and exits the setup redirect loop.
+      void qc.invalidateQueries({ queryKey: ["provider", "me"] });
     },
     onError: (err: Error) => setError(err.message),
   });

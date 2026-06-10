@@ -235,14 +235,17 @@ function rollupRevenue(
   orders: OrderRow[],
   returns: ReturnRow[],
 ): RevenueByDay[] {
+  // Accumulate in integer cents and convert to dollars once at the end —
+  // summing per-row `cents / 100` floats accumulates precision error
+  // across large day buckets.
   const byDay = new Map<
     string,
-    { ordersCount: number; grossUsd: number; refundedUsd: number }
+    { ordersCount: number; grossCents: number; refundedCents: number }
   >();
   function bucket(day: string) {
     let v = byDay.get(day);
     if (!v) {
-      v = { ordersCount: 0, grossUsd: 0, refundedUsd: 0 };
+      v = { ordersCount: 0, grossCents: 0, refundedCents: 0 };
       byDay.set(day, v);
     }
     return v;
@@ -258,22 +261,22 @@ function rollupRevenue(
     const day = (o.paid_at ?? o.created_at).slice(0, 10);
     const b = bucket(day);
     b.ordersCount += 1;
-    b.grossUsd += centsToDollars(o.amount_total_cents);
+    b.grossCents += o.amount_total_cents ?? 0;
   }
   for (const r of returns) {
     if (r.refund_cents == null || r.refund_cents === 0) continue;
     const day = (r.resolved_at ?? r.approved_at ?? r.created_at).slice(0, 10);
     const b = bucket(day);
-    b.refundedUsd += centsToDollars(r.refund_cents);
+    b.refundedCents += r.refund_cents;
   }
   return Array.from(byDay.entries())
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
     .map(([day, v]) => ({
       day,
       ordersCount: v.ordersCount,
-      grossUsd: v.grossUsd,
-      refundedUsd: v.refundedUsd,
-      netUsd: v.grossUsd - v.refundedUsd,
+      grossUsd: centsToDollars(v.grossCents),
+      refundedUsd: centsToDollars(v.refundedCents),
+      netUsd: centsToDollars(v.grossCents - v.refundedCents),
     }));
 }
 

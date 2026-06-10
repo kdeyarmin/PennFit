@@ -13,6 +13,7 @@ import { Card, KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { csrfHeader } from "@/lib/csrf";
+import { formatDateOnly } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -341,7 +342,7 @@ function CycleRow({ c }: { c: CappedRentalCycle }) {
         {compliantModifierBucket(c)}
       </td>
       <td className="p-3 text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
-        {new Date(c.start_date).toLocaleDateString()}
+        {formatDateOnly(c.start_date)}
       </td>
       <td className="p-3 text-[12px]">
         {c.status === "active" ? (

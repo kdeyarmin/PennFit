@@ -107,7 +107,15 @@ router.post(
     // dashboard; the LLM gets a wider context budget for borderline
     // claims (probability >= 0.25 covers ~the top quartile in the
     // first prod batch we saw).
-    void scoreAndPersist(claim.id);
+    // .catch is load-bearing: index.ts exits the process on any
+    // unhandledRejection, so a bare void-discarded rejection here
+    // would take the whole site down from one POST.
+    void scoreAndPersist(claim.id).catch((err) => {
+      logger.warn(
+        { err, claimId: claim.id },
+        "heuristic denial scoring failed (non-blocking)",
+      );
+    });
 
     const output = await scrubClaim({ claimId: claim.id });
 
@@ -138,7 +146,7 @@ router.post(
     if (error) throw error;
 
     // Denormalise onto the claim row.
-    await supabase
+    const { error: denormErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update({
@@ -148,6 +156,7 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", claim.id);
+    if (denormErr) throw denormErr;
 
     await logAudit({
       action: "insurance_claim.ai_scrub",
@@ -236,8 +245,10 @@ router.post(
       patchesToApply,
     );
 
-    // Update the scrub row's log + review status.
-    await supabase
+    // Update the scrub row's log + review status. The applied_at stamp
+    // is the double-apply guard — a silent failure here would let the
+    // same patches be applied twice, so propagate it.
+    const { error: scrubUpdateErr } = await supabase
       .schema("resupply")
       .from("claim_scrub_results")
       .update({
@@ -248,9 +259,10 @@ router.post(
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", scrub.id);
+    if (scrubUpdateErr) throw scrubUpdateErr;
 
-    // Append an event for the claim history.
-    await supabase
+    // Append an event for the claim history (best-effort).
+    const { error: eventErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -259,6 +271,12 @@ router.post(
         note: `AI scrub patches applied (${outcomes.filter((o) => o.status === "applied").length} of ${outcomes.length}).`,
         actor_email: req.adminEmail ?? "unknown",
       });
+    if (eventErr) {
+      logger.warn(
+        { err: eventErr, claimId: idParsed.data.claimId },
+        "insurance_claim.ai_scrub_apply event insert failed",
+      );
+    }
 
     await logAudit({
       action: "insurance_claim.ai_scrub_apply",
@@ -373,7 +391,7 @@ router.post(
     if (error) throw error;
 
     // Point the claim row at the latest analysis.
-    await supabase
+    const { error: pointerErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update({
@@ -381,6 +399,7 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", claim.id);
+    if (pointerErr) throw pointerErr;
 
     await logAudit({
       action: "insurance_claim.ai_denial_analysis",
@@ -501,7 +520,9 @@ router.post(
 
     if (appliedCount === 0) {
       // Nothing landed — keep claim in denied, record the attempt, bail.
-      await supabase
+      // Best-effort: nothing was applied, so a failed stamp only allows
+      // a harmless retry of a no-op.
+      const { error: rejectStampErr } = await supabase
         .schema("resupply")
         .from("claim_denial_analyses")
         .update({
@@ -511,6 +532,12 @@ router.post(
           reviewed_at: new Date().toISOString(),
         })
         .eq("id", analysis.id);
+      if (rejectStampErr) {
+        logger.warn(
+          { err: rejectStampErr, analysisId: analysis.id },
+          "ai_auto_fix_resubmit rejected-stamp write failed",
+        );
+      }
       res.status(409).json({
         error: "no_patches_applied",
         outcomes,
@@ -549,8 +576,11 @@ router.post(
       req.adminEmail ?? "system:ai_auto_resubmit",
     );
 
-    // 4. Stamp the denial-analysis row.
-    await supabase
+    // 4. Stamp the denial-analysis row. applied_at is the
+    //    double-resubmit guard — a silent failure here would let the
+    //    same denial be auto-resubmitted again, so propagate it (the
+    //    500 tells the operator to verify before retrying).
+    const { error: acceptStampErr } = await supabase
       .schema("resupply")
       .from("claim_denial_analyses")
       .update({
@@ -561,9 +591,11 @@ router.post(
         resubmit_office_ally_submission_id: submitResult.officeAllySubmissionId,
       })
       .eq("id", analysis.id);
+    if (acceptStampErr) throw acceptStampErr;
 
     // 5. Close the prior denied claim (denied -> closed is valid).
-    await supabase
+    //    Also a retry guard (the route requires status=denied).
+    const { error: closeErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update({
@@ -571,8 +603,9 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", claim.id);
+    if (closeErr) throw closeErr;
 
-    await supabase
+    const { error: closeEventErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -581,6 +614,12 @@ router.post(
         note: `Closed after AI auto-fix; resubmitted as ${clone.newClaimId}.`,
         actor_email: req.adminEmail ?? "unknown",
       });
+    if (closeEventErr) {
+      logger.warn(
+        { err: closeEventErr, claimId: claim.id },
+        "ai_auto_fix_resubmit closed-event insert failed",
+      );
+    }
 
     await logAudit({
       action: "insurance_claim.ai_auto_fix_resubmit",
@@ -659,7 +698,9 @@ async function cloneAsDraft(
     .select("hcpcs_code, modifier, description, quantity, billed_cents")
     .eq("claim_id", sourceClaimId);
   if (srcLines && srcLines.length > 0) {
-    await supabase
+    // A clone without its line items (or with a stale total) must not
+    // proceed to submission — fail the clone instead.
+    const { error: linesErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_line_items")
       .insert(
@@ -673,12 +714,15 @@ async function cloneAsDraft(
           status: "pending" as const,
         })),
       );
+    if (linesErr) {
+      return { ok: false, message: linesErr.message };
+    }
     // billed_cents is per-unit → extended line charge is * quantity.
     const total = srcLines.reduce(
       (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       0,
     );
-    await supabase
+    const { error: totalErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update({
@@ -686,6 +730,9 @@ async function cloneAsDraft(
         updated_at: new Date().toISOString(),
       })
       .eq("id", newRow.id);
+    if (totalErr) {
+      return { ok: false, message: totalErr.message };
+    }
   }
   return { ok: true, newClaimId: newRow.id };
 }
@@ -872,7 +919,10 @@ async function submitDraftToOfficeAlly(
 
   if (result.upload.ok && subRow) {
     const nowIso = new Date().toISOString();
-    await supabase
+    // The OA upload already succeeded — these are post-hoc status
+    // stamps, so log loudly (a claim stuck in draft after a real
+    // submission risks a duplicate resubmit) but don't fail the call.
+    const { error: claimStampErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update({
@@ -883,7 +933,13 @@ async function submitDraftToOfficeAlly(
         updated_at: nowIso,
       })
       .eq("id", claim.id);
-    await supabase
+    if (claimStampErr) {
+      logger.error(
+        { err: claimStampErr, claimId: claim.id, submissionId: subRow.id },
+        "ai_auto_fix_resubmit: claim submitted-stamp failed after OA upload",
+      );
+    }
+    const { error: submitEventErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -893,6 +949,12 @@ async function submitDraftToOfficeAlly(
         note: `Resubmitted by AI auto-fix (${result.transport}).`,
         actor_email: actorEmail,
       });
+    if (submitEventErr) {
+      logger.warn(
+        { err: submitEventErr, claimId: claim.id },
+        "ai_auto_fix_resubmit: submitted-event insert failed",
+      );
+    }
   }
 
   return {

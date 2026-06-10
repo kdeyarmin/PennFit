@@ -259,11 +259,20 @@ router.get(
       }
     >();
     if (patientIds.length > 0) {
-      const { data: pats } = await supabase
+      const { data: pats, error: patsErr } = await supabase
         .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name, address, email")
         .in("id", patientIds);
+      // Fail the request rather than render the batch with missing
+      // names/addresses — a blank-addressee statement could be printed
+      // and mailed before anyone notices.
+      if (patsErr) {
+        res
+          .status(500)
+          .json({ error: "query_failed", message: patsErr.message });
+        return;
+      }
       for (const p of pats ?? []) {
         patientById.set(p.id as string, {
           legal_first_name: p.legal_first_name as string,

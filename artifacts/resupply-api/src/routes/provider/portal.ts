@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { logger } from "../../lib/logger";
 import { appendSignatureEvent } from "../../lib/provider-portal/signature-events";
 import {
   requireProvider,
@@ -72,11 +73,17 @@ router.get(
     const supabase = getSupabaseServiceRoleClient();
 
     // Best-effort last-login stamp.
-    await supabase
+    const { error: loginStampErr } = await supabase
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({ last_login_at: new Date().toISOString() })
       .eq("id", account.id);
+    if (loginStampErr) {
+      logger.warn(
+        { err: loginStampErr, accountId: account.id },
+        "provider portal: last-login stamp failed",
+      );
+    }
 
     const { data: provider, error: pErr } = await supabase
       .schema("resupply")

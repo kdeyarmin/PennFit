@@ -97,7 +97,7 @@ export function AdminShopInventoryReconcileEditPage() {
   // choices don't carry over to the new reconciliation.
   const detailKey =
     data && data.reconciliation.status === "draft"
-      ? `${data.reconciliation.id}:${data.currentProducts?.length ?? 0}`
+      ? data.reconciliation.id
       : null;
   useEffect(() => {
     if (!data || data.reconciliation.status !== "draft" || !detailKey) return;

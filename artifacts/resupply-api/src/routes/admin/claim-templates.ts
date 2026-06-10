@@ -362,7 +362,7 @@ router.post(
       (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       0,
     );
-    await supabase
+    const { error: totalUpdateErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .update({
@@ -370,8 +370,9 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", claim.id);
+    if (totalUpdateErr) throw totalUpdateErr;
 
-    await supabase
+    const { error: eventInsertErr } = await supabase
       .schema("resupply")
       .from("insurance_claim_events")
       .insert({
@@ -380,6 +381,12 @@ router.post(
         note: `Applied template ${template.id} (${lines.length} lines, total ${newTotal}¢).`,
         actor_email: req.adminEmail ?? "unknown",
       });
+    if (eventInsertErr) {
+      logger.warn(
+        { err: eventInsertErr.message, claimId: claim.id },
+        "claim-templates.apply: event insert failed (non-fatal)",
+      );
+    }
 
     await logAudit({
       action: "insurance_claim.apply_template",

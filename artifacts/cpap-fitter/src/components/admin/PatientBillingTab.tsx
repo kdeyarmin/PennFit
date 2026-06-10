@@ -36,6 +36,7 @@ import {
   verifyEligibility,
 } from "@/lib/admin/clinical-tabs-api";
 import { csrfHeader } from "@/lib/csrf";
+import { formatDateOnly } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -450,9 +451,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
                   DOS{" "}
-                  {c.date_of_service
-                    ? new Date(c.date_of_service).toLocaleDateString()
-                    : "—"}
+                  {c.date_of_service ? formatDateOnly(c.date_of_service) : "—"}
                   {c.patient_responsibility_cents != null &&
                   c.patient_responsibility_cents > 0 ? (
                     <>
@@ -678,7 +677,7 @@ export function PatientBillingTab({ patientId }: { patientId: string }) {
                     </span>
                     {p.approvedThrough && (
                       <span style={{ color: "hsl(var(--ink-3))" }}>
-                        thru {new Date(p.approvedThrough).toLocaleDateString()}
+                        thru {formatDateOnly(p.approvedThrough)}
                       </span>
                     )}
                   </div>
@@ -904,6 +903,12 @@ function StatementDeliveryCard({ patientId }: { patientId: string }) {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!savedAt) return;
+    const t = setTimeout(() => setSavedAt(null), 4000);
+    return () => clearTimeout(t);
+  }, [savedAt]);
 
   useEffect(() => {
     if (pref.data) {
@@ -1140,7 +1145,7 @@ function EligibilityStatusBadge({ status }: { status: string }) {
         className="inline h-3 w-3 mr-0.5 -mt-0.5"
         style={{ color: tone.color }}
       />
-      {status.replace("_", " ")}
+      {status.replace(/_/g, " ")}
     </span>
   );
 }

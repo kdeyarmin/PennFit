@@ -79,7 +79,9 @@ router.post(
     // applied:true there would mislead the CSR and the audit row.
     const applied = shouldApply && !study.diagnosis_icd10;
     if (applied) {
-      await supabase
+      // If this write fails, reporting applied:true (and the audit row)
+      // would be a lie — fail the request instead.
+      const { error: applyErr } = await supabase
         .schema("resupply")
         .from("sleep_studies")
         .update({
@@ -91,6 +93,7 @@ router.post(
           updated_at: new Date().toISOString(),
         })
         .eq("id", study.id);
+      if (applyErr) throw applyErr;
     }
 
     await logAudit({
@@ -155,7 +158,7 @@ router.post(
       });
       return;
     }
-    await supabase
+    const { error: acceptErr } = await supabase
       .schema("resupply")
       .from("sleep_studies")
       .update({
@@ -163,6 +166,7 @@ router.post(
         updated_at: new Date().toISOString(),
       })
       .eq("id", study.id);
+    if (acceptErr) throw acceptErr;
     await logAudit({
       action: "sleep_study.ai_icd10_accept",
       adminEmail: req.adminEmail ?? null,

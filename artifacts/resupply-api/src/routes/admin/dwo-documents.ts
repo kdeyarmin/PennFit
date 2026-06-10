@@ -72,7 +72,8 @@ router.get(
       .from("dwo_documents")
       .select("*")
       .eq("patient_id", parsed.data.patientId)
-      .order("expires_on", { ascending: false });
+      .order("expires_on", { ascending: false })
+      .limit(500);
     res.json({ documents: data ?? [] });
   },
 );
@@ -287,11 +288,19 @@ router.delete(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    await supabase
+    const { error: delErr } = await supabase
       .schema("resupply")
       .from("dwo_documents")
       .delete()
       .eq("id", idParsed.data.id);
+    if (delErr) {
+      logger.error(
+        { err: delErr.message, id: idParsed.data.id },
+        "dwo-documents.delete: DB error",
+      );
+      res.status(500).json({ error: "delete_failed" });
+      return;
+    }
     res.json({ ok: true });
   },
 );
