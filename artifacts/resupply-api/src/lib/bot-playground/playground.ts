@@ -661,7 +661,11 @@ async function runAnthropic(
       messages.push({ role: "assistant", content: assistantBlocks });
       const resultBlocks: AnthropicContentBlock[] = [];
       for (const c of calls) {
-        const { content, simulated } = await executeOrSimulate(bot, c.name, c.input);
+        const { content, simulated } = await executeOrSimulate(
+          bot,
+          c.name,
+          c.input,
+        );
         toolCalls.push({
           name: c.name,
           input: c.input,

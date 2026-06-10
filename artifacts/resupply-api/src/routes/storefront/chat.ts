@@ -309,7 +309,11 @@ async function applyToolCalls(
       parsedArgs = {};
     }
     const startedAt = Date.now();
-    const result = await executeChatTool(call.function.name, parsedArgs, toolCtx);
+    const result = await executeChatTool(
+      call.function.name,
+      parsedArgs,
+      toolCtx,
+    );
     logger.info(
       {
         event: "chat_tool_invoked",
@@ -473,7 +477,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     const client = getAnthropicClient();
     if (client) {
       return streaming
-        ? handleAnthropicStreaming(res, initial, client, messages.length, toolCtx)
+        ? handleAnthropicStreaming(
+            res,
+            initial,
+            client,
+            messages.length,
+            toolCtx,
+          )
         : handleAnthropicJson(res, initial, client, messages.length, toolCtx);
     }
   }

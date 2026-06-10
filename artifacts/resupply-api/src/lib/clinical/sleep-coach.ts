@@ -389,7 +389,9 @@ export async function askSleepCoach(
             model: DEFAULT_OPENAI_MODEL,
             temperature: 0.4,
             max_tokens: 400,
-            ...(sendTools ? { tools: CATALOG_CHAT_TOOLS, tool_choice: "auto" } : {}),
+            ...(sendTools
+              ? { tools: CATALOG_CHAT_TOOLS, tool_choice: "auto" }
+              : {}),
             messages,
           }),
         });
