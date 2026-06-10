@@ -160,19 +160,17 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
   }
 
   // Stamp last_polled_at regardless of per-file outcomes.
-  await supabase
+  const { error: polledStampErr } = await supabase
     .schema("resupply")
     .from("clearinghouse_credentials")
     .update({ last_polled_at: new Date().toISOString() })
-    .eq("id", clearinghouse.row.id)
-    .then(
-      () => undefined,
-      (err) =>
-        logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
-        ),
+    .eq("id", clearinghouse.row.id);
+  if (polledStampErr) {
+    logger.warn(
+      { err: polledStampErr.message },
+      "office-ally.inbound-poll: last_polled_at update failed (non-fatal)",
     );
+  }
 
   await logAudit({
     action: "office_ally_inbound_poll.completed",
@@ -264,8 +262,9 @@ async function processRemoteFile(
   }
   if (sameContent) {
     // Persist a skipped row so the audit shows the redelivery without
-    // re-processing.
-    await supabase
+    // re-processing. Best-effort: a failed insert only loses the audit
+    // breadcrumb, never blocks the skip.
+    const { error: dupRowErr } = await supabase
       .schema("resupply")
       .from("clearinghouse_inbound_files")
       .insert({
@@ -277,11 +276,13 @@ async function processRemoteFile(
         file_kind: "unknown",
         dispatch_status: "skipped",
         error_message: `Redelivery of already-processed sha256 ${sha256}`,
-      })
-      .then(
-        () => undefined,
-        () => undefined,
+      });
+    if (dupRowErr) {
+      logger.warn(
+        { err: dupRowErr.message, remotePath },
+        "office-ally.inbound-poll: duplicate-redelivery audit row insert failed (non-fatal)",
       );
+    }
     stats.skippedDuplicates += 1;
     return false;
   }

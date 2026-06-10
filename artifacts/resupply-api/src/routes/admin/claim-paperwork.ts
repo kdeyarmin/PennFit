@@ -457,14 +457,17 @@ router.post(
         },
       );
       // Mark the fax triaged so it leaves the "new" queue.
-      await supabase
+      const { error: faxStatusErr } = await supabase
         .schema("resupply")
         .from("inbound_faxes")
         .update({ status: "triaged" })
-        .eq("id", faxId.data)
-        .then(undefined, (err: unknown) => {
-          logger.warn({ err }, "bill-hold: fax status update failed");
-        });
+        .eq("id", faxId.data);
+      if (faxStatusErr) {
+        logger.warn(
+          { err: faxStatusErr.message, faxId: faxId.data },
+          "bill-hold: fax status update failed",
+        );
+      }
       await audit(req, "bill_hold.fax_linked", parsed.data.requirementId, {
         fax_id: faxId.data,
         claim_id: requirement.claim_id,
