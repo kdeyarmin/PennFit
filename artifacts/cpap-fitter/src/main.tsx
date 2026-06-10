@@ -8,6 +8,12 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { reportWebVitals } from "./lib/web-vitals-reporter";
+import { installStaleChunkRecovery } from "./lib/stale-chunk-recovery";
+
+// Must be registered before the first lazy route can fail, i.e. before
+// render. See stale-chunk-recovery.ts for the deploy-invalidates-chunks
+// failure mode this absorbs.
+installStaleChunkRecovery();
 
 createRoot(document.getElementById("root")!).render(<App />);
 reportWebVitals();
