@@ -13,6 +13,12 @@ export interface AdminInboxCounts {
   newPatientDocuments: number;
   /** Inbound faxes that have landed in the queue but no CSR has triaged. */
   newInboundFaxes: number;
+  /**
+   * Confirmed resupply episodes waiting on a PacWare CSV export.
+   * Always 0 unless the operator opted into auto-sync notices
+   * (the pacware.auto_sync toggle on /admin/pacware).
+   */
+  pacwareReadyToSync: number;
   serverTime: string;
 }
 
