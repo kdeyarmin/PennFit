@@ -2,6 +2,10 @@
 // (Billing → Worklists). NAV_GROUPS is not exported, so we read the source
 // file directly and assert the expected href, label, matchPrefix, and hint
 // are present — the same approach used by AppShell.nav.test.ts.
+//
+// allow-source-read: NAV_GROUPS is a private const with no behavioral
+// surface to drive in the node test env; this pins the nav registration
+// the same way the five existing AppShell.*nav*.test.ts guards do.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
