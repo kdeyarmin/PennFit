@@ -1,4 +1,4 @@
--- 0299_resupply_usage_compliance_flag — feature flag + CSR alert type
+-- 0300_resupply_usage_compliance_flag — feature flag + CSR alert type
 -- for the order-time continued-use (therapy adherence) soft gate.
 --
 -- Sibling to 0172 (too-soon/over-quantity entitlement guard) and 0185
