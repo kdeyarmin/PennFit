@@ -5,10 +5,9 @@
 # Rule enforced here:
 #   Any migration file ADDED under lib/resupply-db/drizzle/ must use a
 #   4-digit prefix that is NOT already used by any other tracked file.
-#   Duplicate prefixes cause the migrate.mjs runner to emit warnings and
-#   apply migrations in non-deterministic lexicographic order, which
-#   blocks Railway PR preview deploys and obscures the actual apply order
-#   on fresh databases.
+#   Duplicate prefixes cause migrate.mjs to emit warnings on every deploy and
+#   make the prefix tie-break apply order harder to reason about on fresh
+#   databases (ties are broken lexicographically by tag).
 #
 #   Modifying an existing migration is already prohibited by ADR 003
 #   and caught in review, so we only check additions (--diff-filter=A).
