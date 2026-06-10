@@ -186,6 +186,7 @@ import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
 import manualDocumentsAdminRouter from "./admin/manual-documents.js";
+import manualDocumentPacketsAdminRouter from "./admin/manual-document-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
 import conversationsRouter from "./conversations/index.js";
@@ -605,6 +606,10 @@ router.use(patientPacketsAdminRouter);
 // documents (CMN, prescription, agreement, delivery ticket, fax cover,
 // or free-form). Download / email / fax / file-to-chart.
 router.use(manualDocumentsAdminRouter);
+// /admin/manual-document-packets* — ordered bundles of manual documents
+// rendered as ONE combined PDF (optional cover sheet + each document)
+// and sent as a single email attachment or fax transmission.
+router.use(manualDocumentPacketsAdminRouter);
 // /admin/webhook-deliveries/:id/retry-now — manual re-queue of an
 // exhausted/failed delivery.
 router.use(webhookDeliveryRetryRouter);

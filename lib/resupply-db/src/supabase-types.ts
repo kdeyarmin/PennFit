@@ -2543,6 +2543,31 @@ export interface Database {
         >;
         Relationships: [];
       };
+      manual_document_packets: {
+        Row: {
+          id: string;
+          title: string;
+          recipient_name: string | null;
+          recipient_address: string | null;
+          recipient_email: string | null;
+          recipient_fax_e164: string | null;
+          document_ids: Json;
+          include_cover_sheet: boolean;
+          status: "draft" | "sent";
+          last_emailed_at: string | null;
+          last_faxed_at: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["manual_document_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["manual_document_packets"]["Row"]
+        >;
+        Relationships: [];
+      };
       signature_tracking: {
         Row: {
           id: string;
