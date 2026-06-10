@@ -41,6 +41,7 @@ import {
   SHOP_CATEGORIES,
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
 import { invalidateShopProductsCache } from "../shop/products";
 
@@ -93,29 +94,6 @@ const patchPriceBodySchema = z.object({
     .min(50, "Stripe minimum charge is $0.50")
     .max(10_000_000),
 });
-
-// Categorized fields for warn-logging a Stripe SDK failure. The log
-// layer redacts free-text `err.message` / `err.stack` on error
-// objects, and a message string smuggled under the `err` key would
-// dodge that redaction entirely (see the redact rationale in
-// lib/logger.ts — categorized failures are the prescribed shape).
-// Stripe's enumerated identifiers carry the "why" (status, code,
-// type) plus the Dashboard lookup handle (requestId) without the
-// free-text leak surface.
-function stripeErrLogFields(err: unknown): Record<string, string | number> {
-  const e = err as {
-    statusCode?: unknown;
-    code?: unknown;
-    type?: unknown;
-    requestId?: unknown;
-  } | null;
-  const fields: Record<string, string | number> = {};
-  if (typeof e?.statusCode === "number") fields.stripeStatus = e.statusCode;
-  if (typeof e?.code === "string") fields.stripeCode = e.code;
-  if (typeof e?.type === "string") fields.stripeType = e.type;
-  if (typeof e?.requestId === "string") fields.stripeRequestId = e.requestId;
-  return fields;
-}
 
 router.patch(
   "/admin/shop/products/:productId/stock",
@@ -187,10 +165,7 @@ router.patch(
         return;
       }
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe retrieve failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -234,10 +209,7 @@ router.patch(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe update failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -288,11 +260,13 @@ router.patch(
         productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
         priceLabel,
       }).catch((err) => {
+        // Not a Stripe failure (the dispatch path is DB + email), so
+        // the categorized Stripe fields don't apply — log the error
+        // OBJECT: the logger's serializer keeps the error class while
+        // its redaction blanks the free-text message/stack
+        // (lib/logger.ts). The helper logs its own detailed outcome.
         req.log?.warn?.(
-          {
-            productId,
-            err: err instanceof Error ? err.message : String(err),
-          },
+          { productId, err },
           "shop/admin/products: back-in-stock dispatch threw",
         );
       });
@@ -359,10 +333,7 @@ router.patch(
         return;
       }
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe retrieve failed (threshold)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -393,10 +364,7 @@ router.patch(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe update failed (threshold)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -837,10 +805,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe search failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -896,10 +861,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe create product failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -922,11 +884,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId: product.id,
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId: product.id, sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe create price failed (product orphaned)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -956,11 +914,7 @@ router.post(
         recurringPriceId = recurring.id;
       } catch (err) {
         req.log?.warn?.(
-          {
-            productId: product.id,
-            sku: input.sku,
-            err: err instanceof Error ? err.message : String(err),
-          },
+          { productId: product.id, sku: input.sku, ...stripeErrLogFields(err) },
           "shop/admin/products: recurring price create failed (one-time price still set)",
         );
         // Continue — the product is usable as a one-time SKU.
@@ -981,11 +935,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId: product.id,
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId: product.id, sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe set default_price failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
