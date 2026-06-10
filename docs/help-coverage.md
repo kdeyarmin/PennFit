@@ -34,7 +34,6 @@ card in `pages/help.tsx`. The coverage test fails until all three exist.
 | Phone ordering (AI voice assistant)        | `/help/order-by-phone`            | Covered                                   |
 | In-account messages thread                 | —                                 | Gap (low: UI is self-describing)          |
 | Referral program                           | —                                 | Gap (add when program is promoted)        |
-| Appointment requests                       | —                                 | Gap (low: single form)                    |
 | Apple Wallet pass                          | —                                 | Gap (low: feature-gated, self-describing) |
 | Data export & privacy rights               | —                                 | Gap (privacy page covers contact path)    |
 | NPS / post-delivery survey                 | —                                 | Gap (low: one-tap survey)                 |
