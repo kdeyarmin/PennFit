@@ -26,9 +26,13 @@ import {
 } from "lucide-react";
 import { track } from "@/lib/track";
 import {
+  fetchShopProducts,
+  formatMoneyCents,
   submitFitterComplete,
   submitFitterInviteComplete,
+  type ShopProductView,
 } from "@/lib/shop-api";
+import { useCart } from "@/hooks/use-cart";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
@@ -99,6 +103,61 @@ export function Results() {
     });
     track("mask_chosen", { mask: mask.modelNumber });
     setLocation("/order");
+  };
+
+  // Cash-pay bridge: when a recommended mask is also sold in the shop
+  // (matched by manufacturer model number) and checkout is live, each
+  // card gets a secondary "buy without insurance" CTA that drops the
+  // shop product into the cart. Strictly best-effort — a failed or
+  // preview-mode catalog load just hides the CTAs, never blocks the
+  // recommendations the patient came for.
+  const { addItem } = useCart();
+  const [shopByModelNumber, setShopByModelNumber] = useState<Map<
+    string,
+    ShopProductView
+  > | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchShopProducts()
+      .then((result) => {
+        if (cancelled || "unavailable" in result) return;
+        if (!result.purchasingEnabled) return;
+        const byModel = new Map<string, ShopProductView>();
+        for (const p of result.products) {
+          if (p.modelNumber && p.stockCount !== 0) {
+            byModel.set(p.modelNumber, p);
+          }
+        }
+        setShopByModelNumber(byModel);
+      })
+      .catch(() => {
+        // Catalog unreachable — cash-pay CTAs simply don't render.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCashPayAdd = (
+    mask: { maskId: string; modelNumber: string },
+    product: ShopProductView,
+  ) => {
+    const added = addItem({
+      productId: product.id,
+      priceId: product.price.id,
+      name: product.name,
+      unitAmountCents: product.price.unitAmount,
+      currency: product.price.currency,
+      imageUrl: product.imageUrl,
+      isBundle: product.isBundle,
+      mode: "one_time",
+      recurringPriceId: product.recurringPrice?.id ?? null,
+      recurringIntervalLabel: product.recurringPrice?.intervalLabel ?? null,
+      stockCount: product.stockCount,
+    });
+    if (!added.ok) return; // sold out between load and click — leave the page as-is
+    track("mask_cashpay_added", { mask: mask.modelNumber });
+    setLocation("/shop/cart");
   };
 
   const { mutate, data, isPending, error } = useGetRecommendation();
@@ -425,15 +484,29 @@ export function Results() {
             on any card to see the breakdown.
           </p>
         </div>
-        {data.topRecommendations.map((mask, idx) => (
-          <MaskRecommendationCard
-            key={mask.maskId}
-            mask={mask}
-            details={catalogById.get(mask.maskId)}
-            isTopPick={idx === 0}
-            onChoose={() => handleChooseMask(mask)}
-          />
-        ))}
+        {data.topRecommendations.map((mask, idx) => {
+          const shopProduct = shopByModelNumber?.get(mask.modelNumber);
+          return (
+            <MaskRecommendationCard
+              key={mask.maskId}
+              mask={mask}
+              details={catalogById.get(mask.maskId)}
+              isTopPick={idx === 0}
+              onChoose={() => handleChooseMask(mask)}
+              cashPay={
+                shopProduct
+                  ? {
+                      priceLabel: formatMoneyCents(
+                        shopProduct.price.unitAmount,
+                        shopProduct.price.currency,
+                      ),
+                      onAddToCart: () => handleCashPayAdd(mask, shopProduct),
+                    }
+                  : undefined
+              }
+            />
+          );
+        })}
       </div>
 
       <ComfortGuarantee variant="callout" className="mb-8" />
