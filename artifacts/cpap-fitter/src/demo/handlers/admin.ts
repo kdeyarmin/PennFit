@@ -70,7 +70,7 @@ function pennPilotReply(messages: AssistantMessage[] | undefined): string {
   if (q.includes("campaign") || q.includes("bulk")) {
     return "Bulk Campaigns (/admin/bulk-campaigns) is the place: build your audience with the filters, sanity-check the recipient count, then send a batch SMS or email. The reusable content lives alongside it — Alert Library (/admin/alerts) and Automated messages (/admin/templates). (Demo answer — no real messages go out.)";
   }
-  return "Hi, I'm PennPilot — your guide to the admin console. Ask me how a page works or where to find something; try \"walk me through processing a claim\" or \"where do I turn features on or off\". You're exploring the PennFit demo, so my answers are canned samples and no data here is real.";
+  return 'Hi, I\'m PennPilot — your guide to the admin console. Ask me how a page works or where to find something; try "walk me through processing a claim" or "where do I turn features on or off". You\'re exploring the PennFit demo, so my answers are canned samples and no data here is real.';
 }
 
 export const adminHandlers: DemoHandler[] = [

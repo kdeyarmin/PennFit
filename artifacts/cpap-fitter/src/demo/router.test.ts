@@ -146,9 +146,9 @@ describe("demo router", () => {
         "/resupply-api/admin/billing/eligibility-recent",
         (b) => {
           expect(Array.isArray(b.checks)).toBe(true);
-          expect(
-            (b.counts as { total: number }).total,
-          ).toBeGreaterThanOrEqual(0);
+          expect((b.counts as { total: number }).total).toBeGreaterThanOrEqual(
+            0,
+          );
         },
       ],
       [
@@ -159,9 +159,9 @@ describe("demo router", () => {
         "/resupply-api/admin/billing/denials-worklist",
         (b) => {
           expect(Array.isArray(b.items)).toBe(true);
-          expect(
-            (b.totals as { count: number }).count,
-          ).toBeGreaterThanOrEqual(0);
+          expect((b.totals as { count: number }).count).toBeGreaterThanOrEqual(
+            0,
+          );
         },
       ],
       [
