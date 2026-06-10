@@ -47,9 +47,7 @@ const SESSION_SCOPE_MARKERS = [
 // Strip // line comments and /* */ blocks so a marker mentioned in prose
 // can't satisfy (or a commented-out registration can't trip) the checks.
 function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
 describe("shop/me-* routes — signed-in scoping (IDOR guard)", () => {
@@ -60,9 +58,7 @@ describe("shop/me-* routes — signed-in scoping (IDOR guard)", () => {
   });
 
   for (const file of ME_ROUTE_FILES) {
-    const src = stripComments(
-      readFileSync(path.join(__dirname, file), "utf8"),
-    );
+    const src = stripComments(readFileSync(path.join(__dirname, file), "utf8"));
 
     it(`${file}: every route registration carries requireSignedIn`, () => {
       const fileWideGate = /router\.use\(\s*requireSignedIn/.test(src);

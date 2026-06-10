@@ -137,12 +137,16 @@ async function sendIntegrationAlert(
 
   for (const to of recipients) {
     await sendgrid
-      .sendEmail({ to, subject, html, text: `${key} has failed ${consecutiveFailures} consecutive time(s). Last error: ${detail.slice(0, 500)}` })
+      .sendEmail({
+        to,
+        subject,
+        html,
+        text: `${key} has failed ${consecutiveFailures} consecutive time(s). Last error: ${detail.slice(0, 500)}`,
+      })
       .catch((sendErr: unknown) => {
         logger.warn(
           {
-            err:
-              sendErr instanceof Error ? sendErr.message : String(sendErr),
+            err: sendErr instanceof Error ? sendErr.message : String(sendErr),
             to,
             key,
           },

@@ -24,11 +24,27 @@ export function reportWebVitals(): void {
     rating: "good" | "needs-improvement" | "poor",
     navigationType: string,
   ) =>
-    track("web_vital", { name, value: Math.round(value), rating, navigationType, path });
+    track("web_vital", {
+      name,
+      value: Math.round(value),
+      rating,
+      navigationType,
+      path,
+    });
 
-  onLCP(({ value, rating, navigationType }) => report("LCP", value, rating, navigationType));
-  onCLS(({ value, rating, navigationType }) => report("CLS", value, rating, navigationType));
-  onINP(({ value, rating, navigationType }) => report("INP", value, rating, navigationType));
-  onFCP(({ value, rating, navigationType }) => report("FCP", value, rating, navigationType));
-  onTTFB(({ value, rating, navigationType }) => report("TTFB", value, rating, navigationType));
+  onLCP(({ value, rating, navigationType }) =>
+    report("LCP", value, rating, navigationType),
+  );
+  onCLS(({ value, rating, navigationType }) =>
+    report("CLS", value, rating, navigationType),
+  );
+  onINP(({ value, rating, navigationType }) =>
+    report("INP", value, rating, navigationType),
+  );
+  onFCP(({ value, rating, navigationType }) =>
+    report("FCP", value, rating, navigationType),
+  );
+  onTTFB(({ value, rating, navigationType }) =>
+    report("TTFB", value, rating, navigationType),
+  );
 }
