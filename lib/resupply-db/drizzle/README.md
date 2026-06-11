@@ -9,7 +9,7 @@
 
 1. Create a new `.sql` file with a 4-digit numeric prefix that is strictly
    higher than any existing file and unique (no other file uses that prefix).
-   As of this writing the highest is `0306`; use `0307` for the next migration.
+   As of this writing the highest is `0308`; use `0309` for the next migration.
 2. The pre-commit hook (`scripts/check-resupply-migration-prefix.sh`) and the
    CI drift job both reject any addition that collides with an existing prefix.
 3. The migrator (`scripts/migrate.mjs`) applies every `.sql` file in

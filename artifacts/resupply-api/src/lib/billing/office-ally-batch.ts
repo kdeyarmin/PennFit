@@ -19,6 +19,8 @@ import {
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
+  controlNumbersFromValue,
+  type ControlNumbers,
   build837P,
   createOfficeAllyAdapter,
   type ClaimDetail,
@@ -36,6 +38,7 @@ import {
   resolveClearinghouse,
 } from "./identity-resolver";
 import { isFeatureEnabled } from "../feature-flags";
+import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
@@ -348,25 +351,35 @@ export async function executeOfficeAllyBatchSubmit(
     };
   }
 
-  const { data: priorHigh, error: priorHighErr } = await supabase
-    .schema("resupply")
-    .from("office_ally_submissions")
-    .select("isa_control_number")
-    .order("isa_control_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  // Throw on a read error rather than allocating blind: the allocator's
-  // monotonicity guarantee DEPENDS on previousHighest (its own doc says
-  // the persistence layer must supply the MAX ISA13). A swallowed error
-  // here falls back to the time-derived base alone, which can re-mint a
-  // used interchange control number — Office Ally rejects the reused
-  // ISA13 at the 999 and the file needs manual replay.
-  if (priorHighErr) throw priorHighErr;
-  const control = allocateControlNumbers({
-    submittedAt: Date.now(),
-    sequence: 1,
-    previousHighest: priorHigh?.isa_control_number ?? undefined,
-  });
+  // Atomic reservation first (counter table, migration 0308) — unique
+  // by construction across BOTH the claims and eligibility pools and
+  // race-free under concurrency. The legacy MAX-read below survives
+  // only as the pre-migration fallback; see lib/billing/isa13-counter.
+  const reservedIsa = await reserveIsa13Value(supabase);
+  let control: ControlNumbers;
+  if (reservedIsa !== null) {
+    control = controlNumbersFromValue(reservedIsa, Date.now());
+  } else {
+    const { data: priorHigh, error: priorHighErr } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("isa_control_number")
+      .order("isa_control_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    // Throw on a read error rather than allocating blind: the
+    // allocator's monotonicity guarantee DEPENDS on previousHighest. A
+    // swallowed error here falls back to the time-derived base alone,
+    // which can re-mint a used interchange control number — Office
+    // Ally rejects the reused ISA13 at the 999 and the file needs
+    // manual replay.
+    if (priorHighErr) throw priorHighErr;
+    control = allocateControlNumbers({
+      submittedAt: Date.now(),
+      sequence: 1,
+      previousHighest: priorHigh?.isa_control_number ?? undefined,
+    });
+  }
 
   // Guard: any exception before the upload is purely pre-flight; nothing
   // reached the clearinghouse, so release the claimed batch back to 'draft'.

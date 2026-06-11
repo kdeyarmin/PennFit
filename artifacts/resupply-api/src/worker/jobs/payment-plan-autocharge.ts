@@ -213,11 +213,19 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       .schema("resupply")
       .from("patient_payment_plan_installments")
       .select(
-        "id, plan_id, seq, due_date, amount_cents, status, charge_attempts",
+        "id, plan_id, seq, due_date, amount_cents, status, charge_attempts, last_charge_attempt_at",
       )
       .eq("plan_id", p.id);
     if (instErr) throw instErr;
 
+    const lastAttemptById = new Map<string, string | null>();
+    for (const r of instRows ?? []) {
+      lastAttemptById.set(
+        r.id,
+        (r as { last_charge_attempt_at?: string | null })
+          .last_charge_attempt_at ?? null,
+      );
+    }
     const installments: AutochargeInstallment[] = (instRows ?? []).map((r) => ({
       id: r.id,
       planId: r.plan_id,
@@ -233,6 +241,43 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
 
     let anySucceeded = false;
     for (const inst of due) {
+      // Atomic per-installment claim BEFORE the Stripe call — CAS on the
+      // scanned snapshot (status, charge_attempts, last_charge_attempt_at),
+      // mirroring patient-autopay-charge's authorization claim and its
+      // rationale: pg-boss can run two overlapping ticks (the queue's
+      // expiry retries a slow run while the original is still walking the
+      // roster), and without a claim BOTH ticks would mint a PaymentIntent
+      // for the same installment. Stripe's idempotency key only dedups
+      // within its ~24h retention, so the claim is the real guard; exactly
+      // one tick's UPDATE matches, the loser skips. A crash AFTER a
+      // successful charge but before markPaid self-heals on the next tick
+      // within 24h (same scanned attempts → same idempotency key → Stripe
+      // replays the succeeded PI and markPaid runs); only a >24h-stuck
+      // markPaid failure can still double-charge, which requires the DB
+      // write path to be down for a full day of retries.
+      const nowIso = new Date().toISOString();
+      let claim = supabase
+        .schema("resupply")
+        .from("patient_payment_plan_installments")
+        .update({ last_charge_attempt_at: nowIso })
+        .eq("id", inst.id)
+        .eq("status", inst.status)
+        .eq("charge_attempts", inst.chargeAttempts);
+      const scannedLastAttempt = lastAttemptById.get(inst.id) ?? null;
+      claim =
+        scannedLastAttempt === null
+          ? claim.is("last_charge_attempt_at", null)
+          : claim.eq("last_charge_attempt_at", scannedLastAttempt);
+      const { data: claimedRows, error: claimErr } = await claim.select("id");
+      if (claimErr) throw claimErr;
+      if (!claimedRows || claimedRows.length === 0) {
+        logger.info(
+          { installmentId: inst.id, planId: plan.id },
+          "payment-plan-autocharge: claim lost (concurrent tick or mid-run change) — skipping",
+        );
+        continue;
+      }
+
       const res = await chargeInstallment(plan, inst, charger, sink);
       if (res.outcome === "succeeded") {
         stats.charged += 1;

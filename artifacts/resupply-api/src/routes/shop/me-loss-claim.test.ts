@@ -4,10 +4,11 @@
 //   * 401 without sign-in
 //   * 404 when orderId param fails uuid parse
 //   * 400 when body is malformed (note > 2000)
-//   * 401 when shopCustomerEmail missing
-//   * 404 when order not found
-//   * 404 (IDOR guard) when order belongs to a different customer email
+//   * 404 when order not found (covers the IDOR case too — ownership
+//     is now part of the WHERE clause via customer_id, so a foreign
+//     order reads back as no rows)
 //   * 409 when order has not yet shipped
+//   * 409 when an open claim already exists for the order
 //   * 201 happy path inserts open loss-claim and returns the new id
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -19,6 +20,7 @@ import {
   type MockSignedInProfile,
 } from "../../test-helpers/auth-mocks";
 import {
+  getSupabaseFilterCalls,
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
@@ -74,15 +76,7 @@ describe("POST /shop/me/orders/:orderId/loss-claim", () => {
     expect(res.status).toBe(400);
   });
 
-  it("401s when shopCustomerEmail is missing on the session", async () => {
-    mockSignedIn.current = { customerId: "cust_1", email: null };
-    const res = await request(makeApp())
-      .post(`/shop/me/orders/${ORDER_ID}/loss-claim`)
-      .send({});
-    expect(res.status).toBe(401);
-  });
-
-  it("404s when the order is not found", async () => {
+  it("404s when the order is not found (or owned by someone else — the customer_id filter is in the WHERE clause)", async () => {
     mockSignedIn.current = { customerId: "cust_1", email: "a@a.test" };
     stageSupabaseResponse("shop_orders", "select", { data: null });
     const res = await request(makeApp())
@@ -91,19 +85,17 @@ describe("POST /shop/me/orders/:orderId/loss-claim", () => {
     expect(res.status).toBe(404);
   });
 
-  it("404s (IDOR) when the order belongs to a different customer email", async () => {
-    mockSignedIn.current = { customerId: "cust_1", email: "alice@a.test" };
-    stageSupabaseResponse("shop_orders", "select", {
-      data: {
-        id: ORDER_ID,
-        customer_email: "bob@b.test",
-        shipped_at: "2026-01-01T00:00:00.000Z",
-      },
-    });
-    const res = await request(makeApp())
+  it("filters the order lookup by the session's customer_id (IDOR guard)", async () => {
+    mockSignedIn.current = { customerId: "cust_1", email: "a@a.test" };
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    await request(makeApp())
       .post(`/shop/me/orders/${ORDER_ID}/loss-claim`)
       .send({});
-    expect(res.status).toBe(404);
+    const idFilters = getSupabaseFilterCalls("shop_orders", "select").filter(
+      (f) => f.verb === "eq" && f.args[0] === "customer_id",
+    );
+    expect(idFilters).toHaveLength(1);
+    expect(idFilters[0]?.args[1]).toBe("cust_1");
   });
 
   it("409s when order has not yet been marked shipped", async () => {
@@ -111,7 +103,7 @@ describe("POST /shop/me/orders/:orderId/loss-claim", () => {
     stageSupabaseResponse("shop_orders", "select", {
       data: {
         id: ORDER_ID,
-        customer_email: "a@a.test",
+        customer_id: "cust_1",
         shipped_at: null,
       },
     });
@@ -122,15 +114,37 @@ describe("POST /shop/me/orders/:orderId/loss-claim", () => {
     expect(res.body.error).toBe("not_yet_shipped");
   });
 
+  it("409s when an open claim already exists for the order", async () => {
+    mockSignedIn.current = { customerId: "cust_1", email: "a@a.test" };
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
+        id: ORDER_ID,
+        customer_id: "cust_1",
+        shipped_at: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    stageSupabaseResponse("shop_order_loss_claims", "select", {
+      data: { id: "claim_existing" },
+    });
+    const res = await request(makeApp())
+      .post(`/shop/me/orders/${ORDER_ID}/loss-claim`)
+      .send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("claim_already_open");
+    expect(res.body.id).toBe("claim_existing");
+  });
+
   it("201s and returns id on happy path", async () => {
     mockSignedIn.current = { customerId: "cust_1", email: "a@a.test" };
     stageSupabaseResponse("shop_orders", "select", {
       data: {
         id: ORDER_ID,
-        customer_email: "A@a.test", // case-insensitive match
+        customer_id: "cust_1",
         shipped_at: "2026-01-01T00:00:00.000Z",
       },
     });
+    // No open claim yet.
+    stageSupabaseResponse("shop_order_loss_claims", "select", { data: null });
     stageSupabaseResponse("shop_order_loss_claims", "insert", {
       data: { id: "claim_1" },
     });

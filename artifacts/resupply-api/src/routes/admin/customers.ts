@@ -155,66 +155,136 @@ router.get(
     // fetches. The candidate set is bounded by q-ilike + the implicit
     // filter "must have a shop_customers row" — admin-only path, so
     // a full scan at PennPaps scale is acceptable.
-    let customersQuery = supabase
-      .schema("resupply")
-      .from("shop_customers")
-      .select(
-        "customer_id, display_name, email_lower, stripe_customer_id, created_at",
-      );
-    if (q) {
-      // Match on email OR display name so the directory is searchable by
-      // who the person is, not just their address (this also powers the
-      // "find this person in Customers" jump from a patient record).
-      // escapePostgRESTContainsPattern handles LIKE metacharacters and
-      // .or() delimiters, with the `*` wildcards INSIDE the quoting
-      // layer (a hand-rolled `*${escaped}*` mis-parses for searches
-      // containing commas/parens/quotes). ILIKE is case-insensitive,
-      // so a lowercased needle still matches a mixed-case
-      // display_name; email_lower is already stored lowercase.
-      const pattern = escapePostgRESTContainsPattern(q.toLowerCase());
-      customersQuery = customersQuery.or(
-        `email_lower.ilike.${pattern},display_name.ilike.${pattern}`,
-      );
+    // Keyset-page the candidate read up to an explicit, VISIBLE cap.
+    // The previous un-limited select was silently truncated at the
+    // PostgREST server's max-rows (~1000 on hosted Supabase): past
+    // 1000 customers, later rows simply never appeared in the
+    // directory, `total` under-reported, and the rollup sorts were
+    // wrong — with no signal anywhere. An explicit `.limit()` can't
+    // bypass max-rows, so we PAGE on customer_id; past the cap we set
+    // `truncated: true` in the response and log a warn so the gap is
+    // operator-visible rather than silent.
+    const READ_CAP = 5000;
+    const READ_PAGE = 1000;
+    type CustomerRow = {
+      customer_id: string;
+      display_name: string | null;
+      email_lower: string | null;
+      stripe_customer_id: string | null;
+      created_at: string;
+    };
+    const customerRows: CustomerRow[] = [];
+    let truncated = false;
+    let readCursor: string | null = null;
+    for (;;) {
+      let customersQuery = supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select(
+          "customer_id, display_name, email_lower, stripe_customer_id, created_at",
+        )
+        .order("customer_id", { ascending: true })
+        .limit(READ_PAGE);
+      if (readCursor !== null) {
+        customersQuery = customersQuery.gt("customer_id", readCursor);
+      }
+      if (q) {
+        // Match on email OR display name so the directory is searchable by
+        // who the person is, not just their address (this also powers the
+        // "find this person in Customers" jump from a patient record).
+        // escapePostgRESTContainsPattern handles LIKE metacharacters and
+        // .or() delimiters, with the `*` wildcards INSIDE the quoting
+        // layer (a hand-rolled `*${escaped}*` mis-parses for searches
+        // containing commas/parens/quotes). ILIKE is case-insensitive,
+        // so a lowercased needle still matches a mixed-case
+        // display_name; email_lower is already stored lowercase.
+        const pattern = escapePostgRESTContainsPattern(q.toLowerCase());
+        customersQuery = customersQuery.or(
+          `email_lower.ilike.${pattern},display_name.ilike.${pattern}`,
+        );
+      }
+      const { data: pageRows, error: customersErr } = await customersQuery;
+      if (customersErr) throw customersErr;
+      if (!pageRows || pageRows.length === 0) break;
+      customerRows.push(...(pageRows as CustomerRow[]));
+      readCursor = pageRows[pageRows.length - 1]!.customer_id;
+      if (customerRows.length >= READ_CAP) {
+        truncated = true;
+        req.log?.warn(
+          { readCap: READ_CAP, qPresent: !!q },
+          "admin.shop.customers.list: candidate read hit READ_CAP — directory truncated",
+        );
+        break;
+      }
+      if (pageRows.length < READ_PAGE) break;
     }
-    const { data: customerRows, error: customersErr } = await customersQuery;
-    if (customersErr) throw customersErr;
 
-    const customerIds = (customerRows ?? []).map((c) => c.customer_id);
+    const customerIds = customerRows.map((c) => c.customer_id);
 
-    // ── Phase 2: rollup fetches in parallel, scoped to this page's
-    // candidate set. Each fan-out is a single PostgREST request. ────
-    const [ordersRollupRes, activeSubsRes, awaitingReplyRes] =
-      await Promise.all([
-        customerIds.length > 0
-          ? supabase
-              .schema("resupply")
-              .from("shop_orders")
-              .select(
-                "customer_id, amount_total_cents, paid_at, status, created_at",
-              )
-              .in("customer_id", customerIds)
-          : Promise.resolve({ data: [], error: null as null }),
-        customerIds.length > 0
-          ? supabase
-              .schema("resupply")
-              .from("shop_subscriptions")
-              .select("customer_id")
-              .eq("status", "active")
-              .in("customer_id", customerIds)
-          : Promise.resolve({ data: [], error: null as null }),
-        customerIds.length > 0
-          ? supabase
-              .schema("resupply")
-              .from("conversations")
-              .select("customer_id")
-              .eq("channel", "in_app")
-              .eq("status", "awaiting_admin")
-              .in("customer_id", customerIds)
-          : Promise.resolve({ data: [], error: null as null }),
+    // ── Phase 2: rollup fetches, scoped to the candidate set. The ids
+    // are chunked at 200 per request: one giant `.in()` with thousands
+    // of UUIDs blows the PostgREST querystring limit, and the
+    // shop_orders rollup itself can exceed max-rows for a big chunk —
+    // so the orders fan-out also keyset-pages WITHIN each chunk (a
+    // customer set's full order history must be complete or the LTV /
+    // last-order sorts silently undercount). ────
+    const ID_CHUNK = 200;
+    const idChunks: string[][] = [];
+    for (let i = 0; i < customerIds.length; i += ID_CHUNK) {
+      idChunks.push(customerIds.slice(i, i + ID_CHUNK));
+    }
+    type OrdersRollupRow = {
+      customer_id: string | null;
+      amount_total_cents: number | null;
+      paid_at: string | null;
+      status: string;
+      created_at: string | null;
+    };
+    const ordersRollupRows: OrdersRollupRow[] = [];
+    const activeSubRows: Array<{ customer_id: string | null }> = [];
+    const awaitingReplyRows: Array<{ customer_id: string | null }> = [];
+    for (const chunk of idChunks) {
+      let ordersCursor: string | null = null;
+      for (;;) {
+        let ordersQuery = supabase
+          .schema("resupply")
+          .from("shop_orders")
+          .select(
+            "id, customer_id, amount_total_cents, paid_at, status, created_at",
+          )
+          .in("customer_id", chunk)
+          .order("id", { ascending: true })
+          .limit(READ_PAGE);
+        if (ordersCursor !== null) {
+          ordersQuery = ordersQuery.gt("id", ordersCursor);
+        }
+        const { data: ordersPage, error: ordersErr } = await ordersQuery;
+        if (ordersErr) throw ordersErr;
+        if (!ordersPage || ordersPage.length === 0) break;
+        ordersRollupRows.push(...(ordersPage as OrdersRollupRow[]));
+        ordersCursor = (ordersPage[ordersPage.length - 1] as { id: string }).id;
+        if (ordersPage.length < READ_PAGE) break;
+      }
+      const [activeSubsRes, awaitingReplyRes] = await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("shop_subscriptions")
+          .select("customer_id")
+          .eq("status", "active")
+          .in("customer_id", chunk),
+        supabase
+          .schema("resupply")
+          .from("conversations")
+          .select("customer_id")
+          .eq("channel", "in_app")
+          .eq("status", "awaiting_admin")
+          .in("customer_id", chunk),
       ]);
-    if (ordersRollupRes.error) throw ordersRollupRes.error;
-    if (activeSubsRes.error) throw activeSubsRes.error;
-    if (awaitingReplyRes.error) throw awaitingReplyRes.error;
+      if (activeSubsRes.error) throw activeSubsRes.error;
+      if (awaitingReplyRes.error) throw awaitingReplyRes.error;
+      activeSubRows.push(...(activeSubsRes.data ?? []));
+      awaitingReplyRows.push(...(awaitingReplyRes.data ?? []));
+    }
 
     // Bucket the per-customer rollups.
     interface OrderRollup {
@@ -223,7 +293,7 @@ router.get(
       lastOrderAt: string | null;
     }
     const orderRollupByCustomer = new Map<string, OrderRollup>();
-    for (const o of ordersRollupRes.data ?? []) {
+    for (const o of ordersRollupRows) {
       const cid = o.customer_id;
       if (!cid) continue;
       const bucket = orderRollupByCustomer.get(cid) ?? {
@@ -244,11 +314,11 @@ router.get(
       orderRollupByCustomer.set(cid, bucket);
     }
     const activeSubCustomerIds = new Set<string>();
-    for (const r of activeSubsRes.data ?? []) {
+    for (const r of activeSubRows) {
       if (r.customer_id) activeSubCustomerIds.add(r.customer_id);
     }
     const awaitingReplyCustomerIds = new Set<string>();
-    for (const r of awaitingReplyRes.data ?? []) {
+    for (const r of awaitingReplyRows) {
       if (r.customer_id) awaitingReplyCustomerIds.add(r.customer_id);
     }
 
@@ -265,7 +335,7 @@ router.get(
       hasActiveSubscription: boolean;
       inAppNeedsReply: boolean;
     }
-    const enriched: EnrichedRow[] = (customerRows ?? []).map((c) => {
+    const enriched: EnrichedRow[] = customerRows.map((c) => {
       const rollup = orderRollupByCustomer.get(c.customer_id) ?? {
         ordersCount: 0,
         lifetimeValueCents: 0,
@@ -342,6 +412,10 @@ router.get(
     );
 
     res.json({
+      // True when the candidate read hit READ_CAP — the directory and
+      // `total` cover only the first READ_CAP customers (narrow the
+      // search to see the rest). Silent truncation was the bug.
+      truncated,
       customers: pageRows.map((r) => ({
         userId: r.userId,
         displayName: r.displayName,
@@ -461,13 +535,19 @@ router.get(
         .limit(1)
         .maybeSingle(),
       // 7a. Lifetime stats — every paid+non-refunded order's
-      //     amount_total_cents and created_at, plus a head-only
-      //     count of all orders.
+      //     amount_total_cents and created_at. Explicitly bounded:
+      //     PostgREST silently truncates un-limited reads at the
+      //     server max-rows anyway, so make the cap deliberate and
+      //     deterministic (newest-first). One customer exceeding
+      //     1000 orders is implausible for a DME shop; if that ever
+      //     changes this needs the directory route's paging loop.
       supabase
         .schema("resupply")
         .from("shop_orders")
         .select("amount_total_cents, paid_at, status, created_at")
-        .eq("customer_id", userId),
+        .eq("customer_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1000),
       // 7b. Pending reviews count (single head-only query — project a
       // single column since head:true discards the row data anyway).
       supabase
