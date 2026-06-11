@@ -237,6 +237,10 @@ router.post(
       res.status(409).json({ error: "not_awaiting", status: row.status });
       return;
     }
+    if (row.sentCount > 0) {
+      res.status(409).json({ error: "already_dispatched" });
+      return;
+    }
 
     await recordTrackingSent(
       supabase,
