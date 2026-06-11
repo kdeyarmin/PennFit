@@ -708,7 +708,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const pdf = await renderManualDocumentRowToPdf(supabase, row);
+    let pdf: Buffer;
+    try {
+      pdf = await renderManualDocumentRowToPdf(supabase, row);
+    } catch (err) {
+      logger.warn({ err }, "manual_document.pdf render failed");
+      res.status(500).json({ error: "render_failed" });
+      return;
+    }
 
     await logAudit({
       action: "manual_document.downloaded",
