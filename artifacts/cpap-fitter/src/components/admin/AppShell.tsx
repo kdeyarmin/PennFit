@@ -22,6 +22,7 @@ import {
   FolderKanban,
   CalendarClock,
   CalendarDays,
+  Video,
   Sparkles,
   Mail,
   Users,
@@ -265,6 +266,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: CalendarDays,
             matchPrefix: "/admin/company-calendar",
             hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
+          },
+          {
+            href: "/admin/video-visits",
+            label: "Video visits",
+            icon: Video,
+            matchPrefix: "/admin/video-visits",
+            hint: "Telehealth video calls with patients for equipment setups, troubleshooting, and follow-ups",
           },
           {
             href: "/admin/followups",
