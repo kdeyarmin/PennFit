@@ -75,6 +75,22 @@ vi.mock("../shop/products", () => ({
   invalidateShopProductsCache: () => invalidateCacheMock(),
 }));
 
+// Supabase Storage stub for the image-upload endpoint. Only the
+// `storage.from(bucket).upload/getPublicUrl` surface the route touches
+// is modeled.
+const storageUploadMock = vi.fn();
+const storageGetPublicUrlMock = vi.fn();
+vi.mock("@workspace/resupply-db", () => ({
+  getSupabaseServiceRoleClient: () => ({
+    storage: {
+      from: () => ({
+        upload: (...a: unknown[]) => storageUploadMock(...a),
+        getPublicUrl: (...a: unknown[]) => storageGetPublicUrlMock(...a),
+      }),
+    },
+  }),
+}));
+
 // projectProduct stub — vi.fn() so individual tests can override
 // the result (e.g. return null to simulate a non-catalog product
 // that the catalog-membership guard must reject).
@@ -165,7 +181,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "SUPABASE_STORAGE_BUCKET_PUBLIC",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -192,6 +212,14 @@ beforeEach(() => {
   // price-PATCH tests that exercise rotation override prices.list.
   stripePriceUpdateMock.mockResolvedValue({});
   stripePriceListMock.mockResolvedValue({ data: [] });
+  storageUploadMock.mockReset();
+  storageGetPublicUrlMock.mockReset();
+  storageUploadMock.mockResolvedValue({ error: null });
+  storageGetPublicUrlMock.mockImplementation((path: unknown) => ({
+    data: {
+      publicUrl: `https://supabase.example.com/storage/v1/object/public/assets/${String(path)}`,
+    },
+  }));
   projectProductMock.mockReset();
   // Default: every product projects successfully (i.e. is in the
   // catalog). Tests that need to simulate a non-catalog product
@@ -918,5 +946,97 @@ describe("POST /admin/shop/products", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("unprojectable_product");
     expect(res.body.productId).toBe("prod_unprojectable");
+  });
+});
+
+describe("POST /admin/shop/products/image-upload", () => {
+  const PNG_BYTES = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(64, 1),
+  ]);
+
+  function stubPublicBucket(): void {
+    process.env.SUPABASE_STORAGE_BUCKET_PUBLIC = "assets";
+  }
+
+  it("rejects callers without admin sign-in", async () => {
+    stubPublicBucket();
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/products/image-upload")
+      .set("Content-Type", "image/png")
+      .send(PNG_BYTES);
+    expect([401, 403]).toContain(res.status);
+    expect(storageUploadMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects content types outside the allowlist", async () => {
+    stubVerifiedAdmin();
+    stubPublicBucket();
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/products/image-upload")
+      .set("Content-Type", "image/gif")
+      .send(Buffer.from("GIF89a"));
+    expect(res.status).toBe(415);
+    expect(res.body.error).toBe("unsupported_image_type");
+    expect(storageUploadMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects bytes that don't match the declared image type", async () => {
+    stubVerifiedAdmin();
+    stubPublicBucket();
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/products/image-upload")
+      .set("Content-Type", "image/png")
+      .send(Buffer.from("<html>not a png</html>"));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("image_bytes_mismatch");
+    expect(storageUploadMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when the public bucket env is unset", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/products/image-upload")
+      .set("Content-Type", "image/png")
+      .send(PNG_BYTES);
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("public_storage_not_configured");
+    expect(storageUploadMock).not.toHaveBeenCalled();
+  });
+
+  it("uploads to the public bucket and returns the public URL", async () => {
+    stubVerifiedAdmin();
+    stubPublicBucket();
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/products/image-upload")
+      .set("Content-Type", "image/png")
+      .send(PNG_BYTES);
+    expect(res.status).toBe(201);
+    expect(res.body.imageUrl).toMatch(
+      /^https:\/\/supabase\.example\.com\/.+shop-products\/[0-9a-f-]+\.png$/,
+    );
+    expect(storageUploadMock).toHaveBeenCalledTimes(1);
+    const [path, bytes, options] = storageUploadMock.mock.calls[0] as [
+      string,
+      Buffer,
+      { contentType: string },
+    ];
+    expect(path).toMatch(/^shop-products\/[0-9a-f-]+\.png$/);
+    expect(Buffer.isBuffer(bytes)).toBe(true);
+    expect(options.contentType).toBe("image/png");
+  });
+
+  it("returns 502 when the storage upload fails", async () => {
+    stubVerifiedAdmin();
+    stubPublicBucket();
+    storageUploadMock.mockResolvedValueOnce({
+      error: { message: "bucket exploded" },
+    });
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/products/image-upload")
+      .set("Content-Type", "image/png")
+      .send(PNG_BYTES);
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("image_upload_failed");
   });
 });

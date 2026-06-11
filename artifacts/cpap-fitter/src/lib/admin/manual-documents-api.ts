@@ -109,6 +109,32 @@ export async function getManualDocumentCatalog(): Promise<{
   return (await res.json()) as { types: ManualDocumentTypeDef[] };
 }
 
+export interface StandardDocumentTemplate {
+  key: string;
+  label: string;
+  documentType: ManualDocumentType;
+  description: string;
+  title: string;
+  fields: Record<string, string>;
+  body: string;
+}
+
+/** Code-defined, Medicare/payer-aligned starting points (SWO, PAP CMN,
+ *  ABN, AOB, supplier standards, proof of delivery, refill
+ *  confirmation). Always present for every staff member — using one
+ *  creates an ordinary editable draft via createManualDocument. */
+export async function getStandardDocumentCatalog(): Promise<{
+  templates: StandardDocumentTemplate[];
+}> {
+  const url = `${BASE}/standard-catalog`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as { templates: StandardDocumentTemplate[] };
+}
+
 export interface ManualDocumentPrefill {
   /** Suggested values for the type's catalog fields (only known keys,
    *  only non-empty values). */

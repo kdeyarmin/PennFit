@@ -27,6 +27,7 @@ import {
   getManualDocumentCatalog,
   getManualDocumentPacket,
   getManualDocumentPrefill,
+  getStandardDocumentCatalog,
   listManualDocumentPackets,
   listManualDocuments,
   manualDocumentPacketPdfUrl,
@@ -39,6 +40,7 @@ import {
   updateManualDocument,
   updateManualDocumentPacket,
   type ManualDocumentPacketDetail,
+  type StandardDocumentTemplate,
   type ManualDocumentPacketStatus,
   type ManualDocumentPrefill,
   type ManualDocumentPacketSummary,
@@ -250,6 +252,15 @@ export function AdminDocumentsPage() {
             }}
           />
         )}
+
+        <StandardDocumentsPanel
+          typeLabel={typeLabel}
+          onCreated={(id) => {
+            setComposing(false);
+            setSelectedId(id);
+            void refreshList();
+          }}
+        />
 
         <Card
           title="All documents"
@@ -509,6 +520,120 @@ export function AdminDocumentsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// ── Standard payer documents ──────────────────────────────────────
+//
+// The code-defined Medicare / insurance-payer template library (SWO,
+// PAP CMN, ABN, AOB, supplier standards, proof of delivery, refill
+// confirmation). Always listed for every staff member — "Use" creates
+// an ordinary editable draft prefilled with the standard wording (no
+// PHI; patient fields stay blank for "Prefill from chart").
+function StandardDocumentsPanel({
+  typeLabel,
+  onCreated,
+}: {
+  typeLabel: (t: ManualDocumentType) => string;
+  onCreated: (id: string) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+
+  const catalogQuery = useQuery({
+    queryKey: ["manual-documents", "standard-catalog"],
+    queryFn: getStandardDocumentCatalog,
+  });
+  const templates = catalogQuery.data?.templates ?? [];
+
+  const create = useMutation({
+    mutationFn: (t: StandardDocumentTemplate) =>
+      createManualDocument({
+        documentType: t.documentType,
+        title: t.title,
+        fields: t.fields,
+        body: t.body,
+      }),
+    onSuccess: (res) => {
+      setPendingKey(null);
+      onCreated(res.id);
+    },
+    onError: (err) => {
+      setPendingKey(null);
+      setError(describeError(err).detail ?? "Failed to create the document.");
+    },
+  });
+
+  return (
+    <Card
+      title="Standard payer documents"
+      subtitle="Medicare and insurance-compliant templates, available to everyone. “Use” creates an editable draft — patient fields stay blank until you fill them or prefill from a chart."
+    >
+      {catalogQuery.isPending ? (
+        <div className="p-6">
+          <Spinner label="Loading templates…" />
+        </div>
+      ) : catalogQuery.isError ? (
+        <div className="p-4">
+          <ErrorPanel error={catalogQuery.error} />
+        </div>
+      ) : (
+        <div>
+          {error && (
+            <div
+              className="border-b px-5 py-3 text-sm"
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                color: "hsl(0 70% 45%)",
+              }}
+            >
+              {error}
+            </div>
+          )}
+          <ul
+            className="divide-y"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            {templates.map((t) => (
+              <li
+                key={t.key}
+                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+              >
+                <div className="min-w-0 flex-1" style={{ minWidth: "16rem" }}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="text-sm font-medium"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {t.label}
+                    </span>
+                    <Badge variant="neutral">{typeLabel(t.documentType)}</Badge>
+                  </div>
+                  <p
+                    className="mt-1 text-xs"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {t.description}
+                  </p>
+                </div>
+                <Button
+                  intent="secondary"
+                  size="sm"
+                  isLoading={create.isPending && pendingKey === t.key}
+                  onClick={() => {
+                    setError(null);
+                    setPendingKey(t.key);
+                    create.mutate(t);
+                  }}
+                >
+                  Use
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
   );
 }
 

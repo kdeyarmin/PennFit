@@ -528,3 +528,47 @@ describe("PACWARE_EXCHANGE_DISABLED kill switch", () => {
     expect(settingsPut.status).toBe(503);
   });
 });
+
+describe("admin.tools.manage permission gate", () => {
+  // The runbook (docs/runbooks/pacware-import-export.md) and the
+  // /admin/pacware page are admin.tools.manage-tier; the import,
+  // exports, and previews carry the same gate so a CSR-tier session
+  // can't bulk-write patients or download the PHI roster.
+  function asCsr(): void {
+    mockAdmin.current = {
+      userId: "u2",
+      email: "csr@penn.example.com",
+      role: "agent",
+      granularRole: "csr",
+    };
+  }
+
+  it("403s a CSR on import, exports, and previews", async () => {
+    asCsr();
+    const app = makeApp();
+
+    const imp = await request(app)
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv: HEADER, mode: "preview" });
+    expect(imp.status).toBe(403);
+    expect(imp.body.requiredPermission).toBe("admin.tools.manage");
+
+    for (const path of [
+      "/admin/pacware/export/patients.csv",
+      "/admin/pacware/export/resupply-due.csv",
+      "/admin/pacware/sync/patients/preview",
+      "/admin/pacware/sync/resupply-due/preview",
+    ]) {
+      const res = await request(app).get(`/resupply-api${path}`);
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("401s an unauthenticated import", async () => {
+    mockAdmin.current = null;
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv: HEADER, mode: "preview" });
+    expect(res.status).toBe(401);
+  });
+});
