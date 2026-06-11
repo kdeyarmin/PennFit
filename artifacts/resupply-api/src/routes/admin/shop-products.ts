@@ -677,6 +677,13 @@ const IMAGE_UPLOAD_EXTENSIONS: Record<string, string> = {
 };
 
 function sniffImageContentType(buf: Buffer): string | null {
+  // Defensive re-guard: callers pass request-derived bytes, and the
+  // length/index checks below must never run against an
+  // attacker-shaped array or string (CodeQL js/type-confusion-
+  // through-parameter-tampering).
+  if (!Buffer.isBuffer(buf)) {
+    return null;
+  }
   if (
     buf.length >= 8 &&
     buf[0] === 0x89 &&
@@ -738,11 +745,18 @@ router.post(
       });
       return;
     }
-    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    // Narrow the parsed body through an explicit Buffer guard ONCE
+    // and use only the narrowed value below. express.raw leaves
+    // req.body as `{}` for unmatched content types, and a tampered
+    // request can present other shapes — never run length/index
+    // checks against raw req.body.
+    const rawBody: unknown = req.body;
+    if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
       res.status(400).json({ error: "empty_body" });
       return;
     }
-    const sniffed = sniffImageContentType(req.body);
+    const imageBytes: Buffer = rawBody;
+    const sniffed = sniffImageContentType(imageBytes);
     if (sniffed !== declaredType) {
       // The bytes don't match the declared format — refuse to plant
       // mystery content in a public bucket.
@@ -760,7 +774,7 @@ router.post(
     const supabase = getSupabaseServiceRoleClient();
     const { error: uploadError } = await supabase.storage
       .from(bucket)
-      .upload(objectPath, req.body, {
+      .upload(objectPath, imageBytes, {
         contentType: declaredType,
         // Product images are content-addressed by UUID — a replaced
         // photo gets a fresh path, so long-lived caching is safe.
@@ -769,7 +783,7 @@ router.post(
       });
     if (uploadError) {
       req.log?.warn?.(
-        { sizeBytes: req.body.length, contentType: declaredType },
+        { sizeBytes: imageBytes.length, contentType: declaredType },
         "shop/admin/products: image upload to public bucket failed",
       );
       res.status(502).json({ error: "image_upload_failed" });
@@ -786,7 +800,7 @@ router.post(
     }
 
     req.log?.info?.(
-      { sizeBytes: req.body.length, contentType: declaredType },
+      { sizeBytes: imageBytes.length, contentType: declaredType },
       "shop/admin/products: product image uploaded",
     );
     res.status(201).json({ imageUrl });
