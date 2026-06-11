@@ -54,7 +54,10 @@ import {
   normalizeManualDocumentFields,
   type ManualDocumentType,
 } from "../../lib/manual-documents/catalog.js";
-import { STANDARD_DOCUMENT_LIBRARY } from "../../lib/manual-documents/standard-documents.js";
+import {
+  STANDARD_DOCUMENT_LIBRARY,
+  STANDARD_PACKET_LIBRARY,
+} from "../../lib/manual-documents/standard-documents.js";
 import {
   loadManualDocumentRow,
   manualDocumentSupplierName,
@@ -204,6 +207,14 @@ router.get(
         fields: t.fields,
         body: t.body,
       })),
+      packets: STANDARD_PACKET_LIBRARY.map((p) => ({
+        key: p.key,
+        label: p.label,
+        description: p.description,
+        title: p.title,
+        includeCoverSheet: p.includeCoverSheet,
+        templateKeys: p.templateKeys,
+      })),
     });
   },
 );
@@ -212,8 +223,11 @@ router.get(
 //
 // Suggests field + recipient values for a new manual document from data
 // already in the app (patient demographics, the latest prescription and
-// its provider, the latest sleep-study diagnosis), so the author only
-// types what they want to CHANGE. Authoring stays fully editable — this
+// its provider — falling back to the sleep study's interpreting provider
+// — and the latest sleep-study diagnosis), so the author only
+// types what they want to CHANGE. The physician suggestion carries the
+// provider's full contact card: name, NPI, phone, fax, and practice
+// address. Authoring stays fully editable — this
 // endpoint returns suggestions; nothing is persisted, and the SPA only
 // fills inputs the operator hasn't already typed in.
 //
@@ -286,7 +300,7 @@ router.get(
       supabase
         .schema("resupply")
         .from("sleep_studies")
-        .select("diagnosis_icd10, study_date")
+        .select("diagnosis_icd10, study_date, interpreting_provider_id")
         .eq("patient_id", patientId)
         .order("study_date", { ascending: false })
         .limit(1)
@@ -301,13 +315,19 @@ router.get(
     );
     const relevantPrescriptions =
       activePrescriptions.length > 0 ? activePrescriptions : prescriptions;
+    // Physician resolution: the latest prescription's provider first;
+    // when no prescription names one, fall back to the sleep study's
+    // interpreting provider so a chart with only a study still prefills.
     const providerId =
-      relevantPrescriptions.find((p) => p.provider_id)?.provider_id ?? null;
+      relevantPrescriptions.find((p) => p.provider_id)?.provider_id ??
+      studyRes.data?.interpreting_provider_id ??
+      null;
 
     let provider: {
       legal_name: string | null;
       npi: string | null;
       practice_name: string | null;
+      phone_e164: string | null;
       fax_e164: string | null;
       email: string | null;
       practice_address: unknown;
@@ -317,7 +337,7 @@ router.get(
         .schema("resupply")
         .from("providers")
         .select(
-          "legal_name, npi, practice_name, fax_e164, email, practice_address",
+          "legal_name, npi, practice_name, phone_e164, fax_e164, email, practice_address",
         )
         .eq("id", providerId)
         .limit(1)
@@ -337,6 +357,7 @@ router.get(
       ),
     ].join("\n");
     const diagnosis = studyRes.data?.diagnosis_icd10 ?? "";
+    const providerAddress = formatJsonAddress(provider?.practice_address);
 
     // Per-type field suggestions. Only keys the type's catalog defines
     // survive (normalize below), and empty values are dropped, so the
@@ -347,6 +368,9 @@ router.get(
         date_of_birth: patient.date_of_birth ?? "",
         ordering_physician: provider?.legal_name ?? "",
         physician_npi: provider?.npi ?? "",
+        physician_phone: provider?.phone_e164 ?? "",
+        physician_fax: provider?.fax_e164 ?? "",
+        physician_address: providerAddress,
         diagnosis,
         equipment: itemLines,
       },
@@ -355,6 +379,9 @@ router.get(
         date_of_birth: patient.date_of_birth ?? "",
         prescriber_name: provider?.legal_name ?? "",
         prescriber_npi: provider?.npi ?? "",
+        prescriber_phone: provider?.phone_e164 ?? "",
+        prescriber_fax: provider?.fax_e164 ?? "",
+        prescriber_address: providerAddress,
         items_ordered: itemLines,
         icd10_codes: diagnosis,
       },
@@ -388,7 +415,7 @@ router.get(
               [provider.legal_name, provider.practice_name]
                 .filter(Boolean)
                 .join(" — ") || null,
-            address: formatJsonAddress(provider.practice_address) || null,
+            address: providerAddress || null,
             email: provider.email ?? null,
             fax: provider.fax_e164 ?? null,
           }
@@ -692,7 +719,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const pdf = await renderManualDocumentRowToPdf(supabase, row);
+    let pdf: Buffer;
+    try {
+      pdf = await renderManualDocumentRowToPdf(supabase, row);
+    } catch (err) {
+      logger.warn({ err }, "manual_document.pdf render failed");
+      res.status(500).json({ error: "render_failed" });
+      return;
+    }
 
     await logAudit({
       action: "manual_document.downloaded",

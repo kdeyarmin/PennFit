@@ -7,6 +7,8 @@ import {
 } from "./catalog";
 import {
   STANDARD_DOCUMENT_LIBRARY,
+  STANDARD_PACKET_LIBRARY,
+  getStandardDocumentPacket,
   getStandardDocumentTemplate,
 } from "./standard-documents";
 
@@ -83,6 +85,42 @@ describe("standard payer-document library", () => {
           `${t.key}: must not prefill ${key}`,
         ).toBeUndefined();
       }
+    }
+  });
+});
+
+describe("standard packet library", () => {
+  it("includes the new-patient setup packet with the intake trio in order", () => {
+    const packet = getStandardDocumentPacket("new_patient_setup");
+    expect(packet).not.toBeNull();
+    expect(packet!.templateKeys).toEqual([
+      "aob_financial",
+      "supplier_standards",
+      "abn_medicare",
+    ]);
+    expect(packet!.includeCoverSheet).toBe(true);
+  });
+
+  it("has unique keys and every member key resolves to a template", () => {
+    const keys = STANDARD_PACKET_LIBRARY.map((p) => p.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const p of STANDARD_PACKET_LIBRARY) {
+      expect(p.templateKeys.length).toBeGreaterThan(0);
+      expect(new Set(p.templateKeys).size).toBe(p.templateKeys.length);
+      for (const key of p.templateKeys) {
+        expect(
+          getStandardDocumentTemplate(key),
+          `${p.key}: unknown template ${key}`,
+        ).not.toBeNull();
+      }
+    }
+    expect(getStandardDocumentPacket("nope")).toBeNull();
+  });
+
+  it("respects the packet create route's title limit (≤ 160)", () => {
+    for (const p of STANDARD_PACKET_LIBRARY) {
+      expect(p.title.trim().length).toBeGreaterThan(0);
+      expect(p.title.length).toBeLessThanOrEqual(160);
     }
   });
 });
