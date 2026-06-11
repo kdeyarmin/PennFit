@@ -236,7 +236,7 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
   } | null;
   let pdf: Buffer;
   try {
-    ({ pdf } = await renderStatementPdf({
+    const result = await renderStatementPdf({
       patient: {
         name: `${patient.legal_first_name} ${patient.legal_last_name}`,
         address: address?.line1
@@ -263,7 +263,8 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
           identity.organization?.billing_email ?? "billing@example.com",
       },
       lineItems,
-    }));
+    });
+    pdf = result.pdf;
   } catch (err) {
     logger.warn({ err }, "billing_statement.pdf render failed");
     res.status(500).json({ error: "render_failed" });
