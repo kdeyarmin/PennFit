@@ -22,7 +22,7 @@
 //     visit_id, patient_id. NEVER the recipient's email/phone or the
 //     signed link itself.
 
-import { Router, type IRouter, type Request } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
@@ -40,7 +40,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
-import { getIceServers } from "../../lib/video/ice-servers";
+import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
   adminRateLimit,
@@ -240,7 +240,7 @@ async function deliverInvite(opts: {
 
 interface VisitListRow {
   id: string;
-  patient_id: string;
+  patient_id: string | null;
   purpose: string;
   notes: string | null;
   status: string;
@@ -254,6 +254,9 @@ interface VisitListRow {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
+  guest_name: string | null;
+  guest_email: string | null;
+  guest_phone_e164: string | null;
   patients: {
     legal_first_name: string | null;
     legal_last_name: string | null;
@@ -264,10 +267,15 @@ function toApiVisit(r: VisitListRow) {
   return {
     id: r.id,
     patientId: r.patient_id,
+    // Display name for the visit's subject: the patient's chart name,
+    // or the typed-in guest name for no-chart (guest) visits.
     patientName:
       [r.patients?.legal_first_name, r.patients?.legal_last_name]
         .filter(Boolean)
-        .join(" ") || null,
+        .join(" ") ||
+      r.guest_name ||
+      null,
+    isGuest: !r.patient_id,
     purpose: r.purpose,
     notes: r.notes,
     status: r.status,
@@ -284,7 +292,7 @@ function toApiVisit(r: VisitListRow) {
 }
 
 const VISIT_SELECT =
-  "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, patients(legal_first_name, legal_last_name)";
+  "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name)";
 
 // adminReadRateLimiter (a direct express-rate-limit instance) runs
 // BEFORE requireAdmin — the auth gate does a DB-backed session lookup,
@@ -334,6 +342,153 @@ const createBody = z
   })
   .strict();
 
+type CreateBody = z.infer<typeof createBody>;
+
+interface PatientSubject {
+  kind: "patient";
+  id: string;
+  status: string;
+  email: string | null;
+  phone_e164: string | null;
+  legal_first_name: string | null;
+}
+
+interface GuestSubject {
+  kind: "guest";
+  name: string;
+}
+
+/** Shared create path for chart-backed and guest (no-chart) visits:
+ *  resolve the invite recipient, insert the row, deliver the link,
+ *  audit, and respond. Both POST routes below are thin wrappers. */
+async function createVisitAndRespond(
+  req: Request,
+  res: Response,
+  body: CreateBody,
+  subject: PatientSubject | GuestSubject,
+): Promise<void> {
+  // SMS to a non-active patient could violate a STOP opt-out (TCPA) —
+  // refuse, mirroring patient-payment-link.ts. Email has no STOP
+  // concept. Guests have no STOP ledger; this staff-initiated,
+  // one-off transactional invite is the contact's requested service.
+  if (
+    subject.kind === "patient" &&
+    body.channel === "sms" &&
+    subject.status !== "active"
+  ) {
+    res.status(409).json({
+      error: "patient_not_active",
+      message: `Patient status is "${subject.status}". SMS is disabled for non-active patients (STOP opt-out).`,
+    });
+    return;
+  }
+
+  const recipientEmail =
+    body.email ??
+    (subject.kind === "patient"
+      ? (subject.email?.toLowerCase() ?? null)
+      : null);
+  const recipientPhone =
+    body.phoneE164 ??
+    (subject.kind === "patient" ? (subject.phone_e164 ?? null) : null);
+  if (body.channel === "email" && !recipientEmail) {
+    res.status(422).json({
+      error: "email_required",
+      message:
+        "No email available to send the visit link. Provide one, choose SMS, or copy the link.",
+    });
+    return;
+  }
+  if (body.channel === "sms" && !recipientPhone) {
+    res.status(422).json({
+      error: "phone_required",
+      message:
+        "No phone number available to send the visit link. Provide one, choose email, or copy the link.",
+    });
+    return;
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: created, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("video_visits")
+    .insert({
+      patient_id: subject.kind === "patient" ? subject.id : null,
+      guest_name: subject.kind === "guest" ? subject.name : null,
+      guest_email: subject.kind === "guest" ? recipientEmail : null,
+      guest_phone_e164: subject.kind === "guest" ? recipientPhone : null,
+      purpose: body.purpose,
+      notes: body.notes ?? null,
+      scheduled_at: body.scheduledAt ?? null,
+      created_by_admin_user_id: req.adminUserId ?? null,
+      created_by_email: req.adminEmail ?? null,
+      invite_channel: body.channel,
+    })
+    .select(VISIT_SELECT)
+    .single();
+  if (insertErr) throw insertErr;
+  const visit = created as unknown as VisitListRow;
+
+  const joinUrl = patientJoinUrl(visit.id, visit.link_version);
+
+  const greetingName =
+    subject.kind === "patient"
+      ? (subject.legal_first_name ?? null)
+      : (subject.name.split(/\s+/)[0] ?? null);
+
+  let delivered = false;
+  let deliveryError: string | null = null;
+  if (body.channel !== "none") {
+    const delivery = await deliverInvite({
+      channel: body.channel,
+      email: recipientEmail,
+      phone: recipientPhone,
+      firstName: greetingName,
+      practiceName: readPracticeName(),
+      scheduledAt: visit.scheduled_at,
+      link: joinUrl,
+    });
+    delivered = delivery.delivered;
+    deliveryError = delivery.delivered ? null : (delivery.reason ?? null);
+    await supabase
+      .schema("resupply")
+      .from("video_visits")
+      .update({ invite_delivered: delivered })
+      .eq("id", visit.id);
+    visit.invite_delivered = delivered;
+  }
+
+  await logAudit({
+    action: "patient.video_visit.created",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: req.adminUserId ?? null,
+    targetTable: "video_visits",
+    targetId: visit.id,
+    metadata: {
+      visit_id: visit.id,
+      patient_id: subject.kind === "patient" ? subject.id : null,
+      guest: subject.kind === "guest",
+      purpose: body.purpose,
+      channel: body.channel,
+      delivered,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  }).catch((err) => {
+    logger.warn({ err }, "patient.video_visit.created audit write failed");
+  });
+
+  res.status(201).json({
+    visit: toApiVisit(visit),
+    // Always returned so staff can copy/share the link directly —
+    // and so the link is still usable when SMS/email isn't
+    // configured in this environment.
+    joinUrl,
+    delivered,
+    deliveryError,
+  });
+}
+
 // On every mutation below, adminWriteRateLimiter (direct
 // express-rate-limit) runs BEFORE requireAdmin for the same reason as
 // the GET above; the per-admin inviteLimiter / adminRateLimit budgets
@@ -365,9 +520,7 @@ router.post(
       });
       return;
     }
-    const body = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
-
     const { data: patient, error: patientErr } = await supabase
       .schema("resupply")
       .from("patients")
@@ -380,105 +533,97 @@ router.post(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-
-    // SMS to a non-active patient could violate a STOP opt-out (TCPA) —
-    // refuse, mirroring patient-payment-link.ts. Email has no STOP
-    // concept.
-    if (body.channel === "sms" && patient.status !== "active") {
-      res.status(409).json({
-        error: "patient_not_active",
-        message: `Patient status is "${patient.status}". SMS is disabled for non-active patients (STOP opt-out).`,
-      });
-      return;
-    }
-
-    const recipientEmail = body.email ?? patient.email?.toLowerCase() ?? null;
-    const recipientPhone = body.phoneE164 ?? patient.phone_e164 ?? null;
-    if (body.channel === "email" && !recipientEmail) {
-      res.status(422).json({
-        error: "email_required",
-        message:
-          "No email available to send the visit link. Provide one, choose SMS, or copy the link.",
-      });
-      return;
-    }
-    if (body.channel === "sms" && !recipientPhone) {
-      res.status(422).json({
-        error: "phone_required",
-        message:
-          "No phone number available to send the visit link. Provide one, choose email, or copy the link.",
-      });
-      return;
-    }
-
-    const { data: created, error: insertErr } = await supabase
-      .schema("resupply")
-      .from("video_visits")
-      .insert({
-        patient_id: patient.id,
-        purpose: body.purpose,
-        notes: body.notes ?? null,
-        scheduled_at: body.scheduledAt ?? null,
-        created_by_admin_user_id: req.adminUserId ?? null,
-        created_by_email: req.adminEmail ?? null,
-        invite_channel: body.channel,
-      })
-      .select(VISIT_SELECT)
-      .single();
-    if (insertErr) throw insertErr;
-    const visit = created as unknown as VisitListRow;
-
-    const joinUrl = patientJoinUrl(visit.id, visit.link_version);
-
-    let delivered = false;
-    let deliveryError: string | null = null;
-    if (body.channel !== "none") {
-      const delivery = await deliverInvite({
-        channel: body.channel,
-        email: recipientEmail,
-        phone: recipientPhone,
-        firstName: patient.legal_first_name ?? null,
-        practiceName: readPracticeName(),
-        scheduledAt: visit.scheduled_at,
-        link: joinUrl,
-      });
-      delivered = delivery.delivered;
-      deliveryError = delivery.delivered ? null : (delivery.reason ?? null);
-      await supabase
-        .schema("resupply")
-        .from("video_visits")
-        .update({ invite_delivered: delivered })
-        .eq("id", visit.id);
-      visit.invite_delivered = delivered;
-    }
-
-    await logAudit({
-      action: "patient.video_visit.created",
-      adminEmail: req.adminEmail ?? null,
-      adminUserId: req.adminUserId ?? null,
-      targetTable: "video_visits",
-      targetId: visit.id,
-      metadata: {
-        visit_id: visit.id,
-        patient_id: patient.id,
-        purpose: body.purpose,
-        channel: body.channel,
-        delivered,
-      },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    }).catch((err) => {
-      logger.warn({ err }, "patient.video_visit.created audit write failed");
+    await createVisitAndRespond(req, res, parsed.data, {
+      kind: "patient",
+      ...patient,
     });
+  },
+);
 
-    res.status(201).json({
-      visit: toApiVisit(visit),
-      // Always returned so staff can copy/share the link directly —
-      // and so the link is still usable when SMS/email isn't
-      // configured in this environment.
-      joinUrl,
-      delivered,
-      deliveryError,
+// Universal create — the header "start a video visit" button. Accepts
+// EITHER an existing patient (patientId) OR a typed-in guest who isn't
+// in the system yet (guestName + the email/phoneE164 contact fields).
+const universalCreateBody = createBody
+  .extend({
+    patientId: z.string().uuid().optional(),
+    guestName: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    const hasPatientId = Boolean(val.patientId);
+    const hasGuestName = Boolean(val.guestName);
+    if (hasPatientId === hasGuestName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of patientId or guestName.",
+        path: ["patientId"],
+      });
+    }
+    // Guests have no chart to fall back on, so the chosen delivery
+    // channel must come with its contact up front — fail at validation
+    // with a precise path instead of a late 422 from the create path.
+    if (hasGuestName && val.channel === "sms" && !val.phoneE164) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "An SMS invite for a guest needs phoneE164.",
+        path: ["phoneE164"],
+      });
+    }
+    if (hasGuestName && val.channel === "email" && !val.email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "An email invite for a guest needs email.",
+        path: ["email"],
+      });
+    }
+  });
+
+router.post(
+  "/admin/video-visits",
+  adminWriteRateLimiter,
+  requireAdmin,
+  inviteLimiter,
+  adminRateLimit({ name: "video_visits.create_universal", preset: "mutation" }),
+  async (req, res) => {
+    if (!(await isFeatureEnabled("telehealth.video"))) {
+      res.status(503).json({ error: "feature_disabled" });
+      return;
+    }
+    const parsed = universalCreateBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const body = parsed.data;
+    if (body.patientId) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: patient, error: patientErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, status, email, phone_e164, legal_first_name")
+        .eq("id", body.patientId)
+        .limit(1)
+        .maybeSingle();
+      if (patientErr) throw patientErr;
+      if (!patient) {
+        res.status(404).json({ error: "patient_not_found" });
+        return;
+      }
+      await createVisitAndRespond(req, res, body, {
+        kind: "patient",
+        ...patient,
+      });
+      return;
+    }
+    await createVisitAndRespond(req, res, body, {
+      kind: "guest",
+      name: body.guestName!,
     });
   },
 );
@@ -522,7 +667,7 @@ router.post(
       .schema("resupply")
       .from("video_visits")
       .select(
-        "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, patients(legal_first_name, legal_last_name, status, email, phone_e164)",
+        "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name, status, email, phone_e164)",
       )
       .eq("id", idCheck.data)
       .maybeSingle();
@@ -544,7 +689,14 @@ router.post(
       res.status(409).json({ error: "visit_closed" });
       return;
     }
-    if (body.channel === "sms" && visit.patients?.status !== "active") {
+    // TCPA guard applies to chart-backed visits only — guests have no
+    // STOP ledger and the invite is a staff-initiated transactional
+    // message for a service they requested.
+    if (
+      body.channel === "sms" &&
+      visit.patient_id &&
+      visit.patients?.status !== "active"
+    ) {
       res.status(409).json({
         error: "patient_not_active",
         message:
@@ -553,8 +705,15 @@ router.post(
       return;
     }
     const recipientEmail =
-      body.email ?? visit.patients?.email?.toLowerCase() ?? null;
-    const recipientPhone = body.phoneE164 ?? visit.patients?.phone_e164 ?? null;
+      body.email ??
+      visit.patients?.email?.toLowerCase() ??
+      visit.guest_email?.toLowerCase() ??
+      null;
+    const recipientPhone =
+      body.phoneE164 ??
+      visit.patients?.phone_e164 ??
+      visit.guest_phone_e164 ??
+      null;
     if (body.channel === "email" && !recipientEmail) {
       res.status(422).json({ error: "email_required" });
       return;
@@ -569,7 +728,10 @@ router.post(
       channel: body.channel,
       email: recipientEmail,
       phone: recipientPhone,
-      firstName: visit.patients?.legal_first_name ?? null,
+      firstName:
+        visit.patients?.legal_first_name ??
+        visit.guest_name?.split(/\s+/)[0] ??
+        null,
       practiceName: readPracticeName(),
       scheduledAt: visit.scheduled_at,
       link: joinUrl,
@@ -654,7 +816,7 @@ router.post(
       visit: toApiVisit(visit),
       staffToken,
       wsPath: VIDEO_SIGNAL_WS_PATH,
-      iceServers: getIceServers(),
+      iceServers: await resolveIceServers(),
       patientJoinUrl: patientJoinUrl(visit.id, visit.link_version),
     });
   },

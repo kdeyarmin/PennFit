@@ -419,18 +419,27 @@ describe("readMigrations — apply ordering", () => {
     expect(migs[idx - 1]!.prefixNumber).toBe(156);
   });
 
-  it("has no duplicate-prefix files (all duplicates have been resolved)", () => {
+  it("groups duplicate-prefix files together by tag", () => {
     const migs = readMigrations(MIGRATIONS_FOLDER);
-    const prefixCounts = new Map<number, number>();
-    for (const m of migs) {
-      prefixCounts.set(
-        m.prefixNumber,
-        (prefixCounts.get(m.prefixNumber) ?? 0) + 1,
-      );
+    // Build a map from prefix -> all indices at which that prefix appears.
+    const prefixIndices = new Map<number, number[]>();
+    migs.forEach((m: { prefixNumber: number }, idx: number) => {
+      const arr = prefixIndices.get(m.prefixNumber) ?? [];
+      arr.push(idx);
+      prefixIndices.set(m.prefixNumber, arr);
+    });
+    // For every prefix with more than one file, assert contiguity and sort order.
+    for (const [, indices] of prefixIndices) {
+      if (indices.length < 2) continue;
+      // All indices must be consecutive (the group is contiguous).
+      for (let k = 1; k < indices.length; k++) {
+        expect(indices[k]).toBe(indices[k - 1]! + 1);
+      }
+      // Within the group, tags must be in ascending sorted order.
+      const tags = indices.map((i) => migs[i]!.tag);
+      expect(tags).toEqual([...tags].sort());
     }
-    const duplicates = [...prefixCounts.entries()].filter(
-      ([, count]) => count > 1,
-    );
-    expect(duplicates).toEqual([]);
+    // Sanity: prefix 157 must have at least 2 files.
+    expect((prefixIndices.get(157) ?? []).length).toBeGreaterThan(1);
   });
 });

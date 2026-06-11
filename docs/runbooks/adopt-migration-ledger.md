@@ -36,7 +36,7 @@ fresh full replay:
 
 ### The payer-data caveat (why `--baseline-except`)
 
-`0142_payer_profile_completeness` and `0149_pa_payers_phase2` are **below**
+`0175_payer_profile_completeness` and `0176_pa_payers_phase2` are **below**
 the cutoff, but their **value backfill + 25-payer seed never ran on prod** —
 only their columns were added (via `0186`). So they must NOT be baselined as
 "applied"; they need to actually run (both are fully idempotent: `ADD COLUMN
@@ -55,11 +55,11 @@ Railway service, for **one** deploy set:
 ```
 RUN_DB_MIGRATIONS=true
 MIGRATIONS_BASELINE_THROUGH=0187
-MIGRATIONS_BASELINE_EXCEPT=0142_payer_profile_completeness,0149_pa_payers_phase2
+MIGRATIONS_BASELINE_EXCEPT=0175_payer_profile_completeness,0176_pa_payers_phase2
 ```
 
 then deploy. The hook baselines `0000–0187` (except the two payer
-migrations), then applies the pending set: `0142` + `0149` (backfill +
+migrations), then applies the pending set: `0175` + `0176` (backfill +
 25-payer seed) and the `0188–0207` tail (15 tables + `0206`/`0207`
 reconcile). The deploy is gated on success (a failure keeps the previous
 release live).
@@ -95,7 +95,7 @@ fully populated (227 rows), 0 payers at `enrollment_status='unknown'`.
 # 1. Baseline 0000–0187, leaving the two payer migrations pending.
 node lib/resupply-db/scripts/migrate.mjs \
   --baseline-through=0187 \
-  --baseline-except=0142_payer_profile_completeness,0149_pa_payers_phase2
+  --baseline-except=0175_payer_profile_completeness,0176_pa_payers_phase2
 
 # 2. Apply the pending set (the two payer migrations + the 0188–0207 tail).
 node lib/resupply-db/scripts/migrate.mjs

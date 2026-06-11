@@ -26,6 +26,7 @@ import { humanizeStatus } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { FitterInviteButton } from "@/components/admin/FitterInviteButton";
+import { StartVideoVisitButton } from "@/components/admin/StartVideoVisitModal";
 import { PatientPaymentLinkButton } from "@/components/admin/PatientPaymentLinkButton";
 import { VerifyInsuranceButton } from "@/components/admin/VerifyInsuranceButton";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
@@ -347,6 +348,28 @@ export function PatientActionBar({
           <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Sends the patient a link to the AI mask fitter. Results return here
             for follow-up.
+          </p>
+        </div>
+
+        <div>
+          <p
+            className="text-xs uppercase tracking-wider font-semibold mb-2"
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
+          >
+            Telehealth
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <StartVideoVisitButton
+              patient={{
+                id: patient.id,
+                name: `${patient.firstName} ${patient.lastName}`.trim(),
+              }}
+            />
+          </div>
+          <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            Texts or emails the patient a secure video-call link for an
+            equipment setup, troubleshooting, or a follow-up — no app needed on
+            their side.
           </p>
         </div>
 

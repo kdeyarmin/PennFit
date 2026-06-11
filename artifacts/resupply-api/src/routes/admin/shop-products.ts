@@ -26,9 +26,12 @@
 //   public catalog uses, so the response payload is byte-identical
 //   to what /shop/products will return on its next cache flush.
 
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type Stripe from "stripe";
+
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -638,6 +641,182 @@ router.patch(
   },
 );
 
+// POST /admin/shop/products/image-upload — upload a product photo and
+// get back a public HTTPS URL ready to paste into the create form (or
+// pass straight through as `imageUrl` on POST /admin/shop/products).
+//
+// Why this exists: the create endpoint accepts only an already-hosted
+// HTTPS URL (Stripe fetches `images[]` server-side), which made "add a
+// new item" a two-system chore — host the image somewhere public, then
+// fill the form. This endpoint closes that gap by writing the bytes to
+// the PUBLIC Supabase Storage bucket (`SUPABASE_STORAGE_BUCKET_PUBLIC`)
+// and returning the bucket's public object URL, which Stripe can fetch.
+//
+// Deliberately NOT the private-bucket signed-PUT flow the POD /
+// prescription uploads use: those are PHI and must stay private; a
+// product photo is a public marketing asset, and Stripe needs to be
+// able to GET it without a token. No ACL row is written — the public
+// bucket is public by definition.
+//
+// Validation: content-type allowlist (png/jpeg/webp — the formats the
+// storefront cards render), 5 MB cap, and a magic-byte sniff so a
+// renamed non-image can't land in a public bucket under an image
+// content type.
+//
+// Failure posture: fail-soft on config. When the public bucket env is
+// unset the route 503s with `public_storage_not_configured`; the admin
+// form keeps its paste-a-URL fallback, so nothing is lost in
+// environments without the bucket.
+
+const IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+const IMAGE_UPLOAD_EXTENSIONS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+function sniffImageContentType(buf: Buffer): string | null {
+  // Defensive re-guard: callers pass request-derived bytes, and the
+  // length/index checks below must never run against an
+  // attacker-shaped array or string (CodeQL js/type-confusion-
+  // through-parameter-tampering).
+  if (!Buffer.isBuffer(buf)) {
+    return null;
+  }
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    buf.length >= 3 &&
+    buf[0] === 0xff &&
+    buf[1] === 0xd8 &&
+    buf[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+  if (
+    buf.length >= 12 &&
+    buf.toString("ascii", 0, 4) === "RIFF" &&
+    buf.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+// Separate limiter from the catalog mutations: uploads don't touch
+// Stripe, and a fumbled photo session (wrong crop, retry, retry)
+// shouldn't eat the operator's 30/hour product-mutation budget.
+const adminProductImageUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_shop_product_image_upload",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+
+router.post(
+  "/admin/shop/products/image-upload",
+  requirePermission("admin.tools.manage"),
+  adminProductImageUploadLimiter,
+  // Route-level raw parser: the global express.json() skips non-JSON
+  // content types, so the image bytes arrive here untouched. Types
+  // outside the allowlist are left unparsed and rejected below.
+  express.raw({
+    type: Object.keys(IMAGE_UPLOAD_EXTENSIONS),
+    limit: IMAGE_UPLOAD_MAX_BYTES,
+  }),
+  async (req, res) => {
+    const declaredType = (req.get("content-type") ?? "")
+      .split(";")[0]!
+      .trim()
+      .toLowerCase();
+    const extension = IMAGE_UPLOAD_EXTENSIONS[declaredType];
+    if (!extension) {
+      res.status(415).json({
+        error: "unsupported_image_type",
+        supported: Object.keys(IMAGE_UPLOAD_EXTENSIONS),
+      });
+      return;
+    }
+    // Narrow the parsed body through an explicit Buffer guard ONCE
+    // and use only the narrowed value below. express.raw leaves
+    // req.body as `{}` for unmatched content types, and a tampered
+    // request can present other shapes — never run length/index
+    // checks against raw req.body.
+    const rawBody: unknown = req.body;
+    if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+      res.status(400).json({ error: "empty_body" });
+      return;
+    }
+    // Copy into a fresh Buffer rather than aliasing the request body.
+    // Belt-and-braces detachment from the request object (and it makes
+    // the value provably a Buffer to static analysis — CodeQL's
+    // type-confusion query doesn't model Buffer.isBuffer as a type
+    // guard, so length/index reads on the aliased body keep alerting).
+    // At a 5 MB cap on an admin-only route the one-time copy is noise.
+    const imageBytes: Buffer = Buffer.from(rawBody);
+    const sniffed = sniffImageContentType(imageBytes);
+    if (sniffed !== declaredType) {
+      // The bytes don't match the declared format — refuse to plant
+      // mystery content in a public bucket.
+      res.status(400).json({ error: "image_bytes_mismatch" });
+      return;
+    }
+
+    const bucket = (process.env.SUPABASE_STORAGE_BUCKET_PUBLIC ?? "").trim();
+    if (!bucket) {
+      res.status(503).json({ error: "public_storage_not_configured" });
+      return;
+    }
+
+    const objectPath = `shop-products/${randomUUID()}.${extension}`;
+    const supabase = getSupabaseServiceRoleClient();
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(objectPath, imageBytes, {
+        contentType: declaredType,
+        // Product images are content-addressed by UUID — a replaced
+        // photo gets a fresh path, so long-lived caching is safe.
+        cacheControl: "31536000",
+        upsert: false,
+      });
+    if (uploadError) {
+      req.log?.warn?.(
+        { sizeBytes: imageBytes.length, contentType: declaredType },
+        "shop/admin/products: image upload to public bucket failed",
+      );
+      res.status(502).json({ error: "image_upload_failed" });
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(objectPath);
+    const imageUrl = publicUrlData?.publicUrl ?? null;
+    if (!imageUrl) {
+      res.status(502).json({ error: "image_upload_failed" });
+      return;
+    }
+
+    req.log?.info?.(
+      { sizeBytes: imageBytes.length, contentType: declaredType },
+      "shop/admin/products: product image uploaded",
+    );
+    res.status(201).json({ imageUrl });
+  },
+);
+
 // POST /admin/shop/products — create a new SKU in the Stripe catalog.
 //
 // What this writes (idempotent against `metadata.shop_sku`):
@@ -658,13 +837,13 @@ router.patch(
 //   query quoting issues entirely.
 //
 // Image handling:
-//   The MVP accepts a single optional HTTPS URL (passed through to
-//   Stripe `images[]`). We deliberately do NOT operate an image
-//   upload service in this slice — ADR 008/010 explicitly chose
-//   "no S3, no cache" for this product. Operators paste a CDN URL
-//   (or a https://app.pennpaps.com/products/<slug>.webp path that
-//   exists in the cpap-fitter public dir). Object storage is on
-//   the W4 backlog if/when that constraint changes.
+//   Accepts a single optional HTTPS URL (passed through to Stripe
+//   `images[]`). Operators can either paste a CDN URL (or a
+//   https://app.pennpaps.com/products/<slug>.webp path that exists
+//   in the cpap-fitter public dir), or upload a photo via
+//   POST /admin/shop/products/image-upload above, which stores the
+//   bytes in the public Supabase bucket and returns a URL ready to
+//   use here.
 //
 // Authorization:
 //   requireAdmin — agents can add products. Adding a SKU is not a

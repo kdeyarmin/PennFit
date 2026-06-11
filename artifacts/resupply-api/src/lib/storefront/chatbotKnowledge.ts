@@ -1534,6 +1534,31 @@ Customer support:
   - Logged-in customers can also message their CSR from /account#messages.
 `;
 
+const TELEHEALTH_SECTION = `
+# Telehealth video visits
+
+PennPaps offers free one-on-one video visits with the care team for
+equipment setups, mask fitting help, troubleshooting, and follow-ups —
+a real person walks the patient through it face-to-face over video.
+
+How it works for the patient:
+  - The care team sends a secure join link by text message or email.
+  - Tap the link on a phone, tablet, or computer — no app to install
+    and no account needed, just a camera and microphone (the browser
+    asks permission when joining).
+  - The call is encrypted directly between the patient and the care
+    team and is never recorded.
+  - Join links stay valid for about a week; if one has expired, the
+    care team can send a fresh one in seconds.
+
+How to get one: there is no self-serve booking page — a staff member
+sets it up. If a patient wants a video visit, tell them to call
+(814) 471-0627 (Mon-Fri 9 AM - 5 PM Eastern), email
+support@pennpaps.com, or ask right here in chat and a team member will
+follow up with a link. Great fit when written troubleshooting isn't
+working and they'd benefit from showing the equipment on camera.
+`;
+
 const TOOLS_GUIDE = `
 # When to call tools
 
@@ -1788,6 +1813,7 @@ export function buildChatSystemPrompt(): string {
     COMFORT_ACCESSORIES_SECTION,
     SUBSCRIBE_AND_SAVE_SECTION,
     ACCOUNT_AND_REMINDERS_SECTION,
+    TELEHEALTH_SECTION,
     THERAPY_VOCABULARY_SECTION,
     WHY_TREAT_OSA_SECTION,
     CPAP_ALTERNATIVES_SECTION,

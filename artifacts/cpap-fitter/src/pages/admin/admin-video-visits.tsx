@@ -6,37 +6,28 @@
 // and joins the call from this page. Media is WebRTC peer-to-peer —
 // see components/video-call/.
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Plus, Send, Video, XCircle, CheckCircle2 } from "lucide-react";
-
-import {
-  getListPatientsQueryKey,
-  useListPatients,
-} from "@workspace/api-client-react/admin";
 
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
-import { AdminModal } from "@/components/admin/AdminModal";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
-import { Input, Label, Select } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
+import { StartVideoVisitModal } from "@/components/admin/StartVideoVisitModal";
 import {
   VideoCallRoom,
   buildSignalWsUrl,
 } from "@/components/video-call/VideoCallRoom";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { fullName } from "@/lib/admin/format";
 import {
   cancelVideoVisit,
   completeVideoVisit,
-  createVideoVisit,
   joinVideoVisit,
   listVideoVisits,
   resendVideoVisitInvite,
-  type CreateVideoVisitInput,
   type JoinVideoVisitResponse,
   type VideoVisit,
   type VideoVisitPurpose,
@@ -393,23 +384,9 @@ export function AdminVideoVisitsPage() {
       </Card>
 
       {creating && (
-        <CreateVisitModal
+        <StartVideoVisitModal
           onClose={() => setCreating(false)}
-          onCreated={(r) => {
-            setCreating(false);
-            refresh();
-            toast(
-              r.delivered
-                ? { title: "Visit created and invite sent" }
-                : {
-                    title: "Visit created",
-                    description:
-                      r.deliveryError === null
-                        ? "Copy the link to share it with the patient."
-                        : `Invite not delivered (${r.deliveryError}). Copy the link instead.`,
-                  },
-            );
-          }}
+          onCreated={() => refresh()}
         />
       )}
 
@@ -430,227 +407,6 @@ export function AdminVideoVisitsPage() {
       )}
 
       {ConfirmDialogEl}
-    </div>
-  );
-}
-
-// ── Create dialog ────────────────────────────────────────────────
-
-interface SelectedPatient {
-  id: string;
-  firstName: string;
-  lastName: string;
-}
-
-function CreateVisitModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (r: { delivered: boolean; deliveryError: string | null }) => void;
-}) {
-  const { toast } = useToast();
-  const [patient, setPatient] = useState<SelectedPatient | null>(null);
-  const [purpose, setPurpose] = useState<VideoVisitPurpose>("setup");
-  const [channel, setChannel] = useState<"email" | "sms" | "none">("sms");
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [notes, setNotes] = useState("");
-
-  const create = useMutation({
-    mutationFn: (vars: { patientId: string; input: CreateVideoVisitInput }) =>
-      createVideoVisit(vars.patientId, vars.input),
-    onSuccess: (r) => onCreated(r),
-    onError: (err) => {
-      toast({
-        title: "Couldn't create the visit",
-        description:
-          err instanceof Error && err.message
-            ? err.message
-            : "Check the patient's contact info and try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const submit = () => {
-    if (!patient) return;
-    const input: CreateVideoVisitInput = { purpose, channel };
-    if (scheduledAt) {
-      const d = new Date(scheduledAt);
-      if (!Number.isNaN(d.getTime())) input.scheduledAt = d.toISOString();
-    }
-    if (notes.trim()) input.notes = notes.trim();
-    create.mutate({ patientId: patient.id, input });
-  };
-
-  return (
-    <AdminModal
-      title="New video visit"
-      description="The patient gets a secure join link — no app or account needed, just a phone or computer with a camera."
-      onClose={onClose}
-    >
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="video-visit-patient">Patient</Label>
-          <PatientPicker value={patient} onChange={setPatient} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label htmlFor="video-visit-purpose">Purpose</Label>
-            <Select
-              id="video-visit-purpose"
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value as VideoVisitPurpose)}
-              options={[
-                { value: "setup", label: "Equipment setup" },
-                { value: "troubleshooting", label: "Troubleshooting" },
-                { value: "follow_up", label: "Follow-up" },
-                { value: "other", label: "Other" },
-              ]}
-            />
-          </div>
-          <div>
-            <Label htmlFor="video-visit-channel">Send invite by</Label>
-            <Select
-              id="video-visit-channel"
-              value={channel}
-              onChange={(e) =>
-                setChannel(e.target.value as "email" | "sms" | "none")
-              }
-              options={[
-                { value: "sms", label: "Text message (SMS)" },
-                { value: "email", label: "Email" },
-                { value: "none", label: "Don't send — copy the link" },
-              ]}
-            />
-          </div>
-        </div>
-        <div>
-          <Label htmlFor="video-visit-when">
-            Scheduled for (optional — leave blank to call now)
-          </Label>
-          <Input
-            id="video-visit-when"
-            type="datetime-local"
-            value={scheduledAt}
-            onChange={(e) => setScheduledAt(e.target.value)}
-          />
-        </div>
-        <div>
-          <Label htmlFor="video-visit-notes">Internal notes (optional)</Label>
-          <Input
-            id="video-visit-notes"
-            value={notes}
-            maxLength={2000}
-            placeholder="e.g. Walk through humidifier setup"
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button intent="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={!patient}
-            isLoading={create.isPending}
-          >
-            Create visit
-          </Button>
-        </div>
-      </div>
-    </AdminModal>
-  );
-}
-
-// ── Patient typeahead (same shape as the company-calendar picker) ──
-function PatientPicker({
-  value,
-  onChange,
-}: {
-  value: SelectedPatient | null;
-  onChange: (p: SelectedPatient | null) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const params = useMemo(
-    () => ({ search: search.trim(), limit: 8 as const }),
-    [search],
-  );
-  const enabled = search.trim().length >= 2;
-  const q = useListPatients(params, {
-    query: { enabled, queryKey: getListPatientsQueryKey(params) },
-  });
-
-  if (value) {
-    return (
-      <div
-        className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm"
-        style={{ borderColor: "hsl(var(--line-1))" }}
-      >
-        <span className="font-medium">
-          {fullName(value.firstName, value.lastName)}
-        </span>
-        <button
-          type="button"
-          className="text-xs text-muted-foreground underline"
-          onClick={() => {
-            onChange(null);
-            setSearch("");
-          }}
-        >
-          Change
-        </button>
-      </div>
-    );
-  }
-
-  const items = q.data?.items ?? [];
-  return (
-    <div>
-      <Input
-        id="video-visit-patient"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search patient by name…"
-        aria-label="Search patient"
-        autoFocus
-      />
-      {enabled && (
-        <div
-          className="mt-1 max-h-56 overflow-y-auto rounded border"
-          style={{ borderColor: "hsl(var(--line-1))" }}
-        >
-          {q.isFetching && items.length === 0 ? (
-            <div className="p-2 text-xs text-muted-foreground">Searching…</div>
-          ) : items.length === 0 ? (
-            <div className="p-2 text-xs text-muted-foreground">
-              No matching patients.
-            </div>
-          ) : (
-            items.map((pt) => (
-              <button
-                key={pt.id}
-                type="button"
-                onClick={() =>
-                  onChange({
-                    id: pt.id,
-                    firstName: pt.firstName,
-                    lastName: pt.lastName,
-                  })
-                }
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
-              >
-                <span className="font-medium">
-                  {fullName(pt.firstName, pt.lastName)}
-                </span>
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {pt.pacwareId}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
     </div>
   );
 }

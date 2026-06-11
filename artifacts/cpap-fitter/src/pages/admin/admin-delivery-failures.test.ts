@@ -90,6 +90,32 @@ describe("admin-delivery-failures — MessageRow retained", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Recall delivery failures — merged into the messages tab
+// ---------------------------------------------------------------------------
+
+describe("admin-delivery-failures — recall delivery failures surfaced", () => {
+  it("defines a RecallRow component", () => {
+    expect(SRC).toContain("function RecallRow(");
+  });
+
+  it("merges recallEvents into the message-failures table rows", () => {
+    const fnStart = SRC.indexOf("function MessageFailuresTable(");
+    expect(fnStart).toBeGreaterThan(-1);
+    const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
+    const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
+    expect(fnBody).toContain("data.recallEvents");
+    expect(fnBody).toContain("RecallRow");
+  });
+
+  it("links recall failures to the recall roster (no conversation thread)", () => {
+    const fnStart = SRC.indexOf("function RecallRow(");
+    const fnEnd = SRC.indexOf("\nfunction ", fnStart + 1);
+    const fnBody = SRC.slice(fnStart, fnEnd > 0 ? fnEnd : undefined);
+    expect(fnBody).toContain("/admin/equipment-recalls");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Page-level wiring
 // ---------------------------------------------------------------------------
 
