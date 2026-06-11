@@ -530,7 +530,6 @@ async function start(): Promise<void> {
       void applyCompanyInfoToEnv().catch(() => {
         // getCompanyInfo already logs; a refresh failure changes nothing.
       });
-    }
     },
     5 * 60 * 1000,
   );
