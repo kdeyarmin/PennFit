@@ -673,6 +673,23 @@ function VerifyModal({
                   sync again for the rest.
                 </div>
               )}
+              {(data.withheldMissingPacwareId ?? 0) > 0 && (
+                <div
+                  className="rounded-lg border px-3 py-2 text-xs"
+                  style={{
+                    borderColor: "hsl(38,92%,45%)",
+                    backgroundColor: "rgba(245,158,11,0.08)",
+                  }}
+                >
+                  <TriangleAlert className="h-3.5 w-3.5 inline-block mr-1" />
+                  <strong>{data.withheldMissingPacwareId}</strong> due item
+                  {data.withheldMissingPacwareId === 1 ? " is" : "s are"}{" "}
+                  withheld because the patient has no PacWare ID — order entry
+                  needs an account number. Open the patient&apos;s page and use{" "}
+                  <em>Add</em> next to &ldquo;No PacWare ID&rdquo; in the
+                  header, then sync again to include them.
+                </div>
+              )}
               {data.sample.length === 0 ? (
                 <p
                   className="text-sm py-2"
