@@ -1829,16 +1829,17 @@ export function buildChatSystemPrompt(): string {
     .map((s) => s.trim())
     .join("\n\n");
 
-  if (prompt.length > MAX_SYSTEM_PROMPT_CHARS) {
-    throw new Error(
-      `chatbotKnowledge: system prompt is ${prompt.length} chars, ` +
-        `over the ${MAX_SYSTEM_PROMPT_CHARS} cap. Trim before deploying.`,
-    );
-  }
   // The knowledge text above ships with the historical brand/contact
   // strings; rewrite them to whatever the admin saved on the Company
   // information page (no-op until the org row exists).
-  return applyCompanyIdentityToText(prompt);
+  const rewritten = applyCompanyIdentityToText(prompt);
+  if (rewritten.length > MAX_SYSTEM_PROMPT_CHARS) {
+    throw new Error(
+      `chatbotKnowledge: system prompt is ${rewritten.length} chars, ` +
+        `over the ${MAX_SYSTEM_PROMPT_CHARS} cap. Trim before deploying.`,
+    );
+  }
+  return rewritten;
 }
 
 /**
