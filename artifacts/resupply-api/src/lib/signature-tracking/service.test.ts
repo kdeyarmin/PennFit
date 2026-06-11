@@ -137,6 +137,39 @@ describe("listOutstandingSignatures", () => {
     ]);
     expect(result.byProvider[0]!.oldestCreatedAt).toBe("2026-01-01T00:00:00Z");
   });
+
+  it("only counts dispatched documents as outstanding (sent_count > 0)", async () => {
+    stageSupabaseResponse("signature_tracking", "select", { data: [] });
+    const supabase = getSupabaseServiceRoleClient();
+    await listOutstandingSignatures(supabase);
+
+    // The awaiting queue must exclude drafted-but-never-sent rows: a
+    // tracking row exists from document creation (stable barcode), but
+    // nothing is "outstanding" until a send path records a dispatch.
+    expect(
+      supabaseMock.filterCalls("signature_tracking", "select"),
+    ).toContainEqual({ verb: "gt", args: ["sent_count", 0] });
+  });
+
+  it("lists only never-sent rows when dispatched=false (the unsent view)", async () => {
+    stageSupabaseResponse("signature_tracking", "select", { data: [] });
+    const supabase = getSupabaseServiceRoleClient();
+    await listOutstandingSignatures(supabase, { dispatched: false });
+
+    const filters = supabaseMock.filterCalls("signature_tracking", "select");
+    expect(filters).toContainEqual({ verb: "eq", args: ["sent_count", 0] });
+    expect(filters).not.toContainEqual({ verb: "gt", args: ["sent_count", 0] });
+  });
+
+  it("does not apply the dispatch filter to returned/canceled views", async () => {
+    stageSupabaseResponse("signature_tracking", "select", { data: [] });
+    const supabase = getSupabaseServiceRoleClient();
+    await listOutstandingSignatures(supabase, { status: "returned_signed" });
+
+    expect(
+      supabaseMock.filterCalls("signature_tracking", "select"),
+    ).not.toContainEqual({ verb: "gt", args: ["sent_count", 0] });
+  });
 });
 
 function row(overrides: Record<string, unknown>) {
