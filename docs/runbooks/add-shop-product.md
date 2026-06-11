@@ -35,10 +35,13 @@ the seed script is for bulk/initial catalog work.
    Checkout page opens.
 
 Later edits — price, stock count, low-stock threshold — are inline on
-`/admin/shop/inventory`. Anything else (name, description, images) can
-be edited directly in the Stripe Dashboard; Stripe is the single
-source of truth for the catalog and both edit paths produce the same
-storefront result.
+`/admin/shop/inventory`. Catalog copy — name, description, tagline,
+replacement hint, manufacturer, model number, photo — is edited via
+each row's **Edit details** link (`/admin/shop/inventory/<id>/edit`).
+SKU and category are fixed (archive and re-create to change them).
+Everything can also be edited directly in the Stripe Dashboard;
+Stripe is the single source of truth for the catalog and both edit
+paths produce the same storefront result.
 
 ## Path 2 — Seed script (bulk / initial catalog)
 

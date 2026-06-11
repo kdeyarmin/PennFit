@@ -1040,3 +1040,144 @@ describe("POST /admin/shop/products/image-upload", () => {
     expect(res.body.error).toBe("image_upload_failed");
   });
 });
+
+describe("PATCH /admin/shop/products/:productId/details", () => {
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ name: "New name" });
+    expect([401, 403]).toContain(res.status);
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects ids that don't start with prod_", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/x/details")
+      .send({ name: "New name" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_product_id");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty patch (no fields to update)", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects identity fields (sku/category are not editable)", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ sku: "new-sku" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-https image URLs", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ imageUrl: "http://insecure.example.com/x.png" });
+    expect(res.status).toBe(400);
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 in preview mode (no Stripe key)", async () => {
+    stubVerifiedAdmin();
+    stripeConfigured = false;
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ name: "New name" });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+  });
+
+  it("refuses products that are not in the shop catalog", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({ id: "prod_x", metadata: {} });
+    projectProductMock.mockReturnValueOnce(null);
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ name: "New name" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("product_not_in_catalog");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("updates name/description and writes metadata, clearing nulls", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Old name",
+      metadata: { tagline: "Old tagline", manufacturer: "OldCo" },
+    });
+    stripeUpdateMock.mockResolvedValue({
+      id: "prod_x",
+      name: "New name",
+      metadata: { tagline: "New tagline" },
+    });
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({
+        name: "New name",
+        description: "Updated description text.",
+        tagline: "New tagline",
+        manufacturer: null,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.product.id).toBe("prod_x");
+    expect(stripeUpdateMock).toHaveBeenCalledWith(
+      "prod_x",
+      expect.objectContaining({
+        name: "New name",
+        description: "Updated description text.",
+        metadata: { tagline: "New tagline", manufacturer: "" },
+      }),
+    );
+    // Untouched fields must not appear in the update payload.
+    const payload = stripeUpdateMock.mock.calls[0]![1] as Record<
+      string,
+      unknown
+    >;
+    expect(payload).not.toHaveProperty("images");
+    expect(invalidateCacheMock).toHaveBeenCalled();
+  });
+
+  it("replaces the product photo and clears it on null", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "SKU",
+      metadata: {},
+    });
+    stripeUpdateMock.mockResolvedValue({
+      id: "prod_x",
+      name: "SKU",
+      metadata: {},
+    });
+    const set = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ imageUrl: "https://cdn.example.com/p.webp" });
+    expect(set.status).toBe(200);
+    expect(stripeUpdateMock).toHaveBeenLastCalledWith(
+      "prod_x",
+      expect.objectContaining({ images: ["https://cdn.example.com/p.webp"] }),
+    );
+
+    const clear = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/details")
+      .send({ imageUrl: null });
+    expect(clear.status).toBe(200);
+    expect(stripeUpdateMock).toHaveBeenLastCalledWith(
+      "prod_x",
+      expect.objectContaining({ images: [] }),
+    );
+  });
+});

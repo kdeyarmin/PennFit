@@ -1039,6 +1039,17 @@ export function AdminShopInventoryPage() {
                           }}
                         >
                           {p.category} · {p.id}
+                          {" · "}
+                          {/* Name/description/tagline/photo edits live on a
+                              dedicated page — only the numeric fields are
+                              inline-editable in this grid. */}
+                          <a
+                            href={`${import.meta.env.BASE_URL}admin/shop/inventory/${encodeURIComponent(p.id)}/edit`}
+                            data-testid={`inventory-edit-${p.id}`}
+                            style={{ color: "hsl(var(--ink-2))" }}
+                          >
+                            Edit details
+                          </a>
                         </div>
                       </td>
                       <td style={{ padding: "12px", verticalAlign: "top" }}>

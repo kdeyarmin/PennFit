@@ -408,6 +408,121 @@ export async function uploadShopProductImage(file: File): Promise<string> {
   return json.imageUrl;
 }
 
+// Catalog-copy fields of one SKU, as rendered by the edit form.
+// Sourced from the public catalog response (the admin sees the same
+// projection the storefront does — same rationale as
+// listShopInventory above).
+export interface ShopProductDetails {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  tagline: string | null;
+  replacementHint: string | null;
+  manufacturer: string | null;
+  modelNumber: string | null;
+  imageUrl: string | null;
+}
+
+// Look up one product's current catalog copy by Stripe product id.
+// Returns null when the id isn't in the catalog (archived, typo'd
+// URL, or preview-mode fixture mismatch).
+export async function fetchShopProductDetails(
+  productId: string,
+): Promise<ShopProductDetails | null> {
+  const res = await fetch("/resupply-api/shop/products", {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
+  }
+  const json = (await res.json()) as {
+    products?: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+      category: string;
+      tagline?: string | null;
+      replacementHint?: string | null;
+      manufacturer?: string | null;
+      modelNumber?: string | null;
+      imageUrl?: string | null;
+    }>;
+  };
+  const p = (json.products ?? []).find((row) => row.id === productId);
+  if (!p) return null;
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description ?? null,
+    category: p.category,
+    tagline: p.tagline ?? null,
+    replacementHint: p.replacementHint ?? null,
+    manufacturer: p.manufacturer ?? null,
+    modelNumber: p.modelNumber ?? null,
+    imageUrl: p.imageUrl ?? null,
+  };
+}
+
+// PATCH /admin/shop/products/:id/details — edit catalog copy.
+// Field semantics mirror the server schema: omitted = unchanged,
+// null = cleared (name/description can't be cleared).
+export interface PatchShopProductDetailsInput {
+  name?: string;
+  description?: string;
+  tagline?: string | null;
+  replacementHint?: string | null;
+  manufacturer?: string | null;
+  modelNumber?: string | null;
+  imageUrl?: string | null;
+}
+
+export async function patchShopProductDetails(
+  productId: string,
+  input: PatchShopProductDetailsInput,
+): Promise<void> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/products/${encodeURIComponent(productId)}/details`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...csrfHeader(),
+      },
+      body: JSON.stringify(input),
+    },
+  );
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (!res.ok) {
+    let detail = `Save failed (${res.status})`;
+    try {
+      const body = (await res.json()) as {
+        error?: string;
+        issues?: Array<{ path: string; message: string }>;
+      };
+      if (body.issues && body.issues.length > 0) {
+        detail = body.issues
+          .map((i) => (i.path ? `${i.path}: ${i.message}` : i.message))
+          .join("; ");
+      } else if (body.error) {
+        detail = body.error;
+      }
+    } catch {
+      // non-JSON error body — status-only message is enough
+    }
+    throw new Error(detail);
+  }
+}
+
 // SKU collision error surfaced by `createShopProduct`. The API
 // returns 409 with the existing Stripe product id; the form page
 // uses that id to render an "Edit existing SKU" link instead of a
