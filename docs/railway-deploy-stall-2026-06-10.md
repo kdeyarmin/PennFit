@@ -1,9 +1,17 @@
 # Railway deploy stall — June 10–11, 2026
 
-**Status when written (2026-06-11 04:00 UTC): OPEN.** Production has
-not deployed since ~20:05 UTC on June 10. Resolution requires the
-Railway dashboard (see the checklist at the bottom); nothing in the
-repo is broken.
+**Status: RESOLVED (2026-06-11, between ~04:15 and 05:15 UTC).** A
+deploy went through in that window and caught up the entire backlog:
+migrations `0304` + `0305` applied via the pre-deploy migrator,
+`verify:deploy` passes 3/3 against production, and the
+`patient_packets.autofile_signed_pdf` flag is seeded and enabled. The
+root cause was only visible from the Railway dashboard and is not
+recorded here; if it recurs, the checklist below still applies.
+
+Production had not deployed between ~20:05 UTC June 10 and the
+resolution window — roughly nine hours — despite green CI on every
+`main` commit. The original investigation follows, as written while
+the incident was open.
 
 ## Symptom
 
