@@ -16,6 +16,21 @@ export interface MessageFailureEvent {
   patientName: string | null;
 }
 
+/** Recall-notification SMS delivery failure — stamped on
+ *  `recall_notifications` by /sms/status-callback. Recall sends have no
+ *  conversation thread; the drill-down handle is `recallId`. */
+export interface RecallFailureEvent {
+  kind: "recall";
+  id: string;
+  occurredAt: string;
+  channel: string;
+  deliveryStatus: string | null;
+  deliveryError: string | null;
+  recallId: string;
+  patientId: string;
+  patientName: string | null;
+}
+
 export interface AuditFailureEvent {
   kind: "audit";
   id: string;
@@ -29,9 +44,17 @@ export interface AuditFailureEvent {
 
 export interface DeliveryFailuresResponse {
   sinceDays: number;
-  counts: { messageFailures: number; auditFailures: number | null };
+  counts: {
+    messageFailures: number;
+    /** Optional for back-compat with API builds that predate the
+     *  recall delivery-tracking stream. */
+    recallFailures?: number;
+    auditFailures: number | null;
+  };
   failureStatuses: readonly string[];
   messageEvents: MessageFailureEvent[];
+  /** Optional for back-compat — see counts.recallFailures. */
+  recallEvents?: RecallFailureEvent[];
   auditEvents: AuditFailureEvent[];
   /** When true, the system-events stream is no longer tracked (the
    *  audit_log source was retired). UI surfaces this as a clear
