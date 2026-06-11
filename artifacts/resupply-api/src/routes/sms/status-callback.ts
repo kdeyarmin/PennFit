@@ -6,6 +6,14 @@
 // MessageSid (we stamped the SID into vendorMetadata at send time)
 // and audit any failure so the admin inbox can surface bounces.
 //
+// Recall-notification sends are the one outbound SMS path with NO
+// messages row (the recall sweep writes only to recall_notifications),
+// so those sends bake `recallNotificationId=<row id>` into the callback
+// URL instead of `conversationId`. Twilio signs the full URL including
+// the query string, so the id is authenticated by the signature
+// middleware; when present we stamp the delivery outcome onto the
+// recall row and skip the messages lookup entirely.
+//
 // 200 every signed request. Twilio retries 5xx with exponential
 // backoff, which would amplify any downstream incident.
 
@@ -64,6 +72,11 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     typeof rawConvId === "string" && /^[0-9a-f-]{36}$/i.test(rawConvId)
       ? rawConvId
       : null;
+  const rawRecallId = req.query.recallNotificationId;
+  const recallNotificationId =
+    typeof rawRecallId === "string" && /^[0-9a-f-]{36}$/i.test(rawRecallId)
+      ? rawRecallId
+      : null;
 
   const messageSid = parsed.MessageSid;
   const status = parsed.MessageStatus;
@@ -74,6 +87,51 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  if (recallNotificationId) {
+    await updateRecallNotificationDelivery(
+      recallNotificationId,
+      messageSid,
+      status,
+      parsed.ErrorCode ?? null,
+    );
+  } else {
+    await updateMessageDelivery(messageSid, status, parsed.ErrorCode ?? null);
+  }
+
+  if (FAILURE_STATUSES.has(status)) {
+    await safeAudit({
+      action: "messaging.delivery.failed",
+      adminEmail: null,
+      adminUserId: null,
+      targetTable: recallNotificationId ? "recall_notifications" : "messages",
+      targetId: recallNotificationId,
+      metadata: {
+        channel: "sms",
+        conversation_id: conversationId,
+        recall_notification_id: recallNotificationId,
+        twilio_message_sid: messageSid,
+        status,
+        error_code: parsed.ErrorCode ?? null,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
+  }
+
+  res.status(200).type("text/xml").send("<Response/>");
+  return;
+});
+
+/**
+ * Stamp a terminal delivery status onto the messages row that carries
+ * this MessageSid in its vendor metadata. Never throws — Twilio retries
+ * 5xx, which would amplify any downstream incident.
+ */
+async function updateMessageDelivery(
+  messageSid: string,
+  status: string,
+  errorCode: string | null,
+): Promise<void> {
   try {
     const supabase = getSupabaseServiceRoleClient();
     // Update the messages row whose vendor_metadata.twilio_message_sid
@@ -85,7 +143,7 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     // its existing value).
     const update: MessagesUpdate = {
       delivery_status: status,
-      delivery_error: parsed.ErrorCode ?? null,
+      delivery_error: errorCode,
     };
     if (status === "delivered") {
       update.delivered_at = new Date().toISOString();
@@ -120,29 +178,56 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
       "sms.status-callback: failed to update messages row",
     );
   }
+}
 
-  if (FAILURE_STATUSES.has(status)) {
-    await safeAudit({
-      action: "messaging.delivery.failed",
-      adminEmail: null,
-      adminUserId: null,
-      targetTable: "messages",
-      targetId: null,
-      metadata: {
-        channel: "sms",
-        conversation_id: conversationId,
+/**
+ * Stamp a terminal delivery status onto a recall_notifications row,
+ * keyed by primary key (the id rode in the signed callback URL). Also
+ * stamps the SID — the callback can land before the send sweep's
+ * terminal flip writes it. Touches ONLY the delivery_* columns, never
+ * `status`: that column is the send sweep's state machine and a webhook
+ * must not race it. Never throws (same retry-amplification rationale).
+ */
+async function updateRecallNotificationDelivery(
+  recallNotificationId: string,
+  messageSid: string,
+  status: string,
+  errorCode: string | null,
+): Promise<void> {
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    let updateQuery = supabase
+      .schema("resupply")
+      .from("recall_notifications")
+      .update({
+        delivery_status: status,
+        delivery_error_code: errorCode,
         twilio_message_sid: messageSid,
-        status,
-        error_code: parsed.ErrorCode ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", recallNotificationId);
+    if (status === "sent") {
+      // Same no-regress rule as the messages path: callbacks are
+      // unordered and re-POSTed, so a late `sent` must never downgrade
+      // a row that already reached delivered/undelivered/failed.
+      updateQuery = updateQuery.or(
+        "delivery_status.is.null,delivery_status.not.in.(delivered,undelivered,failed)",
+      );
+    }
+    const { error } = await updateQuery;
+    if (error) throw error;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "sms_status_recall_update_failed",
+        message_sid: messageSid,
+        recall_notification_id: recallNotificationId,
+        err: serializeErr(err),
       },
-      ip: req.ip ?? null,
-      userAgent: req.get("user-agent") ?? null,
-    });
+      "sms.status-callback: failed to update recall_notifications row",
+    );
   }
-
-  res.status(200).type("text/xml").send("<Response/>");
-  return;
-});
+}
 
 function serializeErr(err: unknown): { name: string; message?: string } {
   if (err instanceof Error) return { name: err.name, message: err.message };

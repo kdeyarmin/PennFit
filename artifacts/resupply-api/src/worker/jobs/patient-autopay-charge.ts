@@ -119,8 +119,15 @@ export interface PatientAutopayRunStats {
   noBalance: number;
 }
 
+export interface PatientAutopayChargeDeps {
+  /** Injected off-session charger (tests). Defaults to the Stripe confirm. */
+  charger?: OffSessionCharger;
+}
+
 /** Load enabled authorizations, charge each patient's open balance. */
-export async function runPatientAutopayCharge(): Promise<PatientAutopayRunStats> {
+export async function runPatientAutopayCharge(
+  deps: PatientAutopayChargeDeps = {},
+): Promise<PatientAutopayRunStats> {
   const stats: PatientAutopayRunStats = {
     authorizationsConsidered: 0,
     charged: 0,
@@ -128,16 +135,19 @@ export async function runPatientAutopayCharge(): Promise<PatientAutopayRunStats>
     failed: 0,
     noBalance: 0,
   };
-  const config = readStripeConfigOrNull();
-  if (!config) {
-    logger.info(
-      { queue: PATIENT_AUTOPAY_CHARGE_JOB },
-      "patient-autopay-charge: Stripe not configured — skipping",
-    );
-    return stats;
+  let charger = deps.charger ?? null;
+  if (!charger) {
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      logger.info(
+        { queue: PATIENT_AUTOPAY_CHARGE_JOB },
+        "patient-autopay-charge: Stripe not configured — skipping",
+      );
+      return stats;
+    }
+    charger = buildStripeOffSessionCharger(getStripeClient(config));
   }
   const supabase = getSupabaseServiceRoleClient();
-  const charger = buildStripeOffSessionCharger(getStripeClient(config));
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Keyset-page the enabled authorizations: PostgREST caps each
@@ -255,6 +265,41 @@ async function chargeOneAuthorization(
     return;
   }
   stats.authorizationsConsidered += 1;
+
+  // Atomic per-authorization claim — CAS on the scanned snapshot's
+  // last_charge_attempt_at. pg-boss can run two overlapping ticks:
+  // VENDOR_SEND_QUEUE_OPTS expires a tick after 15 minutes and retries
+  // it, so a slow roster walk (or a deploy rollover's second replica)
+  // can re-process the same authorization with a FRESH patient_payments
+  // row — i.e. a different Stripe idempotency key and a real second
+  // PaymentIntent. Stamping last_charge_attempt_at conditionally on the
+  // exact value this tick scanned means exactly one overlapping tick
+  // proceeds; the loser's UPDATE matches zero rows and skips. The stamp
+  // is what selectChargeableAuthorizations keys the once-per-day rule
+  // on, and the success/failure paths below overwrite it with this same
+  // `now`, so claiming early changes no cadence. The enabled/revoked
+  // re-check also drops a patient who turned autopay off between the
+  // scan and the charge.
+  let claim = supabase
+    .schema("resupply")
+    .from("patient_autopay_authorizations")
+    .update({ last_charge_attempt_at: now, updated_at: now })
+    .eq("id", auth.id)
+    .eq("autopay_enabled", true)
+    .is("revoked_at", null);
+  claim =
+    auth.lastChargeAttemptAt === null
+      ? claim.is("last_charge_attempt_at", null)
+      : claim.eq("last_charge_attempt_at", auth.lastChargeAttemptAt);
+  const { data: claimedRows, error: claimError } = await claim.select("id");
+  if (claimError) throw claimError;
+  if (!claimedRows || claimedRows.length === 0) {
+    logger.info(
+      { authorizationId: auth.id },
+      "patient-autopay-charge: claim lost (concurrent tick, or authorization revoked/disabled mid-run) — skipping",
+    );
+    return;
+  }
 
   // Reserve the patient_payments row first so the PI metadata can
   // reference it (the webhook settles via patient_payment_id).
@@ -395,6 +440,15 @@ export async function registerPatientAutopayChargeJob(
       "patient-autopay-charge scheduled",
     );
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(PATIENT_AUTOPAY_CHARGE_JOB).catch(() => undefined);
+    }
     logger.info(
       { queue: PATIENT_AUTOPAY_CHARGE_JOB },
       "patient-autopay-charge registered (cron opt-in unset)",

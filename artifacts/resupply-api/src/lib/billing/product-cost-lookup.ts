@@ -66,7 +66,7 @@ export async function fetchUnitCostsBySku(
     }
   } catch (err) {
     log?.warn?.(
-      { err: err instanceof Error ? err.message : "unknown" },
+      { err },
       "product_costs lookup threw (non-fatal) — costs left unknown",
     );
   }

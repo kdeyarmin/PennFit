@@ -64,6 +64,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 
 const router: IRouter = Router();
 
@@ -471,7 +472,7 @@ async function fetchProductNames(
     }
   } catch (err) {
     log?.warn?.(
-      { err: err instanceof Error ? err.message : String(err) },
+      { ...stripeErrLogFields(err) },
       "shop/me/orders: stripe product name lookup failed (non-fatal)",
     );
     return out; // Whatever we managed to collect; rest fall back.

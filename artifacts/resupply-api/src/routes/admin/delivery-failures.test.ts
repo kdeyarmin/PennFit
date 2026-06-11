@@ -252,3 +252,67 @@ describe("GET /admin/delivery-failures — sinceDays query param (route)", () =>
     expect(res.body.counts.auditFailures).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Recall-notification SMS delivery failures
+// ---------------------------------------------------------------------------
+describe("GET /admin/delivery-failures — recall delivery failures", () => {
+  const RECALL_NOTIFICATION_ID = "66666666-6666-4666-8666-666666666666";
+  const RECALL_ID = "77777777-7777-4777-8777-777777777777";
+  const PATIENT_ID = "88888888-8888-4888-8888-888888888888";
+
+  it("surfaces failed recall SMS rows as recallEvents with patient names", async () => {
+    stubAdmin();
+    stageSupabaseResponse("messages", "select", { data: [], error: null });
+    stageSupabaseResponse("recall_notifications", "select", {
+      data: [
+        {
+          id: RECALL_NOTIFICATION_ID,
+          recall_id: RECALL_ID,
+          patient_id: PATIENT_ID,
+          channel: "sms",
+          delivery_status: "undelivered",
+          delivery_error_code: "30005",
+          updated_at: "2026-06-11T12:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: PATIENT_ID,
+          legal_first_name: "Pat",
+          legal_last_name: "Example",
+        },
+      ],
+      error: null,
+    });
+
+    const res = await request(makeApp()).get("/admin/delivery-failures");
+    expect(res.status).toBe(200);
+    expect(res.body.counts.recallFailures).toBe(1);
+    expect(res.body.recallEvents).toEqual([
+      {
+        kind: "recall",
+        id: RECALL_NOTIFICATION_ID,
+        occurredAt: "2026-06-11T12:00:00.000Z",
+        channel: "sms",
+        deliveryStatus: "undelivered",
+        deliveryError: "30005",
+        recallId: RECALL_ID,
+        patientId: PATIENT_ID,
+        patientName: "Pat Example",
+      },
+    ]);
+  });
+
+  it("returns an empty recallEvents array when nothing failed", async () => {
+    stubAdmin();
+    stageEmptyResponses();
+    const res = await request(makeApp()).get("/admin/delivery-failures");
+    expect(res.status).toBe(200);
+    expect(res.body.recallEvents).toEqual([]);
+    expect(res.body.counts.recallFailures).toBe(0);
+  });
+});

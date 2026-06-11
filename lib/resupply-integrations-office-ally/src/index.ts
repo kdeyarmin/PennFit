@@ -48,6 +48,7 @@ export {
 
 export {
   allocateControlNumbers,
+  controlNumbersFromValue,
   type AllocateControlNumbersInput,
 } from "./edi/control-numbers";
 

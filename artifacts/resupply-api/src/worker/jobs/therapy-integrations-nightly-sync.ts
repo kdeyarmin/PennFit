@@ -115,11 +115,17 @@ export function normalizeSnapshotForPersistence(snapshot: unknown): unknown {
 export async function registerTherapyNightlySyncJob(
   boss: PgBoss,
 ): Promise<void> {
-  await createQueueWithDlq(
-    boss,
-    THERAPY_NIGHTLY_SYNC_JOB,
-    VENDOR_SEND_QUEUE_OPTS,
-  );
+  await createQueueWithDlq(boss, THERAPY_NIGHTLY_SYNC_JOB, {
+    ...VENDOR_SEND_QUEUE_OPTS,
+    // A full MAX_LINKS_PER_RUN page costs 200s of throttle sleep alone
+    // (1000 × 200ms) plus a vendor HTTP fetch and several PostgREST
+    // writes per link — realistic worst case is tens of minutes, far
+    // past the preset's 15-minute expiry. An expired-but-still-running
+    // handler gets retried CONCURRENTLY by pg-boss: two syncs then
+    // double-fetch rate-limited vendor APIs and interleave
+    // last_synced_at stamps. Budget a full hour instead.
+    expireInMinutes: 60,
+  });
   await boss.work(THERAPY_NIGHTLY_SYNC_JOB, async () => {
     await runTherapyNightlySync();
   });

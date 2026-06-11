@@ -24,7 +24,9 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { autofileSignedPacketPdf } from "../../lib/patient-packet/autofile";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
+import { renderPacketDocumentSections } from "../../lib/patient-packet/content";
 import {
   getPacketTemplate,
   packetRequiresDateReceived,
@@ -61,6 +63,8 @@ type ResolvedPacket = {
   expires_at: string | null;
   title: string;
   recipient_name: string;
+  recipient_email: string | null;
+  recipient_phone: string | null;
   completed_at: string | null;
   delivery_details: DeliveryDetails | null;
 };
@@ -84,7 +88,7 @@ async function resolveOpenPacket(
     .schema("resupply")
     .from("patient_packets")
     .select(
-      "id, status, link_version, expires_at, title, recipient_name, completed_at, delivery_details",
+      "id, status, link_version, expires_at, title, recipient_name, recipient_email, recipient_phone, completed_at, delivery_details",
     )
     .eq("id", verified.packetId)
     .limit(1)
@@ -128,7 +132,9 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
   const { data: docs, error: docsErr } = await supabase
     .schema("resupply")
     .from("patient_packet_documents")
-    .select("document_key, title, requires_signature, sort_order")
+    .select(
+      "document_key, title, requires_signature, content_sections, sort_order",
+    )
     .eq("packet_id", packet.id)
     .order("sort_order", { ascending: true });
   if (docsErr) throw docsErr;
@@ -156,7 +162,6 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
   }
 
   const docKeys = (docs ?? []).map((d) => d.document_key);
-  const buildCtx = { deliveryDetails: packet.delivery_details };
 
   res.json({
     status: "open",
@@ -177,7 +182,17 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
         title: d.title,
         category: t?.category ?? "consent",
         requiresSignature: d.requires_signature,
-        sections: t ? t.build(company, buildCtx) : [],
+        // Send-time snapshot (tokens resolved here); legacy rows without
+        // a snapshot build from the code template exactly as before.
+        sections: renderPacketDocumentSections({
+          documentKey: d.document_key,
+          storedSections: d.content_sections,
+          company,
+          recipientName: packet.recipient_name,
+          recipientEmail: packet.recipient_email,
+          recipientPhone: packet.recipient_phone,
+          deliveryDetails: packet.delivery_details,
+        }),
       };
     }),
   });
@@ -339,6 +354,12 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   }).catch((err) => {
     logger.warn({ err }, "patient_packet.signed audit write failed");
   });
+
+  // File the signed PDF onto the patient's chart — fire-and-forget,
+  // best-effort (autofile.ts logs and swallows its own failures). The
+  // patient's signing response must never wait on PDF rendering or
+  // object storage.
+  void autofileSignedPacketPdf(supabase, packet.id);
 
   res.json({ status: "completed", completedAt: nowIso });
 });

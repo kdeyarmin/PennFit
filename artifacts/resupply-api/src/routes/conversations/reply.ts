@@ -424,7 +424,7 @@ async function tryNotifyCustomerOfReply(input: {
     logger.warn(
       {
         conversation_id: input.conversationId,
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "in_app_reply_notification: push send threw (non-fatal)",
     );

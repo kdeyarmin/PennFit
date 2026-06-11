@@ -1,13 +1,19 @@
 // /admin/manual-documents — staff-authored, manually-typed PDF documents.
 //
 // CSRs produce one-off documents (CMN, prescription/order, agreement,
-// delivery ticket, fax cover letter, or a free-form letter) by TYPING
-// the content themselves — deliberately without pre-populating any
-// patient record. Each document can then be downloaded, emailed to a
-// customer, faxed, and/or filed to a patient chart. None of those are
-// required: a document can exist on its own.
+// delivery ticket, fax cover letter, or a free-form letter) by typing
+// the content themselves. Fields start BLANK; the optional /prefill
+// endpoint suggests values from data already on the chart (patient
+// demographics, latest prescription + provider, sleep-study diagnosis)
+// so the author only types what they want to change. Each document can
+// then be downloaded, emailed to a customer, faxed, and/or filed to a
+// patient chart. None of those are required: a document can exist on
+// its own.
 //
 //   GET    /admin/manual-documents/catalog       — type + field catalog
+//   GET    /admin/manual-documents/prefill       — chart-sourced field
+//                                                  suggestions (?patientId,
+//                                                  ?documentType)
 //   GET    /admin/manual-documents               — list (?patientId,?status)
 //   POST   /admin/manual-documents               — create a draft
 //   GET    /admin/manual-documents/:id           — detail
@@ -48,6 +54,7 @@ import {
   normalizeManualDocumentFields,
   type ManualDocumentType,
 } from "../../lib/manual-documents/catalog.js";
+import { STANDARD_DOCUMENT_LIBRARY } from "../../lib/manual-documents/standard-documents.js";
 import {
   loadManualDocumentRow,
   manualDocumentSupplierName,
@@ -172,6 +179,229 @@ router.get(
         fields: def.fields,
       })),
     });
+  },
+);
+
+// ── Standard payer-document library ────────────────────────────────
+//
+// The code-defined, Medicare/payer-aligned starting points (SWO, PAP
+// CMN, ABN, AOB, supplier standards, proof of delivery, refill
+// confirmation). Always available to every caller with patients.read —
+// the SPA renders the library on /admin/documents and "Use" creates an
+// ordinary editable draft through the existing POST.
+router.get(
+  "/admin/manual-documents/standard-catalog",
+  adminReadRateLimiter,
+  requirePermission("patients.read"),
+  (_req, res) => {
+    res.json({
+      templates: STANDARD_DOCUMENT_LIBRARY.map((t) => ({
+        key: t.key,
+        label: t.label,
+        documentType: t.documentType,
+        description: t.description,
+        title: t.title,
+        fields: t.fields,
+        body: t.body,
+      })),
+    });
+  },
+);
+
+// ── Prefill from the chart ─────────────────────────────────────────
+//
+// Suggests field + recipient values for a new manual document from data
+// already in the app (patient demographics, the latest prescription and
+// its provider, the latest sleep-study diagnosis), so the author only
+// types what they want to CHANGE. Authoring stays fully editable — this
+// endpoint returns suggestions; nothing is persisted, and the SPA only
+// fills inputs the operator hasn't already typed in.
+//
+// Recipient suggestion follows who the document is normally addressed
+// to: CMN / prescription / fax cover go TO the physician; agreements
+// and delivery tickets go to the patient.
+//
+// PHI posture: the response is patient demographics over an authed
+// admin session — same as the patient detail routes. Never logged.
+const prefillQuery = z
+  .object({
+    patientId: z.string().uuid(),
+    documentType: z.string().refine(isManualDocumentType, {
+      message: "Unknown document type",
+    }),
+  })
+  .strict();
+
+function formatJsonAddress(raw: unknown): string {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "";
+  const r = raw as Record<string, unknown>;
+  const str = (k: string) => (typeof r[k] === "string" ? (r[k] as string) : "");
+  const line1 = str("line1");
+  const line2 = str("line2");
+  const city = str("city");
+  const state = str("state");
+  const zip = str("postalCode") || str("postal_code") || str("zip");
+  const cityLine = [city, [state, zip].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  return [line1, line2, cityLine].filter(Boolean).join("\n");
+}
+
+router.get(
+  "/admin/manual-documents/prefill",
+  adminReadRateLimiter,
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const parsed = prefillQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_query" });
+      return;
+    }
+    const { patientId, documentType } = parsed.data;
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { data: patient, error: patientErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
+      )
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (patientErr) throw patientErr;
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    const [presRes, studyRes] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .select("item_sku, hcpcs_code, provider_id, status, created_at")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabase
+        .schema("resupply")
+        .from("sleep_studies")
+        .select("diagnosis_icd10, study_date")
+        .eq("patient_id", patientId)
+        .order("study_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (presRes.error) throw presRes.error;
+    if (studyRes.error) throw studyRes.error;
+
+    const prescriptions = presRes.data ?? [];
+    const activePrescriptions = prescriptions.filter(
+      (p) => p.status === "active",
+    );
+    const relevantPrescriptions =
+      activePrescriptions.length > 0 ? activePrescriptions : prescriptions;
+    const providerId =
+      relevantPrescriptions.find((p) => p.provider_id)?.provider_id ?? null;
+
+    let provider: {
+      legal_name: string | null;
+      npi: string | null;
+      practice_name: string | null;
+      fax_e164: string | null;
+      email: string | null;
+      practice_address: unknown;
+    } | null = null;
+    if (providerId) {
+      const { data, error: provErr } = await supabase
+        .schema("resupply")
+        .from("providers")
+        .select(
+          "legal_name, npi, practice_name, fax_e164, email, practice_address",
+        )
+        .eq("id", providerId)
+        .limit(1)
+        .maybeSingle();
+      if (provErr) throw provErr;
+      provider = data;
+    }
+
+    const patientName =
+      `${patient.legal_first_name ?? ""} ${patient.legal_last_name ?? ""}`.trim();
+    const patientAddress = formatJsonAddress(patient.address);
+    const itemLines = [
+      ...new Set(
+        relevantPrescriptions.map((p) =>
+          p.hcpcs_code ? `${p.item_sku} (HCPCS ${p.hcpcs_code})` : p.item_sku,
+        ),
+      ),
+    ].join("\n");
+    const diagnosis = studyRes.data?.diagnosis_icd10 ?? "";
+
+    // Per-type field suggestions. Only keys the type's catalog defines
+    // survive (normalize below), and empty values are dropped, so the
+    // SPA always receives a minimal, valid map.
+    const byType: Record<ManualDocumentType, Record<string, string>> = {
+      cmn: {
+        patient_name: patientName,
+        date_of_birth: patient.date_of_birth ?? "",
+        ordering_physician: provider?.legal_name ?? "",
+        physician_npi: provider?.npi ?? "",
+        diagnosis,
+        equipment: itemLines,
+      },
+      prescription: {
+        patient_name: patientName,
+        date_of_birth: patient.date_of_birth ?? "",
+        prescriber_name: provider?.legal_name ?? "",
+        prescriber_npi: provider?.npi ?? "",
+        items_ordered: itemLines,
+        icd10_codes: diagnosis,
+      },
+      agreement: {
+        party_name: patientName,
+      },
+      delivery_ticket: {
+        patient_name: patientName,
+        delivery_address: patientAddress,
+      },
+      cover_letter: {
+        attention: provider?.legal_name ?? "",
+        from_name: manualDocumentSupplierName(),
+      },
+      other: {},
+    };
+    const fields = normalizeManualDocumentFields(
+      documentType,
+      byType[documentType],
+    );
+
+    // Recipient block: physician-addressed kinds vs patient-addressed.
+    const toProvider =
+      documentType === "cmn" ||
+      documentType === "prescription" ||
+      documentType === "cover_letter";
+    const recipient =
+      toProvider && provider
+        ? {
+            name:
+              [provider.legal_name, provider.practice_name]
+                .filter(Boolean)
+                .join(" — ") || null,
+            address: formatJsonAddress(provider.practice_address) || null,
+            email: provider.email ?? null,
+            fax: provider.fax_e164 ?? null,
+          }
+        : !toProvider
+          ? {
+              name: patientName || null,
+              address: patientAddress || null,
+              email: patient.email ?? null,
+              fax: null,
+            }
+          : { name: null, address: null, email: null, fax: null };
+
+    res.json({ fields, recipient });
   },
 );
 
@@ -549,10 +779,7 @@ router.post(
         ],
       });
     } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "manual_document.send_email failed",
-      );
+      logger.warn({ err }, "manual_document.send_email failed");
       res.status(502).json({ error: "email_send_failed" });
       return;
     }
@@ -773,10 +1000,7 @@ router.post(
         res.status(502).json({ error: "upload_failed" });
         return;
       }
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "manual_document.attach upload failed",
-      );
+      logger.warn({ err }, "manual_document.attach upload failed");
       res.status(502).json({ error: "upload_failed" });
       return;
     }

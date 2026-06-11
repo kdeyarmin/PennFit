@@ -46,6 +46,8 @@
 //   replay-protection SID on email media the way there is on MMS).
 //   So we audit and 200 even on parse failures.
 
+import { createHash } from "node:crypto";
+
 import { Router, type IRouter, type Request, type Response } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import busboy from "busboy";
@@ -63,6 +65,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { claimDedupKey } from "../../lib/dedup-keys";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { selectLlmProvider } from "../../lib/llm-provider";
 import { generateEmailReply } from "../../lib/messaging/email-auto-reply";
@@ -456,6 +459,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
           inboundSubject: subject,
           inboundBody: body,
           inboundMessageId,
+          rfcMessageId: sendgridMessageId,
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
         });
@@ -525,8 +529,22 @@ interface AttemptEmailAutoReplyInput {
   inboundBody: string;
   /** Id of the inbound row we just inserted, so it's excluded from context. */
   inboundMessageId: string | null;
+  /** RFC-822 Message-ID header of the inbound email (sender-controlled). */
+  rfcMessageId: string | null;
   ip: string | null;
   userAgent: string | null;
+}
+
+/** One auto-reply attempt allowed per sender per bucket. The fallback
+ *  for a capped sender is the human-handoff path — exactly the
+ *  pre-auto-reply behavior — so a chatty patient loses nothing but
+ *  the instant bot answer. */
+const AUTO_REPLY_SENDER_BUCKET_MS = 15 * 60 * 1000;
+/** Replays of the same Message-ID are refused for this long. */
+const AUTO_REPLY_MSGID_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 /**
@@ -551,7 +569,58 @@ async function attemptEmailAutoReply(
     inboundSubject,
     inboundBody,
     inboundMessageId,
+    rfcMessageId,
   } = input;
+
+  // Replay + amplification guards (app-review 2026-06-10, P1-6),
+  // evaluated BEFORE the model call so a replay storm never reaches the
+  // LLM. Unlike the SMS webhook (vendor-assigned MessageSid
+  // idempotency), Inbound Parse carries no per-message vendor id — the
+  // RFC-822 Message-ID is sender-controlled, so the dedup stops loops
+  // and replays of the SAME message, and the per-sender bucket bounds an
+  // attacker minting fresh ids. Keys carry SHA-256 hashes, never the raw
+  // address or Message-ID (worker_dedup_keys keys are joinable
+  // pseudo-identifiers otherwise). Every non-claimed outcome — held,
+  // claim error, or a missing Message-ID paired with a capped sender —
+  // returns false, i.e. the human-handoff path the thread used before
+  // auto-reply existed.
+  if (rfcMessageId) {
+    const msgIdClaim = await claimDedupKey(
+      supabase,
+      `email-auto-reply:msgid:${sha256Hex(rfcMessageId)}`,
+      new Date(Date.now() + AUTO_REPLY_MSGID_TTL_MS).toISOString(),
+    );
+    if (msgIdClaim.outcome !== "claimed") {
+      if (msgIdClaim.outcome === "held") {
+        logger.warn(
+          {
+            event: "email_auto_reply_replay_suppressed",
+            conversation_id: conversationId,
+          },
+          "email.inbound-parse: duplicate Message-ID — handing off to a human",
+        );
+      }
+      return false;
+    }
+  }
+  const bucket = Math.floor(Date.now() / AUTO_REPLY_SENDER_BUCKET_MS);
+  const senderClaim = await claimDedupKey(
+    supabase,
+    `email-auto-reply:sender:${sha256Hex(toEmail.toLowerCase())}:${bucket}`,
+    new Date((bucket + 2) * AUTO_REPLY_SENDER_BUCKET_MS).toISOString(),
+  );
+  if (senderClaim.outcome !== "claimed") {
+    if (senderClaim.outcome === "held") {
+      logger.info(
+        {
+          event: "email_auto_reply_sender_capped",
+          conversation_id: conversationId,
+        },
+        "email.inbound-parse: sender already auto-replied this window — handing off",
+      );
+    }
+    return false;
+  }
 
   // Pull a short window of prior turns for context, excluding the inbound
   // row we just inserted (its body is passed separately as the message to

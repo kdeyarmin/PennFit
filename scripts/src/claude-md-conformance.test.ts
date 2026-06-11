@@ -51,9 +51,11 @@ describe("pnpm-workspace.yaml workspace globs", () => {
     expect(workspaceContent).toContain("lib/*");
   });
 
-  it("contains the lib/integrations/* glob (added in this PR)", () => {
-    // CLAUDE.md now documents `lib/integrations/*` as a workspace glob.
-    expect(workspaceContent).toContain("lib/integrations/*");
+  it("does not contain the retired lib/integrations/* glob", () => {
+    // The glob matched nothing (lib/integrations/ never existed — every
+    // integration package lives directly under lib/ and is covered by the
+    // lib/* glob), so it was removed and CLAUDE.md no longer documents it.
+    expect(workspaceContent).not.toContain("lib/integrations/*");
   });
 
   it("contains the scripts glob", () => {

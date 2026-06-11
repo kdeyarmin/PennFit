@@ -38,20 +38,7 @@ router.get(
     const t90d = new Date(now - 90 * 24 * 3600 * 1000).toISOString();
     const t7d = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
 
-    const [
-      { data: staleDrafts },
-      { data: freshDenials },
-      { data: stuckSubmitted },
-      { data: partialEras },
-      { data: scrubBlocking },
-      { data: scrubFixable },
-      { data: deniedNoAnalysis },
-      { data: autoResubmitReady },
-      { data: openPatientResp },
-      { count: webhooksQueued },
-      { count: webhooksExhausted24h },
-      { data: denialRateRows },
-    ] = await Promise.all([
+    const results = await Promise.all([
       supabase
         .schema("resupply")
         .from("insurance_claims")
@@ -125,6 +112,26 @@ router.get(
         .in("status", ["paid", "denied", "appealed", "closed"])
         .limit(20000),
     ]);
+    // Surface query failures instead of rendering an "all clear"
+    // director summary (same swallowed-`error` class fixed in
+    // ai-billing-queue / inbox-counts / billing-dashboard).
+    for (const r of results) {
+      if (r.error) throw r.error;
+    }
+    const [
+      { data: staleDrafts },
+      { data: freshDenials },
+      { data: stuckSubmitted },
+      { data: partialEras },
+      { data: scrubBlocking },
+      { data: scrubFixable },
+      { data: deniedNoAnalysis },
+      { data: autoResubmitReady },
+      { data: openPatientResp },
+      { count: webhooksQueued },
+      { count: webhooksExhausted24h },
+      { data: denialRateRows },
+    ] = results;
 
     // Money rollups.
     const dollarsInStuckSubmitted = (stuckSubmitted ?? []).reduce(

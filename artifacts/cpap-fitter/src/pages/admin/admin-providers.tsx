@@ -22,6 +22,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -342,11 +344,24 @@ function AddProviderModal({
       setError(null);
     },
     onError: (e: Error) => {
-      setError(
-        e.message.includes("npi_not_found")
-          ? "No provider with that NPI in NPPES — fill out the form manually."
-          : `NPPES lookup failed: ${e.message}`,
-      );
+      if (e instanceof ApiError && e.status === 404) {
+        setError(
+          "No provider with that NPI in NPPES — fill out the form manually.",
+        );
+      } else {
+        // The 502 body carries an operator-facing `message` with the
+        // upstream failure detail (e.g. "rejected the request (HTTP
+        // 403)"); prefer it over the raw "HTTP 502 Bad Gateway" line.
+        const serverMessage =
+          e instanceof ApiError &&
+          e.data &&
+          typeof e.data === "object" &&
+          "message" in e.data &&
+          typeof e.data.message === "string"
+            ? e.data.message
+            : null;
+        setError(`NPPES lookup failed: ${serverMessage ?? e.message}`);
+      }
       setAutofilled(null);
     },
   });
@@ -407,10 +422,18 @@ function AddProviderModal({
               </label>
               <Input
                 value={npi}
-                onChange={(e) => setNpi(e.target.value)}
+                // Strip formatting as the user types/pastes: NPIs copied
+                // from an EHR or PDF often carry dashes, spaces, or an
+                // "NPI:" prefix. With a bare maxLength the separators
+                // consumed the 10-char budget and silently truncated the
+                // digits, leaving the Look up button disabled with no
+                // explanation.
+                onChange={(e) =>
+                  setNpi(e.target.value.replace(/\D/g, "").slice(0, 10))
+                }
                 placeholder="1234567893"
                 aria-label="NPI (10 digits)"
-                maxLength={10}
+                inputMode="numeric"
               />
             </div>
             <Button

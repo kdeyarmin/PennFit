@@ -35,6 +35,18 @@ export function Capture() {
     streamRef.current = null;
   };
 
+  // Attach the live stream to the <video> element and arm the
+  // videoReady flip. Called from startCamera when the element is
+  // already mounted, and from the effect below for the retry path,
+  // where the element only mounts AFTER the stream lands.
+  const attachStream = () => {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream || video.srcObject === stream) return;
+    video.srcObject = stream;
+    video.onloadeddata = () => setVideoReady(true);
+  };
+
   const startCamera = async (): Promise<MediaStream | null> => {
     setError(null);
     setVideoReady(false);
@@ -49,10 +61,7 @@ export function Capture() {
         },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadeddata = () => setVideoReady(true);
-      }
+      attachStream();
       setHasPermission(true);
       return stream;
     } catch (err) {
@@ -94,6 +103,19 @@ export function Capture() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-attach on the retry path: the error screen renders WITHOUT the
+  // <video> element, so when "Try again" succeeds the element only
+  // mounts on the NEXT render — after startCamera's own attach already
+  // saw a null ref. Without this, the fresh <video> has no srcObject,
+  // videoReady never flips, and the page wedges on "warming up" with
+  // the camera light on (docs/app-review-2026-06-10.md P0-4). Every
+  // acquisition path resets `error` to null and lands
+  // `hasPermission === true`, so these deps cover all of them; the
+  // srcObject identity guard makes redundant runs no-ops.
+  useEffect(() => {
+    attachStream();
+  }, [hasPermission, error]);
 
   // Capture the current frame from the video feed.
   // Returns true on success, false on failure (so the caller can reset state).

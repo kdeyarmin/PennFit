@@ -169,174 +169,200 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
 
   const cooldownThreshold = isoDaysAgo(RESEND_COOLDOWN_DAYS);
 
-  const { data: candidates, error } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select(
-      "id, email, legal_first_name, legal_last_name, date_of_birth, quarterly_summary_last_sent_at",
-    )
-    .not("email", "is", null)
-    .or(
-      `quarterly_summary_last_sent_at.is.null,quarterly_summary_last_sent_at.lt.${cooldownThreshold}`,
-    )
-    .limit(PER_RUN_MAX * 2);
-  if (error) throw error;
-
-  const rows: PatientRow[] = (candidates ?? []).filter(
-    (r): r is PatientRow => typeof r.email === "string" && r.email.length > 0,
-  );
-
   const practiceName = process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
 
-  // Honor comm-prefs by joining via lowercased email. Every candidate
-  // hits this gate, so resolve all of them in one batched read instead
-  // of a shop_customers query per patient. A patient who never created a
-  // shop_customer row implicitly inherits the "marketing OFF by default"
-  // stance — we skip them. Engaged customers (the target cohort for this
-  // email) all have a row via /account.
-  const optInByEmail = await loadOptInStatuses(
-    supabase,
-    rows.map((r) => r.email),
-  );
-
-  for (const patient of rows) {
-    if (stats.sent >= PER_RUN_MAX) break;
-    stats.candidates += 1;
-
-    const gate = optInByEmail.get(patient.email.toLowerCase()) ?? {
-      optedIn: false,
-      hadShopCustomer: false,
-    };
-    if (!gate.hadShopCustomer) {
-      stats.skippedNoShopCustomer += 1;
-      continue;
-    }
-    if (!gate.optedIn) {
-      stats.skippedOptedOut += 1;
-      continue;
-    }
-
-    // Pull the patient's nights. Cap at WINDOW_DAYS * 4 to bound
-    // the read; a patient with multiple sync sources may have
-    // duplicate dates which buildQuarterlySummary dedups.
-    const windowEnd = new Date();
-    const windowStart = new Date(windowEnd);
-    windowStart.setUTCDate(windowStart.getUTCDate() - WINDOW_DAYS);
-    const startIso = windowStart.toISOString().slice(0, 10);
-    const endIso = windowEnd.toISOString().slice(0, 10);
-
-    const { data: nights, error: nightsErr } = await supabase
-      .schema("resupply")
-      .from("patient_therapy_nights")
-      .select("night_date, usage_minutes, ahi, leak_rate_l_min")
-      .eq("patient_id", patient.id)
-      .gte("night_date", startIso)
-      .order("night_date", { ascending: true })
-      .limit(WINDOW_DAYS * 4);
-    if (nightsErr) {
-      logger.warn(
-        { err: nightsErr.message, patientId: patient.id },
-        "quarterly-summary: night read failed",
-      );
-      stats.failed += 1;
-      continue;
-    }
-
-    const summary = buildQuarterlySummary({
-      patient: {
-        legalFirstName: patient.legal_first_name,
-        legalLastName: patient.legal_last_name,
-        dateOfBirth: patient.date_of_birth,
-      },
-      windowStart: startIso,
-      windowEnd: endIso,
-      practiceName,
-      nights: (nights ?? []).map((n) => ({
-        nightDate: n.night_date,
-        usageMinutes: n.usage_minutes,
-        ahi: n.ahi == null ? null : Number(n.ahi),
-        leakLMin: n.leak_rate_l_min == null ? null : Number(n.leak_rate_l_min),
-      })),
-    });
-
-    if (summary.fields.nightsRecorded < MIN_NIGHTS_FOR_SUMMARY) {
-      stats.skippedNoData += 1;
-      continue;
-    }
-
-    // Atomic claim — stamp before the send.
-    const claimIso = new Date().toISOString();
-    const { data: claimed, error: claimErr } = await supabase
+  // Keyset-paged candidate walk. Skipped rows — most patients have NO
+  // shop_customers row at all (skippedNoShopCustomer), plus opt-outs
+  // and no-data patients — are never stamped, so they re-match the
+  // cooldown filter on every run: a single unordered LIMIT slate
+  // stalled permanently once the skip cohort exceeded it and everyone
+  // behind it never received a summary (the documented
+  // lapsed-customer-winback starvation class). MAX_SCANNED bounds a
+  // pathological dead cohort.
+  const SCAN_PAGE = PER_RUN_MAX * 2;
+  const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
+  let lastPatientId: string | null = null;
+  let scannedTotal = 0;
+  pages: while (
+    stats.sent < PER_RUN_MAX &&
+    scannedTotal < MAX_SCANNED_PER_RUN
+  ) {
+    let pageQuery = supabase
       .schema("resupply")
       .from("patients")
-      .update({ quarterly_summary_last_sent_at: claimIso })
-      .eq("id", patient.id)
+      .select(
+        "id, email, legal_first_name, legal_last_name, date_of_birth, quarterly_summary_last_sent_at",
+      )
+      .not("email", "is", null)
       .or(
         `quarterly_summary_last_sent_at.is.null,quarterly_summary_last_sent_at.lt.${cooldownThreshold}`,
       )
-      .select("id");
-    if (claimErr) {
-      logger.warn(
-        { err: claimErr.message, patientId: patient.id },
-        "quarterly-summary: claim failed",
-      );
-      stats.failed += 1;
-      continue;
+      .order("id", { ascending: true })
+      .limit(SCAN_PAGE);
+    if (lastPatientId !== null) {
+      pageQuery = pageQuery.gt("id", lastPatientId);
     }
-    if (!claimed || claimed.length === 0) {
-      // Lost the race or already stamped after our read.
-      continue;
-    }
+    const { data: candidates, error } = await pageQuery;
+    if (error) throw error;
+    if (!candidates || candidates.length === 0) break;
+    scannedTotal += candidates.length;
+    lastPatientId = candidates[candidates.length - 1]!.id;
 
-    const releaseClaim = async (): Promise<void> => {
-      const { error: releaseErr } = await supabase
-        .schema("resupply")
-        .from("patients")
-        .update({
-          quarterly_summary_last_sent_at:
-            patient.quarterly_summary_last_sent_at,
-        })
-        .eq("id", patient.id);
-      if (releaseErr) {
-        logger.error(
-          { err: releaseErr.message, patientId: patient.id },
-          "quarterly-summary: releaseClaim failed — patient timestamp stuck; summary will be skipped until next window",
-        );
+    const rows: PatientRow[] = candidates.filter(
+      (r): r is PatientRow => typeof r.email === "string" && r.email.length > 0,
+    );
+
+    // Honor comm-prefs by joining via lowercased email. Every candidate
+    // hits this gate, so resolve the page in one batched read instead
+    // of a shop_customers query per patient. A patient who never created
+    // a shop_customer row implicitly inherits the "marketing OFF by
+    // default" stance — we skip them. Engaged customers (the target
+    // cohort for this email) all have a row via /account.
+    const optInByEmail = await loadOptInStatuses(
+      supabase,
+      rows.map((r) => r.email),
+    );
+
+    for (const patient of rows) {
+      if (stats.sent >= PER_RUN_MAX) break pages;
+      stats.candidates += 1;
+
+      const gate = optInByEmail.get(patient.email.toLowerCase()) ?? {
+        optedIn: false,
+        hadShopCustomer: false,
+      };
+      if (!gate.hadShopCustomer) {
+        stats.skippedNoShopCustomer += 1;
+        continue;
       }
-    };
+      if (!gate.optedIn) {
+        stats.skippedOptedOut += 1;
+        continue;
+      }
 
-    try {
-      const result = await sendQuarterlySummaryEmail({
-        toEmail: patient.email,
-        firstName: patient.legal_first_name,
+      // Pull the patient's nights. Cap at WINDOW_DAYS * 4 to bound
+      // the read; a patient with multiple sync sources may have
+      // duplicate dates which buildQuarterlySummary dedups.
+      const windowEnd = new Date();
+      const windowStart = new Date(windowEnd);
+      windowStart.setUTCDate(windowStart.getUTCDate() - WINDOW_DAYS);
+      const startIso = windowStart.toISOString().slice(0, 10);
+      const endIso = windowEnd.toISOString().slice(0, 10);
+
+      const { data: nights, error: nightsErr } = await supabase
+        .schema("resupply")
+        .from("patient_therapy_nights")
+        .select("night_date, usage_minutes, ahi, leak_rate_l_min")
+        .eq("patient_id", patient.id)
+        .gte("night_date", startIso)
+        .order("night_date", { ascending: true })
+        .limit(WINDOW_DAYS * 4);
+      if (nightsErr) {
+        logger.warn(
+          { err: nightsErr.message, patientId: patient.id },
+          "quarterly-summary: night read failed",
+        );
+        stats.failed += 1;
+        continue;
+      }
+
+      const summary = buildQuarterlySummary({
+        patient: {
+          legalFirstName: patient.legal_first_name,
+          legalLastName: patient.legal_last_name,
+          dateOfBirth: patient.date_of_birth,
+        },
         windowStart: startIso,
         windowEnd: endIso,
-        fields: summary.fields,
+        practiceName,
+        nights: (nights ?? []).map((n) => ({
+          nightDate: n.night_date,
+          usageMinutes: n.usage_minutes,
+          ahi: n.ahi == null ? null : Number(n.ahi),
+          leakLMin:
+            n.leak_rate_l_min == null ? null : Number(n.leak_rate_l_min),
+        })),
       });
-      if (!result.configured) {
-        await releaseClaim();
+
+      if (summary.fields.nightsRecorded < MIN_NIGHTS_FOR_SUMMARY) {
+        stats.skippedNoData += 1;
         continue;
       }
-      if (!result.delivered) {
+
+      // Atomic claim — stamp before the send.
+      const claimIso = new Date().toISOString();
+      const { data: claimed, error: claimErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .update({ quarterly_summary_last_sent_at: claimIso })
+        .eq("id", patient.id)
+        .or(
+          `quarterly_summary_last_sent_at.is.null,quarterly_summary_last_sent_at.lt.${cooldownThreshold}`,
+        )
+        .select("id");
+      if (claimErr) {
+        logger.warn(
+          { err: claimErr.message, patientId: patient.id },
+          "quarterly-summary: claim failed",
+        );
+        stats.failed += 1;
+        continue;
+      }
+      if (!claimed || claimed.length === 0) {
+        // Lost the race or already stamped after our read.
+        continue;
+      }
+
+      const releaseClaim = async (): Promise<void> => {
+        const { error: releaseErr } = await supabase
+          .schema("resupply")
+          .from("patients")
+          .update({
+            quarterly_summary_last_sent_at:
+              patient.quarterly_summary_last_sent_at,
+          })
+          .eq("id", patient.id);
+        if (releaseErr) {
+          logger.error(
+            { err: releaseErr.message, patientId: patient.id },
+            "quarterly-summary: releaseClaim failed — patient timestamp stuck; summary will be skipped until next window",
+          );
+        }
+      };
+
+      try {
+        const result = await sendQuarterlySummaryEmail({
+          toEmail: patient.email,
+          firstName: patient.legal_first_name,
+          windowStart: startIso,
+          windowEnd: endIso,
+          fields: summary.fields,
+        });
+        if (!result.configured) {
+          await releaseClaim();
+          continue;
+        }
+        if (!result.delivered) {
+          await releaseClaim();
+          stats.failed += 1;
+          logger.warn(
+            { patientId: patient.id, err: result.error },
+            "quarterly-summary: send failed",
+          );
+          continue;
+        }
+        stats.sent += 1;
+      } catch (err) {
         await releaseClaim();
         stats.failed += 1;
-        logger.warn(
-          { patientId: patient.id, err: result.error },
-          "quarterly-summary: send failed",
+        logger.error(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            patientId: patient.id,
+          },
+          "quarterly-summary: send threw",
         );
-        continue;
       }
-      stats.sent += 1;
-    } catch (err) {
-      await releaseClaim();
-      stats.failed += 1;
-      logger.error(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          patientId: patient.id,
-        },
-        "quarterly-summary: send threw",
-      );
     }
   }
 

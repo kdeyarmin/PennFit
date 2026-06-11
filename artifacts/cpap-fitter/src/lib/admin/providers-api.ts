@@ -98,6 +98,14 @@ export async function listProviders(
   return jsonFetch(`/admin/providers${qs ? `?${qs}` : ""}`);
 }
 
+/**
+ * Proxy lookup against the public NPPES registry. Failure bodies
+ * (thrown as `ApiError.data`):
+ *   404 `{ error: "npi_not_found" }`
+ *   502 `{ error: "nppes_unavailable", upstreamStatus: number | null,
+ *          message: string }` — `message` is operator-facing and safe
+ *          to render verbatim.
+ */
 export async function lookupNppes(npi: string): Promise<{
   provider: NppesProviderProjection;
 }> {

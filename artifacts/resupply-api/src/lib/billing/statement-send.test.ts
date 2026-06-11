@@ -131,11 +131,26 @@ describe("sendOneStatement", () => {
       error: null,
     });
   }
+  // The pending/failed → 'sending' claim UPDATE that gates every
+  // electronic dispatch. data [{id}] = claim won; data [] = another
+  // sender (batch vs operator click) got there first.
+  function stageClaim(won = true) {
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: won ? [{ id: "stmt-1" }] : [],
+      error: null,
+    });
+  }
 
   it("sends via the chosen channel and records the outcome", async () => {
     stageStatement();
     stagePatient();
     stageCustomerPrefs({}); // defaults → email allowed
+    stageClaim();
+    // persistOutcome's conditional sending → sent transition.
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
 
     const send = vi
       .fn<SendFn>()
@@ -152,6 +167,62 @@ describe("sendOneStatement", () => {
     const [ctx, channel] = send.mock.calls[0]!;
     expect(channel).toBe("email");
     expect(ctx.amountCents).toBe(5000);
+
+    // The claim ran before the send, flipped the row to 'sending', and
+    // was conditional on the claimable states only.
+    const claimPayload = supabaseMock.writePayloads(
+      "patient_billing_statements",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(claimPayload).toEqual({ delivery_status: "sending" });
+    const claimFilters = supabaseMock.filterCalls(
+      "patient_billing_statements",
+      "update",
+    );
+    expect(claimFilters).toContainEqual({
+      verb: "in",
+      args: ["delivery_status", ["pending", "failed"]],
+    });
+  });
+
+  it("does NOT send when another sender already claimed the row", async () => {
+    stageStatement();
+    stagePatient();
+    stageCustomerPrefs({});
+    stageClaim(false); // zero rows back — the concurrent sender won
+
+    const send = vi.fn<SendFn>();
+    const outcome = await sendOneStatement(
+      getSupabaseServiceRoleClient(),
+      "stmt-1",
+      { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
+    );
+
+    expect(outcome).toEqual({
+      kind: "skipped",
+      reason: "already_claimed_or_sent",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("throws (does not send) when the claim UPDATE itself errors", async () => {
+    stageStatement();
+    stagePatient();
+    stageCustomerPrefs({});
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: null,
+      error: { message: "connection failure" },
+    });
+
+    const send = vi.fn<SendFn>();
+    await expect(
+      sendOneStatement(getSupabaseServiceRoleClient(), "stmt-1", {
+        send,
+        cfg: stubCfg(),
+        now: new Date("2026-06-01T17:00:00Z"),
+      }),
+    ).rejects.toMatchObject({ message: "connection failure" });
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("skips a zero-balance statement without sending", async () => {
@@ -198,6 +269,7 @@ describe("sendOneStatement", () => {
     // consulting the generic opt-out / DND (no shop_customers read).
     stageStatement({ delivery_method: "email" });
     stagePatient({ phone_e164: "+15551234567" });
+    stageClaim();
     const send = vi
       .fn<SendFn>()
       .mockResolvedValue({ kind: "sent", channel: "email" });
@@ -274,6 +346,11 @@ describe("runStatementBatchSend", () => {
     });
     stageSupabaseResponse("shop_customers", "select", {
       data: { communication_preferences: {} },
+      error: null,
+    });
+    // The per-statement 'sending' claim.
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
       error: null,
     });
 

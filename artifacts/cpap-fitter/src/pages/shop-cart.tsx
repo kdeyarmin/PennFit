@@ -786,15 +786,24 @@ export function ShopCart() {
                             ...prev,
                             [it.priceId]: raw,
                           }));
-                          if (raw === "") return;
+                          // Only commit quantities >= 1 mid-stroke.
+                          // Committing 0 here would REMOVE the line on a
+                          // keystroke (setQuantity treats 0 as delete) —
+                          // a silent delete with no Undo while the user
+                          // may just be typing "05". Sub-1 input settles
+                          // on blur instead.
                           const n = parseInt(raw, 10);
-                          if (Number.isFinite(n)) {
+                          if (Number.isFinite(n) && n >= 1) {
                             setQuantity(it.priceId, n);
                           }
                         }}
                         onBlur={(e) => {
                           const raw = e.target.value;
-                          if (raw === "") {
+                          const n = parseInt(raw, 10);
+                          // Empty or zero-ish input settles to qty 1 —
+                          // the cart-line-removed semantic for qty 0
+                          // belongs to the explicit Remove button.
+                          if (raw === "" || !Number.isFinite(n) || n < 1) {
                             setQuantity(it.priceId, 1);
                           }
                           // Clear draft so display re-syncs with committed

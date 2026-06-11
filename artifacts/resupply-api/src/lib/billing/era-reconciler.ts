@@ -91,8 +91,12 @@ const TERMINAL_STATUSES: readonly ClaimRow["status"][] = ["closed"];
 
 /**
  * Apply a Parsed835 against the live claim rows. Returns a summary
- * of what changed; never throws on per-claim mismatches — those land
+ * of what changed; never throws on per-claim MISMATCHES — those land
  * as `matched: false` so the caller can surface them in the response.
+ * DB query errors DO throw (a transient read failure must fail the
+ * ingest, not mis-post the claim as unmatched). Re-applying the same
+ * remittance is a per-claim no-op via the event-row idempotency check
+ * in applyClaim, so a 'partial' file can be safely re-ingested.
  */
 export async function reconcileEra(
   parsed: Parsed835,
@@ -148,7 +152,12 @@ async function applyClaim(
     .eq("id", eraClaim.patientControlNumber)
     .limit(1)
     .maybeSingle();
-  if (error || !claim) {
+  // A query ERROR is not a no-match: treating it as "unmatched" would
+  // mis-post the ERA (claim silently skipped, file stamped 'partial'
+  // with a bogus "no local match" reason). Throw so the caller fails
+  // the ingest/dispatch and the file stays replayable.
+  if (error) throw error;
+  if (!claim) {
     return {
       patientControlNumber: eraClaim.patientControlNumber,
       matched: false,
@@ -158,6 +167,37 @@ async function applyClaim(
       denialReason: null,
       linesUpdated: 0,
     };
+  }
+  // Replay idempotency: the paid/allowed math below ACCUMULATES
+  // (`+=`), so re-applying the same remittance would double-count.
+  // The event row appended in step 4 carries (claim_id, payer_ref =
+  // check/EFT number) — one check number identifies one remittance —
+  // so an existing era_ingest event for this pair means this claim
+  // block was already applied by a previous (possibly partial) run of
+  // the same 835. Skip it as an already-applied no-op so re-uploading
+  // a 'partial' file only applies the claims that were missed.
+  if (opts.checkOrEftNumber) {
+    const { data: priorEvent, error: priorErr } = await supabase
+      .schema("resupply")
+      .from("insurance_claim_events")
+      .select("id")
+      .eq("claim_id", claim.id)
+      .eq("payer_ref", opts.checkOrEftNumber)
+      .in("event_type", ["paid", "partial_pay", "denied"])
+      .limit(1)
+      .maybeSingle();
+    if (priorErr) throw priorErr;
+    if (priorEvent) {
+      return {
+        patientControlNumber: eraClaim.patientControlNumber,
+        matched: true,
+        newStatus: claim.status,
+        paidCents: 0,
+        patientResponsibilityCents: 0,
+        denialReason: claim.denial_reason,
+        linesUpdated: 0,
+      };
+    }
   }
   if (TERMINAL_STATUSES.includes(claim.status)) {
     // Already closed — record a no-op event and move on. We never
@@ -284,10 +324,17 @@ async function applyClaim(
       actor_email: opts.actorEmail,
     });
   if (eventErr) {
-    logger.warn(
+    // FATAL (was a warn): this event row doubles as the replay-
+    // idempotency marker for the applyClaim check above. Money has
+    // already been posted to the claim at this point — losing the
+    // marker silently would make a later re-ingest double-apply this
+    // claim. Throw so the ingest fails loudly and the operator can
+    // verify this specific claim before replaying.
+    logger.error(
       { err: eventErr.message, claimId: claim.id },
-      "era_reconciler: event insert failed (non-fatal)",
+      "era_reconciler: event insert failed AFTER claim totals were posted — verify this claim before re-ingesting",
     );
+    throw eventErr;
   }
 
   return {

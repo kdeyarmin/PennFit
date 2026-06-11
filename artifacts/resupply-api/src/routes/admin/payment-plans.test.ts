@@ -7,6 +7,7 @@ import {
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
+  getSupabaseWritePayloads,
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
@@ -126,6 +127,10 @@ describe("PATCH /admin/payment-plan-installments/:id", () => {
     stageSupabaseResponse("patient_payment_plan_installments", "select", {
       data: { id: INST_ID, plan_id: PLAN_ID },
     });
+    // plan-status precondition read — settle refuses cancelled plans
+    stageSupabaseResponse("patient_payment_plans", "select", {
+      data: { id: PLAN_ID, status: "active" },
+    });
     stageSupabaseResponse("patient_payment_plan_installments", "update", {
       data: null,
     });
@@ -142,6 +147,25 @@ describe("PATCH /admin/payment-plan-installments/:id", () => {
       .send({ status: "paid" });
     expect(res.status).toBe(200);
     expect(res.body.planStatus).toBe("completed");
+  });
+
+  it("409s installment edits on a cancelled plan", async () => {
+    mockAdmin.current = CSR;
+    stageSupabaseResponse("patient_payment_plan_installments", "select", {
+      data: { id: INST_ID, plan_id: PLAN_ID },
+    });
+    stageSupabaseResponse("patient_payment_plans", "select", {
+      data: { id: PLAN_ID, status: "cancelled" },
+    });
+    const res = await request(makeApp())
+      .patch(`/admin/payment-plan-installments/${INST_ID}`)
+      .send({ status: "paid" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("plan_cancelled");
+    // No installment write may have been issued.
+    expect(
+      getSupabaseWritePayloads("patient_payment_plan_installments", "update"),
+    ).toHaveLength(0);
   });
 
   it("404 when the installment doesn't exist", async () => {

@@ -25,7 +25,6 @@ import {
 import {
   createTwilioSmsClient,
   TwilioApiError,
-  TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
 import { safeAuditFromActor } from "./safe-audit";
@@ -134,6 +133,20 @@ export async function sendReminderSms(
     };
   }
 
+  // Construct the vendor client BEFORE inserting the conversation row.
+  // Construction is pure config validation (TwilioConfigError, no
+  // network), and it used to live inside the post-insert try block —
+  // so a missing/rotated secret threw AFTER the row existed, leaving
+  // an orphan whose `last_message_at = now()` fed the 48h quiet-period
+  // check and silently suppressed the patient's next reminder, once
+  // per affected send.
+  const sms = createTwilioSmsClient({
+    accountSid: cfg.twilioAccountSid,
+    authToken: cfg.twilioAuthToken,
+    from: cfg.twilioPhoneNumber,
+    messagingServiceSid: cfg.twilioMessagingServiceSid,
+  });
+
   const { data: insertedConv, error: insertConvErr } = await supabase
     .schema("resupply")
     .from("conversations")
@@ -151,6 +164,32 @@ export async function sendReminderSms(
   const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
+  // Best-effort orphan-row teardown shared by every post-insert
+  // failure exit (vendor error AND unexpected throw) — see the
+  // quiet-period rationale above.
+  const deleteOrphanConversation = async (): Promise<void> => {
+    const { error: deleteConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .delete()
+      .eq("id", conversationId);
+    if (deleteConvErr) {
+      // Same structured-stderr convention as the post-send DB-write
+      // failure below (this lib must not import pino directly).
+      // Leave the row; ops can reconcile from the audit row.
+      process.stderr.write(
+        JSON.stringify({
+          level: 40,
+          event: "send_sms_orphan_conversation_delete_failed",
+          conversationId,
+          errCode: deleteConvErr.code ?? null,
+          errMessage: deleteConvErr.message,
+          msg: "orphan conversation row not deleted after send failure (non-fatal)",
+        }) + "\n",
+      );
+    }
+  };
+
   // Default body: kept under the 160-char GSM-7 segment cap AND
   // free of UCS-2-triggering characters (em-dash, curly quotes,
   // ellipsis). Twilio silently switches the whole message to
@@ -167,12 +206,6 @@ export async function sendReminderSms(
 
   let messageSid: string;
   try {
-    const sms = createTwilioSmsClient({
-      accountSid: cfg.twilioAccountSid,
-      authToken: cfg.twilioAuthToken,
-      from: cfg.twilioPhoneNumber,
-      messagingServiceSid: cfg.twilioMessagingServiceSid,
-    });
     const r = await sms.sendSms({
       to: normalizedPhone,
       body: messageBody,
@@ -180,40 +213,12 @@ export async function sendReminderSms(
     });
     messageSid = r.messageSid;
   } catch (err) {
-    if (err instanceof TwilioConfigError) {
-      // Surface to caller — caller decides whether to 503 (api) or
-      // crash the worker (worker). Either way the process admin
-      // needs to know secrets are misconfigured.
-      throw err;
-    }
     if (err instanceof TwilioApiError) {
-      // Best-effort: tear down the orphan conversation row we just
-      // created. The conversations table's `last_message_at = now()`
-      // value would otherwise feed into the 48h quiet-period check
-      // on subsequent ticks and silently suppress the patient's next
-      // reminder even though no message was actually delivered. We
-      // log-and-continue on delete errors so a transient Supabase blip
-      // doesn't make the vendor-error path itself fail.
-      const { error: deleteConvErr } = await supabase
-        .schema("resupply")
-        .from("conversations")
-        .delete()
-        .eq("id", conversationId);
-      if (deleteConvErr) {
-        // Same structured-stderr convention as the post-send DB-write
-        // failure below (this lib must not import pino directly).
-        // Leave the row; ops can reconcile from the audit row below.
-        process.stderr.write(
-          JSON.stringify({
-            level: 40,
-            event: "send_sms_orphan_conversation_delete_failed",
-            conversationId,
-            errCode: deleteConvErr.code ?? null,
-            errMessage: deleteConvErr.message,
-            msg: "orphan conversation row not deleted after Twilio API error (non-fatal)",
-          }) + "\n",
-        );
-      }
+      // Tear down the orphan conversation row we just created (see
+      // deleteOrphanConversation above for the quiet-period
+      // rationale). Log-and-continue on delete errors so a transient
+      // Supabase blip doesn't make the vendor-error path itself fail.
+      await deleteOrphanConversation();
       await safeAuditFromActor({
         action: "messaging.reminder.sent",
         actor,
@@ -236,6 +241,9 @@ export async function sendReminderSms(
         vendorCode: err.code != null ? String(err.code) : null,
       };
     }
+    // Unexpected throw — nothing was delivered, so the orphan row has
+    // the same quiet-period side effect as the vendor-error path.
+    await deleteOrphanConversation();
     throw err;
   }
 

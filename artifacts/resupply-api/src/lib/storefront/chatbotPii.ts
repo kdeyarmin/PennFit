@@ -95,6 +95,22 @@ export function redactPiiForOutbound(input: string): RedactionResult {
 }
 
 /**
+ * Extract the email addresses present in user-supplied text, BEFORE
+ * redaction. The chat route harvests these server-side so the
+ * `track_order` tool can verify order ownership against the email the
+ * user actually typed — the model itself only ever sees the
+ * `[redacted-email]` token. Uses the same pattern the redactor uses,
+ * so anything extracted here is guaranteed to be redacted outbound.
+ */
+export function extractEmails(input: string): string[] {
+  const emailPattern = PATTERNS.find((p) => p.kind === "email");
+  if (!emailPattern) return [];
+  emailPattern.pattern.lastIndex = 0;
+  const matches = input.match(emailPattern.pattern) ?? [];
+  return matches.map((m) => m.toLowerCase());
+}
+
+/**
  * True iff the text contains anything that would trigger a
  * redaction. Useful when the caller wants to log a single boolean
  * rather than a per-kind breakdown.

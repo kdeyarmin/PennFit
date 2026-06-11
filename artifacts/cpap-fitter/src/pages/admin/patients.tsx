@@ -79,7 +79,8 @@ function initialPatientFilters(): {
 
 type PatientRow = {
   id: string;
-  pacwareId: string;
+  // Null when the patient has no PacWare account number yet.
+  pacwareId: string | null;
   firstName: string;
   lastName: string;
   status: string;
@@ -388,7 +389,7 @@ export function PatientsPage() {
         className: "w-10",
         render: (r) => (
           <RowSelectionCheckbox
-            ariaLabel={`Select ${r.pacwareId}`}
+            ariaLabel={`Select ${fullName(r.firstName, r.lastName)}`}
             checked={selectedIds.has(r.id)}
             onToggle={() => toggleOne(r.id)}
           />
@@ -406,7 +407,7 @@ export function PatientsPage() {
               {fullName(r.firstName, r.lastName)}
             </div>
             <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              PAC #{r.pacwareId}
+              {r.pacwareId ? `PAC #${r.pacwareId}` : "No PacWare ID"}
             </div>
           </div>
         ),
@@ -753,7 +754,8 @@ function buildCreatePatientBody(form: NewCustomerForm): {
   const insurancePayer = form.insurancePayer.trim();
   const cadenceRaw = form.cadenceOverrideDays.trim();
 
-  if (pacwareId === "") return { body: null, error: "Pacware ID is required." };
+  // Pacware ID is optional — the patient may not be in PacWare yet.
+  // Blank submits as null and the id can be backfilled later.
   if (pacwareId.length > 64) {
     return { body: null, error: "Pacware ID is too long (max 64 chars)." };
   }
@@ -808,7 +810,7 @@ function buildCreatePatientBody(form: NewCustomerForm): {
   }
 
   const body: CreatePatientRequest = {
-    pacwareId,
+    pacwareId: pacwareId === "" ? null : pacwareId,
     legalFirstName,
     legalLastName,
     dateOfBirth,
@@ -918,19 +920,19 @@ function NewCustomerModal({
             New customer
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            All PHI fields are encrypted at rest. The Pacware ID must be unique
-            — duplicates are rejected.
+            All PHI fields are encrypted at rest. The Pacware ID is optional —
+            leave it blank if the patient isn't in PacWare yet. When provided it
+            must be unique; duplicates are rejected.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="np-pacware">Pacware ID</Label>
+              <Label htmlFor="np-pacware">Pacware ID (optional)</Label>
               <Input
                 id="np-pacware"
                 value={form.pacwareId}
                 maxLength={64}
                 onChange={(e) => patch("pacwareId", e.target.value)}
-                required
                 disabled={isPending}
               />
             </div>
@@ -1412,9 +1414,20 @@ function ImportCsvModal({
         agg.skippedDuplicates += res.skippedDuplicates;
         // Re-base server's row indexes to the original CSV row number
         // so the admin can find the offending row in their source file.
+        // The server's rowIndex is 0-based WITHIN THE SUBMITTED BATCH,
+        // and batches are built from validRows (client-invalid rows are
+        // filtered out first) — so the original row number must come
+        // from the matching validRows entry, not from offset arithmetic
+        // alone, or every server error after a client-invalid row points
+        // the admin at the wrong line of their source file.
         const offset = i * CSV_BATCH_SIZE;
         for (const e of res.errors) {
-          agg.serverErrors.push({ ...e, rowIndex: e.rowIndex + offset });
+          agg.serverErrors.push({
+            ...e,
+            rowIndex:
+              validRows[offset + e.rowIndex]?.rowIndex ??
+              e.rowIndex + offset + 1,
+          });
         }
       } catch (err) {
         const msg =
@@ -1450,9 +1463,11 @@ function ImportCsvModal({
     for (const r of invalidRows) {
       lines.push(`${r.rowIndex},,"${(r.error ?? "").replace(/"/g, '""')}"`);
     }
+    // serverErrors.rowIndex is already re-based to the original 1-based
+    // CSV row number (see onSubmit), matching invalidRows' rowIndex.
     for (const e of summary.serverErrors) {
       lines.push(
-        `${e.rowIndex + 1},${e.field ?? ""},"${e.message.replace(/"/g, '""')}"`,
+        `${e.rowIndex},${e.field ?? ""},"${e.message.replace(/"/g, '""')}"`,
       );
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
@@ -1711,7 +1726,9 @@ function ImportCsvModal({
                   >
                     {summary.serverErrors.slice(0, 10).map((e, i) => (
                       <li key={`${e.rowIndex}-${i}`}>
-                        <strong>Row {e.rowIndex + 1}</strong>
+                        {/* rowIndex is already the 1-based source-file
+                            row (re-based in onSubmit) — no +1 here. */}
+                        <strong>Row {e.rowIndex}</strong>
                         {e.field ? ` (${e.field})` : ""}: {e.message}
                       </li>
                     ))}

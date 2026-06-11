@@ -111,10 +111,19 @@ function parseRange(req: import("express").Request): {
   const now = new Date();
   const toRaw = typeof req.query.to === "string" ? req.query.to : null;
   const fromRaw = typeof req.query.from === "string" ? req.query.from : null;
-  const to = toRaw ? new Date(toRaw + "T23:59:59Z") : now;
-  const from = fromRaw
+  let to = toRaw ? new Date(toRaw + "T23:59:59Z") : now;
+  let from = fromRaw
     ? new Date(fromRaw + "T00:00:00Z")
     : new Date(now.getTime() - DEFAULT_DAYS * 86400_000);
+  // A junk ?from/?to yields an Invalid Date: every NaN comparison is
+  // false, so the MAX_DAYS clamp silently disengages and the first
+  // `.toISOString()` downstream throws a RangeError (500 for a typo'd
+  // date). Fall back to the defaults instead — same guard the email
+  // endpoint applies to its own date inputs.
+  if (Number.isNaN(to.getTime())) to = now;
+  if (Number.isNaN(from.getTime())) {
+    from = new Date(to.getTime() - DEFAULT_DAYS * 86400_000);
+  }
   const days = (to.getTime() - from.getTime()) / 86400_000;
   if (days > MAX_DAYS) {
     return {

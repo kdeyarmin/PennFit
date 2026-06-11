@@ -22,6 +22,7 @@ import {
   FolderKanban,
   CalendarClock,
   CalendarDays,
+  Video,
   Sparkles,
   Mail,
   Users,
@@ -95,6 +96,7 @@ import { getMfaStatus } from "@/lib/admin/mfa-api";
 // the multi-branch feature is enabled; the entry stays hidden otherwise.
 const MULTI_LOCATION_NAV_TOKEN = "feature:multi_location";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
+import { StartVideoVisitButton } from "./StartVideoVisitModal";
 import { GlobalLookup } from "./GlobalLookup";
 import { AdminAssistantWidget } from "./AdminAssistantWidget";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
@@ -134,7 +136,8 @@ type NavLink = {
     | "pendingReviews"
     | "overdueFollowups"
     | "newPatientDocuments"
-    | "newInboundFaxes";
+    | "newInboundFaxes"
+    | "pacwareReadyToSync";
   /**
    * Granular RBAC permission key required to USE the destination page
    * (e.g. `admin.tools.manage`). When set, the nav entry is hidden for
@@ -264,6 +267,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: CalendarDays,
             matchPrefix: "/admin/company-calendar",
             hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
+          },
+          {
+            href: "/admin/video-visits",
+            label: "Video visits",
+            icon: Video,
+            matchPrefix: "/admin/video-visits",
+            hint: "Telehealth video calls with patients for equipment setups, troubleshooting, and follow-ups",
           },
           {
             href: "/admin/followups",
@@ -723,7 +733,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Verify insurance",
             icon: ShieldCheck,
             matchPrefix: "/admin/billing/verify",
-            hint: "Run an on-demand insurance verification (270/271) for any patient",
+            hint: "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
           },
           {
             href: "/admin/billing/eligibility",
@@ -1066,6 +1076,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Boxes,
             matchPrefix: "/admin/pacware",
             requiredPermission: "admin.tools.manage",
+            badgeKey: "pacwareReadyToSync",
             hint: "PacWare (DME billing) CSV import & export",
           },
           {
@@ -2001,6 +2012,10 @@ export function AppShell({
           rightSlot={
             adminEmail ? (
               <div className="flex items-center gap-3">
+                {/* Universal telehealth launcher — start a video visit
+                    with any patient (or someone not in the system yet)
+                    from anywhere in the console. */}
+                <StartVideoVisitButton size="sm" label="Video visit" />
                 <GlobalLookup />
                 <AdminHeaderChip email={adminEmail} role={adminRole} />
               </div>

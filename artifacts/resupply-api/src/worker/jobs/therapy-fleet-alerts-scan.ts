@@ -37,9 +37,14 @@ import {
   sendReminderSms,
 } from "@workspace/resupply-reminders";
 
-import { isInDndWindow, shouldSendSms } from "../../lib/comm-prefs.js";
+import {
+  isInDndWindow,
+  isOutsideSmsSendWindow,
+  shouldSendSms,
+} from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { claimDedupKey } from "../../lib/dedup-keys.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -98,8 +103,13 @@ export async function registerTherapyFleetAlertsJob(
   await boss.work(THERAPY_FLEET_ALERTS_JOB, async () => {
     await runTherapyFleetAlertsScan();
   });
-  // 05:15 UTC — after the 05:00 daily snapshot (and 04:30 nightly sync).
-  await boss.schedule(THERAPY_FLEET_ALERTS_JOB, "15 5 * * *");
+  // 19:15 UTC — afternoon across every US timezone, because this scan
+  // can text patients (the old 05:15 UTC slot was ~midnight ET, and a
+  // daily cron outside the 9am–8pm send window pairs badly with the
+  // per-patient quiet-hours gate: the same patients would be skipped at
+  // the same local hour forever). Still hours after the 05:00 daily
+  // snapshot and 04:30 nightly sync, so it scans today's fresh data.
+  await boss.schedule(THERAPY_FLEET_ALERTS_JOB, "15 19 * * *");
   logger.info(
     { queue: THERAPY_FLEET_ALERTS_JOB },
     "therapy fleet alerts-scan worker registered",
@@ -223,14 +233,38 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
   );
 
   // ── 2. reconcile against currently-open alerts ─────────────────
-  const open = await supabase
-    .schema("resupply")
-    .from("therapy_fleet_alerts")
-    .select("id, patient_id, alert_type")
-    .eq("status", "open");
-  if (open.error) throw open.error;
+  // Keyset-paginate: PostgREST silently truncates un-limited reads at
+  // the server max-rows (~1000). A truncated read here is
+  // SELF-SUSTAINING failure: missing open rows re-classify existing
+  // alerts as "new", the bulk insert trips the partial unique index
+  // (therapy_fleet_alerts_open_unique, mig 0184) and fails the whole
+  // job — and because auto-resolution lives in the same run, the open
+  // count can never shrink back below the cap.
+  const OPEN_PAGE_SIZE = 500;
+  const openRows: Array<{
+    id: string;
+    patient_id: string;
+    alert_type: string;
+  }> = [];
+  let openCursor: string | null = null;
+  for (;;) {
+    let pageQuery = supabase
+      .schema("resupply")
+      .from("therapy_fleet_alerts")
+      .select("id, patient_id, alert_type")
+      .eq("status", "open")
+      .order("id", { ascending: true })
+      .limit(OPEN_PAGE_SIZE);
+    if (openCursor) pageQuery = pageQuery.gt("id", openCursor);
+    const page = await pageQuery;
+    if (page.error) throw page.error;
+    if (!page.data || page.data.length === 0) break;
+    openRows.push(...page.data);
+    if (page.data.length < OPEN_PAGE_SIZE) break;
+    openCursor = page.data[page.data.length - 1]!.id;
+  }
   const openKeys = new Set(
-    (open.data ?? []).map(
+    openRows.map(
       (r: { patient_id: string; alert_type: string }) =>
         `${r.patient_id}|${r.alert_type}`,
     ),
@@ -260,22 +294,44 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       detail: d.detail,
       updated_at: nowIso,
     }));
-    const ins = await supabase
-      .schema("resupply")
-      .from("therapy_fleet_alerts")
-      .insert(rows);
-    if (ins.error) throw ins.error;
-    result.created = rows.length;
+    // Per-row inserts, tolerating 23505: a row that already exists
+    // (a concurrent run, or any residual reconcile gap) is skipped
+    // instead of failing the WHOLE batch — the previous all-or-nothing
+    // insert wedged the nightly scan permanently once the open set was
+    // misread (see the pagination note above). NOTE: upsert/on_conflict
+    // can't be used here — therapy_fleet_alerts_open_unique is a
+    // PARTIAL index (WHERE status='open'), which PostgREST's
+    // on_conflict parameter cannot infer.
+    let created = 0;
+    for (const row of rows) {
+      const ins = await supabase
+        .schema("resupply")
+        .from("therapy_fleet_alerts")
+        .insert(row);
+      if (ins.error) {
+        if (ins.error.code === "23505") continue;
+        throw ins.error;
+      }
+      created += 1;
+    }
+    result.created = created;
   }
 
-  // Auto-resolve open alerts the patient no longer trips.
-  const staleIds = (open.data ?? [])
+  // Auto-resolve open alerts the patient no longer trips. Chunked:
+  // with the paginated open read above, staleIds can exceed one
+  // PostgREST page — a single `.in()` with thousands of UUIDs blows
+  // the querystring/URL limit and the whole update throws before
+  // resolving ANYTHING, re-wedging exactly the large-fleet case the
+  // pagination fixed. ~200 UUIDs stays comfortably under the 8KB cap.
+  const staleIds = openRows
     .filter(
       (r: { patient_id: string; alert_type: string }) =>
         !detectedKeys.has(`${r.patient_id}|${r.alert_type}`),
     )
     .map((r: { id: string }) => r.id);
-  if (staleIds.length > 0) {
+  const STALE_CHUNK = 200;
+  for (let i = 0; i < staleIds.length; i += STALE_CHUNK) {
+    const chunk = staleIds.slice(i, i + STALE_CHUNK);
     const upd = await supabase
       .schema("resupply")
       .from("therapy_fleet_alerts")
@@ -285,9 +341,9 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
         resolved_by_email: "system:worker:fleet-alerts",
         updated_at: nowIso,
       })
-      .in("id", staleIds);
+      .in("id", chunk);
     if (upd.error) throw upd.error;
-    result.resolved = staleIds.length;
+    result.resolved += chunk.length;
   }
 
   // ── 3. opt-in patient auto-outreach (flag-gated) ───────────────
@@ -361,10 +417,15 @@ async function maybeSendAdherenceSms(
   const patientRes = await supabase
     .schema("resupply")
     .from("patients")
-    .select("email")
+    .select("email, timezone, address")
     .eq("id", patientId)
     .maybeSingle();
-  const email = (patientRes.data as { email?: string | null } | null)?.email;
+  const patientRow = patientRes.data as {
+    email?: string | null;
+    timezone?: string | null;
+    address?: { zip?: string } | null;
+  } | null;
+  const email = patientRow?.email;
   if (!email) return false;
   const prefsRes = await supabase
     .schema("resupply")
@@ -379,30 +440,41 @@ async function maybeSendAdherenceSms(
   const now = new Date();
   if (!shouldSendSms(prefs, "transactional", now)) return false;
   if (isInDndWindow(prefs, now)) return false;
+  // Hard 9am–8pm patient-local TCPA window — the DND check above only
+  // protects patients who configured a window (default null/null).
+  // Evaluated BEFORE the cap claim, so a quiet-hours skip never burns
+  // the 14-day cooldown.
+  if (
+    isOutsideSmsSendWindow(now, {
+      timezone: patientRow?.timezone ?? null,
+      shippingZip: patientRow?.address?.zip ?? null,
+    })
+  ) {
+    return false;
+  }
 
   // Frequency cap: claim a 14-day dedup key now that the patient is
-  // eligible. If the row already exists, we messaged this patient within
-  // the window — skip.
+  // eligible. "Held" means an UNEXPIRED row exists — we messaged this
+  // patient within the window — skip. claimDedupKey clears an expired
+  // row first; the old plain INSERT conflicted on the stale row too,
+  // which made the 14-day cap permanent (P1-2).
   const capKey = `therapy-alert-sms:${patientId}`;
   const expiresAt = new Date(
     Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claim = await supabase
-    .schema("resupply")
-    .from("worker_dedup_keys")
-    .insert({ key: capKey, expires_at: expiresAt });
-  if (claim.error) {
-    // 23505 = unique violation (cap already claimed) → already messaged recently.
-    if (claim.error.code === "23505") return false;
-    logger.warn(
-      {
-        event: "therapy_fleet_adherence_cap_claim_failed",
-        err: { code: claim.error.code, message: claim.error.message },
-        queue: THERAPY_FLEET_ALERTS_JOB,
-        dedup_key: capKey,
-      },
-      "therapy fleet: failed to claim adherence cap key",
-    );
+  const claim = await claimDedupKey(supabase, capKey, expiresAt);
+  if (claim.outcome !== "claimed") {
+    if (claim.outcome === "error") {
+      logger.warn(
+        {
+          event: "therapy_fleet_adherence_cap_claim_failed",
+          err: claim.error,
+          queue: THERAPY_FLEET_ALERTS_JOB,
+          dedup_key: capKey,
+        },
+        "therapy fleet: failed to claim adherence cap key",
+      );
+    }
     return false;
   }
 

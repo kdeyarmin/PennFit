@@ -19,9 +19,24 @@ export type PacketDocumentCategory =
   | "financial"
   | "delivery";
 
+/** One structured block of document content. Strings may carry
+ *  {{merge_tokens}} resolved server-side at send/render time. */
+export interface PacketDocumentSection {
+  heading?: string;
+  paragraphs?: string[];
+  bullets?: string[];
+}
+
+export interface PacketMergeToken {
+  token: string;
+  label: string;
+}
+
 export interface PatientPacketTemplate {
   key: string;
+  /** Effective title (the operator's override when customized). */
   title: string;
+  defaultTitle: string;
   category: PacketDocumentCategory;
   version: string;
   summary: string;
@@ -29,6 +44,26 @@ export interface PatientPacketTemplate {
   defaultIncluded: boolean;
   /** Compliance-mandatory documents the UI locks into every packet. */
   required: boolean;
+  /** True when a permanent operator override is in effect. */
+  customized: boolean;
+  /** Effective content in token form (override or code default). */
+  sections: PacketDocumentSection[];
+  /** The built-in default, for diffing / revert preview. */
+  defaultSections: PacketDocumentSection[];
+  updatedAt: string | null;
+  updatedByEmail: string | null;
+}
+
+export interface PatientPacketTemplatesResponse {
+  templates: PatientPacketTemplate[];
+  mergeTokens: PacketMergeToken[];
+}
+
+/** A one-off content edit applied to a single packet's document. */
+export interface PacketDocumentOverride {
+  documentKey: string;
+  title?: string;
+  sections: PacketDocumentSection[];
 }
 
 export interface PacketDeliveryItem {
@@ -76,6 +111,8 @@ export interface PatientPacketDocumentRow {
   requires_signature: boolean;
   acknowledged: boolean;
   acknowledged_at: string | null;
+  /** Send-time content snapshot (token form); null on legacy rows. */
+  content_sections: PacketDocumentSection[] | null;
   created_at: string;
 }
 
@@ -100,6 +137,9 @@ export interface PatientPacketDetail {
     updated_at: string;
     /** Itemized Proof of Delivery snapshot, when one was captured. */
     delivery_details: PacketDeliveryDetails | null;
+    /** Set when the signed PDF was auto-filed to the patient's chart. */
+    chart_document_id: string | null;
+    chart_filed_at: string | null;
   };
   documents: PatientPacketDocumentRow[];
   signature: PatientPacketSignatureRow | null;
@@ -117,6 +157,8 @@ export interface SendPatientPacketRequest {
   channels?: PacketChannel[];
   /** Itemized Proof of Delivery snapshot. */
   deliveryDetails?: PacketDeliveryDetails | null;
+  /** One-off content edits for this packet alone. */
+  documentOverrides?: PacketDocumentOverride[];
   expiresInDays?: number;
 }
 
@@ -143,6 +185,8 @@ export interface SendPacketToContactRequest {
   channels?: PacketChannel[];
   /** Itemized Proof of Delivery snapshot. */
   deliveryDetails?: PacketDeliveryDetails | null;
+  /** One-off content edits for this packet alone. */
+  documentOverrides?: PacketDocumentOverride[];
   expiresInDays?: number;
 }
 
@@ -155,6 +199,8 @@ export interface UpdatePatientPacketRequest {
   documentKeys?: string[];
   title?: string;
   deliveryDetails?: PacketDeliveryDetails | null;
+  /** One-off content edits for this open packet's documents. */
+  documentOverrides?: PacketDocumentOverride[];
 }
 
 export interface UpdatePatientPacketResponse {
@@ -194,14 +240,12 @@ export const patientPacketPdfUrl = (packetId: string): string =>
 
 // ── Queries ───────────────────────────────────────────────────────
 export function usePatientPacketTemplates(options?: {
-  query?: Partial<
-    UseQueryOptions<{ templates: PatientPacketTemplate[] }, PacketError>
-  >;
+  query?: Partial<UseQueryOptions<PatientPacketTemplatesResponse, PacketError>>;
 }) {
-  return useQuery<{ templates: PatientPacketTemplate[] }, PacketError>({
+  return useQuery<PatientPacketTemplatesResponse, PacketError>({
     queryKey: getPatientPacketTemplatesQueryKey(),
     queryFn: ({ signal }) =>
-      customFetch<{ templates: PatientPacketTemplate[] }>(TEMPLATES_URL, {
+      customFetch<PatientPacketTemplatesResponse>(TEMPLATES_URL, {
         method: "GET",
         signal,
       }),
@@ -264,6 +308,216 @@ export function usePatientPacket(
         { method: "GET", signal },
       ),
     ...options?.query,
+  });
+}
+
+// ── Packet bundle presets ─────────────────────────────────────────
+
+export interface PatientPacketPreset {
+  id: string;
+  name: string;
+  description: string | null;
+  document_keys: string[];
+  packet_title: string | null;
+  created_by_email: string | null;
+  created_at: string;
+}
+
+const PRESETS_URL = "/resupply-api/admin/patient-packet-presets";
+
+export const getPatientPacketPresetsQueryKey = () => [PRESETS_URL] as const;
+
+export function usePatientPacketPresets(options?: {
+  query?: Partial<
+    UseQueryOptions<{ presets: PatientPacketPreset[] }, PacketError>
+  >;
+}) {
+  return useQuery<{ presets: PatientPacketPreset[] }, PacketError>({
+    queryKey: getPatientPacketPresetsQueryKey(),
+    queryFn: ({ signal }) =>
+      customFetch<{ presets: PatientPacketPreset[] }>(PRESETS_URL, {
+        method: "GET",
+        signal,
+      }),
+    ...options?.query,
+  });
+}
+
+export interface CreatePacketPresetRequest {
+  name: string;
+  description?: string | null;
+  documentKeys: string[];
+  packetTitle?: string | null;
+}
+
+export function useCreatePacketPreset(options?: {
+  mutation?: UseMutationOptions<
+    { id: string },
+    PacketError,
+    CreatePacketPresetRequest
+  >;
+}) {
+  return useMutation<{ id: string }, PacketError, CreatePacketPresetRequest>({
+    mutationFn: (data) =>
+      customFetch(PRESETS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export function useDeletePacketPreset(options?: {
+  mutation?: UseMutationOptions<{ ok: boolean }, PacketError, { id: string }>;
+}) {
+  return useMutation<{ ok: boolean }, PacketError, { id: string }>({
+    mutationFn: ({ id }) =>
+      customFetch(`${PRESETS_URL}/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    ...options?.mutation,
+  });
+}
+
+// ── Template editing ──────────────────────────────────────────────
+
+export interface SavePacketTemplateRequest {
+  title?: string;
+  sections: PacketDocumentSection[];
+}
+
+/** PUT a permanent template override (applies to all future packets). */
+export function useSavePacketTemplate(options?: {
+  mutation?: UseMutationOptions<
+    { key: string; revision: number; customized: boolean },
+    PacketError,
+    { key: string; data: SavePacketTemplateRequest }
+  >;
+}) {
+  return useMutation<
+    { key: string; revision: number; customized: boolean },
+    PacketError,
+    { key: string; data: SavePacketTemplateRequest }
+  >({
+    mutationFn: ({ key, data }) =>
+      customFetch(`${TEMPLATES_URL}/${encodeURIComponent(key)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
+/** Revert a template to the built-in default (deletes the override). */
+export function useResetPacketTemplate(options?: {
+  mutation?: UseMutationOptions<
+    { key: string; customized: boolean },
+    PacketError,
+    { key: string }
+  >;
+}) {
+  return useMutation<
+    { key: string; customized: boolean },
+    PacketError,
+    { key: string }
+  >({
+    mutationFn: ({ key }) =>
+      customFetch(`${TEMPLATES_URL}/${encodeURIComponent(key)}`, {
+        method: "DELETE",
+      }),
+    ...options?.mutation,
+  });
+}
+
+// ── Template revision history ─────────────────────────────────────
+
+export interface PacketTemplateRevision {
+  id: string;
+  action: "saved" | "reverted";
+  /** The override revision counter at save time; null on revert rows. */
+  revision: number | null;
+  title: string | null;
+  /** Token-form sections as saved; null on revert rows. */
+  sections: PacketDocumentSection[] | null;
+  changed_by_email: string | null;
+  created_at: string;
+}
+
+export const getPacketTemplateHistoryQueryKey = (key: string) =>
+  [`${TEMPLATES_URL}/${key}/history`] as const;
+
+export function usePacketTemplateHistory(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<{ revisions: PacketTemplateRevision[] }, PacketError>
+    >;
+  },
+) {
+  return useQuery<{ revisions: PacketTemplateRevision[] }, PacketError>({
+    queryKey: getPacketTemplateHistoryQueryKey(key),
+    queryFn: ({ signal }) =>
+      customFetch<{ revisions: PacketTemplateRevision[] }>(
+        `${TEMPLATES_URL}/${encodeURIComponent(key)}/history`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+/** Restore a prior saved revision as a NEW override revision. */
+export function useRestorePacketTemplate(options?: {
+  mutation?: UseMutationOptions<
+    { key: string; revision: number; customized: boolean },
+    PacketError,
+    { key: string; revisionId: string }
+  >;
+}) {
+  return useMutation<
+    { key: string; revision: number; customized: boolean },
+    PacketError,
+    { key: string; revisionId: string }
+  >({
+    mutationFn: ({ key, revisionId }) =>
+      customFetch(`${TEMPLATES_URL}/${encodeURIComponent(key)}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revisionId }),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export interface PreviewPacketTemplateResponse {
+  key: string;
+  title: string;
+  /** Sections with merge tokens resolved against live company data. */
+  sections: PacketDocumentSection[];
+}
+
+/** Preview a template (optionally with unsaved draft sections) exactly
+ *  as a patient would see it. Read-only despite the POST. */
+export function usePreviewPacketTemplate(options?: {
+  mutation?: UseMutationOptions<
+    PreviewPacketTemplateResponse,
+    PacketError,
+    { key: string; title?: string; sections?: PacketDocumentSection[] }
+  >;
+}) {
+  return useMutation<
+    PreviewPacketTemplateResponse,
+    PacketError,
+    { key: string; title?: string; sections?: PacketDocumentSection[] }
+  >({
+    mutationFn: ({ key, title, sections }) =>
+      customFetch(`${TEMPLATES_URL}/${encodeURIComponent(key)}/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, sections }),
+      }),
+    ...options?.mutation,
   });
 }
 

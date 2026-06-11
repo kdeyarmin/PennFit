@@ -19,6 +19,7 @@ import {
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import {
   type ShopCategory,
   SHOP_CATEGORIES,
@@ -35,6 +36,24 @@ interface CacheEntry {
 
 let cache: CacheEntry | null = null;
 const CACHE_TTL_MS = 60_000;
+
+/**
+ * Drop the in-process catalog cache so the next GET /shop/products
+ * re-fetches from Stripe. Called by the admin price rotation
+ * (routes/admin/shop-products.ts): once a product's default_price is
+ * repointed, serving the cached snapshot for the rest of the TTL
+ * would actively mislead — the storefront would keep building carts
+ * against the replaced price id, which checkout validation
+ * (lib/stripe/validate-cart.ts) is already rejecting as
+ * `price_not_storefront_approved`. Single-process today, so an
+ * in-process drop fully closes that window; if the API ever scales
+ * to multiple instances this becomes best-effort on the siblings
+ * (bounded by the same 60s TTL that exists now).
+ */
+export function invalidateShopProductsCache(): void {
+  cache = null;
+}
+
 // How long we'll keep serving the in-process catalog as "stale" when
 // Stripe is briefly unreachable. Beyond this, we'd rather 503 than
 // serve a catalog that may no longer reflect prices / availability.
@@ -128,7 +147,7 @@ router.get("/shop/products", async (req, res) => {
         req.log?.warn(
           {
             event: "shop_products_stripe_list_failed",
-            err: err instanceof Error ? err.message : String(err),
+            ...stripeErrLogFields(err),
             servedStale: stale !== null,
             staleAgeSeconds:
               cache && stale
@@ -206,7 +225,7 @@ router.get("/shop/products", async (req, res) => {
           // Non-fatal — products still render with one-time prices, the
           // subscribe toggle simply won't appear.
           req.log?.warn(
-            { err: err instanceof Error ? err.message : String(err) },
+            { ...stripeErrLogFields(err) },
             "stripe prices.list failed; subscribe toggle disabled this request",
           );
         }

@@ -17,6 +17,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -301,6 +302,8 @@ describe("GET /admin/pacware/export/patients.csv", () => {
 
 describe("GET /admin/pacware/export/resupply-due.csv", () => {
   it("flattens the episode/prescription/patient join into one line per item", async () => {
+    // First query: head-count of items withheld for a missing PacWare id.
+    stageSupabaseResponse("episodes", "select", { data: null, count: 0 });
     stageSupabaseResponse("episodes", "select", {
       data: [
         {
@@ -327,6 +330,63 @@ describe("GET /admin/pacware/export/resupply-due.csv", () => {
     expect(lines[1]).toContain("MASK-N20-M");
     expect(lines[1]).toContain("2026-06-15");
     expect(lines[1]).toContain("ep_1");
+    // Nothing withheld → no header.
+    expect(res.headers["x-pacware-withheld-missing-id"]).toBeUndefined();
+    // The data query excludes patients without an account number.
+    const filters = getSupabaseFilterCalls("episodes", "select");
+    expect(filters).toContainEqual({
+      verb: "not",
+      args: ["patients.pacware_id", "is", null],
+    });
+    expect(filters).toContainEqual({
+      verb: "is",
+      args: ["patients.pacware_id", null],
+    });
+  });
+
+  it("withholds items whose patient has no PacWare id and reports the count", async () => {
+    stageSupabaseResponse("episodes", "select", { data: null, count: 2 });
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: "ep_ok",
+          status: "confirmed",
+          due_at: "2026-06-15T00:00:00.000Z",
+          prescriptions: { item_sku: "MASK-N20-M" },
+          patients: {
+            pacware_id: "PW1",
+            legal_first_name: "Jane",
+            legal_last_name: "Doe",
+            insurance_payer: "Medicare",
+          },
+        },
+        // Belt-and-braces: even if the query-level filter regressed and
+        // returned a null-id row, the record builder must skip it rather
+        // than emit a blank account-number line.
+        {
+          id: "ep_no_id",
+          status: "confirmed",
+          due_at: "2026-06-16T00:00:00.000Z",
+          prescriptions: { item_sku: "FILTER-X" },
+          patients: {
+            pacware_id: null,
+            legal_first_name: "No",
+            legal_last_name: "Account",
+            insurance_payer: null,
+          },
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/pacware/export/resupply-due.csv",
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["x-pacware-withheld-missing-id"]).toBe("2");
+    const lines = res.text.trim().split("\r\n");
+    expect(lines).toHaveLength(2); // header + the one keyable row
+    expect(lines[1]).toContain("ep_ok");
+    expect(res.text).not.toContain("ep_no_id");
+    expect(res.text).not.toContain("FILTER-X");
   });
 
   it("rejects an unknown status filter with 400", async () => {
@@ -377,7 +437,8 @@ describe("address-column safety", () => {
 
 describe("sync verify + settings", () => {
   it("previews the resupply-due worklist (count + sample, no CSV)", async () => {
-    stageSupabaseResponse("episodes", "select", { data: null, count: 7 }); // head count
+    stageSupabaseResponse("episodes", "select", { data: null, count: 7 }); // exportable head count
+    stageSupabaseResponse("episodes", "select", { data: null, count: 2 }); // withheld (no PacWare id)
     stageSupabaseResponse("episodes", "select", {
       data: [
         {
@@ -400,6 +461,7 @@ describe("sync verify + settings", () => {
     expect(res.status).toBe(200);
     expect(res.body.target).toBe("resupply_due");
     expect(res.body.count).toBe(7);
+    expect(res.body.withheldMissingPacwareId).toBe(2);
     expect(res.body.sample[0].itemSku).toBe("MASK-N20-M");
     expect(res.headers["cache-control"]).toBe("no-store");
   });
@@ -464,5 +526,49 @@ describe("PACWARE_EXCHANGE_DISABLED kill switch", () => {
       .put("/resupply-api/admin/pacware/settings")
       .send({ autoSync: true });
     expect(settingsPut.status).toBe(503);
+  });
+});
+
+describe("admin.tools.manage permission gate", () => {
+  // The runbook (docs/runbooks/pacware-import-export.md) and the
+  // /admin/pacware page are admin.tools.manage-tier; the import,
+  // exports, and previews carry the same gate so a CSR-tier session
+  // can't bulk-write patients or download the PHI roster.
+  function asCsr(): void {
+    mockAdmin.current = {
+      userId: "u2",
+      email: "csr@penn.example.com",
+      role: "agent",
+      granularRole: "csr",
+    };
+  }
+
+  it("403s a CSR on import, exports, and previews", async () => {
+    asCsr();
+    const app = makeApp();
+
+    const imp = await request(app)
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv: HEADER, mode: "preview" });
+    expect(imp.status).toBe(403);
+    expect(imp.body.requiredPermission).toBe("admin.tools.manage");
+
+    for (const path of [
+      "/admin/pacware/export/patients.csv",
+      "/admin/pacware/export/resupply-due.csv",
+      "/admin/pacware/sync/patients/preview",
+      "/admin/pacware/sync/resupply-due/preview",
+    ]) {
+      const res = await request(app).get(`/resupply-api${path}`);
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("401s an unauthenticated import", async () => {
+    mockAdmin.current = null;
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/pacware/import/patients")
+      .send({ csv: HEADER, mode: "preview" });
+    expect(res.status).toBe(401);
   });
 });

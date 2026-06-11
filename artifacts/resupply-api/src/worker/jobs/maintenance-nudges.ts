@@ -39,10 +39,20 @@ import {
 const NUDGE_JOB = "patient-maintenance.weekly-nudge";
 const NUDGE_CRON = "13 11 * * 0";
 const QUIET_PERIOD_MS = 7 * 86_400_000;
-// Bound how many patients we email per nudge run. Bigger DMEs can
+// Bound how many patients we EMAIL per nudge run. Bigger DMEs can
 // raise this — the cron picks up the rest next week. Cap kept low
 // during initial rollout to avoid SendGrid burst limits.
 const BATCH_SIZE = 200;
+// Keyset-scan page size and the per-run scan ceiling. Skipped rows
+// (not-yet-engaged patients — the MAJORITY of any roster — and
+// nothing-overdue patients) are never stamped, so a single
+// `order id asc, limit BATCH_SIZE` slate stalled permanently once the
+// skip cohort at the front of the id order exceeded the slate: every
+// patient behind them was never evaluated again (the documented
+// lapsed-customer-winback starvation class). Paging keeps walking past
+// skips until the send cap or the scan ceiling is hit.
+const SCAN_PAGE = BATCH_SIZE * 2;
+const MAX_SCANNED_PER_RUN = BATCH_SIZE * 25;
 
 interface NudgeStats {
   scanned: number;
@@ -191,22 +201,6 @@ export async function runMaintenanceNudgeSweep(
     recentlyNudgedIds.size > 0 && recentlyNudgedIds.size <= 5000
       ? `(${Array.from(recentlyNudgedIds).join(",")})`
       : null;
-  const baseQuery = supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id, email")
-    .not("email", "is", null);
-  const filteredQuery = excludeFilter
-    ? baseQuery.not("id", "in", excludeFilter)
-    : baseQuery;
-  const { data: candidates, error } = await filteredQuery
-    .order("id", { ascending: true })
-    .limit(BATCH_SIZE);
-  if (error) throw error;
-  const patients = (candidates ?? []).filter(
-    (p): p is { id: string; email: string } => p.email != null,
-  );
-  if (patients.length === 0) return stats;
 
   const sendgrid = createSendgridClient({
     apiKey: cfg.sendgridApiKey,
@@ -215,140 +209,176 @@ export async function runMaintenanceNudgeSweep(
   });
   const asOfDate = new Date();
 
-  // Batch the per-task last-completion read. The prior loop issued one
-  // full `patient_maintenance_log` read per patient (N+1); a naive
-  // `.in()` would instead pull every log row for every patient (years of
-  // history) and risk truncation. The patient_maintenance_latest_by_task
-  // RPC (mig 0232) returns one row per (patient, task) — at most patients
-  // × the small fixed task catalog — so we fetch in chunks of 100
-  // patient_ids and index by patient. Patients already filtered by the
-  // in-memory quiet guard are excluded so we don't fetch logs we'll skip.
-  const eligibleForLog = patients
-    .map((p) => p.id)
-    .filter((id) => !recentlyNudgedIds.has(id));
-  const logByPatient = new Map<string, Map<string, string>>();
-  for (let i = 0; i < eligibleForLog.length; i += 100) {
-    const idChunk = eligibleForLog.slice(i, i + 100);
-    const { data: logRows, error: logBatchErr } = await supabase
+  // Keyset-paged candidate walk — see the SCAN_PAGE comment up top for
+  // why a single LIMIT slate starved everything behind the skip cohort.
+  let lastPatientId = "00000000-0000-0000-0000-000000000000";
+  let scannedTotal = 0;
+  pages: while (
+    stats.emailed < BATCH_SIZE &&
+    scannedTotal < MAX_SCANNED_PER_RUN
+  ) {
+    // Single-chain build (the TS2589 note above): the cursor predicate
+    // is UNCONDITIONAL — the nil UUID sorts below every real id, so the
+    // first page's `gt` excludes nothing — leaving only the original,
+    // proven excludeFilter ternary.
+    const baseQuery = supabase
       .schema("resupply")
-      .rpc("patient_maintenance_latest_by_task", { p_patient_ids: idChunk });
-    if (logBatchErr) throw logBatchErr;
-    for (const r of (logRows ?? []) as Array<{
-      patient_id: string;
-      task_key: string;
-      completed_at: string;
-    }>) {
-      if (!r.patient_id || !r.task_key) continue;
-      let m = logByPatient.get(r.patient_id);
-      if (!m) {
-        m = new Map<string, string>();
-        logByPatient.set(r.patient_id, m);
+      .from("patients")
+      .select("id, email")
+      .not("email", "is", null)
+      .gt("id", lastPatientId);
+    const filteredQuery = excludeFilter
+      ? baseQuery.not("id", "in", excludeFilter)
+      : baseQuery;
+    const { data: candidates, error } = await filteredQuery
+      .order("id", { ascending: true })
+      .limit(SCAN_PAGE);
+    if (error) throw error;
+    if (!candidates || candidates.length === 0) break;
+    scannedTotal += candidates.length;
+    lastPatientId = candidates[candidates.length - 1]!.id;
+    const patients = candidates.filter(
+      (p): p is { id: string; email: string } => p.email != null,
+    );
+    if (patients.length === 0) continue;
+
+    // Batch the per-task last-completion read for THIS page. The prior
+    // loop issued one full `patient_maintenance_log` read per patient
+    // (N+1); a naive `.in()` would instead pull every log row for every
+    // patient (years of history) and risk truncation. The
+    // patient_maintenance_latest_by_task RPC (mig 0232) returns one row
+    // per (patient, task) — at most patients × the small fixed task
+    // catalog — so we fetch in chunks of 100 patient_ids and index by
+    // patient. Patients already filtered by the in-memory quiet guard
+    // are excluded so we don't fetch logs we'll skip.
+    const eligibleForLog = patients
+      .map((p) => p.id)
+      .filter((id) => !recentlyNudgedIds.has(id));
+    const logByPatient = new Map<string, Map<string, string>>();
+    for (let i = 0; i < eligibleForLog.length; i += 100) {
+      const idChunk = eligibleForLog.slice(i, i + 100);
+      const { data: logRows, error: logBatchErr } = await supabase
+        .schema("resupply")
+        .rpc("patient_maintenance_latest_by_task", { p_patient_ids: idChunk });
+      if (logBatchErr) throw logBatchErr;
+      for (const r of (logRows ?? []) as Array<{
+        patient_id: string;
+        task_key: string;
+        completed_at: string;
+      }>) {
+        if (!r.patient_id || !r.task_key) continue;
+        let m = logByPatient.get(r.patient_id);
+        if (!m) {
+          m = new Map<string, string>();
+          logByPatient.set(r.patient_id, m);
+        }
+        // The RPC already returns the latest row per (patient, task); keep
+        // the first seen as a defensive guard against any duplicate.
+        if (!m.has(r.task_key)) m.set(r.task_key, r.completed_at);
       }
-      // The RPC already returns the latest row per (patient, task); keep
-      // the first seen as a defensive guard against any duplicate.
-      if (!m.has(r.task_key)) m.set(r.task_key, r.completed_at);
-    }
-  }
-
-  for (const patient of patients) {
-    stats.scanned += 1;
-
-    // Quiet-period guard, now in-memory. `recentlyNudgedIds` was built
-    // above from the SAME quiet-period cutoff, so the prior per-patient
-    // `patient_maintenance_nudges` read just re-derived a fact we already
-    // hold — a textbook N+1. In the normal path these ids were already
-    // excluded from the candidate query, so this rarely fires; it still
-    // matters in the >5000-recently-nudged escape case, where the
-    // candidate query skips the NOT-IN exclusion (unbounded-URL guard)
-    // and this Set is the only remaining quiet guard.
-    if (recentlyNudgedIds.has(patient.id)) {
-      stats.skippedQuiet += 1;
-      continue;
     }
 
-    // Per-task last-completion, from the pre-fetched batch.
-    const latest = logByPatient.get(patient.id) ?? new Map<string, string>();
+    for (const patient of patients) {
+      if (stats.emailed >= BATCH_SIZE) break pages;
+      stats.scanned += 1;
 
-    // Build the overdue list. We only nudge for tasks the patient
-    // has STARTED — pure-new patients see the checklist on /account
-    // but don't get an email until they've engaged with at least
-    // one task. Avoids "welcome to PennFit, here are 5 chores." A
-    // patient with no completion rows is absent from the batch (empty
-    // map) → treated as not-yet-engaged, exactly as before.
-    const hasEngaged = latest.size > 0;
-    if (!hasEngaged) {
-      stats.skippedNoOverdue += 1;
-      continue;
-    }
+      // Quiet-period guard, now in-memory. `recentlyNudgedIds` was built
+      // above from the SAME quiet-period cutoff, so the prior per-patient
+      // `patient_maintenance_nudges` read just re-derived a fact we already
+      // hold — a textbook N+1. In the normal path these ids were already
+      // excluded from the candidate query, so this rarely fires; it still
+      // matters in the >5000-recently-nudged escape case, where the
+      // candidate query skips the NOT-IN exclusion (unbounded-URL guard)
+      // and this Set is the only remaining quiet guard.
+      if (recentlyNudgedIds.has(patient.id)) {
+        stats.skippedQuiet += 1;
+        continue;
+      }
 
-    const overdueTasks: Array<{
-      task: MaintenanceTask;
-      daysOverdue: number;
-    }> = [];
-    for (const task of MAINTENANCE_CATALOG) {
-      const lastCompletedAt = latest.get(task.key) ?? null;
-      const info = bucketizeMaintenance({
-        lastCompletedAt,
-        frequencyDays: task.frequencyDays,
-        asOfDate,
-      });
-      if (info.bucket === "due_now") {
-        overdueTasks.push({
-          task,
-          daysOverdue: Math.max(0, -info.daysUntilDue),
+      // Per-task last-completion, from the pre-fetched batch.
+      const latest = logByPatient.get(patient.id) ?? new Map<string, string>();
+
+      // Build the overdue list. We only nudge for tasks the patient
+      // has STARTED — pure-new patients see the checklist on /account
+      // but don't get an email until they've engaged with at least
+      // one task. Avoids "welcome to PennFit, here are 5 chores." A
+      // patient with no completion rows is absent from the batch (empty
+      // map) → treated as not-yet-engaged, exactly as before.
+      const hasEngaged = latest.size > 0;
+      if (!hasEngaged) {
+        stats.skippedNoOverdue += 1;
+        continue;
+      }
+
+      const overdueTasks: Array<{
+        task: MaintenanceTask;
+        daysOverdue: number;
+      }> = [];
+      for (const task of MAINTENANCE_CATALOG) {
+        const lastCompletedAt = latest.get(task.key) ?? null;
+        const info = bucketizeMaintenance({
+          lastCompletedAt,
+          frequencyDays: task.frequencyDays,
+          asOfDate,
         });
+        if (info.bucket === "due_now") {
+          overdueTasks.push({
+            task,
+            daysOverdue: Math.max(0, -info.daysUntilDue),
+          });
+        }
       }
-    }
 
-    if (overdueTasks.length === 0) {
-      stats.skippedNoOverdue += 1;
-      continue;
-    }
+      if (overdueTasks.length === 0) {
+        stats.skippedNoOverdue += 1;
+        continue;
+      }
 
-    // Send.
-    const { subject, html, text } = composeNudgeEmail({
-      practiceName: cfg.practiceName,
-      publicBaseUrl: cfg.publicBaseUrl,
-      overdueTasks,
-    });
-    try {
-      await sendgrid.sendEmail({
-        to: patient.email,
-        subject,
-        html,
-        text,
+      // Send.
+      const { subject, html, text } = composeNudgeEmail({
+        practiceName: cfg.practiceName,
+        publicBaseUrl: cfg.publicBaseUrl,
+        overdueTasks,
       });
-    } catch (err) {
-      logger.warn(
-        {
-          err: err instanceof Error ? err.message : "unknown",
-          patientId: patient.id,
-        },
-        "patient-maintenance.weekly-nudge: send failed",
-      );
-      stats.errors += 1;
-      continue;
-    }
+      try {
+        await sendgrid.sendEmail({
+          to: patient.email,
+          subject,
+          html,
+          text,
+        });
+      } catch (err) {
+        logger.warn(
+          {
+            err: err instanceof Error ? err.message : "unknown",
+            patientId: patient.id,
+          },
+          "patient-maintenance.weekly-nudge: send failed",
+        );
+        stats.errors += 1;
+        continue;
+      }
 
-    // Log the nudge.
-    const { error: insErr } = await supabase
-      .schema("resupply")
-      .from("patient_maintenance_nudges")
-      .insert({
-        patient_id: patient.id,
-        channel: "email",
-        task_keys: overdueTasks.map((t) => t.task.key),
-      });
-    if (insErr) {
-      // Won't double-send within this run (the loop is per-patient);
-      // next week's quiet-period check might let through a duplicate
-      // if the log write failed but the email landed. Acceptable.
-      logger.warn(
-        { err: insErr, patientId: patient.id },
-        "patient-maintenance.weekly-nudge: log insert failed",
-      );
+      // Log the nudge.
+      const { error: insErr } = await supabase
+        .schema("resupply")
+        .from("patient_maintenance_nudges")
+        .insert({
+          patient_id: patient.id,
+          channel: "email",
+          task_keys: overdueTasks.map((t) => t.task.key),
+        });
+      if (insErr) {
+        // Won't double-send within this run (the loop is per-patient);
+        // next week's quiet-period check might let through a duplicate
+        // if the log write failed but the email landed. Acceptable.
+        logger.warn(
+          { err: insErr, patientId: patient.id },
+          "patient-maintenance.weekly-nudge: log insert failed",
+        );
+      }
+      stats.emailed += 1;
     }
-    stats.emailed += 1;
   }
 
   return stats;

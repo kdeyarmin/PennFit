@@ -192,18 +192,25 @@ export function classifyEdiPayload(
 ): "999" | "277ca" | "277" | "835" | "271" | "unknown" {
   // Sniff in the first 4KB. The ISA segment is 106 chars; the ST
   // segment usually lands within the first 500 bytes for our sizes.
-  const head = content.slice(0, 4096);
+  //
+  // Tolerate a BOM / leading whitespace before ISA and CR/LF between
+  // segments: real-world clearinghouse files routinely terminate each
+  // segment with `~\r\n` (parseX12 itself accepts that layout, and our
+  // own builders can emit it under test). Requiring the ST tag to abut
+  // the `~` made every newline-separated 999/277CA/835 classify as
+  // "unknown" — silently skipping acknowledgment/ERA dispatch.
+  const head = content.slice(0, 4096).replace(/^[\s\uFEFF]+/, "");
   if (!head.startsWith("ISA")) return "unknown";
-  if (/~ST\*999\*/.test(head)) return "999";
-  if (/~ST\*277\*/.test(head)) {
+  if (/~\s*ST\*999\*/.test(head)) return "999";
+  if (/~\s*ST\*277\*/.test(head)) {
     // Both the 277CA intake acknowledgement (005010X214) and the 277
     // claim-status RESPONSE (005010X212, the answer to our 276) use
     // ST*277. The implementation-convention reference disambiguates:
     // X212 → claim status; everything else → 277CA.
     return /005010X212/.test(head) ? "277" : "277ca";
   }
-  if (/~ST\*835\*/.test(head)) return "835";
-  if (/~ST\*271\*/.test(head)) return "271";
+  if (/~\s*ST\*835\*/.test(head)) return "835";
+  if (/~\s*ST\*271\*/.test(head)) return "271";
   return "unknown";
 }
 

@@ -183,6 +183,7 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
       const key = input.tokenHash.toString("hex");
       const row = emailTokens.get(key);
       if (!row) return null;
+      if (row.purpose !== input.purpose) return null;
       if (row.consumedAt) return null;
       if (row.expiresAt.getTime() <= input.at.getTime()) return null;
       row.consumedAt = input.at;

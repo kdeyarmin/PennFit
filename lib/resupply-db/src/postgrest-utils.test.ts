@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { escapePostgRESTFilterValue } from "./postgrest-utils";
+import {
+  escapePostgRESTContainsPattern,
+  escapePostgRESTFilterValue,
+} from "./postgrest-utils";
 
 describe("escapePostgRESTFilterValue", () => {
   it("leaves a plain value untouched", () => {
@@ -37,5 +40,39 @@ describe("escapePostgRESTFilterValue", () => {
   it("composes both layers: a wildcard AND a delimiter", () => {
     // step1 (LIKE): a%b, c → a\%b, c ; step2 (quote, re-escape \): "a\\%b, c"
     expect(escapePostgRESTFilterValue("a%b, c")).toBe('"a\\\\%b, c"');
+  });
+});
+
+describe("escapePostgRESTContainsPattern", () => {
+  it("wraps a plain value in * wildcards, unquoted", () => {
+    expect(escapePostgRESTContainsPattern("smith")).toBe("*smith*");
+  });
+
+  it("escapes LIKE wildcards inside the pattern", () => {
+    expect(escapePostgRESTContainsPattern("100%_off")).toBe("*100\\%\\_off*");
+  });
+
+  it("puts the * wildcards INSIDE the quotes for delimiter-containing values", () => {
+    // Regression: composing `*${escapePostgRESTFilterValue(v)}*` put
+    // the leading * BEFORE the opening quote — PostgREST's logic-tree
+    // parser only honors quoting when the quote is the operand's first
+    // character, so `name.ilike.*"Smith, John"*` mis-parsed (the comma
+    // terminated the operand → PostgREST 400 → admin search 500) for
+    // exactly the inputs the quoting was meant to protect.
+    expect(escapePostgRESTContainsPattern("Smith, John")).toBe(
+      '"*Smith, John*"',
+    );
+    expect(escapePostgRESTContainsPattern("(albert)")).toBe('"*(albert)*"');
+    expect(escapePostgRESTContainsPattern('say "hi"')).toBe('"*say \\"hi\\"*"');
+  });
+
+  it("never emits a quote that is not the first character", () => {
+    for (const input of ["Smith, John", "(x)", 'a"b', "plain", "100%"]) {
+      const out = escapePostgRESTContainsPattern(input);
+      if (out.includes('"')) {
+        expect(out.startsWith('"')).toBe(true);
+        expect(out.endsWith('"')).toBe(true);
+      }
+    }
   });
 });

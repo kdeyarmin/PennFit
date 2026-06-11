@@ -46,6 +46,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { isOutsideSmsSendWindow } from "./comm-prefs";
 import { isFeatureEnabled } from "./feature-flags";
 import { logger } from "./logger";
 import { withRetry } from "./with-retry";
@@ -95,6 +96,8 @@ interface JourneyRow {
   email: string | null;
   phoneE164: string | null;
   channelPreference: "sms" | "email" | "voice" | null;
+  timezone: string | null;
+  zip: string | null;
 }
 
 const DEFAULT_CAP = 50;
@@ -184,6 +187,8 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
       email: string | null;
       phone_e164: string | null;
       channel_preference: string | null;
+      timezone: string | null;
+      zip: string | null;
     }
   >();
   for (let i = 0; i < patientIds.length; i += 200) {
@@ -191,7 +196,9 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
     const { data, error } = await supabase
       .schema("resupply")
       .from("patients")
-      .select("id, legal_first_name, email, phone_e164, channel_preference")
+      .select(
+        "id, legal_first_name, email, phone_e164, channel_preference, timezone, address",
+      )
       .in("id", batch);
     if (error) throw error;
     for (const p of data ?? []) {
@@ -200,6 +207,10 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
         email: p.email,
         phone_e164: p.phone_e164,
         channel_preference: p.channel_preference,
+        timezone: (p.timezone as string | null) ?? null,
+        zip: ((p.address as { zip?: string } | null)?.zip ?? null) as
+          | string
+          | null,
       });
     }
   }
@@ -228,6 +239,8 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
         channelPref === "voice"
           ? channelPref
           : null,
+      timezone: p.timezone,
+      zip: p.zip,
     });
   }
 
@@ -367,7 +380,24 @@ async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
     if (channel === "email") {
       ({ outcome, vendorRef, errorCode } = await sendEmail(clients, row, day));
     } else if (channel === "sms") {
-      ({ outcome, vendorRef, errorCode } = await sendSms(clients, row, day));
+      // Hard 9am–8pm patient-local TCPA window, mirroring the voice
+      // channel's quiet-hours guard. "not_configured" lets the email
+      // channel still try; if nothing succeeds the day stays unstamped
+      // and the next (in-window) run retries. Falls through to the
+      // attempt-row insert below so the skip is visible in the
+      // patient_checkin_attempts trail, same as the voice path.
+      if (
+        isOutsideSmsSendWindow(asOf, {
+          timezone: row.timezone,
+          shippingZip: row.zip,
+        })
+      ) {
+        outcome = "not_configured";
+        vendorRef = null;
+        errorCode = "quiet_hours";
+      } else {
+        ({ outcome, vendorRef, errorCode } = await sendSms(clients, row, day));
+      }
     } else {
       ({ outcome, vendorRef, errorCode } = await placeVoiceCall(
         clients,

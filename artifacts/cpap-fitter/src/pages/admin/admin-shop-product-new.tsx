@@ -1,12 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   createShopProduct,
   InventoryUnavailableError,
+  PRODUCT_IMAGE_MAX_BYTES,
+  PRODUCT_IMAGE_TYPES,
+  PublicStorageUnavailableError,
   RECURRING_INTERVALS,
   SHOP_CATEGORIES,
   SkuAlreadyExistsError,
+  uploadShopProductImage,
   type CreateShopProductInput,
   type RecurringInterval,
   type ShopCategory,
@@ -127,6 +131,41 @@ export function AdminShopProductNewPage() {
   const [collisionProductId, setCollisionProductId] = useState<string | null>(
     null,
   );
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+
+  async function onImageFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Allow re-selecting the same file after a failed attempt.
+    e.target.value = "";
+    if (!file) return;
+    setImageUploadError(null);
+    if (!(PRODUCT_IMAGE_TYPES as readonly string[]).includes(file.type)) {
+      setImageUploadError("Use a PNG, JPEG, or WebP image.");
+      return;
+    }
+    if (file.size > PRODUCT_IMAGE_MAX_BYTES) {
+      setImageUploadError("Image too large — 5 MB max.");
+      return;
+    }
+    setImageUploading(true);
+    try {
+      const url = await uploadShopProductImage(file);
+      update("imageUrl", url);
+    } catch (err) {
+      if (err instanceof PublicStorageUnavailableError) {
+        setImageUploadError(
+          "Image hosting isn't configured in this environment (SUPABASE_STORAGE_BUCKET_PUBLIC unset) — paste an HTTPS image URL below instead.",
+        );
+      } else {
+        setImageUploadError(
+          err instanceof Error ? err.message : "Upload failed",
+        );
+      }
+    } finally {
+      setImageUploading(false);
+    }
+  }
 
   const createMutation = useMutation({
     mutationFn: (input: CreateShopProductInput) => createShopProduct(input),
@@ -319,6 +358,11 @@ export function AdminShopProductNewPage() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    // Guard the Enter-key path too, not just the disabled button.
+    if (imageUploading) {
+      setErrors(["Wait for the photo upload to finish."]);
+      return;
+    }
     setCollisionProductId(null);
     const result = buildInput();
     if (!result.ok) {
@@ -330,6 +374,10 @@ export function AdminShopProductNewPage() {
   }
 
   const isSubmitting = createMutation.isPending;
+  // Block submission while a photo upload is in flight: buildInput()
+  // reads form.imageUrl, so creating mid-upload would ship the product
+  // without its selected photo and orphan the upload.
+  const submitBlocked = isSubmitting || imageUploading;
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -593,6 +641,48 @@ export function AdminShopProductNewPage() {
             />
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="imageFile" style={FIELD_LABEL_STYLE}>
+              Product photo
+            </label>
+            <input
+              id="imageFile"
+              type="file"
+              accept={PRODUCT_IMAGE_TYPES.join(",")}
+              onChange={(e) => void onImageFileChange(e)}
+              style={{ fontSize: 13 }}
+              disabled={isSubmitting || imageUploading}
+            />
+            {imageUploading ? (
+              <p style={FIELD_HINT_STYLE}>Uploading…</p>
+            ) : (
+              <p style={FIELD_HINT_STYLE}>
+                PNG, JPEG, or WebP up to 5 MB. Uploads to public storage and
+                fills the URL field below.
+              </p>
+            )}
+            {imageUploadError ? (
+              <p role="alert" style={{ ...FIELD_HINT_STYLE, color: "#991b1b" }}>
+                {imageUploadError}
+              </p>
+            ) : null}
+            {form.imageUrl && !imageUploading ? (
+              <img
+                src={form.imageUrl}
+                alt="Product preview"
+                style={{
+                  display: "block",
+                  marginTop: 8,
+                  maxHeight: 120,
+                  maxWidth: 200,
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                  objectFit: "contain",
+                }}
+              />
+            ) : null}
+          </div>
+
           <div>
             <label htmlFor="imageUrl" style={FIELD_LABEL_STYLE}>
               Image URL
@@ -604,12 +694,13 @@ export function AdminShopProductNewPage() {
               onChange={(e) => update("imageUrl", e.target.value)}
               placeholder="https://app.pennpaps.com/products/airfit-p10.webp"
               style={INPUT_STYLE}
-              disabled={isSubmitting}
+              disabled={isSubmitting || imageUploading}
             />
             <p style={FIELD_HINT_STYLE}>
-              Public HTTPS URL Stripe can fetch. Until object storage is
-              configured (W4), use a path under the cpap-fitter public/
-              directory served from your deploy domain.
+              Public HTTPS URL Stripe can fetch. Filled automatically when you
+              upload a photo above; you can also paste a URL directly (e.g. a
+              path under the cpap-fitter public/ directory served from your
+              deploy domain).
             </p>
           </div>
         </section>
@@ -737,7 +828,7 @@ export function AdminShopProductNewPage() {
         <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={submitBlocked}
             style={{
               background: "#0a1f44",
               color: "#fff",
@@ -746,11 +837,15 @@ export function AdminShopProductNewPage() {
               fontSize: 14,
               fontWeight: 600,
               borderRadius: 6,
-              cursor: isSubmitting ? "wait" : "pointer",
-              opacity: isSubmitting ? 0.7 : 1,
+              cursor: submitBlocked ? "wait" : "pointer",
+              opacity: submitBlocked ? 0.7 : 1,
             }}
           >
-            {isSubmitting ? "Creating…" : "Create product"}
+            {isSubmitting
+              ? "Creating…"
+              : imageUploading
+                ? "Uploading photo…"
+                : "Create product"}
           </button>
           <button
             type="button"

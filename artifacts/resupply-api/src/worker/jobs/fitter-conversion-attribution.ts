@@ -12,8 +12,8 @@
 //
 // This worker closes the loop. Hourly it:
 //   1. Pulls every public.orders row whose created_at falls in a
-//      look-back window (default 24h, slightly overlapping the
-//      cron interval so a long-running tick can't drop one).
+//      look-back window (48h — wide enough to ride out worker
+//      outages; see ORDER_LOOKBACK_MS).
 //   2. Looks up the matching fitter_leads row by (lowercased)
 //      email.
 //   3. Stamps first_order_id + first_order_placed_at on the lead
@@ -50,10 +50,17 @@ import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 const JOB_NAME = "fitter-lead.attribution";
 /** Hourly at :29 — clear of the campaign dispatcher (:43). */
 const JOB_CRON = "29 * * * *";
-/** Window over which to scan new orders. Slightly larger than the
- *  cron interval so a tick that runs late doesn't drop a recent
- *  conversion. */
-const ORDER_LOOKBACK_MS = 90 * 60 * 1000; // 90 minutes
+/** Window over which to scan new orders. Sized to ride out worker
+ *  OUTAGES, not just a late tick: any gap in execution longer than the
+ *  lookback permanently loses the conversions placed in it — the lead
+ *  keeps journey_stage "fitted", and the supply campaign carries on
+ *  nurturing ("you haven't bought yet", the T11 discount close-out) a
+ *  patient who already paid. This repo has documented multi-hour
+ *  worker-boot gaps, and the previous 90-minute window only survived
+ *  one missed tick. Re-scans are idempotent (the `first_order_id IS
+ *  NULL` guard below), so a wide window costs only a slightly larger
+ *  hourly read. */
+const ORDER_LOOKBACK_MS = 48 * 60 * 60 * 1000; // 48 hours
 
 export interface AttributionStats {
   ordersScanned: number;
@@ -278,6 +285,15 @@ export async function registerFitterConversionAttributionJob(
       { event: "fitter-lead.attribution.disabled" },
       "fitter-lead.attribution: not registered (RESUPPLY_FITTER_SUPPLY_CAMPAIGN_ENABLED!=1)",
     );
+    // A previously persisted pg-boss schedule keeps enqueueing
+    // ticks into this now-worker-less queue (and replays them in
+    // a burst on re-enable). Clear it so disabling the flag
+    // actually stops the cron (table-guard pattern).
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(JOB_NAME).catch(() => undefined);
+    }
     return;
   }
   await createQueueWithDlq(boss, JOB_NAME, CRON_SCAN_QUEUE_OPTS);

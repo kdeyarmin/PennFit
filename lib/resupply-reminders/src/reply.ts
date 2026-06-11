@@ -168,7 +168,13 @@ export async function replyInConversation(
   // or rejected with a `vendor_api_error` — neither is great. Truncate
   // at 1600 with a trailing ellipsis so the admin notices the clip.
   const SMS_BODY_MAX = 1600;
-  const SMS_BODY_TRUNCATE_TAIL = "… (truncated)";
+  // ASCII-only tail: a single non-GSM-7 character (the Unicode "…"
+  // class — see the encoding note in send-sms.ts) silently flips the
+  // ENTIRE message to UCS-2, cutting segments from 153 to 67 chars.
+  // The tail only ever lands on maximum-length bodies, which would
+  // jump from ~11 to ~24 billed segments — the exact surprise this
+  // clamp exists to avoid.
+  const SMS_BODY_TRUNCATE_TAIL = "... (truncated)";
   const smsBody =
     body.length > SMS_BODY_MAX
       ? body.slice(0, SMS_BODY_MAX - SMS_BODY_TRUNCATE_TAIL.length) +

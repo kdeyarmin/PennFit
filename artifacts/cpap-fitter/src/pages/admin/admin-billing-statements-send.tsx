@@ -49,7 +49,15 @@ export function AdminBillingStatementsSendPage() {
 
   const batch = useMutation({
     mutationFn: () => sendStatementBatch(),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: QUERY_KEY }),
+    // Also invalidate the mail queue: a send can route statements into
+    // it (mail-preferring patients). Leaving it stale makes "Mark
+    // printed batch as mailed" compute printBatchIds from an outdated
+    // queue — printed-and-mailed statements never get marked and
+    // reappear in the next print batch (patient billed twice).
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MAIL_QUEUE_KEY });
+    },
   });
 
   return (
@@ -253,7 +261,12 @@ function StatementRow({ item }: { item: PendingStatement }) {
   const qc = useQueryClient();
   const send = useMutation({
     mutationFn: () => sendStatement(item.statementId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: QUERY_KEY }),
+    // Mail queue too — a single send can land in the mail queue when
+    // the patient prefers mailed bills (see the batch mutation above).
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MAIL_QUEUE_KEY });
+    },
   });
 
   return (

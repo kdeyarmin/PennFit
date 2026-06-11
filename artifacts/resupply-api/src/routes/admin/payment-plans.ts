@@ -295,15 +295,38 @@ router.patch(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { data: inst } = await supabase
+    const { data: inst, error: instErr } = await supabase
       .schema("resupply")
       .from("patient_payment_plan_installments")
       .select("id, plan_id")
       .eq("id", id.data)
       .limit(1)
       .maybeSingle();
+    if (instErr) throw instErr;
     if (!inst) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    // Plan-status precondition: the lifecycle write below is guarded
+    // `.neq("status","cancelled")`, but the INSTALLMENT write was not —
+    // so installments of a cancelled plan stayed freely mutable, and a
+    // paid→scheduled flip on a completed plan silently reactivated it
+    // (derivePlanStatus only ever returns active/completed). Refuse to
+    // touch installments on a cancelled plan outright.
+    const { data: plan, error: planErr } = await supabase
+      .schema("resupply")
+      .from("patient_payment_plans")
+      .select("id, status")
+      .eq("id", inst.plan_id)
+      .limit(1)
+      .maybeSingle();
+    if (planErr) throw planErr;
+    if (!plan) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (plan.status === "cancelled") {
+      res.status(409).json({ error: "plan_cancelled" });
       return;
     }
     const { error: updErr } = await supabase

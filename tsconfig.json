@@ -16,8 +16,12 @@
     { "path": "./lib/resupply-messaging" },
     { "path": "./lib/resupply-reminders" },
     { "path": "./lib/resupply-templates" },
+    { "path": "./lib/resupply-integrations" },
     { "path": "./lib/resupply-integrations-office-ally" },
     { "path": "./lib/resupply-integrations-davinci-pas" },
-    { "path": "./lib/resupply-integrations-pacware" }
+    { "path": "./lib/resupply-integrations-pacware" },
+    { "path": "./lib/resupply-integrations-airview" },
+    { "path": "./lib/resupply-integrations-care-orchestrator" },
+    { "path": "./lib/resupply-integrations-react-health" }
   ]
 }

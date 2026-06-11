@@ -29,9 +29,15 @@ const claimSchema = z.object({
   patientId: z.string(),
   payerName: z.string().nullable(),
   totalBilledCents: z.number().nullable(),
-  latestScrubAt: z.string().optional(),
+  // Both timestamps are NULLABLE columns mapped straight off the row
+  // (`c.latest_scrub_at` / `c.decision_at`). `.optional()` alone does
+  // NOT accept null — a single denied claim with decision_at NULL
+  // (reachable via the manual claim-status PATCH, and sorted FIRST by
+  // the nulls-first desc order) made the schema parse throw and
+  // bricked the whole queue with a 500.
+  latestScrubAt: z.string().nullable().optional(),
   latestScrubResultId: z.string().nullable().optional(),
-  decisionAt: z.string().optional(),
+  decisionAt: z.string().nullable().optional(),
   denialReason: z.string().nullable().optional(),
 });
 
