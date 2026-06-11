@@ -119,12 +119,24 @@ export interface StandardDocumentTemplate {
   body: string;
 }
 
+export interface StandardDocumentPacketDef {
+  key: string;
+  label: string;
+  description: string;
+  title: string;
+  includeCoverSheet: boolean;
+  templateKeys: string[];
+}
+
 /** Code-defined, Medicare/payer-aligned starting points (SWO, PAP CMN,
  *  ABN, AOB, supplier standards, proof of delivery, refill
- *  confirmation). Always present for every staff member — using one
- *  creates an ordinary editable draft via createManualDocument. */
+ *  confirmation) plus named bundles of them (the new-patient setup
+ *  packet). Always present for every staff member — using one creates
+ *  ordinary editable drafts via createManualDocument /
+ *  createManualDocumentPacket. */
 export async function getStandardDocumentCatalog(): Promise<{
   templates: StandardDocumentTemplate[];
+  packets: StandardDocumentPacketDef[];
 }> {
   const url = `${BASE}/standard-catalog`;
   const res = await fetch(url, {
@@ -132,7 +144,10 @@ export async function getStandardDocumentCatalog(): Promise<{
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw await err(res, "GET", url);
-  return (await res.json()) as { templates: StandardDocumentTemplate[] };
+  return (await res.json()) as {
+    templates: StandardDocumentTemplate[];
+    packets: StandardDocumentPacketDef[];
+  };
 }
 
 export interface ManualDocumentPrefill {
