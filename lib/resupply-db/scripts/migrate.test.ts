@@ -421,11 +421,25 @@ describe("readMigrations — apply ordering", () => {
 
   it("groups duplicate-prefix files together by tag", () => {
     const migs = readMigrations(MIGRATIONS_FOLDER);
-    const dup157 = migs.filter(
-      (m: { prefixNumber: number }) => m.prefixNumber === 157,
-    );
-    expect(dup157.length).toBeGreaterThan(1);
-    const tags = dup157.map((m: { tag: string }) => m.tag);
-    expect(tags).toEqual([...tags].sort());
+    // Build a map from prefix -> all indices at which that prefix appears.
+    const prefixIndices = new Map<number, number[]>();
+    migs.forEach((m: { prefixNumber: number }, idx: number) => {
+      const arr = prefixIndices.get(m.prefixNumber) ?? [];
+      arr.push(idx);
+      prefixIndices.set(m.prefixNumber, arr);
+    });
+    // For every prefix with more than one file, assert contiguity and sort order.
+    for (const [, indices] of prefixIndices) {
+      if (indices.length < 2) continue;
+      // All indices must be consecutive (the group is contiguous).
+      for (let k = 1; k < indices.length; k++) {
+        expect(indices[k]).toBe(indices[k - 1]! + 1);
+      }
+      // Within the group, tags must be in ascending sorted order.
+      const tags = indices.map((i) => migs[i]!.tag);
+      expect(tags).toEqual([...tags].sort());
+    }
+    // Sanity: prefix 157 must have at least 2 files.
+    expect((prefixIndices.get(157) ?? []).length).toBeGreaterThan(1);
   });
 });
