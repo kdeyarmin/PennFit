@@ -183,7 +183,7 @@ function buildPassJson(
 // PKCS#7 signature below) — so a weak-crypto scanner flag on this
 // line is a false positive to dismiss, not a fixable finding.
 function sha1Hex(buf: Buffer): string {
-  return createHash("sha1").update(buf).digest("hex");
+  return createHash("sha1").update(buf).digest("hex"); // CodeQL[js/weak-cryptographic-algorithm] SHA-1 is Apple-mandated for .pkpass manifest digests (integrity check, not a security primitive)
 }
 
 function buildManifestJson(entries: ZipEntry[]): string {
