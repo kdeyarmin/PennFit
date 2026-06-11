@@ -32,6 +32,11 @@ vi.mock("../../lib/logger", () => ({
   },
 }));
 
+vi.mock("../../lib/billing/statement-pdf");
+vi.mock("../../lib/billing/identity-resolver");
+
+import { renderStatementPdf } from "../../lib/billing/statement-pdf";
+import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import meBillingRouter from "./me-billing";
 
 const CUSTOMER_ID = "cust_abc123";
@@ -189,5 +194,53 @@ describe("/api/me/billing-statements/:id/pdf", () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "lookup_failed" });
+  });
+
+  it("returns render_failed when renderStatementPdf throws", async () => {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: CUSTOMER_ID, email_lower: "jo@example.com" },
+    });
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT }] });
+    stageSupabaseResponse("patient_billing_statements", "select", {
+      data: {
+        id: STATEMENT,
+        line_items_json: [],
+        total_patient_responsibility_cents: 0,
+        created_at: "2026-05-15T09:55:00.000Z",
+      },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: {
+        legal_first_name: "Jo",
+        legal_last_name: "Smith",
+        address: null,
+        email: "jo@example.com",
+      },
+    });
+    vi.mocked(resolveBillingIdentity).mockResolvedValueOnce({
+      source: "db",
+      organization: null,
+      billingProvider: {
+        organizationName: "Test DME",
+        address: {
+          line1: "123 Main St",
+          city: "Springfield",
+          state: "IL",
+          zip: "62701",
+        },
+      } as never,
+      submitter: {} as never,
+      usageIndicator: "T",
+    });
+    vi.mocked(renderStatementPdf).mockRejectedValueOnce(
+      new Error("puppeteer failed"),
+    );
+
+    const res = await request(makeApp({ shopCustomerId: CUSTOMER_ID })).get(
+      `/api/me/billing-statements/${STATEMENT}/pdf`,
+    );
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "render_failed" });
   });
 });
