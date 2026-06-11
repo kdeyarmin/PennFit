@@ -350,6 +350,64 @@ export class InventoryUnavailableError extends Error {
   }
 }
 
+// 503 from the image-upload endpoint: the deployment has no public
+// Supabase Storage bucket (`SUPABASE_STORAGE_BUCKET_PUBLIC` unset).
+// The Add Product form catches this and tells the operator to paste
+// an already-hosted HTTPS URL instead — the create flow still works.
+export class PublicStorageUnavailableError extends Error {
+  constructor() {
+    super("public_storage_not_configured");
+    this.name = "PublicStorageUnavailableError";
+  }
+}
+
+// Allowlist + cap mirror the server's image-upload route
+// (artifacts/resupply-api/src/routes/admin/shop-products.ts). Checked
+// client-side too so the operator gets instant feedback instead of a
+// round-trip 415/413.
+export const PRODUCT_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+export const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+// POST /admin/shop/products/image-upload — raw image bytes in, public
+// HTTPS URL out. The returned URL is ready to use as `imageUrl` on
+// `createShopProduct` (Stripe fetches it server-side at create time).
+export async function uploadShopProductImage(file: File): Promise<string> {
+  const res = await fetch("/resupply-api/admin/shop/products/image-upload", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": file.type,
+      ...csrfHeader(),
+    },
+    body: file,
+  });
+  if (res.status === 503) {
+    throw new PublicStorageUnavailableError();
+  }
+  if (!res.ok) {
+    let detail = `Upload failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error === "unsupported_image_type") {
+        detail = "Unsupported image type — use PNG, JPEG, or WebP.";
+      } else if (body.error === "image_bytes_mismatch") {
+        detail = "File contents don't match the image type.";
+      } else if (body.error) {
+        detail = body.error;
+      }
+    } catch {
+      // non-JSON error body — status-only message is enough
+    }
+    throw new Error(detail);
+  }
+  const json = (await res.json()) as { imageUrl: string };
+  return json.imageUrl;
+}
+
 // SKU collision error surfaced by `createShopProduct`. The API
 // returns 409 with the existing Stripe product id; the form page
 // uses that id to render an "Edit existing SKU" link instead of a
