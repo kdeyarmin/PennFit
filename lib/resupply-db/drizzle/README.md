@@ -11,7 +11,7 @@
    higher than any existing file and unique (no other file uses that prefix).
    Find the next free prefix with:
    ```bash
-   ls lib/resupply-db/drizzle/*.sql | sed -E 's#.*/([0-9]{4})_.*#\1#' | sort -n | tail -1
+   ls lib/resupply-db/drizzle/*.sql | sed -E 's#.*/([0-9]{4})_.*#\1#' | sort -n | tail -1 | awk '{printf "%04d\n", $1 + 1}'
    ```
 2. The pre-commit hook (`scripts/check-resupply-migration-prefix.sh`) and the
    CI drift job both reject any addition that collides with an existing prefix.
