@@ -119,6 +119,11 @@ router.get(
           "id, status, purpose, scheduled_at, started_at, ended_at, created_at",
         )
         .eq("patient_id", patientId)
+        // Open visits (ended_at null) first, then most recently ended:
+        // ordering by created_at alone could evict a just-completed
+        // visit from the 30-row cap behind a stack of visits scheduled
+        // days ahead.
+        .order("ended_at", { ascending: false, nullsFirst: true })
         .order("created_at", { ascending: false })
         .limit(30),
     ]);

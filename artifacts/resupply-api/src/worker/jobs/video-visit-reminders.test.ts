@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   composeReminder,
   pickReminderTarget,
+  type ChannelAvailability,
   type ReminderVisitRow,
 } from "./video-visit-reminders";
+
+const BOTH: ChannelAvailability = { sms: true, email: true };
 
 function visit(overrides: Partial<ReminderVisitRow>): ReminderVisitRow {
   return {
@@ -27,7 +30,7 @@ function visit(overrides: Partial<ReminderVisitRow>): ReminderVisitRow {
 
 describe("pickReminderTarget", () => {
   it("prefers SMS for an active patient with a phone", () => {
-    expect(pickReminderTarget(visit({}))).toEqual({
+    expect(pickReminderTarget(visit({}), BOTH)).toEqual({
       channel: "sms",
       to: "+18145550100",
       firstName: "Pat",
@@ -35,7 +38,9 @@ describe("pickReminderTarget", () => {
   });
 
   it("honors an email invite_channel preference", () => {
-    expect(pickReminderTarget(visit({ invite_channel: "email" }))).toEqual({
+    expect(
+      pickReminderTarget(visit({ invite_channel: "email" }), BOTH),
+    ).toEqual({
       channel: "email",
       to: "pat@example.com",
       firstName: "Pat",
@@ -52,6 +57,7 @@ describe("pickReminderTarget", () => {
           legal_first_name: "Pat",
         },
       }),
+      BOTH,
     );
     expect(target).toEqual({
       channel: "email",
@@ -71,6 +77,7 @@ describe("pickReminderTarget", () => {
             legal_first_name: "Pat",
           },
         }),
+        BOTH,
       ),
     ).toBeNull();
   });
@@ -82,6 +89,7 @@ describe("pickReminderTarget", () => {
         guest_name: "Jordan Smith",
         guest_phone_e164: "+18145550199",
       }),
+      BOTH,
     );
     expect(target).toEqual({
       channel: "sms",
@@ -92,7 +100,28 @@ describe("pickReminderTarget", () => {
 
   it("returns null for a link-only visit with no contact at all", () => {
     expect(
-      pickReminderTarget(visit({ patients: null, guest_name: "Jordan Smith" })),
+      pickReminderTarget(
+        visit({ patients: null, guest_name: "Jordan Smith" }),
+        BOTH,
+      ),
+    ).toBeNull();
+  });
+
+  it("falls back to email when SMS is preferred but undeliverable (flag off or no vendor)", () => {
+    const target = pickReminderTarget(visit({ invite_channel: "sms" }), {
+      sms: false,
+      email: true,
+    });
+    expect(target).toEqual({
+      channel: "email",
+      to: "pat@example.com",
+      firstName: "Pat",
+    });
+  });
+
+  it("returns null when neither channel is deliverable", () => {
+    expect(
+      pickReminderTarget(visit({}), { sms: false, email: false }),
     ).toBeNull();
   });
 });

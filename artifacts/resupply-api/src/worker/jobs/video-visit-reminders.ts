@@ -55,7 +55,6 @@ export interface ReminderSweepStats {
   scanned: number;
   sent: number;
   skippedNoChannel: number;
-  skippedFlagOff: number;
   skippedClaimRace: number;
   errors: number;
 }
@@ -82,14 +81,29 @@ export interface ReminderTarget {
   firstName: string | null;
 }
 
+/** Which channels this environment can actually deliver on right now
+ *  (feature flag ON and the vendor client constructible). Folded into
+ *  target selection so an undeliverable preferred channel FALLS BACK
+ *  to the other one — and so a row is never claimed for a channel
+ *  that can't send (review feedback: claiming before checking
+ *  deliverability permanently suppressed the reminder). */
+export interface ChannelAvailability {
+  sms: boolean;
+  email: boolean;
+}
+
 /**
  * Resolve who to remind and over which channel. Preference order: the
  * channel the original invite used, falling back to whatever contact
- * exists. SMS is never picked for a non-active chart-backed patient
- * (TCPA/STOP); guests carry their own contact info. Returns null when
- * there is no usable channel (link-only visits with no contact).
+ * exists on a deliverable channel. SMS is never picked for a
+ * non-active chart-backed patient (TCPA/STOP); guests carry their own
+ * contact info. Returns null when there is no usable channel
+ * (link-only visits with no contact, or nothing deliverable).
  */
-export function pickReminderTarget(v: ReminderVisitRow): ReminderTarget | null {
+export function pickReminderTarget(
+  v: ReminderVisitRow,
+  avail: ChannelAvailability,
+): ReminderTarget | null {
   const isGuest = !v.patients;
   const smsAllowed = isGuest || v.patients?.status === "active";
   const phone = isGuest ? v.guest_phone_e164 : v.patients?.phone_e164;
@@ -101,10 +115,11 @@ export function pickReminderTarget(v: ReminderVisitRow): ReminderTarget | null {
     : (v.patients?.legal_first_name ?? null);
 
   const smsTarget: ReminderTarget | null =
-    smsAllowed && phone ? { channel: "sms", to: phone, firstName } : null;
-  const emailTarget: ReminderTarget | null = email
-    ? { channel: "email", to: email, firstName }
-    : null;
+    avail.sms && smsAllowed && phone
+      ? { channel: "sms", to: phone, firstName }
+      : null;
+  const emailTarget: ReminderTarget | null =
+    avail.email && email ? { channel: "email", to: email, firstName } : null;
 
   if (v.invite_channel === "email") return emailTarget ?? smsTarget;
   return smsTarget ?? emailTarget;
@@ -177,7 +192,6 @@ export async function runVideoVisitReminderSweep(
     scanned: 0,
     sent: 0,
     skippedNoChannel: 0,
-    skippedFlagOff: 0,
     skippedClaimRace: 0,
     errors: 0,
   };
@@ -187,7 +201,12 @@ export async function runVideoVisitReminderSweep(
     isFeatureEnabled("sms.reminders"),
     isFeatureEnabled("email.reminders"),
   ]);
-  if (!smsFlag && !emailFlag) return stats;
+  // Deliverability = flag ON and the vendor client constructible.
+  // Computed once per sweep, BEFORE any row is claimed.
+  const twilio = smsFlag ? tryCreateTwilioSms() : null;
+  const sendgrid = emailFlag ? tryCreateSendgrid() : null;
+  const avail: ChannelAvailability = { sms: !!twilio, email: !!sendgrid };
+  if (!avail.sms && !avail.email) return stats;
 
   const supabase = getSupabaseServiceRoleClient();
   const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS).toISOString();
@@ -212,19 +231,18 @@ export async function runVideoVisitReminderSweep(
   for (const visit of visits) {
     stats.scanned += 1;
     try {
-      const target = pickReminderTarget(visit);
+      const target = pickReminderTarget(visit, avail);
       if (!target) {
         stats.skippedNoChannel += 1;
         continue;
       }
-      if (target.channel === "sms" ? !smsFlag : !emailFlag) {
-        stats.skippedFlagOff += 1;
-        continue;
-      }
 
       // Atomic claim: stamp before sending so a crash or vendor retry
-      // can never double-text a patient. The `is null` predicate makes
-      // the claim race-safe if a second worker instance ever appears.
+      // can never double-text a patient. Re-asserting status=scheduled
+      // skips rows cancelled/completed between the select above and
+      // this update (a cancel may have revoked the link version); the
+      // `is null` predicate makes the claim race-safe if a second
+      // worker instance ever appears.
       const { data: claimed, error: claimErr } = await supabase
         .schema("resupply")
         .from("video_visits")
@@ -233,6 +251,7 @@ export async function runVideoVisitReminderSweep(
           updated_at: new Date().toISOString(),
         })
         .eq("id", visit.id)
+        .eq("status", "scheduled")
         .is("reminder_sent_at", null)
         .select("id");
       if (claimErr) throw claimErr;
@@ -255,19 +274,10 @@ export async function runVideoVisitReminderSweep(
       });
 
       if (target.channel === "sms") {
-        const twilio = tryCreateTwilioSms();
-        if (!twilio) {
-          stats.skippedNoChannel += 1;
-          continue;
-        }
-        await twilio.sendSms({ to: target.to, body: message.sms });
+        // Non-null by construction: avail.sms implied twilio above.
+        await twilio!.sendSms({ to: target.to, body: message.sms });
       } else {
-        const sendgrid = tryCreateSendgrid();
-        if (!sendgrid) {
-          stats.skippedNoChannel += 1;
-          continue;
-        }
-        await sendgrid.sendEmail({
+        await sendgrid!.sendEmail({
           to: target.to,
           // No PHI in the subject line.
           subject: message.subject,
