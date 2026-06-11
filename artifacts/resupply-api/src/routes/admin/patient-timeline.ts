@@ -31,7 +31,8 @@ interface TimelineEvent {
     | "grievance_received"
     | "coaching_plan_opened"
     | "recall_notified"
-    | "onboarding_day";
+    | "onboarding_day"
+    | "video_visit";
   /** Display title. */
   title: string;
   /** Single-line context. */
@@ -111,6 +112,15 @@ router.get(
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(30),
+      supabase
+        .schema("resupply")
+        .from("video_visits")
+        .select(
+          "id, status, purpose, scheduled_at, started_at, ended_at, created_at",
+        )
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false })
+        .limit(30),
     ]);
     for (const q of queries) {
       if (q.error) throw q.error;
@@ -123,6 +133,7 @@ router.get(
       grievances,
       plans,
       recalls,
+      videoVisits,
     ] = queries.map((q) => q.data ?? []);
 
     for (const e of episodes as Array<{
@@ -235,6 +246,53 @@ router.get(
         refId: r.id,
         at: r.notified_at ?? r.created_at,
       });
+    }
+
+    const VISIT_PURPOSE_LABEL: Record<string, string> = {
+      setup: "equipment setup",
+      troubleshooting: "troubleshooting",
+      follow_up: "follow-up",
+      other: "check-in",
+    };
+    for (const v of videoVisits as Array<{
+      id: string;
+      status: string;
+      purpose: string;
+      scheduled_at: string | null;
+      started_at: string | null;
+      ended_at: string | null;
+      created_at: string;
+    }>) {
+      const purpose = VISIT_PURPOSE_LABEL[v.purpose] ?? v.purpose;
+      events.push({
+        kind: "video_visit",
+        title: `Video visit — ${purpose}`,
+        detail: v.scheduled_at
+          ? `Status: ${v.status}, scheduled ${new Date(v.scheduled_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+          : `Status: ${v.status}`,
+        refId: v.id,
+        at: v.created_at,
+      });
+      if (v.status === "completed" && v.ended_at) {
+        const minutes =
+          v.started_at != null
+            ? Math.max(
+                1,
+                Math.round(
+                  (new Date(v.ended_at).getTime() -
+                    new Date(v.started_at).getTime()) /
+                    60_000,
+                ),
+              )
+            : null;
+        events.push({
+          kind: "video_visit",
+          title: "Video visit completed",
+          detail: minutes != null ? `About ${minutes} min` : `${purpose}`,
+          refId: v.id,
+          at: v.ended_at,
+        });
+      }
     }
 
     events.sort((a, b) => (a.at < b.at ? 1 : -1));
