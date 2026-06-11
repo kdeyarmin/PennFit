@@ -530,23 +530,25 @@ function SignatureRow({
             >
               {neverSent ? "Send fax" : "Resend fax"}
             </Button>
-            <Button
-              intent="ghost"
-              size="sm"
-              isLoading={handDelivered.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Mark this document as hand-delivered? It will be counted as outstanding until the signed copy comes back.",
-                  )
-                ) {
-                  setMsg(null);
-                  handDelivered.mutate();
-                }
-              }}
-            >
-              Mark hand-delivered
-            </Button>
+            {neverSent && (
+              <Button
+                intent="ghost"
+                size="sm"
+                isLoading={handDelivered.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Mark this document as hand-delivered? It will be counted as outstanding until the signed copy comes back.",
+                    )
+                  ) {
+                    setMsg(null);
+                    handDelivered.mutate();
+                  }
+                }}
+              >
+                Mark hand-delivered
+              </Button>
+            )}
             <Button
               intent="ghost"
               size="sm"
