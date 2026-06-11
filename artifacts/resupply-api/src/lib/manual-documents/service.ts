@@ -82,11 +82,14 @@ export async function buildManualDocumentPdfInput(
   row: ManualDocumentRow,
   generatedOn: Date,
 ): Promise<ManualDocumentPdfInput> {
+  // Best-effort: if the signature_tracking query fails (e.g. during a
+  // migration window or a transient DB hiccup), render the PDF without
+  // a barcode rather than failing the whole download.
   const trackingCode = await getTrackingCodeForDocument(
     supabase,
     "manual_document",
     row.id,
-  );
+  ).catch(() => null);
   return {
     documentType: row.document_type,
     title: row.title,
