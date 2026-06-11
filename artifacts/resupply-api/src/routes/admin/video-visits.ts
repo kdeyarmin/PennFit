@@ -40,7 +40,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
-import { getIceServers } from "../../lib/video/ice-servers";
+import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
   adminRateLimit,
@@ -654,7 +654,7 @@ router.post(
       visit: toApiVisit(visit),
       staffToken,
       wsPath: VIDEO_SIGNAL_WS_PATH,
-      iceServers: getIceServers(),
+      iceServers: await resolveIceServers(),
       patientJoinUrl: patientJoinUrl(visit.id, visit.link_version),
     });
   },

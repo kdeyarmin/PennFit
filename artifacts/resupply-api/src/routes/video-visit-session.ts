@@ -16,7 +16,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../lib/feature-flags";
 import { readPracticeName } from "../lib/messaging/messaging-config";
-import { getIceServers } from "../lib/video/ice-servers";
+import { resolveIceServers } from "../lib/video/ice-servers";
 import { verifyVideoVisitToken } from "../lib/video/video-visit-token";
 
 const router: IRouter = Router();
@@ -77,7 +77,7 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
     scheduledAt: visit.scheduled_at,
     practiceName: readPracticeName(),
     wsPath: VIDEO_SIGNAL_WS_PATH,
-    iceServers: getIceServers(),
+    iceServers: await resolveIceServers(),
   });
 });
 
