@@ -25,6 +25,7 @@ const { api } = vi.hoisted(() => ({
     listManualDocuments: vi.fn(),
     getStandardDocumentCatalog: vi.fn(),
     createManualDocument: vi.fn(),
+    createManualDocumentPacket: vi.fn(),
   },
 }));
 
@@ -44,7 +45,7 @@ vi.mock("@/lib/admin/manual-documents-api", () => ({
   sendManualDocumentFax: vi.fn(),
   listManualDocumentPackets: vi.fn().mockResolvedValue({ packets: [] }),
   getManualDocumentPacket: vi.fn(),
-  createManualDocumentPacket: vi.fn(),
+  createManualDocumentPacket: api.createManualDocumentPacket,
   updateManualDocumentPacket: vi.fn(),
   deleteManualDocumentPacket: vi.fn(),
   sendManualDocumentPacketEmail: vi.fn(),
@@ -78,7 +79,10 @@ function renderPage() {
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("AdminDocumentsPage — standard payer documents", () => {
   it("always lists the standard library and creates a draft on Use", async () => {
@@ -96,6 +100,7 @@ describe("AdminDocumentsPage — standard payer documents", () => {
           body: "Required elements…",
         },
       ],
+      packets: [],
     });
     api.createManualDocument.mockResolvedValue({ id: "doc-1" });
 
@@ -116,12 +121,81 @@ describe("AdminDocumentsPage — standard payer documents", () => {
       }),
     );
   });
+
+  it("creates every member draft, in order, then the packet on Create packet", async () => {
+    api.listManualDocuments.mockResolvedValue({ documents: [] });
+    api.getManualDocumentCatalog.mockResolvedValue(CATALOG);
+    api.getStandardDocumentCatalog.mockResolvedValue({
+      templates: [
+        {
+          key: "aob_financial",
+          label: "Assignment of Benefits",
+          documentType: "cmn",
+          description: "AOB.",
+          title: "Assignment of Benefits",
+          fields: {},
+          body: "AOB terms…",
+        },
+        {
+          key: "abn_medicare",
+          label: "ABN",
+          documentType: "cmn",
+          description: "ABN.",
+          title: "Advance Beneficiary Notice",
+          fields: {},
+          body: "ABN terms…",
+        },
+      ],
+      packets: [
+        {
+          key: "new_patient_setup",
+          label: "New-patient setup packet",
+          description: "Intake paperwork bundle.",
+          title: "New Patient Setup Packet",
+          includeCoverSheet: true,
+          templateKeys: ["aob_financial", "abn_medicare"],
+        },
+      ],
+    });
+    api.createManualDocument
+      .mockResolvedValueOnce({ id: "doc-aob" })
+      .mockResolvedValueOnce({ id: "doc-abn" });
+    api.createManualDocumentPacket.mockResolvedValue({ id: "packet-1" });
+
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create packet" }),
+    );
+    await waitFor(() =>
+      expect(api.createManualDocumentPacket).toHaveBeenCalledWith({
+        title: "New Patient Setup Packet",
+        documentIds: ["doc-aob", "doc-abn"],
+        includeCoverSheet: true,
+      }),
+    );
+    expect(api.createManualDocument).toHaveBeenNthCalledWith(1, {
+      documentType: "cmn",
+      title: "Assignment of Benefits",
+      fields: {},
+      body: "AOB terms…",
+    });
+    expect(api.createManualDocument).toHaveBeenNthCalledWith(2, {
+      documentType: "cmn",
+      title: "Advance Beneficiary Notice",
+      fields: {},
+      body: "ABN terms…",
+    });
+  });
 });
 
 describe("AdminDocumentsPage — catalog failure surfacing", () => {
   it("shows an error + Try again instead of an empty dropdown, and recovers", async () => {
     api.listManualDocuments.mockResolvedValue({ documents: [] });
-    api.getStandardDocumentCatalog.mockResolvedValue({ templates: [] });
+    api.getStandardDocumentCatalog.mockResolvedValue({
+      templates: [],
+      packets: [],
+    });
     api.getManualDocumentCatalog.mockRejectedValueOnce(
       new Error("network down"),
     );
@@ -150,7 +224,10 @@ describe("AdminDocumentsPage — catalog failure surfacing", () => {
 
   it("renders the type options when the catalog loads", async () => {
     api.listManualDocuments.mockResolvedValue({ documents: [] });
-    api.getStandardDocumentCatalog.mockResolvedValue({ templates: [] });
+    api.getStandardDocumentCatalog.mockResolvedValue({
+      templates: [],
+      packets: [],
+    });
     api.getManualDocumentCatalog.mockResolvedValue(CATALOG);
 
     renderPage();
