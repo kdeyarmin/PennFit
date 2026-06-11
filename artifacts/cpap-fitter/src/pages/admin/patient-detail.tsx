@@ -21,6 +21,7 @@ import {
 import { AlertMessageOverridesPanel } from "@/components/admin/alert-message-overrides-panel";
 import { DocumentsTab } from "@/components/admin/DocumentsTab";
 import { EquipmentTab } from "@/components/admin/EquipmentTab";
+import { PacwareIdInlineEdit } from "@/components/admin/PacwareIdInlineEdit";
 import { PatientActionBar } from "@/components/admin/PatientActionBar";
 import { ClickToDialCard } from "@/components/admin/ClickToDialCard";
 import { LogInterventionCard } from "@/components/admin/LogInterventionCard";
@@ -163,8 +164,11 @@ export function PatientDetailPage({ id }: { id: string }) {
               {fullName(data.firstName, data.lastName)}
             </h1>
             <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              PACware ID #{data.pacwareId} · Patient created{" "}
-              {formatDate(data.createdAt)}
+              <PacwareIdInlineEdit
+                patient={data}
+                onSaved={() => void refetch()}
+              />{" "}
+              · Patient created {formatDate(data.createdAt)}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
@@ -432,7 +436,16 @@ export function PatientDetailPage({ id }: { id: string }) {
         </TabButton>
       </div>
 
-      <Card>
+      {/*
+        Keyed on the patient id: this page receives a NEW `id` prop
+        without remounting when the operator jumps patient→patient
+        (global lookup, back/forward), and a cached target skips the
+        spinner branch — so stateful tab bodies (e.g. FaxOutreachTab's
+        physician/cover-letter compose fields) would otherwise carry the
+        PREVIOUS patient's draft and submit it under the new patient.
+        The key remounts the active tab with fresh state on switch.
+      */}
+      <Card key={id}>
         {tab === "timeline" && (
           <TimelineTab
             patientId={id}

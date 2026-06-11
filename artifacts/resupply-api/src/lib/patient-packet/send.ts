@@ -23,6 +23,11 @@ import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
 import { resolveCompanyProfile } from "./company";
 import {
+  effectiveTemplateContent,
+  loadTemplateOverrides,
+  type TemplateOverrideRow,
+} from "./content";
+import {
   PACKET_TEMPLATES,
   defaultPacketDocumentKeys,
   getPacketTemplate,
@@ -30,6 +35,7 @@ import {
   requiredPacketDocumentKeys,
   type CompanyProfile,
   type DeliveryDetails,
+  type PacketDocumentSection,
 } from "./templates";
 import { signPatientPacketToken } from "../patient-packet-token";
 
@@ -39,6 +45,32 @@ export const DEFAULT_PACKET_TTL_DAYS = 30;
 
 export type PacketChannel = "email" | "sms";
 export const PACKET_CHANNELS: PacketChannel[] = ["email", "sms"];
+
+/**
+ * A one-off, per-packet edit to one document's content: applies to this
+ * packet alone (snapshotted onto its patient_packet_documents row) and
+ * never touches the template or any other packet. Sections are in token
+ * form ({{merge_tokens}} resolve at render time). Route-validated.
+ */
+export interface PacketDocumentOverride {
+  documentKey: string;
+  title?: string;
+  sections: PacketDocumentSection[];
+}
+
+/** Per-packet overrides must reference documents actually in the packet. */
+export function findInvalidOverrideKeys(
+  overrides: PacketDocumentOverride[] | undefined,
+  uniqueKeys: string[],
+): string[] {
+  if (!overrides || overrides.length === 0) return [];
+  const allowed = new Set(uniqueKeys);
+  return [
+    ...new Set(
+      overrides.map((o) => o.documentKey).filter((k) => !allowed.has(k)),
+    ),
+  ];
+}
 
 export interface CreateAndSendPatientPacketOptions {
   supabase: SupabaseClient;
@@ -63,6 +95,8 @@ export interface CreateAndSendPatientPacketOptions {
   reminder?: boolean;
   /** Itemized Proof of Delivery snapshot stored on the packet. */
   deliveryDetails?: DeliveryDetails | null;
+  /** One-off content edits for this packet alone (see the type). */
+  documentOverrides?: PacketDocumentOverride[];
   /**
    * Skip the "every compliance-required document is included" guarantee.
    * Off by default so normal sends are always complete; an explicit
@@ -87,7 +121,8 @@ export interface SendPatientPacketSuccess {
 export type CreateAndSendPatientPacketResult =
   | SendPatientPacketSuccess
   | { ok: false; code: "patient_not_found" }
-  | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] };
+  | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] }
+  | { ok: false; code: "invalid_document_overrides"; invalidKeys: string[] };
 
 function signingUrl(baseUrl: string, token: string): string {
   return `${baseUrl.replace(/\/$/, "")}/patient-packet-sign?token=${encodeURIComponent(token)}`;
@@ -122,6 +157,17 @@ export async function createAndSendPatientPacket(
       invalidKeys: docs.invalidKeys,
     };
   }
+  const badOverrides = findInvalidOverrideKeys(
+    opts.documentOverrides,
+    docs.uniqueKeys,
+  );
+  if (badOverrides.length > 0) {
+    return {
+      ok: false,
+      code: "invalid_document_overrides",
+      invalidKeys: badOverrides,
+    };
+  }
 
   const { data: patient, error: patientErr } = await supabase
     .schema("resupply")
@@ -151,6 +197,7 @@ export async function createAndSendPatientPacket(
     title: opts.title,
     channels: opts.channels,
     deliveryDetails: opts.deliveryDetails ?? null,
+    documentOverrides: opts.documentOverrides,
     expiresInDays: opts.expiresInDays,
     createdByEmail: opts.createdByEmail ?? null,
     reminder: opts.reminder,
@@ -181,6 +228,8 @@ export interface SendPatientPacketToContactOptions {
   createdByEmail?: string | null;
   /** Itemized Proof of Delivery snapshot stored on the packet. */
   deliveryDetails?: DeliveryDetails | null;
+  /** One-off content edits for this packet alone (see the type). */
+  documentOverrides?: PacketDocumentOverride[];
 }
 
 export type SendPatientPacketToContactResult =
@@ -191,7 +240,8 @@ export type SendPatientPacketToContactResult =
     })
   | { ok: false; code: "no_recipient" }
   | { ok: false; code: "invalid_phone" }
-  | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] };
+  | { ok: false; code: "invalid_document_keys"; invalidKeys: string[] }
+  | { ok: false; code: "invalid_document_overrides"; invalidKeys: string[] };
 
 export async function createAndSendPatientPacketToContact(
   opts: SendPatientPacketToContactOptions,
@@ -217,6 +267,17 @@ export async function createAndSendPatientPacketToContact(
       invalidKeys: docs.invalidKeys,
     };
   }
+  const badOverrides = findInvalidOverrideKeys(
+    opts.documentOverrides,
+    docs.uniqueKeys,
+  );
+  if (badOverrides.length > 0) {
+    return {
+      ok: false,
+      code: "invalid_document_overrides",
+      invalidKeys: badOverrides,
+    };
+  }
 
   const match = await resolvePatientByContact(supabase, {
     emailLower,
@@ -237,6 +298,7 @@ export async function createAndSendPatientPacketToContact(
     title: opts.title,
     channels: opts.channels,
     deliveryDetails: opts.deliveryDetails ?? null,
+    documentOverrides: opts.documentOverrides,
     expiresInDays: opts.expiresInDays,
     createdByEmail: opts.createdByEmail ?? null,
   });
@@ -445,9 +507,44 @@ interface BuildAndDeliverPacketInput {
   title?: string;
   channels?: PacketChannel[];
   deliveryDetails?: DeliveryDetails | null;
+  documentOverrides?: PacketDocumentOverride[];
   expiresInDays?: number;
   createdByEmail?: string | null;
   reminder?: boolean;
+}
+
+/**
+ * The content snapshot for one document at send time: the operator's
+ * permanent template override when one exists (else the code default),
+ * with any one-off per-packet edit applied on top. Token form — merge
+ * tokens resolve at render time. Shared by the initial insert and the
+ * edit-packet reconcile so the two can never disagree.
+ */
+function snapshotDocumentContent(
+  key: string,
+  overrides: Map<string, TemplateOverrideRow>,
+  packetOverride: PacketDocumentOverride | undefined,
+): { title: string; content_version: string; content_sections: Json } {
+  // Keys are pre-validated against the catalog, so effective content
+  // always resolves; the fallback satisfies the type system.
+  const effective = effectiveTemplateContent(key, overrides) ?? {
+    title: getPacketTemplate(key)!.title,
+    sections: [],
+    version: getPacketTemplate(key)!.version,
+    customized: false,
+  };
+  if (packetOverride) {
+    return {
+      title: packetOverride.title?.trim() || effective.title,
+      content_version: `${effective.version}+edited`,
+      content_sections: packetOverride.sections as unknown as Json,
+    };
+  }
+  return {
+    title: effective.title,
+    content_version: effective.version,
+    content_sections: effective.sections as unknown as Json,
+  };
 }
 
 interface BuildAndDeliverPacketResult {
@@ -471,6 +568,14 @@ async function buildAndDeliverPacket(
   const expiresAt = new Date(
     Date.now() + ttlDays * 24 * 60 * 60 * 1000,
   ).toISOString();
+
+  // Effective template content (permanent overrides folded in) is
+  // snapshotted per document so later template edits never rewrite a
+  // sent packet.
+  const templateOverrides = await loadTemplateOverrides(supabase);
+  const packetOverrideByKey = new Map(
+    (input.documentOverrides ?? []).map((o) => [o.documentKey, o]),
+  );
 
   const { data: packet, error: insertErr } = await supabase
     .schema("resupply")
@@ -496,11 +601,15 @@ async function buildAndDeliverPacket(
 
   const docRows = uniqueKeys.map((key, i) => {
     const t = getPacketTemplate(key)!;
+    const snapshot = snapshotDocumentContent(
+      key,
+      templateOverrides,
+      packetOverrideByKey.get(key),
+    );
     return {
       packet_id: packet.id,
       document_key: key,
-      title: t.title,
-      content_version: t.version,
+      ...snapshot,
       sort_order: i,
       requires_signature: t.requiresSignature,
     };
@@ -582,13 +691,18 @@ export async function reconcilePacketDocuments(
   }
 
   if (toAdd.length > 0) {
+    const templateOverrides = await loadTemplateOverrides(supabase);
     const addRows = toAdd.map((key) => {
       const t = getPacketTemplate(key)!;
+      const snapshot = snapshotDocumentContent(
+        key,
+        templateOverrides,
+        undefined,
+      );
       return {
         packet_id: packetId,
         document_key: key,
-        title: t.title,
-        content_version: t.version,
+        ...snapshot,
         // Final sort_order is restamped below for every row.
         sort_order: orderedKeys.indexOf(key),
         requires_signature: t.requiresSignature,
@@ -612,6 +726,35 @@ export async function reconcilePacketDocuments(
       .update({ sort_order: i })
       .eq("packet_id", packetId)
       .eq("document_key", key);
+    if (error) throw error;
+  }
+}
+
+/**
+ * Apply one-off content edits to an OPEN packet's existing documents
+ * (the caller gates on status and validates the override shapes + keys).
+ * Each edit re-snapshots that document's content for this packet alone;
+ * the template and every other packet are untouched.
+ */
+export async function applyPacketDocumentOverrides(
+  supabase: SupabaseClient,
+  packetId: string,
+  overrides: PacketDocumentOverride[],
+): Promise<void> {
+  if (overrides.length === 0) return;
+  const templateOverrides = await loadTemplateOverrides(supabase);
+  for (const override of overrides) {
+    const snapshot = snapshotDocumentContent(
+      override.documentKey,
+      templateOverrides,
+      override,
+    );
+    const { error } = await supabase
+      .schema("resupply")
+      .from("patient_packet_documents")
+      .update(snapshot)
+      .eq("packet_id", packetId)
+      .eq("document_key", override.documentKey);
     if (error) throw error;
   }
 }

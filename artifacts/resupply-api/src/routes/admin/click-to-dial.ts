@@ -33,6 +33,7 @@ import { logger } from "../../lib/logger";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -81,6 +82,9 @@ const dialBody = z
 router.post(
   "/admin/patients/:patientId/click-to-dial",
   requirePermission("conversations.manage"),
+  // Dials/texts/emails patients or hammers the clearinghouse —
+  // throttle like every sibling outbound-contact endpoint.
+  adminRateLimit({ name: "patients.click_to_dial", preset: "sensitive" }),
   async (req, res) => {
     const idParsed = patientIdParam.safeParse(req.params.patientId);
     if (!idParsed.success) {

@@ -89,7 +89,7 @@ export async function runPecosSync(
       stats.errors += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           npi,
         },
         "pecos.sync: per-NPI fetch failed",

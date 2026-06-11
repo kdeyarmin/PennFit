@@ -15,6 +15,7 @@ import {
   type AuditFailureEvent,
   type DeliveryFailuresResponse,
   type MessageFailureEvent,
+  type RecallFailureEvent,
 } from "@/lib/admin/delivery-failures-api";
 
 type Tab = "messages" | "audit";
@@ -42,8 +43,9 @@ export function AdminDeliveryFailuresPage() {
           Delivery failures
         </h1>
         <p className="text-sm text-slate-600">
-          Recent message-send failures across SMS, email, and voice, plus
-          delivery-failure-shaped audit events. Refreshes once per minute.
+          Recent message-send failures across SMS, email, and voice — including
+          recall-notification texts — plus delivery-failure-shaped audit events.
+          Refreshes once per minute.
         </p>
       </header>
 
@@ -118,7 +120,17 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
-  const rows = data.messageEvents;
+  // Merge conversation-message failures with recall-SMS delivery
+  // failures (stamped on recall_notifications — they have no messages
+  // row) into one newest-first triage list.
+  const rows = useMemo<Array<MessageFailureEvent | RecallFailureEvent>>(
+    () =>
+      [...data.messageEvents, ...(data.recallEvents ?? [])].sort(
+        (a, b) =>
+          new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+      ),
+    [data],
+  );
 
   // Group by deliveryStatus + channel for the summary strip.
   const byStatus = useMemo(() => {
@@ -166,9 +178,13 @@ function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <MessageRow key={r.id} row={r} />
-            ))}
+            {rows.map((r) =>
+              r.kind === "recall" ? (
+                <RecallRow key={`recall-${r.id}`} row={r} />
+              ) : (
+                <MessageRow key={r.id} row={r} />
+              ),
+            )}
           </tbody>
         </table>
       </div>
@@ -223,6 +239,52 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
         ) : (
           <span className="text-slate-400">—</span>
         )}
+      </td>
+    </tr>
+  );
+}
+
+// Recall-SMS delivery failure — no conversation thread to open, so the
+// drill-down goes to the recall roster instead.
+function RecallRow({ row }: { row: RecallFailureEvent }) {
+  return (
+    <tr className="border-t border-slate-100 hover:bg-slate-50">
+      <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
+        {new Date(row.occurredAt).toLocaleString()}
+      </td>
+      <td className="px-3 py-2 text-xs uppercase tracking-wider text-slate-600">
+        {row.channel} · recall
+      </td>
+      <td className="px-3 py-2">
+        <span
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+            (row.deliveryStatus && STATUS_TONE[row.deliveryStatus]) ??
+            "bg-slate-100 text-slate-700 border-slate-300"
+          }`}
+        >
+          {humanizeStatus(row.deliveryStatus)}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-sm">
+        <Link
+          href={`/admin/patients/${row.patientId}`}
+          className="underline decoration-dotted"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          {row.patientName?.trim() || "(no name)"}
+        </Link>
+      </td>
+      <td className="px-3 py-2 text-xs font-mono text-rose-700">
+        {row.deliveryError ?? "—"}
+      </td>
+      <td className="px-3 py-2 text-xs">
+        <Link
+          href="/admin/equipment-recalls"
+          className="underline decoration-dotted"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          Open recall →
+        </Link>
       </td>
     </tr>
   );

@@ -2,10 +2,16 @@
 //
 // Mirrors the pattern used by `scripts/src/auth-bootstrap-admin.ts`:
 // upsert a `resupply_auth.users` row (idempotent on email_lower),
-// issue a long-TTL `password_reset` email-token, send a "set your
-// password" email via the configured EmailSender, and return the
-// resolved `resupply_auth.users.id` so the caller can link any
-// product-level roster row (e.g. `resupply.admin_users.auth_user_id`).
+// issue a long-TTL `password_reset` email-token, send a welcome /
+// "set up your account" email via the configured EmailSender, and
+// return the resolved `resupply_auth.users.id` so the caller can link
+// any product-level roster row (e.g. `resupply.admin_users.auth_user_id`).
+//
+// The email is `renderTeamInviteEmail` — a proper welcome that
+// explains the app, the member's username + role, and the attached
+// getting-started guides. (It historically reused the password-RESET
+// template, so brand-new employees were told "we received a request
+// to reset your password" — wrong task, confusing first touch.)
 //
 // Ported from raw `pg.Pool.query` to the Supabase JS service-role
 // client. The original three-statement
@@ -22,7 +28,7 @@ import { issueToken } from "./token";
 import { hashPassword } from "./password";
 import { validatePassword } from "./password-policy";
 import type { AuthDeps, EmailAttachment } from "./http/types";
-import { renderPasswordResetEmail } from "./http/email-templates";
+import { renderTeamInviteEmail } from "./http/email-templates";
 import { stripTrailingSlashes } from "./string-utils";
 import { bufferToHexBytea } from "./bytea";
 import type { ResupplySupabaseClient } from "@workspace/resupply-db";
@@ -62,6 +68,14 @@ export interface InviteArgs {
   role: "admin" | "agent";
   displayName: string | null;
   productName: string;
+  /**
+   * Human-readable role label shown in the welcome email's
+   * account-details block (e.g. "Customer service rep"). Callers with
+   * a granular role catalog should pass the same label their UI
+   * renders; when omitted, a default is derived from the coarse
+   * `role` ("Super admin" / "Customer service rep").
+   */
+  roleLabel?: string;
   /**
    * Public base URL for the app the invite link should point at.
    * Falls back to `deps.publicBaseUrl` when omitted.
@@ -279,14 +293,22 @@ export async function inviteTeamMember(
 
   const safePrefix = stripTrailingSlashes(args.uiPathPrefix ?? "");
   const inviteLink = `${baseUrl}${safePrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
-  const rendered = renderPasswordResetEmail(
+  const rendered = renderTeamInviteEmail(
     {
       productName: args.productName,
       publicBaseUrl: baseUrl,
       uiPathPrefix: args.uiPathPrefix,
     },
-    token.raw,
-    INVITE_TOKEN_TTL_MS,
+    {
+      rawToken: token.raw,
+      ttlMs: INVITE_TOKEN_TTL_MS,
+      email: args.emailLower,
+      displayName: args.displayName,
+      roleLabel:
+        args.roleLabel ??
+        (args.role === "admin" ? "Super admin" : "Customer service rep"),
+      attachmentFilenames: args.attachments?.map((a) => a.filename),
+    },
   );
 
   let emailSent = false;
@@ -343,6 +365,110 @@ export async function revokeTeamMember(
     .eq("user_id", authUserId)
     .is("revoked_at", null);
   if (sessionsErr) throw sessionsErr;
+}
+
+export interface DeleteTeamMemberResult {
+  /** True iff the resupply_auth.users row was hard-deleted (the
+   *  cascading FKs from 0022 remove password_credentials, sessions,
+   *  and email_tokens with it). */
+  authUserDeleted: boolean;
+  /** True iff the identity row was kept because it is shared with a
+   *  customer account, and was demoted back to role='customer'
+   *  instead of deleted. */
+  authUserDemotedToCustomer: boolean;
+}
+
+/**
+ * Erase the auth-side footprint of a team invite / membership, as if
+ * the invite never happened. Counterpart to `revokeTeamMember`, which
+ * keeps the row around as an audit trail — this one removes it.
+ *
+ * Two modes, chosen by the caller (which owns the product-side
+ * roster and knows whether the identity is shared):
+ *
+ *   * `preserveAsCustomer: false` — the row exists only because of
+ *     the invite. Hard-delete it; `password_credentials`, `sessions`,
+ *     and `email_tokens` all CASCADE (migration 0022), which also
+ *     kills any outstanding invite link.
+ *
+ *   * `preserveAsCustomer: true` — the same resupply_auth.users row
+ *     backs a non-staff login: a shop-customer account, a
+ *     patient-portal login, or a provider-portal account (all three
+ *     are created with role='customer' and may share the row with a
+ *     later staff invite, since invites reuse rows by email_lower).
+ *     Deleting it would destroy that login, so instead: demote the
+ *     role back to 'customer', restore status from the
+ *     email-verification state ('revoked'/'invited' would lock the
+ *     person out), expire any unconsumed password_reset tokens (dead
+ *     invite links, audit rows kept), and revoke live sessions so a
+ *     staff-scoped cookie can't linger.
+ */
+export async function deleteTeamMember(
+  supabase: ResupplySupabaseClient,
+  authUserId: string,
+  opts: { preserveAsCustomer: boolean },
+): Promise<DeleteTeamMemberResult> {
+  if (!opts.preserveAsCustomer) {
+    const { error } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .delete()
+      .eq("id", authUserId);
+    if (error) throw error;
+    return { authUserDeleted: true, authUserDemotedToCustomer: false };
+  }
+
+  const { data: user, error: readErr } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .select("id, email_verified_at")
+    .eq("id", authUserId)
+    .limit(1)
+    .maybeSingle<{ id: string; email_verified_at: string | null }>();
+  if (readErr) throw readErr;
+  if (!user) {
+    return { authUserDeleted: false, authUserDemotedToCustomer: false };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: updErr } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .update({
+      role: "customer",
+      // A verified customer goes back to 'active'; an unverified one
+      // back to 'invited' (sign-in refuses unverified accounts either
+      // way). Leaving 'revoked' in place would lock them out of their
+      // own customer account.
+      status: user.email_verified_at ? "active" : "invited",
+      updated_at: nowIso,
+    })
+    .eq("id", authUserId);
+  if (updErr) throw updErr;
+
+  // Dead-letter the invite's set-password links. Only unconsumed
+  // password_reset tokens — consumed rows are audit trail, and the
+  // customer's own signup_verify tokens are untouched.
+  const { error: tokErr } = await supabase
+    .schema("resupply_auth")
+    .from("email_tokens")
+    // Preserve audit trail: dead-letter invite/reset links by expiring them,
+    // rather than deleting rows.
+    .update({ expires_at: nowIso })
+    .eq("user_id", authUserId)
+    .eq("purpose", "password_reset")
+    .is("consumed_at", null);
+  if (tokErr) throw tokErr;
+
+  const { error: sessErr } = await supabase
+    .schema("resupply_auth")
+    .from("sessions")
+    .update({ revoked_at: nowIso })
+    .eq("user_id", authUserId)
+    .is("revoked_at", null);
+  if (sessErr) throw sessErr;
+
+  return { authUserDeleted: false, authUserDemotedToCustomer: true };
 }
 
 /**

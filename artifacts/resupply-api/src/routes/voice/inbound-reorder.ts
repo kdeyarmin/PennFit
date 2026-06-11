@@ -138,7 +138,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         event: "voice.inbound-reorder.identify_failed",
         callSid: CallSid,
         fromDigits: callerE164.replace(/\D+/g, "").length,
-        err: err instanceof Error ? err.message : "unknown",
+        err,
       },
       "voice.inbound-reorder: caller identification failed",
     );
@@ -252,7 +252,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     } catch (err) {
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err,
           callSid: CallSid,
         },
         "voice.inbound-reorder: shop conversation create failed; transferring",
@@ -412,7 +412,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   } catch (err) {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : "unknown",
+        err,
         callSid: CallSid,
       },
       "voice.inbound-reorder: conversation create failed; transferring to human",

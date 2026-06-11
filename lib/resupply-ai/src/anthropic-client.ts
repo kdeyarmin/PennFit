@@ -358,7 +358,21 @@ export function createAnthropicClient(
     ): Promise<AnthropicCallResult> {
       const req = applyDefaults(rawReq);
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      // IDLE timeout, not a total-duration cap. The timer is re-armed
+      // on every chunk the stream produces: a healthy long reply (the
+      // chatbot's system prompt alone is ~17k tokens and replies
+      // routinely exceed 1k output tokens) can take longer than
+      // `timeoutMs` end-to-end, and aborting it mid-stream reported
+      // `{ ok: false, errorCode: "timeout" }` AFTER deltas had already
+      // been forwarded to the user — the caller's fallback chain then
+      // emitted a second, duplicate answer. What the timeout exists to
+      // catch (a hung connect / stalled stream) is precisely "no chunk
+      // for timeoutMs", which the idle re-arm still catches.
+      let timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const rearmIdleTimer = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      };
       const startedAt = Date.now();
       try {
         const upstream = await fetchImpl(apiUrl, {
@@ -383,6 +397,7 @@ export function createAnthropicClient(
         const accumulated = await consumeAnthropicStream(
           upstream.body,
           onTextDelta,
+          rearmIdleTimer,
         );
         if (!accumulated) {
           return {
@@ -446,6 +461,7 @@ interface AnthropicStreamEvent {
 async function consumeAnthropicStream(
   body: ReadableStream<Uint8Array>,
   onTextDelta: (text: string) => void,
+  onChunkReceived?: () => void,
 ): Promise<AnthropicResponse | null> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -462,6 +478,8 @@ async function consumeAnthropicStream(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      // Liveness signal for the caller's idle-timeout re-arm.
+      onChunkReceived?.();
       buffer += decoder.decode(value, { stream: true });
       let boundary = buffer.indexOf("\n\n");
       while (boundary !== -1) {

@@ -25,6 +25,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { runEligibilityReverificationBatch } from "../../lib/billing/eligibility-batch";
 
 const router: IRouter = Router();
@@ -138,6 +139,9 @@ const batchRunSchema = z
 router.post(
   "/admin/billing/eligibility-batch-run",
   requirePermission("admin.tools.manage"),
+  // Dials/texts/emails patients or hammers the clearinghouse —
+  // throttle like every sibling outbound-contact endpoint.
+  adminRateLimit({ name: "billing.eligibility_batch_run", preset: "bulk" }),
   async (req, res) => {
     const parsed = batchRunSchema.safeParse(req.body ?? {});
     if (!parsed.success) {

@@ -107,18 +107,24 @@ type Row = {
 };
 
 export function EpisodesPage() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
 
   // Default to overdue queue — that's the admin's primary triage view.
   // Empty deps are deliberate: only the first-mount URL seeds state;
   // the local filter UI takes over from then on.
+  // NB: read from window.location, NOT wouter's useLocation() — wouter
+  // v3's location is the pathname only and never contains a "?", so
+  // parsing it dropped every dashboard deep-link filter (and the
+  // URL-sync effect below then replace-rewrote the URL to the
+  // defaults, destroying the inbound link before a refresh could
+  // recover it — docs/app-review-2026-06-10.md P0-5). Reading the
+  // real query string during the initial render runs BEFORE that
+  // effect, so seed and sync now round-trip.
   const initialStatus = useMemo(
-    () => readQueryParam(location, "status") ?? "overdue",
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => readQueryParam("status") ?? "overdue",
     [],
   );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const initialQ = useMemo(() => readQueryParam(location, "q") ?? "", []);
+  const initialQ = useMemo(() => readQueryParam("q") ?? "", []);
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   // Two q states: the live input (re-renders on every keystroke) and
   // the debounced value used to drive the network calls. 250ms is the
@@ -717,8 +723,10 @@ function InlineActions({ row }: { row: Row }) {
   );
 }
 
-function readQueryParam(location: string, key: string): string | null {
-  const qIndex = location.indexOf("?");
-  if (qIndex === -1) return null;
-  return new URLSearchParams(location.slice(qIndex + 1)).get(key);
+// Read once from the real URL (window.location.search). Wouter's
+// useLocation() can't be used here: in v3 it returns the pathname
+// only, so it never carries the query string.
+function readQueryParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
 }

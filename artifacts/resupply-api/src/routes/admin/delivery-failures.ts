@@ -6,7 +6,12 @@
 //
 // Source: `messages.delivery_status IN ('failed','undelivered',
 // 'bounced','dropped','rejected','spam_report')` — per-message
-// terminal failures from the SMS / email status webhooks.
+// terminal failures from the SMS / email status webhooks — plus
+// `recall_notifications.delivery_status IN ('failed','undelivered')`,
+// the recall-SMS delivery outcomes stamped by /sms/status-callback
+// (recall sends have no messages row, so without this stream a
+// bounced safety-recall text would be invisible here while its
+// roster row still read 'sent').
 //
 // What changed (migration 0156 / 0163 cleanup): this endpoint
 // previously also UNION'd a second stream from `resupply.audit_log`
@@ -90,6 +95,21 @@ router.get(
       .limit(MAX_ROWS);
     if (msgErr) throw msgErr;
 
+    // Recall-notification SMS delivery failures. Twilio only ever
+    // reports sent/delivered/undelivered/failed for these, so the
+    // failure subset is narrower than the messages list above.
+    const { data: recallRows, error: recallErr } = await supabase
+      .schema("resupply")
+      .from("recall_notifications")
+      .select(
+        "id, recall_id, patient_id, channel, delivery_status, delivery_error_code, updated_at",
+      )
+      .in("delivery_status", ["failed", "undelivered"])
+      .gte("updated_at", since)
+      .order("updated_at", { ascending: false })
+      .limit(MAX_ROWS);
+    if (recallErr) throw recallErr;
+
     const conversationIds = Array.from(
       new Set((messageRows ?? []).map((r) => r.conversation_id)),
     );
@@ -113,11 +133,12 @@ router.get(
       }
     }
     const patientIds = Array.from(
-      new Set(
-        Array.from(conversationsById.values())
+      new Set([
+        ...Array.from(conversationsById.values())
           .map((c) => c.patient_id)
           .filter((v): v is string => v !== null),
-      ),
+        ...(recallRows ?? []).map((r) => r.patient_id),
+      ]),
     );
     const patientsById = new Map<
       string,
@@ -170,6 +191,31 @@ router.get(
       };
     });
 
+    // Recall-SMS delivery failures, shaped like messageEvents so the
+    // SPA renders both in the same triage table. `recallId` (instead of
+    // `conversationId`) is the drill-down handle — the SPA links to the
+    // recall roster rather than a conversation thread.
+    const recallEvents = (recallRows ?? []).map((r) => {
+      const pt = patientsById.get(r.patient_id);
+      const fullName = pt
+        ? [pt.legal_first_name, pt.legal_last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim()
+        : "";
+      return {
+        kind: "recall" as const,
+        id: r.id,
+        occurredAt: r.updated_at,
+        channel: r.channel ?? "sms",
+        deliveryStatus: r.delivery_status,
+        deliveryError: r.delivery_error_code,
+        recallId: r.recall_id,
+        patientId: r.patient_id,
+        patientName: fullName || null,
+      };
+    });
+
     // Preserved for response-shape compatibility — see header comment.
     const auditEvents: Array<{
       kind: "audit";
@@ -187,12 +233,14 @@ router.get(
       sinceDays,
       counts: {
         messageFailures: messageEvents.length,
+        recallFailures: recallEvents.length,
         // null (not 0) when the audit stream is retired so the SPA can
         // distinguish "no incidents in window" from "data source gone".
         auditFailures: auditEventsUnavailable ? null : auditEvents.length,
       },
       failureStatuses: FAILURE_STATUSES,
       messageEvents,
+      recallEvents,
       auditEvents,
       auditEventsUnavailable,
     });

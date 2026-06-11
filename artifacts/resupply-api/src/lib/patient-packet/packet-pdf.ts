@@ -23,6 +23,13 @@ export interface PacketPdfDocument {
   title: string;
   requiresSignature: boolean;
   contentVersion?: string | null;
+  /**
+   * Send-time snapshot in TOKEN form (merge tokens like {{company_name}}
+   * still present — see content.ts). Substitution happens at render time.
+   * When null/absent the renderer builds from the code template by key
+   * (legacy rows).
+   */
+  sections?: PacketDocumentSection[] | null;
 }
 
 export interface PacketPdfSignature {
@@ -183,7 +190,9 @@ function drawPacket(doc: PDFKit.PDFDocument, input: PacketPdfInput): void {
         .text(`Document version ${d.contentVersion}`);
     }
     doc.moveDown(0.5);
-    if (template) {
+    if (d.sections && d.sections.length > 0) {
+      drawSections(doc, d.sections);
+    } else if (template) {
       drawSections(doc, template.build(company, buildCtx));
     } else {
       doc

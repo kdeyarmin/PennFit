@@ -322,8 +322,8 @@ export function MaskRecommendationCard({
                   Buy without insurance — {cashPay.priceLabel}
                 </Button>
                 <p className="text-xs text-muted-foreground text-center mt-2">
-                  Skip the paperwork — ships from the PennPaps shop.
-                  HSA/FSA eligible.
+                  Skip the paperwork — ships from the PennPaps shop. HSA/FSA
+                  eligible.
                 </p>
               </>
             )}

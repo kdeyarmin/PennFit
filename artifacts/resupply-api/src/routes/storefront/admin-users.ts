@@ -35,6 +35,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { getAuthDeps } from "../../lib/auth-deps.js";
+import { buildInviteHelpAttachments } from "../../lib/help-docs/index.js";
 import { requireCsrf } from "../../middlewares/csrf.js";
 import { requireAdminOnly } from "../../middlewares/requireAdmin.js";
 
@@ -269,14 +270,30 @@ router.post(
       return;
     }
 
+    // Render the role-specific getting-started guides to attach to the
+    // welcome email. Best-effort, same posture as /admin/team/invite —
+    // an invite must never fail because a help doc didn't render.
+    let attachments: Awaited<ReturnType<typeof buildInviteHelpAttachments>> =
+      [];
+    try {
+      attachments = await buildInviteHelpAttachments({ kind: "staff", role });
+    } catch (err) {
+      logger.warn(
+        { err, event: "staff_invite_help_docs_render_failed", role },
+        "failed to render staff invite help documents; sending invite without them",
+      );
+    }
+
     const deps = getAuthDeps();
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: email,
       role,
+      roleLabel: role === "admin" ? "Super admin" : "Customer service rep",
       displayName: null,
       productName: "PennFit",
       publicBaseUrl: buildInviteRedirectUrl(req),
       uiPathPrefix: "/admin",
+      attachments,
     });
 
     await writeAudit(req, `team.invite role=${role} email=${email}`);

@@ -315,50 +315,89 @@ async function tryPersistMedia(
   // No Authorization header — the S3 pre-signed URL carries its own
   // SigV4 auth in the query string; adding a header would break it.
   // Redirects are followed manually so each hop's host is re-validated.
+  //
+  // The abort timer must stay armed through the BODY read, not just
+  // the headers: fetchAllowlistedMedia resolves once headers arrive,
+  // and a stalled S3 body would otherwise hold the Telnyx webhook open
+  // indefinitely — Telnyx then times out and retries, and the
+  // idempotency row from step 1 makes the retry return
+  // `already_recorded` WITHOUT media, permanently losing the fax PDF.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let resp: Response | null;
+  let bytes: Uint8Array;
+  let headerContentType: string;
   try {
-    resp = await fetchAllowlistedMedia(input.mediaUrl, controller.signal);
-  } catch (err) {
+    let resp: Response | null;
+    try {
+      resp = await fetchAllowlistedMedia(input.mediaUrl, controller.signal);
+    } catch (err) {
+      logger.warn(
+        {
+          fax_id_first8: input.telnyxFaxId.slice(0, 8),
+          err,
+        },
+        "fax_inbound_media_fetch_failed",
+      );
+      return MEDIA_NOT_PERSISTED;
+    }
+    if (!resp) {
+      // A redirect pointed off-allowlist (or exceeded the cap) — treat the
+      // same as a rejected host.
+      logger.warn(
+        { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
+        "fax_inbound_media_redirect_rejected",
+      );
+      return MEDIA_NOT_PERSISTED;
+    }
+    if (!resp.ok) {
+      logger.warn(
+        {
+          fax_id_first8: input.telnyxFaxId.slice(0, 8),
+          status: resp.status,
+        },
+        "fax_inbound_media_non_2xx",
+      );
+      return MEDIA_NOT_PERSISTED;
+    }
+
+    headerContentType = (resp.headers.get("content-type") ?? "")
+      .split(";")[0]!
+      .trim()
+      .toLowerCase();
+
+    // Content-Length pre-check (when the server sends one) so an
+    // oversized body is rejected before buffering it into RAM — the
+    // post-read MAX_BYTES check below stays as the backstop for
+    // chunked responses. Mirrors the MMS ingest path.
+    const declaredLength = Number(resp.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BYTES) {
+      logger.warn(
+        {
+          fax_id_first8: input.telnyxFaxId.slice(0, 8),
+          size: declaredLength,
+        },
+        "fax_inbound_media_size_rejected",
+      );
+      return MEDIA_NOT_PERSISTED;
+    }
+
+    let arrayBuf: ArrayBuffer;
+    try {
+      arrayBuf = await resp.arrayBuffer();
+    } catch (err) {
+      logger.warn(
+        {
+          fax_id_first8: input.telnyxFaxId.slice(0, 8),
+          err,
+        },
+        "fax_inbound_media_body_read_failed",
+      );
+      return MEDIA_NOT_PERSISTED;
+    }
+    bytes = new Uint8Array(arrayBuf);
+  } finally {
     clearTimeout(timer);
-    logger.warn(
-      {
-        fax_id_first8: input.telnyxFaxId.slice(0, 8),
-        err: err instanceof Error ? err.message : String(err),
-      },
-      "fax_inbound_media_fetch_failed",
-    );
-    return MEDIA_NOT_PERSISTED;
   }
-  clearTimeout(timer);
-  if (!resp) {
-    // A redirect pointed off-allowlist (or exceeded the cap) — treat the
-    // same as a rejected host.
-    logger.warn(
-      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
-      "fax_inbound_media_redirect_rejected",
-    );
-    return MEDIA_NOT_PERSISTED;
-  }
-  if (!resp.ok) {
-    logger.warn(
-      {
-        fax_id_first8: input.telnyxFaxId.slice(0, 8),
-        status: resp.status,
-      },
-      "fax_inbound_media_non_2xx",
-    );
-    return MEDIA_NOT_PERSISTED;
-  }
-
-  const headerContentType = (resp.headers.get("content-type") ?? "")
-    .split(";")[0]!
-    .trim()
-    .toLowerCase();
-
-  const arrayBuf = await resp.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuf);
   if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) {
     logger.warn(
       {
@@ -418,7 +457,7 @@ async function tryPersistMedia(
     logger.warn(
       {
         fax_id_first8: input.telnyxFaxId.slice(0, 8),
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "fax_inbound_gcs_upload_failed",
     );

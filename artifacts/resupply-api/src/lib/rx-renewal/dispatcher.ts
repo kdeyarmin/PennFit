@@ -21,6 +21,7 @@ import {
 
 import { renderMessage } from "@workspace/resupply-templates";
 
+import { isOutsideSmsSendWindow } from "../comm-prefs";
 import { logger } from "../logger";
 import { messageTemplateLookup } from "../message-templates/lookup";
 import { sendPushToCustomerByEmail } from "../web-push";
@@ -55,6 +56,9 @@ export type RxRenewalOutcome =
       sent: number;
       failed: number;
       skippedNoContact: number;
+      /** SMS only: rows deferred by the 9am–8pm patient-local TCPA
+       *  window. Not claimed — the next in-window run sends them. */
+      skippedQuietHours: number;
       remaining: number;
       windowDays: number;
     };
@@ -96,13 +100,26 @@ export async function runRxRenewalSendDue(
   );
   const patientById = new Map<
     string,
-    { firstName: string | null; email: string | null; phoneE164: string | null }
+    {
+      firstName: string | null;
+      email: string | null;
+      phoneE164: string | null;
+      timezone: string | null;
+      zip: string | null;
+    }
   >();
   if (patientIds.length > 0) {
+    // status='active' only: STOP (SMS), the email stop link, and an
+    // admin pause all set patients.status='paused' — this dispatcher
+    // used to ignore that and contact opted-out patients anyway
+    // (app-review 2026-06-10, P1-4). A non-active patient simply drops
+    // out of the map, so their prescriptions are filtered out below
+    // without being claimed (they resume when the patient does).
     const { data: patientRows, error: patientsErr } = await supabase
       .schema("resupply")
       .from("patients")
-      .select("id, legal_first_name, email, phone_e164")
+      .select("id, legal_first_name, email, phone_e164, timezone, address")
+      .eq("status", "active")
       .in("id", patientIds);
     if (patientsErr) throw patientsErr;
     for (const p of patientRows ?? []) {
@@ -110,6 +127,10 @@ export async function runRxRenewalSendDue(
         firstName: p.legal_first_name,
         email: p.email,
         phoneE164: p.phone_e164,
+        timezone: (p.timezone as string | null) ?? null,
+        zip: ((p.address as { zip?: string } | null)?.zip ?? null) as
+          | string
+          | null,
       });
     }
   }
@@ -125,6 +146,8 @@ export async function runRxRenewalSendDue(
         firstName: patient.firstName,
         email: patient.email,
         phoneE164: patient.phoneE164,
+        timezone: patient.timezone,
+        zip: patient.zip,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -155,9 +178,24 @@ export async function runRxRenewalSendDue(
   let sent = 0;
   let failed = 0;
   let skippedNoContact = 0;
+  let skippedQuietHours = 0;
 
   for (const row of rows) {
     if (attempted >= PER_RUN_CAP) break;
+    // TCPA window gate (SMS only): never text outside 9am–8pm patient-
+    // local, no matter who triggered the run (cron or an operator's
+    // late-evening "Run now" click). The row is NOT claimed, so the
+    // next run inside the window picks it up.
+    if (
+      channel === "sms" &&
+      isOutsideSmsSendWindow(now, {
+        timezone: row.timezone,
+        shippingZip: row.zip,
+      })
+    ) {
+      skippedQuietHours++;
+      continue;
+    }
     attempted++;
     const contact = channel === "email" ? row.email : row.phoneE164;
     if (!contact) {
@@ -319,7 +357,7 @@ export async function runRxRenewalSendDue(
           logger.warn(
             {
               prescription_id: row.prescriptionId,
-              err: err instanceof Error ? err.message : String(err),
+              err,
             },
             "Rx-renewal push fan-out threw (non-fatal)",
           );
@@ -350,7 +388,7 @@ export async function runRxRenewalSendDue(
         {
           prescription_id: row.prescriptionId,
           channel,
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "Rx renewal request send failed",
       );
@@ -364,6 +402,7 @@ export async function runRxRenewalSendDue(
     sent,
     failed,
     skippedNoContact,
+    skippedQuietHours,
     remaining: rows.length > attempted ? rows.length - attempted : 0,
     windowDays: RENEWAL_WINDOW_DAYS,
   };

@@ -732,15 +732,20 @@ router.post(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const { data: row, error } = await supabase
+    // Multi-device (mig 0091): pull ALL verified secrets and accept a
+    // code from ANY enrolled device — same posture as /disable above.
+    // The previous unordered `.limit(1).maybeSingle()` with no
+    // verified_at filter could return the in-progress UNVERIFIED
+    // enrollment row, 404ing a legitimately-enrolled admin (or
+    // validating the code against the wrong device's secret).
+    const { data: rows, error } = await supabase
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter")
       .eq("staff_user_id", adminUserId)
-      .limit(1)
-      .maybeSingle();
+      .not("verified_at", "is", null);
     if (error) throw error;
-    if (!row || !row.verified_at) {
+    if (!rows || rows.length === 0) {
       res.status(404).json({
         error: "not_enrolled",
         message: "MFA is not active on this account; nothing to regenerate.",
@@ -748,11 +753,20 @@ router.post(
       return;
     }
 
-    const result = verifyTotpCode(row.secret_base32, parsed.data.code, {
-      window: 1,
-      minCounter: row.last_used_counter ?? undefined,
-    });
-    if (!result.ok || result.counter == null) {
+    let matchedRow: (typeof rows)[number] | null = null;
+    let matchedCounter: number | null = null;
+    for (const r of rows) {
+      const result = verifyTotpCode(r.secret_base32, parsed.data.code, {
+        window: 1,
+        minCounter: r.last_used_counter ?? undefined,
+      });
+      if (result.ok && result.counter != null) {
+        matchedRow = r;
+        matchedCounter = result.counter;
+        break;
+      }
+    }
+    if (!matchedRow || matchedCounter == null) {
       res.status(400).json({
         error: "invalid_code",
         message: "Code didn't match — refusing to regenerate.",
@@ -767,10 +781,10 @@ router.post(
       .schema("resupply")
       .from("admin_mfa_secrets")
       .update({
-        last_used_counter: result.counter,
+        last_used_counter: matchedCounter,
         last_used_at: new Date().toISOString(),
       })
-      .eq("id", row.id);
+      .eq("id", matchedRow.id);
     if (burnErr) throw burnErr;
 
     // Wipe the entire old batch (used + spendable). Surveyors are

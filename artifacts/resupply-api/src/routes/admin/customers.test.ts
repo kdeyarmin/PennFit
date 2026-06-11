@@ -205,6 +205,8 @@ describe("GET /admin/shop/customers — happy path", () => {
       total: 0,
       page: 1,
       pageSize: 25,
+      // Candidate read stayed under READ_CAP — nothing hidden.
+      truncated: false,
     });
   });
 

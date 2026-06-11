@@ -47,9 +47,15 @@ beforeEach(() => {
   supabaseMock.reset();
   featureEnabled.value = false;
   sendSmsMock.mockClear();
+  // Pin the clock inside the 9am–8pm patient-local TCPA send window
+  // (17:00 UTC = 1pm ET). The scan gate-skips SMS outside the window,
+  // so an unpinned clock made these tests pass or fail by wall-clock
+  // hour of the CI run.
+  vi.useFakeTimers({ now: new Date("2026-06-01T17:00:00Z"), toFake: ["Date"] });
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   process.env = { ...SAVED_ENV };
 });
 
@@ -90,10 +96,12 @@ describe("runTherapyFleetAlertsScan — internal feed", () => {
     expect(result.resolved).toBe(1);
     expect(result.messaged).toBe(0);
 
+    // Per-row inserts (NOT one bulk insert): each new alert is written
+    // individually so a 23505 on one row (already-open duplicate) can
+    // be skipped without failing the whole batch.
     const inserts = getSupabaseWritePayloads("therapy_fleet_alerts", "insert");
-    expect(inserts).toHaveLength(1);
-    const rows = inserts[0] as Array<Record<string, unknown>>;
-    expect(rows).toHaveLength(3);
+    expect(inserts).toHaveLength(3);
+    const rows = inserts as Array<Record<string, unknown>>;
     expect(rows).toContainEqual(
       expect.objectContaining({
         patient_id: P1,

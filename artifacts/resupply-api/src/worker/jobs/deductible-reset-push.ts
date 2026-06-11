@@ -113,151 +113,175 @@ export async function runDeductibleResetPush(
   const supabase = getSupabaseServiceRoleClient();
   const activitySince = isoDaysAgo(now, ACTIVE_LOOKBACK_DAYS);
 
-  const { data: candidates, error } = await supabase
-    .schema("resupply")
-    .from("shop_customers")
-    .select(
-      "customer_id, email_lower, display_name, communication_preferences, deductible_reset_year",
-    )
-    .or(
-      `deductible_reset_year.is.null,deductible_reset_year.neq.${currentYear}`,
-    )
-    .not("email_lower", "is", null)
-    .limit(PER_RUN_MAX * 2);
-  if (error) throw error;
-
-  const rows: CustomerCandidate[] = (candidates ?? []).filter(
-    (r): r is CustomerCandidate => typeof r.email_lower === "string",
-  );
-
-  // Batch the active-customer gate. The prior per-customer existence
-  // query (`shop_orders … .eq("customer_id", …).gt("paid_at", …).limit(1)`)
-  // was an N+1 — one serial round-trip per candidate. The
-  // shop_customers_last_paid_at RPC (mig 0232) returns MAX(paid_at) per
-  // customer in one pass; chunk the candidate ids at 500 so each response
-  // stays well under the ~1000-row cap. MAX(paid_at) > activitySince is
-  // equivalent to "has at least one paid order in the window".
+  // Keyset-paged candidate walk. Skipped rows (opted-out customers,
+  // not-recently-active customers) are never stamped with the year, so
+  // they re-match the filter on every run — a single unordered LIMIT
+  // slate stalled permanently once the skip cohort exceeded it, and for
+  // this job the entire send window is ONE November: starved customers
+  // got nothing that year (the documented lapsed-customer-winback
+  // starvation class). MAX_SCANNED bounds a pathological dead cohort.
   const activitySinceMs = new Date(activitySince).getTime();
-  const lastPaidByCustomer = new Map<string, string>();
-  const candidateIds = rows.map((r) => r.customer_id);
-  for (let i = 0; i < candidateIds.length; i += 500) {
-    const idChunk = candidateIds.slice(i, i + 500);
-    const { data: paidRows, error: paidErr } = await supabase
-      .schema("resupply")
-      .rpc("shop_customers_last_paid_at", { p_customer_ids: idChunk });
-    if (paidErr) throw paidErr;
-    for (const r of (paidRows ?? []) as Array<{
-      customer_id: string;
-      last_paid_at: string | null;
-    }>) {
-      if (r.customer_id && r.last_paid_at) {
-        lastPaidByCustomer.set(r.customer_id, r.last_paid_at);
-      }
-    }
-  }
-
-  for (const row of rows) {
-    if (stats.sent >= PER_RUN_MAX) break;
-    stats.candidates += 1;
-
-    const prefs = readPrefs(row.communication_preferences);
-    if (!shouldSendEmail(prefs, "marketing")) {
-      stats.skipped += 1;
-      continue;
-    }
-
-    // Active-customer gate: a paid order in the last 730 days. Read from
-    // the pre-fetched MAX(paid_at) map. Compared as epoch ms so a
-    // PostgREST timestamptz offset (`+00:00`) and the `Z`-suffixed
-    // activitySince can't mis-compare as raw strings.
-    const lastPaid = lastPaidByCustomer.get(row.customer_id) ?? null;
-    if (!lastPaid || new Date(lastPaid).getTime() <= activitySinceMs) {
-      stats.skipped += 1;
-      continue;
-    }
-
-    // Atomic claim — stamp the year BEFORE the send. We only update
-    // when the stored value is still null or last year's, so a race
-    // against another worker resolves cleanly.
-    const { data: claimed, error: claimErr } = await supabase
+  const SCAN_PAGE = PER_RUN_MAX * 2;
+  const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
+  let lastCustomerId: string | null = null;
+  let scannedTotal = 0;
+  pages: while (
+    stats.sent < PER_RUN_MAX &&
+    scannedTotal < MAX_SCANNED_PER_RUN
+  ) {
+    let pageQuery = supabase
       .schema("resupply")
       .from("shop_customers")
-      .update({ deductible_reset_year: currentYear })
-      .eq("customer_id", row.customer_id)
+      .select(
+        "customer_id, email_lower, display_name, communication_preferences, deductible_reset_year",
+      )
       .or(
         `deductible_reset_year.is.null,deductible_reset_year.neq.${currentYear}`,
       )
-      .select("customer_id");
-    if (claimErr) {
-      logger.warn(
-        { err: claimErr.message, customerId: row.customer_id },
-        "shop-customers.deductible-reset: claim failed",
-      );
-      stats.failed += 1;
-      continue;
+      .not("email_lower", "is", null)
+      .order("customer_id", { ascending: true })
+      .limit(SCAN_PAGE);
+    if (lastCustomerId !== null) {
+      pageQuery = pageQuery.gt("customer_id", lastCustomerId);
     }
-    if (!claimed || claimed.length === 0) {
-      stats.skipped += 1;
-      continue;
-    }
+    const { data: candidates, error } = await pageQuery;
+    if (error) throw error;
+    if (!candidates || candidates.length === 0) break;
+    scannedTotal += candidates.length;
+    lastCustomerId = candidates[candidates.length - 1]!.customer_id;
 
-    const firstName = (row.display_name ?? "").split(" ")[0]?.trim() || null;
-    const releaseClaim = async (): Promise<void> => {
-      const { error: releaseErr } = await supabase
+    const rows: CustomerCandidate[] = candidates.filter(
+      (r): r is CustomerCandidate => typeof r.email_lower === "string",
+    );
+
+    // Batch the active-customer gate for THIS page. The prior
+    // per-customer existence query was an N+1 — one serial round-trip
+    // per candidate. The shop_customers_last_paid_at RPC (mig 0232)
+    // returns MAX(paid_at) per customer in one pass; chunk the ids at
+    // 500 so each response stays well under the ~1000-row cap.
+    // MAX(paid_at) > activitySince is equivalent to "has at least one
+    // paid order in the window".
+    const lastPaidByCustomer = new Map<string, string>();
+    const candidateIds = rows.map((r) => r.customer_id);
+    for (let i = 0; i < candidateIds.length; i += 500) {
+      const idChunk = candidateIds.slice(i, i + 500);
+      const { data: paidRows, error: paidErr } = await supabase
         .schema("resupply")
-        .from("shop_customers")
-        .update({ deductible_reset_year: row.deductible_reset_year })
-        .eq("customer_id", row.customer_id);
-      if (releaseErr) {
-        throw new Error(
-          `Failed to release deductible_reset_year claim for customer ${row.customer_id}: ${releaseErr.message}`,
-        );
+        .rpc("shop_customers_last_paid_at", { p_customer_ids: idChunk });
+      if (paidErr) throw paidErr;
+      for (const r of (paidRows ?? []) as Array<{
+        customer_id: string;
+        last_paid_at: string | null;
+      }>) {
+        if (r.customer_id && r.last_paid_at) {
+          lastPaidByCustomer.set(r.customer_id, r.last_paid_at);
+        }
       }
-    };
+    }
 
-    try {
-      const result = await sendDeductibleResetEmail({
-        toEmail: row.email_lower,
-        firstName,
-      });
-      if (!result.configured) {
-        await releaseClaim();
+    for (const row of rows) {
+      if (stats.sent >= PER_RUN_MAX) break pages;
+      stats.candidates += 1;
+
+      const prefs = readPrefs(row.communication_preferences);
+      if (!shouldSendEmail(prefs, "marketing")) {
         stats.skipped += 1;
         continue;
       }
-      if (!result.delivered) {
-        await releaseClaim();
-        stats.failed += 1;
-        logger.warn(
-          { customerId: row.customer_id, err: result.error },
-          "shop-customers.deductible-reset: send failed",
-        );
+
+      // Active-customer gate: a paid order in the last 730 days. Read from
+      // the pre-fetched MAX(paid_at) map. Compared as epoch ms so a
+      // PostgREST timestamptz offset (`+00:00`) and the `Z`-suffixed
+      // activitySince can't mis-compare as raw strings.
+      const lastPaid = lastPaidByCustomer.get(row.customer_id) ?? null;
+      if (!lastPaid || new Date(lastPaid).getTime() <= activitySinceMs) {
+        stats.skipped += 1;
         continue;
       }
-      stats.sent += 1;
-    } catch (err) {
+
+      // Atomic claim — stamp the year BEFORE the send. We only update
+      // when the stored value is still null or last year's, so a race
+      // against another worker resolves cleanly.
+      const { data: claimed, error: claimErr } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .update({ deductible_reset_year: currentYear })
+        .eq("customer_id", row.customer_id)
+        .or(
+          `deductible_reset_year.is.null,deductible_reset_year.neq.${currentYear}`,
+        )
+        .select("customer_id");
+      if (claimErr) {
+        logger.warn(
+          { err: claimErr.message, customerId: row.customer_id },
+          "shop-customers.deductible-reset: claim failed",
+        );
+        stats.failed += 1;
+        continue;
+      }
+      if (!claimed || claimed.length === 0) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      const firstName = (row.display_name ?? "").split(" ")[0]?.trim() || null;
+      const releaseClaim = async (): Promise<void> => {
+        const { error: releaseErr } = await supabase
+          .schema("resupply")
+          .from("shop_customers")
+          .update({ deductible_reset_year: row.deductible_reset_year })
+          .eq("customer_id", row.customer_id);
+        if (releaseErr) {
+          throw new Error(
+            `Failed to release deductible_reset_year claim for customer ${row.customer_id}: ${releaseErr.message}`,
+          );
+        }
+      };
+
       try {
-        await releaseClaim();
-      } catch (releaseErr) {
+        const result = await sendDeductibleResetEmail({
+          toEmail: row.email_lower,
+          firstName,
+        });
+        if (!result.configured) {
+          await releaseClaim();
+          stats.skipped += 1;
+          continue;
+        }
+        if (!result.delivered) {
+          await releaseClaim();
+          stats.failed += 1;
+          logger.warn(
+            { customerId: row.customer_id, err: result.error },
+            "shop-customers.deductible-reset: send failed",
+          );
+          continue;
+        }
+        stats.sent += 1;
+      } catch (err) {
+        try {
+          await releaseClaim();
+        } catch (releaseErr) {
+          logger.error(
+            {
+              err:
+                releaseErr instanceof Error
+                  ? releaseErr.message
+                  : String(releaseErr),
+              customerId: row.customer_id,
+            },
+            "shop-customers.deductible-reset: releaseClaim failed — deductible_reset_year may remain claimed",
+          );
+        }
+        stats.failed += 1;
         logger.error(
           {
-            err:
-              releaseErr instanceof Error
-                ? releaseErr.message
-                : String(releaseErr),
+            err: err instanceof Error ? err.message : String(err),
             customerId: row.customer_id,
           },
-          "shop-customers.deductible-reset: releaseClaim failed — deductible_reset_year may remain claimed",
+          "shop-customers.deductible-reset: send threw",
         );
       }
-      stats.failed += 1;
-      logger.error(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          customerId: row.customer_id,
-        },
-        "shop-customers.deductible-reset: send threw",
-      );
     }
   }
 

@@ -5,11 +5,12 @@
 // validation, and the PDF renderer — for the document types a staff
 // member can author by hand and the fields each one offers.
 //
-// Design intent (per the feature request): every field is BLANK by
-// default. Nothing here is pre-populated from a patient record; the
-// author types whatever they need. The same catalog therefore stays
-// deliberately content-agnostic — it only describes labels + input
-// shapes, never default values.
+// Design intent: every field starts BLANK and the catalog itself stays
+// content-agnostic — it only describes labels + input shapes, never
+// default values. Chart-sourced suggestions are an OPT-IN layer on top:
+// GET /admin/manual-documents/prefill (routes/admin/manual-documents.ts)
+// proposes values from the patient record and the SPA fills only inputs
+// the author hasn't typed in, so nothing is ever silently injected.
 //
 // Pure module — no I/O, no DB, no PHI. Safe to unit-test and to import
 // from both the route layer and the PDF renderer.

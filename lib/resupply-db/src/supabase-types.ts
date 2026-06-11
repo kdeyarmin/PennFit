@@ -643,7 +643,10 @@ export interface Database {
       patients: {
         Row: {
           id: string;
-          pacware_id: string;
+          /** PacWare account number. Nullable since migration 0303 —
+           * admin intake may create a patient before PacWare knows
+           * them; unique when present. */
+          pacware_id: string | null;
           legal_first_name: string;
           legal_last_name: string;
           date_of_birth: string;
@@ -2497,6 +2500,14 @@ export interface Database {
           reminder_count: number;
           last_reminded_at: string | null;
           delivery_details: Json | null;
+          /**
+           * Migration 0305: the patient_documents row holding the
+           * auto-filed signed PDF (soft pointer, app-enforced), and
+           * when it was filed. NULL until the packet is completed and
+           * the best-effort auto-file succeeds.
+           */
+          chart_document_id: string | null;
+          chart_filed_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -2540,6 +2551,31 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["manual_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      manual_document_packets: {
+        Row: {
+          id: string;
+          title: string;
+          recipient_name: string | null;
+          recipient_address: string | null;
+          recipient_email: string | null;
+          recipient_fax_e164: string | null;
+          document_ids: Json;
+          include_cover_sheet: boolean;
+          status: "draft" | "sent";
+          last_emailed_at: string | null;
+          last_faxed_at: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["manual_document_packets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["manual_document_packets"]["Row"]
         >;
         Relationships: [];
       };
@@ -2648,6 +2684,13 @@ export interface Database {
           requires_signature: boolean;
           acknowledged: boolean;
           acknowledged_at: string | null;
+          /**
+           * Snapshot of the document's structured sections at send time
+           * (migration 0301). May carry {{merge_tokens}} resolved at
+           * render time. NULL on legacy rows, which render from the code
+           * template by document_key.
+           */
+          content_sections: Json | null;
           created_at: string;
         };
         Insert: Partial<
@@ -2655,6 +2698,70 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["patient_packet_documents"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0302: named, operator-managed bundles of packet
+      // documents for the send panel (e.g. Medicare vs commercial).
+      patient_packet_presets: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          document_keys: string[];
+          packet_title: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_presets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_presets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0306: append-only history of permanent template edits
+      // (saves and reverts), enabling view + one-click restore of any
+      // prior revision.
+      patient_packet_template_revisions: {
+        Row: {
+          id: string;
+          document_key: string;
+          action: "saved" | "reverted";
+          revision: number | null;
+          title: string | null;
+          sections: Json | null;
+          changed_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_template_revisions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_template_revisions"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Migration 0301: permanent operator edits to the built-in patient
+      // packet document templates. One row per document key; deleting the
+      // row reverts to the code default.
+      patient_packet_template_overrides: {
+        Row: {
+          document_key: string;
+          title: string;
+          sections: Json;
+          revision: number;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_template_overrides"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_template_overrides"]["Row"]
         >;
         Relationships: [];
       };
@@ -3319,6 +3426,9 @@ export interface Database {
           notified_at: string | null;
           failed_at: string | null;
           failed_reason: string | null;
+          twilio_message_sid: string | null;
+          delivery_status: string | null;
+          delivery_error_code: string | null;
           created_at: string;
           updated_at: string;
         };

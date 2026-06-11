@@ -92,7 +92,17 @@ export function ConversationDetailPage({ id }: { id: string }) {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    /*
+      Keyed on the conversation id: this page receives a NEW `id` prop
+      without remounting when the operator jumps thread→thread (global
+      lookup, back/forward), and when the target thread is already in
+      the React Query cache the spinner branch never renders. Without
+      the key, the stateful children below (ReplyComposer's draft body,
+      TriagePanel's tags/snooze) would carry the PREVIOUS conversation's
+      state — a half-typed reply could be sent to the wrong patient and
+      thread A's tags would overwrite thread B's on the next tag save.
+    */
+    <div key={data.id} className="space-y-6 max-w-7xl">
       <BackLink />
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-6 min-w-0">

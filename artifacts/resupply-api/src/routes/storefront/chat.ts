@@ -83,6 +83,7 @@ import {
   extractEmails,
   redactPiiForOutbound,
 } from "../../lib/storefront/chatbotPii.js";
+import { tryConsumeChatBudget } from "../../lib/storefront/chat-budget.js";
 import {
   DEFAULT_ANTHROPIC_MODEL_CHAT,
   getAnthropicClient,
@@ -308,7 +309,11 @@ async function applyToolCalls(
       parsedArgs = {};
     }
     const startedAt = Date.now();
-    const result = await executeChatTool(call.function.name, parsedArgs, toolCtx);
+    const result = await executeChatTool(
+      call.function.name,
+      parsedArgs,
+      toolCtx,
+    );
     logger.info(
       {
         event: "chat_tool_invoked",
@@ -416,6 +421,28 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     return;
   }
 
+  // Global spend ceiling (app-review 2026-06-10, P1-7): the per-IP
+  // limiter above caps ONE client, but this endpoint is public — cap
+  // the aggregate LLM turns per minute across ALL callers. Consumed
+  // only after the cheap gates above, so feature-off / unconfigured
+  // traffic never burns the window. Exhausted → the same
+  // degraded-shaped reply the upstream-failure paths use.
+  if (!tryConsumeChatBudget()) {
+    logger.warn(
+      { event: "chat_global_budget_exhausted", streaming },
+      "chat: global per-minute turn budget exhausted — returning degraded fallback",
+    );
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      writeSseEvent(res, { type: "done", degraded: true });
+      res.end();
+    } else {
+      res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    }
+    return;
+  }
+
   const { messages: initial, redactionCounts } = buildInitialMessages(messages);
   if (Object.keys(redactionCounts).length > 0) {
     logger.info(
@@ -450,7 +477,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     const client = getAnthropicClient();
     if (client) {
       return streaming
-        ? handleAnthropicStreaming(res, initial, client, messages.length, toolCtx)
+        ? handleAnthropicStreaming(
+            res,
+            initial,
+            client,
+            messages.length,
+            toolCtx,
+          )
         : handleAnthropicJson(res, initial, client, messages.length, toolCtx);
     }
   }

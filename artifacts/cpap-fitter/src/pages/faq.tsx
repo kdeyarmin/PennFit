@@ -20,6 +20,7 @@ import {
   Droplets,
   Wrench,
   PhoneCall,
+  Video,
   ArrowRight,
   Search,
   X,
@@ -420,6 +421,60 @@ const sections: FaqSection[] = [
             sleep apnea feels (much more daytime sleepiness, choking episodes
             returning), contact your sleep provider — that's a therapy issue,
             not a supply issue.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: "telehealth-video-visits",
+    title: "Telehealth Video Visits",
+    blurb:
+      "Face-to-face help over video — equipment setups, mask fitting help, and troubleshooting with a real person.",
+    Icon: Video,
+    items: [
+      {
+        q: "What is a video visit?",
+        a: (
+          <>
+            A free, secure video call with a member of our care team — a
+            respiratory therapist or patient-support specialist — who walks you
+            through an equipment setup, helps with a mask fit, or troubleshoots
+            a problem while you show us the equipment on camera. It&apos;s the
+            next best thing to an in-person visit, without leaving home.
+          </>
+        ),
+      },
+      {
+        q: "How do I join a video visit?",
+        a: (
+          <>
+            We send you a secure link by text message or email. Tap it on your
+            phone, tablet, or computer — there&apos;s no app to install and no
+            account needed. Your browser will ask permission to use your camera
+            and microphone, and then you&apos;re in. Links stay valid for about
+            a week; if yours has expired, just ask and we&apos;ll send a fresh
+            one.
+          </>
+        ),
+      },
+      {
+        q: "Is a video visit private?",
+        a: (
+          <>
+            Yes. The call is encrypted directly between your device and your
+            care team&apos;s, and it is never recorded. Nothing from your camera
+            is stored.
+          </>
+        ),
+      },
+      {
+        q: "How do I schedule one?",
+        a: (
+          <>
+            Call us at (814) 471-0627 (Monday–Friday, 9 AM–5 PM Eastern), email
+            support@pennpaps.com, or ask in the chat bubble on this site — a
+            team member will set it up and send your join link.
           </>
         ),
       },

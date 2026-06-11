@@ -68,7 +68,13 @@ export async function renderManualDocumentPdf(
   });
 }
 
-function drawManualDocument(
+/**
+ * Draw one manual document into an existing PDFKit doc, starting at the
+ * current page. Exported so the packet renderer (packet-pdf.ts) can draw
+ * several documents into a single combined PDF — each on a fresh page —
+ * without re-implementing the per-document layout.
+ */
+export function drawManualDocument(
   doc: PDFKit.PDFDocument,
   input: ManualDocumentPdfInput,
 ): void {
@@ -208,6 +214,10 @@ function drawManualDocument(
       .strokeColor("#aaaaaa")
       .stroke()
       .strokeColor("#000000");
+    // The footer sits below the bottom margin (720 = 792 − 72); lift the
+    // margin while drawing it or PDFKit auto-appends a blank page.
+    const savedBottomMargin = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc
       .fontSize(8)
       .font("Helvetica")
@@ -220,6 +230,7 @@ function drawManualDocument(
         { width: USABLE_WIDTH, align: "center" },
       )
       .fillColor("#000000");
+    doc.page.margins.bottom = savedBottomMargin;
   }
 }
 

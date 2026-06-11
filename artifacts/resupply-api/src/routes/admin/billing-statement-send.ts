@@ -35,6 +35,7 @@ import {
 } from "../../lib/object-storage/objectStorage";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const MAIL_PRINT_CAP = 100;
 
@@ -109,6 +110,9 @@ router.get(
 router.post(
   "/admin/billing/statements/:statementId/send",
   requirePermission("admin.tools.manage"),
+  // Dials/texts/emails patients or hammers the clearinghouse —
+  // throttle like every sibling outbound-contact endpoint.
+  adminRateLimit({ name: "billing.statement_send", preset: "sensitive" }),
   async (req, res) => {
     const parsed = z.string().uuid().safeParse(req.params.statementId);
     if (!parsed.success) {
@@ -131,6 +135,9 @@ const batchSchema = z
 router.post(
   "/admin/billing/statements/batch-send",
   requirePermission("admin.tools.manage"),
+  // Dials/texts/emails patients or hammers the clearinghouse —
+  // throttle like every sibling outbound-contact endpoint.
+  adminRateLimit({ name: "billing.statement_batch_send", preset: "bulk" }),
   async (req, res) => {
     const parsed = batchSchema.safeParse(req.body ?? {});
     if (!parsed.success) {

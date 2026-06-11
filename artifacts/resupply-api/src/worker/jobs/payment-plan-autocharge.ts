@@ -168,17 +168,40 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
   const sink = buildSupabaseSink(supabase);
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const { data: plans, error: planErr } = await supabase
-    .schema("resupply")
-    .from("patient_payment_plans")
-    .select(
-      "id, patient_id, autopay_status, stripe_customer_id, stripe_payment_method_id",
-    )
-    .eq("status", "active")
-    .eq("autopay_status", "authorized");
-  if (planErr) throw planErr;
+  // Keyset-paginate the plan scan. PostgREST silently caps un-limited
+  // reads at the server's max-rows (~1000): an unpaginated read would
+  // silently and permanently exclude every authorized plan past the
+  // cap — those patients' installments would just never be charged.
+  // Same pattern (and rationale) as patient-autopay-charge.ts.
+  const PLAN_PAGE_SIZE = 500;
+  const plans: Array<{
+    id: string;
+    patient_id: string;
+    stripe_customer_id: string | null;
+    stripe_payment_method_id: string | null;
+  }> = [];
+  let planCursor: string | null = null;
+  for (;;) {
+    let pageQuery = supabase
+      .schema("resupply")
+      .from("patient_payment_plans")
+      .select(
+        "id, patient_id, autopay_status, stripe_customer_id, stripe_payment_method_id",
+      )
+      .eq("status", "active")
+      .eq("autopay_status", "authorized")
+      .order("id", { ascending: true })
+      .limit(PLAN_PAGE_SIZE);
+    if (planCursor) pageQuery = pageQuery.gt("id", planCursor);
+    const { data: page, error: planErr } = await pageQuery;
+    if (planErr) throw planErr;
+    if (!page || page.length === 0) break;
+    plans.push(...page);
+    if (page.length < PLAN_PAGE_SIZE) break;
+    planCursor = page[page.length - 1]!.id;
+  }
 
-  for (const p of plans ?? []) {
+  for (const p of plans) {
     const plan: AutochargePlan = {
       id: p.id,
       patientId: p.patient_id,
@@ -190,11 +213,19 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       .schema("resupply")
       .from("patient_payment_plan_installments")
       .select(
-        "id, plan_id, seq, due_date, amount_cents, status, charge_attempts",
+        "id, plan_id, seq, due_date, amount_cents, status, charge_attempts, last_charge_attempt_at",
       )
       .eq("plan_id", p.id);
     if (instErr) throw instErr;
 
+    const lastAttemptById = new Map<string, string | null>();
+    for (const r of instRows ?? []) {
+      lastAttemptById.set(
+        r.id,
+        (r as { last_charge_attempt_at?: string | null })
+          .last_charge_attempt_at ?? null,
+      );
+    }
     const installments: AutochargeInstallment[] = (instRows ?? []).map((r) => ({
       id: r.id,
       planId: r.plan_id,
@@ -210,6 +241,43 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
 
     let anySucceeded = false;
     for (const inst of due) {
+      // Atomic per-installment claim BEFORE the Stripe call — CAS on the
+      // scanned snapshot (status, charge_attempts, last_charge_attempt_at),
+      // mirroring patient-autopay-charge's authorization claim and its
+      // rationale: pg-boss can run two overlapping ticks (the queue's
+      // expiry retries a slow run while the original is still walking the
+      // roster), and without a claim BOTH ticks would mint a PaymentIntent
+      // for the same installment. Stripe's idempotency key only dedups
+      // within its ~24h retention, so the claim is the real guard; exactly
+      // one tick's UPDATE matches, the loser skips. A crash AFTER a
+      // successful charge but before markPaid self-heals on the next tick
+      // within 24h (same scanned attempts → same idempotency key → Stripe
+      // replays the succeeded PI and markPaid runs); only a >24h-stuck
+      // markPaid failure can still double-charge, which requires the DB
+      // write path to be down for a full day of retries.
+      const nowIso = new Date().toISOString();
+      let claim = supabase
+        .schema("resupply")
+        .from("patient_payment_plan_installments")
+        .update({ last_charge_attempt_at: nowIso })
+        .eq("id", inst.id)
+        .eq("status", inst.status)
+        .eq("charge_attempts", inst.chargeAttempts);
+      const scannedLastAttempt = lastAttemptById.get(inst.id) ?? null;
+      claim =
+        scannedLastAttempt === null
+          ? claim.is("last_charge_attempt_at", null)
+          : claim.eq("last_charge_attempt_at", scannedLastAttempt);
+      const { data: claimedRows, error: claimErr } = await claim.select("id");
+      if (claimErr) throw claimErr;
+      if (!claimedRows || claimedRows.length === 0) {
+        logger.info(
+          { installmentId: inst.id, planId: plan.id },
+          "payment-plan-autocharge: claim lost (concurrent tick or mid-run change) — skipping",
+        );
+        continue;
+      }
+
       const res = await chargeInstallment(plan, inst, charger, sink);
       if (res.outcome === "succeeded") {
         stats.charged += 1;
@@ -282,6 +350,15 @@ export async function registerPaymentPlanAutochargeJob(
       "payment-plan-autocharge scheduled",
     );
   } else {
+    // boss.schedule() persists the cron in pg-boss; merely not
+    // re-scheduling does NOT stop a previously-attached schedule.
+    // Clear any stale row so removing the env var actually turns
+    // the cron off (same pattern as worker/lib/table-guard.ts).
+    // typeof-guarded like worker/lib/table-guard.ts — test
+    // doubles (and old pg-boss) may not implement unschedule.
+    if (typeof boss.unschedule === "function") {
+      await boss.unschedule(PAYMENT_PLAN_AUTOCHARGE_JOB).catch(() => undefined);
+    }
     logger.info(
       { queue: PAYMENT_PLAN_AUTOCHARGE_JOB },
       "payment-plan-autocharge registered (cron opt-in unset)",

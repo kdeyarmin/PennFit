@@ -27,6 +27,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { projectProduct } from "../../lib/stripe/products-meta";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
 
 const router: IRouter = Router();
@@ -130,7 +131,7 @@ router.get(
         }
       } catch (err) {
         req.log?.warn?.(
-          { err: err instanceof Error ? err.message : String(err) },
+          { ...stripeErrLogFields(err) },
           "back-in-stock-queue: Stripe enrichment failed; falling back to ids",
         );
       }
@@ -228,7 +229,7 @@ router.post(
       req.log?.warn?.(
         {
           productId,
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
         },
         "back-in-stock-queue: stripe retrieve failed",
       );

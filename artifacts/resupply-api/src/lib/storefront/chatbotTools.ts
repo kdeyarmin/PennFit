@@ -560,10 +560,9 @@ async function executeTrackOrder(
   }
   // Most recent email first — it's almost always the one they just
   // typed in response to being asked.
-  const toTry = [...new Set(candidates)].reverse().slice(
-    0,
-    MAX_TRACK_EMAIL_ATTEMPTS,
-  );
+  const toTry = [...new Set(candidates)]
+    .reverse()
+    .slice(0, MAX_TRACK_EMAIL_ATTEMPTS);
   for (const email of toTry) {
     if (ctx?.rateLimitKey && trackOrderRateLimited(ctx.rateLimitKey)) {
       return {

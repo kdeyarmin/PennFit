@@ -318,6 +318,50 @@ describe("streamChatMessage", () => {
     expect(chunks).toEqual(["recovered"]);
   });
 
+  test("retries the JSON endpoint when the stream body carries no SSE events", async () => {
+    // A proxy or interceptor (e.g. demo mode's unmatched-route fallback)
+    // can answer the streaming endpoint with a plain JSON body. The old
+    // behavior resolved { degraded: true } with an EMPTY bubble; we now
+    // retry the JSON endpoint.
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        ...makeSseStream(['{"ok":true}']),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ reply: "Recovered via JSON." }),
+      });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(chunks).toEqual(["Recovered via JSON."]);
+    expect(result.degraded).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("marks degraded and keeps the bubble non-empty when the JSON fallback has no reply", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        ...makeSseStream(['{"ok":true}']),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(chunks.length).toBe(1);
+    expect(chunks[0]).toMatch(/try again/i);
+    expect(result.degraded).toBe(true);
+  });
+
   test("preserves partial chunks when the stream interrupts mid-way", async () => {
     // Stream emits one chunk then errors (the underlying ReadableStream's
     // pull() throws). With chunks already received we should NOT fall

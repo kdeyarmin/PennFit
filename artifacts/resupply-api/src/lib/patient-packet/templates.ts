@@ -354,34 +354,14 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
     requiresSignature: true,
     defaultIncluded: true,
     build: (c, ctx) => {
-      const dd = ctx?.deliveryDetails ?? null;
       const sections: PacketDocumentSection[] = [
         {
           paragraphs: [
             `By signing below, I confirm that I have received the equipment and supplies furnished by ${c.legalName} as itemized below and on my accompanying delivery documentation.`,
           ],
         },
+        ...buildDeliveryDetailSections(ctx?.deliveryDetails ?? null),
       ];
-      // CMS requires a detailed description of the delivered items on a
-      // compliant Proof of Delivery. Render the itemized list when known.
-      if (dd?.items && dd.items.length > 0) {
-        sections.push({
-          heading: "Equipment delivered",
-          bullets: dd.items.map((it) => {
-            const qty = it.quantity ? `${it.quantity} × ` : "";
-            const hcpcs = it.hcpcs ? ` (HCPCS ${it.hcpcs})` : "";
-            return `${qty}${it.description}${hcpcs}`;
-          }),
-        });
-      }
-      const deliveryFacts: string[] = [];
-      if (dd?.deliveryDate)
-        deliveryFacts.push(`Delivery date: ${dd.deliveryDate}`);
-      if (dd?.deliveryAddress)
-        deliveryFacts.push(`Delivered to: ${dd.deliveryAddress}`);
-      if (deliveryFacts.length > 0) {
-        sections.push({ heading: "Delivery details", bullets: deliveryFacts });
-      }
       sections.push(
         {
           heading: "I confirm that",
@@ -406,6 +386,37 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
 /** The document key whose presence requires capturing a date-received
  *  (a Medicare Proof of Delivery field). */
 export const PROOF_OF_DELIVERY_KEY = "proof_of_delivery";
+
+/**
+ * The dynamic, per-packet portion of the Proof of Delivery: the CMS-
+ * required itemized list of what was delivered, plus delivery date /
+ * address when known. Exported so the content layer (content.ts) can
+ * splice these into an operator-edited POD template at render time —
+ * an edit to the static POD wording must never drop the itemization.
+ */
+export function buildDeliveryDetailSections(
+  dd: DeliveryDetails | null,
+): PacketDocumentSection[] {
+  const sections: PacketDocumentSection[] = [];
+  if (dd?.items && dd.items.length > 0) {
+    sections.push({
+      heading: "Equipment delivered",
+      bullets: dd.items.map((it) => {
+        const qty = it.quantity ? `${it.quantity} × ` : "";
+        const hcpcs = it.hcpcs ? ` (HCPCS ${it.hcpcs})` : "";
+        return `${qty}${it.description}${hcpcs}`;
+      }),
+    });
+  }
+  const deliveryFacts: string[] = [];
+  if (dd?.deliveryDate) deliveryFacts.push(`Delivery date: ${dd.deliveryDate}`);
+  if (dd?.deliveryAddress)
+    deliveryFacts.push(`Delivered to: ${dd.deliveryAddress}`);
+  if (deliveryFacts.length > 0) {
+    sections.push({ heading: "Delivery details", bullets: deliveryFacts });
+  }
+  return sections;
+}
 
 /**
  * Compliance-mandatory document keys: the signed agreements and required

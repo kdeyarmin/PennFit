@@ -395,7 +395,7 @@ async function ensureFulfillments(
     logger.warn(
       {
         event: "resupply.substitution.resolve_failed",
-        err: err instanceof Error ? err.message : "unknown",
+        err,
       },
       "resupply: substitution lookup failed; falling back to primary SKU",
     );
@@ -604,31 +604,36 @@ async function consultRecentTherapyUsage(
     .from("patient_therapy_nights")
     .select("night_date, usage_minutes")
     .eq("patient_id", patientId)
-    .gte("night_date", sinceDate);
+    .gte("night_date", sinceDate)
+    // One row per (night, source); a few cloud sources × a 30-day
+    // window stays well under this safety cap.
+    .limit(200);
   if (nightsErr) throw nightsErr;
 
-  // Deduplicate by calendar night — multiple source rows for the same
-  // night_date (e.g. during a device/provider migration) must not inflate
-  // the night count or skew the compliance ratio. Keep the best (max)
-  // usage_minutes per night so a patient with ANY source showing 4+ hours
-  // is counted compliant for that night.
-  const nightMap = new Map<string, number>();
-  for (const row of nights ?? []) {
-    const key = row.night_date as string;
-    const mins = row.usage_minutes ?? 0;
-    nightMap.set(key, Math.max(nightMap.get(key) ?? 0, mins));
+  // The table allows one row per (night, source) — a patient who
+  // migrated between cloud providers can report the same calendar
+  // night more than once. Dedupe to nights, keeping each night's BEST
+  // usage: any source showing 4+ hours makes that night compliant.
+  // Counting raw rows would let duplicates inflate a sparse window
+  // past the minimum-sample bar or skew the compliant ratio.
+  const byNight = new Map<string, number>();
+  for (const n of nights ?? []) {
+    const minutes = n.usage_minutes ?? 0;
+    const prev = byNight.get(n.night_date);
+    if (prev === undefined || minutes > prev) {
+      byNight.set(n.night_date, minutes);
+    }
   }
-
-  const rows = [...nightMap.values()];
-  if (rows.length < USAGE_MIN_DATA_NIGHTS) return null; // sparse data → no opinion
-  const compliantNights = rows.filter(
-    (mins) => mins >= USAGE_COMPLIANT_NIGHT_MINUTES,
-  ).length;
-  if (compliantNights / rows.length >= USAGE_MIN_COMPLIANT_RATIO) return null;
+  if (byNight.size < USAGE_MIN_DATA_NIGHTS) return null; // sparse data → no opinion
+  let compliantNights = 0;
+  for (const minutes of byNight.values()) {
+    if (minutes >= USAGE_COMPLIANT_NIGHT_MINUTES) compliantNights++;
+  }
+  if (compliantNights / byNight.size >= USAGE_MIN_COMPLIANT_RATIO) return null;
 
   return {
     windowDays: USAGE_WINDOW_DAYS,
-    dataNights: rows.length,
+    dataNights: byNight.size,
     compliantNights,
   };
 }
@@ -725,13 +730,18 @@ export async function pausePatient(patientId: string): Promise<void> {
   // patient's STOP was about SMS, not email). Patients without a
   // shop account have no row to update — no-op.
   const emailLower = patient.email.toLowerCase();
-  const { data: cust } = await supabase
+  const { data: cust, error: custErr } = await supabase
     .schema("resupply")
     .from("shop_customers")
     .select("customer_id, communication_preferences")
     .eq("email_lower", emailLower)
     .limit(1)
     .maybeSingle();
+  // Throw (matching reactivatePatient below): a swallowed lookup error
+  // would return "success" with the STOP mirror silently unwritten, so
+  // shop-side dispatchers keep texting a patient who opted out — the
+  // legally-important direction must not fail soft.
+  if (custErr) throw custErr;
   if (!cust) return;
   const prefs = (cust.communication_preferences ?? {}) as Record<
     string,

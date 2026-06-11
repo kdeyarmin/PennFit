@@ -61,4 +61,11 @@ describe("renderManualDocumentPdf", () => {
     );
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
+
+  it("renders a short PHI document on exactly one page (no trailing blank from the footer)", async () => {
+    const pdf = await renderManualDocumentPdf(input());
+    const pages = (pdf.toString("latin1").match(/\/Type \/Page[^s]/g) ?? [])
+      .length;
+    expect(pages).toBe(1);
+  });
 });

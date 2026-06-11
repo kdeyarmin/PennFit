@@ -2,12 +2,13 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "pnpm -r --workspace-concurrency=1 --if-present run build",
+    "buildCommand": "pnpm -r --workspace-concurrency=1 --if-present run build && node scripts/embed-spa.mjs",
     "watchPatterns": [
       "artifacts/resupply-api/**",
       "artifacts/cpap-fitter/**",
       "artifacts/shared/**",
       "lib/**",
+      "scripts/embed-spa.mjs",
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",

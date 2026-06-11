@@ -529,18 +529,25 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
     });
   }
 
-  /** Build N therapy-night rows, the first `compliant` of which are 4h+. */
+  /** ISO date for "i days ago" — gives every row a unique night. */
+  function nightDate(i: number): string {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - i);
+    return d.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Build N therapy-night rows on N distinct calendar nights, the
+   * first `compliant` of which are 4h+.
+   */
   function nightsRows(
     total: number,
     compliant: number,
   ): Array<{ night_date: string; usage_minutes: number | null }> {
-    return Array.from({ length: total }, (_, i) => {
-      const d = new Date(Date.UTC(2024, 0, i + 1));
-      return {
-        night_date: d.toISOString().slice(0, 10),
-        usage_minutes: i < compliant ? 300 : 30,
-      };
-    });
+    return Array.from({ length: total }, (_, i) => ({
+      night_date: nightDate(i),
+      usage_minutes: i < compliant ? 300 : 30,
+    }));
   }
 
   /** Stage the post-guard happy path: claim succeeds, no existing
@@ -622,6 +629,46 @@ describe("placeResupplyOrderForConversation — continued-use guard", () => {
     stageLookupChain();
     stageSupabaseResponse("patient_therapy_nights", "select", {
       data: nightsRows(10, 0),
+      error: null,
+    });
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+  });
+
+  it("dedupes multi-source rows to calendar nights (duplicates can't inflate a sparse window)", async () => {
+    stageLookupChain();
+    // 15 distinct nights, each reported by TWO cloud sources = 30 rows.
+    // Counting rows would clear the 21-night minimum sample and hold
+    // the order; counting calendar nights (15) must keep it sparse →
+    // no opinion → the order proceeds.
+    const fifteenNightsTwice = [...nightsRows(15, 0), ...nightsRows(15, 0)];
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: fifteenNightsTwice,
+      error: null,
+    });
+    stageClaimAndFulfillment();
+
+    const result = await placeResupplyOrderForConversation({
+      conversationId: CONV_ID,
+    });
+
+    expect(result.status).toBe("ok");
+  });
+
+  it("counts a night compliant when ANY source reports 4+ hours for it", async () => {
+    stageLookupChain();
+    // 30 distinct nights, every night low from source A; source B
+    // re-reports the first 15 nights at 4+ hours. Per-night max ⇒
+    // 15/30 compliant = at the 50% bar → no hold.
+    const sourceA = nightsRows(30, 0);
+    const sourceB = nightsRows(15, 15);
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [...sourceA, ...sourceB],
       error: null,
     });
     stageClaimAndFulfillment();

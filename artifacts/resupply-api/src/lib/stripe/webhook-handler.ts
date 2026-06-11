@@ -60,6 +60,7 @@ import {
   type StripeConfig,
 } from "./config";
 import { readDefaultPaymentMethod } from "./customer";
+import { stripeErrLogFields } from "./err-log-fields";
 import { formatIntervalLabel } from "./products-meta";
 import {
   sendOrderConfirmationEmail,
@@ -207,7 +208,7 @@ export async function tryRecordWebhookEvent(
     return "error";
   } catch (err) {
     log?.warn?.(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err },
       "stripe webhook: dedup INSERT threw (non-fatal, proceeding)",
     );
     return "error";
@@ -293,7 +294,7 @@ export const stripeWebhookHandler: RequestHandler = async (
     // Returning 400 (not 401) is what Stripe's docs ask for — it's
     // their convention for "I refuse this delivery, try again".
     req.log?.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { ...stripeErrLogFields(err) },
       "stripe webhook signature verification failed",
     );
     res.status(400).json({ error: "invalid_signature" });
@@ -1843,7 +1844,7 @@ export async function sendOrderConfirmationIfFirst(args: {
     log?.warn?.(
       {
         orderId: claimed.id,
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "order confirmation email post-claim threw (non-fatal, claim released)",
     );

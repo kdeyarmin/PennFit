@@ -44,7 +44,7 @@ import {
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 
-import { isInDndWindow } from "../comm-prefs";
+import { isInDndWindow, isOutsideSmsSendWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { sendPushToCustomerByEmail } from "../web-push";
@@ -213,7 +213,9 @@ export async function runSmartTriggerSendDue(
   const { data: patientRows, error: patientsErr } = await supabase
     .schema("resupply")
     .from("patients")
-    .select("id, legal_first_name, email, phone_e164, status")
+    .select(
+      "id, legal_first_name, email, phone_e164, status, timezone, address",
+    )
     .in("id", patientIds);
   if (patientsErr) throw patientsErr;
   const patientMap = new Map(
@@ -224,6 +226,10 @@ export async function runSmartTriggerSendDue(
         email: p.email,
         phoneE164: p.phone_e164,
         status: p.status,
+        timezone: (p.timezone as string | null) ?? null,
+        zip: ((p.address as { zip?: string } | null)?.zip ?? null) as
+          | string
+          | null,
       },
     ]),
   );
@@ -243,11 +249,18 @@ export async function runSmartTriggerSendDue(
     .map((e) => e.toLowerCase());
   const prefsByEmail = new Map<string, CommunicationPreferences>();
   if (patientEmails.length > 0) {
-    const { data: custRows } = await supabase
+    const { data: custRows, error: custErr } = await supabase
       .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", patientEmails);
+    // Throw — never fall through. With prefsByEmail left empty the
+    // eligibility filter sees null prefs, which the channel gate
+    // treats as "couldn't have opted out" — so one transient read
+    // error here would nudge every patient INCLUDING those who
+    // explicitly opted out or configured a DND window (the exact
+    // HIPAA/TCPA exposure the comment above exists to prevent).
+    if (custErr) throw custErr;
     for (const c of custRows ?? []) {
       if (c.email_lower) {
         prefsByEmail.set(c.email_lower, readPrefs(c.communication_preferences));
@@ -265,6 +278,20 @@ export async function runSmartTriggerSendDue(
       if (!p || p.status !== "active") return false;
       const contact = channel === "email" ? p.email : p.phoneE164;
       if (contact === null || contact === "") return false;
+      // Hard TCPA window for SMS — the DND check below only protects
+      // patients who configured a DND window (default null), and a
+      // DME-only patient with no shop_customers row used to default
+      // to "allowed" at ANY hour. The event is not claimed, so the
+      // next in-window run picks it up.
+      if (
+        channel === "sms" &&
+        isOutsideSmsSendWindow(nowForGating, {
+          timezone: p.timezone,
+          shippingZip: p.zip,
+        })
+      ) {
+        return false;
+      }
       // Comm-prefs gating. See smartTriggerChannelAllowed for the
       // policy: DND always blocks, explicit opt-out is honoured,
       // and DME-only patients without a shop_customers row default
@@ -434,7 +461,7 @@ export async function runSmartTriggerSendDue(
           logger.warn(
             {
               event_id: row.eventId,
-              err: err instanceof Error ? err.message : String(err),
+              err,
             },
             "smart-trigger push fan-out threw (non-fatal)",
           );

@@ -31,7 +31,7 @@ router.get(
     // distribution stats. The decided population gives stable history
     // without overweighting in-flight noise.
     const cutoff = new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString();
-    const { data: claims } = await supabase
+    const { data: claims, error: claimsErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select(
@@ -40,6 +40,9 @@ router.get(
       .gte("decision_at", cutoff)
       .in("status", ["paid", "denied", "closed", "appealed"])
       .limit(20000);
+    // Throw — a swallowed error rendered the benchmarks as all-zero
+    // (same swallowed-`error` class as billing-dashboard).
+    if (claimsErr) throw claimsErr;
     const claimList = claims ?? [];
 
     // ── DSO (days from submit → paid). ────────────────────────────

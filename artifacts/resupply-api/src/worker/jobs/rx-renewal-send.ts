@@ -7,11 +7,15 @@
 //
 // Schedule
 // --------
-// 04:43 UTC daily. Sequenced 30 min after the smart-trigger cron
-// (04:13 UTC) so the two pipelines don't both compete for SendGrid /
-// Twilio rate-limit budget at the same instant. Far enough from
-// the reminders cron (hourly :00) and attachment-sweep (Sunday
-// 03:13) to avoid resource contention spikes.
+// 19:43 UTC daily — 2:43/3:43pm ET, inside the 9am–8pm TCPA send
+// window for every US timezone (Hawaii included), because this job
+// texts patients. The old 04:43 UTC slot was ~midnight ET; with the
+// dispatcher's per-patient quiet-hours gate a night-time daily cron
+// would skip the same patients at the same local hour forever
+// (app-review 2026-06-10, P1-3). Still sequenced 30 min after the
+// smart-trigger cron (19:13 UTC) so the two pipelines don't compete
+// for SendGrid / Twilio rate-limit budget at the same instant, and
+// still clear of the reminders cron (hourly :00).
 //
 // Channel ordering: email first (cheaper, higher delivery rate),
 // then SMS (mops up patients without an email on file).
@@ -41,9 +45,10 @@ import {
 } from "../lib/queue-options";
 
 const SEND_JOB = "rx-renewal.send-due";
-/** Daily 04:43 UTC. Sequenced 30 min after the smart-trigger send
- *  cron (04:13) so we don't double-burst the email vendor. */
-const SEND_CRON = "43 4 * * *";
+/** Daily 19:43 UTC (afternoon across all US timezones — see the
+ *  Schedule note above). Sequenced 30 min after the smart-trigger
+ *  send cron (19:13) so we don't double-burst the email vendor. */
+const SEND_CRON = "43 19 * * *";
 
 const SYSTEM_ACTOR_EMAIL = "system:cron:rx-renewal-send";
 

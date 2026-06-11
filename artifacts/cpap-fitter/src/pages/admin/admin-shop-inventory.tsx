@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bulkPatchShopProductStock,
+  centsToPriceDraft,
   InventoryUnavailableError,
   listShopInventory,
+  parsePriceDraftToCents,
+  patchShopProductPrice,
   patchShopProductStock,
   patchShopProductThreshold,
   type BulkStockResultItem,
@@ -20,9 +23,10 @@ const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 // Shop Inventory admin page.
 //
 // One-line summary: lists every catalog SKU with its current
-// `stock_count` (from Stripe metadata) and lets an admin edit it
-// inline. Saves write through to Stripe via PATCH /admin/shop/
-// products/:id/stock; the public storefront's 60s product cache
+// `stock_count` (from Stripe metadata) and price (from the Stripe
+// default_price) and lets an admin edit both inline. Saves write
+// through to Stripe via PATCH /admin/shop/products/:id/{stock,
+// threshold,price}; the public storefront's 60s product cache
 // will pick the change up on its next flush.
 //
 // Why one row per SKU (no pagination):
@@ -38,20 +42,6 @@ const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 //   roll back on error.
 
 const QUERY_KEY = ["shop-inventory"] as const;
-
-function formatPrice(cents: number | null, currency: string | null): string {
-  if (cents == null) return "—";
-  const amount = cents / 100;
-  const curr = (currency ?? "usd").toUpperCase();
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: curr,
-    }).format(amount);
-  } catch {
-    return `${curr} ${amount.toFixed(2)}`;
-  }
-}
 
 function StockCell({
   product,
@@ -207,6 +197,132 @@ function StockCell({
           }}
         >
           Untrack
+        </button>
+      </div>
+      {error ? (
+        <div
+          role="alert"
+          style={{ color: "#b91c1c", fontSize: 12, maxWidth: 320 }}
+        >
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// PriceCell mirrors StockCell (same draft-state + optimistic-save
+// pattern) but edits the storefront price. The server rotates the
+// Stripe Price objects (new Price + default_price repoint — Stripe
+// Prices are immutable) and keeps any Subscribe & Save price in sync,
+// so from here it's just "type dollars, save".
+function PriceCell({
+  product,
+  onSaved,
+}: {
+  product: InventoryProductRow;
+  onSaved: (next: InventoryProductRow) => void;
+}) {
+  const [draft, setDraft] = useState<string>(
+    centsToPriceDraft(product.priceCents),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const saveMutation = useMutation({
+    mutationFn: async (unitAmountCents: number) =>
+      patchShopProductPrice(product.id, unitAmountCents),
+    onMutate: async (unitAmountCents) => {
+      await queryClient.cancelQueries({ queryKey: QUERY_KEY });
+      const prev =
+        queryClient.getQueryData<ListShopInventoryResponse>(QUERY_KEY);
+      if (prev) {
+        queryClient.setQueryData<ListShopInventoryResponse>(QUERY_KEY, {
+          ...prev,
+          products: prev.products.map((p) =>
+            p.id === product.id ? { ...p, priceCents: unitAmountCents } : p,
+          ),
+        });
+      }
+      return { prev };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(QUERY_KEY, ctx.prev);
+      setError(
+        err instanceof InventoryUnavailableError
+          ? "Stripe is not configured in this environment — set STRIPE_SECRET_KEY to edit prices."
+          : err instanceof Error
+            ? err.message
+            : "Save failed",
+      );
+    },
+    onSuccess: (next) => {
+      onSaved(next);
+      // Normalise the draft to the canonical two-decimal form so a
+      // save of "19.9" doesn't leave the row permanently "dirty"
+      // against the server's 1990 cents.
+      setDraft(centsToPriceDraft(next.priceCents));
+      setError(null);
+    },
+  });
+
+  function handleSave() {
+    const parsed = parsePriceDraftToCents(draft);
+    if (!parsed.ok) {
+      setError(parsed.reason);
+      return;
+    }
+    setError(null);
+    saveMutation.mutate(parsed.cents);
+  }
+
+  // A row without a projected price can't be repriced from here —
+  // defensive only; the catalog projection guarantees a price.
+  if (product.priceCents === null) {
+    return <span style={{ color: "hsl(var(--ink-3))" }}>—</span>;
+  }
+
+  const dirty = draft.trim() !== centsToPriceDraft(product.priceCents);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <span style={{ color: "hsl(var(--ink-2))", fontSize: 14 }}>$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          aria-label={`Price in dollars for ${product.name}`}
+          data-testid={`price-input-${product.id}`}
+          disabled={saveMutation.isPending}
+          style={{
+            width: 96,
+            padding: "6px 8px",
+            border: "1px solid #d1d5db",
+            borderRadius: 4,
+            fontSize: 14,
+            fontFamily: "inherit",
+          }}
+        />
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty || saveMutation.isPending}
+          data-testid={`price-save-${product.id}`}
+          style={{
+            padding: "6px 12px",
+            background: dirty ? "#0a1f44" : "#e5e7eb",
+            color: dirty ? "#ffffff" : "#6b7280",
+            border: "none",
+            borderRadius: 4,
+            fontSize: 13,
+            fontWeight: 500,
+            cursor:
+              dirty && !saveMutation.isPending ? "pointer" : "not-allowed",
+          }}
+        >
+          {saveMutation.isPending ? "Saving…" : "Save"}
         </button>
       </div>
       {error ? (
@@ -702,7 +818,10 @@ export function AdminShopInventoryPage() {
           Stock counts are stored in Stripe product metadata. Setting a count to{" "}
           <strong>0</strong> hides the “Add to cart” button on the storefront
           and shows an out-of-stock badge. Leave a SKU untracked to keep the
-          storefront treating it as always available.
+          storefront treating it as always available. Price edits write through
+          to Stripe (the Subscribe &amp; Save price follows automatically) and
+          reach the storefront within a minute; existing subscriptions keep the
+          price they signed up at.
         </p>
       </header>
 
@@ -923,7 +1042,26 @@ export function AdminShopInventoryPage() {
                         </div>
                       </td>
                       <td style={{ padding: "12px", verticalAlign: "top" }}>
-                        {formatPrice(p.priceCents, p.currency)}
+                        <PriceCell
+                          product={p}
+                          onSaved={(next) => {
+                            const prev =
+                              queryClient.getQueryData<ListShopInventoryResponse>(
+                                QUERY_KEY,
+                              );
+                            if (prev) {
+                              queryClient.setQueryData<ListShopInventoryResponse>(
+                                QUERY_KEY,
+                                {
+                                  ...prev,
+                                  products: prev.products.map((row) =>
+                                    row.id === next.id ? next : row,
+                                  ),
+                                },
+                              );
+                            }
+                          }}
+                        />
                       </td>
                       <td style={{ padding: "12px", verticalAlign: "top" }}>
                         <StockBadge

@@ -41,6 +41,14 @@ describe("isStaleChunkError", () => {
     expect(isStaleChunkError(err)).toBe(true);
   });
 
+  it("matches Vite's 'Unable to preload CSS' dep-preload failure", () => {
+    expect(
+      isStaleChunkError(
+        new Error("Unable to preload CSS for /assets/admin-3f9a1c.css"),
+      ),
+    ).toBe(true);
+  });
+
   it("does NOT match a generic runtime error from module evaluation", () => {
     expect(isStaleChunkError(new TypeError("x is not a function"))).toBe(false);
   });

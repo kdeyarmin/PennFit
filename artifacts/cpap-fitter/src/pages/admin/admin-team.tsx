@@ -19,14 +19,16 @@
 // Layout:
 //   - Invite form at the top (email + role + optional display name + notes)
 //   - Active members list
-//   - Pending invites list (with Resend / Revoke buttons)
-//   - Revoked rows (collapsed by default, kept for audit)
+//   - Pending invites list (with Resend / Revoke / Delete buttons)
+//   - Revoked rows (collapsed by default; deletable to clear them
+//     out entirely, as if the invite never happened)
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
+  deleteMember,
   inviteMember,
   listTeam,
   patchMember,
@@ -79,7 +81,8 @@ export function AdminTeamPage() {
         <p className="text-sm text-slate-600">
           Invite admins and customer-service reps. Invitees receive a sign-up
           link by email and must accept before they can log in. Revoking removes
-          access immediately.
+          access immediately; pending and revoked invites can also be deleted
+          entirely, as if they were never sent.
         </p>
       </header>
       <InviteCard />
@@ -234,6 +237,10 @@ function MemberRow({
     mutationFn: () => revokeMember(member.id),
     onSuccess: invalidate,
   });
+  const remove = useMutation({
+    mutationFn: () => deleteMember(member.id),
+    onSuccess: invalidate,
+  });
   const promote = useMutation({
     mutationFn: () => patchMember(member.id, { role: "admin" }),
     onSuccess: invalidate,
@@ -278,15 +285,17 @@ function MemberRow({
       ? resend.error.message
       : revoke.error instanceof Error
         ? revoke.error.message
-        : promote.error instanceof Error
-          ? promote.error.message
-          : demote.error instanceof Error
-            ? demote.error.message
-            : changeRole.error instanceof Error
-              ? changeRole.error.message
-              : changeLocation.error instanceof Error
-                ? changeLocation.error.message
-                : null;
+        : remove.error instanceof Error
+          ? remove.error.message
+          : promote.error instanceof Error
+            ? promote.error.message
+            : demote.error instanceof Error
+              ? demote.error.message
+              : changeRole.error instanceof Error
+                ? changeRole.error.message
+                : changeLocation.error instanceof Error
+                  ? changeLocation.error.message
+                  : null;
 
   return (
     <li
@@ -452,6 +461,34 @@ function MemberRow({
               data-testid={`team-member-${member.id}-revoke`}
             >
               {revoke.isPending ? "Revoking…" : "Revoke access"}
+            </button>
+          )}
+          {(member.status === "pending" || member.status === "revoked") && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  !(await confirm({
+                    title:
+                      member.status === "pending"
+                        ? "Delete this invite?"
+                        : "Delete this record?",
+                    description:
+                      member.status === "pending"
+                        ? `Permanently delete the invitation for ${member.displayName?.trim() || member.email}? The invite link will stop working and the entry will be removed from the team list — as if it was never sent.`
+                        : `Permanently delete ${member.displayName?.trim() || member.email} from the team list? Their access is already revoked; this removes the record entirely.`,
+                    confirmLabel: "Delete",
+                    destructive: true,
+                  }))
+                )
+                  return;
+                remove.mutate();
+              }}
+              disabled={remove.isPending}
+              className="rounded border border-rose-400 bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              data-testid={`team-member-${member.id}-delete`}
+            >
+              {remove.isPending ? "Deleting…" : "Delete"}
             </button>
           )}
         </div>

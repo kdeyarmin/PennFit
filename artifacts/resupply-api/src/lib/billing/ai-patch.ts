@@ -200,7 +200,7 @@ export async function applyAiPatches(
   // lines so the EDI builder + preflight see a consistent number.
   await recomputeTotals(supabase, claimId).catch((err) => {
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err), claimId },
+      { err, claimId },
       "ai-patch: recomputeTotals failed (non-fatal)",
     );
   });

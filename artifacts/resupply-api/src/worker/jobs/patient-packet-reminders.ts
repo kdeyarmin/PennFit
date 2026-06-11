@@ -32,6 +32,7 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
@@ -46,7 +47,12 @@ import {
 } from "../lib/queue-options";
 
 const REMINDER_JOB = "patient-packet.reminders";
-const REMINDER_CRON = process.env.PATIENT_PACKET_REMINDER_CRON ?? "33 15 * * *";
+// 19:33 UTC — early afternoon in every US timezone. The sweep's SMS
+// channel is an automated text, so the default cron must sit inside
+// the 9am–8pm TCPA send window for the whole patient base (15:33 UTC
+// was 7:33am Pacific in winter — below even the statutory 8am floor).
+// The per-patient isOutsideSmsSendWindow gate below is the backstop.
+const REMINDER_CRON = process.env.PATIENT_PACKET_REMINDER_CRON ?? "33 19 * * *";
 
 function intEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -86,7 +92,7 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     .schema("resupply")
     .from("patient_packets")
     .select(
-      "id, patient_id, link_version, reminder_count, recipient_name, recipient_email, sent_at",
+      "id, patient_id, link_version, reminder_count, recipient_name, recipient_email, sent_at, status, expires_at, last_reminded_at",
     )
     .in("status", ["sent", "viewed"])
     .lt("reminder_count", MAX_REMINDERS)
@@ -106,15 +112,29 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
   };
   if (rows.length === 0) return stats;
 
-  // Bulk-resolve patient phone numbers for the SMS channel.
+  // Bulk-resolve patient phone numbers (+ timezone for the TCPA
+  // send-window gate) for the SMS channel.
   const patientIds = Array.from(new Set(rows.map((r) => r.patient_id)));
   const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
-    .select("id, phone_e164")
+    .select("id, phone_e164, timezone, address")
     .in("id", patientIds);
-  const phoneByPatient = new Map<string, string | null>();
-  for (const p of patients ?? []) phoneByPatient.set(p.id, p.phone_e164);
+  const patientById = new Map<
+    string,
+    {
+      phone_e164: string | null;
+      timezone: string | null;
+      address: { zip?: string } | null;
+    }
+  >();
+  for (const p of patients ?? []) {
+    patientById.set(p.id, {
+      phone_e164: p.phone_e164,
+      timezone: (p as { timezone?: string | null }).timezone ?? null,
+      address: (p as { address?: { zip?: string } | null }).address ?? null,
+    });
+  }
 
   for (const c of rows) {
     const nextVersion = (c.link_version ?? 1) + 1;
@@ -151,6 +171,17 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     if (!claimed) continue; // raced — another run took it
 
     const link = buildPacketSigningLink(c.id, nextVersion);
+    // Automated cron text — withhold the phone (email still goes out)
+    // when the patient's local time is outside the 9am–8pm TCPA send
+    // window. The 19:33 UTC default cron makes this a backstop for
+    // non-US/edge timezones rather than the primary gate.
+    const patientRow = patientById.get(c.patient_id);
+    const smsWindowOpen =
+      patientRow != null &&
+      !isOutsideSmsSendWindow(new Date(), {
+        timezone: patientRow.timezone,
+        shippingZip: patientRow.address?.zip ?? null,
+      });
     let emailSent = false;
     let smsSent = false;
     try {
@@ -159,7 +190,7 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
         recipientName: c.recipient_name,
         link,
         email: c.recipient_email,
-        phone: phoneByPatient.get(c.patient_id) ?? null,
+        phone: smsWindowOpen ? (patientRow?.phone_e164 ?? null) : null,
         channels: PACKET_CHANNELS,
         reminder: true,
         packetId: c.id,
@@ -174,6 +205,38 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
         },
         "patient-packet.reminders: delivery failed (non-fatal)",
       );
+    }
+
+    if (!emailSent && !smsSent) {
+      // Nothing reached the patient, but the claim above already
+      // bumped link_version — which REVOKED the previously-delivered
+      // link — and consumed one of the MAX_REMINDERS slots. Left as-is,
+      // a few bad delivery days strand the patient with a dead link and
+      // no further nudges. Roll the claim back (CAS on the values we
+      // just wrote, so a concurrent admin resend is never clobbered):
+      // the old link works again and the slot is retried next sweep.
+      const { error: rollbackErr } = await supabase
+        .schema("resupply")
+        .from("patient_packets")
+        .update({
+          link_version: c.link_version,
+          status: c.status,
+          sent_at: c.sent_at,
+          expires_at: c.expires_at,
+          reminder_count: c.reminder_count ?? 0,
+          last_reminded_at: c.last_reminded_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", c.id)
+        .eq("link_version", nextVersion)
+        .eq("reminder_count", (c.reminder_count ?? 0) + 1);
+      if (rollbackErr) {
+        logger.warn(
+          { err: rollbackErr, packet_id: c.id },
+          "patient-packet.reminders: claim rollback failed",
+        );
+      }
+      continue;
     }
 
     stats.reminded += 1;

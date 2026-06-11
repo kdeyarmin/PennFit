@@ -184,7 +184,7 @@ router.post("/shop/quiz-leads", async (req, res) => {
       req.log?.warn?.(
         {
           event: "quiz-results-email.threw",
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "shop/quiz-leads: results email send threw (non-fatal)",
       );

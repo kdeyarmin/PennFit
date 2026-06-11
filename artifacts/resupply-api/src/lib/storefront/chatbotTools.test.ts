@@ -125,7 +125,9 @@ describe("executeChatTool", () => {
 
   describe("find_masks", () => {
     it("filters by mask type", async () => {
-      const result = await executeChatTool("find_masks", { type: "nasalPillow" });
+      const result = await executeChatTool("find_masks", {
+        type: "nasalPillow",
+      });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("expected ok");
       const data = result.data as {
@@ -136,7 +138,9 @@ describe("executeChatTool", () => {
     });
 
     it("filters by manufacturer with case-insensitive substring match", async () => {
-      const result = await executeChatTool("find_masks", { manufacturer: "RESMED" });
+      const result = await executeChatTool("find_masks", {
+        manufacturer: "RESMED",
+      });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("expected ok");
       const data = result.data as {
@@ -171,7 +175,9 @@ describe("executeChatTool", () => {
     });
 
     it("rejects unknown extra fields", async () => {
-      const result = await executeChatTool("find_masks", { invalid_field: true });
+      const result = await executeChatTool("find_masks", {
+        invalid_field: true,
+      });
       expect(result.ok).toBe(false);
     });
   });

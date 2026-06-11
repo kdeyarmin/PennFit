@@ -94,7 +94,7 @@ export interface TrackedOrderStatus {
 export type TrackOrderLookup =
   | { outcome: "found"; order: TrackedOrderStatus }
   | { outcome: "not_found" }
-  | { outcome: "lookup_failed"; detail: unknown };
+  | { outcome: "lookup_failed"; detail: string };
 
 /**
  * Look up one order by (normalized reference, lowercased email).
@@ -130,7 +130,7 @@ export async function lookupTrackedOrder(
     .limit(1)
     .maybeSingle();
   if (legacyErr) {
-    return { outcome: "lookup_failed", detail: legacyErr };
+    return { outcome: "lookup_failed", detail: legacyErr.message };
   }
 
   // Treat "found but email doesn't match" the same as "not found"

@@ -19,6 +19,7 @@ import {
 import type Stripe from "stripe";
 
 import { getStripeClient, readStripeConfigOrNull } from "../stripe/config";
+import { stripeErrLogFields } from "../stripe/err-log-fields";
 import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -173,7 +174,7 @@ export async function createPaymentIntent(
       );
     }
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { ...stripeErrLogFields(err) },
       "patient_payment: stripe paymentIntents.create failed",
     );
     return {
@@ -407,7 +408,7 @@ export async function createPaymentCheckoutSession(
       );
     }
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { ...stripeErrLogFields(err) },
       "patient_payment: stripe checkout.sessions.create failed",
     );
     return {
@@ -589,7 +590,7 @@ export async function createAdhocPaymentCheckoutSession(
       );
     }
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { ...stripeErrLogFields(err) },
       "patient_payment: stripe adhoc checkout.sessions.create failed",
     );
     return {

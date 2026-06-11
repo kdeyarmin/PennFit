@@ -52,6 +52,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { sendDeliveryFollowupEmail } from "../../lib/order-emails/send-delivery-followup-email";
 import { sendCaregiverNotificationEmail } from "../../lib/order-emails/send-caregiver-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
+import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
 import {
   createTwilioSmsClient,
@@ -64,7 +65,12 @@ import {
 } from "../lib/queue-options";
 
 const FOLLOWUP_JOB = "shop-order.delivery-followup";
-const FOLLOWUP_CRON = "23 14 * * *";
+// 19:23 UTC — early afternoon in every US timezone, so the SMS leg's
+// 9am–8pm TCPA send window is satisfied by schedule (14:23 UTC was
+// 6:23am Pacific in winter — below even the statutory 8am floor). The
+// isOutsideSmsSendWindow gate below is the backstop, not the schedule;
+// see the cron note on that helper in lib/comm-prefs.ts.
+const FOLLOWUP_CRON = "23 19 * * *";
 
 /** Lower bound: 3 days before now. Earlier is intrusive. */
 const MIN_DAYS_SINCE_DELIVERY = 3;
@@ -226,7 +232,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       stats.failed += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           orderId: claimed.id,
         },
         "shop-order.delivery-followup: recipient lookup failed",
@@ -269,7 +275,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       stats.failed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           orderId: claimed.id,
         },
         "shop-order.delivery-followup: send threw (claim released)",
@@ -300,13 +306,28 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
 
     // 4. SMS leg — same gates as the shipped event. Fires when the
     //    customer's email matches a DME-registered patient with
-    //    phone_e164 + transactional SMS opt-in.
+    //    phone_e164 + transactional SMS opt-in. Additionally gated on
+    //    the hard TCPA send window (9am–8pm patient-local): this is an
+    //    automated cron text, so an out-of-window tick must not fire
+    //    it. Skipping (not deferring) matches this leg's best-effort
+    //    semantics — the email above is the canonical delivery.
     try {
       const smsRecipient = await resolveSmsRecipientForShopOrder({
         customerId: claimed.customer_id,
         customerEmailFromOrder: claimed.customer_email ?? null,
       });
-      if (smsRecipient) {
+      if (
+        smsRecipient &&
+        isOutsideSmsSendWindow(new Date(), {
+          timezone: smsRecipient.timezone,
+          shippingZip: smsRecipient.zip,
+        })
+      ) {
+        logger.info(
+          { orderId: claimed.id },
+          "shop-order.delivery-followup: sms skipped (outside send window)",
+        );
+      } else if (smsRecipient) {
         const smsClient = createTwilioSmsClient();
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
