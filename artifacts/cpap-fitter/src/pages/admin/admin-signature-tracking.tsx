@@ -27,10 +27,12 @@ import {
   cancelSignatureTracking,
   listOutstandingSignatures,
   lookupSignatureByCode,
+  markSignatureHandDelivered,
   markSignatureReturned,
   resendSignatureDocument,
   type SignatureDeliveryChannel,
   type SignatureDocumentKind,
+  type SignatureListStatus,
   type SignatureTrackingItem,
   type SignatureTrackingStatus,
 } from "@/lib/admin/signature-tracking-api";
@@ -57,6 +59,15 @@ const CHANNEL_LABEL: Record<SignatureDeliveryChannel, string> = {
 
 const STATUS_LABEL: Record<SignatureTrackingStatus, string> = {
   awaiting_signature: "Awaiting signature",
+  returned_signed: "Returned signed",
+  canceled: "Canceled",
+};
+
+// Worklist filter labels — the stored statuses plus the "unsent" view
+// (created but never faxed/emailed/hand-delivered).
+const FILTER_LABEL: Record<SignatureListStatus, string> = {
+  awaiting_signature: "Awaiting signature",
+  unsent: "Not sent yet",
   returned_signed: "Returned signed",
   canceled: "Canceled",
 };
@@ -96,7 +107,7 @@ export function AdminSignatureTrackingPage() {
   useDocumentTitle("Awaiting signatures");
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] =
-    useState<SignatureTrackingStatus>("awaiting_signature");
+    useState<SignatureListStatus>("awaiting_signature");
 
   const listKey = ["signature-tracking", "list", statusFilter] as const;
   const listQuery = useQuery({
@@ -131,10 +142,11 @@ export function AdminSignatureTrackingPage() {
             id="statusFilter"
             value={statusFilter}
             onChange={(e) =>
-              setStatusFilter(e.target.value as SignatureTrackingStatus)
+              setStatusFilter(e.target.value as SignatureListStatus)
             }
             options={[
               { value: "awaiting_signature", label: "Awaiting signature" },
+              { value: "unsent", label: "Not sent yet" },
               { value: "returned_signed", label: "Returned signed" },
               { value: "canceled", label: "Canceled" },
             ]}
@@ -205,7 +217,7 @@ export function AdminSignatureTrackingPage() {
           title={
             statusFilter === "awaiting_signature"
               ? "Outstanding documents"
-              : STATUS_LABEL[statusFilter]
+              : FILTER_LABEL[statusFilter]
           }
         >
           {listQuery.isPending ? (
@@ -221,12 +233,16 @@ export function AdminSignatureTrackingPage() {
               title={
                 statusFilter === "awaiting_signature"
                   ? "Nothing awaiting a signature"
-                  : "No documents here"
+                  : statusFilter === "unsent"
+                    ? "No unsent documents"
+                    : "No documents here"
               }
               hint={
                 statusFilter === "awaiting_signature"
-                  ? "Documents show up here automatically once they're sent (faxed or emailed) for signature. Drafts that haven't been sent yet aren't counted."
-                  : undefined
+                  ? 'Documents show up here automatically once they\'re faxed, emailed, or marked hand-delivered. Drafts wait under "Not sent yet" until then.'
+                  : statusFilter === "unsent"
+                    ? "Newly created signable documents wait here until they're faxed, emailed, or marked hand-delivered."
+                    : undefined
               }
             />
           ) : (
@@ -417,13 +433,24 @@ function SignatureRow({
   const isOutstanding = item.status === "awaiting_signature";
   const age = daysSince(item.createdAt);
 
+  const neverSent = item.sentCount === 0;
+
   const resend = useMutation({
     mutationFn: () => resendSignatureDocument(item),
     onSuccess: () => {
-      setMsg("Fax re-sent.");
+      setMsg(neverSent ? "Fax sent." : "Fax re-sent.");
       onChanged();
     },
-    onError: (err) => setMsg(describeError(err).detail ?? "Resend failed."),
+    onError: (err) => setMsg(describeError(err).detail ?? "Send failed."),
+  });
+
+  const handDelivered = useMutation({
+    mutationFn: () => markSignatureHandDelivered(item.id),
+    onSuccess: () => {
+      setMsg("Marked hand-delivered — now counted as outstanding.");
+      onChanged();
+    },
+    onError: (err) => setMsg(describeError(err).detail ?? "Failed."),
   });
 
   const markReturned = useMutation({
@@ -501,7 +528,24 @@ function SignatureRow({
                 resend.mutate();
               }}
             >
-              Resend fax
+              {neverSent ? "Send fax" : "Resend fax"}
+            </Button>
+            <Button
+              intent="ghost"
+              size="sm"
+              isLoading={handDelivered.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Mark this document as hand-delivered? It will be counted as outstanding until the signed copy comes back.",
+                  )
+                ) {
+                  setMsg(null);
+                  handDelivered.mutate();
+                }
+              }}
+            >
+              Mark hand-delivered
             </Button>
             <Button
               intent="ghost"

@@ -13,6 +13,12 @@ export type SignatureTrackingStatus =
   | "awaiting_signature"
   | "returned_signed"
   | "canceled";
+/**
+ * List filter values: the stored statuses plus "unsent" — a server-side
+ * view of awaiting_signature rows never dispatched (sent_count = 0),
+ * from which a CSR can send or mark a document hand-delivered.
+ */
+export type SignatureListStatus = SignatureTrackingStatus | "unsent";
 export type SignatureDeliveryChannel =
   | "none"
   | "fax"
@@ -83,7 +89,7 @@ async function jsonFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function listOutstandingSignatures(params?: {
-  status?: SignatureTrackingStatus;
+  status?: SignatureListStatus;
   providerId?: string;
   practiceName?: string;
   kind?: SignatureDocumentKind;
@@ -108,6 +114,18 @@ export async function markSignatureReturned(
   id: string,
 ): Promise<{ status: SignatureTrackingStatus }> {
   return jsonFetch(`${BASE}/${encodeURIComponent(id)}/mark-returned`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Record that the document was printed and physically handed to the
+ * provider/patient — it joins the outstanding queue from here.
+ */
+export async function markSignatureHandDelivered(
+  id: string,
+): Promise<{ status: SignatureTrackingStatus; deliveryChannel: string }> {
+  return jsonFetch(`${BASE}/${encodeURIComponent(id)}/mark-hand-delivered`, {
     method: "POST",
   });
 }

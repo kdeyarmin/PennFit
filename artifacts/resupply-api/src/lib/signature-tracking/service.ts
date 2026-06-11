@@ -456,6 +456,13 @@ export interface ListOutstandingOptions {
   practiceName?: string;
   kind?: SignatureDocumentKind;
   limit?: number;
+  /**
+   * Only meaningful with status=awaiting_signature. Defaults to true —
+   * the outstanding queue (sent_count > 0). Pass false to list the
+   * inverse: prepared-but-never-sent rows (the "Not sent yet" view, from
+   * which a CSR can mark a document hand-delivered or send it).
+   */
+  dispatched?: boolean;
 }
 
 const DEFAULT_LIMIT = 200;
@@ -487,7 +494,12 @@ export async function listOutstandingSignatures(
     .eq("status", status)
     .order("created_at", { ascending: true })
     .limit(limit);
-  if (status === "awaiting_signature") query = query.gt("sent_count", 0);
+  if (status === "awaiting_signature") {
+    query =
+      opts.dispatched === false
+        ? query.eq("sent_count", 0)
+        : query.gt("sent_count", 0);
+  }
   if (opts.providerId) query = query.eq("provider_id", opts.providerId);
   if (opts.practiceName) query = query.eq("practice_name", opts.practiceName);
   if (opts.kind) query = query.eq("document_kind", opts.kind);
