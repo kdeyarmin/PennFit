@@ -855,6 +855,27 @@ function RosterRow({
           >
             {notification.status}
           </span>
+          {/* Carrier-side SMS outcome. 'sent' means Twilio ACCEPTED the
+              text; the status callback can still report a bounce after
+              the fact — without this badge a bounced safety-recall text
+              looks identical to a delivered one. */}
+          {notification.deliveryStatus === "undelivered" ||
+          notification.deliveryStatus === "failed" ? (
+            <span
+              className="ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider bg-rose-100 text-rose-900"
+              title={
+                notification.deliveryErrorCode
+                  ? `Twilio error ${notification.deliveryErrorCode}`
+                  : "Carrier reported the text undeliverable"
+              }
+            >
+              sms bounced
+            </span>
+          ) : notification.deliveryStatus === "delivered" ? (
+            <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider bg-emerald-100 text-emerald-900">
+              delivered
+            </span>
+          ) : null}
         </td>
         <td className="py-1.5 text-xs">{notification.channel ?? "—"}</td>
         <td className="py-1.5 text-xs">
