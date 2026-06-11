@@ -161,7 +161,7 @@ export async function verifyEligibility(
 
   // Allocate monotonic control numbers vs. the office_ally_submissions
   // ISA13 history. Eligibility and claim ISA13s share the same pool.
-  // Atomic reservation first (counter table, migration 0306) — unique
+  // Atomic reservation first (counter table, migration 0307) — unique
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
   // only as the pre-migration fallback; see lib/billing/isa13-counter.

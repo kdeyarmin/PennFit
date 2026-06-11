@@ -1,5 +1,5 @@
 // Atomic ISA13 reservation via resupply.control_number_counters
-// (migration 0306).
+// (migration 0307).
 //
 // The legacy allocation read MAX(isa_control_number) from
 // office_ally_submissions and added 1 — which (a) never saw the
@@ -29,7 +29,7 @@ const MAX_CAS_ATTEMPTS = 8;
 /**
  * Reserve the next ISA13 value atomically. Returns the reserved
  * NUMERIC value, or `null` when the counter row doesn't exist yet
- * (migration 0306 not applied) — callers fall back to the legacy
+ * (migration 0307 not applied) — callers fall back to the legacy
  * MAX-read allocation so deploy ordering can't break submissions.
  * Throws on persistent CAS contention or query errors.
  */
@@ -48,7 +48,7 @@ export async function reserveIsa13Value(
     if (!row) {
       logger.warn(
         { pool: POOL },
-        "isa13-counter: counter row missing (migration 0306 not applied?) — falling back to legacy MAX-read allocation",
+        "isa13-counter: counter row missing (migration 0307 not applied?) — falling back to legacy MAX-read allocation",
       );
       return null;
     }
