@@ -166,7 +166,7 @@ export async function sendRecallNotification(
       // the patient than abort.
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err,
           recallId: ctx.recall.id,
         },
         "recall-notifications.send: email failed; trying SMS",

@@ -461,7 +461,7 @@ export async function runSmartTriggerSendDue(
           logger.warn(
             {
               event_id: row.eventId,
-              err: err instanceof Error ? err.message : String(err),
+              err,
             },
             "smart-trigger push fan-out threw (non-fatal)",
           );

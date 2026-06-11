@@ -253,7 +253,7 @@ export async function runDeductibleResetPush(
       stats.failed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           customerId: row.customer_id,
         },
         "shop-customers.deductible-reset: send threw",

@@ -77,7 +77,7 @@ export async function maybeDispatchLowUsageCheckinAlert(
       {
         event: "low_usage_checkin_error",
         patient_id: patientId,
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "alerts: low_usage_checkin trigger failed (non-fatal)",
     );

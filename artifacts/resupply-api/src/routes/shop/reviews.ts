@@ -477,10 +477,7 @@ router.post(
     try {
       identity = await resolveAuthorIdentity(req);
     } catch (err) {
-      req.log?.warn?.(
-        { err: err instanceof Error ? err.message : String(err) },
-        "shop/reviews: customer identity lookup failed",
-      );
+      req.log?.warn?.({ err }, "shop/reviews: customer identity lookup failed");
       res.status(400).json({ error: "author_identity_unavailable" });
       return;
     }

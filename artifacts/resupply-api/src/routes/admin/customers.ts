@@ -71,6 +71,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -951,7 +952,7 @@ router.post(
         {
           userId,
           sourceOrderId,
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
         },
         "admin/shop/customers: stripe checkout.sessions.create failed",
       );

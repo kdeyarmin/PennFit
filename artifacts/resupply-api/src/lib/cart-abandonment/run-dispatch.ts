@@ -272,7 +272,7 @@ export async function runCartAbandonmentDispatch(
       opts.log?.warn?.(
         {
           rowId: row.id,
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "cart-abandonment send threw — unclaiming batch",
       );

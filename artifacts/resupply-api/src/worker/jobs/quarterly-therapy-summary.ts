@@ -332,7 +332,7 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       stats.failed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           patientId: patient.id,
         },
         "quarterly-summary: send threw",

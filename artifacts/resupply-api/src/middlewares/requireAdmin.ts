@@ -146,7 +146,7 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
       logger.warn(
         {
           event: "resupply_admin_granular_role_lookup_failed",
-          err: err instanceof Error ? err.message : "unknown",
+          err,
         },
         "requireAdmin: admin_users.role lookup failed; falling back to coarse role",
       );
@@ -163,7 +163,7 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     logger.warn(
       {
         event: "resupply_admin_in_house_lookup_failed",
-        err: err instanceof Error ? err.message : "unknown",
+        err,
       },
       "requireAdmin: in-house session lookup failed",
     );

@@ -190,10 +190,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     ip: null,
     userAgent: null,
   }).catch((err) => {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      "office-ally.inbound-poll: audit write failed",
-    );
+    logger.warn({ err }, "office-ally.inbound-poll: audit write failed");
   });
 
   // A successful list resets the consecutive-failure counter.
@@ -391,7 +388,7 @@ async function processRemoteFile(
     stats.dispatchErrors += 1;
     logger.error(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         remotePath,
         kind,
       },
@@ -766,7 +763,7 @@ async function runDenialAnalysisQuietly(
   } catch (err) {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         claimId,
       },
       "office-ally.inbound-poll: AI denial analysis failed (non-fatal)",
