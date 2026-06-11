@@ -104,7 +104,13 @@ export const getProviderQueueItem = (id: string) =>
 
 export const signProviderDocument = (
   id: string,
-  body: { consentEsign: true; signerName: string; signerTitle?: string },
+  body: {
+    consentEsign: true;
+    signerName: string;
+    signerTitle?: string;
+    /** Optional drawn signature (PNG data URL). */
+    signatureImage?: string | null;
+  },
 ) =>
   jsonFetch<{ ok: true; status: string; signedAt: string }>(
     `/queue/${encodeURIComponent(id)}/sign`,
@@ -114,6 +120,26 @@ export const signProviderDocument = (
       body: JSON.stringify(body),
     },
   );
+
+/** Sign several selected documents in one submit. Each is still signed
+ *  individually server-side (own row update + hash-chain event);
+ *  ineligible documents come back in `skipped` with a reason. */
+export const signProviderDocumentsBatch = (body: {
+  ids: string[];
+  consentEsign: true;
+  signerName: string;
+  signerTitle?: string;
+  signatureImage?: string | null;
+}) =>
+  jsonFetch<{
+    ok: true;
+    signed: string[];
+    skipped: Array<{ id: string; reason: string }>;
+  }>("/queue/sign-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 export const declineProviderDocument = (id: string, reason?: string) =>
   jsonFetch<{ ok: true; status: string }>(

@@ -755,6 +755,21 @@ class Impl implements VoiceToolDispatcher {
               "order can ship. Offer to have a teammate follow up.",
           },
         };
+      case "usage_review":
+        return {
+          callId: call.callId,
+          name: call.name,
+          result: {
+            ok: false,
+            order_id: "",
+            accepted_skus: [],
+            reason:
+              "A teammate needs to check in about the patient's therapy " +
+              "before this order can ship. Warmly offer to have a " +
+              "teammate follow up — do not mention usage data or " +
+              "compliance.",
+          },
+        };
       default:
         // conversation_not_found / episode_not_found /
         // no_active_prescription — all "we can't place this by phone".

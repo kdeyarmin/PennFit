@@ -86,6 +86,35 @@ router.post(
 
     const supabase = getSupabaseServiceRoleClient();
 
+    // Duplicate guard: refuse when this fulfillment already has an
+    // open (non-denied/closed) claim. A double-click — or two CSRs
+    // working the same "fulfillments to bill" row — otherwise creates
+    // two draft claims with identical lines for ONE shipment, both
+    // batch-submittable to the payer (duplicate-claim denial at best,
+    // double payment exposure at worst); the billing dashboard also
+    // hides the fulfillment from "to bill" once ONE claim exists, so
+    // the second becomes invisible work. Denied/closed claims don't
+    // block — a re-bill after a denial is legitimate.
+    const { data: existingClaim, error: existingClaimErr } = await supabase
+      .schema("resupply")
+      .from("insurance_claims")
+      .select("id, status")
+      .eq("fulfillment_id", idParsed.data.fulfillmentId)
+      .not("status", "in", "(denied,closed)")
+      .limit(1)
+      .maybeSingle();
+    if (existingClaimErr) throw existingClaimErr;
+    if (existingClaim) {
+      res.status(409).json({
+        error: "claim_exists",
+        claimId: existingClaim.id,
+        status: existingClaim.status,
+        message:
+          "This fulfillment already has an open claim. Work that claim instead of creating a duplicate.",
+      });
+      return;
+    }
+
     // Insert the claim header.
     const { data: claimRow, error: claimErr } = await supabase
       .schema("resupply")

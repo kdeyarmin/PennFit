@@ -149,6 +149,36 @@ export async function revokeMember(
   return (await res.json()) as { member: TeamMember };
 }
 
+/** Permanently delete a pending or revoked invite, as if it never
+ *  happened. The server rejects active members (409 member_active) —
+ *  revoke first. */
+export async function deleteMember(id: string): Promise<{
+  deleted: boolean;
+  id: string;
+  authUserDeleted: boolean;
+  authUserDemotedToCustomer: boolean;
+}> {
+  const url = `${BASE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
+  if (!res.ok) {
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new ApiError(res, json, { method: "DELETE", url });
+  }
+  return (await res.json()) as {
+    deleted: boolean;
+    id: string;
+    authUserDeleted: boolean;
+    authUserDemotedToCustomer: boolean;
+  };
+}
+
 export async function patchMember(
   id: string,
   body: Partial<{

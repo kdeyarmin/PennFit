@@ -29,7 +29,7 @@ import { z } from "zod";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   getSupabaseServiceRoleClient,
-  escapePostgRESTFilterValue,
+  escapePostgRESTContainsPattern,
 } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -95,9 +95,9 @@ router.get(
       } else {
         // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
         // Escape commas/parentheses/quotes in the search value to
-        // prevent breaking the filter expression.
-        const escaped = escapePostgRESTFilterValue(search);
-        const needle = `*${escaped}*`;
+        // prevent breaking the filter expression; the wildcards must
+        // live INSIDE the quoting layer (see the helper's doc).
+        const needle = escapePostgRESTContainsPattern(search);
         query = query.or(
           `pacware_id.ilike.${needle},legal_first_name.ilike.${needle},legal_last_name.ilike.${needle},email.ilike.${needle}`,
         );

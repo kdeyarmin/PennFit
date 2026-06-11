@@ -3,6 +3,7 @@
 export {
   HELP_DOC_VERSION,
   PATIENT_HELP_DOCS,
+  PROVIDER_HELP_DOCS,
   staffHelpDocs,
   type HelpDoc,
   type HelpDocSection,
@@ -12,3 +13,8 @@ export {
   __clearHelpDocCache,
   type HelpDocAudience,
 } from "./render";
+export {
+  CUSTOMER_SERVICE_MANUAL_FILENAME,
+  loadCustomerServiceManual,
+  __clearManualCache,
+} from "./manual";

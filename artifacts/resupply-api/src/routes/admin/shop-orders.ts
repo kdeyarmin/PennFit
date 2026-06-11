@@ -61,6 +61,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendReadyForPickupEmail } from "../../lib/order-emails/send-ready-for-pickup-email";
 import { getPickupLocationsByIds } from "../../lib/pickup/locations";
@@ -445,7 +446,7 @@ async function sendShippingNotificationIfNew(args: {
         log?.warn?.(
           {
             orderId: claimedRow.id,
-            err: err instanceof Error ? err.message : String(err),
+            err,
           },
           "shipping notification push send threw (non-fatal)",
         );
@@ -508,7 +509,7 @@ async function sendShippingNotificationIfNew(args: {
         log?.warn?.(
           {
             orderId: claimedRow.id,
-            err: err instanceof Error ? err.message : String(err),
+            err,
           },
           "shipping notification caregiver send threw (non-fatal)",
         );
@@ -526,7 +527,7 @@ async function sendShippingNotificationIfNew(args: {
     log?.warn?.(
       {
         orderId: claimedRow.id,
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "shipping notification email post-claim threw (non-fatal, claim released)",
     );
@@ -1123,7 +1124,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
         log?.warn?.(
           {
             orderId: claimedRow.id,
-            err: err instanceof Error ? err.message : String(err),
+            err,
           },
           "ready-for-pickup push send threw (non-fatal)",
         );
@@ -1349,7 +1350,7 @@ router.post(
       req.log?.warn?.(
         {
           orderId,
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
         },
         "admin/shop/orders: stripe refund failed",
       );

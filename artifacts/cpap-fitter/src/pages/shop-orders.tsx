@@ -77,11 +77,7 @@ export function ShopOrders() {
   // returns ONLY its content — wrapping in <Layout> here would
   // double-render the global header.
   return (
-    <main
-      id="main-content"
-      tabIndex={-1}
-      className="container mx-auto max-w-3xl px-4 md:px-6 py-10 md:py-14"
-    >
+    <div className="container mx-auto max-w-3xl px-4 md:px-6 py-10 md:py-14">
       <header className="mb-8">
         <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight">
           Your orders
@@ -93,7 +89,7 @@ export function ShopOrders() {
       <SignedIn fallback={<SignedOutPrompt />}>
         <SignedInOrders />
       </SignedIn>
-    </main>
+    </div>
   );
 }
 

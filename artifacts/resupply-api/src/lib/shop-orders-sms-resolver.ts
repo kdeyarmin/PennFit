@@ -49,6 +49,10 @@ export interface ResolveSmsRecipientArgs {
 export interface SmsRecipient {
   phoneE164: string;
   patientFirstName: string | null;
+  /** Patient's IANA timezone, for the TCPA send-window gate. */
+  timezone: string | null;
+  /** Patient's address ZIP — timezone inference fallback. */
+  zip: string | null;
 }
 
 /**
@@ -97,14 +101,17 @@ export async function resolveSmsRecipientForShopOrder(
   const { data: patient } = await supabase
     .schema("resupply")
     .from("patients")
-    .select("phone_e164, legal_first_name")
+    .select("phone_e164, legal_first_name, timezone, address")
     .ilike("email", escapedEmail)
     .limit(1)
     .maybeSingle();
   if (!patient?.phone_e164) return null;
 
+  const address = patient.address as { zip?: string } | null;
   return {
     phoneE164: patient.phone_e164,
     patientFirstName: patient.legal_first_name ?? null,
+    timezone: patient.timezone ?? null,
+    zip: address?.zip ?? null,
   };
 }

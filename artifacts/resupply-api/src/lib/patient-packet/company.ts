@@ -33,7 +33,7 @@ export async function resolveCompanyProfile(
     };
   } catch (err) {
     logger.warn(
-      { err: err instanceof Error ? err.message : "unknown" },
+      { err },
       "patient-packet: company profile resolution failed; using fallback",
     );
     return FALLBACK_COMPANY;

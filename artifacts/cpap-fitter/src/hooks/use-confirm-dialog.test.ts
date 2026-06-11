@@ -260,8 +260,24 @@ describe("use-confirm-dialog — description rendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("use-confirm-dialog — dialog element memoisation", () => {
-  it("memoises the dialog element on [state.open, state.options, settle]", () => {
-    expect(SRC).toContain("[state.open, state.options, settle]");
+  it("memoises the dialog element on [state.open, state.options, settle, inAdminScope, sentinelRef]", () => {
+    expect(SRC).toContain(
+      "[state.open, state.options, settle, inAdminScope, sentinelRef]",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Admin-theme scoping — portal content re-scopes under .admin-root
+// ---------------------------------------------------------------------------
+
+describe("use-confirm-dialog — admin-root portal scoping", () => {
+  it("detects an .admin-root ancestor via the scope sentinel", () => {
+    expect(SRC).toContain('node.closest(".admin-root")');
+  });
+
+  it("re-applies admin-root on the portalled AlertDialogContent when scoped", () => {
+    expect(SRC).toContain('inAdminScope ? "admin-root" : undefined');
   });
 });
 

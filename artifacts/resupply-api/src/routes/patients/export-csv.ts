@@ -33,7 +33,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getSupabaseServiceRoleClient,
-  escapePostgRESTFilterValue,
+  escapePostgRESTContainsPattern,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -129,9 +129,9 @@ router.get(
     if (search) {
       // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
       // Escape commas/parentheses/quotes in the search value to
-      // prevent breaking the filter expression.
-      const escaped = escapePostgRESTFilterValue(search);
-      const pattern = `*${escaped}*`;
+      // prevent breaking the filter expression; the wildcards must
+      // live INSIDE the quoting layer (see the helper's doc).
+      const pattern = escapePostgRESTContainsPattern(search);
       query = query.or(
         `pacware_id.ilike.${pattern},legal_first_name.ilike.${pattern},legal_last_name.ilike.${pattern}`,
       );

@@ -1081,7 +1081,9 @@ dashboard navigates to /patients/{id} on success.
 
 409 with `error: "duplicate_pacware_id"` when the supplied
 Pacware id is already in use — pacware_id is the unique join
-key for CSV imports and may not be reused.
+key for CSV imports and may not be reused. The id itself is
+optional: omit / null / empty when the patient isn't in
+PacWare yet.
 
  * @summary Create a new patient
  */
@@ -1270,11 +1272,15 @@ export function useGetPatient<
 
 /**
  * Partial update of a patient's admin-editable fields:
-`insurancePayer`, `cadenceOverrideDays`, and
+`pacwareId`, `insurancePayer`, `cadenceOverrideDays`, and
 `channelPreference`. Each field is independently optional;
 sending `null` explicitly clears the field, omitting it leaves
 the column unchanged. PHI columns (name, phone, email) are
 NOT writable through this endpoint.
+
+`pacwareId` is the backfill path for patients created before
+PacWare knew them; it must be unique when present, and a
+collision returns 409 `duplicate_pacware_id`.
 
 Supports optional optimistic-concurrency via the
 `expectedUpdatedAt` body field. When supplied, a stale write
@@ -1302,7 +1308,7 @@ export const updatePatient = async (
 
 export const getUpdatePatientMutationOptions = <
   TError = ErrorType<
-    ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+    ConsoleValidationError | AuthError | NotFoundError | StalePatientError | DuplicatePacwareIdError
   >,
   TContext = unknown,
 >(options?: {
@@ -1345,7 +1351,7 @@ export type UpdatePatientMutationResult = NonNullable<
 >;
 export type UpdatePatientMutationBody = BodyType<PatientUpdate>;
 export type UpdatePatientMutationError = ErrorType<
-  ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+  ConsoleValidationError | AuthError | NotFoundError | StalePatientError | DuplicatePacwareIdError
 >;
 
 /**
@@ -1353,7 +1359,7 @@ export type UpdatePatientMutationError = ErrorType<
  */
 export const useUpdatePatient = <
   TError = ErrorType<
-    ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+    ConsoleValidationError | AuthError | NotFoundError | StalePatientError | DuplicatePacwareIdError
   >,
   TContext = unknown,
 >(options?: {

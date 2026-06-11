@@ -147,6 +147,7 @@ export async function streamAdminAssistantMessage(
   const decoder = new TextDecoder();
   let buffer = "";
   let chunksReceived = 0;
+  let sawDone = false;
   let result: {
     offline?: boolean;
     degraded?: boolean;
@@ -185,6 +186,7 @@ export async function streamAdminAssistantMessage(
             chunksReceived += 1;
             onChunk(parsed.text);
           } else if (parsed.type === "done") {
+            sawDone = true;
             result = { offline: parsed.offline, degraded: parsed.degraded };
           }
         }
@@ -201,6 +203,15 @@ export async function streamAdminAssistantMessage(
     reader.releaseLock();
   }
 
+  // The body completed but carried no SSE events at all — e.g. a proxy
+  // or interceptor answered the streaming endpoint with a plain JSON
+  // body. Without this retry the UI would show an empty bubble and a
+  // "degraded" toast despite never asking the JSON endpoint.
+  if (chunksReceived === 0 && !sawDone) {
+    console.warn("[pennpilot] stream carried no events, trying JSON fallback");
+    return fallbackToJson(messages, onChunk, signal);
+  }
+
   return result;
 }
 
@@ -215,7 +226,14 @@ async function fallbackToJson(
   unauthorized?: boolean;
 }> {
   const reply = await postAdminAssistantMessage(messages, signal);
-  if (reply.reply) onChunk(reply.reply);
+  if (reply.reply) {
+    onChunk(reply.reply);
+  } else if (!reply.unauthorized && !reply.rateLimited) {
+    // A 200 with no reply text is abnormal — keep the bubble non-empty
+    // and let the caller surface the degraded toast.
+    onChunk("Sorry, I couldn't come up with an answer. Please try again.");
+    return { ...reply, degraded: true };
+  }
   return {
     offline: reply.offline,
     degraded: reply.degraded,

@@ -71,22 +71,23 @@ export async function loadManualDocumentRow(
 }
 
 /**
- * Render a loaded row to a PDF Buffer. Fetches the document's
+ * Build the renderer input for a loaded row. Fetches the document's
  * signature-tracking code (if any) so the rendered PDF carries the
- * top-right tracking barcode — keeping every channel (download, email,
- * fax, chart copy) byte-identical.
+ * top-right tracking barcode. Shared by the individual render below and
+ * the packet renderer (packet-service.ts) so a document's pages look the
+ * same whether sent alone or inside a packet.
  */
-export async function renderManualDocumentRowToPdf(
+export async function buildManualDocumentPdfInput(
   supabase: SupabaseClient,
   row: ManualDocumentRow,
-  generatedOn: Date = new Date(),
-): Promise<Buffer> {
+  generatedOn: Date,
+): Promise<ManualDocumentPdfInput> {
   const trackingCode = await getTrackingCodeForDocument(
     supabase,
     "manual_document",
     row.id,
   );
-  const input: ManualDocumentPdfInput = {
+  return {
     documentType: row.document_type,
     title: row.title,
     recipient: {
@@ -101,5 +102,17 @@ export async function renderManualDocumentRowToPdf(
     generatedOn,
     trackingCode,
   };
+}
+
+/**
+ * Render a loaded row to a PDF Buffer — keeping every channel (download,
+ * email, fax, chart copy) byte-identical.
+ */
+export async function renderManualDocumentRowToPdf(
+  supabase: SupabaseClient,
+  row: ManualDocumentRow,
+  generatedOn: Date = new Date(),
+): Promise<Buffer> {
+  const input = await buildManualDocumentPdfInput(supabase, row, generatedOn);
   return renderManualDocumentPdf(input);
 }

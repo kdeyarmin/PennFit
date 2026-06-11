@@ -975,6 +975,38 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         });
         return "Thanks! We need to verify your insurance coverage before this ships, so a team member will review and follow up shortly.";
       }
+      if (result.status === "usage_review") {
+        // Continued-use guard held the reship (recent therapy data
+        // shows the device is effectively unused). Do NOT reuse
+        // input.aiReply ("on its way") — it would be wrong. order-flow
+        // already raised a CSR alert; flip the conversation to
+        // awaiting_admin so it lands in the queue.
+        const { error: usageErr } = await supabase
+          .schema("resupply")
+          .from("conversations")
+          .update({ status: "awaiting_admin", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (usageErr) throw usageErr;
+        await safeAudit({
+          action: "messaging.order.blocked_usage_review",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "episodes",
+          targetId: result.episodeId,
+          metadata: {
+            channel: "sms",
+            conversation_id: input.conversationId,
+            patient_id: input.patientId,
+            episode_id: result.episodeId,
+            data_nights: result.usage.dataNights,
+            compliant_nights: result.usage.compliantNights,
+            window_days: result.usage.windowDays,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+        });
+        return "Thanks! A team member will check in with you before this ships — we want to make sure your therapy is going well first.";
+      }
       return "Thanks — we'll review and follow up shortly.";
     }
     case "decline": {

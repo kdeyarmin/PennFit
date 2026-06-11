@@ -104,6 +104,20 @@ router.get(
         .from("inbound_faxes")
         .select("*", { count: "exact", head: true })
         .eq("status", "new"),
+      // Confirmed resupply episodes waiting on a PacWare CSV export —
+      // same definition as the /admin/pacware "ready to sync" banner.
+      // Surfaced as a badge only when the operator has opted into
+      // auto-sync notices (the pacware.auto_sync app_config toggle,
+      // read below), so an operator who runs exports on their own
+      // schedule isn't nagged by a perpetual badge.
+      supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("id, prescriptions!inner(id), patients!inner(id)", {
+          count: "exact",
+          head: true,
+        })
+        .eq("status", "confirmed"),
     ]);
     for (const r of results) {
       if (r.error) throw r.error;
@@ -116,7 +130,24 @@ router.get(
       { count: overdueShop },
       { count: overduePatient },
       { count: newInboundFaxes },
+      { count: pacwareConfirmed },
     ] = results;
+
+    // The auto-sync opt-in lives in app_config as a plain row (see
+    // routes/admin/pacware.ts AUTO_SYNC_KEY). Fail-soft to "off" so a
+    // config-read hiccup zeroes one badge instead of 500ing them all.
+    let pacwareAutoSync = false;
+    const { data: autoSyncRow, error: autoSyncErr } = await supabase
+      .schema("resupply")
+      .from("app_config")
+      .select("value")
+      .eq("key", "pacware.auto_sync")
+      .limit(1)
+      .maybeSingle();
+    if (!autoSyncErr) {
+      pacwareAutoSync =
+        (autoSyncRow as { value?: string } | null)?.value === "true";
+    }
 
     res.json({
       awaitingReplyConversations: awaitingReplyConversations ?? 0,
@@ -125,6 +156,7 @@ router.get(
       overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
       newPatientDocuments: newPatientDocuments ?? 0,
       newInboundFaxes: newInboundFaxes ?? 0,
+      pacwareReadyToSync: pacwareAutoSync ? (pacwareConfirmed ?? 0) : 0,
       serverTime: new Date().toISOString(),
     });
   },

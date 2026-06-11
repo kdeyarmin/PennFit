@@ -1,5 +1,5 @@
-// Four patient-facing self-service sections added in the second
-// 15-phase sprint. Co-located so account.tsx only needs four new
+// Patient-facing self-service sections added in the second
+// 15-phase sprint. Co-located so account.tsx only needs a few new
 // JSX lines + one import.
 //
 //   * EsignFormsSection      — HIPAA NPP / AOB / ABN / Financial
@@ -8,12 +8,10 @@
 //   * ReferralProgramSection — generate referral code + history.
 //   * EquipmentRegistrySection — register a CPAP / device the
 //                                 patient already owns.
-//   * RequestAppointmentSection — request a fitting / telehealth /
-//                                  general appointment.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, FileSignature, Gift, Stethoscope } from "lucide-react";
+import { FileSignature, Gift, Stethoscope } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +23,6 @@ import {
   mintReferral,
   registerSelfEquipment,
   signFormAcknowledgement,
-  submitAppointmentRequest,
 } from "@/lib/account/self-service-api";
 
 // --- E-sign forms ---
@@ -322,105 +319,6 @@ export function EquipmentRegistrySection() {
       {register.isSuccess && (
         <p className="text-xs mt-2 text-emerald-700">
           Equipment registered. Thanks!
-        </p>
-      )}
-    </section>
-  );
-}
-
-// --- Appointment request ---
-
-const APPOINTMENT_TOPICS = [
-  { value: "fitting_help", label: "Mask fitting help" },
-  { value: "telehealth_consult", label: "Telehealth consult" },
-  { value: "billing_question", label: "Billing question" },
-  { value: "general", label: "General question" },
-];
-
-export function RequestAppointmentSection() {
-  const [topic, setTopic] = useState("fitting_help");
-  const [preferredWindow, setPreferredWindow] = useState("");
-  const [notes, setNotes] = useState("");
-  const submit = useMutation({
-    mutationFn: () =>
-      submitAppointmentRequest({
-        topic,
-        preferredWindow: preferredWindow || null,
-        notes: notes || null,
-      }),
-    onSuccess: () => {
-      setPreferredWindow("");
-      setNotes("");
-    },
-  });
-  return (
-    <section className="glass-card rounded-2xl p-6">
-      <header className="flex items-start gap-3 mb-4">
-        <CalendarPlus className="h-5 w-5 mt-0.5 text-muted-foreground" />
-        <div>
-          <h2 className="text-lg font-semibold">Request an appointment</h2>
-          <p className="text-sm text-muted-foreground">
-            Fitting help, a telehealth consult, or a billing question —
-            we&apos;ll reach out to schedule.
-          </p>
-        </div>
-      </header>
-      <div className="space-y-3 mb-3">
-        <div>
-          <Label htmlFor="appt-topic" className="text-xs">
-            Topic
-          </Label>
-          <select
-            id="appt-topic"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            className="w-full h-9 rounded border px-2 text-sm"
-          >
-            {APPOINTMENT_TOPICS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="appt-window" className="text-xs">
-            Preferred time window (optional)
-          </Label>
-          <Input
-            id="appt-window"
-            value={preferredWindow}
-            onChange={(e) => setPreferredWindow(e.target.value)}
-            placeholder="e.g. weekdays after 4pm ET"
-          />
-        </div>
-        <div>
-          <Label htmlFor="appt-notes" className="text-xs">
-            What should the team know? (optional)
-          </Label>
-          <textarea
-            id="appt-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            className="w-full rounded border px-2 py-1.5 text-sm"
-          />
-        </div>
-      </div>
-      <Button
-        size="sm"
-        onClick={() => submit.mutate()}
-        disabled={submit.isPending || submit.isSuccess}
-      >
-        {submit.isSuccess
-          ? "Request sent"
-          : submit.isPending
-            ? "Sending…"
-            : "Send request"}
-      </Button>
-      {submit.isError && (
-        <p className="text-xs mt-2 text-destructive">
-          {(submit.error as Error).message}
         </p>
       )}
     </section>

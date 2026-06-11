@@ -48,7 +48,11 @@ import {
 } from "../lib/queue-options";
 
 const SEND_JOB = "recall-notifications.send";
-const SEND_CRON = "23 4 * * *";
+// 19:23 UTC — 9:23am–3:23pm local across every US timezone. Recalls
+// are safety communications (arguably TCPA-exempt), but a midnight
+// text gets silenced/missed; an afternoon one gets read. The old
+// 04:23 UTC slot was ~midnight ET (app-review 2026-06-10, P1-3).
+const SEND_CRON = "23 19 * * *";
 const BATCH_SIZE = 50;
 // How long a row may sit in the transient 'sending' state before a
 // later sweep assumes the claiming worker died and re-queues it. Must
@@ -72,6 +76,13 @@ interface MessagingConfig {
   twilioPhoneNumber: string | null;
   twilioMessagingServiceSid: string | null;
   practiceName: string;
+  /**
+   * Public origin Twilio uses to call back into us with SMS delivery
+   * status. Same resolution as messaging-config.ts (explicit env var,
+   * falling back to the Railway-injected domain). Null when neither is
+   * set — the send still goes out, just without delivery tracking.
+   */
+  publicBaseUrl: string | null;
 }
 
 /** Read messaging config from env. Returned object has null fields
@@ -91,7 +102,18 @@ export function readRecallMessagingConfig(
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER ?? null,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID ?? null,
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    publicBaseUrl:
+      stripTrailingSlash(
+        env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
+          (env.RAILWAY_PUBLIC_DOMAIN
+            ? `https://${env.RAILWAY_PUBLIC_DOMAIN}`
+            : ""),
+      ) || null,
   };
+}
+
+function stripTrailingSlash(s: string): string {
+  return s.endsWith("/") ? s.slice(0, -1) : s;
 }
 
 /**
@@ -103,6 +125,13 @@ export function readRecallMessagingConfig(
  * audit row.
  */
 export interface RecallNotificationContext {
+  /**
+   * The recall_notifications row id. Baked into the SMS status-callback
+   * URL (which Twilio signs) so the /sms/status-callback webhook can
+   * stamp the delivery outcome back onto this exact row — recall sends
+   * have no conversations/messages row to correlate through.
+   */
+  notificationId: string;
   recall: {
     id: string;
     title: string;
@@ -115,7 +144,12 @@ export interface RecallNotificationContext {
 }
 
 export type SendOutcome =
-  | { kind: "sent"; channel: "email" | "sms" }
+  | {
+      kind: "sent";
+      channel: "email" | "sms";
+      /** Twilio message SID — present only on the SMS channel. */
+      twilioMessageSid: string | null;
+    }
   | { kind: "failed"; channel: "email" | "sms"; reason: string }
   | { kind: "skipped"; reason: string };
 
@@ -156,13 +190,13 @@ export async function sendRecallNotification(
           .join(""),
         text: bodyText,
       });
-      return { kind: "sent", channel: "email" };
+      return { kind: "sent", channel: "email", twilioMessageSid: null };
     } catch (err) {
       // Fall through to SMS — email errored but we'd rather reach
       // the patient than abort.
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err,
           recallId: ctx.recall.id,
         },
         "recall-notifications.send: email failed; trying SMS",
@@ -186,11 +220,25 @@ export async function sendRecallNotification(
       const smsBody = ctx.recall.recallReference
         ? `${cfg.practiceName} recall notice: ${ctx.recall.title}. Manufacturer ref ${ctx.recall.recallReference}. We will contact you with next steps.`
         : `${cfg.practiceName} recall notice: ${ctx.recall.title}. We will contact you with next steps.`;
-      await client.sendSms({
+      // Delivery tracking: recalls are safety communications, so a
+      // carrier-side bounce after Twilio accepts must not be invisible.
+      // The callback correlates by the row id in the (signed) query
+      // string — recall sends have no conversations/messages row.
+      const statusCallbackUrl = cfg.publicBaseUrl
+        ? `${cfg.publicBaseUrl}/resupply-api/sms/status-callback?recallNotificationId=${encodeURIComponent(
+            ctx.notificationId,
+          )}`
+        : undefined;
+      const sent = await client.sendSms({
         to: ctx.patient.phoneE164,
         body: smsBody.slice(0, 320),
+        ...(statusCallbackUrl ? { statusCallbackUrl } : {}),
       });
-      return { kind: "sent", channel: "sms" };
+      return {
+        kind: "sent",
+        channel: "sms",
+        twilioMessageSid: sent.messageSid,
+      };
     } catch (err) {
       return {
         kind: "failed",
@@ -364,6 +412,7 @@ async function runRecallSendSweepInner(
 
     const outcome = await sendRecallNotification(
       {
+        notificationId: row.id,
         recall: {
           id: recall.id,
           title: recall.title,
@@ -396,6 +445,13 @@ async function runRecallSendSweepInner(
           status: "sent",
           channel: outcome.channel,
           notified_at: nowIso,
+          // SMS only. The status callback can land BEFORE this flip and
+          // stamps the same SID itself, so re-writing it here is an
+          // idempotent no-op — but deliberately do NOT touch
+          // delivery_status here, or we'd clobber an early callback.
+          ...(outcome.twilioMessageSid
+            ? { twilio_message_sid: outcome.twilioMessageSid }
+            : {}),
         })
         .eq("id", row.id)
         .eq("status", "sending");

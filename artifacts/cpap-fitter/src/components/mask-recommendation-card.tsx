@@ -39,11 +39,22 @@ export function MaskRecommendationCard({
   details,
   isTopPick,
   onChoose,
+  cashPay,
 }: {
   mask: MaskRecommendation;
   details: MaskEntry | undefined;
   isTopPick: boolean;
   onChoose: () => void;
+  /**
+   * Cash-pay path for this mask, present when it's sold in the shop
+   * and checkout is live. Renders a secondary "buy without insurance"
+   * CTA under the insurance-order button — the fitting funnel's
+   * bridge into the cash-pay shop. Omit to hide.
+   */
+  cashPay?: {
+    priceLabel: string;
+    onAddToCart: () => void;
+  };
 }) {
   const confidencePct = Math.round(mask.confidence * 100);
 
@@ -298,6 +309,24 @@ export function MaskRecommendationCard({
               We'll collect your insurance and shipping info, then send your
               order to PennPaps.
             </p>
+            {cashPay && (
+              <>
+                <Button
+                  onClick={cashPay.onAddToCart}
+                  size="lg"
+                  variant="ghost"
+                  className="w-full mt-3 glass-panel"
+                  data-testid={`button-cashpay-${mask.maskId}`}
+                >
+                  <ShoppingCart className="w-4 h-4 mr-2" />
+                  Buy without insurance — {cashPay.priceLabel}
+                </Button>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Skip the paperwork — ships from the PennPaps shop. HSA/FSA
+                  eligible.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -176,6 +176,7 @@ import webhookSubscriptionsRouter from "./admin/webhook-subscriptions.js";
 import webhookEventCatalogRouter from "./admin/webhook-event-catalog.js";
 import billingDirectorRouter from "./admin/billing-director.js";
 import eligibilityRecentRouter from "./admin/eligibility-recent.js";
+import eligibilityQuickCheckRouter from "./admin/eligibility-quick-check.js";
 import priorAuthQueueRouter from "./admin/prior-auth-queue.js";
 import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
@@ -186,6 +187,7 @@ import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
 import manualDocumentsAdminRouter from "./admin/manual-documents.js";
+import manualDocumentPacketsAdminRouter from "./admin/manual-document-packets.js";
 import webhookDeliveryRetryRouter from "./admin/webhook-delivery-retry.js";
 import dispenseReadinessRouter from "./admin/dispense-readiness.js";
 import conversationsRouter from "./conversations/index.js";
@@ -204,6 +206,8 @@ import rxRequestDocumentRouter from "./rx-request-document.js";
 import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import signatureTrackingRouter from "./admin/signature-tracking.js";
 import voiceRouter from "./voice/index.js";
+import videoVisitsAdminRouter from "./admin/video-visits.js";
+import videoVisitSessionRouter from "./video-visit-session.js";
 
 const router: IRouter = Router();
 
@@ -218,6 +222,15 @@ router.use(shopRouter);
 // handler does its own feature-flag check so a missing env var becomes
 // a clean 503 (or TwiML 503 for vendor-only paths) rather than a 404.
 router.use(voiceRouter);
+// /video-visit/session — public, token-gated lookup the patient's
+// telehealth join page calls before entering a video visit. The admin
+// surface for creating/joining visits is videoVisitsAdminRouter below.
+router.use(videoVisitSessionRouter);
+// /admin/video-visits + /admin/patients/:id/video-visits — telehealth
+// video visits (RT/CSR ↔ patient WebRTC calls for setups and
+// troubleshooting). Signaling WS is wired in index.ts; media is
+// peer-to-peer and never reaches the server.
+router.use(videoVisitsAdminRouter);
 router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Telnyx.
 // The Telnyx webhooks (/fax/inbound, /fax/status-callback) are mounted
@@ -570,6 +583,9 @@ router.use(billingDirectorRouter);
 // eligibility checks (last 30 days by default), feeding the
 // verification team's daily worklist.
 router.use(eligibilityRecentRouter);
+// /admin/billing/eligibility-quick-check — patient-less real-time
+// 270/271 from typed-in subscriber details; persists nothing.
+router.use(eligibilityQuickCheckRouter);
 // /admin/billing/prior-auth-queue — system-wide PA queue grouped
 // by at-risk / missed SLA / awaiting decision / expiring soon /
 // drafts. Source for the admin PA director page.
@@ -605,6 +621,10 @@ router.use(patientPacketsAdminRouter);
 // documents (CMN, prescription, agreement, delivery ticket, fax cover,
 // or free-form). Download / email / fax / file-to-chart.
 router.use(manualDocumentsAdminRouter);
+// /admin/manual-document-packets* — ordered bundles of manual documents
+// rendered as ONE combined PDF (optional cover sheet + each document)
+// and sent as a single email attachment or fax transmission.
+router.use(manualDocumentPacketsAdminRouter);
 // /admin/webhook-deliveries/:id/retry-now — manual re-queue of an
 // exhausted/failed delivery.
 router.use(webhookDeliveryRetryRouter);

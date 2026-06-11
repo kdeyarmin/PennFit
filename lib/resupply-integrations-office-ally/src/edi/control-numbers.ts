@@ -40,6 +40,29 @@ export interface AllocateControlNumbersInput {
  * also reuses the base counter modulo 100000 — there's only ever one
  * ST per submission for us, so collision risk is structural-only.
  */
+/**
+ * Format a PRE-RESERVED ISA13 value into the full control-number set.
+ * Used by the atomic counter-table allocation path
+ * (resupply.control_number_counters, migration 0308): the caller has
+ * already CAS-reserved a unique value, so no previousHighest guard is
+ * needed — formatting is the only job left. Wraps into the 9-digit
+ * field exactly like allocateControlNumbers.
+ */
+export function controlNumbersFromValue(
+  isaValue: number,
+  submittedAt: number,
+): ControlNumbers {
+  const MOD = 1_000_000_000;
+  const isa = ((isaValue % MOD) + MOD) % MOD;
+  const isaStr = String(isa).padStart(9, "0");
+  return {
+    interchangeControlNumber: isaStr,
+    groupControlNumber: String(isa),
+    transactionSetControlNumber: String(isa % 100000).padStart(4, "0"),
+    builtAt: submittedAt,
+  };
+}
+
 export function allocateControlNumbers(
   input: AllocateControlNumbersInput,
 ): ControlNumbers {

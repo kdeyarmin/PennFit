@@ -766,10 +766,15 @@ export async function uploadMyDocument(
   documentType: PatientDocumentType,
   file: File,
 ): Promise<{ id: string }> {
-  const urlRes = await fetch("/resupply-api/shop/me/documents/upload-url", {
+  // Step 1 must go through meFetch: the route sits behind the app-wide
+  // conditional-CSRF gate (requireCsrfWhenSessionOnShopMutations) and the
+  // patient is always cookie-signed-in here, so a fetch without the
+  // X-PF-CSRF header is rejected 403 before a presigned URL is issued.
+  const { uploadURL, objectPath } = await meFetch<{
+    uploadURL: string;
+    objectPath: string;
+  }>("/shop/me/documents/upload-url", {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       documentType,
       filename: file.name,
@@ -777,14 +782,6 @@ export async function uploadMyDocument(
       sizeBytes: file.size,
     }),
   });
-  if (!urlRes.ok) {
-    const body = (await urlRes.json().catch(() => ({}))) as { error?: string };
-    throw new AccountApiError(urlRes.status, body);
-  }
-  const { uploadURL, objectPath } = (await urlRes.json()) as {
-    uploadURL: string;
-    objectPath: string;
-  };
 
   let parsedUpload: URL;
   try {

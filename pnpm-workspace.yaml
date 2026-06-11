@@ -1,7 +1,6 @@
 packages:
   - artifacts/*
   - lib/*
-  - lib/integrations/*
   - scripts
 
 allowBuilds:
@@ -141,7 +140,10 @@ overrides:
   # are intentionally omitted here — pnpm-workspace.yaml already pins
   # them to stricter versions above (esbuild 0.27.3, uuid ^14.0.0).
   ip-address: ">=10.1.1"
-  fast-xml-builder: ">=1.1.7"
+  # (a former `fast-xml-builder` override was removed 2026-06: no package
+  # by that name — or `fast-xml-parser` — exists anywhere in the graph,
+  # so the pin protected nothing. Re-add a CORRECTLY-NAMED override if a
+  # dependency ever pulls an XML parser with an advisory.)
   qs: ">=6.15.2"
   # axios <1.16.1 is vulnerable to Proxy-Authorization header injection via
   # prototype pollution (patch bypass for null-prototype objects). Pin the

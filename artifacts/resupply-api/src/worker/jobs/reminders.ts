@@ -293,7 +293,7 @@ function isWithinQuietHours(now: Date, timezone: string): boolean {
       {
         event: "reminder_tz_fallback",
         bad_timezone: timezone,
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "reminders: unrecognized patient timezone — falling back to America/New_York",
     );

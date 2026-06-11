@@ -107,7 +107,7 @@ Split across two migrations:
   table (auth-user ↔ provider link; `auth_user_id` is a soft reference to
   `resupply_auth.users(id)` enforced in app code, since the migration runner
   lacks cross-schema `REFERENCES` privilege).
-- **`0259_provider_portal_esign_tables.sql`** — ALTERs the lifecycle / MFA
+- **`0297_provider_portal_esign_tables.sql`** — ALTERs the lifecycle / MFA
   columns onto `provider_portal_accounts` (`status`, `mfa_enrolled_at`,
   `last_login_at`, invite/disable audit), then creates the rest:
   - `provider_mfa_secrets`, `provider_mfa_recovery_codes` — provider TOTP.

@@ -101,9 +101,9 @@ export function build270(input: Build270Input): Built270 {
       "00",
       "          ",
       "ZZ",
-      pad(sanitizeElement(input.submitter.etin), 15),
+      padFixedWidth(sanitizeElement(input.submitter.etin), 15),
       "ZZ",
-      pad(sanitizeElement(input.receiver.interchangeId), 15),
+      padFixedWidth(sanitizeElement(input.receiver.interchangeId), 15),
       yymmdd,
       hhmm,
       "^",
@@ -243,6 +243,19 @@ function stripLeadingZeros(value: string): string {
 function pad(value: string, width: number): string {
   return value.length > width ? value.slice(0, width) : value;
 }
+
+/**
+ * ISA06/ISA08 are fixed-width AN(15) elements: exactly 15 chars,
+ * space-padded on the right. The ISA segment is the one segment X12
+ * receivers (and our own parse-segments.ts) parse POSITIONALLY — it
+ * must be exactly 106 bytes with ISA16 at offset 104 — so an unpadded
+ * sender/receiver id shifts every later byte and makes the whole
+ * interchange unparseable at strict intake (TA1-level rejection).
+ */
+function padFixedWidth(value: string, width: number): string {
+  return value.slice(0, width).padEnd(width, " ");
+}
+
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
 }

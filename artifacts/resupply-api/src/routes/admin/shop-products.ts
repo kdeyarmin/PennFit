@@ -1,13 +1,16 @@
 // /admin/shop/products/* — admin tools for the cash-pay catalog.
 //
-// Today this module owns exactly one endpoint: PATCH the stock count
-// on a Stripe Product. The shop catalog reads inventory from
-// `metadata.stock_count` (parsed by lib/stripe/products-meta.ts), so
-// "set the stock count" is "write to Stripe metadata". We deliberately
-// don't introduce a separate inventory table; Stripe stays the single
-// source of truth and an admin editing the value in the Stripe
-// Dashboard directly produces the same on-storefront result as
-// editing it from our admin console.
+// This module owns the catalog mutations: PATCH the stock count /
+// low-stock threshold / price on a Stripe Product, and POST a new SKU.
+// The shop catalog reads inventory from `metadata.stock_count` (parsed
+// by lib/stripe/products-meta.ts), so "set the stock count" is "write
+// to Stripe metadata"; the storefront price is the product's
+// `default_price`, so "edit the price" is "create a new Stripe Price
+// and repoint default_price" (Stripe Prices are immutable). We
+// deliberately don't introduce a separate inventory table; Stripe
+// stays the single source of truth and an admin editing the value in
+// the Stripe Dashboard directly produces the same on-storefront result
+// as editing it from our admin console.
 //
 // Why metadata (not Stripe's catalog inventory feature):
 //   Stripe's hosted "inventory" is part of Stripe Tax / Stripe Terminal
@@ -23,9 +26,12 @@
 //   public catalog uses, so the response payload is byte-identical
 //   to what /shop/products will return on its next cache flush.
 
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type Stripe from "stripe";
+
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -38,13 +44,15 @@ import {
   SHOP_CATEGORIES,
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { invalidateShopProductsCache } from "../shop/products";
 
 const router: IRouter = Router();
 
 // Per-admin rate limit on every catalog mutation (B-07). Each call
-// hits Stripe (products.update / products.create / prices.create) and
-// can fan out a back-in-stock notification, so a compromised account
+// hits Stripe (products.update / products.create / prices.create /
+// prices.update) and can fan out a back-in-stock notification, so a compromised account
 // looping on the endpoint can both burn Stripe quota and spam
 // subscribers. 30/hour per-admin covers legitimate catalog work
 // without bounding ops review or onboarding bursts. Keyed by
@@ -77,6 +85,17 @@ const patchThresholdBodySchema = z.object({
     .describe(
       "Integer ≥0, or null to clear the threshold (storefront uses default of 5).",
     ),
+});
+
+// New storefront price in whole-dollar cents. Bounds mirror the
+// create endpoint's unitAmountCents: Stripe's $0.50 minimum charge
+// and a $100,000 sanity cap.
+const patchPriceBodySchema = z.object({
+  unitAmountCents: z
+    .number()
+    .int()
+    .min(50, "Stripe minimum charge is $0.50")
+    .max(10_000_000),
 });
 
 router.patch(
@@ -149,10 +168,7 @@ router.patch(
         return;
       }
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe retrieve failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -196,10 +212,7 @@ router.patch(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe update failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -250,11 +263,13 @@ router.patch(
         productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
         priceLabel,
       }).catch((err) => {
+        // Not a Stripe failure (the dispatch path is DB + email), so
+        // the categorized Stripe fields don't apply — log the error
+        // OBJECT: the logger's serializer keeps the error class while
+        // its redaction blanks the free-text message/stack
+        // (lib/logger.ts). The helper logs its own detailed outcome.
         req.log?.warn?.(
-          {
-            productId,
-            err: err instanceof Error ? err.message : String(err),
-          },
+          { productId, err },
           "shop/admin/products: back-in-stock dispatch threw",
         );
       });
@@ -321,10 +336,7 @@ router.patch(
         return;
       }
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe retrieve failed (threshold)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -355,10 +367,7 @@ router.patch(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe update failed (threshold)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -378,6 +387,433 @@ router.patch(
       "shop/admin/products: low-stock threshold updated",
     );
     res.json({ product: projected });
+  },
+);
+
+// PATCH /admin/shop/products/:productId/price — change the storefront
+// price of an existing SKU.
+//
+// Stripe Prices are immutable (unit_amount can never change on an
+// existing Price object), so "edit the price" is a three-step write:
+//   1. create a new one-time Price at the new amount (same currency)
+//   2. repoint the product's `default_price` at it — this is the
+//      moment the storefront (and checkout validation) switch over
+//   3. archive the old default Price (hygiene; in-flight carts that
+//      still hold the old price id are already rejected by
+//      validate-cart's "must equal default_price" rule, archiving
+//      just makes the rejection reason cleaner)
+// The order matters: Stripe refuses to archive a Price that is still
+// a product's default_price, so the repoint must land first.
+//
+// Subscribe & Save: v1 policy is "subscription price == one-time
+// price" (no modeled discount — see products-meta.ts). When the SKU
+// has active recurring Price(s), we mirror the storefront-selected
+// one (cheapest active, id tie-break — same rule as validate-cart)
+// onto a new recurring Price at the new amount and archive the old
+// ones. Existing subscriptions are NOT touched: archiving a Price
+// only prevents new use; Stripe keeps billing current subscribers on
+// the price they signed up at.
+//
+// Failure posture mirrors the create endpoint: nothing before the
+// default_price repoint has visible effect (a non-default price is
+// not purchasable), and every step after it is best-effort hygiene —
+// logged, never fatal — so a partial failure can't leave the SKU in
+// a worse state than "old price object still active but unused".
+router.patch(
+  "/admin/shop/products/:productId/price",
+  requirePermission("admin.tools.manage"),
+  adminProductMutationLimiter,
+  async (req, res) => {
+    const productId = String(req.params.productId ?? "");
+    if (!productId.startsWith("prod_")) {
+      res.status(400).json({ error: "invalid_product_id" });
+      return;
+    }
+    const parsed = patchPriceBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { unitAmountCents } = parsed.data;
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    // Catalog-membership guard — same fence as the stock/threshold
+    // handlers. Also gives us the current default price (id, amount,
+    // currency) that steps 1–3 below need.
+    let existing;
+    try {
+      existing = await stripe.products.retrieve(productId, {
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      if (status === 404) {
+        res.status(404).json({ error: "product_not_found" });
+        return;
+      }
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe retrieve failed (price)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_retrieve_failed",
+      });
+      return;
+    }
+    const existingProjected: ShopProductView | null = projectProduct(existing);
+    if (!existingProjected) {
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+
+    const previousPrice = existingProjected.price;
+    if (previousPrice.unitAmount === unitAmountCents) {
+      // Idempotent no-op: saving the already-current amount must not
+      // churn out duplicate Price objects in Stripe.
+      res.json({ product: existingProjected });
+      return;
+    }
+
+    // Step 1 — new one-time price at the new amount. Currency follows
+    // the existing default price so a non-USD catalog round-trips.
+    let newPrice: { id: string };
+    try {
+      newPrice = await stripe.prices.create({
+        product: productId,
+        unit_amount: unitAmountCents,
+        currency: previousPrice.currency,
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe create price failed (price unchanged)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_price_create_failed",
+      });
+      return;
+    }
+
+    // Step 2 — repoint default_price. This is the commit point: once
+    // it lands, the storefront's next cache flush serves the new
+    // price and checkout only accepts it.
+    let updated;
+    try {
+      updated = await stripe.products.update(productId, {
+        default_price: newPrice.id,
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { productId, newPriceId: newPrice.id, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe set default_price failed (price edit; orphaned price)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_set_default_price_failed",
+        productId,
+      });
+      return;
+    }
+
+    // The repoint is live in Stripe — drop the public catalog's
+    // in-process cache so the storefront's next request serves the
+    // new price immediately, instead of spending the rest of the 60s
+    // TTL building carts against the replaced price id that checkout
+    // validation is now rejecting.
+    invalidateShopProductsCache();
+
+    // Step 3 — archive the previous default price. Best-effort: a
+    // failure leaves an unused-but-active price object behind, which
+    // validate-cart already refuses to sell.
+    try {
+      await stripe.prices.update(previousPrice.id, { active: false });
+    } catch (err) {
+      req.log?.warn?.(
+        { productId, priceId: previousPrice.id, ...stripeErrLogFields(err) },
+        "shop/admin/products: archive of replaced default price failed",
+      );
+    }
+
+    // Subscribe & Save rotation. Best-effort end to end: the one-time
+    // price is already switched, so the worst outcome of a failure
+    // here is a stale subscription price (logged loudly below) that
+    // the operator can fix in the Stripe Dashboard.
+    let recurringRotated = false;
+    try {
+      const recurringList = await stripe.prices.list({
+        product: productId,
+        active: true,
+        type: "recurring",
+        limit: 100,
+      });
+      const oldRecurring = recurringList.data;
+      if (oldRecurring.length > 0) {
+        // Mirror the cadence of the price the storefront actually
+        // surfaces: cheapest active recurring, id tie-break — the
+        // exact selection rule in validate-cart.ts / shop products.
+        const mirrored = oldRecurring
+          .filter((p) => p.unit_amount != null && p.recurring)
+          .reduce<Stripe.Price | null>((best, p) => {
+            if (!best) return p;
+            const pa = p.unit_amount ?? Infinity;
+            const ba = best.unit_amount ?? Infinity;
+            if (pa !== ba) return pa < ba ? p : best;
+            return p.id < best.id ? p : best;
+          }, null);
+        if (mirrored?.recurring) {
+          const newRecurring = await stripe.prices.create({
+            product: productId,
+            unit_amount: unitAmountCents,
+            currency: previousPrice.currency,
+            recurring: {
+              interval: mirrored.recurring.interval,
+              interval_count: mirrored.recurring.interval_count ?? 1,
+            },
+          });
+          // Only retire the old recurring prices once the replacement
+          // exists — otherwise the SKU would lose its Subscribe toggle
+          // entirely on a mid-flight failure.
+          for (const old of oldRecurring) {
+            if (old.id === newRecurring.id) continue;
+            try {
+              await stripe.prices.update(old.id, { active: false });
+            } catch (err) {
+              req.log?.warn?.(
+                { productId, priceId: old.id, ...stripeErrLogFields(err) },
+                "shop/admin/products: archive of replaced recurring price failed",
+              );
+            }
+          }
+          recurringRotated = true;
+          // The catalog's recurringPrice projection changed as well —
+          // a GET that landed between the repoint-invalidate above
+          // and this rotation may have cached the old recurring
+          // price, so drop the cache again.
+          invalidateShopProductsCache();
+        }
+      }
+    } catch (err) {
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: recurring price rotation failed — subscription price is now stale vs one-time",
+      );
+    }
+
+    const projected: ShopProductView | null = projectProduct(updated);
+    if (!projected) {
+      res.status(422).json({ error: "unprojectable_product" });
+      return;
+    }
+
+    req.log?.info?.(
+      {
+        productId,
+        previousUnitAmountCents: previousPrice.unitAmount,
+        unitAmountCents,
+        recurringRotated,
+      },
+      "shop/admin/products: price updated",
+    );
+    res.json({ product: projected });
+  },
+);
+
+// POST /admin/shop/products/image-upload — upload a product photo and
+// get back a public HTTPS URL ready to paste into the create form (or
+// pass straight through as `imageUrl` on POST /admin/shop/products).
+//
+// Why this exists: the create endpoint accepts only an already-hosted
+// HTTPS URL (Stripe fetches `images[]` server-side), which made "add a
+// new item" a two-system chore — host the image somewhere public, then
+// fill the form. This endpoint closes that gap by writing the bytes to
+// the PUBLIC Supabase Storage bucket (`SUPABASE_STORAGE_BUCKET_PUBLIC`)
+// and returning the bucket's public object URL, which Stripe can fetch.
+//
+// Deliberately NOT the private-bucket signed-PUT flow the POD /
+// prescription uploads use: those are PHI and must stay private; a
+// product photo is a public marketing asset, and Stripe needs to be
+// able to GET it without a token. No ACL row is written — the public
+// bucket is public by definition.
+//
+// Validation: content-type allowlist (png/jpeg/webp — the formats the
+// storefront cards render), 5 MB cap, and a magic-byte sniff so a
+// renamed non-image can't land in a public bucket under an image
+// content type.
+//
+// Failure posture: fail-soft on config. When the public bucket env is
+// unset the route 503s with `public_storage_not_configured`; the admin
+// form keeps its paste-a-URL fallback, so nothing is lost in
+// environments without the bucket.
+
+const IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+const IMAGE_UPLOAD_EXTENSIONS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+function sniffImageContentType(buf: Buffer): string | null {
+  // Defensive re-guard: callers pass request-derived bytes, and the
+  // length/index checks below must never run against an
+  // attacker-shaped array or string (CodeQL js/type-confusion-
+  // through-parameter-tampering).
+  if (!Buffer.isBuffer(buf)) {
+    return null;
+  }
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    buf.length >= 3 &&
+    buf[0] === 0xff &&
+    buf[1] === 0xd8 &&
+    buf[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+  if (
+    buf.length >= 12 &&
+    buf.toString("ascii", 0, 4) === "RIFF" &&
+    buf.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+// Separate limiter from the catalog mutations: uploads don't touch
+// Stripe, and a fumbled photo session (wrong crop, retry, retry)
+// shouldn't eat the operator's 30/hour product-mutation budget.
+const adminProductImageUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_shop_product_image_upload",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+
+router.post(
+  "/admin/shop/products/image-upload",
+  requirePermission("admin.tools.manage"),
+  adminProductImageUploadLimiter,
+  // Route-level raw parser: the global express.json() skips non-JSON
+  // content types, so the image bytes arrive here untouched. Types
+  // outside the allowlist are left unparsed and rejected below.
+  express.raw({
+    type: Object.keys(IMAGE_UPLOAD_EXTENSIONS),
+    limit: IMAGE_UPLOAD_MAX_BYTES,
+  }),
+  async (req, res) => {
+    const declaredType = (req.get("content-type") ?? "")
+      .split(";")[0]!
+      .trim()
+      .toLowerCase();
+    const extension = IMAGE_UPLOAD_EXTENSIONS[declaredType];
+    if (!extension) {
+      res.status(415).json({
+        error: "unsupported_image_type",
+        supported: Object.keys(IMAGE_UPLOAD_EXTENSIONS),
+      });
+      return;
+    }
+    // Narrow the parsed body through an explicit Buffer guard ONCE
+    // and use only the narrowed value below. express.raw leaves
+    // req.body as `{}` for unmatched content types, and a tampered
+    // request can present other shapes — never run length/index
+    // checks against raw req.body.
+    const rawBody: unknown = req.body;
+    if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+      res.status(400).json({ error: "empty_body" });
+      return;
+    }
+    // Copy into a fresh Buffer rather than aliasing the request body.
+    // Belt-and-braces detachment from the request object (and it makes
+    // the value provably a Buffer to static analysis — CodeQL's
+    // type-confusion query doesn't model Buffer.isBuffer as a type
+    // guard, so length/index reads on the aliased body keep alerting).
+    // At a 5 MB cap on an admin-only route the one-time copy is noise.
+    const imageBytes: Buffer = Buffer.from(rawBody);
+    const sniffed = sniffImageContentType(imageBytes);
+    if (sniffed !== declaredType) {
+      // The bytes don't match the declared format — refuse to plant
+      // mystery content in a public bucket.
+      res.status(400).json({ error: "image_bytes_mismatch" });
+      return;
+    }
+
+    const bucket = (process.env.SUPABASE_STORAGE_BUCKET_PUBLIC ?? "").trim();
+    if (!bucket) {
+      res.status(503).json({ error: "public_storage_not_configured" });
+      return;
+    }
+
+    const objectPath = `shop-products/${randomUUID()}.${extension}`;
+    const supabase = getSupabaseServiceRoleClient();
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(objectPath, imageBytes, {
+        contentType: declaredType,
+        // Product images are content-addressed by UUID — a replaced
+        // photo gets a fresh path, so long-lived caching is safe.
+        cacheControl: "31536000",
+        upsert: false,
+      });
+    if (uploadError) {
+      req.log?.warn?.(
+        { sizeBytes: imageBytes.length, contentType: declaredType },
+        "shop/admin/products: image upload to public bucket failed",
+      );
+      res.status(502).json({ error: "image_upload_failed" });
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(objectPath);
+    const imageUrl = publicUrlData?.publicUrl ?? null;
+    if (!imageUrl) {
+      res.status(502).json({ error: "image_upload_failed" });
+      return;
+    }
+
+    req.log?.info?.(
+      { sizeBytes: imageBytes.length, contentType: declaredType },
+      "shop/admin/products: product image uploaded",
+    );
+    res.status(201).json({ imageUrl });
   },
 );
 
@@ -401,13 +837,13 @@ router.patch(
 //   query quoting issues entirely.
 //
 // Image handling:
-//   The MVP accepts a single optional HTTPS URL (passed through to
-//   Stripe `images[]`). We deliberately do NOT operate an image
-//   upload service in this slice — ADR 008/010 explicitly chose
-//   "no S3, no cache" for this product. Operators paste a CDN URL
-//   (or a https://app.pennpaps.com/products/<slug>.webp path that
-//   exists in the cpap-fitter public dir). Object storage is on
-//   the W4 backlog if/when that constraint changes.
+//   Accepts a single optional HTTPS URL (passed through to Stripe
+//   `images[]`). Operators can either paste a CDN URL (or a
+//   https://app.pennpaps.com/products/<slug>.webp path that exists
+//   in the cpap-fitter public dir), or upload a photo via
+//   POST /admin/shop/products/image-upload above, which stores the
+//   bytes in the public Supabase bucket and returns a URL ready to
+//   use here.
 //
 // Authorization:
 //   requireAdmin — agents can add products. Adding a SKU is not a
@@ -548,10 +984,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe search failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -607,10 +1040,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe create product failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -633,11 +1063,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId: product.id,
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId: product.id, sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe create price failed (product orphaned)",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({
@@ -667,11 +1093,7 @@ router.post(
         recurringPriceId = recurring.id;
       } catch (err) {
         req.log?.warn?.(
-          {
-            productId: product.id,
-            sku: input.sku,
-            err: err instanceof Error ? err.message : String(err),
-          },
+          { productId: product.id, sku: input.sku, ...stripeErrLogFields(err) },
           "shop/admin/products: recurring price create failed (one-time price still set)",
         );
         // Continue — the product is usable as a one-time SKU.
@@ -692,11 +1114,7 @@ router.post(
           ? (err as { statusCode: number }).statusCode
           : 502;
       req.log?.warn?.(
-        {
-          productId: product.id,
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { productId: product.id, sku: input.sku, ...stripeErrLogFields(err) },
         "shop/admin/products: stripe set default_price failed",
       );
       res.status(status >= 400 && status < 600 ? status : 502).json({

@@ -1,6 +1,15 @@
 // PATCH /patients/:id — admin-editable settings.
 //
 // Updates these admin-managed fields:
+//   - pacwareId               (PacWare account number, ≤ 64 chars, or
+//                             null to clear — nullable since migration
+//                             0303. The backfill path for patients
+//                             created before PacWare knew them: set it
+//                             here once the account exists so roster
+//                             imports correlate instead of inserting a
+//                             duplicate. Unique when present; a
+//                             collision returns 409
+//                             `duplicate_pacware_id`.)
 //   - insurance_payer        (free text, ≤ 120 chars)
 //   - cadence_override_days  (positive integer, or null to clear)
 //   - channel_preference     (sms | email | voice, or null to clear)
@@ -60,6 +69,17 @@ const ISO_TIMESTAMP_RE =
 // accept and ignore them.
 const bodySchema = z
   .object({
+    // NB: the transform must map ONLY "" → null (not undefined → null):
+    // an omitted key has to stay undefined so the `"pacwareId" in body`
+    // check below leaves the column alone — otherwise every unrelated
+    // settings PATCH would silently clear the id.
+    pacwareId: z
+      .string()
+      .trim()
+      .max(64)
+      .nullable()
+      .optional()
+      .transform((v) => (v === "" ? null : v)),
     insurancePayer: z
       .string()
       .trim()
@@ -121,6 +141,7 @@ router.patch(
     // `expectedUpdatedAt` is a precondition, not a column — it never
     // lands in `updates`.
     const updates: PatientsUpdate = {};
+    if ("pacwareId" in body) updates.pacware_id = body.pacwareId ?? null;
     if ("insurancePayer" in body)
       updates.insurance_payer = body.insurancePayer ?? null;
     if ("cadenceOverrideDays" in body)
@@ -197,7 +218,24 @@ router.patch(
     }
     const { data: result, error: updErr } =
       await updateQuery.select("id, updated_at");
-    if (updErr) throw updErr;
+    if (updErr) {
+      // Unique-violation on patients_pacware_id_unique → 409, mirroring
+      // POST /patients. Both the SQLSTATE and the constraint/column
+      // mention are checked so a future unique index on another column
+      // isn't misreported as a duplicate PacWare id.
+      if (
+        updErr.code === "23505" &&
+        (/patients_pacware_id_unique/.test(updErr.message ?? "") ||
+          /pacware_id/.test(updErr.details ?? ""))
+      ) {
+        res.status(409).json({
+          error: "duplicate_pacware_id",
+          message: `Pacware id "${body.pacwareId}" is already in use.`,
+        });
+        return;
+      }
+      throw updErr;
+    }
 
     if (!result || result.length === 0) {
       if (expectedUpdatedAt) {

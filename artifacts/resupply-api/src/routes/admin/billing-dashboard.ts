@@ -50,13 +50,7 @@ router.get(
       now - FULFILLMENT_TO_BILL_DAYS * 24 * 3600 * 1000,
     ).toISOString();
 
-    const [
-      { data: drafts },
-      { data: denied },
-      { data: stuck },
-      { data: partialEras },
-      { data: recentFulfillments },
-    ] = await Promise.all([
+    const results = await Promise.all([
       supabase
         .schema("resupply")
         .from("insurance_claims")
@@ -104,6 +98,22 @@ router.get(
         .order("shipped_at", { ascending: false })
         .limit(200),
     ]);
+    // Surface query failures instead of rendering an "all clear"
+    // dashboard: with only `data` destructured, any PostgREST error
+    // (exposed-schema/permission/network) silently became "zero
+    // drafts, zero denials, zero stuck claims" — hiding real billing
+    // work. Same bug class the ai-billing-queue / inbox-counts fixes
+    // call out in their comments.
+    for (const r of results) {
+      if (r.error) throw r.error;
+    }
+    const [
+      { data: drafts },
+      { data: denied },
+      { data: stuck },
+      { data: partialEras },
+      { data: recentFulfillments },
+    ] = results;
 
     // Filter fulfillments to "no claim yet". One batched lookup of every
     // fulfillment that already has a claim, instead of a count query per

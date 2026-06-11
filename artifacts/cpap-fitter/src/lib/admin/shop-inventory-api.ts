@@ -213,6 +213,97 @@ export async function patchShopProductThreshold(
   };
 }
 
+// PATCH the storefront price via the price-rotation endpoint
+// (Stripe Prices are immutable, so the server creates a new Price
+// and repoints default_price; any Subscribe & Save price is rotated
+// to match). Mirrors `patchShopProductStock` exactly: same auth
+// bridge, same 503 handling, same row-shape contract.
+export async function patchShopProductPrice(
+  productId: string,
+  unitAmountCents: number,
+): Promise<InventoryProductRow> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/products/${encodeURIComponent(productId)}/price`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...csrfHeader(),
+      },
+      body: JSON.stringify({ unitAmountCents }),
+    },
+  );
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "PATCH", url: res.url });
+  }
+  const json = (await res.json()) as {
+    product: {
+      id: string;
+      name: string;
+      category: string;
+      price?: {
+        unitAmount?: number | null;
+        amount?: number | null;
+        currency: string | null;
+      };
+      stockCount?: number | null;
+      lowStockThreshold?: number | null;
+    };
+  };
+  return {
+    id: json.product.id,
+    name: json.product.name,
+    category: json.product.category,
+    priceCents:
+      json.product.price?.unitAmount ?? json.product.price?.amount ?? null,
+    currency: json.product.price?.currency ?? null,
+    stockCount: json.product.stockCount ?? null,
+    lowStockThreshold: json.product.lowStockThreshold ?? null,
+  };
+}
+
+// Parse an admin-typed dollar amount ("19.99", "$1299", "49.5") into
+// the API's `unitAmountCents` contract. String math (not parseFloat *
+// 100) so amounts like 4.015 can never round through float error.
+// Bounds mirror the server schema: $0.50 Stripe minimum, $100,000 cap.
+export function parsePriceDraftToCents(
+  draft: string,
+): { ok: true; cents: number } | { ok: false; reason: string } {
+  const trimmed = draft.trim().replace(/^\$/, "").replace(/,/g, "");
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(trimmed);
+  if (!match) {
+    return { ok: false, reason: "Enter a dollar amount like 19.99." };
+  }
+  const dollars = parseInt(match[1]!, 10);
+  const centsPart = match[2] ? match[2].padEnd(2, "0") : "00";
+  const cents = dollars * 100 + parseInt(centsPart, 10);
+  if (cents < 50) {
+    return { ok: false, reason: "Minimum price is $0.50 (Stripe minimum)." };
+  }
+  if (cents > 10_000_000) {
+    return { ok: false, reason: "Maximum price is $100,000." };
+  }
+  return { ok: true, cents };
+}
+
+// Render cents as the plain-dollars draft string the price input
+// edits ("1999" → "19.99"). Inverse of parsePriceDraftToCents for
+// every in-bounds value, so an untouched input is never "dirty".
+export function centsToPriceDraft(cents: number | null): string {
+  if (cents == null) return "";
+  return (cents / 100).toFixed(2);
+}
+
 // Bulk stock-count save (A4). Implemented as parallel PATCH calls
 // against the existing single-SKU endpoint — Stripe's API is the
 // rate-limit ceiling, and at ~30 SKUs the worst case is well under
@@ -257,6 +348,64 @@ export class InventoryUnavailableError extends Error {
     super(reason);
     this.name = "InventoryUnavailableError";
   }
+}
+
+// 503 from the image-upload endpoint: the deployment has no public
+// Supabase Storage bucket (`SUPABASE_STORAGE_BUCKET_PUBLIC` unset).
+// The Add Product form catches this and tells the operator to paste
+// an already-hosted HTTPS URL instead — the create flow still works.
+export class PublicStorageUnavailableError extends Error {
+  constructor() {
+    super("public_storage_not_configured");
+    this.name = "PublicStorageUnavailableError";
+  }
+}
+
+// Allowlist + cap mirror the server's image-upload route
+// (artifacts/resupply-api/src/routes/admin/shop-products.ts). Checked
+// client-side too so the operator gets instant feedback instead of a
+// round-trip 415/413.
+export const PRODUCT_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+export const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+// POST /admin/shop/products/image-upload — raw image bytes in, public
+// HTTPS URL out. The returned URL is ready to use as `imageUrl` on
+// `createShopProduct` (Stripe fetches it server-side at create time).
+export async function uploadShopProductImage(file: File): Promise<string> {
+  const res = await fetch("/resupply-api/admin/shop/products/image-upload", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": file.type,
+      ...csrfHeader(),
+    },
+    body: file,
+  });
+  if (res.status === 503) {
+    throw new PublicStorageUnavailableError();
+  }
+  if (!res.ok) {
+    let detail = `Upload failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error === "unsupported_image_type") {
+        detail = "Unsupported image type — use PNG, JPEG, or WebP.";
+      } else if (body.error === "image_bytes_mismatch") {
+        detail = "File contents don't match the image type.";
+      } else if (body.error) {
+        detail = body.error;
+      }
+    } catch {
+      // non-JSON error body — status-only message is enough
+    }
+    throw new Error(detail);
+  }
+  const json = (await res.json()) as { imageUrl: string };
+  return json.imageUrl;
 }
 
 // SKU collision error surfaced by `createShopProduct`. The API

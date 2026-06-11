@@ -242,7 +242,7 @@ router.post(
         // Audit-relevant but non-fatal. Log structurally only — no
         // measurement values, no customer id (treat logs as world-readable).
         logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
+          { err },
           "Failed to mirror facial measurements onto shop_customers (continuing)",
         );
       }
@@ -325,7 +325,7 @@ router.post(
         logger.warn(
           {
             event: "fitter-order.concierge-sms.failed",
-            err: err instanceof Error ? err.message : String(err),
+            err,
             orderReference: result.orderReference,
           },
           "fitter order: concierge-sms send failed (non-fatal)",
@@ -367,7 +367,7 @@ router.post(
       } catch (err) {
         logger.warn(
           {
-            err: err instanceof Error ? err.message : String(err),
+            err,
             orderReference: result.orderReference,
           },
           "fitter order: confirmation-email threw (non-fatal)",

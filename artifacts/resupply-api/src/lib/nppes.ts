@@ -83,13 +83,64 @@ export interface NppesProviderProjection {
   } | null;
 }
 
+/**
+ * Why the lookup failed, for the route to log and to translate into
+ * an operator-facing message. "http" carries `upstreamStatus` — the
+ * single most useful diagnostic when the registry's CDN/WAF starts
+ * rejecting our egress IP or request shape (it answers "is NPPES
+ * down, or is it refusing *us*?" straight from the admin UI).
+ */
+export type NppesLookupFailureKind =
+  | "invalid_npi"
+  | "network"
+  | "timeout"
+  | "http"
+  | "parse";
+
 export class NppesLookupError extends Error {
+  public readonly kind: NppesLookupFailureKind;
+  public readonly upstreamStatus?: number;
+  public readonly cause?: unknown;
+
   constructor(
     message: string,
-    public readonly cause?: unknown,
+    opts: {
+      kind?: NppesLookupFailureKind;
+      upstreamStatus?: number;
+      cause?: unknown;
+    } = {},
   ) {
     super(message);
     this.name = "NppesLookupError";
+    this.kind = opts.kind ?? "network";
+    this.upstreamStatus = opts.upstreamStatus;
+    this.cause = opts.cause;
+  }
+}
+
+/**
+ * Operator-facing description of a lookup failure. Shown verbatim in
+ * the Add Provider modal, so it must be actionable for a CSR (what to
+ * do now) while still carrying the one fact an engineer needs (the
+ * upstream HTTP status). Never includes internals beyond that status.
+ */
+export function nppesFailurePublicMessage(err: NppesLookupError): string {
+  const manualFallback =
+    "Fill out the provider manually, or try the lookup again later.";
+  switch (err.kind) {
+    case "http": {
+      const status =
+        err.upstreamStatus != null ? ` (HTTP ${err.upstreamStatus})` : "";
+      return `The NPPES registry rejected the request${status}. ${manualFallback}`;
+    }
+    case "timeout":
+      return `The NPPES registry did not respond in time. ${manualFallback}`;
+    case "parse":
+      return `The NPPES registry returned an unexpected response. ${manualFallback}`;
+    case "invalid_npi":
+      return "That NPI is not a valid 10-digit number.";
+    default:
+      return `Could not reach the NPPES registry. ${manualFallback}`;
   }
 }
 
@@ -108,7 +159,9 @@ export async function lookupNpi(
   opts: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<NppesProviderProjection | null> {
   if (!/^\d{10}$/.test(npi)) {
-    throw new NppesLookupError(`Invalid NPI format: ${npi}`);
+    throw new NppesLookupError(`Invalid NPI format: ${npi}`, {
+      kind: "invalid_npi",
+    });
   }
 
   const timeoutMs = opts.timeoutMs ?? 5_000;
@@ -120,23 +173,45 @@ export async function lookupNpi(
   try {
     res = await fetchFn(
       `https://npiregistry.cms.hhs.gov/api/?version=2.1&number=${npi}`,
-      { signal: controller.signal },
+      {
+        signal: controller.signal,
+        // NPPES sits behind CloudFront + WAF, and Node's fetch (undici)
+        // sends NO User-Agent by default — a common WAF block target.
+        // Identify ourselves explicitly so the request doesn't look
+        // like an anonymous scraper.
+        headers: {
+          accept: "application/json",
+          "user-agent": "PennFit-Resupply/1.0 (+https://pennpaps.com)",
+        },
+      },
     );
   } catch (err) {
-    throw new NppesLookupError("NPPES lookup failed (network)", err);
+    const timedOut = controller.signal.aborted;
+    throw new NppesLookupError(
+      timedOut
+        ? `NPPES lookup timed out after ${timeoutMs}ms`
+        : "NPPES lookup failed (network)",
+      { kind: timedOut ? "timeout" : "network", cause: err },
+    );
   } finally {
     clearTimeout(timer);
   }
 
   if (!res.ok) {
-    throw new NppesLookupError(`NPPES lookup failed (HTTP ${res.status})`);
+    throw new NppesLookupError(`NPPES lookup failed (HTTP ${res.status})`, {
+      kind: "http",
+      upstreamStatus: res.status,
+    });
   }
 
   let json: NppesResponse;
   try {
     json = (await res.json()) as NppesResponse;
   } catch (err) {
-    throw new NppesLookupError("NPPES response not JSON", err);
+    throw new NppesLookupError("NPPES response not JSON", {
+      kind: "parse",
+      cause: err,
+    });
   }
 
   if (json.result_count === 0 || !json.results || json.results.length === 0) {

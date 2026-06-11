@@ -96,7 +96,15 @@ export type PacwareSyncTarget = "patients" | "resupply-due";
 export interface PacwareSyncPreview {
   target: "patient_roster" | "resupply_due";
   status?: string;
+  /** Rows the downloaded CSV will contain. */
   count: number;
+  /**
+   * resupply_due only: due items withheld from the worklist because the
+   * patient has no PacWare account number yet (a blank account line
+   * can't be keyed into PacWare order entry). Backfill the id on the
+   * patient page, then sync again.
+   */
+  withheldMissingPacwareId?: number;
   sample: Array<Record<string, string | number | null>>;
 }
 
