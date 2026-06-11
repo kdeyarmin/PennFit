@@ -2722,6 +2722,28 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0306: append-only history of permanent template edits
+      // (saves and reverts), enabling view + one-click restore of any
+      // prior revision.
+      patient_packet_template_revisions: {
+        Row: {
+          id: string;
+          document_key: string;
+          action: "saved" | "reverted";
+          revision: number | null;
+          title: string | null;
+          sections: Json | null;
+          changed_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_packet_template_revisions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_packet_template_revisions"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0301: permanent operator edits to the built-in patient
       // packet document templates. One row per document key; deleting the
       // row reverts to the code default.

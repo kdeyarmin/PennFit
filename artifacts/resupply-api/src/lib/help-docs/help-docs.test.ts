@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CUSTOMER_SERVICE_MANUAL_FILENAME,
   PATIENT_HELP_DOCS,
   buildInviteHelpAttachments,
+  loadCustomerServiceManual,
   staffHelpDocs,
   __clearHelpDocCache,
+  __clearManualCache,
 } from "./index";
 
 beforeEach(() => {
   __clearHelpDocCache();
+  __clearManualCache();
 });
 
 describe("staffHelpDocs", () => {
@@ -48,7 +52,7 @@ describe("buildInviteHelpAttachments", () => {
     expect(a.content.length).toBeGreaterThan(500);
   });
 
-  it("renders both admin staff docs", async () => {
+  it("renders both admin staff docs plus the customer service manual", async () => {
     const attachments = await buildInviteHelpAttachments({
       kind: "staff",
       role: "admin",
@@ -56,6 +60,7 @@ describe("buildInviteHelpAttachments", () => {
     expect(attachments.map((a) => a.filename)).toEqual([
       "PennPaps-Team-Getting-Started.pdf",
       "PennPaps-Administrator-Guide.pdf",
+      CUSTOMER_SERVICE_MANUAL_FILENAME,
     ]);
     for (const a of attachments) {
       expect(a.contentType).toBe("application/pdf");
@@ -63,14 +68,27 @@ describe("buildInviteHelpAttachments", () => {
     }
   });
 
-  it("renders a single doc for a non-admin staff role", async () => {
+  it("gives a non-admin staff role the guide plus the manual", async () => {
     const attachments = await buildInviteHelpAttachments({
       kind: "staff",
       role: "csr",
     });
     expect(attachments.map((a) => a.filename)).toEqual([
       "PennPaps-Team-Getting-Started.pdf",
+      CUSTOMER_SERVICE_MANUAL_FILENAME,
     ]);
+  });
+
+  it("does not attach the manual to patient or provider invites", async () => {
+    for (const audience of [
+      { kind: "patient" } as const,
+      { kind: "provider" } as const,
+    ]) {
+      const attachments = await buildInviteHelpAttachments(audience);
+      expect(attachments.map((a) => a.filename)).not.toContain(
+        CUSTOMER_SERVICE_MANUAL_FILENAME,
+      );
+    }
   });
 
   it("renders the provider portal guide for provider invites", async () => {
@@ -89,5 +107,19 @@ describe("buildInviteHelpAttachments", () => {
     const second = await buildInviteHelpAttachments({ kind: "patient" });
     // Same cached Buffer instance is reused for the rendered document.
     expect(second[0]!.content).toBe(first[0]!.content);
+  });
+});
+
+describe("loadCustomerServiceManual", () => {
+  it("loads the repo's pre-rendered manual PDF and caches it", async () => {
+    const manual = await loadCustomerServiceManual();
+    expect(manual).not.toBeNull();
+    expect(manual!.filename).toBe(CUSTOMER_SERVICE_MANUAL_FILENAME);
+    expect(manual!.contentType).toBe("application/pdf");
+    expect(manual!.content.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect(manual!.content.length).toBeGreaterThan(100_000);
+
+    const again = await loadCustomerServiceManual();
+    expect(again!.content).toBe(manual!.content);
   });
 });

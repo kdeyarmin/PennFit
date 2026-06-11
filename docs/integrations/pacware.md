@@ -42,8 +42,18 @@ resupply engine**.
 > (Patients → New customer) may create a patient before PacWare knows
 > them. The id stays **unique when present** and remains the join key for
 > every import/export here; patients without one simply never match an
-> import row, and roster exports emit a blank account-number cell for
-> them (the operator assigns the account in PacWare).
+> import row. The two exports treat a missing id differently:
+>
+> - **Patient roster** emits a **blank account-number cell** for them —
+>   that's the surface where the operator sees who still needs an
+>   account created in PacWare.
+> - **Resupply-due** **withholds** their items (an order line with no
+>   account number can't be keyed into PacWare order entry) and reports
+>   how many were withheld — in the verify preview
+>   (`withheldMissingPacwareId`), the download's
+>   `X-Pacware-Withheld-Missing-Id` header, and the audit row. Backfill
+>   the id on the patient page (header → "No PacWare ID" → **Add**),
+>   then sync again.
 
 ## Architecture
 

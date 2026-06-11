@@ -14,13 +14,17 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
+  getPacketTemplateHistoryQueryKey,
   getPatientPacketTemplatesQueryKey,
+  usePacketTemplateHistory,
   usePatientPacketTemplates,
   usePreviewPacketTemplate,
   useResetPacketTemplate,
+  useRestorePacketTemplate,
   useSavePacketTemplate,
   type PacketDocumentSection,
   type PacketMergeToken,
+  type PacketTemplateRevision,
   type PatientPacketTemplate,
 } from "@workspace/api-client-react/admin";
 
@@ -122,6 +126,7 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftText, setDraftText] = useState("");
   const [previewSections, setPreviewSections] = useState<
@@ -138,6 +143,7 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
   const openTemplate = async (t: PatientPacketTemplate) => {
     setSelectedKey(t.key);
     setEditing(false);
+    setShowHistory(false);
     setMessage(null);
     setError(null);
     setPreviewSections(null);
@@ -326,6 +332,13 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
                         Edit
                       </Button>
                     )}
+                    <Button
+                      intent="ghost"
+                      size="sm"
+                      onClick={() => setShowHistory((s) => !s)}
+                    >
+                      {showHistory ? "Hide history" : "History"}
+                    </Button>
                     {selected.customized && (
                       <Button
                         intent="ghost"
@@ -338,6 +351,22 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
                     )}
                   </div>
                 </div>
+
+                {showHistory && (
+                  <TemplateHistoryPanel
+                    templateKey={selected.key}
+                    onRestored={async () => {
+                      await refresh();
+                      setMessage(
+                        "Revision restored — it now applies to every packet sent from now on.",
+                      );
+                      const res = await preview
+                        .mutateAsync({ key: selected.key })
+                        .catch(() => null);
+                      setPreviewSections(res?.sections ?? null);
+                    }}
+                  />
+                )}
 
                 {editing && (
                   <div className="space-y-3">
@@ -442,6 +471,152 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </Card>
+  );
+}
+
+// ── Template revision history ─────────────────────────────────────
+//
+// Append-only log of every permanent save/revert: who changed the
+// wording, when, with the full content of each saved revision viewable
+// and restorable (a restore re-saves it as a NEW revision).
+function TemplateHistoryPanel({
+  templateKey,
+  onRestored,
+}: {
+  templateKey: string;
+  onRestored: () => void | Promise<void>;
+}) {
+  const qc = useQueryClient();
+  const historyQuery = usePacketTemplateHistory(templateKey);
+  const restore = useRestorePacketTemplate();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const revisions = historyQuery.data?.revisions ?? [];
+
+  const handleRestore = async (rev: PacketTemplateRevision) => {
+    if (
+      !window.confirm(
+        `Restore revision ${rev.revision ?? "?"}? It will apply to every packet sent from now on.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await restore.mutateAsync({ key: templateKey, revisionId: rev.id });
+      await qc.invalidateQueries({
+        queryKey: getPacketTemplateHistoryQueryKey(templateKey),
+      });
+      await onRestored();
+    } catch (err) {
+      setError(describeError(err).detail ?? "Restore failed.");
+    }
+  };
+
+  return (
+    <div
+      className="rounded-md border p-3 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <h4
+        className="text-xs font-semibold uppercase tracking-wide"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        Edit history
+      </h4>
+      {historyQuery.isPending ? (
+        <Spinner label="Loading history…" />
+      ) : historyQuery.isError ? (
+        <ErrorPanel error={historyQuery.error} />
+      ) : revisions.length === 0 ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          No edits recorded yet — history starts with the first save after this
+          feature shipped.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {revisions.map((rev) => {
+            const when = new Date(rev.created_at).toLocaleString(undefined, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            return (
+              <li
+                key={rev.id}
+                className="rounded-md border px-3 py-2"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span style={{ color: "hsl(var(--ink-1))" }}>
+                    {rev.action === "saved" ? (
+                      <>
+                        <Badge variant="info">r{rev.revision}</Badge>{" "}
+                        {rev.title ?? "Saved"}
+                      </>
+                    ) : (
+                      <Badge variant="muted">Reverted to default</Badge>
+                    )}
+                  </span>
+                  <span
+                    className="text-xs"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {when}
+                    {rev.changed_by_email ? ` · ${rev.changed_by_email}` : ""}
+                  </span>
+                </div>
+                {rev.action === "saved" && rev.sections && (
+                  <div className="mt-1 flex gap-3">
+                    <button
+                      type="button"
+                      className="text-xs font-semibold"
+                      style={{ color: "hsl(var(--penn-navy))" }}
+                      onClick={() =>
+                        setOpenId(openId === rev.id ? null : rev.id)
+                      }
+                    >
+                      {openId === rev.id ? "Hide content" : "View content"}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs font-semibold"
+                      style={{ color: "hsl(var(--penn-navy))" }}
+                      disabled={restore.isPending}
+                      onClick={() => void handleRestore(rev)}
+                    >
+                      Restore
+                    </button>
+                  </div>
+                )}
+                {openId === rev.id && rev.sections && (
+                  <div
+                    className="mt-2 max-h-64 overflow-y-auto rounded-md border p-3"
+                    style={{ borderColor: "hsl(var(--line-1))" }}
+                  >
+                    <p
+                      className="mb-2 text-xs"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      Merge fields shown unresolved.
+                    </p>
+                    <PacketSectionsViewer sections={rev.sections} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error && (
+        <div className="text-sm" style={{ color: "hsl(0 70% 45%)" }}>
+          {error}
+        </div>
+      )}
+    </div>
   );
 }
 
