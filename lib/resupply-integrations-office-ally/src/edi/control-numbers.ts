@@ -43,7 +43,7 @@ export interface AllocateControlNumbersInput {
 /**
  * Format a PRE-RESERVED ISA13 value into the full control-number set.
  * Used by the atomic counter-table allocation path
- * (resupply.control_number_counters, migration 0307): the caller has
+ * (resupply.control_number_counters, migration 0308): the caller has
  * already CAS-reserved a unique value, so no previousHighest guard is
  * needed — formatting is the only job left. Wraps into the 9-digit
  * field exactly like allocateControlNumbers.

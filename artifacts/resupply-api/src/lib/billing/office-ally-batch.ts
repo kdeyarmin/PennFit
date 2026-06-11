@@ -351,7 +351,7 @@ export async function executeOfficeAllyBatchSubmit(
     };
   }
 
-  // Atomic reservation first (counter table, migration 0307) — unique
+  // Atomic reservation first (counter table, migration 0308) — unique
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
   // only as the pre-migration fallback; see lib/billing/isa13-counter.
