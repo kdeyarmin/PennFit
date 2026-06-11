@@ -54,6 +54,7 @@ import {
   normalizeManualDocumentFields,
   type ManualDocumentType,
 } from "../../lib/manual-documents/catalog.js";
+import { STANDARD_DOCUMENT_LIBRARY } from "../../lib/manual-documents/standard-documents.js";
 import {
   loadManualDocumentRow,
   manualDocumentSupplierName,
@@ -176,6 +177,32 @@ router.get(
         phi: def.phi,
         requiresSignature: def.requiresSignature,
         fields: def.fields,
+      })),
+    });
+  },
+);
+
+// ── Standard payer-document library ────────────────────────────────
+//
+// The code-defined, Medicare/payer-aligned starting points (SWO, PAP
+// CMN, ABN, AOB, supplier standards, proof of delivery, refill
+// confirmation). Always available to every caller with patients.read —
+// the SPA renders the library on /admin/documents and "Use" creates an
+// ordinary editable draft through the existing POST.
+router.get(
+  "/admin/manual-documents/standard-catalog",
+  adminReadRateLimiter,
+  requirePermission("patients.read"),
+  (_req, res) => {
+    res.json({
+      templates: STANDARD_DOCUMENT_LIBRARY.map((t) => ({
+        key: t.key,
+        label: t.label,
+        documentType: t.documentType,
+        description: t.description,
+        title: t.title,
+        fields: t.fields,
+        body: t.body,
       })),
     });
   },
