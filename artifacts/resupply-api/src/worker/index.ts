@@ -39,6 +39,7 @@ import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
+import { registerVideoVisitReminderJob } from "./jobs/video-visit-reminders.js";
 import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerFitterLeadFirstDayNudgeJob } from "./jobs/fitter-lead-first-day-nudge.js";
 import { registerFitterSupplyCampaignJob } from "./jobs/fitter-supply-campaign.js";
@@ -412,6 +413,15 @@ async function doStartWorker(): Promise<void> {
     "patient-maintenance.weekly-nudge",
     ["patient_maintenance_log", "patient_maintenance_nudges"],
     registerMaintenanceNudgeJob,
+  );
+  // Telehealth video-visit reminder — every 10 min, texts/emails the
+  // join link to patients whose SCHEDULED visit starts within the next
+  // hour. Gated by telehealth.video + the per-channel reminder flags.
+  await registerIfProvisioned(
+    boss,
+    "video-visits.reminder-sweep",
+    ["video_visits"],
+    registerVideoVisitReminderJob,
   );
   // Abandoned-fitter re-engagement — daily 09:37 UTC. Scans
   // resupply.fitter_leads for opted-in rows aged 3–30 days that
