@@ -746,13 +746,14 @@ export function buildCustomerChatSystemPrompt(
     .map((s) => s.trim())
     .join("\n\n");
 
-  if (prompt.length > MAX_CUSTOMER_SYSTEM_PROMPT_CHARS) {
+  // Rewrite the historical brand/contact strings to the admin-saved
+  // company identity (no-op until the org row exists).
+  const rewritten = applyCompanyIdentityToText(prompt);
+  if (rewritten.length > MAX_CUSTOMER_SYSTEM_PROMPT_CHARS) {
     throw new Error(
-      `customerChatKnowledge: system prompt is ${prompt.length} chars, ` +
+      `customerChatKnowledge: system prompt is ${rewritten.length} chars, ` +
         `over the ${MAX_CUSTOMER_SYSTEM_PROMPT_CHARS} cap. Trim before deploying.`,
     );
   }
-  // Rewrite the historical brand/contact strings to the admin-saved
-  // company identity (no-op until the org row exists).
-  return applyCompanyIdentityToText(prompt);
+  return rewritten;
 }
