@@ -204,7 +204,11 @@ router.post(
 // ── Mark hand-delivered (paper went out by hand) ───────────────────
 // Records a hand_delivery dispatch via recordTrackingSent (bumps
 // sent_count, stamps last_sent_at + channel), which is what moves the
-// row onto the outstanding queue. The source document's own lifecycle is
+// row onto the outstanding queue. Deliberately allowed on already-sent
+// rows too: delivery_channel models the MOST RECENT dispatch, so a
+// packet that was faxed and then handed over in person (fax went
+// unanswered, provider visited the office) is a genuine re-dispatch —
+// same semantics as "resend fax". The source document's own lifecycle is
 // untouched — prescription packets and manual documents only model
 // fax/email sends, and the tracking ledger is the system of record for
 // the paper path. Terminal rows 409: a returned/canceled request must be

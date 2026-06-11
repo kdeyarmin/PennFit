@@ -122,9 +122,10 @@ export async function markSignatureReturned(
  * Record that the document was printed and physically handed to the
  * provider/patient — it joins the outstanding queue from here.
  */
-export async function markSignatureHandDelivered(
-  id: string,
-): Promise<{ status: SignatureTrackingStatus; deliveryChannel: string }> {
+export async function markSignatureHandDelivered(id: string): Promise<{
+  status: SignatureTrackingStatus;
+  deliveryChannel: SignatureDeliveryChannel;
+}> {
   return jsonFetch(`${BASE}/${encodeURIComponent(id)}/mark-hand-delivered`, {
     method: "POST",
   });
