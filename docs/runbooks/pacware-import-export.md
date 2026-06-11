@@ -163,6 +163,13 @@ into the order note → ship & bill in PacWare as usual.
 > **Size limit:** 5,000 rows. If the download header shows it was capped,
 > narrow the status filter and export again.
 
+> **Patients without a PacWare ID:** their due items are **withheld** from
+> this worklist — an order line with no account number can't be keyed into
+> PacWare order entry. The verify dialog shows how many were withheld (and
+> the download carries an `X-Pacware-Withheld-Missing-Id` header). To
+> include them: open the patient's page, click **Add** next to "No PacWare
+> ID" in the header, enter the account number from PacWare, and sync again.
+
 ---
 
 ## Part 3 — Recommended cadence
@@ -182,3 +189,4 @@ into the order note → ship & bill in PacWare as usual.
 | Sync button says session expired (401)    | Your sign-in lapsed. Refresh the page and sign in again.                                                                     |
 | Export capped at 5,000 rows               | Narrow the filter (status for resupply; patient `status` for the roster) and sync again.                                     |
 | An import didn't change a patient         | Expected — the import only **fills blanks** and never overwrites. To correct an existing value, edit it in PennFit directly. |
+| A due item is missing from the worklist   | The patient has no PacWare ID yet (the verify dialog shows the withheld count). Add the id on the patient page, sync again.  |
