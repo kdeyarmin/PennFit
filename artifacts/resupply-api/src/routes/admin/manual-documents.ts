@@ -54,7 +54,10 @@ import {
   normalizeManualDocumentFields,
   type ManualDocumentType,
 } from "../../lib/manual-documents/catalog.js";
-import { STANDARD_DOCUMENT_LIBRARY } from "../../lib/manual-documents/standard-documents.js";
+import {
+  STANDARD_DOCUMENT_LIBRARY,
+  STANDARD_PACKET_LIBRARY,
+} from "../../lib/manual-documents/standard-documents.js";
 import {
   loadManualDocumentRow,
   manualDocumentSupplierName,
@@ -203,6 +206,14 @@ router.get(
         title: t.title,
         fields: t.fields,
         body: t.body,
+      })),
+      packets: STANDARD_PACKET_LIBRARY.map((p) => ({
+        key: p.key,
+        label: p.label,
+        description: p.description,
+        title: p.title,
+        includeCoverSheet: p.includeCoverSheet,
+        templateKeys: p.templateKeys,
       })),
     });
   },
