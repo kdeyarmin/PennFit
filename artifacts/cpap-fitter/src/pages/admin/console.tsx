@@ -423,6 +423,11 @@ const AdminShopProductNewPage = lazyWithRetry(() =>
     default: m.AdminShopProductNewPage,
   })),
 );
+const AdminShopProductEditPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shop-product-edit").then((m) => ({
+    default: m.AdminShopProductEditPage,
+  })),
+);
 const AdminShopInventoryReconcilePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-shop-inventory-reconcile").then((m) => ({
     default: m.AdminShopInventoryReconcilePage,
@@ -899,6 +904,10 @@ function AdminConsole() {
             <Route
               path="/admin/shop/inventory/new"
               component={AdminShopProductNewPage}
+            />
+            <Route
+              path="/admin/shop/inventory/:productId/edit"
+              component={AdminShopProductEditPage}
             />
             <Route
               path="/admin/shop/inventory/reconcile"
