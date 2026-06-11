@@ -14,16 +14,16 @@ live and the pre-deploy migrator never runs.
 
 ## Timeline (all times UTC, June 10)
 
-| Time   | Event                                                                                                                            |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| ~16:00 | Last fully-normal deploy cycle (morning merge train, migrations through `0300`).                                                  |
-| 17:49  | PR #672 merges (`.railwayignore` only — does not match `railway.json` watchPatterns, so correctly no deploy).                      |
-| 18:46  | PR #673 merges (e-sign overhaul, migrations `0301`/`0302`). **No deploy** for ~75 minutes despite green CI.                        |
-| 20:02  | PR #675 merges (migration `0303`). **A deploy triggers and succeeds** (~20:05), carrying #673's changes + migrations `0301`–`0303`. |
-| 21:37  | PR #681 merges. Its main-branch CI run is **cancelled** (superseded by #682's push 19s later). No deploy.                           |
-| 21:37–22:40 | PRs #682, #683, #684, #685 (migrations `0304`/`0305`), #686, #687 merge. All have green CI on main. **No deploys.**           |
-| 22:40  | PR #687 merges — notably a deploy-targeted fix ("Embed the built SPA inside resupply-api/dist so it rides the surviving layer"). Still no deploy. |
-| 04:00 (Jun 11) | Migrations `0304`/`0305` remain unapplied in production; ~43 commits / 8 hours of work undeployed.                           |
+| Time           | Event                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~16:00         | Last fully-normal deploy cycle (morning merge train, migrations through `0300`).                                                                  |
+| 17:49          | PR #672 merges (`.railwayignore` only — does not match `railway.json` watchPatterns, so correctly no deploy).                                     |
+| 18:46          | PR #673 merges (e-sign overhaul, migrations `0301`/`0302`). **No deploy** for ~75 minutes despite green CI.                                       |
+| 20:02          | PR #675 merges (migration `0303`). **A deploy triggers and succeeds** (~20:05), carrying #673's changes + migrations `0301`–`0303`.               |
+| 21:37          | PR #681 merges. Its main-branch CI run is **cancelled** (superseded by #682's push 19s later). No deploy.                                         |
+| 21:37–22:40    | PRs #682, #683, #684, #685 (migrations `0304`/`0305`), #686, #687 merge. All have green CI on main. **No deploys.**                               |
+| 22:40          | PR #687 merges — notably a deploy-targeted fix ("Embed the built SPA inside resupply-api/dist so it rides the surviving layer"). Still no deploy. |
+| 04:00 (Jun 11) | Migrations `0304`/`0305` remain unapplied in production; ~43 commits / 8 hours of work undeployed.                                                |
 
 ## Evidence gathered
 
@@ -55,18 +55,18 @@ the non-idempotent 0304 index would then fail the real deploy).
 ## Operator checklist (Railway dashboard)
 
 1. **PennFit service → Deployments.** Two possible pictures:
-   - *No entries since ~4 PM ET:* the GitHub trigger is disconnected or
+   - _No entries since ~4 PM ET:_ the GitHub trigger is disconnected or
      paused. Check Settings → Source (repo connection, trigger branch
      `main`, any "wait for CI" toggle), and the Railway GitHub App's
      repo access.
-   - *Failed/skipped entries:* open the build log of the first failure —
+   - _Failed/skipped entries:_ open the build log of the first failure —
      it names the cause directly. #683/#687 already fixed an SPA-dist
      issue speculatively; the log will confirm or refute.
 2. **Either way, hit Deploy on latest `main`.** One manual deploy
    catches everything up: the migrator applies `0304` + `0305` in order
    before the release goes live; no manual DB steps are needed.
 3. **Afterwards, verify:** `pnpm --filter @workspace/scripts
-   verify:deploy -- https://pennpaps.com`, and confirm
+verify:deploy -- https://pennpaps.com`, and confirm
    `patient_packets.chart_document_id` exists (migration 0305).
 4. If the trigger was broken, consider a post-fix probe: merge any
    trivial change and confirm a deployment entry appears within a
