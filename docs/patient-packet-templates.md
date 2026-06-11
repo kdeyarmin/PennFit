@@ -101,6 +101,21 @@ preserving the signing UI's no-markup-injection property.
 Audit actions: `patient_packet_template.updated` / `.reverted` (key +
 revision only — never the content).
 
+## Template revision history
+
+_Migration 0306._ Every permanent save or revert appends a row to the
+append-only `patient_packet_template_revisions` table — who changed
+which document's wording, when, with the full token-form content of
+each saved revision. The Templates panel's **History** view lists the
+revisions, shows any saved revision's content, and offers one-click
+**Restore** (which re-saves it as a NEW revision; history is never
+rewritten). Already-sent packets are unaffected as always — they render
+from their own send-time snapshot.
+
+- `GET  /admin/patient-packet-templates/:key/history` (`patients.read`)
+- `POST /admin/patient-packet-templates/:key/restore` `{ revisionId }`
+  (`admin.tools.manage`; audited with `restored_from_revision`)
+
 ## Packet bundle presets
 
 _Migration 0302._ Named bundles of documents (e.g. "Medicare new
