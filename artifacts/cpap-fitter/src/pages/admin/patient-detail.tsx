@@ -2457,7 +2457,7 @@ function ActivityTab({ patientId }: { patientId: string }) {
     return (
       <EmptyState
         title="No activity yet."
-        hint="Episodes, conversations, grievances, recalls, and coaching plans all show here as they happen."
+        hint="Episodes, conversations, video visits, grievances, recalls, and coaching plans all show here as they happen."
       />
     );
   }
