@@ -50,13 +50,27 @@ router.get(
     const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
 
-    // Six counts in parallel. The original code packed four into one
-    // round-trip via `SELECT (subquery), (subquery), …` for a single
-    // payload; PostgREST doesn't expose that shape, so we issue six
-    // and parallelize via Promise.all. Each individual query is
-    // already index-backed (every WHERE clause hits a partial or
-    // narrow index), so the wall-clock cost is the slowest of the
-    // six rather than their sum.
+    // Read the auto-sync toggle first so we only run the (potentially
+    // expensive) episodes count when the operator has opted in. Fail-soft
+    // to "off" so a config-read hiccup zeroes one badge instead of
+    // 500ing them all.
+    let pacwareAutoSync = false;
+    const { data: autoSyncRow, error: autoSyncErr } = await supabase
+      .schema("resupply")
+      .from("app_config")
+      .select("value")
+      .eq("key", "pacware.auto_sync")
+      .limit(1)
+      .maybeSingle();
+    if (!autoSyncErr) {
+      pacwareAutoSync =
+        (autoSyncRow as { value?: string } | null)?.value === "true";
+    }
+
+    // Seven counts in parallel. Each individual query is already
+    // index-backed (every WHERE clause hits a partial or narrow index),
+    // so the wall-clock cost is the slowest of the seven rather than
+    // their sum.
     // Throw on ANY of the seven errors so a partial Supabase failure
     // surfaces as a 500 rather than silently rendering "queue empty"
     // on every nav badge. The previous code destructured only `count`
@@ -104,20 +118,6 @@ router.get(
         .from("inbound_faxes")
         .select("*", { count: "exact", head: true })
         .eq("status", "new"),
-      // Confirmed resupply episodes waiting on a PacWare CSV export —
-      // same definition as the /admin/pacware "ready to sync" banner.
-      // Surfaced as a badge only when the operator has opted into
-      // auto-sync notices (the pacware.auto_sync app_config toggle,
-      // read below), so an operator who runs exports on their own
-      // schedule isn't nagged by a perpetual badge.
-      supabase
-        .schema("resupply")
-        .from("episodes")
-        .select("id, prescriptions!inner(id), patients!inner(id)", {
-          count: "exact",
-          head: true,
-        })
-        .eq("status", "confirmed"),
     ]);
     for (const r of results) {
       if (r.error) throw r.error;
@@ -130,23 +130,24 @@ router.get(
       { count: overdueShop },
       { count: overduePatient },
       { count: newInboundFaxes },
-      { count: pacwareConfirmed },
     ] = results;
 
-    // The auto-sync opt-in lives in app_config as a plain row (see
-    // routes/admin/pacware.ts AUTO_SYNC_KEY). Fail-soft to "off" so a
-    // config-read hiccup zeroes one badge instead of 500ing them all.
-    let pacwareAutoSync = false;
-    const { data: autoSyncRow, error: autoSyncErr } = await supabase
-      .schema("resupply")
-      .from("app_config")
-      .select("value")
-      .eq("key", "pacware.auto_sync")
-      .limit(1)
-      .maybeSingle();
-    if (!autoSyncErr) {
-      pacwareAutoSync =
-        (autoSyncRow as { value?: string } | null)?.value === "true";
+    // Only query the episodes count when the operator has opted into
+    // auto-sync notices (the pacware.auto_sync toggle above). Fail-soft
+    // to 0 so an optional-feature hiccup doesn't 500 the other badges.
+    let pacwareConfirmed = 0;
+    if (pacwareAutoSync) {
+      const { count, error: episodesErr } = await supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("id, prescriptions!inner(id), patients!inner(id)", {
+          count: "exact",
+          head: true,
+        })
+        .eq("status", "confirmed");
+      if (!episodesErr) {
+        pacwareConfirmed = count ?? 0;
+      }
     }
 
     res.json({
@@ -156,7 +157,7 @@ router.get(
       overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
       newPatientDocuments: newPatientDocuments ?? 0,
       newInboundFaxes: newInboundFaxes ?? 0,
-      pacwareReadyToSync: pacwareAutoSync ? (pacwareConfirmed ?? 0) : 0,
+      pacwareReadyToSync: pacwareConfirmed,
       serverTime: new Date().toISOString(),
     });
   },
