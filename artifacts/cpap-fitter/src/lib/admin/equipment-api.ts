@@ -219,6 +219,13 @@ export interface RecallNotification {
   notifiedAt: string | null;
   failedAt: string | null;
   failedReason: string | null;
+  /** Twilio carrier-side outcome from the SMS status callback
+   *  (sent / delivered / undelivered / failed) — null for email sends
+   *  and rows that predate delivery tracking. A row can be status
+   *  'sent' (vendor accepted) yet deliveryStatus 'undelivered'
+   *  (carrier bounced it). */
+  deliveryStatus: string | null;
+  deliveryErrorCode: string | null;
   createdAt: string;
 }
 
