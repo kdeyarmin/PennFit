@@ -18,8 +18,10 @@
 //
 // PHI posture: uploaded rows + exported rows ARE patient data. This file
 // NEVER logs row contents (CLAUDE.md hard rule — treat every log line as
-// world-readable). Audit rows carry structural counts only. Exports are
-// admin-gated and `Cache-Control: no-store`.
+// world-readable). Audit rows carry structural counts only. Every import/
+// export/preview route is `admin.tools.manage`-gated (same tier as the
+// /admin/pacware page itself — see docs/runbooks/pacware-import-export.md)
+// and exports send `Cache-Control: no-store`.
 
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
@@ -46,10 +48,7 @@ import {
   adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
-import {
-  requireAdmin,
-  requirePermission,
-} from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -147,7 +146,7 @@ const CORE_ADDRESS_FIELDS = ["addressLine1", "city", "state", "postalCode"];
 router.post(
   "/admin/pacware/import/patients",
   adminWriteRateLimiter,
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   withIdempotency("POST /admin/pacware/import/patients"),
   async (req, res) => {
     if (!ensurePacwareEnabled(res)) return;
@@ -361,7 +360,7 @@ const exportPatientsQuerySchema = z
 router.get(
   "/admin/pacware/export/patients.csv",
   adminReadRateLimiter,
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     if (!ensurePacwareEnabled(res)) return;
     const parsed = exportPatientsQuerySchema.safeParse(req.query);
@@ -458,7 +457,7 @@ interface EpisodeJoinRow {
 router.get(
   "/admin/pacware/export/resupply-due.csv",
   adminReadRateLimiter,
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     if (!ensurePacwareEnabled(res)) return;
     const parsed = exportResupplyQuerySchema.safeParse(req.query);
@@ -548,13 +547,14 @@ router.get(
 // ---------------------------------------------------------------------------
 // Verify-before-sync previews. The "Sync to PacWare" buttons call these to
 // show the admin exactly WHAT will be synced (a count + a sample of the
-// actual rows) before they download the CSV. PHI sample → no-store, admin-
-// gated. No idempotency wrapping (GET), so the PHI sample is never persisted.
+// actual rows) before they download the CSV. PHI sample → no-store,
+// `admin.tools.manage`-gated. No idempotency wrapping (GET), so the PHI
+// sample is never persisted.
 // ---------------------------------------------------------------------------
 router.get(
   "/admin/pacware/sync/patients/preview",
   adminReadRateLimiter,
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     if (!ensurePacwareEnabled(res)) return;
     const parsed = exportPatientsQuerySchema.safeParse(req.query);
@@ -595,7 +595,7 @@ router.get(
 router.get(
   "/admin/pacware/sync/resupply-due/preview",
   adminReadRateLimiter,
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     if (!ensurePacwareEnabled(res)) return;
     const parsed = exportResupplyQuerySchema.safeParse(req.query);
