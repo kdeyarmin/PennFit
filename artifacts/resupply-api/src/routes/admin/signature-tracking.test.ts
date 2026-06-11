@@ -84,6 +84,24 @@ describe("GET /admin/signature-tracking", () => {
     );
     expect(res.body.byProvider[0]).toMatchObject({ label: "Dr. A", count: 1 });
   });
+
+  it("lists never-sent drafts under ?status=unsent", async () => {
+    stageSupabaseResponse("signature_tracking", "select", {
+      data: [dbRow({ sent_count: 0, delivery_channel: "none" })],
+    });
+    const res = await request(makeApp()).get(
+      "/admin/signature-tracking?status=unsent",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    // The pseudo-status maps to awaiting_signature + sent_count = 0.
+    const filters = supabaseMock.filterCalls("signature_tracking", "select");
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["status", "awaiting_signature"],
+    });
+    expect(filters).toContainEqual({ verb: "eq", args: ["sent_count", 0] });
+  });
 });
 
 describe("GET /admin/signature-tracking/lookup", () => {
@@ -134,6 +152,46 @@ describe("POST /admin/signature-tracking/:id/mark-returned", () => {
     expect(res.status).toBe(200);
     expect(res.body.alreadyReturned).toBe(true);
     // No writes when it was already terminal.
+    expect(supabaseMock.callCount("signature_tracking", "update")).toBe(0);
+  });
+});
+
+describe("POST /admin/signature-tracking/:id/mark-hand-delivered", () => {
+  it("records a hand_delivery dispatch (the row becomes outstanding)", async () => {
+    // getTrackingById → an unsent draft.
+    stageSupabaseResponse("signature_tracking", "select", {
+      data: dbRow({ sent_count: 0, delivery_channel: "none" }),
+    });
+    // recordTrackingSent's own row read.
+    stageSupabaseResponse("signature_tracking", "select", {
+      data: { id: "t1", sent_count: 0 },
+    });
+    const res = await request(makeApp()).post(
+      "/admin/signature-tracking/11111111-1111-4111-8111-111111111111/mark-hand-delivered",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: "awaiting_signature",
+      deliveryChannel: "hand_delivery",
+    });
+    const updates = supabaseMock.writePayloads("signature_tracking", "update");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      sent_count: 1,
+      delivery_channel: "hand_delivery",
+      status: "awaiting_signature",
+    });
+  });
+
+  it("409s on a terminal row instead of silently reopening it", async () => {
+    stageSupabaseResponse("signature_tracking", "select", {
+      data: dbRow({ status: "returned_signed" }),
+    });
+    const res = await request(makeApp()).post(
+      "/admin/signature-tracking/11111111-1111-4111-8111-111111111111/mark-hand-delivered",
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("not_awaiting");
     expect(supabaseMock.callCount("signature_tracking", "update")).toBe(0);
   });
 });

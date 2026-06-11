@@ -9,8 +9,11 @@
 //
 //   GET  /admin/signature-tracking
 //        Outstanding (default awaiting_signature) items, oldest first,
-//        plus a provider/practice rollup for the at-a-glance view.
-//        Filters: ?status, ?providerId, ?practiceName, ?kind, ?limit.
+//        plus a provider/practice rollup for the at-a-glance view. Only
+//        documents that have actually been dispatched (sent_count > 0)
+//        count as outstanding — a drafted-but-unsent document stays off
+//        the queue. Filters: ?status, ?providerId, ?practiceName, ?kind,
+//        ?limit.
 //
 //   GET  /admin/signature-tracking/lookup?code=PFS-XXXX
 //        Resolve a scanned / typed barcode to its document so a returned
@@ -19,6 +22,12 @@
 //   POST /admin/signature-tracking/:id/mark-returned
 //        The signed copy came back — mark it returned and advance the
 //        source document (a prescription packet → status=signed).
+//
+//   POST /admin/signature-tracking/:id/mark-hand-delivered
+//        The document was printed and physically handed to the provider
+//        or patient — record a hand_delivery dispatch so it joins the
+//        outstanding queue. (Printing alone never counts as sending;
+//        this is the explicit operator action for the paper path.)
 //
 //   POST /admin/signature-tracking/:id/cancel
 //        The request is no longer needed — drop it from the queue.
@@ -46,6 +55,7 @@ import {
   lookupTrackingByCode,
   markReturnedAndCascade,
   markTrackingCanceled,
+  recordTrackingSent,
   type SignatureTrackingRow,
 } from "../../lib/signature-tracking/service";
 import {
@@ -57,10 +67,13 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 const idParam = z.object({ id: z.string().uuid() });
 
+// "unsent" is a view, not a stored status: awaiting_signature rows that
+// have never been dispatched (sent_count = 0) — the drafts a CSR can
+// still send or mark hand-delivered.
 const listQuery = z
   .object({
     status: z
-      .enum(["awaiting_signature", "returned_signed", "canceled"])
+      .enum(["awaiting_signature", "unsent", "returned_signed", "canceled"])
       .optional(),
     providerId: z.string().uuid().optional(),
     practiceName: z.string().trim().min(1).max(200).optional(),
@@ -96,7 +109,13 @@ router.get(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    const result = await listOutstandingSignatures(supabase, parsed.data);
+    const { status, ...rest } = parsed.data;
+    const result = await listOutstandingSignatures(
+      supabase,
+      status === "unsent"
+        ? { ...rest, status: "awaiting_signature", dispatched: false }
+        : { ...rest, status },
+    );
     res.json({
       count: result.count,
       byProvider: result.byProvider,
@@ -179,6 +198,80 @@ router.post(
     });
 
     res.status(200).json({ status: "returned_signed" });
+  },
+);
+
+// ── Mark hand-delivered (paper went out by hand) ───────────────────
+// Records a hand_delivery dispatch via recordTrackingSent (bumps
+// sent_count, stamps last_sent_at + channel), which is what moves the
+// row onto the outstanding queue. Deliberately allowed on already-sent
+// rows too: delivery_channel models the MOST RECENT dispatch, so a
+// packet that was faxed and then handed over in person (fax went
+// unanswered, provider visited the office) is a genuine re-dispatch —
+// same semantics as "resend fax". The source document's own lifecycle is
+// untouched — prescription packets and manual documents only model
+// fax/email sends, and the tracking ledger is the system of record for
+// the paper path. Terminal rows 409: a returned/canceled request must be
+// re-registered (re-sent) through its source document, not silently
+// reopened from the dashboard.
+router.post(
+  "/admin/signature-tracking/:id/mark-hand-delivered",
+  requirePermission("patients.update"),
+  adminRateLimit({
+    name: "signature_tracking.mark_hand_delivered",
+    preset: "mutation",
+  }),
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const row = await getTrackingById(supabase, params.data.id);
+    if (!row) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (row.status !== "awaiting_signature") {
+      res.status(409).json({ error: "not_awaiting", status: row.status });
+      return;
+    }
+    if (row.sentCount > 0) {
+      res.status(409).json({ error: "already_dispatched" });
+      return;
+    }
+
+    await recordTrackingSent(
+      supabase,
+      row.documentKind,
+      row.documentId,
+      "hand_delivery",
+    );
+
+    await logAudit({
+      action: "signature_tracking.hand_delivered",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "signature_tracking",
+      targetId: row.id,
+      metadata: {
+        document_kind: row.documentKind,
+        tracking_code: row.trackingCode,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "signature_tracking.hand_delivered audit write failed",
+      );
+    });
+
+    res.status(200).json({
+      status: "awaiting_signature",
+      deliveryChannel: "hand_delivery",
+    });
   },
 );
 

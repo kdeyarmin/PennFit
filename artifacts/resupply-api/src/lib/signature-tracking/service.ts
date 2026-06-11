@@ -12,6 +12,10 @@
 //     it (e.g. re-rendering the PDF after an edit) returns the SAME
 //     tracking code, so the barcode on the document is stable. It only
 //     refreshes the snapshot labels, never the code.
+//   • A registered row is NOT yet "outstanding": the awaiting dashboard
+//     only counts rows with sent_count > 0, i.e. documents actually
+//     dispatched (fax/email bump it via `recordTrackingSent`). Preparing
+//     or previewing a document never puts it in the queue.
 //   • The tracking code is drawn from a deliberately unambiguous alphabet
 //     (no 0/O/1/I/L) so a CSR can read it off a fax and key it in. Lookup
 //     normalises case / spacing / a missing prefix.
@@ -452,6 +456,13 @@ export interface ListOutstandingOptions {
   practiceName?: string;
   kind?: SignatureDocumentKind;
   limit?: number;
+  /**
+   * Only meaningful with status=awaiting_signature. Defaults to true —
+   * the outstanding queue (sent_count > 0). Pass false to list the
+   * inverse: prepared-but-never-sent rows (the "Not sent yet" view, from
+   * which a CSR can mark a document hand-delivered or send it).
+   */
+  dispatched?: boolean;
 }
 
 const DEFAULT_LIMIT = 200;
@@ -461,6 +472,13 @@ const MAX_LIMIT = 500;
  * The dashboard read: outstanding (default awaiting_signature) tracking
  * rows, oldest first, plus a provider/practice rollup for the at-a-glance
  * view. Throws on a DB error (Express middleware → 500).
+ *
+ * "Outstanding" means awaiting_signature AND dispatched at least once
+ * (sent_count > 0). A tracking row is registered as soon as the document
+ * is created — that's what keeps the printed barcode stable — but a
+ * drafted-and-never-sent document isn't owed back by anyone, so it stays
+ * off the awaiting queue until a send path records a dispatch via
+ * {@link recordTrackingSent}.
  */
 export async function listOutstandingSignatures(
   supabase: SupabaseClient,
@@ -476,6 +494,12 @@ export async function listOutstandingSignatures(
     .eq("status", status)
     .order("created_at", { ascending: true })
     .limit(limit);
+  if (status === "awaiting_signature") {
+    query =
+      opts.dispatched === false
+        ? query.eq("sent_count", 0)
+        : query.gt("sent_count", 0);
+  }
   if (opts.providerId) query = query.eq("provider_id", opts.providerId);
   if (opts.practiceName) query = query.eq("practice_name", opts.practiceName);
   if (opts.kind) query = query.eq("document_kind", opts.kind);
