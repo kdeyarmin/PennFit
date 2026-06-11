@@ -16,6 +16,7 @@
 #   G. duplicate-prefix add (0049 again)                            — fail
 #   H. working-tree mode (DIFF_TARGET="") still detects forbidden   — fail
 #   I. high-prefix add far above threshold (0099)                   — pass
+#   J. duplicate-prefix add with two new high-prefix files (0098)   — fail
 
 set -euo pipefail
 
@@ -147,5 +148,17 @@ if ! run_check >/dev/null 2>&1; then
 fi
 git restore --staged lib/resupply-db/drizzle/0099_high.sql >/dev/null 2>&1 || true
 rm -f lib/resupply-db/drizzle/0099_high.sql
+
+# --- J: duplicate high-prefix add in same staged set ------------------------
+echo "[self-test] scenario J: adding 0098_a.sql and 0098_b.sql should fail"
+echo "-- duplicate high prefix a" > lib/resupply-db/drizzle/0098_a.sql
+echo "-- duplicate high prefix b" > lib/resupply-db/drizzle/0098_b.sql
+git add lib/resupply-db/drizzle/0098_a.sql lib/resupply-db/drizzle/0098_b.sql
+if run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: J (duplicate 0098 adds should have failed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/0098_a.sql lib/resupply-db/drizzle/0098_b.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/drizzle/0098_a.sql lib/resupply-db/drizzle/0098_b.sql
 
 echo "[self-test] all scenarios passed"
