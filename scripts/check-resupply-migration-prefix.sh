@@ -131,14 +131,9 @@ for f in "${added[@]}"; do
     while IFS= read -r existing_file; do
       [[ -z "$existing_file" ]] && continue
 
-      skip_added=0
-      for af in "${added[@]}"; do
-        if [[ "$existing_file" == "$af" ]]; then
-          skip_added=1
-          break
-        fi
-      done
-      (( skip_added == 1 )) && continue
+      # Skip only the file currently being checked (self) so that two new files
+      # added in the same commit with the same prefix are caught.
+      [[ "$existing_file" == "$f" ]] && continue
 
       existing_base="${existing_file##*/}"
       if [[ "$existing_base" =~ ^([0-9]{4})_.+\.sql$ ]] && [[ "${BASH_REMATCH[1]}" == "$prefix" ]]; then
