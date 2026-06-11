@@ -559,18 +559,32 @@ app.use("/api", storefrontRouter);
 // in form's POST, which the SPA renders as "Not found." (see
 // lib/resupply-auth-react/src/client.ts:defaultMessageForStatus).
 //
-// Path resolution: this module is bundled to
-// `artifacts/resupply-api/dist/index.mjs`; the Vite build outputs to
-// `artifacts/cpap-fitter/dist/public/`. Two parent dirs up gets us
-// to `artifacts/`, then into `cpap-fitter/dist/public`.
+// Path resolution, in preference order:
+//   1. `<this module's dir>/public` — the deploy build EMBEDS the SPA
+//      inside this artifact's own dist (railway.json buildCommand runs
+//      scripts/embed-spa.mjs after the workspace builds). The runtime
+//      image is guaranteed to keep resupply-api's dist (the start
+//      command runs from it), so the embedded copy makes SPA serving
+//      independent of any other workspace's output surviving image
+//      assembly.
+//   2. `../../cpap-fitter/dist/public` — the sibling workspace output
+//      (local builds / historical layout). From the bundled
+//      `artifacts/resupply-api/dist/index.mjs` AND from src in dev,
+//      two parent dirs up reaches `artifacts/`.
 //
-// We guard on `existsSync` so a dev session running only the API
+// We guard on index.html presence so a dev session running only the API
 // (with Vite serving the SPA on a separate port) skips the wiring
 // gracefully — the API still works, the SPA just isn't co-served.
-const SPA_DIST = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../cpap-fitter/dist/public",
-);
+const SPA_DIST_CANDIDATES = [
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "public"),
+  path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../cpap-fitter/dist/public",
+  ),
+];
+const SPA_DIST =
+  SPA_DIST_CANDIDATES.find((dir) => existsSync(path.join(dir, "index.html"))) ??
+  SPA_DIST_CANDIDATES[1]!;
 const SPA_INDEX_HTML = path.join(SPA_DIST, "index.html");
 
 if (existsSync(SPA_INDEX_HTML)) {
@@ -658,10 +672,10 @@ if (existsSync(SPA_INDEX_HTML)) {
   // Deployed runtime (NODE_ENV=production OR any Railway-injected
   // marker): refuse to start. Crashing before the listener binds fails
   // the deploy's health check, so Railway keeps the previous (working)
-  // release serving. Keying this on NODE_ENV alone let a dist-less
-  // image go live on 2026-06-10 — Railway doesn't inject NODE_ENV, the
-  // guard stayed quiet, and the liveness probe (deliberately
-  // dependency-free) waved the broken image through.
+  // release serving. Keying this on NODE_ENV alone left the guard
+  // unable to fire on Railway at all — Railway doesn't inject NODE_ENV,
+  // so a dist-less image (if one were ever built) would sail past the
+  // deliberately dependency-free liveness probe and go live.
   if (isDeployedRuntime(process.env)) {
     logger.error(
       { event: "spa_dist_missing", spa_dist: SPA_DIST },
