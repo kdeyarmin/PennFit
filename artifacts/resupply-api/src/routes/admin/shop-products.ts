@@ -755,7 +755,13 @@ router.post(
       res.status(400).json({ error: "empty_body" });
       return;
     }
-    const imageBytes: Buffer = rawBody;
+    // Copy into a fresh Buffer rather than aliasing the request body.
+    // Belt-and-braces detachment from the request object (and it makes
+    // the value provably a Buffer to static analysis — CodeQL's
+    // type-confusion query doesn't model Buffer.isBuffer as a type
+    // guard, so length/index reads on the aliased body keep alerting).
+    // At a 5 MB cap on an admin-only route the one-time copy is noise.
+    const imageBytes: Buffer = Buffer.from(rawBody);
     const sniffed = sniffImageContentType(imageBytes);
     if (sniffed !== declaredType) {
       // The bytes don't match the declared format — refuse to plant
