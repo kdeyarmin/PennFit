@@ -699,12 +699,12 @@ export function FloatingContactLauncher() {
             )}
             role="dialog"
             aria-modal="true"
-            aria-label="PennPaps support"
+            aria-label={`${contact.name} support`}
             data-testid="floating-contact-popover"
           >
             <div className="px-4 py-3 bg-[hsl(var(--penn-navy))] text-white flex items-center justify-between shrink-0">
               <div>
-                <div className="text-sm font-semibold">PennPaps support</div>
+                <div className="text-sm font-semibold">{contact.name} support</div>
                 <div className="text-[11px] opacity-80">{contact.hours}</div>
               </div>
               <div className="flex items-center gap-1">
