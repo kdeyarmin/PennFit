@@ -689,7 +689,11 @@ function sniffImageContentType(buf: Buffer): string | null {
     buf[0] === 0x89 &&
     buf[1] === 0x50 &&
     buf[2] === 0x4e &&
-    buf[3] === 0x47
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
   ) {
     return "image/png";
   }
@@ -733,7 +737,7 @@ router.post(
     limit: IMAGE_UPLOAD_MAX_BYTES,
   }),
   async (req, res) => {
-    const declaredType = (req.headers["content-type"] ?? "")
+    const declaredType = (req.get("content-type") ?? "")
       .split(";")[0]!
       .trim()
       .toLowerCase();

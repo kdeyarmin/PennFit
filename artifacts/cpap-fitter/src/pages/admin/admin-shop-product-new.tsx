@@ -358,6 +358,11 @@ export function AdminShopProductNewPage() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    // Guard the Enter-key path too, not just the disabled button.
+    if (imageUploading) {
+      setErrors(["Wait for the photo upload to finish."]);
+      return;
+    }
     setCollisionProductId(null);
     const result = buildInput();
     if (!result.ok) {
@@ -369,6 +374,10 @@ export function AdminShopProductNewPage() {
   }
 
   const isSubmitting = createMutation.isPending;
+  // Block submission while a photo upload is in flight: buildInput()
+  // reads form.imageUrl, so creating mid-upload would ship the product
+  // without its selected photo and orphan the upload.
+  const submitBlocked = isSubmitting || imageUploading;
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -819,7 +828,7 @@ export function AdminShopProductNewPage() {
         <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={submitBlocked}
             style={{
               background: "#0a1f44",
               color: "#fff",
@@ -828,11 +837,15 @@ export function AdminShopProductNewPage() {
               fontSize: 14,
               fontWeight: 600,
               borderRadius: 6,
-              cursor: isSubmitting ? "wait" : "pointer",
-              opacity: isSubmitting ? 0.7 : 1,
+              cursor: submitBlocked ? "wait" : "pointer",
+              opacity: submitBlocked ? 0.7 : 1,
             }}
           >
-            {isSubmitting ? "Creating…" : "Create product"}
+            {isSubmitting
+              ? "Creating…"
+              : imageUploading
+                ? "Uploading photo…"
+                : "Create product"}
           </button>
           <button
             type="button"
