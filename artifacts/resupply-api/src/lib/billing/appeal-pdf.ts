@@ -117,9 +117,15 @@ function drawAppeal(doc: PDFKit.PDFDocument, input: AppealInput): void {
   });
   doc.moveDown(2);
 
-  // Signer block.
+  // Signer block. A redetermination request must be SIGNED by the
+  // appellant or representative — the typed name alone isn't enough,
+  // so draw an explicit signature/date line above it.
   doc.text("Sincerely,");
   doc.moveDown(2);
+  doc.text(
+    "Signature: ____________________________________   Date: ______________",
+  );
+  doc.moveDown(1);
   doc.text(input.signerName);
   doc.text(input.signerTitle);
   doc.text(input.dmeOrganization.legalName);

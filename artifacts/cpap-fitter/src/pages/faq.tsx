@@ -6,6 +6,10 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useSearchShortcut } from "@/hooks/use-search-shortcut";
 import {
+  SupportEmailText,
+  SupportPhoneText,
+} from "@/components/company-contact";
+import {
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -472,9 +476,9 @@ const sections: FaqSection[] = [
         q: "How do I schedule one?",
         a: (
           <>
-            Call us at (814) 471-0627 (Monday–Friday, 9 AM–5 PM Eastern), email
-            support@pennpaps.com, or ask in the chat bubble on this site — a
-            team member will set it up and send your join link.
+            Call us at <SupportPhoneText /> (Monday–Friday, 9 AM–5 PM Eastern),
+            email <SupportEmailText />, or ask in the chat bubble on this site —
+            a team member will set it up and send your join link.
           </>
         ),
       },

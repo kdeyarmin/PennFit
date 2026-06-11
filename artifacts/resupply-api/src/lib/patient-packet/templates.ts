@@ -468,9 +468,12 @@ export function defaultPacketDocumentKeys(): string[] {
   return PACKET_TEMPLATES.filter((t) => t.defaultIncluded).map((t) => t.key);
 }
 
+// Last-resort values when the dme_organization row hasn't been seeded
+// (dev / preview). The phone is the real support line — a placeholder
+// number must never render on a signed patient agreement.
 export const FALLBACK_COMPANY: CompanyProfile = {
   legalName: "PennPaps",
-  phone: "(215) 555-0100",
+  phone: "(814) 471-0627",
   email: "info@pennpaps.com",
   addressLine1: "",
   cityStateZip: "",

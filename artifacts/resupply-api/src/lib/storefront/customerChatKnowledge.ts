@@ -31,6 +31,8 @@
  * needing to call a tool.
  */
 
+import { applyCompanyIdentityToText } from "../company-info.js";
+
 const CUSTOMER_GREETING_GUIDE = `
 Persona:
   You are PennBot Account Assistant, the signed-in customer chatbot
@@ -623,8 +625,11 @@ const MAX_CUSTOMER_SYSTEM_PROMPT_CHARS = 40_000;
  * Static fallback reply when the OpenAI key isn't configured (dev or
  * a misconfigured deploy). The route surfaces it with `offline: true`.
  */
-export const CUSTOMER_OFFLINE_FALLBACK_REPLY =
-  "I'm not available to chat right now. For account or order questions, please call (814) 471-0627 (Mon-Fri 9-5 ET) or email support@pennpaps.com. Your /account page shows your orders, subscriptions, and saved device.";
+export function customerOfflineFallbackReply(): string {
+  return applyCompanyIdentityToText(
+    "I'm not available to chat right now. For account or order questions, please call (814) 471-0627 (Mon-Fri 9-5 ET) or email support@pennpaps.com. Your /account page shows your orders, subscriptions, and saved device.",
+  );
+}
 
 /**
  * Minimal account-context fields the route hands to the prompt
@@ -747,5 +752,7 @@ export function buildCustomerChatSystemPrompt(
         `over the ${MAX_CUSTOMER_SYSTEM_PROMPT_CHARS} cap. Trim before deploying.`,
     );
   }
-  return prompt;
+  // Rewrite the historical brand/contact strings to the admin-saved
+  // company identity (no-op until the org row exists).
+  return applyCompanyIdentityToText(prompt);
 }

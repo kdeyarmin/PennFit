@@ -810,6 +810,13 @@ function AdminConsole() {
               path="/admin/billing/config/organization"
               component={AdminBillingConfigOrganizationPage}
             />
+            {/* Settings-group alias for the same page: the company
+                identity feeds documents, storefront, chat, and SMS/email
+                branding — not just billing. */}
+            <Route
+              path="/admin/company-information"
+              component={AdminBillingConfigOrganizationPage}
+            />
             <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}

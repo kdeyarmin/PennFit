@@ -16,6 +16,10 @@ assertRequiredEnv();
 
 import app from "./app";
 import { applyAppConfigOverlayToEnv } from "./lib/app-config/store";
+import {
+  applyCompanyInfoToEnv,
+  invalidateCompanyInfoCache,
+} from "./lib/company-info";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import {
@@ -508,6 +512,29 @@ async function start(): Promise<void> {
       "app_config overlay failed at boot — continuing on environment values",
     );
   });
+
+  // Same decoupled posture for the admin-entered company identity
+  // (resupply.dme_organization): hydrate RESUPPLY_PRACTICE_NAME /
+  // SENDGRID_FROM_NAME from the Company information page so the brand
+  // name in SMS/email/voice/PDF copy follows the database. Re-applied
+  // periodically so a save on another replica (or a missed in-process
+  // refresh) converges without a redeploy. Fail-soft throughout.
+  void applyCompanyInfoToEnv().catch((err) => {
+    logger.warn(
+      { err: serializeErr(err), event: "company_info_hydrate_boot_failed" },
+      "company info hydration failed at boot — continuing on environment values",
+    );
+  });
+  const companyInfoRefresh = setInterval(
+    () => {
+      invalidateCompanyInfoCache();
+      void applyCompanyInfoToEnv().catch(() => {
+        // getCompanyInfo already logs; a refresh failure changes nothing.
+      });
+    },
+    5 * 60 * 1000,
+  );
+  companyInfoRefresh.unref();
 
   scheduleWorkerStart();
 }

@@ -2960,6 +2960,9 @@ export interface Database {
           fax_e164: string | null;
           billing_email: string;
           general_email: string | null;
+          support_email: string | null;
+          support_phone_e164: string | null;
+          support_hours_text: string | null;
           website_url: string | null;
           accreditation_body: "achc" | "boc" | "tjc" | "cap" | "other" | null;
           accreditation_number: string | null;

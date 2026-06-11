@@ -17,6 +17,10 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import {
+  applyCompanyInfoToEnv,
+  invalidateCompanyInfoCache,
+} from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -81,6 +85,9 @@ const orgBody = z
     faxE164: z.string().trim().regex(E164_RE).nullable().optional(),
     billingEmail: z.string().trim().email().max(180),
     generalEmail: z.string().trim().email().max(180).nullable().optional(),
+    supportEmail: z.string().trim().email().max(180).nullable().optional(),
+    supportPhoneE164: z.string().trim().regex(E164_RE).nullable().optional(),
+    supportHoursText: z.string().trim().max(160).nullable().optional(),
     websiteUrl: z.string().trim().url().max(240).nullable().optional(),
     accreditationBody: z.enum(ACCREDITATION_VALUES).nullable().optional(),
     accreditationNumber: z.string().trim().max(60).nullable().optional(),
@@ -153,6 +160,9 @@ function orgRowToApi(r: OrgRow) {
     faxE164: r.fax_e164,
     billingEmail: r.billing_email,
     generalEmail: r.general_email,
+    supportEmail: r.support_email,
+    supportPhoneE164: r.support_phone_e164,
+    supportHoursText: r.support_hours_text,
     websiteUrl: r.website_url,
     accreditation: r.accreditation_body
       ? {
@@ -281,6 +291,9 @@ router.put(
         fax_e164: b.faxE164 ?? null,
         billing_email: b.billingEmail,
         general_email: b.generalEmail ?? null,
+        support_email: b.supportEmail ?? null,
+        support_phone_e164: b.supportPhoneE164 ?? null,
+        support_hours_text: b.supportHoursText ?? null,
         website_url: b.websiteUrl ?? null,
         accreditation_body: b.accreditationBody ?? null,
         accreditation_number: b.accreditationNumber ?? null,
@@ -326,6 +339,15 @@ router.put(
       if (error) throw error;
       rowId = newRow.id;
     }
+
+    // Make the new identity visible everywhere immediately: drop the
+    // resolver cache and re-hydrate RESUPPLY_PRACTICE_NAME /
+    // SENDGRID_FROM_NAME so SMS/email/voice/PDF copy uses the saved
+    // name without a restart. Fail-soft — the save itself succeeded.
+    invalidateCompanyInfoCache();
+    await applyCompanyInfoToEnv().catch((err) => {
+      logger.warn({ err }, "company info re-hydration after save failed");
+    });
 
     await logAudit({
       action: "dme_organization.upsert",

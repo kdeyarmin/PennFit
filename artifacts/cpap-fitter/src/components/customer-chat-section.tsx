@@ -44,6 +44,7 @@ import {
   streamCustomerChatMessage,
   type CustomerChatMessage,
 } from "@/lib/customer-chat-api";
+import { useCompanyContact } from "@/lib/contact";
 import { useShopIdentity } from "@/lib/identity";
 
 const SESSION_STORAGE_KEY = "pennpaps_account_chat_v1";
@@ -216,6 +217,7 @@ export function CustomerChatSection(): React.JSX.Element | null {
 }
 
 function CustomerChatSectionInner(): React.JSX.Element | null {
+  const contact = useCompanyContact();
   const { isSignedIn, isLoaded, displayName } = useShopIdentity();
   const { toast } = useToast();
   const [messages, setMessages] = useState<DisplayMessage[]>(() =>
@@ -324,8 +326,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
         } else if (finalMeta.offline) {
           toast({
             title: "Chat is offline",
-            description:
-              "Our chat assistant isn't available right now. Try again later or call (814) 471-0627.",
+            description: `Our chat assistant isn't available right now. Try again later or call ${contact.phoneDisplay}.`,
           });
         } else if (finalMeta.degraded) {
           toast({
@@ -355,8 +356,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
                 ? {
                     ...m,
                     streaming: false,
-                    content:
-                      "Sorry, I couldn't reach the chat service. Please try again, or call (814) 471-0627.",
+                    content: `Sorry, I couldn't reach the chat service. Please try again, or call ${contact.phoneDisplay}.`,
                   }
                 : m,
             ),
@@ -373,8 +373,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
                 ? {
                     ...m,
                     streaming: false,
-                    content:
-                      "Sorry, something went wrong. Please try again, or call (814) 471-0627.",
+                    content: `Sorry, something went wrong. Please try again, or call ${contact.phoneDisplay}.`,
                   }
                 : m,
             ),
@@ -385,7 +384,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
         abortRef.current = null;
       }
     },
-    [busy, messages, toast],
+    [busy, messages, toast, contact.phoneDisplay],
   );
 
   const handleSubmit = useCallback(
@@ -459,7 +458,7 @@ function CustomerChatSectionInner(): React.JSX.Element | null {
         <span>
           Quick answers about your orders, subscriptions, device, and supplies.
           For prescriptions, refunds, or anything PennBot can&apos;t handle,
-          send a message above or call (814) 471-0627.
+          send a message above or call {contact.phoneDisplay}.
         </span>
       </p>
 
