@@ -86,5 +86,27 @@ video-visit endpoints, and all ~60 pg-boss worker jobs.
    the known migration backlog the gate auditor prints, not a
    regression.
 
-No functional defects found; nothing was fixed because nothing was
-broken.
+No functional defects found in the verification pass itself.
+
+## Addendum (same day): finding 3 triaged and partially fixed
+
+A follow-up pass classified all 67 flagged mutations. The bucket is
+mostly NOT a backlog:
+
+- **~50 use `requireAdminOnly`** (super-admin only) — stricter than any
+  catalog permission swap; the auditor just can't distinguish the two
+  spellings. No change needed (a `requirePermission` rewrite would be
+  cosmetic or would _loosen_ access).
+- **Deliberately all-staff, documented in-file:** MFA self-service,
+  `agent-availability/me`, PennPilot assistant chat, the shared company
+  calendar ("every staff member can VIEW and EDIT"), alert **send**
+  (CSRs send alerts; editing copy is already `admin.tools.manage`), and
+  video visits (CSRs schedule, clinicians join/complete — no existing
+  permission covers that union). Left as-is.
+- **One genuine inconsistency, fixed:** `routes/admin/pacware.ts`. The
+  runbook and the `/admin/pacware` page are `admin.tools.manage`-tier,
+  and the file's own status/settings endpoints carry that gate — but
+  the bulk patient **import** (mass `patients` writes) and the four PHI
+  roster **export/preview** GETs were plain `requireAdmin` (any staff).
+  All five now require `admin.tools.manage`, with regression tests
+  locking in the 403 for CSR-tier sessions.
