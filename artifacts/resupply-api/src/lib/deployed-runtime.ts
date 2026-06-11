@@ -6,10 +6,16 @@
 // keeps serving) rather than degrade silently. The historical key was
 // NODE_ENV === "production", but Railway does not inject NODE_ENV: a
 // service that never set it manually runs every "production" check as
-// false. That gap is how a dist-less image sailed past the SPA-missing
-// guard and went live behind the liveness probe on 2026-06-10 (site
-// 404, API fine). Railway DOES always inject its own runtime markers,
-// so treat any of them as "deployed" too.
+// false — so on Railway the SPA-missing guard could never fire and a
+// dist-less image (had one ever been built) would have gone live behind
+// the liveness probe. Railway DOES always inject its own runtime
+// markers, so treat any of them as "deployed" too.
+//
+// (Provenance: added during the 2026-06-10 deploy-stall investigation —
+// see docs/railway-deploy-stall-2026-06-10.md. The "site is serving
+// without its SPA" readings that motivated it turned out to be a probe
+// artifact, not a real dist-less image; the guard stands on its own as
+// defense-in-depth.)
 
 export function isDeployedRuntime(env: NodeJS.ProcessEnv): boolean {
   if (env.NODE_ENV === "production") return true;

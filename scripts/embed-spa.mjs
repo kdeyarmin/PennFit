@@ -1,13 +1,13 @@
 // embed-spa.mjs — copy the built cpap-fitter SPA into resupply-api's
 // own dist (artifacts/resupply-api/dist/public).
 //
-// Why: the deploy runtime provably keeps artifacts/resupply-api/dist
-// (the start command runs dist/index.mjs from it) but the 2026-06-10
-// outage showed Railway's builder shipping images WITHOUT
-// artifacts/cpap-fitter/dist — API up, every storefront/admin path 404.
-// Embedding the SPA inside the API's dist makes the SPA ride the one
-// layer that demonstrably survives, instead of depending on a sibling
-// workspace's build output staying in the image.
+// Why: the deploy runtime is guaranteed to keep
+// artifacts/resupply-api/dist (the start command runs dist/index.mjs
+// from it). Embedding the SPA inside the API's dist makes SPA serving
+// independent of any other workspace's build output surviving image
+// assembly — one less way for a deploy to ship without the storefront.
+// (Added during the 2026-06-10 deploy-stall investigation; see
+// docs/railway-deploy-stall-2026-06-10.md.)
 //
 // Runs as the last step of railway.json's buildCommand (and mirrored by
 // CI's "Railway prod build" job). Plain node, zero dependencies. Fails
