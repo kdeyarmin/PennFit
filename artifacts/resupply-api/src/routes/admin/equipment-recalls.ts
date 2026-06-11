@@ -485,7 +485,7 @@ router.get(
       .schema("resupply")
       .from("recall_notifications")
       .select(
-        "id, asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason, created_at",
+        "id, asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason, delivery_status, delivery_error_code, created_at",
       )
       .eq("recall_id", idCheck.data)
       .order("created_at", { ascending: false })
@@ -513,6 +513,10 @@ router.get(
         notifiedAt: r.notified_at,
         failedAt: r.failed_at,
         failedReason: r.failed_reason,
+        // Twilio carrier-side outcome from the SMS status callback —
+        // null for email sends and pre-callback rows.
+        deliveryStatus: r.delivery_status,
+        deliveryErrorCode: r.delivery_error_code,
         createdAt: r.created_at,
       })),
     });
