@@ -12,6 +12,8 @@ const ENV_KEYS = [
   "RESUPPLY_TURN_URLS",
   "RESUPPLY_TURN_USERNAME",
   "RESUPPLY_TURN_CREDENTIAL",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
 ] as const;
 
 const TWILIO_TURN = {
@@ -88,6 +90,18 @@ describe("ice-servers", () => {
 
   it("falls back to STUN-only when Twilio is unconfigured", async () => {
     const servers = await resolveIceServers({ ntsClientFactory: () => null });
+    expect(servers).toHaveLength(1);
+    expect(servers[0]!.urls[0]).toMatch(/^stun:/);
+  });
+
+  it("falls back to STUN-only when NTS client construction blows up unexpectedly", async () => {
+    // The Twilio SDK constructor rejects account SIDs that don't start
+    // with "AC" — a non-config init error, the exact path that must
+    // degrade rather than escape resolveIceServers()'s never-throws
+    // contract.
+    process.env.TWILIO_ACCOUNT_SID = "not-an-account-sid";
+    process.env.TWILIO_AUTH_TOKEN = "x";
+    const servers = await resolveIceServers();
     expect(servers).toHaveLength(1);
     expect(servers[0]!.urls[0]).toMatch(/^stun:/);
   });

@@ -87,8 +87,20 @@ function tryCreateNtsClient(): TwilioNtsClient | null {
   try {
     return createTwilioNtsClient();
   } catch (err) {
-    if (err instanceof TwilioConfigError) return null;
-    throw err;
+    // Missing Twilio env is the expected "not configured" signal;
+    // anything else (an SDK constructor failure) still degrades to the
+    // baseline — resolveIceServers() must never throw — but is worth a
+    // warning since it means Twilio IS configured and unusable.
+    if (!(err instanceof TwilioConfigError)) {
+      logger.warn(
+        {
+          event: "video.ice.nts_client_init_failed",
+          err: err instanceof Error ? err : new Error(String(err)),
+        },
+        "Twilio NTS client construction failed — falling back to STUN-only ICE",
+      );
+    }
+    return null;
   }
 }
 
@@ -124,10 +136,12 @@ export async function resolveIceServers(opts?: {
     };
     return [...baseline, ...servers];
   } catch (err) {
+    // Pass the Error object itself so the logger's redaction policy
+    // applies to message/stack rather than leaking a raw string.
     logger.warn(
       {
         event: "video.ice.nts_token_failed",
-        err: err instanceof Error ? err.message : String(err),
+        err: err instanceof Error ? err : new Error(String(err)),
       },
       "Twilio NTS token mint failed — falling back to STUN-only ICE",
     );
