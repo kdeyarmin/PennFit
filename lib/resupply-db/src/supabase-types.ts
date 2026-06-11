@@ -3426,6 +3426,9 @@ export interface Database {
           notified_at: string | null;
           failed_at: string | null;
           failed_reason: string | null;
+          twilio_message_sid: string | null;
+          delivery_status: string | null;
+          delivery_error_code: string | null;
           created_at: string;
           updated_at: string;
         };
