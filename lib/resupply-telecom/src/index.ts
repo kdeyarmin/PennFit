@@ -73,6 +73,15 @@ export {
   type WithRetryHooks,
 } from "./retry";
 
+export {
+  createTwilioNtsClient,
+  type TwilioNtsClient,
+  type CreateTwilioNtsClientOptions,
+  type CreateIceTokenResult,
+  type NtsIceServer,
+  type RawTwilioNtsSdk,
+} from "./nts";
+
 // Faxes go through Telnyx (Twilio retired Programmable Fax). The Twilio
 // REST client / SMS / voice / signature wrappers above stay on Twilio;
 // only fax moved.
