@@ -180,9 +180,17 @@ export function AdminShopProductEditPage() {
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
 
   const product = productQuery.data ?? null;
-  if (product && form === null) {
-    setForm(toFormState(product));
-  }
+
+  // Reset when changing to a different product.
+  useEffect(() => {
+    setForm(null);
+  }, [productId]);
+
+  // Initialize once per product load; afterwards the operator owns the state.
+  useEffect(() => {
+    if (!product) return;
+    setForm((prev) => prev ?? toFormState(product));
+  }, [product]);
 
   const saveMutation = useMutation({
     mutationFn: (patch: PatchShopProductDetailsInput) =>
