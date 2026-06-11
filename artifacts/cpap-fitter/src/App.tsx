@@ -513,6 +513,11 @@ const PatientPacketSign = lazyWithRetry(() =>
     default: m.PatientPacketSign,
   })),
 );
+const VideoVisitPage = lazyWithRetry(() =>
+  import("@/pages/video-visit").then((m) => ({
+    default: m.VideoVisitPage,
+  })),
+);
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
@@ -1011,6 +1016,10 @@ function PatientRouter() {
             <Route path="/reminders" component={Reminders} />
             <Route path="/reminders/manage" component={RemindersManage} />
             <Route path="/patient-packet-sign" component={PatientPacketSign} />
+            {/* Public token-gated telehealth join page (link arrives by
+                SMS/email; token rides the query string like
+                /patient-packet-sign). */}
+            <Route path="/video-visit" component={VideoVisitPage} />
             <Route path="/privacy" component={Privacy} />
             <Route path="/terms" component={Terms} />
             <Route path="/returns" component={ReturnsPage} />

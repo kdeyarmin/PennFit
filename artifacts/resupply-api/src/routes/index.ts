@@ -206,6 +206,8 @@ import rxRequestDocumentRouter from "./rx-request-document.js";
 import prescriptionRequestsRouter from "./admin/prescription-requests.js";
 import signatureTrackingRouter from "./admin/signature-tracking.js";
 import voiceRouter from "./voice/index.js";
+import videoVisitsAdminRouter from "./admin/video-visits.js";
+import videoVisitSessionRouter from "./video-visit-session.js";
 
 const router: IRouter = Router();
 
@@ -220,6 +222,15 @@ router.use(shopRouter);
 // handler does its own feature-flag check so a missing env var becomes
 // a clean 503 (or TwiML 503 for vendor-only paths) rather than a 404.
 router.use(voiceRouter);
+// /video-visit/session — public, token-gated lookup the patient's
+// telehealth join page calls before entering a video visit. The admin
+// surface for creating/joining visits is videoVisitsAdminRouter below.
+router.use(videoVisitSessionRouter);
+// /admin/video-visits + /admin/patients/:id/video-visits — telehealth
+// video visits (RT/CSR ↔ patient WebRTC calls for setups and
+// troubleshooting). Signaling WS is wired in index.ts; media is
+// peer-to-peer and never reaches the server.
+router.use(videoVisitsAdminRouter);
 router.use(smsRouter);
 // /fax/document/:token  — signed cover-letter PDF fetched by Telnyx.
 // The Telnyx webhooks (/fax/inbound, /fax/status-callback) are mounted
