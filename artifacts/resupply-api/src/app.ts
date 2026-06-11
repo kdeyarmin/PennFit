@@ -563,10 +563,10 @@ app.use("/api", storefrontRouter);
 //   1. `<this module's dir>/public` — the deploy build EMBEDS the SPA
 //      inside this artifact's own dist (railway.json buildCommand runs
 //      scripts/embed-spa.mjs after the workspace builds). The runtime
-//      image provably keeps resupply-api's dist (the start command runs
-//      from it); the 2026-06-10 outage showed the sibling workspace's
-//      dist can be missing from the image, so the SPA rides the layer
-//      that survives.
+//      image is guaranteed to keep resupply-api's dist (the start
+//      command runs from it), so the embedded copy makes SPA serving
+//      independent of any other workspace's output surviving image
+//      assembly.
 //   2. `../../cpap-fitter/dist/public` — the sibling workspace output
 //      (local builds / historical layout). From the bundled
 //      `artifacts/resupply-api/dist/index.mjs` AND from src in dev,
@@ -672,10 +672,10 @@ if (existsSync(SPA_INDEX_HTML)) {
   // Deployed runtime (NODE_ENV=production OR any Railway-injected
   // marker): refuse to start. Crashing before the listener binds fails
   // the deploy's health check, so Railway keeps the previous (working)
-  // release serving. Keying this on NODE_ENV alone let a dist-less
-  // image go live on 2026-06-10 — Railway doesn't inject NODE_ENV, the
-  // guard stayed quiet, and the liveness probe (deliberately
-  // dependency-free) waved the broken image through.
+  // release serving. Keying this on NODE_ENV alone left the guard
+  // unable to fire on Railway at all — Railway doesn't inject NODE_ENV,
+  // so a dist-less image (if one were ever built) would sail past the
+  // deliberately dependency-free liveness probe and go live.
   if (isDeployedRuntime(process.env)) {
     logger.error(
       { event: "spa_dist_missing", spa_dist: SPA_DIST },

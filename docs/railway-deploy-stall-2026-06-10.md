@@ -80,6 +80,36 @@ verify:deploy -- https://pennpaps.com`, and confirm
    trivial change and confirm a deployment entry appears within a
    minute or two.
 
+## Probe pitfall discovered during this incident (read before declaring an outage)
+
+A bare `curl https://<host>/` returns **404 on a perfectly healthy
+deployment** of this app. The SPA history-fallback in
+`artifacts/resupply-api/src/app.ts` only serves `index.html` to
+requests whose `Accept` header includes `text/html` (so missing-API-route
+fetches 404 as JSON callers expect, instead of silently receiving HTML).
+Browsers always send it; curl's default `Accept: */*` does not — the
+request falls through every handler to Express's default
+`Cannot GET /`. The same applies to `/favicon.ico` (the SPA ships
+`favicon.svg` / `favicon-32.png`, no `.ico`).
+
+During this incident a parallel session probed with bare curl,
+concluded the storefront was hard-down for ~14 hours, and built an
+elaborate (wrong) "Railway ships images without the SPA" theory on top
+— while real browsers were served the site the whole time. Probe with
+the right instrument:
+
+```bash
+pnpm --filter @workspace/scripts verify:deploy -- https://<host>   # sends proper headers
+curl -H "Accept: text/html" https://<host>/                       # manual equivalent
+```
+
+A bare-curl 404 on `/` with a 200 on `/resupply-api/healthz` is the
+EXPECTED shape, not an outage signature. (The defensive changes from
+that session — #683 boot guard, #687 SPA embed, #692 watchPatterns —
+remain in place; they are sound independent of the misdiagnosis. The
+incident-narrative comments they originally carried were corrected
+after the fact.)
+
 ## Related
 
 - [`docs/railway-deployment.md`](./railway-deployment.md) — how the
