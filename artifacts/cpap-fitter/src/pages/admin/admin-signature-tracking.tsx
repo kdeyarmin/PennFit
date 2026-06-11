@@ -225,7 +225,7 @@ export function AdminSignatureTrackingPage() {
               }
               hint={
                 statusFilter === "awaiting_signature"
-                  ? "Documents you fax or hand to a provider for signature show up here automatically."
+                  ? "Documents show up here automatically once they're sent (faxed or emailed) for signature. Drafts that haven't been sent yet aren't counted."
                   : undefined
               }
             />

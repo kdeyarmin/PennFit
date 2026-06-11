@@ -9,8 +9,11 @@
 //
 //   GET  /admin/signature-tracking
 //        Outstanding (default awaiting_signature) items, oldest first,
-//        plus a provider/practice rollup for the at-a-glance view.
-//        Filters: ?status, ?providerId, ?practiceName, ?kind, ?limit.
+//        plus a provider/practice rollup for the at-a-glance view. Only
+//        documents that have actually been dispatched (sent_count > 0)
+//        count as outstanding — a drafted-but-unsent document stays off
+//        the queue. Filters: ?status, ?providerId, ?practiceName, ?kind,
+//        ?limit.
 //
 //   GET  /admin/signature-tracking/lookup?code=PFS-XXXX
 //        Resolve a scanned / typed barcode to its document so a returned

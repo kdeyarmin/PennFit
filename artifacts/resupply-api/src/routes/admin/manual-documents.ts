@@ -481,10 +481,11 @@ router.post(
     if (!inserted) throw new Error("manual_documents insert returned no rows");
 
     // Signable document kinds (CMN, prescription, agreement, delivery
-    // ticket) get a signature-tracking row + barcode so they show up in
-    // the outstanding-signatures dashboard and a returned fax can be
-    // scanned and filed. Non-signable kinds (cover letter, free-form) do
-    // not. Best-effort — never fail the create on a tracking error.
+    // ticket) get a signature-tracking row + barcode so a returned fax
+    // can be scanned and filed. The row joins the outstanding-signatures
+    // dashboard only once the document is actually sent (sent_count > 0).
+    // Non-signable kinds (cover letter, free-form) do not. Best-effort —
+    // never fail the create on a tracking error.
     let trackingCode: string | null = null;
     if (getManualDocumentTypeDef(type).requiresSignature) {
       try {
