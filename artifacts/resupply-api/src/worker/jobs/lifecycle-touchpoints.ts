@@ -302,7 +302,7 @@ export async function runLifecycleTouchpoints(
       stats.birthdayFailed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           patientId: row.id,
         },
         "lifecycle-touchpoints: birthday send threw",
@@ -432,7 +432,7 @@ export async function runLifecycleTouchpoints(
       stats.anniversaryFailed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           patientId: row.patient_id,
         },
         "lifecycle-touchpoints: anniversary send threw",

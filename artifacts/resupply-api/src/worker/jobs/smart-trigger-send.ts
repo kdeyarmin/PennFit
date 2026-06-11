@@ -104,7 +104,7 @@ export async function registerSmartTriggerSendJob(boss: PgBoss): Promise<void> {
       logger.error(
         {
           channel: "email",
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "smart-triggers.send-due: email channel threw",
       );
@@ -129,7 +129,7 @@ export async function registerSmartTriggerSendJob(boss: PgBoss): Promise<void> {
       logger.error(
         {
           channel: "sms",
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "smart-triggers.send-due: SMS channel threw",
       );

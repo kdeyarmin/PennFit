@@ -46,7 +46,7 @@ async function missingResupplyTables(tables: string[]): Promise<string[]> {
     logger.warn(
       {
         event: "table_guard_check_failed",
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "table-existence guard probe failed; registering job anyway (fail-open)",
     );

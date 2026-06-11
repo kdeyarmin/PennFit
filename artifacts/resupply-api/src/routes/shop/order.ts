@@ -20,6 +20,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 
 const SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]{20,}$/;
 
@@ -68,7 +69,7 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
     });
   } catch (err) {
     req.log?.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { ...stripeErrLogFields(err) },
       "stripe checkout.sessions.retrieve failed",
     );
     res.status(502).json({ error: "stripe_retrieve_failed" });

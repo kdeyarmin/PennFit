@@ -13,3 +13,8 @@ export {
   __clearHelpDocCache,
   type HelpDocAudience,
 } from "./render";
+export {
+  CUSTOMER_SERVICE_MANUAL_FILENAME,
+  loadCustomerServiceManual,
+  __clearManualCache,
+} from "./manual";

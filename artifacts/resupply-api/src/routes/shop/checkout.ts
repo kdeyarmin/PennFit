@@ -39,6 +39,7 @@ import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { attachSignedIn } from "../../middlewares/requireSignedIn";
@@ -288,7 +289,7 @@ router.post(
         stripeCustomerId = mapping.stripeCustomerId;
       } catch (err) {
         req.log?.warn(
-          { err: err instanceof Error ? err.message : String(err) },
+          { err },
           "shop checkout: signed-in customer attachment failed; continuing as guest",
         );
       }
@@ -410,7 +411,7 @@ router.post(
       }
     } catch (err) {
       req.log?.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { ...stripeErrLogFields(err) },
         "stripe checkout.sessions.create failed",
       );
       res.status(502).json({

@@ -96,10 +96,7 @@ router.post(
     try {
       parsedEra = parse835(payload);
     } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "era_ingest: parse failed",
-      );
+      logger.warn({ err }, "era_ingest: parse failed");
       res.status(400).json({
         error: "parse_failed",
         message: "the uploaded file could not be parsed as a 5010 835",

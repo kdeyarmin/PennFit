@@ -24,6 +24,7 @@ import {
   type HelpDoc,
   type HelpDocSection,
 } from "./content";
+import { loadCustomerServiceManual } from "./manual";
 
 const PAGE_WIDTH = 504; // LETTER (612) minus 54pt margins each side
 const PDF_CONTENT_TYPE = "application/pdf";
@@ -67,6 +68,14 @@ export async function buildInviteHelpAttachments(
       filename: doc.filename,
       contentType: PDF_CONTENT_TYPE,
     });
+  }
+  // Staff invites additionally carry the full Customer Service
+  // Manual — the operations manual for the console the new hire is
+  // joining. Best-effort: when the PDF isn't on disk the invite
+  // ships with the rendered guides only.
+  if (audience.kind === "staff") {
+    const manual = await loadCustomerServiceManual();
+    if (manual) attachments.push(manual);
   }
   return attachments;
 }

@@ -22,6 +22,8 @@ import {
   handleVoiceDiagnosticWsConnection,
   handleVoiceWsConnection,
 } from "./lib/voice/ws-handler";
+import { handleVideoSignalConnection } from "./lib/video/signal-handler";
+import { verifyVideoVisitToken } from "./lib/video/video-visit-token";
 import { readVoiceConfigOrNull } from "./lib/voice/voice-config";
 import { startWorker, stopWorker } from "./worker/index.js";
 
@@ -78,9 +80,44 @@ const httpServer = createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
 const VOICE_WS_PATH = "/resupply-api/voice/stream";
+// Telehealth video-visit signaling (SDP/ICE relay only — media is
+// WebRTC peer-to-peer and never touches this process). Gated by an
+// HMAC-signed token minted by the admin join endpoint (staff) or the
+// patient's invite link; the connection handler re-checks the visit
+// row so cancellation/revocation is honored immediately.
+const VIDEO_WS_PATH = "/resupply-api/video/signal";
 
 httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head) => {
   const url = safeParseUpgradeUrl(req);
+  if (url?.pathname === VIDEO_WS_PATH) {
+    let verified: ReturnType<typeof verifyVideoVisitToken>;
+    try {
+      verified = verifyVideoVisitToken(url.searchParams.get("token") ?? "");
+    } catch {
+      // RESUPPLY_LINK_HMAC_KEY unset — feature can't operate here.
+      rejectUpgrade(socket, 503, "video-not-configured");
+      return;
+    }
+    if (!verified.valid) {
+      rejectUpgrade(socket, 401, "invalid-token");
+      return;
+    }
+    const claims = verified;
+    wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+      void handleVideoSignalConnection(ws, claims).catch((err) => {
+        logger.error(
+          { err: serializeErr(err), visitId: claims.visitId },
+          "video signal ws handler crashed",
+        );
+        try {
+          ws.close(1011, "internal-error");
+        } catch {
+          /* already closed */
+        }
+      });
+    });
+    return;
+  }
   if (!url || url.pathname !== VOICE_WS_PATH) {
     // Reject unknown upgrade paths immediately. We use destroy()
     // rather than 404+close because Twilio (the only legitimate

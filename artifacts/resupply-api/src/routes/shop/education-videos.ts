@@ -56,10 +56,7 @@ router.get("/shop/education-videos", async (_req, res) => {
     });
     res.json({ groups: groupActiveVideosByTopic(videos) });
   } catch (err) {
-    logger.warn(
-      { err: err instanceof Error ? err.message : "unknown" },
-      "shop/education-videos: threw",
-    );
+    logger.warn({ err }, "shop/education-videos: threw");
     res.json({ groups: [] });
   }
 });

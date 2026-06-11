@@ -555,7 +555,7 @@ export async function runOutreachPlaybookSweep(
       stats.errors += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           runId: run.id,
           stepIndex: step.step_index,
           channel: step.channel,

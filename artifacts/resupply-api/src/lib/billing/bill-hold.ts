@@ -589,7 +589,7 @@ export async function autoMatchInboundFaxToPaperwork(
     logger.warn(
       {
         event: "bill_hold.fax_auto_match_failed",
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "bill-hold: inbound fax auto-match failed (non-fatal)",
     );

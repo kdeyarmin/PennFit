@@ -334,7 +334,7 @@ async function tryPersistMedia(
       logger.warn(
         {
           fax_id_first8: input.telnyxFaxId.slice(0, 8),
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "fax_inbound_media_fetch_failed",
       );
@@ -388,7 +388,7 @@ async function tryPersistMedia(
       logger.warn(
         {
           fax_id_first8: input.telnyxFaxId.slice(0, 8),
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "fax_inbound_media_body_read_failed",
       );
@@ -457,7 +457,7 @@ async function tryPersistMedia(
     logger.warn(
       {
         fax_id_first8: input.telnyxFaxId.slice(0, 8),
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "fax_inbound_gcs_upload_failed",
     );

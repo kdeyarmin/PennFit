@@ -157,7 +157,7 @@ async function runScrubPass(
       stats.errors += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           claimId: claim.id,
         },
         "auto-workflow.scrub: per-claim failure",
@@ -239,7 +239,7 @@ async function runDenialAnalysisPass(
       stats.errors += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           claimId: claim.id,
         },
         "auto-workflow.denial: per-claim failure",

@@ -165,7 +165,7 @@ export async function autofileSignedPacketPdf(
     }
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         packetId,
       },
       "patient packet auto-file to chart failed (non-fatal; PDF remains downloadable)",
