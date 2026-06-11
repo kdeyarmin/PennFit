@@ -8,6 +8,7 @@
       "artifacts/cpap-fitter/**",
       "artifacts/shared/**",
       "lib/**",
+      "scripts/embed-spa.mjs",
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
