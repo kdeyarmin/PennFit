@@ -63,6 +63,7 @@ const EXCLUDED_EXACT = new Set([
   "/mask-fit",
   "/fitter-invite",
   "/patient-packet-sign",
+  "/video-visit",
   "/reminders/manage",
   "/nps",
   // Auth utility pages.

@@ -59,6 +59,7 @@ export type TrackStep =
   | "questionnaire_completed"
   | "results_viewed"
   | "mask_chosen"
+  | "mask_cashpay_added"
   | "order_started"
   | "order_submitted_success"
   | "cart_items_dropped"

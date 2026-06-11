@@ -29,6 +29,7 @@ import {
   projectProduct,
   type ShopCategory,
 } from "../../lib/stripe/products-meta";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 
 const router: IRouter = Router();
 
@@ -160,7 +161,7 @@ router.get(
           req.log?.warn(
             {
               productId: id,
-              err: err instanceof Error ? err.message : String(err),
+              ...stripeErrLogFields(err),
             },
             "reorder-suggestions: stripe product lookup failed",
           );

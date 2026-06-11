@@ -48,7 +48,11 @@ import {
 } from "../lib/queue-options";
 
 const SEND_JOB = "recall-notifications.send";
-const SEND_CRON = "23 4 * * *";
+// 19:23 UTC — 9:23am–3:23pm local across every US timezone. Recalls
+// are safety communications (arguably TCPA-exempt), but a midnight
+// text gets silenced/missed; an afternoon one gets read. The old
+// 04:23 UTC slot was ~midnight ET (app-review 2026-06-10, P1-3).
+const SEND_CRON = "23 19 * * *";
 const BATCH_SIZE = 50;
 // How long a row may sit in the transient 'sending' state before a
 // later sweep assumes the claiming worker died and re-queues it. Must
@@ -162,7 +166,7 @@ export async function sendRecallNotification(
       // the patient than abort.
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err,
           recallId: ctx.recall.id,
         },
         "recall-notifications.send: email failed; trying SMS",

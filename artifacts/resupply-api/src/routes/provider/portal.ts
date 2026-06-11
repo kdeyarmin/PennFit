@@ -231,13 +231,116 @@ router.get(
   },
 );
 
-const signBody = z
-  .object({
-    consentEsign: z.literal(true),
-    signerName: z.string().trim().min(2).max(120),
-    signerTitle: z.string().trim().max(120).optional(),
-  })
-  .strict();
+// Drawn-signature cap mirrors the patient-packet signing route: keeps
+// the PNG data URL inside the dedicated 1 MB parser mounted for
+// /api/provider/queue in app.ts.
+const SIGNATURE_MAX_CHARS = 90_000;
+
+const signCaptureFields = {
+  consentEsign: z.literal(true),
+  signerName: z.string().trim().min(2).max(120),
+  signerTitle: z.string().trim().max(120).optional(),
+  // Optional drawn signature. Typed name + consent remains the legally
+  // sufficient ESIGN capture; the image is supplementary (some payers
+  // prefer a wet-look signature on faxed/printed copies).
+  signatureImage: z
+    .string()
+    .max(SIGNATURE_MAX_CHARS)
+    .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/u)
+    .optional()
+    .nullable(),
+};
+
+const signBody = z.object(signCaptureFields).strict();
+
+interface SignCapture {
+  signerName: string;
+  signerTitle: string | null;
+  signatureImage: string | null;
+}
+
+/**
+ * Execute one signature: the status-guarded row update plus the
+ * hash-chained "signed" event. Shared by the single-document route and
+ * the batch route so the two captures can never drift. The
+ * `.eq("status", "pending")` guard makes concurrent submits safe — the
+ * loser sees `not_pending`.
+ */
+async function executeSignature(opts: {
+  accountId: string;
+  accountEmail: string;
+  requestId: string;
+  npi: string | null;
+  capture: SignCapture;
+  ip: string | null;
+  userAgent: string | null;
+  viaBatch: boolean;
+}): Promise<{ ok: true; signedAt: string } | { ok: false }> {
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  const statement = esignStatement(opts.capture.signerName, opts.npi);
+
+  const { data: updated, error: updErr } = await supabase
+    .schema("resupply")
+    .from("provider_signature_requests")
+    .update({
+      status: "signed",
+      signed_at: nowIso,
+      signer_name: opts.capture.signerName,
+      signer_title: opts.capture.signerTitle,
+      signer_npi: opts.npi,
+      consent_esign: true,
+      signature_statement: statement,
+      // The drawn image is the signed artifact — persisted, NEVER
+      // logged, and excluded from the hash-chained event payload.
+      signature_image: opts.capture.signatureImage,
+      signer_ip: opts.ip,
+      signer_user_agent: opts.userAgent,
+      account_id: opts.accountId,
+      updated_at: nowIso,
+    })
+    .eq("id", opts.requestId)
+    .eq("status", "pending")
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (updErr) throw updErr;
+  if (!updated) return { ok: false };
+
+  await appendSignatureEvent({
+    requestId: opts.requestId,
+    eventType: "signed",
+    actorKind: "provider",
+    actorAccountId: opts.accountId,
+    actorEmail: opts.accountEmail,
+    payload: {
+      signerName: opts.capture.signerName,
+      signerTitle: opts.capture.signerTitle,
+      signerNpi: opts.npi,
+      consentEsign: true,
+      hasDrawnSignature: Boolean(opts.capture.signatureImage),
+      ...(opts.viaBatch ? { viaBatch: true } : {}),
+      statement,
+    },
+    ip: opts.ip,
+    userAgent: opts.userAgent,
+    occurredAt: new Date(nowIso),
+  });
+
+  return { ok: true, signedAt: nowIso };
+}
+
+async function loadProviderNpi(providerId: string): Promise<string | null> {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: provider } = await supabase
+    .schema("resupply")
+    .from("providers")
+    .select("npi")
+    .eq("id", providerId)
+    .limit(1)
+    .maybeSingle();
+  return (provider?.npi as string | undefined) ?? null;
+}
 
 router.post(
   "/api/provider/queue/:id/sign",
@@ -279,43 +382,21 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: provider } = await supabase
-      .schema("resupply")
-      .from("providers")
-      .select("npi")
-      .eq("id", account.providerId)
-      .limit(1)
-      .maybeSingle();
-    const npi = (provider?.npi as string | undefined) ?? null;
-    const nowIso = new Date().toISOString();
-    const statement = esignStatement(parsed.data.signerName, npi);
-    const ip = req.ip ?? null;
-    const userAgent = req.get("user-agent") ?? null;
-
-    const { data: updated, error: updErr } = await supabase
-      .schema("resupply")
-      .from("provider_signature_requests")
-      .update({
-        status: "signed",
-        signed_at: nowIso,
-        signer_name: parsed.data.signerName,
-        signer_title: parsed.data.signerTitle ?? null,
-        signer_npi: npi,
-        consent_esign: true,
-        signature_statement: statement,
-        signer_ip: ip,
-        signer_user_agent: userAgent,
-        account_id: account.id,
-        updated_at: nowIso,
-      })
-      .eq("id", params.data.id)
-      .eq("status", "pending")
-      .select("id")
-      .limit(1)
-      .maybeSingle();
-    if (updErr) throw updErr;
-    if (!updated) {
+    const result = await executeSignature({
+      accountId: account.id,
+      accountEmail: account.emailLower,
+      requestId: params.data.id,
+      npi: await loadProviderNpi(account.providerId),
+      capture: {
+        signerName: parsed.data.signerName,
+        signerTitle: parsed.data.signerTitle ?? null,
+        signatureImage: parsed.data.signatureImage ?? null,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+      viaBatch: false,
+    });
+    if (!result.ok) {
       res.status(409).json({
         error: "not_pending",
         message:
@@ -324,25 +405,95 @@ router.post(
       return;
     }
 
-    await appendSignatureEvent({
-      requestId: params.data.id,
-      eventType: "signed",
-      actorKind: "provider",
-      actorAccountId: account.id,
-      actorEmail: account.emailLower,
-      payload: {
-        signerName: parsed.data.signerName,
-        signerTitle: parsed.data.signerTitle ?? null,
-        signerNpi: npi,
-        consentEsign: true,
-        statement,
-      },
-      ip,
-      userAgent,
-      occurredAt: new Date(nowIso),
-    });
+    res.json({ ok: true, status: "signed", signedAt: result.signedAt });
+  },
+);
 
-    res.json({ ok: true, status: "signed", signedAt: nowIso });
+// ── Batch signing ─────────────────────────────────────────────────
+//
+// One typed name + one ESIGN consent (+ one optional drawn signature)
+// executed against several selected documents in a single submit. Each
+// document is still signed INDIVIDUALLY — its own row update, its own
+// statement, its own hash-chained "signed" event (flagged viaBatch) —
+// so certificates and audit trails are identical to one-at-a-time
+// signing. Ineligible documents (already signed / declined / voided /
+// expired / not the provider's) are skipped and reported, never
+// silently signed.
+const signBatchBody = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(50),
+    ...signCaptureFields,
+  })
+  .strict();
+
+router.post(
+  "/api/provider/queue/sign-batch",
+  providerPortalRateLimiter,
+  ...requireProvider,
+  requireProviderMfaEnrolled,
+  async (req, res) => {
+    const account = req.providerAccount!;
+    const parsed = signBatchBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        message:
+          "You must select documents, type your full name, and check the consent box to e-sign.",
+      });
+      return;
+    }
+    const ids = [...new Set(parsed.data.ids)];
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("provider_signature_requests")
+      .select("id, status, expires_at")
+      .eq("provider_id", account.providerId)
+      .in("id", ids);
+    if (error) throw error;
+    const byId = new Map((rows ?? []).map((r) => [r.id as string, r]));
+
+    const capture: SignCapture = {
+      signerName: parsed.data.signerName,
+      signerTitle: parsed.data.signerTitle ?? null,
+      signatureImage: parsed.data.signatureImage ?? null,
+    };
+    const npi = await loadProviderNpi(account.providerId);
+    const ip = req.ip ?? null;
+    const userAgent = req.get("user-agent") ?? null;
+
+    const signed: string[] = [];
+    const skipped: Array<{ id: string; reason: string }> = [];
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) {
+        skipped.push({ id, reason: "not_found" });
+        continue;
+      }
+      if (row.status !== "pending") {
+        skipped.push({ id, reason: "not_pending" });
+        continue;
+      }
+      if (row.expires_at && new Date(row.expires_at as string) < new Date()) {
+        skipped.push({ id, reason: "expired" });
+        continue;
+      }
+      const result = await executeSignature({
+        accountId: account.id,
+        accountEmail: account.emailLower,
+        requestId: id,
+        npi,
+        capture,
+        ip,
+        userAgent,
+        viaBatch: true,
+      });
+      if (result.ok) signed.push(id);
+      else skipped.push({ id, reason: "not_pending" });
+    }
+
+    res.json({ ok: true, signed, skipped });
   },
 );
 

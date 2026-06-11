@@ -167,6 +167,7 @@ export async function streamChatMessage(
   const decoder = new TextDecoder();
   let buffer = "";
   let chunksReceived = 0;
+  let sawDone = false;
   let result: { offline?: boolean; degraded?: boolean; rateLimited?: boolean } =
     { degraded: true };
 
@@ -201,6 +202,7 @@ export async function streamChatMessage(
             chunksReceived += 1;
             onChunk(parsed.text);
           } else if (parsed.type === "done") {
+            sawDone = true;
             result = {
               offline: parsed.offline,
               degraded: parsed.degraded,
@@ -218,6 +220,15 @@ export async function streamChatMessage(
     return { degraded: true };
   } finally {
     reader.releaseLock();
+  }
+
+  // The body completed but carried no SSE events at all — e.g. a proxy
+  // or interceptor answered the streaming endpoint with a plain JSON
+  // body. Retry the JSON endpoint rather than resolving degraded with
+  // an empty bubble.
+  if (chunksReceived === 0 && !sawDone) {
+    console.warn("[pennbot] stream carried no events, trying JSON fallback");
+    return fallbackToJson(messages, onChunk, signal);
   }
 
   return result;
@@ -240,7 +251,14 @@ async function fallbackToJson(
   unavailable?: boolean;
 }> {
   const reply = await postChatMessage(messages, signal);
-  if (reply.reply) onChunk(reply.reply);
+  if (reply.reply) {
+    onChunk(reply.reply);
+  } else if (!reply.rateLimited && !reply.unavailable) {
+    // A 200 with no reply text is abnormal — keep the bubble non-empty
+    // and let the caller surface the degraded state.
+    onChunk("Sorry, I couldn't come up with an answer. Please try again.");
+    return { ...reply, degraded: true };
+  }
   return {
     offline: reply.offline,
     degraded: reply.degraded,

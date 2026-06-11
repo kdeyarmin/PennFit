@@ -1,0 +1,15 @@
+-- 0303: allow patients without a PacWare account number.
+--
+-- Admin intake (POST /patients) no longer requires a PacWare id — a
+-- patient can be entered before they exist in the legacy billing
+-- system, and the id can be backfilled later (e.g. by the PacWare
+-- roster import, which matches on pacware_id and fills blanks only).
+--
+-- The unique index patients_pacware_id_unique stays as-is: Postgres
+-- treats NULLs as distinct, so any number of patients may have no
+-- PacWare id while real ids remain unique.
+--
+-- ALTER COLUMN ... DROP NOT NULL is naturally idempotent (re-running
+-- it on an already-nullable column is a no-op), so this file is safe
+-- under both fresh replay and re-apply.
+ALTER TABLE "resupply"."patients" ALTER COLUMN "pacware_id" DROP NOT NULL;

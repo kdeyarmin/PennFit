@@ -20,7 +20,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  escapePostgRESTFilterValue,
+  escapePostgRESTContainsPattern,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
@@ -149,9 +149,12 @@ router.get(
     // <uuid>) and pivot the query out of the intended columns.
     const qRaw = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (qRaw.length > 0 && qRaw.length <= 80) {
-      const safe = escapePostgRESTFilterValue(qRaw);
+      // Wildcards must live INSIDE the quoting layer (see the
+      // helper's doc) — composing them around the escaped value
+      // mis-parses for delimiter-containing searches.
+      const pattern = escapePostgRESTContainsPattern(qRaw);
       query = query.or(
-        `isa_control_number.ilike.%${safe}%,file_name.ilike.%${safe}%`,
+        `isa_control_number.ilike.${pattern},file_name.ilike.${pattern}`,
       );
     }
     const { data, error } = await query;
@@ -696,8 +699,7 @@ router.get(
     }
     const qRaw = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (qRaw.length > 0 && qRaw.length <= 80) {
-      const escaped = escapePostgRESTFilterValue(qRaw);
-      const pattern = `*${escaped}*`;
+      const pattern = escapePostgRESTContainsPattern(qRaw);
       query = query.or(
         `isa_control_number.ilike.${pattern},file_name.ilike.${pattern}`,
       );

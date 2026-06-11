@@ -190,10 +190,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     ip: null,
     userAgent: null,
   }).catch((err) => {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      "office-ally.inbound-poll: audit write failed",
-    );
+    logger.warn({ err }, "office-ally.inbound-poll: audit write failed");
   });
 
   // A successful list resets the consecutive-failure counter.
@@ -391,7 +388,7 @@ async function processRemoteFile(
     stats.dispatchErrors += 1;
     logger.error(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         remotePath,
         kind,
       },
@@ -432,13 +429,20 @@ export async function dispatch999(
         : parsed.disposition === "R" || parsed.disposition === "E"
           ? "rejected_999"
           : "uploaded";
-    const { data: submission } = await supabase
+    const { data: submission, error: submissionErr } = await supabase
       .schema("resupply")
       .from("office_ally_submissions")
       .select("id")
       .eq("gs_control_number", parsed.groupControlNumber)
       .limit(1)
       .maybeSingle();
+    // Throw — a transient lookup error is not "no matching submission".
+    // Falling through stamps the inbound file `dispatched`, and the
+    // remote-path + SHA dedupe then guarantee it is NEVER reprocessed:
+    // a rejected-999 submission would show `uploaded` forever. Throwing
+    // lands the file in dispatch_failed for operator replay (the same
+    // posture dispatch835 already takes).
+    if (submissionErr) throw submissionErr;
     if (submission) {
       const { error: sub999Err } = await supabase
         .schema("resupply")
@@ -499,13 +503,18 @@ export async function dispatch277ca(
   const submissionHasRejection = new Map<string, boolean>();
   for (const block of parsed.claims) {
     if (!block.traceNumber) continue;
-    const { data: claim } = await supabase
+    const { data: claim, error: claimLookupErr } = await supabase
       .schema("resupply")
       .from("insurance_claims")
       .select("id, office_ally_submission_id, status")
       .eq("id", block.traceNumber)
       .limit(1)
       .maybeSingle();
+    // Throw — see dispatch999: a lookup error must land the file in
+    // dispatch_failed for replay, not silently skip the claim block
+    // and let the file be stamped `dispatched` (the SHA dedupe makes
+    // that permanent — a rejected claim would never get its status).
+    if (claimLookupErr) throw claimLookupErr;
     if (!claim) continue;
     // Capture the payer-assigned ref number on the claim.
     const update: Database["resupply"]["Tables"]["insurance_claims"]["Update"] =
@@ -754,7 +763,7 @@ async function runDenialAnalysisQuietly(
   } catch (err) {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         claimId,
       },
       "office-ally.inbound-poll: AI denial analysis failed (non-fatal)",

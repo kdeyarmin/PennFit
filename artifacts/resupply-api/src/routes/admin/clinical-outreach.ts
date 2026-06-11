@@ -21,6 +21,7 @@ import {
 } from "../../lib/clinical/clinical-outreach";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 
 const router: IRouter = Router();
 
@@ -106,6 +107,9 @@ const runSchema = z
 router.post(
   "/admin/clinical/outreach/run",
   requirePermission("clinical.intervention.write"),
+  // Dials/texts/emails patients or hammers the clearinghouse —
+  // throttle like every sibling outbound-contact endpoint.
+  adminRateLimit({ name: "clinical.outreach_run", preset: "bulk" }),
   async (req, res) => {
     const parsed = runSchema.safeParse(req.body ?? {});
     if (!parsed.success) {

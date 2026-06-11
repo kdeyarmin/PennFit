@@ -18,6 +18,7 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import { __resetRateLimitsForTests } from "../../middlewares/rate-limit";
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -29,14 +30,18 @@ vi.mock("../../middlewares/requireAdmin", () =>
 // Stripe SDK stub. The PATCH routes need `retrieve` (catalog-membership
 // precheck) + `update` (the actual metadata write). The POST route
 // adds `search` (SKU collision guard), `products.create`, and
-// `prices.create` (one-time + optional recurring). All flow through
-// projectProduct (mocked below) so the handler reaches its happy
-// path without a real Stripe fixture.
+// `prices.create` (one-time + optional recurring). The price PATCH
+// adds `prices.update` (archive replaced prices) and `prices.list`
+// (recurring rotation). All flow through projectProduct (mocked
+// below) so the handler reaches its happy path without a real
+// Stripe fixture.
 const stripeRetrieveMock = vi.fn();
 const stripeUpdateMock = vi.fn();
 const stripeSearchMock = vi.fn();
 const stripeProductCreateMock = vi.fn();
 const stripePriceCreateMock = vi.fn();
+const stripePriceUpdateMock = vi.fn();
+const stripePriceListMock = vi.fn();
 vi.mock("../../lib/stripe/config", () => ({
   readStripeConfigOrNull: () => readStripeConfig(),
   getStripeClient: () => ({
@@ -48,6 +53,8 @@ vi.mock("../../lib/stripe/config", () => ({
     },
     prices: {
       create: (...a: unknown[]) => stripePriceCreateMock(...a),
+      update: (...a: unknown[]) => stripePriceUpdateMock(...a),
+      list: (...a: unknown[]) => stripePriceListMock(...a),
     },
   }),
 }));
@@ -56,6 +63,17 @@ let stripeConfigured = true;
 function readStripeConfig(): { secretKey: string } | null {
   return stripeConfigured ? { secretKey: "sk_test_x" } : null;
 }
+
+// The price PATCH drops the public catalog's in-process cache after
+// a successful default_price repoint (and again after a recurring
+// rotation) so the storefront stops serving the replaced price id —
+// which checkout validation rejects — for the rest of the 60s TTL.
+// Mocked so this admin-route test stays hermetic and the calls are
+// assertable.
+const invalidateCacheMock = vi.fn();
+vi.mock("../shop/products", () => ({
+  invalidateShopProductsCache: () => invalidateCacheMock(),
+}));
 
 // projectProduct stub — vi.fn() so individual tests can override
 // the result (e.g. return null to simulate a non-catalog product
@@ -92,11 +110,12 @@ function defaultProjection(raw: {
   id: string;
   name?: string;
   metadata?: Record<string, string>;
+  default_price?: { id?: string; unit_amount?: number };
 }): {
   id: string;
   name: string;
   category: string;
-  price: { unitAmount: number; currency: string };
+  price: { id: string; unitAmount: number; currency: string };
   stockCount: number | null;
   lowStockThreshold: number | null;
 } {
@@ -105,8 +124,16 @@ function defaultProjection(raw: {
     name: raw.name ?? "Test SKU",
     category: "accessories",
     // Mirror the real ShopProductView field name (unitAmount, not
-    // amount) so a future contract drift breaks this test.
-    price: { unitAmount: 1999, currency: "usd" },
+    // amount) so a future contract drift breaks this test. When the
+    // raw fixture carries an expanded default_price (the price-PATCH
+    // tests), project it through like the real projectProduct does —
+    // the price handler reads `price.id` (to archive the replaced
+    // Price) and `price.unitAmount` (no-op short-circuit).
+    price: {
+      id: raw.default_price?.id ?? "price_old",
+      unitAmount: raw.default_price?.unit_amount ?? 1999,
+      currency: "usd",
+    },
     stockCount: raw.metadata?.stock_count
       ? parseInt(raw.metadata.stock_count, 10)
       : null,
@@ -148,12 +175,23 @@ beforeEach(() => {
 
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+  // The catalog-mutation limiter (30/hour per admin) is module-level
+  // state shared across this whole file; without a reset the later
+  // describe blocks exhaust the budget and 429.
+  __resetRateLimitsForTests();
   stripeConfigured = true;
   stripeRetrieveMock.mockReset();
   stripeUpdateMock.mockReset();
   stripeSearchMock.mockReset();
   stripeProductCreateMock.mockReset();
   stripePriceCreateMock.mockReset();
+  stripePriceUpdateMock.mockReset();
+  stripePriceListMock.mockReset();
+  invalidateCacheMock.mockReset();
+  // Default: archive succeeds, no recurring prices to rotate. The
+  // price-PATCH tests that exercise rotation override prices.list.
+  stripePriceUpdateMock.mockResolvedValue({});
+  stripePriceListMock.mockResolvedValue({ data: [] });
   projectProductMock.mockReset();
   // Default: every product projects successfully (i.e. is in the
   // catalog). Tests that need to simulate a non-catalog product
@@ -312,6 +350,248 @@ describe("PATCH /admin/shop/products/:productId/stock", () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("product_not_found");
     expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// PATCH /admin/shop/products/:productId/price — reprice a SKU
+// ─────────────────────────────────────────────────────────────────────
+//
+// Stripe Prices are immutable, so the handler creates a NEW one-time
+// Price, repoints default_price, archives the replaced Price, and
+// rotates any active recurring (Subscribe & Save) prices to the new
+// amount. Coverage:
+//   - non-admin                       → 401/403, nothing sent to Stripe
+//   - non-prod_ id                    → 400
+//   - non-integer / sub-minimum cents → 400 (zod)
+//   - preview mode (no Stripe key)    → 503
+//   - product not in catalog          → 404, no writes
+//   - happy path                      → create → repoint → archive old
+//   - same amount                     → idempotent no-op, zero writes
+//   - recurring rotation              → new recurring at same cadence,
+//                                       old recurring archived
+//   - default_price repoint fails     → 502, old price NOT archived
+//   - archive failure                 → non-fatal, still 200
+
+describe("PATCH /admin/shop/products/:productId/price", () => {
+  function stubExistingProduct(): void {
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Test SKU",
+      metadata: {},
+      default_price: { id: "price_old", unit_amount: 1999 },
+    });
+  }
+  function stubRepointedProduct(unitAmount = 2499): void {
+    stripeUpdateMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Test SKU",
+      metadata: {},
+      default_price: { id: "price_new", unit_amount: unitAmount },
+    });
+  }
+
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 2499 });
+    expect([401, 403]).toContain(res.status);
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects ids that don't start with prod_", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/x/price")
+      .send({ unitAmountCents: 2499 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_product_id");
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-integer cent amounts", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 19.99 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects amounts below the Stripe minimum", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 10 });
+    expect(res.status).toBe(400);
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects null (price is required, unlike stock/threshold)", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: null });
+    expect(res.status).toBe(400);
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 in preview mode (no Stripe key)", async () => {
+    stubVerifiedAdmin();
+    stripeConfigured = false;
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 2499 });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects with 404 when the product is not in the shop catalog", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_other",
+      name: "Some other product",
+      metadata: {},
+    });
+    projectProductMock.mockReturnValueOnce(null);
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_other/price")
+      .send({ unitAmountCents: 2499 });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("product_not_in_catalog");
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a new price, repoints default_price, archives the old price", async () => {
+    stubVerifiedAdmin();
+    stubExistingProduct();
+    stripePriceCreateMock.mockResolvedValue({ id: "price_new" });
+    stubRepointedProduct(2499);
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 2499 });
+    expect(res.status).toBe(200);
+    // New price at the new amount, in the product's existing currency.
+    expect(stripePriceCreateMock).toHaveBeenCalledTimes(1);
+    expect(stripePriceCreateMock.mock.calls[0]![0]).toEqual({
+      product: "prod_x",
+      unit_amount: 2499,
+      currency: "usd",
+    });
+    // default_price repointed at the new price.
+    const [updateProductId, updatePayload] = stripeUpdateMock.mock.calls[0]!;
+    expect(updateProductId).toBe("prod_x");
+    expect((updatePayload as { default_price: string }).default_price).toBe(
+      "price_new",
+    );
+    // Replaced price archived AFTER the repoint (Stripe refuses to
+    // archive a product's current default_price).
+    expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_old", {
+      active: false,
+    });
+    // The public catalog cache was dropped, so the storefront stops
+    // serving the replaced price id without waiting out the 60s TTL.
+    expect(invalidateCacheMock).toHaveBeenCalledTimes(1);
+    // Response carries the re-projected product at the new amount.
+    expect(res.body.product.price.unitAmount).toBe(2499);
+  });
+
+  it("is an idempotent no-op when the amount is unchanged", async () => {
+    stubVerifiedAdmin();
+    stubExistingProduct(); // current amount: 1999
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 1999 });
+    expect(res.status).toBe(200);
+    expect(res.body.product.price.unitAmount).toBe(1999);
+    // Critically: no Price churn in Stripe, and the catalog cache
+    // keeps its (still-correct) snapshot.
+    expect(stripePriceCreateMock).not.toHaveBeenCalled();
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+    expect(stripePriceUpdateMock).not.toHaveBeenCalled();
+    expect(invalidateCacheMock).not.toHaveBeenCalled();
+  });
+
+  it("rotates the Subscribe & Save price to the new amount at the same cadence", async () => {
+    stubVerifiedAdmin();
+    stubExistingProduct();
+    stripePriceCreateMock
+      .mockResolvedValueOnce({ id: "price_new" })
+      .mockResolvedValueOnce({ id: "price_rec_new" });
+    stubRepointedProduct(2499);
+    stripePriceListMock.mockResolvedValue({
+      data: [
+        {
+          id: "price_rec_old",
+          unit_amount: 1999,
+          recurring: { interval: "month", interval_count: 3 },
+        },
+      ],
+    });
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 2499 });
+    expect(res.status).toBe(200);
+    // Second create: recurring price at the NEW amount, SAME cadence
+    // (v1 policy: subscription price == one-time price).
+    expect(stripePriceCreateMock).toHaveBeenCalledTimes(2);
+    expect(stripePriceCreateMock.mock.calls[1]![0]).toEqual({
+      product: "prod_x",
+      unit_amount: 2499,
+      currency: "usd",
+      recurring: { interval: "month", interval_count: 3 },
+    });
+    // Both the old default price AND the old recurring price retired.
+    expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_old", {
+      active: false,
+    });
+    expect(stripePriceUpdateMock).toHaveBeenCalledWith("price_rec_old", {
+      active: false,
+    });
+    // Cache dropped twice: once when default_price repointed, once
+    // after the recurring rotation (a GET between the two could have
+    // re-cached the old recurring price).
+    expect(invalidateCacheMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 502 and does NOT archive the old price when the repoint fails", async () => {
+    stubVerifiedAdmin();
+    stubExistingProduct();
+    stripePriceCreateMock.mockResolvedValue({ id: "price_new" });
+    const stripeErr = Object.assign(new Error("Stripe is down"), {
+      statusCode: 502,
+    });
+    stripeUpdateMock.mockRejectedValue(stripeErr);
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 2499 });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("stripe_set_default_price_failed");
+    // The old price is still the live default — archiving it would
+    // take the SKU off the storefront entirely, and the cached
+    // catalog (still the old price) remains correct.
+    expect(stripePriceUpdateMock).not.toHaveBeenCalled();
+    expect(invalidateCacheMock).not.toHaveBeenCalled();
+  });
+
+  it("still returns 200 when archiving the replaced price fails", async () => {
+    stubVerifiedAdmin();
+    stubExistingProduct();
+    stripePriceCreateMock.mockResolvedValue({ id: "price_new" });
+    stubRepointedProduct(2499);
+    stripePriceUpdateMock.mockRejectedValue(
+      Object.assign(new Error("archive failed"), { statusCode: 502 }),
+    );
+    const res = await request(makeApp())
+      .patch("/resupply-api/admin/shop/products/prod_x/price")
+      .send({ unitAmountCents: 2499 });
+    // The storefront price IS switched (default_price repointed); a
+    // leftover active-but-unused price object is hygiene, not an error.
+    expect(res.status).toBe(200);
+    expect(res.body.product.price.unitAmount).toBe(2499);
   });
 });
 

@@ -284,7 +284,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
         stats.failed += 1;
         logger.error(
           {
-            err: err instanceof Error ? err.message : String(err),
+            err,
             customerId: row.customer_id,
           },
           "shop-customers.winback: send threw",

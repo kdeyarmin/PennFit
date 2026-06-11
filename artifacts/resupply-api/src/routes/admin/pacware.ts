@@ -102,11 +102,15 @@ router.get(
 // ---------------------------------------------------------------------------
 // POST /admin/pacware/import/patients — upload a PacWare patient report.
 //
-// Sync semantics: rows are matched to PennFit patients on pacware_id and
-// upserted. Only the columns PRESENT in the uploaded report are written,
-// so a report that omits a column never blanks that field — but a column
-// that IS present with an empty cell is treated as "cleared" (PacWare is
-// the demographics system of record).
+// Sync semantics: rows are matched to PennFit patients on pacware_id.
+// New patients are inserted; existing patients are FILL-ONLY patched —
+// only their BLANK fields are filled, an existing value is never
+// overwritten and never blanked (buildFillPatch skips blank incoming
+// values, and the parser drops empty cells before validation). This is
+// the documented invariant in docs/integrations/pacware.md and
+// CLAUDE.md. An earlier version of this comment claimed a
+// present-but-empty cell "clears" the field — the code has never done
+// that; do not introduce it (it would overwrite PHI).
 //
 //   mode: "preview" — parse + validate only; no DB writes. Returns counts,
 //                     per-row errors, and unmapped headers (NO patient rows
@@ -437,13 +441,13 @@ interface EpisodeJoinRow {
   prescriptions: { item_sku: string } | { item_sku: string }[] | null;
   patients:
     | {
-        pacware_id: string;
+        pacware_id: string | null;
         legal_first_name: string;
         legal_last_name: string;
         insurance_payer: string | null;
       }
     | {
-        pacware_id: string;
+        pacware_id: string | null;
         legal_first_name: string;
         legal_last_name: string;
         insurance_payer: string | null;
@@ -464,6 +468,22 @@ router.get(
     }
     const { status } = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
+    // Items whose patient has no PacWare account number are WITHHELD
+    // from the worklist (the report's pacware_id is required for
+    // PacWare order entry — a blank account line can't be keyed) and
+    // surfaced via the X-Pacware-Withheld-Missing-Id header + the
+    // verify preview so the operator can backfill the id (patient
+    // header → "No PacWare ID" → Add) and sync again. Count them first.
+    const { count: missingCount, error: missingErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescriptions!inner(id), patients!inner(id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("status", status)
+      .is("patients.pacware_id", null);
+    if (missingErr) throw missingErr;
     const { data: rows, error } = await supabase
       .schema("resupply")
       .from("episodes")
@@ -471,6 +491,7 @@ router.get(
         "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
       )
       .eq("status", status)
+      .not("patients.pacware_id", "is", null)
       .order("due_at", { ascending: true })
       .limit(MAX_EXPORT_ROWS + 1);
     if (error) throw error;
@@ -480,6 +501,7 @@ router.get(
     const slice = truncated ? list.slice(0, MAX_EXPORT_ROWS) : list;
 
     const records = toResupplyRecords(slice);
+    const withheldMissingPacwareId = missingCount ?? 0;
 
     await logAudit({
       // Distinct from the patient-roster export's action: this is
@@ -493,6 +515,7 @@ router.get(
       metadata: {
         row_count: records.length,
         truncated,
+        withheld_missing_pacware_id: withheldMissingPacwareId,
         status_filter: status,
         report: "resupply_due",
       },
@@ -511,6 +534,12 @@ router.get(
       "Content-Disposition",
       'attachment; filename="pacware-resupply-due.csv"',
     );
+    if (withheldMissingPacwareId > 0) {
+      res.setHeader(
+        "X-Pacware-Withheld-Missing-Id",
+        String(withheldMissingPacwareId),
+      );
+    }
     if (truncated) res.setHeader("X-Truncated", "true");
     res.status(200).send(buildPacwareResupplyDueCsv(records));
   },
@@ -576,6 +605,12 @@ router.get(
     }
     const { status } = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
+    // `count` is what the downloaded CSV will actually contain (the
+    // verify contract): items whose patient has no PacWare account
+    // number are withheld from the worklist and reported separately as
+    // `withheldMissingPacwareId` so the operator can backfill the id
+    // first. The sample query mirrors the export's filter for the same
+    // reason — the preview must never show a row the file won't have.
     const { count, error: countErr } = await supabase
       .schema("resupply")
       .from("episodes")
@@ -583,8 +618,20 @@ router.get(
         count: "exact",
         head: true,
       })
-      .eq("status", status);
+      .eq("status", status)
+      .not("patients.pacware_id", "is", null);
     if (countErr) throw countErr;
+
+    const { count: missingCount, error: missingErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescriptions!inner(id), patients!inner(id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("status", status)
+      .is("patients.pacware_id", null);
+    if (missingErr) throw missingErr;
 
     const { data: rows, error } = await supabase
       .schema("resupply")
@@ -593,6 +640,7 @@ router.get(
         "id, status, due_at, prescriptions!inner(item_sku), patients!inner(pacware_id, legal_first_name, legal_last_name, insurance_payer)",
       )
       .eq("status", status)
+      .not("patients.pacware_id", "is", null)
       .order("due_at", { ascending: true })
       .limit(VERIFY_SAMPLE);
     if (error) throw error;
@@ -602,6 +650,7 @@ router.get(
       target: "resupply_due",
       status,
       count: count ?? 0,
+      withheldMissingPacwareId: missingCount ?? 0,
       sample: toResupplyRecords((rows ?? []) as unknown as EpisodeJoinRow[]),
     });
   },
@@ -795,7 +844,10 @@ function toPatientExportRecord(
 ): PacwarePatientExportRecord {
   const addr = (r.address ?? null) as AddressBlob | null;
   return {
-    pacwareId: r.pacware_id as string,
+    // Blank cell for patients with no PacWare account number yet —
+    // the operator assigns one in PacWare; the roster importer only
+    // matches on non-blank ids, so a re-import can't collide.
+    pacwareId: (r.pacware_id as string | null) ?? "",
     legalFirstName: r.legal_first_name as string,
     legalLastName: r.legal_last_name as string,
     dateOfBirth: r.date_of_birth as string,
@@ -819,6 +871,12 @@ function toResupplyRecords(list: EpisodeJoinRow[]): PacwareResupplyDueRecord[] {
     const rx = first(ep.prescriptions);
     const pt = first(ep.patients);
     if (!rx || !pt) continue;
+    // Belt-and-braces: the callers' queries already exclude patients
+    // with no PacWare account number (the worklist line can't be keyed
+    // into PacWare order entry without one — those items are counted
+    // and surfaced as "withheld" instead). Skip here too so a future
+    // caller can't accidentally emit a blank account line.
+    if (!pt.pacware_id) continue;
     out.push({
       pacwareId: pt.pacware_id,
       legalLastName: pt.legal_last_name,

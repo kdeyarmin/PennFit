@@ -19,6 +19,8 @@ import {
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
+  controlNumbersFromValue,
+  type ControlNumbers,
   build837P,
   createOfficeAllyAdapter,
   type ClaimDetail,
@@ -36,6 +38,7 @@ import {
   resolveClearinghouse,
 } from "./identity-resolver";
 import { isFeatureEnabled } from "../feature-flags";
+import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
@@ -85,9 +88,36 @@ export type BatchSubmitResult =
         | "payer_not_electronic"
         | "claim_missing_required_data"
         | "eligibility_blocked"
-        | "bill_hold";
+        | "bill_hold"
+        | "concurrent_submission";
       detail: Record<string, unknown>;
     };
+
+/**
+ * Release claimed claims back to 'draft' (conflict loser, or transport
+ * failure — nothing reached the clearinghouse, so the claims must stay
+ * retryable). Conditional on 'submitting' so it can never stomp a row
+ * a competing winner already flipped to 'submitted'. Best-effort: on a
+ * write error the rows stay visibly stuck in 'submitting' (flip back to
+ * 'draft' by hand) rather than risking a double transmission.
+ */
+async function releaseClaimsToDraft(
+  supabase: SupabaseClient,
+  claimIds: string[],
+): Promise<void> {
+  const { error } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .update({ status: "draft", updated_at: new Date().toISOString() })
+    .in("id", claimIds)
+    .eq("status", "submitting");
+  if (error) {
+    logger.error(
+      { err: error.message, claimCount: claimIds.length },
+      "office-ally-batch: failed to release claimed claims back to draft — claims are stuck in 'submitting'; flip to 'draft' by hand",
+    );
+  }
+}
 
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
@@ -284,32 +314,99 @@ export async function executeOfficeAllyBatchSubmit(
     detailEntries.push(detail);
   }
 
-  const { data: priorHigh } = await supabase
+  // Atomically claim the batch BEFORE any transport work: flip every
+  // claim draft → 'submitting' in one conditional UPDATE. The earlier
+  // "all claims are draft" read is only advisory — the SFTP upload below
+  // can take 60s+ (×3 retries), and during that window a second submit
+  // (operator double-click, the auto-submit tick, a resubmit) used to
+  // pass the same read and transmit the SAME claims under a fresh ISA13:
+  // both files accepted, duplicate claims billed to the payer
+  // (docs/app-review-2026-06-10.md P1-1). With the conditional UPDATE
+  // exactly one submitter wins each claim; a partial win means someone
+  // else is mid-flight, so we release what we took and report the
+  // conflict. The 'submitting' state is admitted by migration 0298.
+  const claimedAtIso = new Date().toISOString();
+  const batchClaimIds = claims.map((c) => c.id);
+  const { data: claimedRows, error: batchClaimErr } = await supabase
     .schema("resupply")
-    .from("office_ally_submissions")
-    .select("isa_control_number")
-    .order("isa_control_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const control = allocateControlNumbers({
-    submittedAt: Date.now(),
-    sequence: 1,
-    previousHighest: priorHigh?.isa_control_number ?? undefined,
-  });
+    .from("insurance_claims")
+    .update({ status: "submitting", updated_at: claimedAtIso })
+    .in("id", batchClaimIds)
+    .eq("status", "draft")
+    .select("id");
+  if (batchClaimErr) throw batchClaimErr;
+  const claimedIds = (claimedRows ?? []).map((r) => r.id as string);
+  if (claimedIds.length !== claims.length) {
+    if (claimedIds.length > 0) {
+      await releaseClaimsToDraft(supabase, claimedIds);
+    }
+    return {
+      ok: false,
+      kind: "concurrent_submission",
+      detail: {
+        message:
+          "another submission claimed part of this batch first — nothing was transmitted",
+        claimIds: batchClaimIds.filter((id) => !claimedIds.includes(id)),
+      },
+    };
+  }
 
-  const identity = await resolveBillingIdentity({ supabase });
-  const adapter = createOfficeAllyAdapter({
-    submitterOverride: identity.submitter,
-    billingProviderOverride: identity.billingProvider,
-    usageIndicatorOverride: identity.usageIndicator,
-  });
+  // Atomic reservation first (counter table, migration 0308) — unique
+  // by construction across BOTH the claims and eligibility pools and
+  // race-free under concurrency. The legacy MAX-read below survives
+  // only as the pre-migration fallback; see lib/billing/isa13-counter.
+  const reservedIsa = await reserveIsa13Value(supabase);
+  let control: ControlNumbers;
+  if (reservedIsa !== null) {
+    control = controlNumbersFromValue(reservedIsa, Date.now());
+  } else {
+    const { data: priorHigh, error: priorHighErr } = await supabase
+      .schema("resupply")
+      .from("office_ally_submissions")
+      .select("isa_control_number")
+      .order("isa_control_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    // Throw on a read error rather than allocating blind: the
+    // allocator's monotonicity guarantee DEPENDS on previousHighest. A
+    // swallowed error here falls back to the time-derived base alone,
+    // which can re-mint a used interchange control number — Office
+    // Ally rejects the reused ISA13 at the 999 and the file needs
+    // manual replay.
+    if (priorHighErr) throw priorHighErr;
+    control = allocateControlNumbers({
+      submittedAt: Date.now(),
+      sequence: 1,
+      previousHighest: priorHigh?.isa_control_number ?? undefined,
+    });
+  }
+
+  // Guard: any exception before the upload is purely pre-flight; nothing
+  // reached the clearinghouse, so release the claimed batch back to 'draft'.
   const fileName = `PF-BATCH-${control.interchangeControlNumber}.txt`;
-  const submission = await adapter.submitClaims({
-    control,
-    fileName,
-    usageIndicatorOverride: input.usageIndicator,
-    claims: detailEntries,
-  });
+  let identity: Awaited<ReturnType<typeof resolveBillingIdentity>>;
+  let submission: Awaited<
+    ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>
+  >;
+  try {
+    identity = await resolveBillingIdentity({ supabase });
+    const adapter = createOfficeAllyAdapter({
+      submitterOverride: identity.submitter,
+      billingProviderOverride: identity.billingProvider,
+      usageIndicatorOverride: identity.usageIndicator,
+    });
+    submission = await adapter.submitClaims({
+      control,
+      fileName,
+      usageIndicatorOverride: input.usageIndicator,
+      claims: detailEntries,
+    });
+  } catch (err) {
+    // Pre-upload failure — nothing was transmitted. Release the claims so
+    // the operator can retry the batch from a clean state.
+    await releaseClaimsToDraft(supabase, claimedIds);
+    throw err;
+  }
 
   const status = submission.upload.ok
     ? identity.source === "stub"
@@ -335,7 +432,28 @@ export async function executeOfficeAllyBatchSubmit(
     })
     .select("id")
     .single();
-  if (subErr) throw subErr;
+  if (subErr) {
+    if (submission.upload.ok) {
+      // The file was transmitted to the clearinghouse but we couldn't
+      // persist the submission row. The claims are still 'submitting' —
+      // releasing them to 'draft' here would risk a second transmission
+      // of the same batch. Log the ISA control number so an operator can
+      // reconcile the clearinghouse acknowledgement against the DB.
+      logger.error(
+        {
+          err: subErr.message,
+          claimIds: claimedIds,
+          isaControlNumber: submission.interchangeControlNumber,
+        },
+        "office-ally-batch: submission row insert failed after successful upload — claims left in 'submitting' for manual reconciliation",
+      );
+    } else {
+      // Upload did not succeed — release claims to draft so the operator
+      // can retry without manual intervention.
+      await releaseClaimsToDraft(supabase, claimedIds);
+    }
+    throw subErr;
+  }
 
   if (submission.upload.ok) {
     const nowIso = new Date().toISOString();
@@ -397,6 +515,10 @@ export async function executeOfficeAllyBatchSubmit(
         },
       });
     }
+  } else {
+    // Transport failed — nothing reached the clearinghouse. Release the
+    // claimed batch back to 'draft' so the operator can retry it.
+    await releaseClaimsToDraft(supabase, claimedIds);
   }
 
   await logAudit({

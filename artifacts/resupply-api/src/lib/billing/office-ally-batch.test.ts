@@ -247,6 +247,116 @@ describe("executeOfficeAllyBatchSubmit — bill hold", () => {
   });
 });
 
+describe("executeOfficeAllyBatchSubmit — atomic batch claim (double-transmission guard)", () => {
+  // Reach the claim block: 2 draft claims, electronic payer, eligibility
+  // fails open (unstaged eligibility_checks), buildOneDetail satisfied
+  // for both claims.
+  function stageTwoClaimBatch() {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [
+        makeClaimRow({
+          id: "claim-1",
+          payer_profile_id: "pp-1",
+          insurance_coverage_id: "cov-1",
+          patient_id: "pat-1",
+        }),
+        makeClaimRow({
+          id: "claim-2",
+          payer_profile_id: "pp-1",
+          insurance_coverage_id: "cov-1",
+          patient_id: "pat-1",
+        }),
+      ],
+    });
+    stageSupabaseResponse("payer_profiles", "select", {
+      data: {
+        id: "pp-1",
+        payer_legal_name: "Aetna",
+        office_ally_payer_id: "60054",
+        paper_only: false,
+        claim_format: "837p",
+        is_active: true,
+        edi_enrollment_status: "enrolled",
+      },
+    });
+    // buildOneDetail × 2 (FIFO per table).
+    for (let i = 0; i < 2; i++) {
+      stageSupabaseResponse("insurance_coverages", "select", {
+        data: { member_id: "MBR-001", policyholder_relationship: "self" },
+        error: null,
+      });
+      stageSupabaseResponse("patients", "select", {
+        data: {
+          legal_first_name: "Jane",
+          legal_last_name: "Doe",
+          date_of_birth: "1980-01-01",
+          address: {
+            line1: "100 Main St",
+            city: "Pittsburgh",
+            state: "PA",
+            zip: "15201",
+          },
+        },
+        error: null,
+      });
+      stageSupabaseResponse("insurance_claim_line_items", "select", {
+        data: [
+          {
+            hcpcs_code: "A7038",
+            modifier: "NU",
+            billed_cents: 1599,
+            quantity: 1,
+          },
+        ],
+        error: null,
+      });
+    }
+  }
+
+  it("reports concurrent_submission (and transmits nothing) when another submitter wins part of the batch", async () => {
+    stageTwoClaimBatch();
+    // The draft → 'submitting' claim UPDATE: only claim-1 comes back —
+    // a concurrent submit already took claim-2.
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: "claim-1" }],
+      error: null,
+    });
+    // The release of claim-1 back to draft (unstaged default would also
+    // pass, but stage it so the FIFO order is explicit).
+    stageSupabaseResponse("insurance_claims", "update", {
+      data: [{ id: "claim-1" }],
+      error: null,
+    });
+
+    const result = await executeOfficeAllyBatchSubmit({
+      claimIds: ["claim-1", "claim-2"],
+      adminEmail: "ops@example.com",
+      adminUserId: "u-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("concurrent_submission");
+      expect(result.detail.claimIds).toEqual(["claim-2"]);
+    }
+
+    // First UPDATE was the conditional draft → submitting claim; second
+    // was the conditional submitting → draft release of what we won.
+    // Nothing was inserted into office_ally_submissions — no transport.
+    const updates = supabaseMock.writePayloads("insurance_claims", "update");
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toMatchObject({ status: "submitting" });
+    expect(updates[1]).toMatchObject({ status: "draft" });
+    const filters = supabaseMock.filterCalls("insurance_claims", "update");
+    expect(filters).toContainEqual({ verb: "eq", args: ["status", "draft"] });
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["status", "submitting"],
+    });
+    expect(supabaseMock.callCount("office_ally_submissions", "insert")).toBe(0);
+  });
+});
+
 describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity", () => {
   it("multiplies billed_cents by quantity to produce the extended line charge", async () => {
     // 2 units @ $15.99 → extended = $31.98

@@ -16,7 +16,7 @@ import type { AdminRole } from "@workspace/resupply-db";
 
 /** Bump when the copy below changes so cached/rendered bytes refresh
  *  and the document footer advertises the right revision. */
-export const HELP_DOC_VERSION = "2026-06-09.v1";
+export const HELP_DOC_VERSION = "2026-06-10.v1";
 
 /** A single labelled block of a help document. Mirrors the structured-
  *  content shape the patient-packet templates use (heading + prose +
@@ -83,6 +83,52 @@ const PATIENT_PORTAL_GUIDE: HelpDoc = {
 
 /** Help documents attached to a patient portal invite. */
 export const PATIENT_HELP_DOCS: ReadonlyArray<HelpDoc> = [PATIENT_PORTAL_GUIDE];
+
+// ── Provider e-signature portal ─────────────────────────────────────
+
+const PROVIDER_PORTAL_GUIDE: HelpDoc = {
+  key: "provider-portal-guide",
+  filename: "PennPaps-Provider-Portal-Guide.pdf",
+  title: "Welcome to the PennPaps Provider Portal",
+  subtitle:
+    "Reviewing and electronically signing your patients' documents online.",
+  sections: [
+    {
+      heading: "Activating your account",
+      paragraphs: [
+        "PennPaps has invited you to its provider portal, where you can review and electronically sign documents for your patients without faxes or paper chasing. Your invitation email contains a secure link to choose your password — your username is your email address.",
+        "The invitation link expires seven days after it is sent. If it expires before you set your password, contact the PennPaps team and we'll send a fresh one.",
+        "To protect patient information, the portal uses multi-factor authentication: after enrolling an authenticator app on first sign-in, you'll confirm a six-digit code each time you sign in.",
+      ],
+    },
+    {
+      heading: "What you can do in the portal",
+      bullets: [
+        "See every document awaiting your signature for your patients in a single queue.",
+        "Review each item — prescriptions, supply orders, and certificates of medical necessity — before you sign.",
+        "Sign electronically with a typed or drawn signature, one document at a time or several at once.",
+        "Decline a document back to the PennPaps team when something needs to be corrected first.",
+      ],
+    },
+    {
+      heading: "Keeping patient information safe",
+      paragraphs: [
+        "Documents in the portal contain protected health information (PHI). Use a strong, unique password, keep your authenticator app enrolled, and sign out when you're finished — especially on shared computers.",
+      ],
+    },
+    {
+      heading: "Getting help",
+      paragraphs: [
+        "Questions about a document or the portal itself? Reply to any PennPaps email or call the practice and a member of the team will be glad to assist.",
+      ],
+    },
+  ],
+};
+
+/** Help documents attached to a provider portal invite. */
+export const PROVIDER_HELP_DOCS: ReadonlyArray<HelpDoc> = [
+  PROVIDER_PORTAL_GUIDE,
+];
 
 // ── Staff / admin console ───────────────────────────────────────────
 

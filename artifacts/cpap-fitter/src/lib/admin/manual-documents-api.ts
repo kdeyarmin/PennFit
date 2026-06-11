@@ -109,6 +109,39 @@ export async function getManualDocumentCatalog(): Promise<{
   return (await res.json()) as { types: ManualDocumentTypeDef[] };
 }
 
+export interface ManualDocumentPrefill {
+  /** Suggested values for the type's catalog fields (only known keys,
+   *  only non-empty values). */
+  fields: Record<string, string>;
+  /** Suggested recipient block (provider for CMN / prescription / fax
+   *  cover, the patient otherwise). */
+  recipient: {
+    name: string | null;
+    address: string | null;
+    email: string | null;
+    fax: string | null;
+  };
+}
+
+/** Chart-sourced suggestions so the author only types what they want to
+ *  change. Read-only; nothing is persisted. */
+export async function getManualDocumentPrefill(params: {
+  patientId: string;
+  documentType: ManualDocumentType;
+}): Promise<ManualDocumentPrefill> {
+  const qs = new URLSearchParams({
+    patientId: params.patientId,
+    documentType: params.documentType,
+  });
+  const url = `${BASE}/prefill?${qs.toString()}`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as ManualDocumentPrefill;
+}
+
 export async function listManualDocuments(params?: {
   patientId?: string;
   status?: ManualDocumentStatus;
@@ -233,6 +266,156 @@ export async function attachManualDocument(
     patientId: string;
     patientDocumentId: string | null;
   };
+}
+
+// ── Packets ─────────────────────────────────────────────────────────
+// A packet is an ordered bundle of manual documents rendered as ONE
+// combined PDF (optional generated cover sheet + each document on a
+// fresh page) and sent as a single email attachment or fax.
+
+export type ManualDocumentPacketStatus = "draft" | "sent";
+
+export interface ManualDocumentPacketSummary {
+  id: string;
+  title: string;
+  recipient_name: string | null;
+  recipient_address: string | null;
+  recipient_email: string | null;
+  recipient_fax_e164: string | null;
+  document_ids: string[];
+  include_cover_sheet: boolean;
+  status: ManualDocumentPacketStatus;
+  last_emailed_at: string | null;
+  last_faxed_at: string | null;
+  created_by_email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManualDocumentPacketMember {
+  id: string;
+  document_type: ManualDocumentType;
+  title: string;
+  status: ManualDocumentStatus;
+}
+
+export interface ManualDocumentPacketDetail {
+  packet: ManualDocumentPacketSummary;
+  documents: ManualDocumentPacketMember[];
+  missingDocumentIds: string[];
+}
+
+export interface ManualDocumentPacketInput {
+  title?: string;
+  documentIds?: string[];
+  includeCoverSheet?: boolean;
+  recipientName?: string | null;
+  recipientAddress?: string | null;
+  recipientEmail?: string | null;
+  recipientFaxE164?: string | null;
+}
+
+const PACKETS_BASE = "/resupply-api/admin/manual-document-packets";
+
+export async function listManualDocumentPackets(params?: {
+  status?: ManualDocumentPacketStatus;
+}): Promise<{ packets: ManualDocumentPacketSummary[] }> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  const url = qs.toString() ? `${PACKETS_BASE}?${qs.toString()}` : PACKETS_BASE;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as { packets: ManualDocumentPacketSummary[] };
+}
+
+export async function getManualDocumentPacket(
+  id: string,
+): Promise<ManualDocumentPacketDetail> {
+  const url = `${PACKETS_BASE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw await err(res, "GET", url);
+  return (await res.json()) as ManualDocumentPacketDetail;
+}
+
+export async function createManualDocumentPacket(
+  body: ManualDocumentPacketInput,
+): Promise<{ id: string }> {
+  const res = await fetch(PACKETS_BASE, {
+    method: "POST",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await err(res, "POST", PACKETS_BASE);
+  return (await res.json()) as { id: string };
+}
+
+export async function updateManualDocumentPacket(
+  id: string,
+  body: ManualDocumentPacketInput,
+): Promise<{ ok: boolean }> {
+  const url = `${PACKETS_BASE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await err(res, "PATCH", url);
+  return (await res.json()) as { ok: boolean };
+}
+
+export async function deleteManualDocumentPacket(
+  id: string,
+): Promise<{ ok: boolean }> {
+  const url = `${PACKETS_BASE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json", ...csrfHeader() },
+  });
+  if (!res.ok) throw await err(res, "DELETE", url);
+  return (await res.json()) as { ok: boolean };
+}
+
+export function manualDocumentPacketPdfUrl(id: string): string {
+  return `${PACKETS_BASE}/${encodeURIComponent(id)}/pdf`;
+}
+
+export async function sendManualDocumentPacketEmail(
+  id: string,
+  body: { email?: string },
+): Promise<{ ok: boolean }> {
+  const url = `${PACKETS_BASE}/${encodeURIComponent(id)}/send-email`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await err(res, "POST", url);
+  return (await res.json()) as { ok: boolean };
+}
+
+export async function sendManualDocumentPacketFax(
+  id: string,
+  body: { fax?: string },
+): Promise<{ ok: boolean; vendorRef?: string }> {
+  const url = `${PACKETS_BASE}/${encodeURIComponent(id)}/send-fax`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await err(res, "POST", url);
+  return (await res.json()) as { ok: boolean; vendorRef?: string };
 }
 
 // Patient typeahead for the "attach to chart" picker. Hits the shared

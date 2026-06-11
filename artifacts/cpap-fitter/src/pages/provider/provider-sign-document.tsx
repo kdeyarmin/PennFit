@@ -1,13 +1,18 @@
 // Provider signing screen — shows one document and captures the
-// e-signature: a typed legal name + explicit ESIGN consent. No drawn
-// image is collected (typed-name + consent is the ESIGN/CMS-compliant
-// capture and avoids storing signature images).
+// e-signature: a typed legal name + explicit ESIGN consent, plus an
+// OPTIONAL drawn signature. The typed name + consent is the legally
+// sufficient ESIGN/CMS capture; the drawn image is supplementary for
+// payers that prefer a wet-look signature on printed/faxed copies.
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ArrowLeft, FileSignature, CheckCircle2 } from "lucide-react";
 
+import {
+  SignaturePad,
+  type SignaturePadHandle,
+} from "@/components/signature-pad";
 import {
   getProviderQueueItem,
   signProviderDocument,
@@ -35,6 +40,7 @@ export function ProviderSignDocument({
   const [, setLocation] = useLocation();
   const [signerName, setSignerName] = useState("");
   const [signerTitle, setSignerTitle] = useState("");
+  const sigRef = useRef<SignaturePadHandle | null>(null);
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [declining, setDeclining] = useState(false);
@@ -57,6 +63,7 @@ export function ProviderSignDocument({
         consentEsign: true,
         signerName: signerName.trim(),
         signerTitle: signerTitle.trim() || undefined,
+        signatureImage: sigRef.current?.toDataURL() ?? undefined,
       }),
     onSuccess: () => setDone("signed"),
     onError: (err: Error) => setError(err.message),
@@ -214,6 +221,21 @@ export function ProviderSignDocument({
                     onChange={(e) => setSignerTitle(e.target.value)}
                     placeholder="e.g. MD, DO, NP"
                     className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">
+                    Draw your signature (optional)
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Your typed name above is your legal signature; a drawn
+                    signature is added to the record and the printed certificate
+                    when provided.
+                  </p>
+                  <SignaturePad
+                    ref={sigRef}
+                    height={140}
+                    ariaLabel="Draw your signature"
                   />
                 </div>
                 <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">

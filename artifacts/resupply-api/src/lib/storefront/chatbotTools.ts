@@ -22,10 +22,22 @@
  *     two named masks. Lets the bot answer "what's the difference
  *     between the AirFit P10 and the Brevida" with structured
  *     fields instead of model-generated guesses.
+ *   - `track_order(order_reference)` is the guest order-status
+ *     lookup — the same lookup as the public /track-order page, with
+ *     the same auth model (reference + email must both match). The
+ *     email never reaches the model (the PII redactor replaces it
+ *     with `[redacted-email]` outbound); instead the chat route
+ *     harvests emails server-side from the RAW user turns and passes
+ *     them in via ChatToolContext, where this dispatcher verifies
+ *     them against the order. Draws from the same per-IP rate bucket
+ *     as the HTTP endpoint so the chatbot surface doesn't widen the
+ *     (reference × email) brute-force window.
  *
- * PHI posture: tool args are non-PHI booleans + enums + catalog ids.
- * Tool results are public catalog data. No DB writes, no audit, no
- * patient identity ever flows through this module.
+ * PHI posture: tool args are non-PHI booleans + enums + catalog ids +
+ * the order reference (an opaque code the user just typed). Catalog
+ * tool results are public data; track_order returns only what the
+ * public /track-order page returns (mask + status — no addresses,
+ * physician, or insurance). No DB writes, no audit.
  */
 
 import { z } from "zod";
@@ -35,6 +47,12 @@ import {
   type QuestionnaireAnswers,
 } from "./recommendationEngine.js";
 import { maskCatalog, type MaskEntry } from "../../data/maskCatalog.js";
+import {
+  lookupTrackedOrder,
+  normalizeOrderReference,
+  trackOrderRateLimited,
+  type TrackedOrderStatus,
+} from "./orderTracking.js";
 
 /** Maximum tool-execution rounds per user turn — defense vs runaway. */
 export const MAX_TOOL_ROUNDS = 2;
@@ -99,7 +117,38 @@ const compareArgsSchema = z
   })
   .strict();
 
-export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
+const trackArgsSchema = z
+  .object({
+    order_reference: z.string().trim().min(1).max(32),
+  })
+  .strict();
+
+/**
+ * Request-scoped context the chat route passes alongside each tool
+ * call. Only `track_order` consumes it today.
+ */
+export interface ChatToolContext {
+  /**
+   * Emails harvested server-side from the RAW user turns (before PII
+   * redaction), lowercased, oldest first. The model never sees these —
+   * it sees `[redacted-email]` — so this is how the dispatcher
+   * resolves the redacted token back to a verifiable value.
+   */
+  candidateEmails: string[];
+  /**
+   * Per-IP rate-limit key, shared with POST /api/orders/track. Null
+   * disables rate limiting (unit tests only — the route always sets it).
+   */
+  rateLimitKey: string | null;
+}
+
+/**
+ * The three catalog-only tools — synchronous, public data, no DB.
+ * Surfaces that embed PennBot's brain WITHOUT the chat route's
+ * request context (sleep coach, …) expose THIS list so their models
+ * never see track_order (which needs the harvested-email context).
+ */
+export const CATALOG_CHAT_TOOLS: OpenAiToolDescriptor[] = [
   {
     type: "function",
     function: {
@@ -247,6 +296,31 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
   },
 ];
 
+/** The full public-chatbot tool surface: catalog tools + track_order. */
+export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
+  ...CATALOG_CHAT_TOOLS,
+  {
+    type: "function",
+    function: {
+      name: "track_order",
+      description:
+        "Look up the status of a PennPaps fitting order for a guest. Use this when the user asks 'where is my order' / 'did my order go through'. Requires TWO things from the user: (1) their order reference — 'PENN-' plus 6 letters/digits, from their confirmation email — passed as order_reference, and (2) the email address they used on the order, which must already appear somewhere in this conversation. You will see their email as [redacted-email]; that is expected — call the tool anyway, the server restores the real value. If the tool returns needs_email, ask the user to type the email they used. Never echo the email back to the user.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["order_reference"],
+        properties: {
+          order_reference: {
+            type: "string",
+            description:
+              "The PennPaps order reference, e.g. 'PENN-AB1234' (the 6-character tail alone is also accepted).",
+          },
+        },
+      },
+    },
+  },
+];
+
 /**
  * Median measurements across the catalog's fit ranges, used as a
  * neutral baseline so the recommendation engine doesn't exclude
@@ -330,6 +404,19 @@ interface CompareToolResultMask {
 }
 
 /**
+ * track_order outcome forwarded to the model. Non-`found` statuses
+ * carry a `guidance` string telling the model what to do next (ask
+ * for the email, suggest /track-order, hand off, …) — the model
+ * paraphrases it, never reads it verbatim.
+ */
+export type TrackOrderToolData =
+  | { status: "found"; order: TrackedOrderStatus }
+  | {
+      status: "needs_email" | "not_found" | "rate_limited" | "unavailable";
+      guidance: string;
+    };
+
+/**
  * Discriminated tool result. `ok: true` carries a JSON-serializable
  * payload we forward back to the model verbatim; `ok: false` carries
  * a short human-readable error the model can surface to the user.
@@ -345,6 +432,7 @@ export type ChatToolResult =
         differences: string[];
       };
     }
+  | { ok: true; data: TrackOrderToolData }
   | { ok: false; error: string };
 
 /** Resolve a user-supplied mask reference (id or substring of name) to a catalog entry. */
@@ -429,14 +517,102 @@ function buildDifferences(a: MaskEntry, b: MaskEntry): string[] {
 }
 
 /**
+ * How many harvested emails one track_order call may verify against
+ * the reference. Each attempt consumes a slot in the shared per-IP
+ * rate bucket, so a long conversation can't amplify guessing.
+ */
+const MAX_TRACK_EMAIL_ATTEMPTS = 3;
+
+async function executeTrackOrder(
+  rawArgs: unknown,
+  ctx: ChatToolContext | undefined,
+): Promise<ChatToolResult> {
+  const parsed = trackArgsSchema.safeParse(rawArgs ?? {});
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: `track_order: invalid arguments — ${parsed.error.issues
+        .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+        .join("; ")}`,
+    };
+  }
+  const normalized = normalizeOrderReference(parsed.data.order_reference);
+  if (!normalized) {
+    return {
+      ok: true,
+      data: {
+        status: "not_found",
+        guidance:
+          "That doesn't look like a PennPaps order reference — it's 'PENN-' plus 6 letters/digits, from the confirmation email. Ask the user to double-check it.",
+      },
+    };
+  }
+  const candidates = ctx?.candidateEmails ?? [];
+  if (candidates.length === 0) {
+    return {
+      ok: true,
+      data: {
+        status: "needs_email",
+        guidance:
+          "Ask the user to type the email address they used on the order — it's required to verify the order is theirs. (It will show as [redacted-email]; call track_order again after they provide it.)",
+      },
+    };
+  }
+  // Most recent email first — it's almost always the one they just
+  // typed in response to being asked.
+  const toTry = [...new Set(candidates)]
+    .reverse()
+    .slice(0, MAX_TRACK_EMAIL_ATTEMPTS);
+  for (const email of toTry) {
+    if (ctx?.rateLimitKey && trackOrderRateLimited(ctx.rateLimitKey)) {
+      return {
+        ok: true,
+        data: {
+          status: "rate_limited",
+          guidance:
+            "Too many lookups from this connection. Ask the user to try the /track-order page in a few minutes, or contact support.",
+        },
+      };
+    }
+    const result = await lookupTrackedOrder(normalized, email);
+    if (result.outcome === "lookup_failed") {
+      return {
+        ok: true,
+        data: {
+          status: "unavailable",
+          guidance:
+            "The order lookup is temporarily unavailable. Point the user at the /track-order page or the support phone/email.",
+        },
+      };
+    }
+    if (result.outcome === "found") {
+      return { ok: true, data: { status: "found", order: result.order } };
+    }
+  }
+  return {
+    ok: true,
+    data: {
+      status: "not_found",
+      guidance:
+        "No order matches that reference + email combination. Ask the user to double-check both against their confirmation email; if it still doesn't match, hand off to support.",
+    },
+  };
+}
+
+/**
  * Execute one tool call from the model. Always returns — never throws —
  * so the chat route's try/catch only has to deal with HTTP failures,
- * not tool errors.
+ * not tool errors. Async because track_order reads the database; the
+ * catalog tools remain synchronous internally.
  */
-export function executeChatTool(
+export async function executeChatTool(
   name: string,
   rawArgs: unknown,
-): ChatToolResult {
+  ctx?: ChatToolContext,
+): Promise<ChatToolResult> {
+  if (name === "track_order") {
+    return executeTrackOrder(rawArgs, ctx);
+  }
   if (name === "recommend_masks") {
     const parsed = recommendArgsSchema.safeParse(rawArgs ?? {});
     if (!parsed.success) {

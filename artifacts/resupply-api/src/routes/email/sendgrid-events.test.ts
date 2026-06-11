@@ -262,6 +262,115 @@ describe("POST /email/sendgrid-events", () => {
     },
   );
 
+  it("applies same-message events sequentially in timestamp order (processed never clobbers a terminal bounce)", async () => {
+    // SendGrid batches carry the full processed→bounce sequence for one
+    // message, and list order is not chronological order. The handler
+    // must group by message id and replay in timestamp order, or the
+    // concurrent writes race and a stale `processed` can revert a
+    // bounced message to "sent" (hiding it from delivery-failures).
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+    stageMessageUpdates(2);
+
+    const ts = String(Math.floor(Date.now() / 1000));
+    // Deliberately list the terminal bounce FIRST with the LATER
+    // timestamp — chronological replay must still apply processed first.
+    const body = JSON.stringify([
+      {
+        event: "bounce",
+        type: "bounce",
+        sg_message_id: "sg-same-msg.filter001.0",
+        timestamp: 200,
+      },
+      {
+        event: "processed",
+        sg_message_id: "sg-same-msg.filter001.0",
+        timestamp: 100,
+      },
+    ]);
+    const sig = signBody(privateKeyPem, ts, body);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(getSupabaseCallCount("messages", "update")).toBe(2);
+    const updates = getSupabaseWritePayloads("messages", "update") as Record<
+      string,
+      unknown
+    >[];
+    expect(updates[0]?.delivery_status).toBe("sent");
+    expect(updates[1]?.delivery_status).toBe("bounced");
+  });
+
+  it("guards non-terminal status writes against downgrading a terminal status (cross-batch ordering)", async () => {
+    // A retried/out-of-order `processed` batch can arrive AFTER the
+    // bounce batch. The UPDATE for a non-terminal status must exclude
+    // rows already in an outranking status so the bounce survives.
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+    stageMessageUpdates(1);
+
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = JSON.stringify([
+      { event: "processed", sg_message_id: "sg.msg.guard.1" },
+    ]);
+    const sig = signBody(privateKeyPem, ts, body);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    const orFilters = getSupabaseFilterCalls("messages", "update").filter(
+      (f) => f.verb === "or",
+    );
+    expect(orFilters).toHaveLength(1);
+    const orArg = String(orFilters[0]?.args[0]);
+    // NULL-status rows must stay matchable (NOT IN excludes NULL).
+    expect(orArg).toContain("delivery_status.is.null");
+    expect(orArg).toContain("delivery_status.not.in.");
+    for (const outranking of ["deferred", "delivered", "bounced", "dropped"]) {
+      expect(orArg).toContain(outranking);
+    }
+  });
+
+  it("writes terminal bounce statuses unguarded so they always land", async () => {
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+    stageMessageUpdates(1);
+
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = JSON.stringify([
+      { event: "bounce", type: "bounce", sg_message_id: "sg.msg.guard.2" },
+    ]);
+    const sig = signBody(privateKeyPem, ts, body);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(getSupabaseCallCount("messages", "update")).toBe(1);
+    const orFilters = getSupabaseFilterCalls("messages", "update").filter(
+      (f) => f.verb === "or",
+    );
+    expect(orFilters).toHaveLength(0);
+  });
+
   it("returns 400 for non-JSON Content-Type (e.g. text/plain)", async () => {
     const { publicKeyBase64 } = freshKeyPair();
     setBaseEnv(publicKeyBase64);

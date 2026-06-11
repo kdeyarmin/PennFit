@@ -212,7 +212,8 @@ for nopool in artifacts/resupply-api/src \
               lib/resupply-domain/src \
               lib/resupply-api-client/src \
               lib/resupply-audit/src lib/resupply-telecom/src \
-              lib/resupply-ai/src; do
+              lib/resupply-ai/src \
+              lib/resupply-integrations*/src; do
   if [[ -d "$nopool" ]]; then
     bad="$(rg --no-messages -n "${RG_TYPES[@]}" \
       -e 'new\s+([A-Za-z_$][\w$]*\.)?(Pool|PgPool)\(' \
@@ -225,6 +226,19 @@ for nopool in artifacts/resupply-api/src \
       echo "$bad" | sed 's/^/    /' >&2
     fi
   fi
+done
+
+# Rule 7b: integration packages are pure connectivity. CLAUDE.md's
+# integrations section documents "No DB imports" as a CI-enforced
+# invariant, but until this rule no check actually covered the
+# lib/resupply-integrations* family — Rule 7 above now bans raw `pg`
+# there, and this rule bans the data layer itself: adapters return
+# summary values; persistence belongs to the registry/route layer in
+# resupply-api.
+for intdir in lib/resupply-integrations*/src; do
+  forbid_imports_in "$intdir" \
+    "$intdir is a pure integration package — it must not import @workspace/resupply-db (persistence happens in the registry/route layer)" \
+    "@workspace/resupply-db['\"]"
 done
 
 # Rule 8: every audit_log INSERT must go through @workspace/resupply-audit.

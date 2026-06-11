@@ -4,6 +4,7 @@ import request from "supertest";
 
 import chatRouter, { __setChatFetchForTests } from "./chat";
 import { __resetLlmBreakersForTests } from "../../lib/llm-circuit-breaker";
+import { resetChatBudgetForTests } from "../../lib/storefront/chat-budget";
 import { __resetRateLimitsForTests } from "../../middlewares/rate-limit";
 
 function makeApp(): express.Express {
@@ -24,13 +25,48 @@ describe("POST /chat", () => {
     // Likewise the per-IP chat rate limiter — reset it so the request
     // count from one test doesn't exhaust the shared 20/min budget.
     __resetRateLimitsForTests();
+    // And the global per-minute LLM turn budget (module singleton).
+    resetChatBudgetForTests();
   });
 
   afterEach(() => {
     if (originalKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = originalKey;
+    delete process.env.RESUPPLY_CHAT_GLOBAL_TURNS_PER_MINUTE;
     __setChatFetchForTests(undefined);
     vi.restoreAllMocks();
+  });
+
+  it("degrades without calling the LLM once the GLOBAL turn budget is exhausted", async () => {
+    // Per-IP limits cap one client; this caps the aggregate across all
+    // callers (app-review 2026-06-10, P1-7). Budget of 1: the first
+    // turn reaches the (mocked) vendor, the second must not.
+    process.env.RESUPPLY_CHAT_GLOBAL_TURNS_PER_MINUTE = "1";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: "Happy to help!" } }],
+      }),
+      text: async () => "",
+    });
+    __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+    const first = await request(makeApp())
+      .post("/chat")
+      .send({ messages: [{ role: "user", content: "hi" }] });
+    expect(first.status).toBe(200);
+    expect(first.body.degraded).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const second = await request(makeApp())
+      .post("/chat")
+      .send({ messages: [{ role: "user", content: "hi again" }] });
+    expect(second.status).toBe(200);
+    expect(second.body.degraded).toBe(true);
+    expect(second.body.reply).toMatch(/\(814\) 471-0627/);
+    // The vendor was never touched for the over-budget turn.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects empty bodies with 400", async () => {
@@ -576,6 +612,7 @@ describe("POST /chat", () => {
         "compare_masks",
         "find_masks",
         "recommend_masks",
+        "track_order",
       ]);
       expect(payload.tool_choice).toBe("auto");
     });

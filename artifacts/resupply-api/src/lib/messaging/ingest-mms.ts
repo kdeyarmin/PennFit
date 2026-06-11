@@ -454,7 +454,7 @@ async function downloadOneMedia(
   } catch (err) {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         twilio_media_sid: twilioMediaSid,
       },
       "mms_ingest_download_failed",
@@ -690,10 +690,7 @@ async function uploadToGcs(
     });
     return normalised;
   } catch (err) {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      "mms_ingest_gcs_upload_failed",
-    );
+    logger.warn({ err }, "mms_ingest_gcs_upload_failed");
     return null;
   }
 }

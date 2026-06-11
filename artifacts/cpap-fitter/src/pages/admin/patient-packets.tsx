@@ -5,6 +5,9 @@ import {
   useListPatients,
   getListPatientsQueryKey,
   usePatientPacketTemplates,
+  usePatientPacketPresets,
+  useCreatePacketPreset,
+  useDeletePacketPreset,
   useAllPatientPackets,
   usePatientPacket,
   useSendPatientPacket,
@@ -12,8 +15,10 @@ import {
   useResendPatientPacket,
   useVoidPatientPacket,
   getAllPatientPacketsQueryKey,
+  getPatientPacketPresetsQueryKey,
   getPatientPacketQueryKey,
   patientPacketPdfUrl,
+  type PatientPacketPreset,
   type PatientPacketSummary,
   type PatientPacketStatus,
   type PatientPacketTemplate,
@@ -28,6 +33,12 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { DeliveryItemsEditor } from "@/components/admin/DeliveryItemsEditor";
 import { PacketEditForm } from "@/components/admin/PacketEditForm";
+import {
+  PacketDocumentCustomizer,
+  PacketTemplatesPanel,
+  buildDocumentOverrides,
+  type PacketCustomization,
+} from "@/components/admin/PacketTemplatesPanel";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 type BadgeVariant =
@@ -73,6 +84,7 @@ export function AdminPatientPacketsPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showSend, setShowSend] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const packetsQuery = useAllPatientPackets(statusFilter || undefined);
@@ -99,10 +111,22 @@ export function AdminPatientPacketsPage() {
               track who has signed.
             </p>
           </div>
-          <Button onClick={() => setShowSend((s) => !s)}>
-            {showSend ? "Close" : "Send new packet"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              intent="secondary"
+              onClick={() => setShowTemplates((s) => !s)}
+            >
+              {showTemplates ? "Close templates" : "Document templates"}
+            </Button>
+            <Button onClick={() => setShowSend((s) => !s)}>
+              {showSend ? "Close" : "Send new packet"}
+            </Button>
+          </div>
         </div>
+
+        {showTemplates && (
+          <PacketTemplatesPanel onClose={() => setShowTemplates(false)} />
+        )}
 
         {showSend && (
           <SendPacketPanel
@@ -278,6 +302,10 @@ function SendPacketPanel({
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<Record<string, boolean>>({});
+  // One-off content edits keyed by document key (null = not customizing).
+  const [customizations, setCustomizations] = useState<
+    Record<string, PacketCustomization | null>
+  >({});
   const [useEmail, setUseEmail] = useState(true);
   const [useSms, setUseSms] = useState(true);
   const [title, setTitle] = useState("");
@@ -328,6 +356,20 @@ function SendPacketPanel({
   const toggleKey = (key: string) =>
     setSelectedKeys({ ...selectedKeys, [key]: !selectedKeys[key] });
 
+  // Apply a saved bundle preset: select its documents (the required set
+  // is folded in server-side regardless) and adopt its title.
+  const applyPreset = (preset: {
+    document_keys: string[];
+    packet_title: string | null;
+  }) => {
+    const next: Record<string, boolean> = {};
+    for (const t of templates) {
+      next[t.key] = preset.document_keys.includes(t.key);
+    }
+    setSelectedKeys(next);
+    if (preset.packet_title) setTitle(preset.packet_title);
+  };
+
   const handleSend = async () => {
     setError(null);
     setResult(null);
@@ -335,6 +377,11 @@ function SendPacketPanel({
       setError("Select at least one document.");
       return;
     }
+    const documentOverrides = buildDocumentOverrides(
+      customizations,
+      templates,
+      chosen.map((t) => t.key),
+    );
     try {
       if (mode === "patient") {
         if (!selectedPatient) {
@@ -357,6 +404,7 @@ function SendPacketPanel({
             recipientPhone: recipientPhone.trim() || undefined,
             channels,
             deliveryDetails,
+            documentOverrides,
           },
         });
         setResult({
@@ -384,6 +432,7 @@ function SendPacketPanel({
           title: title.trim() || undefined,
           channels,
           deliveryDetails,
+          documentOverrides,
         });
         setResult({
           link: res.signingLink,
@@ -490,6 +539,7 @@ function SendPacketPanel({
                   setContactEmail("");
                   setContactPhone("");
                   setDeliveryDetails(null);
+                  setCustomizations({});
                 }}
               >
                 Send another
@@ -687,44 +737,73 @@ function SendPacketPanel({
             {/* Document selection */}
             <div>
               <Label htmlFor="docs">Documents</Label>
+              <PacketPresetBar
+                currentKeys={chosen.map((t) => t.key)}
+                onApply={applyPreset}
+              />
               {templatesQuery.isPending ? (
                 <Spinner label="Loading documents…" />
               ) : (
                 <div className="space-y-2">
-                  {templates.map((t: PatientPacketTemplate) => (
-                    <label
-                      key={t.key}
-                      className="flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer"
-                      style={{ borderColor: "hsl(var(--line-1))" }}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={t.required || Boolean(selectedKeys[t.key])}
-                        disabled={t.required}
-                        onChange={() => toggleKey(t.key)}
-                      />
-                      <span>
-                        <span
-                          className="font-medium text-sm"
-                          style={{ color: "hsl(var(--ink-1))" }}
-                        >
-                          {t.title}
-                        </span>{" "}
-                        {t.required ? (
-                          <Badge variant="info">Required</Badge>
-                        ) : !t.requiresSignature ? (
-                          <Badge variant="muted">Informational</Badge>
-                        ) : null}
-                        <span
-                          className="block text-xs mt-0.5"
-                          style={{ color: "hsl(var(--ink-3))" }}
-                        >
-                          {t.summary}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
+                  {templates.map((t: PatientPacketTemplate) => {
+                    const included = t.required || Boolean(selectedKeys[t.key]);
+                    return (
+                      <div
+                        key={t.key}
+                        className="rounded-md border px-3 py-2"
+                        style={{ borderColor: "hsl(var(--line-1))" }}
+                      >
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={included}
+                            disabled={t.required}
+                            onChange={() => toggleKey(t.key)}
+                          />
+                          <span>
+                            <span
+                              className="font-medium text-sm"
+                              style={{ color: "hsl(var(--ink-1))" }}
+                            >
+                              {t.title}
+                            </span>{" "}
+                            {t.required ? (
+                              <Badge variant="info">Required</Badge>
+                            ) : !t.requiresSignature ? (
+                              <Badge variant="muted">Informational</Badge>
+                            ) : null}
+                            {t.customized && (
+                              <Badge variant="info">Customized</Badge>
+                            )}
+                            <span
+                              className="block text-xs mt-0.5"
+                              style={{ color: "hsl(var(--ink-3))" }}
+                            >
+                              {t.summary}
+                            </span>
+                          </span>
+                        </label>
+                        {included && (
+                          <div className="mt-1 pl-7">
+                            <PacketDocumentCustomizer
+                              template={t}
+                              mergeTokens={
+                                templatesQuery.data?.mergeTokens ?? []
+                              }
+                              value={customizations[t.key] ?? null}
+                              onChange={(v) =>
+                                setCustomizations((prev) => ({
+                                  ...prev,
+                                  [t.key]: v,
+                                }))
+                              }
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -875,6 +954,141 @@ function SendPacketPanel({
         )}
       </div>
     </Card>
+  );
+}
+
+// ── Packet bundle presets bar ─────────────────────────────────────
+//
+// Sits above the document checkboxes in the send panel: apply a saved
+// bundle (e.g. "Medicare new patient") with one click, save the current
+// selection as a new preset, or delete one. Presets are a selection
+// convenience — the server still folds in every required document.
+function PacketPresetBar({
+  currentKeys,
+  onApply,
+}: {
+  currentKeys: string[];
+  onApply: (preset: PatientPacketPreset) => void;
+}) {
+  const qc = useQueryClient();
+  const presetsQuery = usePatientPacketPresets();
+  const createPreset = useCreatePacketPreset();
+  const deletePreset = useDeletePacketPreset();
+  const presets = presetsQuery.data?.presets ?? [];
+
+  const [selectedId, setSelectedId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: getPatientPacketPresetsQueryKey() });
+
+  const selected = presets.find((p) => p.id === selectedId) ?? null;
+
+  return (
+    <div
+      className="mb-2 rounded-md border p-2.5 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          id="presetSelect"
+          aria-label="Document bundle preset"
+          value={selectedId}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSelectedId(id);
+            setMsg(null);
+            const preset = presets.find((p) => p.id === id);
+            if (preset) {
+              onApply(preset);
+              setMsg(`Applied “${preset.name}”.`);
+            }
+          }}
+          emptyOptionLabel={
+            presets.length === 0 ? "No saved bundles yet" : "Apply a bundle…"
+          }
+          options={presets.map((p) => ({ value: p.id, label: p.name }))}
+        />
+        {selected && (
+          <Button
+            intent="ghost"
+            size="sm"
+            isLoading={deletePreset.isPending}
+            onClick={async () => {
+              if (!window.confirm(`Delete the “${selected.name}” bundle?`)) {
+                return;
+              }
+              setMsg(null);
+              try {
+                await deletePreset.mutateAsync({ id: selected.id });
+                setSelectedId("");
+                await refresh();
+                setMsg("Bundle deleted.");
+              } catch (err) {
+                setMsg(describeError(err).detail ?? "Delete failed.");
+              }
+            }}
+          >
+            Delete bundle
+          </Button>
+        )}
+        <Button
+          intent="ghost"
+          size="sm"
+          onClick={() => {
+            setSaving((s) => !s);
+            setMsg(null);
+          }}
+        >
+          {saving ? "Cancel" : "Save selection as bundle"}
+        </Button>
+      </div>
+      {saving && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            aria-label="Bundle name"
+            placeholder="e.g. Medicare new patient"
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            className="max-w-xs"
+          />
+          <Button
+            size="sm"
+            isLoading={createPreset.isPending}
+            disabled={presetName.trim().length < 2 || currentKeys.length === 0}
+            onClick={async () => {
+              setMsg(null);
+              try {
+                await createPreset.mutateAsync({
+                  name: presetName.trim(),
+                  documentKeys: currentKeys,
+                });
+                setPresetName("");
+                setSaving(false);
+                await refresh();
+                setMsg("Bundle saved.");
+              } catch (err) {
+                const detail = describeError(err).detail;
+                setMsg(
+                  detail === "name_taken"
+                    ? "A bundle with that name already exists."
+                    : (detail ?? "Save failed."),
+                );
+              }
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      )}
+      {msg && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          {msg}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1060,6 +1274,23 @@ function PacketDetailPanel({
               ESIGN consent: {signature.consent_esign ? "Yes" : "No"}
               {signature.signer_ip ? ` · IP ${signature.signer_ip}` : ""}
             </p>
+            {packet.chart_document_id ? (
+              <p className="text-xs mt-1" style={{ color: "hsl(142 60% 30%)" }}>
+                Signed PDF filed to the patient’s chart
+                {packet.chart_filed_at
+                  ? ` on ${fmtDate(packet.chart_filed_at)}`
+                  : ""}
+                {" — see their Documents tab."}
+              </p>
+            ) : packet.patient_id ? (
+              <p
+                className="text-xs mt-1"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Not yet filed to the chart — download the PDF below to file it
+                manually if needed.
+              </p>
+            ) : null}
           </div>
         )}
 

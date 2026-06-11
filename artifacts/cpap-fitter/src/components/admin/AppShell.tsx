@@ -22,6 +22,7 @@ import {
   FolderKanban,
   CalendarClock,
   CalendarDays,
+  Video,
   Sparkles,
   Mail,
   Users,
@@ -134,7 +135,8 @@ type NavLink = {
     | "pendingReviews"
     | "overdueFollowups"
     | "newPatientDocuments"
-    | "newInboundFaxes";
+    | "newInboundFaxes"
+    | "pacwareReadyToSync";
   /**
    * Granular RBAC permission key required to USE the destination page
    * (e.g. `admin.tools.manage`). When set, the nav entry is hidden for
@@ -264,6 +266,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: CalendarDays,
             matchPrefix: "/admin/company-calendar",
             hint: "Shared schedule of patient appointments — fittings, setups, follow-ups — visible to the whole team",
+          },
+          {
+            href: "/admin/video-visits",
+            label: "Video visits",
+            icon: Video,
+            matchPrefix: "/admin/video-visits",
+            hint: "Telehealth video calls with patients for equipment setups, troubleshooting, and follow-ups",
           },
           {
             href: "/admin/followups",
@@ -723,7 +732,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Verify insurance",
             icon: ShieldCheck,
             matchPrefix: "/admin/billing/verify",
-            hint: "Run an on-demand insurance verification (270/271) for any patient",
+            hint: "Run an on-demand insurance verification (270/271) for any patient — or a quick check with no patient record",
           },
           {
             href: "/admin/billing/eligibility",
@@ -1066,6 +1075,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Boxes,
             matchPrefix: "/admin/pacware",
             requiredPermission: "admin.tools.manage",
+            badgeKey: "pacwareReadyToSync",
             hint: "PacWare (DME billing) CSV import & export",
           },
           {

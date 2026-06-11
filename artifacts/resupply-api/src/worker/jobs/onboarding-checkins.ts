@@ -8,15 +8,17 @@
 // vendor-failure attempts the dispatcher just logged.
 //
 // Cadence:
-//   onboarding-checkins.dispatch  — daily 14:17 UTC (10:17 ET)
-//   onboarding-checkins.scan      — daily 14:47 UTC (30 min later)
+//   onboarding-checkins.dispatch  — daily 19:17 UTC (3:17pm ET)
+//   onboarding-checkins.scan      — daily 19:47 UTC (30 min later)
 //
-// Both are off-peak for our Eastern-US patient base but still
-// in-business-hours so a vendor-error alert lands while a CSR is
-// online. Idempotency: each handler is safe to re-run — the
-// dispatcher's `dayN_sent_at IS NULL` guard prevents double-sends,
-// and the scanner's partial unique index keeps one open alert per
-// patient.
+// 19:17 UTC is inside the 9am–8pm TCPA send window for EVERY US
+// timezone (the old 14:17 UTC slot was 6:17am Pacific in winter —
+// under the TCPA 8am floor for West-Coast patients; app-review
+// 2026-06-10, P1-3), and still in-business-hours so a vendor-error
+// alert lands while a CSR is online. Idempotency: each handler is
+// safe to re-run — the dispatcher's `dayN_sent_at IS NULL` guard
+// prevents double-sends, and the scanner's partial unique index
+// keeps one open alert per patient.
 
 import type PgBoss from "pg-boss";
 
@@ -30,10 +32,10 @@ import {
 } from "../lib/queue-options";
 
 const DISPATCH_JOB = "onboarding-checkins.dispatch";
-const DISPATCH_CRON = "17 14 * * *";
+const DISPATCH_CRON = "17 19 * * *";
 
 const SCAN_JOB = "onboarding-checkins.scan";
-const SCAN_CRON = "47 14 * * *";
+const SCAN_CRON = "47 19 * * *";
 
 export async function registerOnboardingCheckinJobs(
   boss: PgBoss,

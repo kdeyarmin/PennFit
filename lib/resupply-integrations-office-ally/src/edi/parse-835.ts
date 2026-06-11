@@ -204,8 +204,15 @@ export function parse835(input: string): Parsed835 {
         modifiers,
         billedCents: safeMoney(seg.elements[1]),
         paidCents: safeMoney(seg.elements[2]),
-        unitsBilled: toIntOrNull(seg.elements[4]),
-        unitsPaid: toIntOrNull(seg.elements[5]),
+        // Per 005010X221A1: SVC04 (elements[3]) is the NUBC revenue
+        // code, SVC05 (elements[4]) is units of service PAID, SVC06
+        // (elements[5]) is a composite echoing the procedure as
+        // originally submitted, and SVC07 (elements[6]) is the
+        // ORIGINAL (billed) units. SVC07 is only sent when it differs
+        // from SVC05, so fall back to the paid units when absent.
+        unitsBilled:
+          toIntOrNull(seg.elements[6]) ?? toIntOrNull(seg.elements[4]),
+        unitsPaid: toIntOrNull(seg.elements[4]),
         serviceDate: null,
         adjustments: [],
       };

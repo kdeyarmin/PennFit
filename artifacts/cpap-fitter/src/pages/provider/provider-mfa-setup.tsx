@@ -1,8 +1,8 @@
 // Provider MFA enrollment — mandatory before the document queue opens.
 //
-// Step 1: "Begin" mints a TOTP secret; we show the manual-entry key +
-//         an otpauth:// link (no QR-code library is bundled; a QR is a
-//         follow-up). The provider adds it to their authenticator app.
+// Step 1: "Begin" mints a TOTP secret; we show a scannable QR code plus
+//         the manual-entry key + an otpauth:// link. The provider adds
+//         it to their authenticator app.
 // Step 2: enter the 6-digit code to confirm; on success we show the
 //         one-time recovery codes and let them continue to the queue.
 
@@ -11,6 +11,7 @@ import { useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Copy, Check } from "lucide-react";
 
+import { QrCode } from "@/components/QrCode";
 import {
   beginProviderMfa,
   verifyProviderMfa,
@@ -141,7 +142,16 @@ export function ProviderMfaSetup({
           >
             <div className="space-y-2">
               <p className="text-sm font-medium text-slate-700">
-                1. Add this key to your authenticator app
+                1. Scan this QR code with your authenticator app
+              </p>
+              <div className="flex justify-center rounded-lg border border-slate-200 bg-white p-3">
+                <QrCode
+                  value={begin.otpauthUri}
+                  ariaLabel="Authenticator enrollment QR code"
+                />
+              </div>
+              <p className="text-sm font-medium text-slate-700">
+                …or add this key manually
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm">

@@ -20,6 +20,7 @@ import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import providerPortalRouter from "./routes/provider";
 import { getAuthDeps } from "./lib/auth-deps";
+import { isDeployedRuntime } from "./lib/deployed-runtime";
 import { isFeatureEnabled } from "./lib/feature-flags";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
@@ -241,11 +242,35 @@ app.use(
   faxWebhooksRouter,
 );
 
+// SendGrid Event Webhook + vendor integration webhooks verify an
+// ECDSA/HMAC signature over the EXACT raw body bytes, same as Stripe
+// and fax above. Their routers register express.raw() locally, but
+// they are mounted inside the /resupply-api tree — AFTER the global
+// express.json() below, which would consume the stream first and turn
+// req.body into a parsed object (the router-level raw() then no-ops).
+// That shipped as "every SendGrid event 400s in production"
+// (docs/app-review-2026-06-10.md P0-2). Capture the raw Buffer here,
+// BEFORE the global parser; the router-level raw() and the global
+// json() both skip an already-read body, so req.body stays a Buffer
+// all the way to the signature middleware.
+app.use(
+  "/resupply-api/email/sendgrid-events",
+  express.raw({ type: "application/json", limit: "1mb" }),
+);
+app.use(
+  "/resupply-api/integrations/webhooks",
+  express.raw({ type: "application/json", limit: "1mb" }),
+);
+
 // The patient-packet signing endpoint can carry a drawn-signature PNG
 // data URL, which exceeds the default 100 KB body cap. Parse it with a
 // larger limit BEFORE the global parser; once parsed, express.json
 // below is a no-op for this request.
 app.use("/api/patient-packets/sign", express.json({ limit: "1mb" }));
+
+// The provider-portal sign route can carry the same drawn-signature PNG
+// data URL — same dedicated 1 MB parser, same reasoning as above.
+app.use("/api/provider/queue", express.json({ limit: "1mb" }));
 
 // The PacWare patient-roster import POSTs a whole report CSV as JSON
 // ({ csv: "..." }), which exceeds the default 100 KB cap. Parse it with a
@@ -306,13 +331,14 @@ logger.info(
 // BEFORE the provider data router below so /api/provider/auth/* resolves
 // to the auth handlers.
 const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
-app.use("/api/provider", async (_req, res, next) => {
-  if (await isFeatureEnabled("provider.portal_enabled")) {
-    next();
-    return;
-  }
-  res.status(404).json({ error: "not_found" });
-});
+// NOTE: no blanket feature-flag gate in front of this mount. The
+// staged-rollout design (documented on providerPortalFeatureGate
+// below) keeps the AUTH surface reachable while the flag is OFF so
+// invited providers can sign in / enroll MFA before launch — only the
+// queue/sign/decline DATA surface stays dark. An earlier blanket
+// `app.use("/api/provider", flagGate)` here 404'd the auth router too,
+// making the gate's auth exemption dead code and blocking pre-launch
+// provider sign-in.
 app.use(
   "/api/provider/auth",
   makeAuthRouter(providerAuthDeps, {
@@ -533,18 +559,32 @@ app.use("/api", storefrontRouter);
 // in form's POST, which the SPA renders as "Not found." (see
 // lib/resupply-auth-react/src/client.ts:defaultMessageForStatus).
 //
-// Path resolution: this module is bundled to
-// `artifacts/resupply-api/dist/index.mjs`; the Vite build outputs to
-// `artifacts/cpap-fitter/dist/public/`. Two parent dirs up gets us
-// to `artifacts/`, then into `cpap-fitter/dist/public`.
+// Path resolution, in preference order:
+//   1. `<this module's dir>/public` — the deploy build EMBEDS the SPA
+//      inside this artifact's own dist (railway.json buildCommand runs
+//      scripts/embed-spa.mjs after the workspace builds). The runtime
+//      image is guaranteed to keep resupply-api's dist (the start
+//      command runs from it), so the embedded copy makes SPA serving
+//      independent of any other workspace's output surviving image
+//      assembly.
+//   2. `../../cpap-fitter/dist/public` — the sibling workspace output
+//      (local builds / historical layout). From the bundled
+//      `artifacts/resupply-api/dist/index.mjs` AND from src in dev,
+//      two parent dirs up reaches `artifacts/`.
 //
-// We guard on `existsSync` so a dev session running only the API
+// We guard on index.html presence so a dev session running only the API
 // (with Vite serving the SPA on a separate port) skips the wiring
 // gracefully — the API still works, the SPA just isn't co-served.
-const SPA_DIST = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../cpap-fitter/dist/public",
-);
+const SPA_DIST_CANDIDATES = [
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "public"),
+  path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../cpap-fitter/dist/public",
+  ),
+];
+const SPA_DIST =
+  SPA_DIST_CANDIDATES.find((dir) => existsSync(path.join(dir, "index.html"))) ??
+  SPA_DIST_CANDIDATES[1]!;
 const SPA_INDEX_HTML = path.join(SPA_DIST, "index.html");
 
 if (existsSync(SPA_INDEX_HTML)) {
@@ -629,10 +669,17 @@ if (existsSync(SPA_INDEX_HTML)) {
     "serving cpap-fitter SPA + history fallback from this process",
   );
 } else {
-  if (process.env.NODE_ENV === "production") {
+  // Deployed runtime (NODE_ENV=production OR any Railway-injected
+  // marker): refuse to start. Crashing before the listener binds fails
+  // the deploy's health check, so Railway keeps the previous (working)
+  // release serving. Keying this on NODE_ENV alone left the guard
+  // unable to fire on Railway at all — Railway doesn't inject NODE_ENV,
+  // so a dist-less image (if one were ever built) would sail past the
+  // deliberately dependency-free liveness probe and go live.
+  if (isDeployedRuntime(process.env)) {
     logger.error(
       { event: "spa_dist_missing", spa_dist: SPA_DIST },
-      "cpap-fitter dist not found in production — refusing to start",
+      "cpap-fitter dist not found in a deployed runtime — refusing to start",
     );
     throw new Error(
       "Refusing to start: cpap-fitter dist/public/index.html missing",

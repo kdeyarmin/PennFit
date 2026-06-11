@@ -39,7 +39,7 @@ import {
 } from "../llm-provider";
 import { logger } from "../logger";
 import {
-  CHAT_TOOLS,
+  CATALOG_CHAT_TOOLS,
   executeChatTool,
   MAX_TOOL_ROUNDS,
 } from "../storefront/chatbotTools";
@@ -115,12 +115,14 @@ const SYSTEM_PROMPT = [
   "  Use them freely rather than refusing.",
 ].join("\n");
 
-// Reuse the storefront chatbot's catalog tools. They're pure read-
-// only catalog operations — no PHI surface, no DB writes — so the
-// same set is safe inside the patient-portal sleep coach. Without
+// Reuse the storefront chatbot's CATALOG tools only. They're pure
+// read-only catalog operations — no PHI surface, no DB writes — so
+// the same set is safe inside the patient-portal sleep coach. (The
+// chat route's track_order tool is deliberately NOT exposed here:
+// it needs the chat route's harvested-email context.) Without
 // tools the coach hallucinates mask names when patients ask product
 // questions; with tools every answer is grounded in maskCatalog.ts.
-const ANTHROPIC_TOOLS: AnthropicTool[] = CHAT_TOOLS.map((t) => ({
+const ANTHROPIC_TOOLS: AnthropicTool[] = CATALOG_CHAT_TOOLS.map((t) => ({
   name: t.function.name,
   description: t.function.description,
   input_schema: t.function.parameters,
@@ -279,7 +281,7 @@ export async function askSleepCoach(
           is_error?: boolean;
         }> = [];
         for (const tc of toolCalls) {
-          const dispatch = executeChatTool(tc.name, tc.input);
+          const dispatch = await executeChatTool(tc.name, tc.input);
           if (dispatch.ok) {
             userContent.push({
               type: "tool_result",
@@ -387,7 +389,9 @@ export async function askSleepCoach(
             model: DEFAULT_OPENAI_MODEL,
             temperature: 0.4,
             max_tokens: 400,
-            ...(sendTools ? { tools: CHAT_TOOLS, tool_choice: "auto" } : {}),
+            ...(sendTools
+              ? { tools: CATALOG_CHAT_TOOLS, tool_choice: "auto" }
+              : {}),
             messages,
           }),
         });
@@ -482,12 +486,12 @@ export async function askSleepCoach(
         tool_calls: toolCalls,
       });
       for (const call of toolCalls) {
-        const toolResult = (() => {
+        const toolResult = await (async () => {
           try {
             const parsedArgs = call.function.arguments
               ? JSON.parse(call.function.arguments)
               : {};
-            return executeChatTool(call.function.name, parsedArgs);
+            return await executeChatTool(call.function.name, parsedArgs);
           } catch {
             return { ok: false as const, error: "Invalid tool arguments JSON" };
           }

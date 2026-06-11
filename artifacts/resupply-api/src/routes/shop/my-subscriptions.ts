@@ -77,6 +77,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -209,7 +210,7 @@ router.post(
     } catch (err) {
       req.log?.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
           subscriptionId: sub.stripeSubscriptionId,
         },
         "stripe.subscriptions.update(cancel_at_period_end) failed",
@@ -314,7 +315,7 @@ router.get(
     } catch (err) {
       req.log?.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
           productId: item.productId,
         },
         "stripe.prices.list(cadence-options) failed",
@@ -424,7 +425,7 @@ async function handlePauseOrResume(
     req.log?.error(
       {
         verb,
-        err: err instanceof Error ? err.message : String(err),
+        ...stripeErrLogFields(err),
         subscriptionId: sub.stripeSubscriptionId,
       },
       `stripe.subscriptions.update(${verb}) failed`,
@@ -571,7 +572,7 @@ router.post(
     } catch (err) {
       req.log?.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
           priceId: newPriceId,
         },
         "stripe.prices.retrieve(cadence) failed",
@@ -601,7 +602,7 @@ router.post(
     } catch (err) {
       req.log?.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
           subscriptionId: sub.stripeSubscriptionId,
         },
         "stripe.subscriptions.retrieve(cadence) failed",
@@ -625,7 +626,7 @@ router.post(
     } catch (err) {
       req.log?.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          ...stripeErrLogFields(err),
           subscriptionId: sub.stripeSubscriptionId,
           newPriceId,
         },

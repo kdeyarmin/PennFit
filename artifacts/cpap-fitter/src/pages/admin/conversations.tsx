@@ -72,19 +72,20 @@ const VIEW_LABELS: Record<InboxView, string> = {
 };
 
 export function ConversationsPage() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
 
   // Read initial filter from URL on first mount so deep links from
   // the dashboard ("Awaiting admin queue") land prefiltered. The empty
   // deps array is deliberate — once the user starts navigating within
   // the page we drive the state from local handlers, not the URL.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const initialStatus = useMemo(() => readQueryParam(location, "status"), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const initialChannel = useMemo(() => readQueryParam(location, "channel"), []);
+  // NB: read from window.location, NOT wouter's useLocation() — wouter
+  // v3's location is the pathname only and never contains a "?", so
+  // parsing it dropped every dashboard deep-link filter on the floor
+  // (docs/app-review-2026-06-10.md P0-5).
+  const initialStatus = useMemo(() => readQueryParam("status"), []);
+  const initialChannel = useMemo(() => readQueryParam("channel"), []);
   const initialView = useMemo(
-    () => (readQueryParam(location, "view") as InboxView | null) ?? "",
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => (readQueryParam("view") as InboxView | null) ?? "",
     [],
   );
 
@@ -332,10 +333,12 @@ export function ConversationsPage() {
   );
 }
 
-function readQueryParam(location: string, key: string): string | null {
-  const qIndex = location.indexOf("?");
-  if (qIndex === -1) return null;
-  return new URLSearchParams(location.slice(qIndex + 1)).get(key);
+// Read once from the real URL (window.location.search). Wouter's
+// useLocation() can't be used here: in v3 it returns the pathname
+// only, so it never carries the query string.
+function readQueryParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
 }
 
 const PRIORITY_TONE: Record<NonNullable<Row["priority"]>, string> = {

@@ -384,6 +384,10 @@ export function supabaseAuthRepository(
         .from("email_tokens")
         .update({ consumed_at: iso })
         .eq("token_hash", bufferToHexBytea(input.tokenHash))
+        // Purpose is part of the predicate — see the repository
+        // interface note: a wrong-endpoint submission must miss the
+        // WHERE clause and leave the token intact, not burn it.
+        .eq("purpose", input.purpose)
         .is("consumed_at", null)
         .gt("expires_at", iso)
         .select(EMAIL_TOKEN_COLS)

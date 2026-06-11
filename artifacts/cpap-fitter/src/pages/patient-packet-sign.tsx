@@ -73,13 +73,9 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <main
-      id="main-content"
-      tabIndex={-1}
-      className="relative z-10 container max-w-3xl mx-auto px-4 py-10 sm:py-14"
-    >
+    <div className="relative z-10 container max-w-3xl mx-auto px-4 py-10 sm:py-14">
       {children}
-    </main>
+    </div>
   );
 }
 

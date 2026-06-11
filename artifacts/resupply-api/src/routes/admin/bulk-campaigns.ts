@@ -575,7 +575,7 @@ function makeTransitionHandler(
           {
             campaignId: params.data.id,
             action,
-            err: err instanceof Error ? err.message : String(err),
+            err,
           },
           `bulk_campaign.${action}: side effect failed`,
         );

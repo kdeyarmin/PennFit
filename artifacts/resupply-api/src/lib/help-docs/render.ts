@@ -19,10 +19,12 @@ import type { EmailAttachment } from "@workspace/resupply-auth";
 import {
   HELP_DOC_VERSION,
   PATIENT_HELP_DOCS,
+  PROVIDER_HELP_DOCS,
   staffHelpDocs,
   type HelpDoc,
   type HelpDocSection,
 } from "./content";
+import { loadCustomerServiceManual } from "./manual";
 
 const PAGE_WIDTH = 504; // LETTER (612) minus 54pt margins each side
 const PDF_CONTENT_TYPE = "application/pdf";
@@ -34,12 +36,18 @@ const renderedCache = new Map<string, Buffer>();
 /** Audience descriptor for {@link buildInviteHelpAttachments}. */
 export type HelpDocAudience =
   | { kind: "patient" }
+  | { kind: "provider" }
   | { kind: "staff"; role: AdminRole };
 
 function docsFor(audience: HelpDocAudience): ReadonlyArray<HelpDoc> {
-  return audience.kind === "patient"
-    ? PATIENT_HELP_DOCS
-    : staffHelpDocs(audience.role);
+  switch (audience.kind) {
+    case "patient":
+      return PATIENT_HELP_DOCS;
+    case "provider":
+      return PROVIDER_HELP_DOCS;
+    case "staff":
+      return staffHelpDocs(audience.role);
+  }
 }
 
 /**
@@ -60,6 +68,14 @@ export async function buildInviteHelpAttachments(
       filename: doc.filename,
       contentType: PDF_CONTENT_TYPE,
     });
+  }
+  // Staff invites additionally carry the full Customer Service
+  // Manual — the operations manual for the console the new hire is
+  // joining. Best-effort: when the PDF isn't on disk the invite
+  // ships with the rendered guides only.
+  if (audience.kind === "staff") {
+    const manual = await loadCustomerServiceManual();
+    if (manual) attachments.push(manual);
   }
   return attachments;
 }

@@ -15,6 +15,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { QrCode } from "@/components/QrCode";
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -365,15 +366,16 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
         manually. Then enter the 6-digit code it shows.
       </p>
 
-      {/* The SPA renders an SVG QR client-side via a tiny QR
-          generator. To avoid adding a dependency, we surface the
-          otpauth URI as a copy-friendly link and the base32 secret
-          for manual entry. Authenticator apps all accept manual
-          entry of the secret string. */}
       <div
         className="rounded border p-4 space-y-3 font-mono text-xs"
         style={{ borderColor: "hsl(var(--line-1))" }}
       >
+        <div className="flex justify-center">
+          <QrCode
+            value={enrollState.otpauthUri}
+            ariaLabel="Authenticator enrollment QR code"
+          />
+        </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1">
             Setup key (manual entry)

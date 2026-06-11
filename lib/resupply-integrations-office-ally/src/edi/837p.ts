@@ -40,6 +40,11 @@
 const SEGMENT_TERMINATOR = "~";
 const ELEMENT_SEPARATOR = "*";
 const COMPONENT_SEPARATOR = ":";
+/** ISA11 declares `^` as the repetition separator — reserved like the
+ *  other three delimiters in 5010, so it must be stripped from data
+ *  elements too (a `^` in a name would split the element into
+ *  repetitions at strict receivers). */
+const REPETITION_SEPARATOR = "^";
 
 /** Inputs to a single 837P transaction. One transaction = one or more claims for one payer. */
 export interface Claim837PInput {
@@ -235,7 +240,7 @@ export interface ControlNumbers {
 }
 
 const ELEMENT_FORBIDDEN = new RegExp(
-  `[${escapeForCharClass(ELEMENT_SEPARATOR)}${escapeForCharClass(SEGMENT_TERMINATOR)}${escapeForCharClass(COMPONENT_SEPARATOR)}]`,
+  `[${escapeForCharClass(ELEMENT_SEPARATOR)}${escapeForCharClass(SEGMENT_TERMINATOR)}${escapeForCharClass(COMPONENT_SEPARATOR)}${escapeForCharClass(REPETITION_SEPARATOR)}]`,
   "g",
 );
 
@@ -354,9 +359,9 @@ export function build837P(
       "00", // ISA03 security information qualifier
       "          ", // ISA04 security (10 spaces)
       "ZZ", // ISA05 sender qualifier
-      padOrTrunc(sanitizeElement(input.submitter.etin), 15),
+      padFixedWidth(sanitizeElement(input.submitter.etin), 15),
       "ZZ", // ISA07 receiver qualifier
-      padOrTrunc(sanitizeElement(input.receiver.interchangeId), 15),
+      padFixedWidth(sanitizeElement(input.receiver.interchangeId), 15),
       yymmdd, // ISA09 — date YYMMDD
       hhmm, // ISA10 — time HHMM
       "^", // ISA11 — repetition separator
@@ -687,8 +692,11 @@ export function build837P(
 
     // 2320 / 2330 — coordination of benefits. We emit a single OI
     // payer disclosure: SBR (other subscriber info), NM1*IL + N3 + N4
-    // + DMG (other subscriber demographics), NM1*PR (other payer),
-    // AMT*D (prior payer paid amount, when known).
+    // (other subscriber name/address — loop 2330A), NM1*PR (other
+    // payer), AMT*D (prior payer paid amount, when known). NOTE: no
+    // DMG here — 4010 allowed other-subscriber demographics in 2330A,
+    // but 005010X222A1 removed it (2330A is NM1/N3/N4/REF only); a
+    // DMG in this position is a SNIP-2 syntax rejection at the 999.
     if (claim.otherSubscriber) {
       const oth = claim.otherSubscriber;
       segments.push(
@@ -742,14 +750,6 @@ export function build837P(
           padOrTrunc(sanitizeElement(oth.subscriber.address.city), 30),
           sanitizeElement(oth.subscriber.address.state).slice(0, 2),
           digitsOnly(oth.subscriber.address.zip),
-        ]),
-      );
-      segments.push(
-        joinSegment([
-          "DMG",
-          "D8",
-          toCcyymmdd(oth.subscriber.dateOfBirth),
-          oth.subscriber.gender,
         ]),
       );
       // 2330B — other payer. Emit the real payer identifier (NM108=PI,
@@ -920,4 +920,16 @@ function stripLeadingZeros(value: string): string {
 function padOrTrunc(value: string, width: number): string {
   if (value.length > width) return value.slice(0, width);
   return value;
+}
+
+/**
+ * ISA06/ISA08 are fixed-width AN(15) elements: exactly 15 chars,
+ * space-padded on the right. The ISA segment is the one segment X12
+ * receivers (and our own parse-segments.ts) parse POSITIONALLY — it
+ * must be exactly 106 bytes with ISA16 at offset 104 — so an unpadded
+ * sender/receiver id shifts every later byte and makes the whole
+ * interchange unparseable at strict intake (TA1-level rejection).
+ */
+function padFixedWidth(value: string, width: number): string {
+  return value.slice(0, width).padEnd(width, " ");
 }

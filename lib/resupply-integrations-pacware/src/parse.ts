@@ -82,8 +82,13 @@ export interface PacwareParseResult<T> {
   /**
    * Canonical fields that WERE present (mapped) in the header. Lets a
    * sync importer touch only the columns the report actually carried —
-   * so a report that omits the phone column never blanks existing phones,
-   * while a present-but-empty phone cell is treated as "cleared".
+   * so a report that omits the phone column never blanks existing
+   * phones. NOTE: a present-but-EMPTY cell is NOT "cleared" — empty
+   * cells are dropped before validation, and the importer's
+   * buildFillPatch is fill-only (it never overwrites or blanks an
+   * existing value; see docs/integrations/pacware.md). An earlier
+   * version of this comment described destructive cleared semantics
+   * the code has never had — do not "fix" the code to match it.
    */
   presentFields: string[];
 }

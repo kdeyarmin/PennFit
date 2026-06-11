@@ -197,6 +197,24 @@ describe("build837P", () => {
     expect(payload).toContain("~IEA*1*");
   });
 
+  it("emits a positionally-valid 106-byte ISA segment (ISA06/ISA08 space-padded to 15)", () => {
+    // The ISA segment is the one segment X12 receivers parse by BYTE
+    // OFFSET: ISA16 (the component separator) must sit at offset 104
+    // and the segment terminator at 105. Regression: padOrTrunc only
+    // truncated, so short sender/receiver ids produced a <106-byte ISA
+    // that shifted every later byte and made the interchange
+    // unparseable at strict clearinghouse intake.
+    const { payload } = build837P(fixtureInput());
+    const isaEnd = payload.indexOf("~");
+    const isa = payload.slice(0, isaEnd + 1);
+    expect(isa.length).toBe(106);
+    const elements = isa.slice(0, -1).split("*");
+    expect(elements[6]).toHaveLength(15); // ISA06 sender id
+    expect(elements[8]).toHaveLength(15); // ISA08 receiver id
+    expect(isa[104]).toBe(":"); // ISA16 component separator
+    expect(isa[105]).toBe("~");
+  });
+
   it("places the version qualifier 005010X222A1 in both GS08 and ST03", () => {
     const { payload } = build837P(fixtureInput());
     const gsMatch = payload.match(/~GS\*[^~]+~/);

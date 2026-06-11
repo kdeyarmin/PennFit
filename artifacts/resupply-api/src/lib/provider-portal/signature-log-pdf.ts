@@ -42,6 +42,8 @@ export interface SignatureLogItem {
   signerTitle: string | null;
   signerNpi: string | null;
   signatureStatement: string | null;
+  /** Optional drawn signature (PNG data URL). Rendered, never logged. */
+  signatureImage: string | null;
   signerIp: string | null;
   consentEsign: boolean;
   events: SignatureLogEvent[];
@@ -198,6 +200,21 @@ function drawSignatureLog(
         .fillColor("#000000");
     }
 
+    // Optional drawn signature, below the typed identity.
+    if (item.signatureImage) {
+      const embedded = embedSignatureImage(doc, item.signatureImage);
+      if (embedded) {
+        doc
+          .fontSize(8)
+          .font("Helvetica")
+          .fillColor("#555555")
+          .text("Drawn signature captured at signing", {
+            width: USABLE_WIDTH,
+          })
+          .fillColor("#000000");
+      }
+    }
+
     // Event chain table (compact).
     if (item.events.length > 0) {
       doc.moveDown(0.3);
@@ -223,6 +240,29 @@ function drawSignatureLog(
 
 function maybePageBreak(doc: PDFKit.PDFDocument, needed: number): void {
   if (doc.y + needed > 740) doc.addPage();
+}
+
+// Same defensive embed as lib/patient-packet/packet-pdf.ts: strict PNG
+// data-URL shape, size-capped, and a failed decode silently falls back
+// to the typed identity already printed above.
+function embedSignatureImage(
+  doc: PDFKit.PDFDocument,
+  dataUrl: string,
+): boolean {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(
+    dataUrl.trim(),
+  );
+  if (!match) return false;
+  try {
+    const buf = Buffer.from(match[1]!, "base64");
+    if (buf.length === 0 || buf.length > 2_000_000) return false;
+    maybePageBreak(doc, 80);
+    doc.moveDown(0.3);
+    doc.image(buf, { fit: [200, 64] });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function header(doc: PDFKit.PDFDocument, label: string): void {

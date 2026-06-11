@@ -29,6 +29,7 @@ import {
 
 import { runRecallBulkMatch } from "../../lib/equipment/recall-bulk-match";
 import { logger } from "../../lib/logger";
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import {
   recallMatchesAsset,
   type RecallSerialMatch,
@@ -801,19 +802,12 @@ router.get(
           r?.evidence_url ?? "",
           r?.performed_at ?? "",
         ]
-          .map(rosterCsvCell)
+          .map(safeCsvCell)
           .join(",") + "\n",
       );
     }
     res.end();
   },
 );
-
-function rosterCsvCell(value: unknown): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
 
 export default router;

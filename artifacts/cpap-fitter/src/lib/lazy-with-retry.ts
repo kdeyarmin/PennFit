@@ -52,7 +52,8 @@ export function isStaleChunkError(err: unknown): boolean {
     /Failed to fetch dynamically imported module/i.test(message) ||
     /error loading dynamically imported module/i.test(message) ||
     /Importing a module script failed/i.test(message) || // Safari
-    /'?text\/html'? is not a valid JavaScript MIME type/i.test(message) // SPA fallback served HTML for a missing chunk
+    /'?text\/html'? is not a valid JavaScript MIME type/i.test(message) || // SPA fallback served HTML for a missing chunk
+    /Unable to preload CSS/i.test(message) // Vite's preload helper — a chunk's hashed CSS dep is gone after a deploy
   );
 }
 
