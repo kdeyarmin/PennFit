@@ -752,10 +752,7 @@ router.post(
         ],
       });
     } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "manual_document.send_email failed",
-      );
+      logger.warn({ err }, "manual_document.send_email failed");
       res.status(502).json({ error: "email_send_failed" });
       return;
     }
@@ -976,10 +973,7 @@ router.post(
         res.status(502).json({ error: "upload_failed" });
         return;
       }
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "manual_document.attach upload failed",
-      );
+      logger.warn({ err }, "manual_document.attach upload failed");
       res.status(502).json({ error: "upload_failed" });
       return;
     }

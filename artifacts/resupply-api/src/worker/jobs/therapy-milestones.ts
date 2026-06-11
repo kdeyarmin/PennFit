@@ -629,7 +629,7 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       stats.sendFailed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           milestoneId: claimed.id,
         },
         "therapy-milestones: send threw (claim released)",

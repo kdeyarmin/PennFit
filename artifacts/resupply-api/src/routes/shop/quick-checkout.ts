@@ -44,6 +44,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
+import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
 
@@ -193,7 +194,7 @@ router.post(
         );
       } catch (err) {
         req.log?.warn(
-          { err: err instanceof Error ? err.message : String(err) },
+          { ...stripeErrLogFields(err) },
           "quick-checkout: stripe session retrieve failed",
         );
         res.status(502).json({ error: "stripe_retrieve_failed" });
@@ -415,7 +416,7 @@ router.post(
       }
     } catch (err) {
       req.log?.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { ...stripeErrLogFields(err) },
         "stripe quick-checkout sessions.create failed",
       );
       res.status(502).json({

@@ -304,7 +304,7 @@ export async function processTick(
     log.error(
       {
         campaignId: campaign.id,
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "bulk_campaigns.tick: template render failed; pausing campaign",
     );

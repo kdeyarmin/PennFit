@@ -357,7 +357,7 @@ export async function runRxRenewalSendDue(
           logger.warn(
             {
               prescription_id: row.prescriptionId,
-              err: err instanceof Error ? err.message : String(err),
+              err,
             },
             "Rx-renewal push fan-out threw (non-fatal)",
           );
@@ -388,7 +388,7 @@ export async function runRxRenewalSendDue(
         {
           prescription_id: row.prescriptionId,
           channel,
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "Rx renewal request send failed",
       );

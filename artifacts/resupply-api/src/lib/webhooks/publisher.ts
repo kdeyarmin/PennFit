@@ -82,7 +82,7 @@ export async function publishEvent(input: PublishEventInput): Promise<void> {
   } catch (err) {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err,
         eventType: input.eventType,
       },
       "webhook.publish: unexpected error (suppressed)",

@@ -132,7 +132,7 @@ export async function maybeDispatchPaymentFailedAlert(
     log?.warn?.(
       {
         event: "payment_failed_alert_error",
-        err: err instanceof Error ? err.message : String(err),
+        err,
       },
       "alerts: payment_failed trigger failed (non-fatal)",
     );

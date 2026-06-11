@@ -219,7 +219,7 @@ router.post("/shop/insurance-estimates", async (req, res) => {
       req.log?.warn?.(
         {
           event: "insurance-estimate-email.threw",
-          err: err instanceof Error ? err.message : String(err),
+          err,
         },
         "shop/insurance-estimates: estimate email send threw (non-fatal)",
       );

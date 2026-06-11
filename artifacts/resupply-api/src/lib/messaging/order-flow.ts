@@ -395,7 +395,7 @@ async function ensureFulfillments(
     logger.warn(
       {
         event: "resupply.substitution.resolve_failed",
-        err: err instanceof Error ? err.message : "unknown",
+        err,
       },
       "resupply: substitution lookup failed; falling back to primary SKU",
     );

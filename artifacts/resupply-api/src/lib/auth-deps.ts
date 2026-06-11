@@ -75,7 +75,7 @@ export function getAuthDeps(): AuthDeps {
         {
           event: "auth_audit_write_failed",
           action: event.action,
-          err: err instanceof Error ? err.message : "unknown",
+          err,
         },
         "auth audit write failed",
       );
@@ -111,7 +111,7 @@ export function getAuthDeps(): AuthDeps {
         event: "auth_rate_limit_check_failed",
         emailBucket,
         ip: context.ip,
-        err: err instanceof Error ? err.message : "unknown",
+        err,
       },
       "auth rate-limit check failed (fail-open)",
     );

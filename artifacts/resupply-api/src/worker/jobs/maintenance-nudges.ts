@@ -321,7 +321,7 @@ export async function runMaintenanceNudgeSweep(
     } catch (err) {
       logger.warn(
         {
-          err: err instanceof Error ? err.message : "unknown",
+          err,
           patientId: patient.id,
         },
         "patient-maintenance.weekly-nudge: send failed",

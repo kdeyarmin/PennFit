@@ -232,7 +232,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       stats.failed += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           orderId: claimed.id,
         },
         "shop-order.delivery-followup: recipient lookup failed",
@@ -275,7 +275,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       stats.failed += 1;
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           orderId: claimed.id,
         },
         "shop-order.delivery-followup: send threw (claim released)",

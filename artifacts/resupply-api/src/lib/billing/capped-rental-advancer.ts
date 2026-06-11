@@ -74,7 +74,7 @@ export async function runCappedRentalAdvance(): Promise<AdvanceStats> {
       stats.errored += 1;
       logger.warn(
         {
-          err: err instanceof Error ? err.message : String(err),
+          err,
           cycleId: cycle.id,
         },
         "capped-rental.advance: per-cycle failure",
