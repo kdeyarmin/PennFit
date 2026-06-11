@@ -42,7 +42,11 @@ import { logger } from "../../lib/logger";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
 import { getIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import {
+  adminRateLimit,
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -282,31 +286,33 @@ function toApiVisit(r: VisitListRow) {
 const VISIT_SELECT =
   "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, patients(legal_first_name, legal_last_name)";
 
-router.get("/admin/video-visits", requireAdmin, async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const includeClosed = req.query.include === "closed";
-  const patientId = z
-    .string()
-    .uuid()
-    .safeParse(req.query.patientId ?? "");
-  let query = supabase
-    .schema("resupply")
-    .from("video_visits")
-    .select(VISIT_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (!includeClosed) {
-    query = query.in("status", ["scheduled", "in_progress"]);
-  }
-  if (patientId.success) {
-    query = query.eq("patient_id", patientId.data);
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  res.json({
-    visits: ((data ?? []) as unknown as VisitListRow[]).map(toApiVisit),
-  });
-});
+// adminReadRateLimiter (a direct express-rate-limit instance) runs
+// BEFORE requireAdmin — the auth gate does a DB-backed session lookup,
+// so a limiter placed after it would leave that read unprotected (and
+// CodeQL's js/missing-rate-limiting flags exactly that ordering).
+router.get(
+  "/admin/video-visits",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const includeClosed = req.query.include === "closed";
+    let query = supabase
+      .schema("resupply")
+      .from("video_visits")
+      .select(VISIT_SELECT)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (!includeClosed) {
+      query = query.in("status", ["scheduled", "in_progress"]);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({
+      visits: ((data ?? []) as unknown as VisitListRow[]).map(toApiVisit),
+    });
+  },
+);
 
 const E164_RE = /^\+\d{10,15}$/;
 
@@ -328,8 +334,13 @@ const createBody = z
   })
   .strict();
 
+// On every mutation below, adminWriteRateLimiter (direct
+// express-rate-limit) runs BEFORE requireAdmin for the same reason as
+// the GET above; the per-admin inviteLimiter / adminRateLimit budgets
+// stay AFTER the gate where req.adminUserId is populated.
 router.post(
   "/admin/patients/:id/video-visits",
+  adminWriteRateLimiter,
   requireAdmin,
   inviteLimiter,
   adminRateLimit({ name: "video_visits.create", preset: "mutation" }),
@@ -486,6 +497,7 @@ const inviteBody = z
 
 router.post(
   "/admin/video-visits/:id/invite",
+  adminWriteRateLimiter,
   requireAdmin,
   inviteLimiter,
   adminRateLimit({ name: "video_visits.invite", preset: "mutation" }),
@@ -601,6 +613,7 @@ router.post(
 
 router.post(
   "/admin/video-visits/:id/join",
+  adminWriteRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "video_visits.join", preset: "mutation" }),
   async (req, res) => {
@@ -649,6 +662,7 @@ router.post(
 
 router.post(
   "/admin/video-visits/:id/cancel",
+  adminWriteRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "video_visits.cancel", preset: "mutation" }),
   async (req, res) => {
@@ -706,6 +720,7 @@ router.post(
 
 router.post(
   "/admin/video-visits/:id/complete",
+  adminWriteRateLimiter,
   requireAdmin,
   adminRateLimit({ name: "video_visits.complete", preset: "mutation" }),
   async (req, res) => {

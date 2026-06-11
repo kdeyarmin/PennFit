@@ -84,18 +84,10 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const listVideoVisits = (opts?: {
-  includeClosed?: boolean;
-  patientId?: string;
-}) => {
-  const params = new URLSearchParams();
-  if (opts?.includeClosed) params.set("include", "closed");
-  if (opts?.patientId) params.set("patientId", opts.patientId);
-  const qs = params.toString();
-  return jsonFetch<{ visits: VideoVisit[] }>(
-    `/admin/video-visits${qs ? `?${qs}` : ""}`,
+export const listVideoVisits = (opts?: { includeClosed?: boolean }) =>
+  jsonFetch<{ visits: VideoVisit[] }>(
+    `/admin/video-visits${opts?.includeClosed ? "?include=closed" : ""}`,
   );
-};
 
 export const createVideoVisit = (
   patientId: string,
