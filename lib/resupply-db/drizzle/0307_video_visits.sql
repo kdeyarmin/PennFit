@@ -49,6 +49,13 @@ CREATE INDEX IF NOT EXISTS video_visits_patient_created_idx
 CREATE INDEX IF NOT EXISTS video_visits_status_scheduled_idx
   ON resupply.video_visits (status, scheduled_at);
 
+-- RLS — match the deny-all posture established in 0169/0170.
+-- service_role (the only runtime data path) bypasses RLS; enabling it
+-- with no policy makes the table deny-all to anon/authenticated, the
+-- intended end-state for a service-role-only schema. 0170's catalog
+-- loop already ran, so a new table must enable it here.
+ALTER TABLE resupply.video_visits ENABLE ROW LEVEL SECURITY;
+
 -- Feature flag: seeded ON (the table's default-enabled posture). The
 -- create / invite / join routes and the signaling WebSocket all consult
 -- it, so flipping it OFF stops new visits and dead-ends join links
