@@ -1,20 +1,24 @@
 // Customer Service Manual attachment for staff invites.
 //
-// The full operations manual lives in the repo at
-// docs/user-manual/PennPaps-Customer-Service-Manual.pdf, pre-rendered
-// offline by docs/user-manual/render.mjs — Chromium is NOT a runtime
-// dependency. Staff invites attach it alongside the concise
-// getting-started guides so a new hire's welcome email carries the
-// actual manual for the console they're joining.
+// The full operations manual is authored in docs/user-manual/
+// (manual.html) and pre-rendered offline by docs/user-manual/render.mjs
+// — Chromium is NOT a runtime dependency. The rendered PDF is committed
+// at artifacts/resupply-api/assets/user-manual/ rather than docs/
+// because BOTH .railwayignore (docs) and .dockerignore
+// (docs/user-manual) exclude the docs tree from the Railway build
+// context — a PDF under docs/ would exist locally and in CI but never
+// reach the deployed container. Staff invites attach it alongside the
+// concise getting-started guides so a new hire's welcome email carries
+// the actual manual for the console they're joining.
 //
 // Loading is best-effort and cached. The file is resolved by walking
 // upward from this module (then from process.cwd()) until the
-// docs/user-manual path appears: the module's depth differs between
-// dev (src/lib/help-docs/), vitest, and the bundled dist output, and
-// cwd differs between local runs and Railway, so no fixed relative
-// path works everywhere. A missing file logs once per process and
-// yields "no attachment" — an invite must never fail because a docs
-// artifact wasn't shipped with the deploy.
+// repo-root-relative asset path appears: the module's depth differs
+// between dev (src/lib/help-docs/), vitest, and the bundled dist
+// output, and cwd differs between local runs and Railway, so no fixed
+// relative path works everywhere. A missing file logs once per process
+// and yields "no attachment" — an invite must never fail because an
+// asset wasn't shipped with the deploy.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -27,7 +31,9 @@ import { logger } from "../logger";
 export const CUSTOMER_SERVICE_MANUAL_FILENAME =
   "PennPaps-Customer-Service-Manual.pdf";
 const MANUAL_RELATIVE_PATH = path.join(
-  "docs",
+  "artifacts",
+  "resupply-api",
+  "assets",
   "user-manual",
   CUSTOMER_SERVICE_MANUAL_FILENAME,
 );
