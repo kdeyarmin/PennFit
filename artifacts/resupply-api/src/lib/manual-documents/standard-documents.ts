@@ -264,6 +264,46 @@ export function getStandardDocumentTemplate(
   return LIBRARY_BY_KEY.get(key) ?? null;
 }
 
+// ── Standard packets ───────────────────────────────────────────────
+//
+// Named bundles of the templates above. The SPA creates one draft per
+// member template through the existing POST /admin/manual-documents,
+// then bundles the drafts with POST /admin/manual-document-packets —
+// so a standard packet is pure composition, not a new mutation surface.
+
+export interface StandardDocumentPacket {
+  /** Stable identifier (used by the SPA; never persisted). */
+  key: string;
+  /** Display name in the library list. */
+  label: string;
+  /** One-line "when to use this" shown in the library list. */
+  description: string;
+  /** Title the created packet starts with (editable). */
+  title: string;
+  /** Whether the combined PDF opens with a generated cover sheet. */
+  includeCoverSheet: boolean;
+  /** Member template keys, in packet (send) order. */
+  templateKeys: readonly string[];
+}
+
+export const STANDARD_PACKET_LIBRARY: readonly StandardDocumentPacket[] = [
+  {
+    key: "new_patient_setup",
+    label: "New-patient setup packet",
+    description:
+      "The intake paperwork for onboarding a new patient, bundled as one PDF: Assignment of Benefits & Financial Responsibility, the Medicare DMEPOS Supplier Standards notice, and an Advance Beneficiary Notice — ready to fill in, send, and file.",
+    title: "New Patient Setup Packet",
+    includeCoverSheet: true,
+    templateKeys: ["aob_financial", "supplier_standards", "abn_medicare"],
+  },
+] as const;
+
+export function getStandardDocumentPacket(
+  key: string,
+): StandardDocumentPacket | null {
+  return STANDARD_PACKET_LIBRARY.find((p) => p.key === key) ?? null;
+}
+
 // ── Module-load assertion ──────────────────────────────────────────
 // Every template's prefilled field keys must exist in its type's
 // catalog def — otherwise normalizeManualDocumentFields would silently
@@ -274,6 +314,18 @@ for (const template of STANDARD_DOCUMENT_LIBRARY) {
     if (!allowed.has(key)) {
       throw new Error(
         `standard-documents: template "${template.key}" prefills unknown field "${key}" for type "${template.documentType}"`,
+      );
+    }
+  }
+}
+
+// Every packet member key must resolve to a template — a typo here
+// would otherwise surface as a broken "Create packet" button.
+for (const packet of STANDARD_PACKET_LIBRARY) {
+  for (const key of packet.templateKeys) {
+    if (!LIBRARY_BY_KEY.has(key)) {
+      throw new Error(
+        `standard-documents: packet "${packet.key}" references unknown template "${key}"`,
       );
     }
   }

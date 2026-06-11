@@ -15,7 +15,8 @@ export interface TimelineEvent {
     | "grievance_received"
     | "coaching_plan_opened"
     | "recall_notified"
-    | "onboarding_day";
+    | "onboarding_day"
+    | "video_visit";
   title: string;
   detail: string;
   refId: string;
