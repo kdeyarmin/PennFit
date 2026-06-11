@@ -550,23 +550,29 @@ const universalCreateBody = createBody
   })
   .strict()
   .superRefine((val, ctx) => {
-    if (!val.patientId === !val.guestName) {
+    const hasPatientId = Boolean(val.patientId);
+    const hasGuestName = Boolean(val.guestName);
+    if (hasPatientId === hasGuestName) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Provide exactly one of patientId or guestName.",
         path: ["patientId"],
       });
     }
-    if (
-      val.guestName &&
-      val.channel !== "none" &&
-      !val.email &&
-      !val.phoneE164
-    ) {
+    // Guests have no chart to fall back on, so the chosen delivery
+    // channel must come with its contact up front — fail at validation
+    // with a precise path instead of a late 422 from the create path.
+    if (hasGuestName && val.channel === "sms" && !val.phoneE164) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "A guest invite needs an email or phone number (or choose the copy-link channel).",
+        message: "An SMS invite for a guest needs phoneE164.",
+        path: ["phoneE164"],
+      });
+    }
+    if (hasGuestName && val.channel === "email" && !val.email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "An email invite for a guest needs email.",
         path: ["email"],
       });
     }

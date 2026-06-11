@@ -20,7 +20,16 @@ ALTER TABLE resupply.video_visits
   ADD COLUMN IF NOT EXISTS guest_phone_e164 text;
 
 -- Every existing row has a patient_id, so validating the constraint
--- against current data is free.
+-- against current data is free. DROP IF EXISTS first so environments
+-- that applied an earlier revision of this file (the preview env's
+-- hash-tracked migrator re-applies on content change) swap cleanly.
+-- The guest leg requires a NON-BLANK name: trim/length alone would
+-- yield NULL for a NULL guest_name, and CHECK treats NULL as pass.
+ALTER TABLE resupply.video_visits
+  DROP CONSTRAINT IF EXISTS video_visits_subject_check;
 ALTER TABLE resupply.video_visits
   ADD CONSTRAINT video_visits_subject_check
-  CHECK (patient_id IS NOT NULL OR guest_name IS NOT NULL);
+  CHECK (
+    patient_id IS NOT NULL
+    OR (guest_name IS NOT NULL AND length(trim(guest_name)) > 0)
+  );

@@ -118,13 +118,16 @@ export function StartVideoVisitModal({
     },
   });
 
+  // Channel-aware so the UI can't submit a state the server rejects
+  // (e.g. an SMS invite for a guest with only an email on the form).
   const canSubmit = lockedPatient
     ? true
     : isGuest
       ? guestName.trim().length > 0 &&
         (channel === "none" ||
-          guestEmail.trim().length > 0 ||
-          guestPhone.trim().length > 0)
+          (channel === "sms"
+            ? guestPhone.trim().length > 0
+            : guestEmail.trim().length > 0))
       : patient !== null;
 
   const copyLink = async () => {
