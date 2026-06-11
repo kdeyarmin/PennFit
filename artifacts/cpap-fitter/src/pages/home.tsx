@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   Sparkles,
   UserCircle2,
+  Video,
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
@@ -279,8 +280,16 @@ export function Home() {
           </div>
 
           <div className="glass-panel rounded-2xl p-2 sm:p-3">
-            <div className="grid sm:grid-cols-3 gap-1 sm:gap-2">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2">
               {[
+                {
+                  href: "/faq#telehealth-video-visits",
+                  Icon: Video,
+                  title: "Live video visits",
+                  cta: "Get help face-to-face",
+                  testid: "home-resource-video-visits",
+                  halo: "icon-halo-gold",
+                },
                 {
                   href: "/learn",
                   Icon: BookOpen,

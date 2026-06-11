@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   HelpCircle,
+  Video,
 } from "lucide-react";
 
 const steps = [
@@ -365,6 +366,38 @@ export function HowItWorks() {
       </section>
 
       {/* CTA */}
+      <section className="space-y-3">
+        <Card className="border-0 glass-card rounded-2xl">
+          <CardContent className="pt-6 flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
+              <Video className="w-5 h-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <h3 className="font-semibold tracking-tight">
+                Prefer a real person? Book a free video visit.
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Our care team offers secure telehealth video calls for equipment
+                setups, mask fitting help, and troubleshooting — no app to
+                install, just a link we text or email you. Call{" "}
+                <a className="underline" href="tel:+18144710627">
+                  (814) 471-0627
+                </a>{" "}
+                or ask in chat to set one up.
+              </p>
+            </div>
+            <Link href="/faq#telehealth-video-visits">
+              <Button
+                variant="outline"
+                className="rounded-full glass-panel border-border/60"
+              >
+                Learn more
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </section>
+
       <section className="text-center space-y-4 pt-4">
         <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
           Ready to get started?

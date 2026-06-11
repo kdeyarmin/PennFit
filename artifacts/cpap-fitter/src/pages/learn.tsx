@@ -25,6 +25,7 @@ import {
   LifeBuoy,
   ClipboardList,
   AlertTriangle,
+  Video,
 } from "lucide-react";
 
 type Category =
@@ -413,6 +414,26 @@ const articles: Article[] = [
         together — we'll coordinate prescriptions and pressure changes with your
         provider's office on your behalf, so you don't have to be the messenger
         between us.
+      </>
+    ),
+  },
+  {
+    Icon: Video,
+    title: "Telehealth Video Visits",
+    takeaway:
+      "Face-to-face help over video — setups, mask fitting, and troubleshooting without leaving home.",
+    tone: "gold",
+    category: "team",
+    body: (
+      <>
+        When written instructions aren't cutting it, our care team can meet you
+        on a free, secure video call: show us the equipment on camera and a
+        respiratory therapist or support specialist walks you through the setup
+        or fix in real time. We text or email you a join link — no app to
+        install and no account needed, just a phone, tablet, or computer with a
+        camera. Calls are encrypted directly between you and the team and are
+        never recorded. To set one up, call (814) 471-0627, email
+        support@pennpaps.com, or ask in the site chat.
       </>
     ),
   },
