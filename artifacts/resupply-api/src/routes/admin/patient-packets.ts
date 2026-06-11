@@ -39,6 +39,7 @@ import {
   listMergeTokens,
   loadTemplateOverrides,
   packetSectionsSchema,
+  parseStoredSections,
   renderPacketDocumentSections,
 } from "../../lib/patient-packet/content";
 import { buildSignedPacketPdf } from "../../lib/patient-packet/signed-pdf";
@@ -255,6 +256,69 @@ const saveTemplateBody = z
   })
   .strict();
 
+/**
+ * Persist a template override and append its revision-history row.
+ * Shared by the PUT (save) route and the restore route so every change
+ * — including a restore — lands in the same append-only history.
+ * Returns the new revision number.
+ */
+async function saveTemplateOverride(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  key: string,
+  title: string,
+  sections: Json,
+  adminEmail: string | null,
+): Promise<number> {
+  const { data: existing, error: readErr } = await supabase
+    .schema("resupply")
+    .from("patient_packet_template_overrides")
+    .select("revision")
+    .eq("document_key", key)
+    .limit(1)
+    .maybeSingle();
+  if (readErr) throw readErr;
+
+  const revision = (existing?.revision ?? 0) + 1;
+  const nowIso = new Date().toISOString();
+  const { error: upsertErr } = await supabase
+    .schema("resupply")
+    .from("patient_packet_template_overrides")
+    .upsert(
+      {
+        document_key: key,
+        title,
+        sections,
+        revision,
+        updated_by_email: adminEmail,
+        updated_at: nowIso,
+      },
+      { onConflict: "document_key" },
+    );
+  if (upsertErr) throw upsertErr;
+
+  // Append-only history (migration 0306). Best-effort: a history write
+  // failure must not roll back the save the operator just made.
+  const { error: histErr } = await supabase
+    .schema("resupply")
+    .from("patient_packet_template_revisions")
+    .insert({
+      document_key: key,
+      action: "saved",
+      revision,
+      title,
+      sections,
+      changed_by_email: adminEmail,
+    });
+  if (histErr) {
+    logger.warn(
+      { err: histErr.message, document_key: key },
+      "packet template revision-history write failed (save persisted)",
+    );
+  }
+
+  return revision;
+}
+
 router.put(
   "/admin/patient-packet-templates/:key",
   requirePermission("admin.tools.manage"),
@@ -292,32 +356,13 @@ router.put(
 
     const template = getPacketTemplate(key)!;
     const supabase = getSupabaseServiceRoleClient();
-    const { data: existing, error: readErr } = await supabase
-      .schema("resupply")
-      .from("patient_packet_template_overrides")
-      .select("revision")
-      .eq("document_key", key)
-      .limit(1)
-      .maybeSingle();
-    if (readErr) throw readErr;
-
-    const revision = (existing?.revision ?? 0) + 1;
-    const nowIso = new Date().toISOString();
-    const { error: upsertErr } = await supabase
-      .schema("resupply")
-      .from("patient_packet_template_overrides")
-      .upsert(
-        {
-          document_key: key,
-          title: parsed.data.title?.trim() || template.title,
-          sections: parsed.data.sections as unknown as Json,
-          revision,
-          updated_by_email: req.adminEmail ?? null,
-          updated_at: nowIso,
-        },
-        { onConflict: "document_key" },
-      );
-    if (upsertErr) throw upsertErr;
+    const revision = await saveTemplateOverride(
+      supabase,
+      key,
+      parsed.data.title?.trim() || template.title,
+      parsed.data.sections as unknown as Json,
+      req.adminEmail ?? null,
+    );
 
     await logAudit({
       action: "patient_packet_template.updated",
@@ -356,12 +401,32 @@ router.delete(
     }
     const key = keyParsed.data.key;
     const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .schema("resupply")
       .from("patient_packet_template_overrides")
       .delete()
-      .eq("document_key", key);
+      .eq("document_key", key)
+      .select("document_key");
     if (error) throw error;
+
+    // History row only when an override actually existed (a revert of an
+    // already-default template is a no-op, not an event).
+    if (deleted && deleted.length > 0) {
+      const { error: histErr } = await supabase
+        .schema("resupply")
+        .from("patient_packet_template_revisions")
+        .insert({
+          document_key: key,
+          action: "reverted",
+          changed_by_email: req.adminEmail ?? null,
+        });
+      if (histErr) {
+        logger.warn(
+          { err: histErr.message, document_key: key },
+          "packet template revision-history write failed (revert persisted)",
+        );
+      }
+    }
 
     await logAudit({
       action: "patient_packet_template.reverted",
@@ -380,6 +445,115 @@ router.delete(
     });
 
     res.json({ key, customized: false });
+  },
+);
+
+// ── Template revision history ─────────────────────────────────────
+//
+// Append-only log of every save/revert (migration 0306): who changed
+// which document's wording, when, and the full content of each saved
+// revision — so an accidental edit is one click from recovery.
+router.get(
+  "/admin/patient-packet-templates/:key/history",
+  adminReadRateLimiter,
+  requirePermission("patients.read"),
+  async (req, res) => {
+    const keyParsed = templateKeyParam.safeParse(req.params);
+    if (!keyParsed.success || !isValidPacketDocumentKey(keyParsed.data.key)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patient_packet_template_revisions")
+      .select(
+        "id, action, revision, title, sections, changed_by_email, created_at",
+      )
+      .eq("document_key", keyParsed.data.key)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ revisions: data ?? [] });
+  },
+);
+
+// Restore a prior saved revision: re-saves its content as a NEW
+// override revision (history stays append-only; nothing is rewritten).
+const restoreBody = z.object({ revisionId: z.string().uuid() }).strict();
+
+router.post(
+  "/admin/patient-packet-templates/:key/restore",
+  requirePermission("admin.tools.manage"),
+  adminRateLimit({
+    name: "patient_packet_templates.restore",
+    preset: "sensitive",
+  }),
+  async (req, res) => {
+    const keyParsed = templateKeyParam.safeParse(req.params);
+    if (!keyParsed.success || !isValidPacketDocumentKey(keyParsed.data.key)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const key = keyParsed.data.key;
+    const parsed = restoreBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rev, error: revErr } = await supabase
+      .schema("resupply")
+      .from("patient_packet_template_revisions")
+      .select("id, document_key, action, revision, title, sections")
+      .eq("id", parsed.data.revisionId)
+      .eq("document_key", key)
+      .limit(1)
+      .maybeSingle();
+    if (revErr) throw revErr;
+    if (!rev || rev.action !== "saved") {
+      res.status(404).json({ error: "revision_not_found" });
+      return;
+    }
+    // Stored content is validated on the way in, but defend against a
+    // malformed row anyway — a restore must never save junk.
+    const sections = parseStoredSections(rev.sections);
+    if (!sections) {
+      res.status(409).json({ error: "revision_unrestorable" });
+      return;
+    }
+
+    const template = getPacketTemplate(key)!;
+    const revision = await saveTemplateOverride(
+      supabase,
+      key,
+      rev.title?.trim() || template.title,
+      sections as unknown as Json,
+      req.adminEmail ?? null,
+    );
+
+    await logAudit({
+      action: "patient_packet_template.updated",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_packet_template_overrides",
+      targetId: key,
+      metadata: {
+        document_key: key,
+        revision,
+        restored_from_revision: rev.revision,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "patient_packet_template.updated (restore) audit write failed",
+      );
+    });
+
+    res.json({ key, revision, customized: true });
   },
 );
 

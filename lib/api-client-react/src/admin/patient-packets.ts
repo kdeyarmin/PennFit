@@ -431,6 +431,65 @@ export function useResetPacketTemplate(options?: {
   });
 }
 
+// ── Template revision history ─────────────────────────────────────
+
+export interface PacketTemplateRevision {
+  id: string;
+  action: "saved" | "reverted";
+  /** The override revision counter at save time; null on revert rows. */
+  revision: number | null;
+  title: string | null;
+  /** Token-form sections as saved; null on revert rows. */
+  sections: PacketDocumentSection[] | null;
+  changed_by_email: string | null;
+  created_at: string;
+}
+
+export const getPacketTemplateHistoryQueryKey = (key: string) =>
+  [`${TEMPLATES_URL}/${key}/history`] as const;
+
+export function usePacketTemplateHistory(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<{ revisions: PacketTemplateRevision[] }, PacketError>
+    >;
+  },
+) {
+  return useQuery<{ revisions: PacketTemplateRevision[] }, PacketError>({
+    queryKey: getPacketTemplateHistoryQueryKey(key),
+    queryFn: ({ signal }) =>
+      customFetch<{ revisions: PacketTemplateRevision[] }>(
+        `${TEMPLATES_URL}/${encodeURIComponent(key)}/history`,
+        { method: "GET", signal },
+      ),
+    ...options?.query,
+  });
+}
+
+/** Restore a prior saved revision as a NEW override revision. */
+export function useRestorePacketTemplate(options?: {
+  mutation?: UseMutationOptions<
+    { key: string; revision: number; customized: boolean },
+    PacketError,
+    { key: string; revisionId: string }
+  >;
+}) {
+  return useMutation<
+    { key: string; revision: number; customized: boolean },
+    PacketError,
+    { key: string; revisionId: string }
+  >({
+    mutationFn: ({ key, revisionId }) =>
+      customFetch(`${TEMPLATES_URL}/${encodeURIComponent(key)}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revisionId }),
+      }),
+    ...options?.mutation,
+  });
+}
+
 export interface PreviewPacketTemplateResponse {
   key: string;
   title: string;
