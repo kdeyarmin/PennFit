@@ -16,10 +16,7 @@ assertRequiredEnv();
 
 import app from "./app";
 import { applyAppConfigOverlayToEnv } from "./lib/app-config/store";
-import {
-  applyCompanyInfoToEnv,
-  invalidateCompanyInfoCache,
-} from "./lib/company-info";
+import { applyCompanyInfoToEnv } from "./lib/company-info";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import {
