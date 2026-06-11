@@ -19,8 +19,10 @@ export type VideoVisitStatus =
 
 export interface VideoVisit {
   id: string;
-  patientId: string;
+  patientId: string | null;
+  /** Chart name, or the typed-in guest name for no-chart visits. */
   patientName: string | null;
+  isGuest: boolean;
   purpose: VideoVisitPurpose;
   notes: string | null;
   status: VideoVisitStatus;
@@ -101,6 +103,17 @@ export const createVideoVisit = (
       body: JSON.stringify(input),
     },
   );
+
+/** Universal create — works for an existing patient (patientId) OR a
+ *  typed-in guest who isn't in the system yet (guestName + email/phone). */
+export const createVideoVisitUniversal = (
+  input: CreateVideoVisitInput & { patientId?: string; guestName?: string },
+) =>
+  jsonFetch<CreateVideoVisitResponse>(`/admin/video-visits`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 
 export const resendVideoVisitInvite = (
   visitId: string,

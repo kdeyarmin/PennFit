@@ -96,6 +96,7 @@ import { getMfaStatus } from "@/lib/admin/mfa-api";
 // the multi-branch feature is enabled; the entry stays hidden otherwise.
 const MULTI_LOCATION_NAV_TOKEN = "feature:multi_location";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
+import { StartVideoVisitButton } from "./StartVideoVisitModal";
 import { GlobalLookup } from "./GlobalLookup";
 import { AdminAssistantWidget } from "./AdminAssistantWidget";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
@@ -2011,6 +2012,10 @@ export function AppShell({
           rightSlot={
             adminEmail ? (
               <div className="flex items-center gap-3">
+                {/* Universal telehealth launcher — start a video visit
+                    with any patient (or someone not in the system yet)
+                    from anywhere in the console. */}
+                <StartVideoVisitButton size="sm" label="Video visit" />
                 <GlobalLookup />
                 <AdminHeaderChip email={adminEmail} role={adminRole} />
               </div>
