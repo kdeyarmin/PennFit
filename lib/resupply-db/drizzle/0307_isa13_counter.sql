@@ -1,4 +1,4 @@
--- 0306_isa13_counter.sql
+-- 0307_isa13_counter.sql
 --
 -- Atomic ISA13 (interchange control number) allocation.
 --
