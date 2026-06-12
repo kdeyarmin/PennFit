@@ -96,8 +96,8 @@ router.get(
 );
 
 // ── POST /admin/patients/paperwork/query ─────────────────────────────
-// Accepts patientId in the body to avoid exposing PHI identifiers in the
-// URL (resolves CodeQL js/sensitive-get-query for GET + path param).
+// Accepts patientId in the body to avoid exposing identifiers in the URL.
+// (Avoids CodeQL findings for sensitive identifiers in GET request URLs.)
 const patientIdBody = z.object({ patientId: z.string().uuid() }).strict();
 
 router.post(
