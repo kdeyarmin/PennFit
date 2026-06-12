@@ -29,7 +29,14 @@ export interface VideoVisit {
   scheduledAt: string | null;
   createdByEmail: string | null;
   inviteChannel: "email" | "sms" | "none" | null;
+  /** Vendor accepted the send (Twilio/SendGrid API call succeeded). */
   inviteDelivered: boolean | null;
+  /** Carrier-side outcome from the Twilio status callback (SMS only):
+   *  "sent" | "delivered" | "undelivered" | "failed". Null until a
+   *  callback lands (and always null for email / link-only). */
+  inviteDeliveryStatus: string | null;
+  /** Twilio error code when undelivered/failed (e.g. "30034"). */
+  inviteDeliveryErrorCode: string | null;
   staffJoinedAt: string | null;
   patientJoinedAt: string | null;
   startedAt: string | null;
