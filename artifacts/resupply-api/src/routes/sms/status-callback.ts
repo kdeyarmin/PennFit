@@ -13,7 +13,7 @@
 // delivery outcome onto that row and skip the messages lookup entirely:
 //   * `recallNotificationId=<id>` — recall_notifications (recall sweep).
 //   * `videoVisitId=<id>`         — video_visits (telehealth invite
-//     SMS; columns from migration 0315).
+//     SMS; columns from migration 0316).
 //
 // 200 every signed request. Twilio retries 5xx with exponential
 // backoff, which would amplify any downstream incident.
