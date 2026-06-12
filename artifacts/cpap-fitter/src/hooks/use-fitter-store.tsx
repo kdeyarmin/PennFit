@@ -38,6 +38,14 @@ interface FitterState {
 }
 
 interface FitterContextType extends FitterState {
+  /**
+   * False when sessionStorage is unusable (some private-browsing
+   * modes, storage quota exhausted, cookies/site-data fully blocked).
+   * The flow still works — all state lives in React memory — but a
+   * refresh restarts from /consent. Surfaces a heads-up banner so the
+   * patient isn't surprised mid-flow.
+   */
+  storagePersisted: boolean;
   setMeasurements: (measurements: FacialMeasurements) => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   setCapturedImage: (image: string | null) => void;
@@ -49,7 +57,24 @@ interface FitterContextType extends FitterState {
 
 const FitterContext = createContext<FitterContextType | undefined>(undefined);
 
+/**
+ * Write-probe sessionStorage. Reading `window.sessionStorage` alone
+ * can throw (site data blocked), and some private modes only fail on
+ * setItem — so probe the full round-trip once at provider mount.
+ */
+function probeSessionStorage(): boolean {
+  try {
+    const k = "__fitter_storage_probe__";
+    sessionStorage.setItem(k, "1");
+    sessionStorage.removeItem(k);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function FitterProvider({ children }: { children: ReactNode }) {
+  const [storagePersisted] = useState(probeSessionStorage);
   const [measurements, setMeasurements] = useState<FacialMeasurements | null>(
     null,
   );
@@ -163,11 +188,15 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setEmailConsentState(false);
     setInviteTokenState(null);
-    sessionStorage.removeItem("fitter_answers");
-    sessionStorage.removeItem("fitter_chosen_mask");
-    sessionStorage.removeItem("fitter_email");
-    sessionStorage.removeItem("fitter_email_consent");
-    sessionStorage.removeItem("fitter_invite_token");
+    try {
+      sessionStorage.removeItem("fitter_answers");
+      sessionStorage.removeItem("fitter_chosen_mask");
+      sessionStorage.removeItem("fitter_email");
+      sessionStorage.removeItem("fitter_email_consent");
+      sessionStorage.removeItem("fitter_invite_token");
+    } catch {
+      // Storage unusable — nothing was persisted, nothing to clear.
+    }
   };
 
   return (
@@ -180,6 +209,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         email,
         emailConsent,
         inviteToken,
+        storagePersisted,
         setMeasurements,
         updateAnswers,
         setCapturedImage,
