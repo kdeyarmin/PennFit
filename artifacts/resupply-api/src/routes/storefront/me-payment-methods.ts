@@ -307,7 +307,8 @@ router.delete(
     message: {
       error: "too_many_requests",
       limiter: "me_autopay_remove",
-      message: "You're going a little fast. Please wait a moment and try again.",
+      message:
+        "You're going a little fast. Please wait a moment and try again.",
     },
   }),
   async (req, res) => {

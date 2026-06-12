@@ -13,9 +13,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
-import { SUPPORT_EMAIL, SUPPORT_PHONE_E164 } from "@/lib/contact";
+import { useCompanyContact } from "@/lib/contact";
 
 export function ReturnsPage() {
+  const contact = useCompanyContact();
   useDocumentTitle(
     "Returns & refunds",
     "Penn Home Medical Supply return policy — 30 days for unopened supplies, 30-day fit guarantee on masks and cushions, free exchange shipping.",
@@ -200,16 +201,16 @@ export function ReturnsPage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-3 pt-1">
           <a
-            href={`tel:${SUPPORT_PHONE_E164}`}
+            href={`tel:${contact.phoneE164}`}
             className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
           >
             <Phone className="w-4 h-4" /> Call Penn Home Medical Supply
           </a>
           <a
-            href={`mailto:${SUPPORT_EMAIL}`}
+            href={`mailto:${contact.email}`}
             className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
           >
-            <Mail className="w-4 h-4" /> {SUPPORT_EMAIL}
+            <Mail className="w-4 h-4" /> {contact.email}
           </a>
         </div>
       </section>

@@ -41,11 +41,7 @@ import {
 import { defaultIconPng, defaultLogoPng } from "../../lib/apple-wallet/assets";
 import { logger } from "../../lib/logger";
 
-// Branding constants — kept in sync with the cpap-fitter
-// `lib/contact.ts` copy. Inlined on the server because the
-// resupply-api workspace doesn't depend on the frontend bundle.
-const SUPPORT_PHONE_DISPLAY = "(814) 471-0627";
-const SUPPORT_EMAIL = "support@pennpaps.com";
+import { getCompanyInfo } from "../../lib/company-info";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -106,18 +102,19 @@ router.get(
       return;
     }
 
+    const company = await getCompanyInfo();
     const memberName =
       cust.display_name && cust.display_name.trim().length > 0
         ? cust.display_name.trim()
-        : (req.shopCustomerEmail ?? "PennPaps Member");
+        : (req.shopCustomerEmail ?? `${company.name} Member`);
 
     try {
       const pkpass = await buildPkpass({
         serialNumber: customerId,
         memberName,
-        logoText: "PennPaps",
-        supportPhone: SUPPORT_PHONE_DISPLAY,
-        supportEmail: SUPPORT_EMAIL,
+        logoText: company.name,
+        supportPhone: company.supportPhoneDisplay,
+        supportEmail: company.supportEmail,
         buyAgainUrl: `${publicBaseUrl()}/shop`,
         iconPng: defaultIconPng(),
         logoPng: defaultLogoPng(),

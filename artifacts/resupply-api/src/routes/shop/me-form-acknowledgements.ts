@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { applyCompanyIdentityToText } from "../../lib/company-info";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   INTAKE_FORMS,
@@ -85,7 +86,9 @@ router.get(
         return {
           kind,
           title: descriptor.title,
-          body: descriptor.body,
+          // The catalog text carries the historical company name;
+          // rewrite it to the admin-saved identity at serve time.
+          body: applyCompanyIdentityToText(descriptor.body),
           currentVersion: descriptor.version,
           lastSignedVersion: ack?.version ?? null,
           lastSignedAt: ack?.signedAt ?? null,
