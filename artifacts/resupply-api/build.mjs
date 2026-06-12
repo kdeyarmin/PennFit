@@ -35,6 +35,13 @@ async function buildAll() {
       "*.node",
       "twilio",
       "stripe",
+      // pdfkit reads its built-in font metrics (data/*.afm) from disk via
+      // __dirname at runtime; bundling it makes every PDF render throw
+      // ENOENT (dist/data/Helvetica.afm) → {"error":"render_failed"}.
+      "pdfkit",
+      // @hyzyla/pdfium resolves pdfium.wasm relative to import.meta.url,
+      // which a single-file bundle also breaks.
+      "@hyzyla/pdfium",
       "sharp",
       "better-sqlite3",
       "sqlite3",
