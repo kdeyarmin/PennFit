@@ -613,8 +613,8 @@ router.use(connectionTestsRouter);
 // /admin/diagnostics/proxy-chain — echoes the forwarding-header chain
 // (socket peer, XFF, CF-Connecting-IP) plus Express's req.ip resolution
 // for the calling request. Operator tool for confirming Railway's XFF
-// behavior live before the P1-5 trust-proxy fix
-// (docs/runbooks/verify-xff-chain.md). system.config.manage.
+// behavior live and validating/diagnosing the current `trust proxy`
+// predicate (docs/runbooks/verify-xff-chain.md). system.config.manage.
 router.use(proxyChainRouter);
 // /admin/bot-playground/* — admin sandbox to exercise the storefront,
 // account, and voice bots against scripted situations (synthetic data,
