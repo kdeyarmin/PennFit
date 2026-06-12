@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
-import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact";
+import { getCompanyContact } from "@/lib/contact";
 
 interface Props {
   children: React.ReactNode;
@@ -58,6 +58,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
     }
 
     const inline = this.props.variant === "inline";
+    // Class component (no hooks) — a point-in-time snapshot is fine
+    // for a crash screen.
+    const contact = getCompanyContact();
 
     return (
       <div
@@ -80,12 +83,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <h1 className="text-2xl font-semibold mb-2">Something went wrong</h1>
           <p className="text-muted-foreground mb-6">
             The page hit an unexpected error. Reloading usually fixes it. If
-            this keeps happening, please call us at Penn Home Medical Supply at{" "}
+            this keeps happening, please call us at {contact.name} at{" "}
             <a
-              href={`tel:${SUPPORT_PHONE_E164}`}
+              href={`tel:${contact.phoneE164}`}
               className="font-medium text-foreground underline underline-offset-2"
             >
-              {SUPPORT_PHONE_DISPLAY}
+              {contact.phoneDisplay}
             </a>{" "}
             and we'll help you finish what you were doing.
           </p>

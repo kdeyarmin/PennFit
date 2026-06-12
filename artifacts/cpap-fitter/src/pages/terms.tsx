@@ -2,6 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollText } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { GeneralEmailLink } from "@/components/company-contact";
 
 export function Terms() {
   useDocumentTitle(
@@ -156,13 +157,8 @@ export function Terms() {
             </ul>
             <p className="mt-2">
               For SMS support contact{" "}
-              <a
-                href="mailto:info@pennpaps.com"
-                className="underline hover:text-primary"
-              >
-                info@pennpaps.com
-              </a>
-              . See our{" "}
+              <GeneralEmailLink className="underline hover:text-primary" />. See
+              our{" "}
               <a href="/privacy" className="underline hover:text-primary">
                 Privacy Policy
               </a>{" "}
@@ -232,13 +228,7 @@ export function Terms() {
             </h3>
             <p>
               Questions about these Terms or the SMS program may be sent to{" "}
-              <a
-                href="mailto:info@pennpaps.com"
-                className="underline hover:text-primary"
-              >
-                info@pennpaps.com
-              </a>
-              .
+              <GeneralEmailLink className="underline hover:text-primary" />.
             </p>
           </section>
         </CardContent>

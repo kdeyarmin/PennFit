@@ -46,6 +46,9 @@ export interface DmeOrgBody {
   faxE164: string | null;
   billingEmail: string;
   generalEmail: string | null;
+  supportEmail: string | null;
+  supportPhoneE164: string | null;
+  supportHoursText: string | null;
   websiteUrl: string | null;
   accreditationBody: AccreditationBody | null;
   accreditationNumber: string | null;
@@ -88,6 +91,9 @@ export interface DmeOrganization {
   faxE164: string | null;
   billingEmail: string;
   generalEmail: string | null;
+  supportEmail: string | null;
+  supportPhoneE164: string | null;
+  supportHoursText: string | null;
   websiteUrl: string | null;
   accreditation: {
     body: AccreditationBody;
@@ -195,6 +201,9 @@ export function emptyDmeOrgBody(): DmeOrgBody {
     faxE164: null,
     billingEmail: "",
     generalEmail: null,
+    supportEmail: null,
+    supportPhoneE164: null,
+    supportHoursText: null,
     websiteUrl: null,
     accreditationBody: null,
     accreditationNumber: null,
@@ -244,6 +253,9 @@ export function orgToBody(org: DmeOrganization): DmeOrgBody {
     faxE164: org.faxE164,
     billingEmail: org.billingEmail,
     generalEmail: org.generalEmail,
+    supportEmail: org.supportEmail,
+    supportPhoneE164: org.supportPhoneE164,
+    supportHoursText: org.supportHoursText,
     websiteUrl: org.websiteUrl,
     accreditationBody: org.accreditation?.body ?? null,
     accreditationNumber: org.accreditation?.number ?? null,

@@ -95,6 +95,20 @@ const CONTACT: FieldDef[] = [
   { key: "generalEmail", label: "General email" },
   { key: "websiteUrl", label: "Website URL", placeholder: "https://…" },
 ];
+const SUPPORT: FieldDef[] = [
+  {
+    key: "supportPhoneE164",
+    label: "Support phone",
+    placeholder: "+18144710627",
+  },
+  { key: "supportEmail", label: "Support email" },
+  {
+    key: "supportHoursText",
+    label: "Support hours",
+    placeholder: "Mon–Fri 9a–5p ET",
+    maxLength: 160,
+  },
+];
 const ACCREDITATION: FieldDef[] = [
   { key: "accreditationNumber", label: "Accreditation number" },
   {
@@ -268,12 +282,16 @@ export function AdminBillingConfigOrganizationPage() {
   return (
     <div className="admin-root p-6 space-y-6 max-w-5xl">
       <header>
-        <h1 className="text-2xl font-semibold">DME organization identity</h1>
+        <h1 className="text-2xl font-semibold">Company information</h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          The billing identity used on every claim (837P), eligibility request
-          (270), and HCFA form. Saved to the database and preferred over the
-          legacy <code>OFFICE_ALLY_BILLING_*</code> environment variables — set
-          it here instead of in global secrets. SFTP login keys stay in secrets;
+          The company identity used everywhere: claims (837P), eligibility
+          requests (270), HCFA forms, patient-packet documents, generated PDFs,
+          the storefront contact details, the chatbots, and the brand name on
+          SMS and email. The display name is the DBA name when set, otherwise
+          the legal name. Saved to the database and preferred over the legacy{" "}
+          <code>OFFICE_ALLY_BILLING_*</code> /{" "}
+          <code>RESUPPLY_PRACTICE_NAME</code> environment variables — set it
+          here instead of in global secrets. SFTP login keys stay in secrets;
           this page is identity only.
         </p>
       </header>
@@ -289,6 +307,10 @@ export function AdminBillingConfigOrganizationPage() {
         addressFields("payTo"),
       )}
       {section("Contact", CONTACT)}
+      {section(
+        "Customer support (shown on the storefront, chat, and documents — blank = main phone/email)",
+        SUPPORT,
+      )}
       {section("Accreditation", ACCREDITATION, accreditationSelect)}
       {section("Licensing, liability & signer (optional)", LICENSING)}
 
