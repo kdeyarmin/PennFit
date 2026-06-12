@@ -33,6 +33,7 @@
 //     the inbound directory; not implemented in this transport.
 
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -116,16 +117,23 @@ async function uploadOnce(
   req: UploadRequest,
 ): Promise<UploadOutcome> {
   const safeName = req.fileName.replace(/[^A-Za-z0-9._-]/g, "_");
+  // Per-attempt nonce in every TEMP artifact name (local payload,
+  // local batch script, remote .tmp). Two concurrent uploads of the
+  // same fileName previously shared all three paths, so the second
+  // writer could clobber the first's payload mid-transfer. Only the
+  // FINAL remote name stays nonce-free — that's the name Office Ally
+  // picks up, and the remote `rename` makes it appear atomically.
+  const nonce = `${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
   const localDir = join(tmpdir(), "pf-oa-upload");
-  const localPath = join(localDir, safeName);
-  const batchPath = join(localDir, `${safeName}.batch`);
+  const localPath = join(localDir, `${safeName}.${nonce}`);
+  const batchPath = join(localDir, `${safeName}.${nonce}.batch`);
   try {
     await mkdir(localDir, { recursive: true });
     await writeFile(localPath, req.payload, { encoding: "utf8" });
     // The batch file tells sftp the exact upload+rename sequence
     // so a transport interruption never leaves a half-written
     // file in OA's pickup directory.
-    const remoteTmp = `${config.remoteInboxDir}/${safeName}.tmp`;
+    const remoteTmp = `${config.remoteInboxDir}/${safeName}.${nonce}.tmp`;
     const remoteFinal = `${config.remoteInboxDir}/${safeName}`;
     const batch = [
       `put ${quoteSftpArg(localPath)} ${quoteSftpArg(remoteTmp)}`,

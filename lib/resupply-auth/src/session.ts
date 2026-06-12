@@ -19,12 +19,19 @@ export interface SessionWindow {
   expiresAt: Date;
 }
 
-/** Brand-new session issued `now`. */
+/**
+ * Brand-new session issued `now`. The TTL is clamped to
+ * `absoluteMaxDays` so a misconfigured `ttlDays` larger than the cap
+ * can't mint a first session that outlives the ceiling `slideExpiry`
+ * enforces — without the clamp, only SLIDES were capped and the
+ * initial window escaped it.
+ */
 export function issueWindow(
   now: Date,
   config: SessionExpiryConfig,
 ): SessionWindow {
-  const expires = new Date(now.getTime() + config.ttlDays * MS_PER_DAY);
+  const ttlDays = Math.min(config.ttlDays, config.absoluteMaxDays ?? 90);
+  const expires = new Date(now.getTime() + ttlDays * MS_PER_DAY);
   return { issuedAt: new Date(now), expiresAt: expires };
 }
 

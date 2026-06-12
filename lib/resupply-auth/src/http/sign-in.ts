@@ -25,7 +25,7 @@
 // keeps the cookie-issuing path side-effect-only and the identity
 // path cacheable.
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { type Request, type Response } from "express";
 import { z } from "zod";
@@ -51,6 +51,7 @@ import { issueToken } from "../token";
 
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
+import { hashUserAgent } from "./user-agent";
 
 const SignInBody = z.object({
   email: z.string().min(3).max(254),
@@ -86,13 +87,6 @@ function getDummyHashForTimingEqualization(
     );
   }
   return dummyHashPromise;
-}
-
-/** Hash the User-Agent header (sha256). Stored alongside sessions. */
-function hashUserAgent(req: Request): Buffer | null {
-  const ua = req.headers["user-agent"];
-  if (!ua || typeof ua !== "string") return null;
-  return createHash("sha256").update(ua).digest();
 }
 
 /**

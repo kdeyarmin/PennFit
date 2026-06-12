@@ -54,6 +54,8 @@ type ShopSubscriptionUpdate =
   Database["resupply"]["Tables"]["shop_subscriptions"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
+import { getBoss } from "../../worker/index.js";
+import { PAYMENT_FAILED_ALERT_JOB } from "../../worker/jobs/payment-failed-alert.js";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -689,21 +691,44 @@ export const stripeWebhookHandler: RequestHandler = async (
           },
           "stripe: subscription renewal payment failed",
         );
-        // Optional automated patient alert. Fire-and-forget — the
-        // SendGrid round-trip must NOT sit on the webhook's ACK path
-        // (Stripe will retry on a slow response). Gated by the
-        // `alerts.auto_dispatch` feature flag (default OFF), so this is
-        // inert until an operator turns it on. Resolution + send + all
-        // error handling live in the trigger module; we don't await.
-        void maybeDispatchPaymentFailedAlert({
-          stripeCustomerId:
-            typeof invoice.customer === "string"
-              ? invoice.customer
-              : (invoice.customer?.id ?? null),
-          amountDueCents: invoice.amount_due,
-          currency: invoice.currency,
-          log,
-        });
+        // Optional automated patient alert. The SendGrid round-trip
+        // must NOT sit on the webhook's ACK path (Stripe will retry on
+        // a slow response), so route through the retry-backed pg-boss
+        // queue: one fast local insert here, and a transient
+        // SendGrid/DB failure during the send gets retries + DLQ
+        // instead of silently losing the alert after we've ACKed.
+        // Gated by the `alerts.auto_dispatch` feature flag (default
+        // OFF) inside the dispatcher, so this is inert until an
+        // operator turns it on. When the worker isn't running (or the
+        // enqueue itself fails) fall back to the historical
+        // fire-and-forget direct send — degraded, but never worse than
+        // the pre-queue behavior.
+        {
+          const alertPayload = {
+            stripeCustomerId:
+              typeof invoice.customer === "string"
+                ? invoice.customer
+                : (invoice.customer?.id ?? null),
+            amountDueCents: invoice.amount_due,
+            currency: invoice.currency,
+          };
+          const boss = getBoss();
+          let enqueued = false;
+          if (boss) {
+            try {
+              await boss.send(PAYMENT_FAILED_ALERT_JOB, alertPayload);
+              enqueued = true;
+            } catch (err) {
+              log?.warn?.(
+                { event: "payment_failed_alert_enqueue_failed", err },
+                "stripe: payment_failed alert enqueue failed — falling back to direct dispatch",
+              );
+            }
+          }
+          if (!enqueued) {
+            void maybeDispatchPaymentFailedAlert({ ...alertPayload, log });
+          }
+        }
         break;
       }
       case "charge.dispute.created": {

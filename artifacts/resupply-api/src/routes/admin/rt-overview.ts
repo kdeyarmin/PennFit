@@ -101,6 +101,22 @@ interface RawPatient {
   legal_last_name: string;
 }
 
+// `.in()` id-list chunk size — same rationale as therapy-usage-report:
+// 150 uuids keeps the PostgREST request URL comfortably under proxy
+// limits AND each chunk's response under the ~1000-row response cap
+// (for the 1-row-per-id patient lookup; the nights/triggers reads
+// additionally page WITHIN a chunk because they return many rows per
+// patient).
+const IN_CHUNK = 150;
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    chunks.push(ids.slice(i, i + IN_CHUNK));
+  }
+  return chunks;
+}
+
 /**
  * Fetch + roll up the RT overview. Exported so the test can call it
  * with staged Supabase responses and so a future CSV endpoint can
@@ -120,13 +136,26 @@ export async function buildRtOverview(days: number): Promise<{
   //    by an integration." Status `active` only; revoked / errored
   //    links are visible on the patient-detail screen but don't
   //    belong on the RT board.
-  const { data: linksRaw, error: linksErr } = await supabase
-    .schema("resupply")
-    .from("patient_therapy_links")
-    .select("patient_id, source, status, last_synced_at, last_sync_status")
-    .eq("status", "active");
-  if (linksErr) throw linksErr;
-  const links = (linksRaw ?? []) as RawTherapyLink[];
+  //    Paged: this read defines the board's whole population, so the
+  //    ~1000-row response cap silently shrinking it is the worst
+  //    truncation of the lot.
+  const LINK_PAGE = 1000;
+  const MAX_LINK_PAGES = 20;
+  const links: RawTherapyLink[] = [];
+  for (let page = 0; page < MAX_LINK_PAGES; page++) {
+    const { data: linksRaw, error: linksErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_links")
+      .select("patient_id, source, status, last_synced_at, last_sync_status")
+      .eq("status", "active")
+      .order("patient_id", { ascending: true })
+      .order("source", { ascending: true })
+      .range(page * LINK_PAGE, page * LINK_PAGE + LINK_PAGE - 1);
+    if (linksErr) throw linksErr;
+    const batch = (linksRaw ?? []) as RawTherapyLink[];
+    links.push(...batch);
+    if (batch.length < LINK_PAGE) break;
+  }
 
   const linkedPatientIds = Array.from(new Set(links.map((l) => l.patient_id)));
   if (linkedPatientIds.length === 0) {
@@ -138,41 +167,73 @@ export async function buildRtOverview(days: number): Promise<{
     };
   }
 
-  // 2. Patient name lookup. PostgREST `.in()` handles ~1k ids in one
-  //    URL — well above any plausible single-clinic RT fleet.
-  const { data: patientsRaw, error: patientsErr } = await supabase
-    .schema("resupply")
-    .from("patients")
-    .select("id, pacware_id, legal_first_name, legal_last_name")
-    .in("id", linkedPatientIds);
-  if (patientsErr) throw patientsErr;
-  const patients = (patientsRaw ?? []) as RawPatient[];
+  // 2. Patient name lookup, chunked: one unchunked `.in()` both risks
+  //    the URL length limit and silently truncates the response at
+  //    PostgREST's ~1000-row cap once the fleet outgrows it (rows past
+  //    the cap rendered nameless on the board).
+  const patients: RawPatient[] = [];
+  for (const chunk of chunkIds(linkedPatientIds)) {
+    const { data: patientsRaw, error: patientsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, pacware_id, legal_first_name, legal_last_name")
+      .in("id", chunk);
+    if (patientsErr) throw patientsErr;
+    patients.push(...((patientsRaw ?? []) as RawPatient[]));
+  }
 
   // 3. Therapy nights inside the window. We also pull older nights
-  //    (no lower bound) so `staleDays` can reflect "last night ever",
-  //    but cap the per-patient count by relying on the DB ordering;
-  //    a 90-night window × 200 patients is ~18k rows — fine.
-  const { data: nightsRaw, error: nightsErr } = await supabase
-    .schema("resupply")
-    .from("patient_therapy_nights")
-    .select("patient_id, night_date, usage_minutes, ahi, leak_rate_l_min")
-    .in("patient_id", linkedPatientIds)
-    .order("night_date", { ascending: false });
-  if (nightsErr) throw nightsErr;
-  const nights = (nightsRaw ?? []) as RawNight[];
+  //    (no lower bound) so `staleDays` can reflect "last night ever".
+  //    A 90-night window × 200 patients is ~18k rows — MORE than
+  //    PostgREST's default ~1000-row response cap, so this MUST page
+  //    with .range() (same bounded-loop pattern as therapy-milestones):
+  //    the previous single unranged read silently truncated to the
+  //    first page once the fleet grew, skewing usage/staleness for
+  //    every patient sorted past it.
+  const NIGHT_PAGE = 1000;
+  const MAX_NIGHT_PAGES = 50; // 50k rows/chunk ≫ any plausible history
+  const nights: RawNight[] = [];
+  for (const chunk of chunkIds(linkedPatientIds)) {
+    for (let page = 0; page < MAX_NIGHT_PAGES; page++) {
+      const { data: nightsRaw, error: nightsErr } = await supabase
+        .schema("resupply")
+        .from("patient_therapy_nights")
+        .select("patient_id, night_date, usage_minutes, ahi, leak_rate_l_min")
+        .in("patient_id", chunk)
+        .order("night_date", { ascending: false })
+        .order("id", { ascending: true })
+        .range(page * NIGHT_PAGE, page * NIGHT_PAGE + NIGHT_PAGE - 1);
+      if (nightsErr) throw nightsErr;
+      const batch = (nightsRaw ?? []) as RawNight[];
+      nights.push(...batch);
+      if (batch.length < NIGHT_PAGE) break;
+    }
+  }
 
   // 4. Undismissed smart-trigger events, scoped to the same patients.
   //    PostgREST `.is("dismissed_at", null)` filters out any that
-  //    were closed via the CSR dismiss action.
-  const { data: triggersRaw, error: triggersErr } = await supabase
-    .schema("resupply")
-    .from("patient_smart_trigger_events")
-    .select("id, patient_id, kind, detected_at")
-    .in("patient_id", linkedPatientIds)
-    .is("dismissed_at", null)
-    .order("detected_at", { ascending: false });
-  if (triggersErr) throw triggersErr;
-  const triggers = (triggersRaw ?? []) as RawSmartTriggerEvent[];
+  //    were closed via the CSR dismiss action. Paged for the same
+  //    reason as the nights read above.
+  const TRIGGER_PAGE = 1000;
+  const MAX_TRIGGER_PAGES = 20;
+  const triggers: RawSmartTriggerEvent[] = [];
+  for (const chunk of chunkIds(linkedPatientIds)) {
+    for (let page = 0; page < MAX_TRIGGER_PAGES; page++) {
+      const { data: triggersRaw, error: triggersErr } = await supabase
+        .schema("resupply")
+        .from("patient_smart_trigger_events")
+        .select("id, patient_id, kind, detected_at")
+        .in("patient_id", chunk)
+        .is("dismissed_at", null)
+        .order("detected_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(page * TRIGGER_PAGE, page * TRIGGER_PAGE + TRIGGER_PAGE - 1);
+      if (triggersErr) throw triggersErr;
+      const batch = (triggersRaw ?? []) as RawSmartTriggerEvent[];
+      triggers.push(...batch);
+      if (batch.length < TRIGGER_PAGE) break;
+    }
+  }
 
   // Bucket child rows by patient_id once so the per-patient loop
   // below is O(patients), not O(patients × nights).

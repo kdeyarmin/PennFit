@@ -44,7 +44,9 @@ export function Consent() {
     email: storedEmail,
     emailConsent: storedEmailConsent,
     setEmailConsent,
+    storagePersisted,
   } = useFitterStore();
+  const [storageNoticeDismissed, setStorageNoticeDismissed] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [email, setEmail] = useState(storedEmail ?? "");
   const [emailOptIn, setEmailOptIn] = useState(storedEmailConsent);
@@ -137,6 +139,32 @@ export function Consent() {
 
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
+      {!storagePersisted && !storageNoticeDismissed && (
+        // Heads-up when sessionStorage is unusable (some private-
+        // browsing modes / fully-blocked site data). The fitter still
+        // works — state lives in memory — but a refresh restarts the
+        // flow, which would otherwise feel like a silent data loss.
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+          data-testid="fitter-storage-notice"
+        >
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+          <p className="flex-1">
+            Your browser is blocking temporary storage (often private browsing).
+            You can still complete the fitting, but refreshing or closing this
+            tab will restart it from the beginning.
+          </p>
+          <button
+            type="button"
+            onClick={() => setStorageNoticeDismissed(true)}
+            aria-label="Dismiss storage notice"
+            className="shrink-0 font-medium underline underline-offset-2"
+          >
+            Got it
+          </button>
+        </div>
+      )}
       <Card className="border-0 glass-card rounded-2xl">
         <CardHeader className="space-y-4">
           <div className="flex items-center justify-center w-16 h-16 rounded-2xl icon-halo-navy mx-auto mb-2">

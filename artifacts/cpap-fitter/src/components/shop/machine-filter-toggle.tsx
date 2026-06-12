@@ -36,7 +36,7 @@ export function MachineFilterToggle({
         role="switch"
         aria-checked={enabled}
         onClick={() => onChange(!enabled)}
-        className="inline-flex items-center gap-2 text-xs font-semibold text-[hsl(var(--penn-navy))]"
+        className="inline-flex items-center gap-2 text-xs font-semibold text-[hsl(var(--penn-navy))] rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-navy))] focus-visible:ring-offset-2"
       >
         <span
           className={`inline-flex h-4 w-7 items-center rounded-full transition-colors ${

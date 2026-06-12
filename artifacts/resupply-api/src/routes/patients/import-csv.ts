@@ -32,6 +32,7 @@ import {
   getSupabaseServiceRoleClient,
   type Json,
 } from "@workspace/resupply-db";
+import { timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -152,6 +153,10 @@ router.post(
           }
         : null;
 
+      // Quiet-hours timezone from the address state; omitted when
+      // underivable so the DB default (Eastern) applies.
+      const derivedTimezone = timezoneForUsState(address?.state);
+
       const { data: inserted, error: insertErr } = await supabase
         .schema("resupply")
         .from("patients")
@@ -165,6 +170,7 @@ router.post(
           // The structured address JSON has no index signature so
           // PostgREST's `Json` type rejects it without a cast.
           address: address as unknown as Json,
+          ...(derivedTimezone ? { timezone: derivedTimezone } : {}),
           status: "active",
           insurance_payer: row.insurancePayer ?? null,
           created_at: nowIso,

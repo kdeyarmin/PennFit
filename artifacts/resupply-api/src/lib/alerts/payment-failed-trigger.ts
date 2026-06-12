@@ -58,78 +58,19 @@ function formatAmount(cents: number | null, currency: string | null): string {
  * Resolve the patient behind a failed-payment event and send the
  * `payment_failed` alert. Never throws — every failure path logs and
  * returns. Safe to call fire-and-forget.
+ *
+ * Prefer the pg-boss job (worker/jobs/payment-failed-alert.ts), which
+ * calls the throwing variant below so transient SendGrid/DB failures
+ * get a retry budget; this wrapper remains the degraded path when the
+ * worker isn't running.
  */
 export async function maybeDispatchPaymentFailedAlert(
   input: PaymentFailedTriggerInput,
 ): Promise<void> {
-  const { stripeCustomerId, log } = input;
   try {
-    if (!stripeCustomerId) return;
-
-    // Fail-closed flag gate — merging this code does NOT start sending
-    // until an operator turns the flag on.
-    if (!(await isFeatureEnabled("alerts.auto_dispatch"))) return;
-
-    const supabase = getSupabaseServiceRoleClient();
-
-    // Stripe customer → shop_customers.email_lower.
-    const { data: shopCustomer, error: scErr } = await supabase
-      .schema("resupply")
-      .from("shop_customers")
-      .select("email_lower")
-      .eq("stripe_customer_id", stripeCustomerId)
-      .limit(1)
-      .maybeSingle();
-    if (scErr) throw scErr;
-    const email = shopCustomer?.email_lower;
-    if (!email) {
-      log?.info?.(
-        { event: "payment_failed_alert_skipped", reason: "no_shop_customer" },
-        "alerts: payment_failed trigger — no shop_customer for stripe customer",
-      );
-      return;
-    }
-
-    // Email → patients.id (case-insensitive).
-    const { data: patient, error: pErr } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id")
-      .ilike("email", escapeIlike(email))
-      .limit(1)
-      .maybeSingle();
-    if (pErr) throw pErr;
-    if (!patient?.id) {
-      log?.info?.(
-        { event: "payment_failed_alert_skipped", reason: "no_patient" },
-        "alerts: payment_failed trigger — no patient matches shop_customer email",
-      );
-      return;
-    }
-
-    const outcome = await dispatchAlert({
-      alertKey: "payment_failed",
-      channel: "email",
-      patientId: patient.id,
-      variables: {
-        amount: formatAmount(input.amountDueCents, input.currency),
-        // No deep-link to a Stripe billing portal here — the patient
-        // /account page already reflects past_due. Operators can wire a
-        // real portal URL later; the template leaves {{update_payment_url}}
-        // literal if unset, which is QA-visible.
-      },
-    });
-
-    log?.info?.(
-      {
-        event: "payment_failed_alert_dispatched",
-        outcome: outcome.status,
-        patient_id: patient.id,
-      },
-      "alerts: payment_failed trigger — dispatch complete",
-    );
+    await dispatchPaymentFailedAlertOrThrow(input);
   } catch (err) {
-    log?.warn?.(
+    input.log?.warn?.(
       {
         event: "payment_failed_alert_error",
         err,
@@ -137,4 +78,93 @@ export async function maybeDispatchPaymentFailedAlert(
       "alerts: payment_failed trigger failed (non-fatal)",
     );
   }
+}
+
+/**
+ * Same resolution chain, but transient failures (Supabase error,
+ * SendGrid send error) PROPAGATE so a retry-backed caller (the pg-boss
+ * job) can re-attempt. Unresolvable inputs (no flag, no shop customer,
+ * no patient) still return cleanly — retrying those can never succeed.
+ */
+export async function dispatchPaymentFailedAlertOrThrow(
+  input: PaymentFailedTriggerInput,
+): Promise<void> {
+  const { stripeCustomerId, log } = input;
+  if (!stripeCustomerId) return;
+
+  // Fail-closed flag gate — merging this code does NOT start sending
+  // until an operator turns the flag on.
+  if (!(await isFeatureEnabled("alerts.auto_dispatch"))) return;
+
+  const supabase = getSupabaseServiceRoleClient();
+
+  // Stripe customer → shop_customers.email_lower.
+  const { data: shopCustomer, error: scErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("email_lower")
+    .eq("stripe_customer_id", stripeCustomerId)
+    .limit(1)
+    .maybeSingle();
+  if (scErr) throw scErr;
+  const email = shopCustomer?.email_lower;
+  if (!email) {
+    log?.info?.(
+      { event: "payment_failed_alert_skipped", reason: "no_shop_customer" },
+      "alerts: payment_failed trigger — no shop_customer for stripe customer",
+    );
+    return;
+  }
+
+  // Email → patients.id (case-insensitive).
+  const { data: patient, error: pErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .ilike("email", escapeIlike(email))
+    .limit(1)
+    .maybeSingle();
+  if (pErr) throw pErr;
+  if (!patient?.id) {
+    log?.info?.(
+      { event: "payment_failed_alert_skipped", reason: "no_patient" },
+      "alerts: payment_failed trigger — no patient matches shop_customer email",
+    );
+    return;
+  }
+
+  const outcome = await dispatchAlert({
+    alertKey: "payment_failed",
+    channel: "email",
+    patientId: patient.id,
+    variables: {
+      amount: formatAmount(input.amountDueCents, input.currency),
+      // No deep-link to a Stripe billing portal here — the patient
+      // /account page already reflects past_due. Operators can wire a
+      // real portal URL later; the template leaves {{update_payment_url}}
+      // literal if unset, which is QA-visible.
+    },
+  });
+
+  // dispatchAlert maps recoverable SendGrid API errors (429/5xx) to a
+  // `vendor_error` OUTCOME rather than throwing — surface those as a
+  // throw here so the pg-boss job's retry/DLQ budget actually applies.
+  // Every other non-ok status (flag off upstream, missing template,
+  // suppressed/missing patient contact) is unresolvable: retrying
+  // can't fix it, so completing the job with the logged outcome is
+  // correct.
+  if (outcome.status === "vendor_error") {
+    throw new Error(
+      `payment_failed alert dispatch hit a vendor error (status=${outcome.vendorStatus ?? "?"}, code=${outcome.vendorCode ?? "?"}) — retrying`,
+    );
+  }
+
+  log?.info?.(
+    {
+      event: "payment_failed_alert_dispatched",
+      outcome: outcome.status,
+      patient_id: patient.id,
+    },
+    "alerts: payment_failed trigger — dispatch complete",
+  );
 }
