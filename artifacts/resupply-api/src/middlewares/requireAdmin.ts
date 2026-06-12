@@ -152,7 +152,7 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
         logger.warn(
           {
             event: "resupply_admin_granular_role_lookup_failed",
-            err: error.message,
+            err: error,
           },
           "requireAdmin: admin_users.role lookup errored; failing closed",
         );
