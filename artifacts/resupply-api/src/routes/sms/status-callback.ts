@@ -275,7 +275,22 @@ async function updateVideoVisitInviteDelivery(
         updated_at: new Date().toISOString(),
       })
       .eq("id", videoVisitId)
-      .eq("invite_twilio_message_sid", messageSid);
+      // First-writer-or-match guard. The send path stamps the SID only
+      // AFTER deliverInvite returns, so the callback can land while the
+      // column is still NULL — a bare `.eq(sid)` matched zero rows in
+      // exactly that race and silently dropped the outcome (worst case
+      // the instant `failed` for an unreachable number, which arrives
+      // fastest). Accept the row when the SID is unset (this callback
+      // is the first writer; the payload stamps it) OR matches; a late
+      // callback from a superseded re-sent invite's SID still cannot
+      // clobber the current invite's delivery state. JSON quoting is
+      // PostgREST's documented quoted-value encoding for `.or()`
+      // operands.
+      .or(
+        `invite_twilio_message_sid.is.null,invite_twilio_message_sid.eq.${JSON.stringify(
+          messageSid,
+        )}`,
+      );
     if (status === "sent") {
       // Same no-regress rule as the paths above: callbacks are
       // unordered and re-POSTed, so a late `sent` must never downgrade
