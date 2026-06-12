@@ -2785,6 +2785,7 @@ export interface Database {
           signer_user_agent: string | null;
           signer_reason: string | null;
           date_received: string | null;
+          document_choices: Json | null;
           created_at: string;
         };
         Insert: Partial<

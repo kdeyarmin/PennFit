@@ -115,12 +115,17 @@ function DocumentCard({
   total,
   acknowledged,
   onAcknowledge,
+  selectedOption,
+  onSelectOption,
 }: {
   doc: PublicPacketDocument;
   index: number;
   total: number;
   acknowledged: boolean;
   onAcknowledge: (checked: boolean) => void;
+  /** Selected option key for choice documents (e.g. the ABN). */
+  selectedOption?: string;
+  onSelectOption?: (optionKey: string) => void;
 }) {
   return (
     <Card
@@ -151,6 +156,41 @@ function DocumentCard({
             <SectionView key={i} section={section} />
           ))}
         </div>
+        {doc.choice && (
+          <fieldset className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+            <legend className="px-1 text-sm font-semibold text-slate-900">
+              {doc.choice.prompt}
+            </legend>
+            {doc.choice.options.map((option) => (
+              <label
+                key={option.key}
+                className={
+                  "flex cursor-pointer items-start gap-3 rounded-lg border bg-white p-3 transition-colors " +
+                  (selectedOption === option.key
+                    ? "border-emerald-400 ring-1 ring-emerald-300"
+                    : "border-slate-200")
+                }
+              >
+                <input
+                  type="radio"
+                  name={`choice-${doc.key}`}
+                  className="mt-1"
+                  checked={selectedOption === option.key}
+                  onChange={() => onSelectOption?.(option.key)}
+                  aria-label={option.label}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-900">
+                    {option.label}
+                  </span>
+                  <span className="mt-0.5 block text-sm leading-relaxed text-slate-600">
+                    {option.detail}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-slate-50 p-3">
           <Checkbox
             checked={acknowledged}
@@ -197,6 +237,8 @@ export function PatientPacketSign() {
   const sign = useSignPatientPacket();
 
   const [acked, setAcked] = useState<Record<string, boolean>>({});
+  // Option selections for choice documents (document key → option key).
+  const [choices, setChoices] = useState<Record<string, string>>({});
   const [signerName, setSignerName] = useState("");
   const [relationship, setRelationship] = useState<SignerRelationship>("self");
   const [signerReason, setSignerReason] = useState("");
@@ -214,8 +256,13 @@ export function PatientPacketSign() {
   const isRepresentative = relationship !== "self";
   const ackedCount = documents.filter((d) => acked[d.key]).length;
   const allAcked = documents.length > 0 && ackedCount === documents.length;
+  // Choice documents (e.g. the ABN's Option 1/2/3): every one must have
+  // an option personally selected before the packet can be signed.
+  const choiceDocs = documents.filter((d) => d.choice);
+  const allChoicesMade = choiceDocs.every((d) => Boolean(choices[d.key]));
   const canSubmit =
     allAcked &&
+    allChoicesMade &&
     signerName.trim().length >= 2 &&
     consent &&
     (!isRepresentative || signerReason.trim().length > 0) &&
@@ -376,6 +423,12 @@ export function PatientPacketSign() {
         acknowledgedDocumentKeys: documents
           .filter((d) => acked[d.key])
           .map((d) => d.key),
+        documentChoices:
+          choiceDocs.length > 0
+            ? Object.fromEntries(
+                choiceDocs.map((d) => [d.key, choices[d.key] ?? ""]),
+              )
+            : undefined,
       });
       setCompletedAt(res.completedAt);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -451,6 +504,10 @@ export function PatientPacketSign() {
             acknowledged={Boolean(acked[doc.key])}
             onAcknowledge={(checked) =>
               setAcked((prev) => ({ ...prev, [doc.key]: checked }))
+            }
+            selectedOption={choices[doc.key]}
+            onSelectOption={(optionKey) =>
+              setChoices((prev) => ({ ...prev, [doc.key]: optionKey }))
             }
           />
         ))}
@@ -698,6 +755,8 @@ function friendlySubmitError(raw: string): string {
     return "Please enter the reason the patient is unable to sign.";
   if (/date_received_required/.test(raw))
     return "Please enter the date you received the equipment.";
+  if (/document_choice_required/.test(raw))
+    return "Please choose one option on each document that asks you to pick one.";
   if (/already_completed/.test(raw))
     return "These documents have already been signed.";
   if (/expired|voided|invalid|not_found/.test(raw))

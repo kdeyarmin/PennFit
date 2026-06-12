@@ -60,6 +60,26 @@ export interface PacketBuildContext {
   deliveryDetails?: DeliveryDetails | null;
 }
 
+/** One selectable option on a choice document (e.g. an ABN option). */
+export interface PacketDocumentChoiceOption {
+  key: string;
+  label: string;
+  /** Full option wording shown beside the radio and printed in the PDF. */
+  detail: string;
+}
+
+/**
+ * A signer-side selection some documents require — the signer must
+ * personally pick exactly one option before the packet can be signed
+ * (the ABN's Option 1/2/3 is the canonical case; a notice with a
+ * pre-selected option is not valid). Code-defined like the rest of the
+ * template; operator content overrides never alter the options.
+ */
+export interface PacketDocumentChoice {
+  prompt: string;
+  options: PacketDocumentChoiceOption[];
+}
+
 export interface PacketDocumentTemplate {
   key: string;
   title: string;
@@ -73,6 +93,8 @@ export interface PacketDocumentTemplate {
   /** Whether this document is selected by default in a standard new
    *  patient packet. */
   defaultIncluded: boolean;
+  /** Present when the signer must select one option at signing time. */
+  choice?: PacketDocumentChoice;
   build: (
     company: CompanyProfile,
     ctx?: PacketBuildContext,
@@ -381,6 +403,109 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       return sections;
     },
   },
+  {
+    key: "refill_continued_use",
+    title: "Resupply Refill Request & Continued Use Confirmation",
+    category: "consent",
+    version: "2026-06-12.v1",
+    summary:
+      "Per-refill confirmation that the patient still uses PAP therapy and needs the requested supplies (Medicare refill-request documentation). Sent on its own each refill cycle, not part of onboarding.",
+    requiresSignature: true,
+    defaultIncluded: false,
+    build: (c) => [
+      {
+        paragraphs: [
+          `I am requesting replacement supplies for my PAP therapy equipment from ${c.legalName}. By signing this document electronically, I confirm the statements below.`,
+        ],
+      },
+      {
+        heading: "Continued use and need",
+        bullets: [
+          "I am still using my PAP device, and I continue to need resupply items to stay on therapy.",
+          "The supplies I am requesting are for my own use, as prescribed by my treating practitioner.",
+          "My existing supplies are nearly used up — I have approximately a 10-day supply or less remaining, or will by the expected delivery date.",
+        ],
+      },
+      {
+        heading: "How this request works",
+        bullets: [
+          `This refill was requested by me (or my caregiver on my behalf); ${c.legalName} does not ship supplies automatically without a request.`,
+          "I understand this confirmation is made no sooner than 14 calendar days before the expected delivery or shipping date.",
+          "I understand the quantities provided follow my prescription and my insurer's replacement schedule.",
+        ],
+      },
+      {
+        heading: "Questions or changes",
+        paragraphs: [
+          `If anything about my supply needs has changed — a different mask size, comfort issues, or a change in my insurance — I will contact ${c.legalName} at ${c.phone} or ${c.email} before my supplies ship.`,
+        ],
+      },
+    ],
+  },
+  {
+    key: "abn_medicare",
+    title: "Advance Beneficiary Notice of Non-coverage (ABN)",
+    category: "financial",
+    version: "2026-06-12.v1",
+    summary:
+      "Notice that Medicare may not pay for a specific item (CMS-R-131 structure). The signer must personally pick Option 1, 2, or 3 at signing time. Customize the item / cost / reason for this packet before sending.",
+    requiresSignature: true,
+    defaultIncluded: false,
+    choice: {
+      prompt:
+        "Choose ONE option below. We cannot choose an option for you. Your choice is recorded with your signature.",
+      options: [
+        {
+          key: "option_1",
+          label: "Option 1 — I want the item(s), bill Medicare",
+          detail:
+            "I want the item(s) listed above. I want Medicare billed for an official decision on payment, which is sent to me on a Medicare Summary Notice (MSN). I understand that if Medicare doesn't pay, I am responsible for payment, but I can appeal to Medicare by following the directions on the MSN.",
+        },
+        {
+          key: "option_2",
+          label: "Option 2 — I want the item(s), do not bill Medicare",
+          detail:
+            "I want the item(s) listed above, but do not bill Medicare. I am responsible for payment and cannot appeal because Medicare is not billed.",
+        },
+        {
+          key: "option_3",
+          label: "Option 3 — I don't want the item(s)",
+          detail:
+            "I don't want the item(s) listed above. I understand I am not responsible for payment, and I cannot appeal to see if Medicare would pay.",
+        },
+      ],
+    },
+    build: (c) => [
+      {
+        paragraphs: [
+          `NOTE: Medicare may not pay for the item(s) listed below, supplied by ${c.legalName}. Medicare does not pay for everything, even some care that you or your health care provider have good reason to think you need.`,
+        ],
+      },
+      {
+        heading: "Item(s), estimated cost, and reason Medicare may not pay",
+        paragraphs: [
+          "Item(s) / service(s): ____________________________________________",
+          "Reason Medicare may not pay: _____________________________________",
+          "Estimated cost: $________",
+          "(To be completed by the supplier for this notice before it is sent — use “Customize” in the send panel.)",
+        ],
+      },
+      {
+        heading: "What you need to do now",
+        bullets: [
+          "Read this notice carefully so you can make an informed decision about your care.",
+          `Ask us any questions — you can reach ${c.legalName} at ${c.phone} or ${c.email}.`,
+          "Choose ONE option in the selection below. We cannot choose an option for you.",
+        ],
+      },
+      {
+        heading: "Additional information",
+        paragraphs: [
+          "This notice gives our opinion, not an official Medicare decision. If you have other questions about this notice or Medicare billing, call 1-800-MEDICARE (1-800-633-4227 / TTY 1-877-486-2048). Signing below means that you have received and understand this notice, and your selected option is recorded with your signature. You also receive a copy.",
+        ],
+      },
+    ],
+  },
 ];
 
 /** The document key whose presence requires capturing a date-received
@@ -443,10 +568,61 @@ export function isRequiredPacketDocumentKey(key: string): boolean {
   return REQUIRED_DOC_KEYS.has(key);
 }
 
+/**
+ * Standalone-capable document keys: documents that make sense as a
+ * single-document signature outside the full onboarding packet (today:
+ * the per-refill-cycle continued-use confirmation). When a send's
+ * ENTIRE selection is standalone-capable, the required onboarding set
+ * is NOT folded in — see resolveDocumentKeys in send.ts. Onboarding
+ * packets (any selection touching a non-standalone document) keep the
+ * all-required guarantee unchanged.
+ */
+const STANDALONE_DOC_KEYS = new Set<string>([
+  "refill_continued_use",
+  "abn_medicare",
+]);
+
+export function isStandalonePacketDocumentKey(key: string): boolean {
+  return STANDALONE_DOC_KEYS.has(key);
+}
+
+/** True when every key in a non-empty selection is standalone-capable
+ *  (the selection may be sent without the required onboarding set). */
+export function isStandaloneSelection(keys: string[]): boolean {
+  return keys.length > 0 && keys.every((k) => STANDALONE_DOC_KEYS.has(k));
+}
+
 /** True when the packet contains the Proof of Delivery (so the signer
  *  must record the date they received the equipment). */
 export function packetRequiresDateReceived(documentKeys: string[]): boolean {
   return documentKeys.includes(PROOF_OF_DELIVERY_KEY);
+}
+
+/**
+ * The choice documents present in a packet: each one needs the signer
+ * to pick exactly one option before the packet can be signed. The sign
+ * route validates the submission against this; the signing UI renders
+ * a radio group per entry.
+ */
+export function packetChoiceDocuments(
+  documentKeys: string[],
+): { documentKey: string; choice: PacketDocumentChoice }[] {
+  const out: { documentKey: string; choice: PacketDocumentChoice }[] = [];
+  for (const key of documentKeys) {
+    const choice = getPacketTemplate(key)?.choice;
+    if (choice) out.push({ documentKey: key, choice });
+  }
+  return out;
+}
+
+/** Resolve a recorded option key to its full option, for rendering the
+ *  signed PDF / admin detail. Null when the key isn't a valid option. */
+export function resolvePacketChoiceOption(
+  documentKey: string,
+  optionKey: string,
+): PacketDocumentChoiceOption | null {
+  const choice = getPacketTemplate(documentKey)?.choice;
+  return choice?.options.find((o) => o.key === optionKey) ?? null;
 }
 
 const TEMPLATE_BY_KEY = new Map<string, PacketDocumentTemplate>(

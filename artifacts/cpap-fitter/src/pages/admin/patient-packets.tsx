@@ -291,6 +291,13 @@ function SendPacketPanel({
   // "patient" = pick an existing patient; "contact" = type an email /
   // phone with no patient selected (auto-files to a chart if it matches).
   const [mode, setMode] = useState<"patient" | "contact">("patient");
+  // "onboarding" = the full new-patient packet (server folds in every
+  // compliance-required document); "standalone" = a single-document
+  // signature (today: the per-refill continued-use confirmation) sent
+  // WITHOUT the onboarding set.
+  const [packetKind, setPacketKind] = useState<"onboarding" | "standalone">(
+    "onboarding",
+  );
   const [search, setSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<{
     id: string;
@@ -351,10 +358,33 @@ function SendPacketPanel({
     }
   }, [templatesQuery.data, seeded]);
 
-  const chosen = templates.filter((t) => selectedKeys[t.key]);
+  // Standalone-capable documents get their own send kind; they never
+  // appear in the onboarding list and vice versa, so a toggle flip can't
+  // leave a mixed selection.
+  const standaloneTemplates = templates.filter((t) => t.standalone);
+  const visibleTemplates =
+    packetKind === "standalone"
+      ? standaloneTemplates
+      : templates.filter((t) => !t.standalone);
+  const chosen = visibleTemplates.filter((t) => selectedKeys[t.key]);
 
   const toggleKey = (key: string) =>
     setSelectedKeys({ ...selectedKeys, [key]: !selectedKeys[key] });
+
+  const switchPacketKind = (kind: "onboarding" | "standalone") => {
+    setPacketKind(kind);
+    const next: Record<string, boolean> = {};
+    for (const t of templates) {
+      // Standalone mode starts with nothing selected when there's a
+      // choice of documents (the operator picks the one they need);
+      // a single standalone document is selected (and locked) for them.
+      next[t.key] =
+        kind === "standalone"
+          ? t.standalone && standaloneTemplates.length === 1
+          : !t.standalone && t.defaultIncluded;
+    }
+    setSelectedKeys(next);
+  };
 
   // Apply a saved bundle preset: select its documents (the required set
   // is folded in server-side regardless) and adopt its title.
@@ -734,19 +764,60 @@ function SendPacketPanel({
               </div>
             )}
 
+            {/* Packet kind — full onboarding vs a standalone signature */}
+            {standaloneTemplates.length > 0 && (
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="packetKind"
+                    checked={packetKind === "onboarding"}
+                    onChange={() => switchPacketKind("onboarding")}
+                  />
+                  <span style={{ color: "hsl(var(--ink-1))" }}>
+                    New-patient packet
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="packetKind"
+                    checked={packetKind === "standalone"}
+                    onChange={() => switchPacketKind("standalone")}
+                  />
+                  <span style={{ color: "hsl(var(--ink-1))" }}>
+                    Single-document signature
+                    <span
+                      className="block text-xs"
+                      style={{ color: "hsl(var(--ink-3))" }}
+                    >
+                      Sends just the selected document (refill confirmation,
+                      ABN) for an e-signature — no onboarding documents.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
             {/* Document selection */}
             <div>
               <Label htmlFor="docs">Documents</Label>
-              <PacketPresetBar
-                currentKeys={chosen.map((t) => t.key)}
-                onApply={applyPreset}
-              />
+              {packetKind === "onboarding" && (
+                <PacketPresetBar
+                  currentKeys={chosen.map((t) => t.key)}
+                  onApply={applyPreset}
+                />
+              )}
               {templatesQuery.isPending ? (
                 <Spinner label="Loading documents…" />
               ) : (
                 <div className="space-y-2">
-                  {templates.map((t: PatientPacketTemplate) => {
-                    const included = t.required || Boolean(selectedKeys[t.key]);
+                  {visibleTemplates.map((t: PatientPacketTemplate) => {
+                    const locked =
+                      t.required ||
+                      (packetKind === "standalone" &&
+                        standaloneTemplates.length === 1);
+                    const included = locked || Boolean(selectedKeys[t.key]);
                     return (
                       <div
                         key={t.key}
@@ -758,7 +829,7 @@ function SendPacketPanel({
                             type="checkbox"
                             className="mt-1"
                             checked={included}
-                            disabled={t.required}
+                            disabled={locked}
                             onChange={() => toggleKey(t.key)}
                           />
                           <span>

@@ -406,3 +406,46 @@ describe("deliverPacketLink", () => {
     expect(res).toEqual({ emailSent: false, smsSent: false });
   });
 });
+
+// ── resolveDocumentKeys — standalone carve-out ────────────────────
+import { resolveDocumentKeys } from "./send";
+import { requiredPacketDocumentKeys } from "./templates";
+
+describe("resolveDocumentKeys", () => {
+  it("folds the required onboarding set into a normal selection", () => {
+    const res = resolveDocumentKeys(["welcome_instructions"], undefined);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      for (const k of requiredPacketDocumentKeys()) {
+        expect(res.uniqueKeys).toContain(k);
+      }
+    }
+  });
+
+  it("sends a standalone-only selection as-is (refill confirmation)", () => {
+    const res = resolveDocumentKeys(["refill_continued_use"], undefined);
+    expect(res).toEqual({ ok: true, uniqueKeys: ["refill_continued_use"] });
+  });
+
+  it("still folds required docs when a standalone doc is mixed with onboarding docs", () => {
+    const res = resolveDocumentKeys(
+      ["refill_continued_use", "welcome_instructions"],
+      undefined,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.uniqueKeys).toContain("refill_continued_use");
+      for (const k of requiredPacketDocumentKeys()) {
+        expect(res.uniqueKeys).toContain(k);
+      }
+    }
+  });
+
+  it("default selection (no keys) excludes the refill confirmation", () => {
+    const res = resolveDocumentKeys(undefined, undefined);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.uniqueKeys).not.toContain("refill_continued_use");
+    }
+  });
+});
