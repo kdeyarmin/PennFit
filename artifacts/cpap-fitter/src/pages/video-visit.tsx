@@ -100,8 +100,8 @@ export function VideoVisitPage() {
           We couldn't load your visit
         </h1>
         <p className="mt-3 text-sm text-slate-600">
-          Please check your connection and try again. If the problem
-          continues, contact your care team.
+          Please check your connection and try again. If the problem continues,
+          contact your care team.
         </p>
         <button
           onClick={() => void session.refetch()}

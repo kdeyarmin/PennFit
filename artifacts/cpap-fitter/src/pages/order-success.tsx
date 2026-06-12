@@ -46,16 +46,14 @@ export function OrderSuccess() {
   // Lazily initialize from sessionStorage so there's no flash of
   // empty content. GuardedOrderSuccess already verified the key exists
   // before mounting this component, so the parse almost always succeeds.
-  const [confirmation] = useState<OrderConfirmation | null>(
-    () => {
-      try {
-        const stored = sessionStorage.getItem("fitter_order_confirmation");
-        return stored ? (JSON.parse(stored) as OrderConfirmation) : null;
-      } catch {
-        return null;
-      }
-    },
-  );
+  const [confirmation] = useState<OrderConfirmation | null>(() => {
+    try {
+      const stored = sessionStorage.getItem("fitter_order_confirmation");
+      return stored ? (JSON.parse(stored) as OrderConfirmation) : null;
+    } catch {
+      return null;
+    }
+  });
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
   useEffect(
