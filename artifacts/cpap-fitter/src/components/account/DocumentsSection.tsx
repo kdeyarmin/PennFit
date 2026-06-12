@@ -37,6 +37,7 @@ export function DocumentsSection() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedType, setSelectedType] =
     useState<PatientDocumentType>("insurance_card");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,14 +76,22 @@ export function DocumentsSection() {
     }
   }
 
-  async function handleDelete(id: string) {
-    setDeletingId(id);
+  async function handleDelete(doc: PatientDocumentItem) {
+    if (
+      !window.confirm(
+        `Delete "${doc.filename ?? "this document"}"? This can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(doc.id);
+    setDeleteError(null);
     try {
-      await deleteMyDocument(id);
+      await deleteMyDocument(doc.id);
       await load();
     } catch {
-      // Non-fatal: reload to reconcile.
-      await load();
+      setDeleteError("Couldn't delete the document — please try again.");
+      await load(); // reconcile in case it actually went through
     } finally {
       setDeletingId(null);
     }
@@ -169,9 +178,24 @@ export function DocumentsSection() {
         </p>
       )}
 
+      {deleteError && (
+        <p className="text-sm text-destructive" role="alert">
+          {deleteError}
+        </p>
+      )}
+
       {/* Document list */}
       {loadError && (
-        <p className="text-sm text-muted-foreground">{loadError}</p>
+        <p className="text-sm text-muted-foreground">
+          {loadError}{" "}
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="underline font-medium"
+          >
+            Try again
+          </button>
+        </p>
       )}
       {docs === null && !loadError && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -222,23 +246,25 @@ export function DocumentsSection() {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {DOCUMENT_TYPE_LABELS[
-                    doc.documentType as PatientDocumentType
-                  ] ?? doc.documentType}
-                  {" · "}
-                  {formatBytes(doc.sizeBytes)}
-                  {" · "}
-                  {new Date(doc.createdAt).toLocaleDateString(undefined, {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })}
+                  {[
+                    DOCUMENT_TYPE_LABELS[
+                      doc.documentType as PatientDocumentType
+                    ] ?? doc.documentType,
+                    formatBytes(doc.sizeBytes),
+                    new Date(doc.createdAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    }),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </p>
               </div>
               <button
                 type="button"
                 disabled={deletingId === doc.id}
-                onClick={() => void handleDelete(doc.id)}
+                onClick={() => void handleDelete(doc)}
                 className="text-muted-foreground hover:text-destructive disabled:opacity-40 shrink-0"
                 aria-label="Delete document"
                 data-testid={`account-doc-delete-${doc.id}`}

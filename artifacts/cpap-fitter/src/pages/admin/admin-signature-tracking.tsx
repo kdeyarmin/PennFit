@@ -36,6 +36,7 @@ import {
   type SignatureTrackingItem,
   type SignatureTrackingStatus,
 } from "@/lib/admin/signature-tracking-api";
+import { sendErrorText } from "@/lib/admin/send-error";
 
 type BadgeVariant =
   | "neutral"
@@ -429,7 +430,9 @@ function SignatureRow({
   item: SignatureTrackingItem;
   onChanged: () => void;
 }) {
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    null,
+  );
   const isOutstanding = item.status === "awaiting_signature";
   const age = daysSince(item.createdAt);
 
@@ -438,31 +441,38 @@ function SignatureRow({
   const resend = useMutation({
     mutationFn: () => resendSignatureDocument(item),
     onSuccess: () => {
-      setMsg(neverSent ? "Fax sent." : "Fax re-sent.");
+      setMsg({ kind: "ok", text: neverSent ? "Fax sent." : "Fax re-sent." });
       onChanged();
     },
-    onError: (err) => setMsg(describeError(err).detail ?? "Send failed."),
+    onError: (err) =>
+      setMsg({ kind: "err", text: sendErrorText(err, "Send failed.") }),
   });
 
   const handDelivered = useMutation({
     mutationFn: () => markSignatureHandDelivered(item.id),
     onSuccess: () => {
-      setMsg("Marked hand-delivered — now counted as outstanding.");
+      setMsg({
+        kind: "ok",
+        text: "Marked hand-delivered — now counted as outstanding.",
+      });
       onChanged();
     },
-    onError: (err) => setMsg(describeError(err).detail ?? "Failed."),
+    onError: (err) =>
+      setMsg({ kind: "err", text: describeError(err).detail ?? "Failed." }),
   });
 
   const markReturned = useMutation({
     mutationFn: () => markSignatureReturned(item.id),
     onSuccess: onChanged,
-    onError: (err) => setMsg(describeError(err).detail ?? "Failed."),
+    onError: (err) =>
+      setMsg({ kind: "err", text: describeError(err).detail ?? "Failed." }),
   });
 
   const cancel = useMutation({
     mutationFn: () => cancelSignatureTracking(item.id),
     onSuccess: onChanged,
-    onError: (err) => setMsg(describeError(err).detail ?? "Failed."),
+    onError: (err) =>
+      setMsg({ kind: "err", text: describeError(err).detail ?? "Failed." }),
   });
 
   return (
@@ -576,8 +586,13 @@ function SignatureRow({
           </>
         )}
         {msg && (
-          <div className="text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-            {msg}
+          <div
+            className="text-xs mt-1"
+            style={{
+              color: msg.kind === "ok" ? "hsl(142 60% 30%)" : "hsl(0 70% 45%)",
+            }}
+          >
+            {msg.text}
           </div>
         )}
       </td>
