@@ -1011,9 +1011,12 @@ router.patch(
 // storefront on the next cache flush (forced below); validate-cart
 // then rejects any in-flight cart line for it. Nothing is deleted:
 // order history keeps resolving, and the product can be re-activated
-// from the Stripe Dashboard — or by re-creating the same SKU, which
-// the seed script and the create endpoint's collision guard handle
-// (both search active products only).
+// from the Stripe Dashboard or by re-running the seed script (it
+// dedupes on SKU regardless of active state and re-activates).
+// Do NOT re-create the SKU through the admin create form: its
+// collision guard searches active products only, so it would mint a
+// DUPLICATE product carrying the same supposedly-stable SKU.
+// Idempotent: archiving an already-inactive product is a 200 no-op.
 //
 // We deliberately do NOT archive the product's Price objects: Stripe
 // keeps billing existing subscriptions on their original price, and
@@ -1062,6 +1065,14 @@ router.post(
       res.status(status >= 400 && status < 600 ? status : 502).json({
         error: "stripe_retrieve_failed",
       });
+      return;
+    }
+    // Idempotency short-circuit BEFORE the projection fence:
+    // projectProduct rejects inactive products, so without this a
+    // repeat archive (double-click, retry, concurrent admins) would
+    // 404 even though the product is in exactly the requested state.
+    if (existing.active === false) {
+      res.json({ ok: true, productId });
       return;
     }
     const existingProjected: ShopProductView | null = projectProduct(existing);

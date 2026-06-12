@@ -1270,3 +1270,21 @@ describe("POST /admin/shop/products/:productId/archive", () => {
     expect(res.body.error).toBe("stripe_archive_failed");
   });
 });
+
+describe("POST /admin/shop/products/:productId/archive — idempotency", () => {
+  it("returns 200 ok for an already-inactive product (no Stripe write)", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Already archived",
+      active: false,
+      metadata: {},
+    });
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, productId: "prod_x" });
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+});

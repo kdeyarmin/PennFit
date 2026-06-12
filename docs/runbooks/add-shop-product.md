@@ -66,9 +66,12 @@ edit but not retire). This archives the product in Stripe: it leaves
 the storefront within seconds, in-flight carts holding it are
 rejected at checkout validation, order history is unaffected, and
 existing subscriptions keep billing. To bring it back, re-activate
-the product in the Stripe Dashboard, or create the SKU again (the
-seed script re-activates archived SKUs; the admin create form's
-collision check only considers active products).
+the product in the Stripe Dashboard, or re-run the seed script if
+the SKU is seeded there (it dedupes on SKU regardless of active
+state and re-activates archived products). Do **not** re-create the
+SKU through the admin "Add product" form: its duplicate check only
+looks at active products, so it would create a second Stripe product
+with the same SKU instead of restoring the original.
 
 ## Prerequisites (one-time, per environment)
 
