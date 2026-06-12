@@ -100,18 +100,24 @@ function buildBlockList(extraCidrsRaw: string | undefined): BlockList {
   // Operator escape hatch: extend the trusted set without a deploy
   // (e.g. Cloudflare publishes a new range). Invalid entries are
   // logged and skipped — a typo must never take the boot down.
+  //
+  // The log line identifies the bad entry by POSITION, never by
+  // content: the value comes from process.env, and an env-derived
+  // string must not reach the world-readable log stream (someone
+  // could paste a secret into the wrong variable; CodeQL
+  // js/clear-text-logging flags exactly this).
   const extras = (extraCidrsRaw ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  for (const cidr of extras) {
+  extras.forEach((cidr, index) => {
     const parsed = parseCidr(cidr);
     if (!parsed) {
       logger.warn(
-        { event: "trusted_proxy_cidr_invalid", cidr },
+        { event: "trusted_proxy_cidr_invalid", entryIndex: index },
         "trusted-proxies: ignoring malformed RESUPPLY_TRUSTED_PROXY_CIDRS entry",
       );
-      continue;
+      return;
     }
     try {
       list.addSubnet(
@@ -121,11 +127,11 @@ function buildBlockList(extraCidrsRaw: string | undefined): BlockList {
       );
     } catch {
       logger.warn(
-        { event: "trusted_proxy_cidr_invalid", cidr },
+        { event: "trusted_proxy_cidr_invalid", entryIndex: index },
         "trusted-proxies: ignoring malformed RESUPPLY_TRUSTED_PROXY_CIDRS entry",
       );
     }
-  }
+  });
   return list;
 }
 
