@@ -28,7 +28,7 @@ import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
 import { Input, Select, Label } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
-import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { AdminModal } from "@/components/admin/AdminModal";
 import {
@@ -241,7 +241,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
           </div>
           {mut.isError ? (
             <p className="text-xs text-red-600">
-              Could not send the invitation. Check the provider has an email.
+              Could not send the invitation: {describeError(mut.error).detail}
             </p>
           ) : null}
           <div className="flex justify-end gap-2">
@@ -325,6 +325,11 @@ function CreateRequestModal({ onClose }: { onClose: () => void }) {
             placeholder="Order / claim / prescription ID for reference"
           />
         </div>
+        {mut.isError ? (
+          <p className="text-xs text-red-600">
+            Could not create the request: {describeError(mut.error).detail}
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button intent="ghost" onClick={onClose}>
             Cancel
@@ -398,6 +403,11 @@ function ReleaseModal({
             onChange={(e) => setNote(e.target.value)}
           />
         </div>
+        {mut.isError ? (
+          <p className="text-xs text-red-600">
+            Could not release: {describeError(mut.error).detail}
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button intent="ghost" onClick={onClose}>
             Cancel
@@ -414,20 +424,33 @@ function ReleaseModal({
 function AccountsTab() {
   const qc = useQueryClient();
   const [inviting, setInviting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ["admin", "provider-accounts"],
     queryFn: listProviderAccounts,
   });
+  const onSuccess = () => {
+    setActionError(null);
+    void qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] });
+  };
+  const onError = (err: unknown) =>
+    setActionError(
+      describeError(err).detail ?? "The action failed — try again.",
+    );
   const disable = useMutation({
     mutationFn: disableProviderAccount,
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] }),
+    onSuccess,
+    onError,
   });
   const enable = useMutation({
     mutationFn: enableProviderAccount,
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["admin", "provider-accounts"] }),
+    onSuccess,
+    onError,
   });
+  const pendingOn = (
+    m: { isPending: boolean; variables?: string },
+    id: string,
+  ) => m.isPending && m.variables === id;
 
   return (
     <>
@@ -436,6 +459,15 @@ function AccountsTab() {
           <Plus className="h-4 w-4" /> Invite provider
         </Button>
       </div>
+      {actionError && (
+        <p
+          className="mb-3 text-sm"
+          role="alert"
+          style={{ color: "hsl(0 70% 45%)" }}
+        >
+          {actionError}
+        </p>
+      )}
       {query.isPending ? (
         <Spinner />
       ) : query.isError ? (
@@ -536,6 +568,7 @@ function AccountsTab() {
                           <Button
                             intent="ghost"
                             size="sm"
+                            isLoading={pendingOn(enable, a.id)}
                             onClick={() => enable.mutate(a.id)}
                           >
                             Enable
@@ -544,6 +577,7 @@ function AccountsTab() {
                           <Button
                             intent="ghost"
                             size="sm"
+                            isLoading={pendingOn(disable, a.id)}
                             onClick={() => disable.mutate(a.id)}
                           >
                             Disable
@@ -568,23 +602,70 @@ function DocumentsTab() {
   const [status, setStatus] = useState("all");
   const [creating, setCreating] = useState(false);
   const [releasing, setReleasing] = useState<SignatureRequest | null>(null);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    null,
+  );
   const query = useQuery({
     queryKey: ["admin", "signature-requests", status],
     queryFn: () =>
       listSignatureRequests({ status: status === "all" ? undefined : status }),
   });
 
-  const onSuccess = () =>
+  const refresh = () =>
     qc.invalidateQueries({ queryKey: ["admin", "signature-requests"] });
+  const onSuccess = () => {
+    setMsg(null);
+    void refresh();
+  };
+  const onError = (err: unknown) =>
+    setMsg({
+      kind: "err",
+      text: describeError(err).detail ?? "The action failed — try again.",
+    });
 
-  const voidM = useMutation({ mutationFn: voidSignatureRequest, onSuccess });
-  const readyM = useMutation({ mutationFn: markReadyToPrint, onSuccess });
-  const returnedM = useMutation({ mutationFn: markReturnedSigned, onSuccess });
-  const attachM = useMutation({ mutationFn: markAttachedToChart, onSuccess });
+  const voidM = useMutation({
+    mutationFn: voidSignatureRequest,
+    onSuccess,
+    onError,
+  });
+  const readyM = useMutation({
+    mutationFn: markReadyToPrint,
+    onSuccess,
+    onError,
+  });
+  const returnedM = useMutation({
+    mutationFn: markReturnedSigned,
+    onSuccess,
+    onError,
+  });
+  const attachM = useMutation({
+    mutationFn: markAttachedToChart,
+    onSuccess,
+    onError,
+  });
   const remindM = useMutation({
     mutationFn: remindSignatureRequest,
-    onSuccess,
+    onSuccess: (res) => {
+      // The API reports whether the reminder email actually went out —
+      // don't let the CSR assume it did when email isn't configured.
+      setMsg(
+        res.emailSent
+          ? { kind: "ok", text: "Reminder email sent to the provider." }
+          : {
+              kind: "err",
+              text: "Reminder recorded, but the email could not be sent — contact the provider directly.",
+            },
+      );
+      void refresh();
+    },
+    onError,
   });
+
+  // Scope a shared mutation's spinner to the row it was fired from.
+  const pendingOn = (
+    m: { isPending: boolean; variables?: string },
+    id: string,
+  ) => m.isPending && m.variables === id;
 
   return (
     <>
@@ -608,6 +689,18 @@ function DocumentsTab() {
           <Plus className="h-4 w-4" /> New request
         </Button>
       </div>
+
+      {msg && (
+        <p
+          className="mb-3 text-sm"
+          role={msg.kind === "err" ? "alert" : undefined}
+          style={{
+            color: msg.kind === "ok" ? "hsl(142 60% 30%)" : "hsl(0 70% 45%)",
+          }}
+        >
+          {msg.text}
+        </p>
+      )}
 
       {query.isPending ? (
         <Spinner />
@@ -701,6 +794,7 @@ function DocumentsTab() {
                             <Button
                               intent="ghost"
                               size="sm"
+                              isLoading={pendingOn(remindM, r.id)}
                               onClick={() => remindM.mutate(r.id)}
                             >
                               <Mail className="h-3.5 w-3.5" /> Remind
@@ -708,7 +802,16 @@ function DocumentsTab() {
                             <Button
                               intent="ghost"
                               size="sm"
-                              onClick={() => voidM.mutate(r.id)}
+                              isLoading={pendingOn(voidM, r.id)}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Void this signature request? The provider will no longer be able to sign it.",
+                                  )
+                                ) {
+                                  voidM.mutate(r.id);
+                                }
+                              }}
                             >
                               Void
                             </Button>
@@ -729,6 +832,7 @@ function DocumentsTab() {
                               <Button
                                 intent="ghost"
                                 size="sm"
+                                isLoading={pendingOn(readyM, r.id)}
                                 onClick={() => readyM.mutate(r.id)}
                               >
                                 Ready to print
@@ -738,6 +842,7 @@ function DocumentsTab() {
                               <Button
                                 intent="ghost"
                                 size="sm"
+                                isLoading={pendingOn(returnedM, r.id)}
                                 onClick={() => returnedM.mutate(r.id)}
                               >
                                 Returned signed
@@ -747,6 +852,7 @@ function DocumentsTab() {
                               <Button
                                 intent="ghost"
                                 size="sm"
+                                isLoading={pendingOn(attachM, r.id)}
                                 onClick={() => attachM.mutate(r.id)}
                               >
                                 Attach to chart
