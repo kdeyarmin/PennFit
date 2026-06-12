@@ -57,7 +57,6 @@ import { CustomerChatSection } from "@/components/customer-chat-section";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { CaregiverSection } from "@/components/caregiver-section";
 import { PushPromptBanner } from "@/components/push-prompt-banner";
-import { WalletPassSection } from "@/components/wallet-pass-section";
 import {
   EquipmentRegistrySection,
   EsignFormsSection,
@@ -440,7 +439,6 @@ function AccountInner() {
                 <EsignFormsSection />
                 <ReferralProgramSection />
                 <CaregiverSection />
-                <WalletPassSection />
                 <CommPrefsSection />
                 <DataExportSection />
               </>
