@@ -72,4 +72,4 @@ docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
   -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower='$ADMIN_EMAIL' AND email_verified_at IS NULL;" >/dev/null
 
 echo "[dev-db] done. Admin: $ADMIN_EMAIL / $ADMIN_PASSWORD"
-echo "[dev-db] SUPABASE_SERVICE_ROLE_KEY (for .env): $SRK"
+echo "[dev-db] SUPABASE_SERVICE_ROLE_KEY is available via: supabase status -o env"
