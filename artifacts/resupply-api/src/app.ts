@@ -280,6 +280,10 @@ app.use(
 // below is a no-op for this request.
 app.use("/api/patient-packets/sign", express.json({ limit: "1mb" }));
 
+// The CSR-order sign endpoint carries the same drawn-signature PNG
+// data URL — same dedicated 1 MB parser, same reasoning as above.
+app.use("/api/csr-orders/sign", express.json({ limit: "1mb" }));
+
 // The provider-portal sign route can carry the same drawn-signature PNG
 // data URL — same dedicated 1 MB parser, same reasoning as above.
 app.use("/api/provider/queue", express.json({ limit: "1mb" }));

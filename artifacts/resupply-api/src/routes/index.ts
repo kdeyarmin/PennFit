@@ -28,6 +28,7 @@ import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
 import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
+import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
@@ -643,6 +644,11 @@ router.use(shopProductsAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/csr-order-requests* — CSR-created "sign & pay" orders: the
+// CSR builds an order from the admin Orders page and the customer
+// receives a signed link to review, e-sign paperwork, and pay via
+// Stripe Hosted Checkout (public twin: routes/storefront/csr-orders).
+router.use(csrOrderRequestsAdminRouter);
 // /admin/shop/orders/:orderId/notes — internal CSR notes per shop
 // order (Phase 14). Mounted after the orders router so the more-
 // specific /notes path doesn't shadow any future detail GET.
