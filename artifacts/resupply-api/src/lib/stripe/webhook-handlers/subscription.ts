@@ -47,11 +47,11 @@ export async function handleSubscriptionEvent(
  * The shop customer id is recovered from the subscription's
  * metadata (stamped at Session creation time in checkout.ts).
  * If it's missing — which can happen for legacy subscriptions or
- * for events Stripe emits without our prior context — we still
- * insert the row with a synthetic placeholder so we don't lose
- * the Stripe-side source of truth, but log a warning. The
- * /shop/me/subscriptions endpoint filters by customer_id, so an
- * unowned row won't accidentally surface to the wrong patient.
+ * for events Stripe emits without our prior context — we DROP the
+ * event (no DB write) and log a warning. Operators can backfill from
+ * Stripe by event id if the subscription is genuinely ours.
+ *
+ * (We intentionally do not write a synthetic placeholder customer_id.)
  */
 async function upsertSubscription(
   subscription: Stripe.Subscription,
