@@ -1,7 +1,7 @@
 // /admin/diagnostics/proxy-chain — echo what the proxy chain actually
-// delivered to the app for THIS request, so an operator can confirm
-// Railway's X-Forwarded-For behavior live before the P1-5 trust-proxy
-// fix is written (docs/app-review-2026-06-10.md P1-5; capture procedure
+// delivered to the app for THIS request, so an operator can validate
+// Railway/Cloudflare forwarding behavior and diagnose `req.ip` resolution
+// under the current `trust proxy` configuration (P1-5; capture procedure
 // in docs/runbooks/verify-xff-chain.md).
 //
 //   GET /admin/diagnostics/proxy-chain
