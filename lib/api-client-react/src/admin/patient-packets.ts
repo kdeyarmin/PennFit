@@ -44,6 +44,9 @@ export interface PatientPacketTemplate {
   defaultIncluded: boolean;
   /** Compliance-mandatory documents the UI locks into every packet. */
   required: boolean;
+  /** Standalone-capable: may be sent on its own (e.g. the per-refill
+   *  continued-use confirmation) without the onboarding set. */
+  standalone: boolean;
   /** True when a permanent operator override is in effect. */
   customized: boolean;
   /** Effective content in token form (override or code default). */

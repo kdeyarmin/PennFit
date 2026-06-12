@@ -381,6 +381,45 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       return sections;
     },
   },
+  {
+    key: "refill_continued_use",
+    title: "Resupply Refill Request & Continued Use Confirmation",
+    category: "consent",
+    version: "2026-06-12.v1",
+    summary:
+      "Per-refill confirmation that the patient still uses PAP therapy and needs the requested supplies (Medicare refill-request documentation). Sent on its own each refill cycle, not part of onboarding.",
+    requiresSignature: true,
+    defaultIncluded: false,
+    build: (c) => [
+      {
+        paragraphs: [
+          `I am requesting replacement supplies for my PAP therapy equipment from ${c.legalName}. By signing this document electronically, I confirm the statements below.`,
+        ],
+      },
+      {
+        heading: "Continued use and need",
+        bullets: [
+          "I am still using my PAP device, and I continue to need resupply items to stay on therapy.",
+          "The supplies I am requesting are for my own use, as prescribed by my treating practitioner.",
+          "My existing supplies are nearly used up — I have approximately a 10-day supply or less remaining, or will by the expected delivery date.",
+        ],
+      },
+      {
+        heading: "How this request works",
+        bullets: [
+          `This refill was requested by me (or my caregiver on my behalf); ${c.legalName} does not ship supplies automatically without a request.`,
+          "I understand this confirmation is made no sooner than 14 calendar days before the expected delivery or shipping date.",
+          "I understand the quantities provided follow my prescription and my insurer's replacement schedule.",
+        ],
+      },
+      {
+        heading: "Questions or changes",
+        paragraphs: [
+          `If anything about my supply needs has changed — a different mask size, comfort issues, or a change in my insurance — I will contact ${c.legalName} at ${c.phone} or ${c.email} before my supplies ship.`,
+        ],
+      },
+    ],
+  },
 ];
 
 /** The document key whose presence requires capturing a date-received
@@ -441,6 +480,27 @@ export function requiredPacketDocumentKeys(): string[] {
 
 export function isRequiredPacketDocumentKey(key: string): boolean {
   return REQUIRED_DOC_KEYS.has(key);
+}
+
+/**
+ * Standalone-capable document keys: documents that make sense as a
+ * single-document signature outside the full onboarding packet (today:
+ * the per-refill-cycle continued-use confirmation). When a send's
+ * ENTIRE selection is standalone-capable, the required onboarding set
+ * is NOT folded in — see resolveDocumentKeys in send.ts. Onboarding
+ * packets (any selection touching a non-standalone document) keep the
+ * all-required guarantee unchanged.
+ */
+const STANDALONE_DOC_KEYS = new Set<string>(["refill_continued_use"]);
+
+export function isStandalonePacketDocumentKey(key: string): boolean {
+  return STANDALONE_DOC_KEYS.has(key);
+}
+
+/** True when every key in a non-empty selection is standalone-capable
+ *  (the selection may be sent without the required onboarding set). */
+export function isStandaloneSelection(keys: string[]): boolean {
+  return keys.length > 0 && keys.every((k) => STANDALONE_DOC_KEYS.has(k));
 }
 
 /** True when the packet contains the Proof of Delivery (so the signer

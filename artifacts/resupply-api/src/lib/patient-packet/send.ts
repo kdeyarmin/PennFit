@@ -31,6 +31,7 @@ import {
   PACKET_TEMPLATES,
   defaultPacketDocumentKeys,
   getPacketTemplate,
+  isStandaloneSelection,
   isValidPacketDocumentKey,
   requiredPacketDocumentKeys,
   type CompanyProfile,
@@ -468,7 +469,12 @@ async function resolvePatientViaCustomerEmail(
 // DB-free, so both send paths can fail fast before any round-trip.
 //
 // Unless `allowPartial` is set, every compliance-required document is
-// folded in so a normal send is always complete.
+// folded in so a normal send is always complete. The one carve-out:
+// when the ENTIRE selection is standalone-capable (today only the
+// per-refill-cycle continued-use confirmation), the packet is sent
+// as-is — bundling the full onboarding set with every refill signature
+// would be wrong, and any selection touching a non-standalone document
+// still gets the required set folded in unchanged.
 //
 // Exported so the "edit an open packet" admin route reconciles its
 // document set through the exact same validation + required-folding +
@@ -481,7 +487,7 @@ export function resolveDocumentKeys(
   const invalidKeys = keys.filter((k) => !isValidPacketDocumentKey(k));
   if (invalidKeys.length > 0) return { ok: false, invalidKeys };
   const selected = new Set(keys);
-  if (!allowPartial) {
+  if (!allowPartial && !isStandaloneSelection([...selected])) {
     for (const k of requiredPacketDocumentKeys()) selected.add(k);
   }
   const uniqueKeys = PACKET_TEMPLATES.map((t) => t.key).filter((k) =>
@@ -582,7 +588,15 @@ async function buildAndDeliverPacket(
     .from("patient_packets")
     .insert({
       patient_id: input.patientId,
-      title: input.title ?? "New Patient Document Packet",
+      // A standalone single-document send (e.g. the refill confirmation)
+      // is titled after its document — calling it a "New Patient" packet
+      // would mislabel the signing page and every reminder.
+      title:
+        input.title ??
+        (isStandaloneSelection(input.uniqueKeys) &&
+        input.uniqueKeys.length === 1
+          ? getPacketTemplate(input.uniqueKeys[0]!)!.title
+          : "New Patient Document Packet"),
       status: "sent",
       recipient_name: input.recipientName,
       recipient_email: input.recipientEmail,

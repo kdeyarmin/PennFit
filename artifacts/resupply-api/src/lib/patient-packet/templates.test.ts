@@ -93,3 +93,39 @@ describe("patient-packet templates", () => {
     expect(text).toContain("2026-06-06");
   });
 });
+
+// ── Refill / continued-use confirmation (standalone e-sign) ───────
+import {
+  isStandalonePacketDocumentKey,
+  isStandaloneSelection,
+} from "./templates";
+
+describe("refill_continued_use template", () => {
+  it("is a signed, standalone, non-onboarding document", () => {
+    const t = getPacketTemplate("refill_continued_use")!;
+    expect(t).toBeDefined();
+    expect(t.requiresSignature).toBe(true);
+    expect(t.defaultIncluded).toBe(false);
+    expect(isRequiredPacketDocumentKey(t.key)).toBe(false);
+    expect(isStandalonePacketDocumentKey(t.key)).toBe(true);
+  });
+
+  it("covers the Medicare refill-documentation elements", () => {
+    const t = getPacketTemplate("refill_continued_use")!;
+    const text = JSON.stringify(t.build(FALLBACK_COMPANY));
+    expect(text).toMatch(/still using my PAP device/i);
+    expect(text).toMatch(/10-day supply or less/i);
+    expect(text).toMatch(/14 calendar days/i);
+    expect(text).toMatch(/requested by me/i);
+    expect(text).toContain(FALLBACK_COMPANY.legalName);
+  });
+
+  it("isStandaloneSelection only accepts non-empty all-standalone sets", () => {
+    expect(isStandaloneSelection(["refill_continued_use"])).toBe(true);
+    expect(isStandaloneSelection([])).toBe(false);
+    expect(
+      isStandaloneSelection(["refill_continued_use", "assignment_of_benefits"]),
+    ).toBe(false);
+    expect(isStandaloneSelection(["assignment_of_benefits"])).toBe(false);
+  });
+});
