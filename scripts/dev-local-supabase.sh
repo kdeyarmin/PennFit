@@ -50,13 +50,13 @@ echo "[dev-db] 3/5 grant data-API roles on resupply schemas"
 for s in resupply resupply_auth; do
   docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
     -c "GRANT ALL ON SCHEMA auth TO postgres;" \
-    -c "GRANT USAGE ON SCHEMA $s TO anon, authenticated, service_role;" \
-    -c "GRANT ALL ON ALL TABLES IN SCHEMA $s TO anon, authenticated, service_role;" \
-    -c "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA $s TO anon, authenticated, service_role;" \
-    -c "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $s TO anon, authenticated, service_role;" \
-    -c "ALTER DEFAULT PRIVILEGES IN SCHEMA $s GRANT ALL ON TABLES TO anon, authenticated, service_role;" \
-    -c "ALTER DEFAULT PRIVILEGES IN SCHEMA $s GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO anon, authenticated, service_role;" \
-    -c "ALTER DEFAULT PRIVILEGES IN SCHEMA $s GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;" >/dev/null
+    -c "GRANT USAGE ON SCHEMA $s TO service_role;" \
+    -c "GRANT ALL ON ALL TABLES IN SCHEMA $s TO service_role;" \
+    -c "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA $s TO service_role;" \
+    -c "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $s TO service_role;" \
+    -c "ALTER DEFAULT PRIVILEGES IN SCHEMA $s GRANT ALL ON TABLES TO service_role;" \
+    -c "ALTER DEFAULT PRIVILEGES IN SCHEMA $s GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO service_role;" \
+    -c "ALTER DEFAULT PRIVILEGES IN SCHEMA $s GRANT EXECUTE ON FUNCTIONS TO service_role;" >/dev/null
 done
 docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres -c "NOTIFY pgrst, 'reload schema';" >/dev/null
 
