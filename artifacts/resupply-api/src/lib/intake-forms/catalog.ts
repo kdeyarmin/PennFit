@@ -20,22 +20,22 @@ export interface FormDescriptor {
 export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
   hipaa_npp: {
     kind: "hipaa_npp",
-    version: "2024.01",
+    version: "2026.06",
     title: "Notice of Privacy Practices",
     body:
-      "PennPaps protects your health information per HIPAA. We may " +
+      "Penn Home Medical Supply protects your health information per HIPAA. We may " +
       "use your information for treatment, payment, and healthcare " +
       "operations. You have the right to request, amend, and " +
       "restrict access to your records.",
   },
   aob: {
     kind: "aob",
-    version: "2024.01",
+    version: "2026.06",
     title: "Assignment of Benefits",
     body:
-      "By signing, you authorize PennPaps to bill your insurance " +
+      "By signing, you authorize Penn Home Medical Supply to bill your insurance " +
       "carrier directly for covered services, and you assign payment " +
-      "of benefits to PennPaps.",
+      "of benefits to Penn Home Medical Supply.",
   },
   abn: {
     kind: "abn",
@@ -48,19 +48,19 @@ export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
   },
   financial_responsibility: {
     kind: "financial_responsibility",
-    version: "2024.01",
+    version: "2026.06",
     title: "Financial Responsibility",
     body:
       "You are responsible for any deductible, copayment, or " +
-      "non-covered charges. PennPaps will provide an estimate " +
+      "non-covered charges. Penn Home Medical Supply will provide an estimate " +
       "before service whenever possible.",
   },
   supplier_standards: {
     kind: "supplier_standards",
-    version: "2024.01",
+    version: "2026.06",
     title: "DMEPOS Supplier Standards",
     body:
-      "PennPaps is a Medicare-enrolled DMEPOS supplier and adheres " +
+      "Penn Home Medical Supply is a Medicare-enrolled DMEPOS supplier and adheres " +
       "to the 30 supplier standards published by CMS. A copy is " +
       "available on request.",
   },

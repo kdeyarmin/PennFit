@@ -57,6 +57,7 @@ import {
   GL_ACCOUNT_DEFAULTS,
   loadGlAccounts,
 } from "../../lib/billing/gl-accounts";
+import { getDocumentSupplierNameSync } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   customerKeyForId,
@@ -103,10 +104,9 @@ const DEFAULT_DAYS = 30;
 const MAX_DAYS = 90;
 
 // Read at call time (not module load) so the boot/save-time company-
-// info hydration of RESUPPLY_PRACTICE_NAME is honoured without a
-// restart.
-const practiceName = (): string =>
-  process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+// info hydration is honoured without a restart. Reports carry the
+// registered DME legal name, not the storefront brand.
+const practiceName = (): string => getDocumentSupplierNameSync();
 
 function parseRange(req: import("express").Request): {
   from: Date;
