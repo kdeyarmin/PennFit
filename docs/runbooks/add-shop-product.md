@@ -65,13 +65,17 @@ Open the product's **Edit details** page and use **Archive product**
 edit but not retire). This archives the product in Stripe: it leaves
 the storefront within seconds, in-flight carts holding it are
 rejected at checkout validation, order history is unaffected, and
-existing subscriptions keep billing. To bring it back, re-activate
-the product in the Stripe Dashboard, or re-run the seed script if
-the SKU is seeded there (it dedupes on SKU regardless of active
-state and re-activates archived products). Do **not** re-create the
-SKU through the admin "Add product" form: its duplicate check only
-looks at active products, so it would create a second Stripe product
-with the same SKU instead of restoring the original.
+existing subscriptions keep billing. To bring it back, open
+**View archived** on the inventory page
+(`/admin/shop/inventory/archived`) and click **Restore** — the
+product returns to the storefront with its previous price, stock,
+and photo (re-activating in the Stripe Dashboard or re-running the
+seed script also works). Do **not** re-create the SKU through the
+admin "Add product" form: its duplicate check only looks at active
+products, so it would create a second Stripe product with the same
+SKU instead of restoring the original. The in-app Restore guards
+against the inverse case too — it refuses (409) when an active
+product already carries the SKU.
 
 ## Prerequisites (one-time, per environment)
 
