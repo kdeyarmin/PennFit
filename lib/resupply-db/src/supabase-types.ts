@@ -3334,6 +3334,47 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["inbound_faxes"]["Row"]>;
         Relationships: [];
       };
+      // AI referral intake reviews (migration 0321). One row per referral
+      // packet (an inbound fax or an admin-uploaded PDF) holding the
+      // structured AI extraction and the human accept/dismiss lifecycle.
+      referral_reviews: {
+        Row: {
+          id: string;
+          source: "fax" | "upload";
+          inbound_fax_id: string | null;
+          media_object_key: string | null;
+          media_content_type: string | null;
+          media_size_bytes: number | null;
+          status:
+            | "pending"
+            | "extracted"
+            | "accepted"
+            | "dismissed"
+            | "failed"
+            | "offline"
+            | "unsupported";
+          extraction: Json | null;
+          extraction_model: string | null;
+          extracted_at: string | null;
+          error_reason: string | null;
+          created_patient_id: string | null;
+          accepted_at: string | null;
+          accepted_by_user_id: string | null;
+          dismissed_at: string | null;
+          dismissed_by_user_id: string | null;
+          dismiss_note: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_reviews"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_reviews"]["Row"]
+        >;
+        Relationships: [];
+      };
       voice_calls: {
         Row: {
           id: string;

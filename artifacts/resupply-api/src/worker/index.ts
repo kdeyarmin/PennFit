@@ -37,6 +37,7 @@ import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.j
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
+import { registerReferralReviewExtractJob } from "./jobs/referral-review-extract.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerVideoVisitReminderJob } from "./jobs/video-visit-reminders.js";
@@ -461,6 +462,14 @@ async function doStartWorker(): Promise<void> {
     "registerPatientDocumentsRetentionSweepJob",
     registrationFailures,
     () => registerPatientDocumentsRetentionSweepJob(boss),
+  );
+  // Referral-review extraction — runs the Claude pass over a referral
+  // packet (fax arrival when `fax.referral_review` is on, or a manual
+  // admin upload) and persists the structured fields for human review.
+  await safeRegister(
+    "registerReferralReviewExtractJob",
+    registrationFailures,
+    () => registerReferralReviewExtractJob(boss),
   );
   // Recall notification send-side worker — drains queued
   // recall_notifications rows once per day. The matcher

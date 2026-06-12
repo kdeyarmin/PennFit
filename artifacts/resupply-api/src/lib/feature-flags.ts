@@ -86,6 +86,7 @@ export const FEATURE_FLAG_KEYS = [
   "billing.bill_hold",
   "billing.bill_hold_auto_remind",
   "fax.auto_file_signed",
+  "fax.referral_review",
   "frontdesk.counter_orders",
 ] as const;
 

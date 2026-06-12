@@ -163,6 +163,11 @@ const AdminInboundFaxesPage = lazyWithRetry(() =>
     default: m.AdminInboundFaxesPage,
   })),
 );
+const AdminReferralReviewsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-referral-reviews").then((m) => ({
+    default: m.AdminReferralReviewsPage,
+  })),
+);
 const AdminPrescriptionRequestsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-prescription-requests").then((m) => ({
     default: m.AdminPrescriptionRequestsPage,
@@ -988,6 +993,10 @@ function AdminConsole() {
             <Route
               path="/admin/inbound-faxes"
               component={AdminInboundFaxesPage}
+            />
+            <Route
+              path="/admin/referral-reviews"
+              component={AdminReferralReviewsPage}
             />
             <Route
               path="/admin/patients/:patientId/prescription-requests"
