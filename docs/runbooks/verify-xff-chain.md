@@ -2,15 +2,15 @@
 
 **Why.** The app review
 ([`docs/app-review-2026-06-10.md`](../app-review-2026-06-10.md), P1-5)
-found that `trust proxy = 1` is one hop short behind Cloudflare: on the
-custom domain (`pennpaps.com` → Cloudflare → Railway edge → app),
-`req.ip` resolves to a Cloudflare colo IP, so every IP-keyed rate
-limiter buckets all custom-domain visitors together. The fix was
-**deliberately deferred** because writing it blind is dangerous: if
-Railway's edge _appends_ to a client-supplied `X-Forwarded-For` instead
-of stripping it, then `trust proxy = 2` would let anyone hitting
-`pennfit.up.railway.app` directly spoof their rate-limit identity — a
-worse failure than today's over-blocking.
+identified that a plain `trust proxy = 1` is one hop short behind Cloudflare:
+on the custom domain (`pennpaps.com` → Cloudflare → Railway edge → app),
+`req.ip` can resolve to a Cloudflare colo IP, so IP-keyed rate limiters can
+bucket all custom-domain visitors together.
+
+The current code uses a `trust proxy` predicate (see
+`artifacts/resupply-api/src/lib/trusted-proxies.ts`) to address this safely.
+This runbook captures the live proxy-chain facts needed to validate the
+deployment and to decide if any follow-up trust-proxy adjustments are needed.
 
 This runbook captures the facts the fix depends on. It uses the
 super-admin diagnostics endpoint `GET /admin/diagnostics/proxy-chain`,
