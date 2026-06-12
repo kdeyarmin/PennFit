@@ -31,14 +31,18 @@ const body = z
   })
   .strict();
 
-router.post("/shop/validate-address", validateAddressLimiter, async (req, res) => {
-  const parsed = body.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid_body" });
-    return;
-  }
-  const result = validateAddress(parsed.data);
-  res.json(result);
-});
+router.post(
+  "/shop/validate-address",
+  validateAddressLimiter,
+  async (req, res) => {
+    const parsed = body.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const result = validateAddress(parsed.data);
+    res.json(result);
+  },
+);
 
 export default router;

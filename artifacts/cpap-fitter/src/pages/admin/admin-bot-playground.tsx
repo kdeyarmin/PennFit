@@ -272,7 +272,9 @@ export function AdminBotPlaygroundPage() {
               color: "hsl(var(--destructive))",
             }}
           >
-            <span>Couldn't load playground config — scenarios may be incomplete.</span>
+            <span>
+              Couldn't load playground config — scenarios may be incomplete.
+            </span>
             <Button
               size="sm"
               variant="outline"
