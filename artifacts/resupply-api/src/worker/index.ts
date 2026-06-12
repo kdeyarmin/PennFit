@@ -58,6 +58,7 @@ import { registerTherapyFleetSnapshotJob } from "./jobs/therapy-fleet-daily-snap
 import { registerMetricsSnapshotJob } from "./jobs/metrics-snapshot.js";
 import { registerMetricAlertsEvaluatorJob } from "./jobs/metric-alerts-evaluator.js";
 import { registerMetricAlertsNotifyJob } from "./jobs/metric-alerts-notify.js";
+import { registerDlqMonitorJob } from "./jobs/dlq-monitor.js";
 import { registerOwnerDigestJob } from "./jobs/owner-digest.js";
 import { registerTherapyFleetAlertsJob } from "./jobs/therapy-fleet-alerts-scan.js";
 import { registerSetupDeadlineOutreachJob } from "./jobs/therapy-setup-deadline-outreach.js";
@@ -566,6 +567,10 @@ async function doStartWorker(): Promise<void> {
 
   // Email a SendGrid digest of new KPI alerts to admins (06:50 UTC).
   await registerMetricAlertsNotifyJob(boss);
+
+  // Daily dead-letter-queue depth report (06:55 UTC) — surfaces jobs
+  // that exhausted their retries; without it a DLQ fills silently.
+  await registerDlqMonitorJob(boss);
 
   // Weekly owner KPI digest (Mondays 13:00 UTC).
   await registerOwnerDigestJob(boss);

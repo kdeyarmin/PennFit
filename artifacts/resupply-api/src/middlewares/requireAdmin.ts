@@ -77,9 +77,10 @@ interface ResolvedAdmin {
   role: "admin" | "agent";
   /**
    * From admin_users.role. Defaults to the coarse `role` value
-   * when the admin_users lookup fails or no row exists — legacy
-   * rows pre-dating Phase A are treated as their coarse role
-   * (admin → admin, agent → agent), preserving backwards-compat.
+   * only when NO admin_users row exists — legacy rows pre-dating
+   * Phase A are treated as their coarse role (admin → admin,
+   * agent → agent), preserving backwards-compat. A FAILED lookup
+   * rejects the request instead (fail closed, P2-19).
    */
   granularRole: AdminRole;
   /** Home branch from admin_users.location_id; null when unassigned
@@ -120,24 +121,43 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
       return null;
     }
 
-    // Look up the granular role from admin_users. Best-effort: if
-    // this fails (lookup error, no row), fall back to the coarse
-    // role so the user still has SOME role and the request
-    // continues. The trade is "lenient under DB blips" vs "fail
-    // closed" — and the coarse `auth.users.role` already gated
-    // staff-or-not above, so the fallback is the same access the
-    // user had before Phase A.
+    // Look up the granular role from admin_users.
+    //
+    // Two distinct outcomes (app-review 2026-06-10, P2-19):
+    //   * NO ROW (lookup succeeded, nothing matched) — legacy
+    //     pre-Phase-A account that was never migrated into
+    //     admin_users. Fall back to the coarse role: that's the
+    //     same access the user had before Phase A, so the fallback
+    //     can't grant anything new.
+    //   * LOOKUP FAILED (PostgREST error or thrown) — we cannot
+    //     know the user's real granular role. Falling back to the
+    //     coarse role here would let a deliberately DOWNGRADED
+    //     staffer (admin→csr in admin_users) regain super_admin for
+    //     the duration of any admin_users read hiccup. Fail closed:
+    //     reject the request (401), same posture as a failed
+    //     session lookup. The blip costs one retried request, not a
+    //     privilege escalation.
     let granularRole: AdminRole = user.role;
     let locationId: string | null = null;
     try {
       const supabase = getSupabaseServiceRoleClient();
-      const { data } = await supabase
+      const { data, error } = await supabase
         .schema("resupply")
         .from("admin_users")
         .select("role, location_id")
         .eq("auth_user_id", user.id)
         .limit(1)
         .maybeSingle();
+      if (error) {
+        logger.warn(
+          {
+            event: "resupply_admin_granular_role_lookup_failed",
+            err: error.message,
+          },
+          "requireAdmin: admin_users.role lookup errored; failing closed",
+        );
+        return null;
+      }
       if (data?.role) {
         granularRole = data.role as AdminRole;
       }
@@ -148,8 +168,9 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
           event: "resupply_admin_granular_role_lookup_failed",
           err,
         },
-        "requireAdmin: admin_users.role lookup failed; falling back to coarse role",
+        "requireAdmin: admin_users.role lookup threw; failing closed",
       );
+      return null;
     }
 
     return {
