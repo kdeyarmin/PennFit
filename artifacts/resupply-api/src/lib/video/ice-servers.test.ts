@@ -113,4 +113,55 @@ describe("ice-servers", () => {
     expect(servers).toHaveLength(1);
     expect(servers[0]!.urls[0]).toMatch(/^stun:/);
   });
+
+  it("falls back to STUN-only when the NTS mint hangs past the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      // A mint that never settles — the Twilio SDK's own ~30s HTTP
+      // timeout must not become the join latency; the 5s race cap does.
+      const create = vi.fn().mockReturnValue(new Promise<never>(() => {}));
+      const client: TwilioNtsClient = {
+        createIceToken: create as TwilioNtsClient["createIceToken"],
+      };
+      const pending = resolveIceServers({ ntsClientFactory: () => client });
+      await vi.advanceTimersByTimeAsync(5_001);
+      const servers = await pending;
+      expect(servers).toHaveLength(1);
+      expect(servers[0]!.urls[0]).toMatch(/^stun:/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("backs off after a failed mint instead of retrying on every join", async () => {
+    const create = vi.fn().mockRejectedValue(new Error("twilio down"));
+    const client: TwilioNtsClient = { createIceToken: create };
+    let nowMs = 1_000_000;
+    const now = () => nowMs;
+
+    await resolveIceServers({ ntsClientFactory: () => client, now });
+    expect(create).toHaveBeenCalledTimes(1);
+
+    // Within the 60s backoff window: no second round-trip.
+    nowMs += 10 * 1000;
+    const during = await resolveIceServers({
+      ntsClientFactory: () => client,
+      now,
+    });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(during).toHaveLength(1);
+
+    // Past the window: re-probe (and a success clears the backoff +
+    // populates the cache so the NEXT call doesn't mint again).
+    nowMs += 70 * 1000;
+    create.mockResolvedValue({ iceServers: [TWILIO_TURN], ttlSeconds: 86400 });
+    const after = await resolveIceServers({
+      ntsClientFactory: () => client,
+      now,
+    });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(after).toContainEqual(TWILIO_TURN);
+    await resolveIceServers({ ntsClientFactory: () => client, now });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
 });
