@@ -26,6 +26,39 @@ vi.mock("../lib/auth-deps", () => ({
   },
 }));
 
+// Mock the Supabase client behind the granular admin_users role
+// lookup. Default: lookup succeeds with NO row — the legacy
+// pre-Phase-A shape, which falls back to the coarse role. Tests
+// override `mockAdminUsersLookup` to exercise the granular-role
+// attach and the fail-closed paths (P2-19).
+type AdminUsersLookupResult =
+  | {
+      data: { role: string; location_id: string | null } | null;
+      error: { message: string } | null;
+    }
+  | "throw";
+let mockAdminUsersLookup: AdminUsersLookupResult = { data: null, error: null };
+vi.mock("@workspace/resupply-db", () => ({
+  getSupabaseServiceRoleClient: () => ({
+    schema: () => ({
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            limit: () => ({
+              maybeSingle: async () => {
+                if (mockAdminUsersLookup === "throw") {
+                  throw new Error("admin_users lookup blew up");
+                }
+                return mockAdminUsersLookup;
+              },
+            }),
+          }),
+        }),
+      }),
+    }),
+  }),
+}));
+
 import { requireAdmin, requireAdminOnly } from "./requireAdmin";
 
 function makeApp(): Express {
@@ -43,6 +76,7 @@ function makeApp(): Express {
       adminEmail: req.adminEmail,
       adminUserId: req.adminUserId,
       adminRole: req.adminRole,
+      adminGranularRole: req.adminGranularRole,
     });
   });
   app.get("/admin-only", limiter, requireAdminOnly, (req, res) => {
@@ -139,6 +173,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
 
   beforeEach(() => {
     mockDeps = null;
+    mockAdminUsersLookup = { data: null, error: null };
     originalEnv = {
       RESUPPLY_ADMIN_EMAILS: process.env.RESUPPLY_ADMIN_EMAILS,
       NODE_ENV: process.env.NODE_ENV,
@@ -173,6 +208,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       adminEmail: "alice@example.com",
       adminUserId: "u_admin",
       adminRole: "admin",
+      adminGranularRole: "admin",
     });
   });
 
@@ -305,6 +341,91 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(401);
+  });
+
+  // ── Granular admin_users role lookup (Phase A / P2-19) ─────────────
+  describe("granular role lookup", () => {
+    it("attaches the granular role when an admin_users row exists", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = {
+        data: { role: "csr", location_id: null },
+        error: null,
+      };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_granular",
+        email: "g@example.com",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+
+      // Coarse role still admits; the granular role (csr) is what
+      // requirePermission would consult.
+      expect(res.status).toBe(200);
+      expect(res.body.adminRole).toBe("admin");
+      expect(res.body.adminGranularRole).toBe("csr");
+    });
+
+    it("falls back to the coarse role when NO admin_users row exists (legacy)", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = { data: null, error: null };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_legacy",
+        email: "legacy@example.com",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+    });
+
+    it("fails closed (401) when the admin_users lookup returns a PostgREST error", async () => {
+      // Regression for app-review 2026-06-10 P2-19: falling back to
+      // the coarse role on a lookup ERROR would let a deliberately
+      // downgraded staffer regain full admin during any admin_users
+      // read hiccup.
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = {
+        data: null,
+        error: { message: "PostgREST unavailable" },
+      };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_err",
+        email: "err@example.com",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(401);
+    });
+
+    it("fails closed (401) when the admin_users lookup throws", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = "throw";
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_throw",
+        email: "throw@example.com",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(401);
+    });
   });
 
   // ── CSRF enforcement on state-changing admin requests ──────────────

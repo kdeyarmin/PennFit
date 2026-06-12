@@ -998,3 +998,76 @@ describe("processTick — SendGrid client construction", () => {
     expect(createSendgridClientMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Step-6 status re-read failure (app-review 2026-06-10, P2-2)
+// ──────────────────────────────────────────────────────────────────────────────
+describe("processTick — step-6 status re-read failure does not kill the tick chain", () => {
+  it("falls through to finalize/reschedule when the status re-read errors", async () => {
+    // Pre-fix, the step-6 re-read discarded the PostgREST error: a
+    // transient blip looked exactly like an admin cancel, the chain
+    // returned early, and the campaign wedged in 'sending' until a
+    // manual pause→resume. Now an errored re-read logs and proceeds —
+    // here all work is done, so the campaign must still be finalized.
+    stageDb("bulk_campaigns", "select", { data: makeCampaign() });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    stageDb("bulk_campaign_recipients", "select", { data: [makeRecipient()] });
+    stageDb("bulk_campaign_recipients", "update", { data: [makeRecipient()] });
+    stageDb("patients", "select", {
+      data: { communication_preferences: { emailMarketing: true } },
+    });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    // Step 6: the status re-read fails transiently.
+    stageDb("bulk_campaigns", "select", {
+      data: null,
+      error: { message: "transient PostgREST blip" },
+    });
+    // Step 7: remaining-work count — nothing left → finalize.
+    stageDb("bulk_campaign_recipients", "select", { data: null, count: 0 } as {
+      data: null;
+      count: number;
+    });
+    // Step 8: markCampaignSent UPDATE.
+    stageDb("bulk_campaigns", "update", { data: [{ id: "camp-1" }] });
+
+    const boss = makeBoss();
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    // The chain survived past step 6: the campaign was finalized
+    // (pre-fix this write never happened — the tick returned early).
+    expect(getWrites("bulk_campaigns", "update")).toHaveLength(1);
+    // And the failure was surfaced, not swallowed.
+    expect(testLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: "camp-1" }),
+      expect.stringContaining("status re-read failed"),
+    );
+  });
+
+  it("still stops the chain when the campaign really was cancelled", async () => {
+    stageDb("bulk_campaigns", "select", { data: makeCampaign() });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    stageDb("bulk_campaign_recipients", "select", { data: [makeRecipient()] });
+    stageDb("bulk_campaign_recipients", "update", { data: [makeRecipient()] });
+    stageDb("patients", "select", {
+      data: { communication_preferences: { emailMarketing: true } },
+    });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    // Step 6: a SUCCESSFUL re-read reporting an admin cancel.
+    stageDb("bulk_campaigns", "select", { data: { status: "cancelled" } });
+
+    const boss = makeBoss();
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    // No finalize write, no next tick — the cancel is respected.
+    expect(getWrites("bulk_campaigns", "update")).toHaveLength(0);
+    expect(boss.send).not.toHaveBeenCalled();
+  });
+});

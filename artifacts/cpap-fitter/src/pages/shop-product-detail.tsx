@@ -458,6 +458,7 @@ function ProductImageWithZoom({
               <img
                 src={src}
                 alt={alt}
+                decoding="async"
                 className="w-full max-h-[85vh] object-contain bg-gradient-to-br from-slate-50 via-white to-slate-100"
               />
             ) : null}
@@ -682,6 +683,8 @@ function Hero({
               <img
                 src={resolved}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
             ) : (

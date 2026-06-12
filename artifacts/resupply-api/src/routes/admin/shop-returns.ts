@@ -200,10 +200,12 @@ router.get(
       res.status(400).json({ error: "invalid_status" });
       return;
     }
-    const limit = Math.min(
-      Math.max(1, Number(req.query.limit ?? PAGE_SIZE_DEFAULT)),
-      PAGE_SIZE_MAX,
-    );
+    // NaN-guard the clamp (June-10 audit, P3): Math.max/min propagate
+    // NaN, so `?limit=abc` reached PostgREST as `.limit(NaN)`.
+    const rawLimit = Number(req.query.limit ?? PAGE_SIZE_DEFAULT);
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(Math.max(1, Math.floor(rawLimit)), PAGE_SIZE_MAX)
+      : PAGE_SIZE_DEFAULT;
     const cursor =
       typeof req.query.cursor === "string" ? req.query.cursor : null;
 

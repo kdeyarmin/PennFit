@@ -47,6 +47,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Pagination } from "@/components/admin/Pagination";
 import { Label, Select } from "@/components/admin/Input";
 import { Button } from "@/components/admin/Button";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { fullName, formatDate } from "@/lib/admin/format";
 
 const PAGE_SIZE = 25;
@@ -149,6 +150,7 @@ export function EpisodesPage() {
     useState<EpisodesBulkSendRequestChannel>("sms");
   const [lastBulkResult, setLastBulkResult] =
     useState<EpisodesBulkSendResponse | null>(null);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   // Reset pagination whenever the filter set changes — otherwise a
   // user paging deep into "overdue" then switching to "fulfilled"
@@ -392,6 +394,17 @@ export function EpisodesPage() {
         onSend={async () => {
           const ids = Array.from(selected);
           if (ids.length === 0) return;
+          // Patient-facing bulk messaging needs a confirmation step
+          // (app-review 2026-06-10, P2-12): bulk campaigns and the
+          // patients bulk-close both confirm; this single-click send
+          // texted/emailed every selected patient immediately.
+          const ok = await confirm({
+            title: `Send ${ids.length} ${bulkChannel === "sms" ? "SMS message" : "email"}${ids.length === 1 ? "" : "s"}?`,
+            description:
+              "Each selected episode's patient will be messaged immediately. This cannot be unsent.",
+            confirmLabel: "Send",
+          });
+          if (!ok) return;
           setLastBulkResult(null);
           try {
             const r = await bulkSend.mutateAsync({
@@ -459,6 +472,7 @@ export function EpisodesPage() {
           )}
         </Card>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

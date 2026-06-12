@@ -593,14 +593,28 @@ export async function processTick(
   //    Re-read the campaign status one more time so an admin cancel
   //    that landed during the send doesn't get overridden by a fresh
   //    tick enqueue.
-  const { data: nextCampaign } = await supabase
+  //
+  //    A FAILED re-read must not be treated as "cancelled" (app-review
+  //    2026-06-10, P2-2): discarding the error here made a transient
+  //    PostgREST blip indistinguishable from an admin cancel — the
+  //    self-re-enqueueing chain died and the campaign wedged in
+  //    'sending' until a manual pause→resume. On error, fall through
+  //    to the reschedule path instead: the tick ENTRY re-checks status
+  //    before doing any work, so if the campaign really was cancelled
+  //    the extra tick is a harmless no-op.
+  const { data: nextCampaign, error: statusErr } = await supabase
     .schema("resupply")
     .from("bulk_campaigns")
     .select("status")
     .eq("id", campaign.id)
     .limit(1)
     .maybeSingle();
-  if (!nextCampaign || nextCampaign.status !== "sending") {
+  if (statusErr) {
+    log.error(
+      { err: statusErr, campaignId: campaign.id },
+      "bulk_campaigns.tick: status re-read failed — rescheduling (tick entry re-checks status)",
+    );
+  } else if (!nextCampaign || nextCampaign.status !== "sending") {
     log.info(
       { campaignId: campaign.id, status: nextCampaign?.status },
       "bulk_campaigns.tick: campaign state changed during send — not enqueueing next tick",

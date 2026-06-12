@@ -35,17 +35,27 @@ export const DEFAULT_RATE_LIMIT: RateLimitConfig = {
 
 export interface RateLimitDecision {
   allowed: boolean;
-  reason?: "email_locked" | "ip_locked";
+  reason?: "email_locked" | "ip_locked" | "check_failed";
   /** Recommended Retry-After (seconds) when blocked. */
   retryAfterSeconds: number;
 }
 
 /**
+ * Retry-After when the check itself fails (fail-closed). Short on
+ * purpose: the trigger is a transient DB error, not an attacker
+ * hitting a limit, so the caller should be invited back quickly —
+ * if the DB is still down on retry, sign-in would fail at the
+ * user-lookup step anyway.
+ */
+export const CHECK_FAILED_RETRY_AFTER_SECONDS = 30;
+
+/**
  * Observability hook invoked when the rate-limit check throws and
- * we fall back to fail-open. Callers should plumb this to their
+ * the gate fails closed. Callers should plumb this to their
  * structured logger AND emit a metric so a sustained DB issue
- * (which silently disables rate limiting and creates a brute-force
- * window) is visible to ops. Default = `console.error`.
+ * (which is now blocking sign-ins with 429s rather than silently
+ * disabling rate limiting) is visible to ops. Default =
+ * `console.error`.
  *
  * The return type is `void | Promise<void>` so async loggers (e.g.
  * a backend that fires-and-forgets a network log shipper) can be
@@ -63,7 +73,7 @@ const defaultErrorHandler: RateLimitErrorHandler = (err) => {
   // Production callers should override this with a structured
   // logger + a metric (e.g. `auth.rate_limit.check_failed`).
   console.error(
-    "[resupply-auth] rate-limit check failed (fail-open):",
+    "[resupply-auth] rate-limit check failed (fail-closed):",
     err instanceof Error ? err.message : String(err),
   );
 };
@@ -71,7 +81,15 @@ const defaultErrorHandler: RateLimitErrorHandler = (err) => {
 /**
  * Determine whether a sign-in attempt should be allowed immediately under the configured rate limits.
  *
- * Evaluates separate rolling-window failure counts for the provided email (case-normalized) and IP, and applies the stricter limit. On database or other errors the check fails open (permits the attempt) and invokes `onError` so observability can record the failure; failures in `onError` are swallowed and do not change the fail-open behavior.
+ * Evaluates separate rolling-window failure counts for the provided email (case-normalized) and IP, and applies the stricter limit. On database or other errors the check fails CLOSED (denies the attempt with reason `"check_failed"` and a short Retry-After) and invokes `onError` so observability can record the failure; failures in `onError` are swallowed and do not change the fail-closed behavior.
+ *
+ * Fail-closed rationale (app-review 2026-06-10, P2-18): failing open
+ * meant a DB blip silently disabled brute-force protection exactly
+ * when the only backstop was the per-IP edge limiter (itself
+ * weakened behind Cloudflare, P1-5). Failing closed costs little
+ * availability — if `countRecentFailures` can't reach the DB, the
+ * subsequent credential lookup on the same repo would fail anyway —
+ * and removes the brute-force window.
  *
  * @param input - Context for the attempt. `emailLower` is the lowercased email identifier; `ip` is the client IP or `null` when unavailable.
  * @param config - Rate-limit parameters (`maxPerEmail`, `maxPerIp`, `windowMs`). Defaults are used when omitted.
@@ -124,6 +142,10 @@ export async function checkLoginRateLimit(
     } catch {
       // Observability must never throw past the rate-limit gate.
     }
-    return { allowed: true, retryAfterSeconds: 0 };
+    return {
+      allowed: false,
+      reason: "check_failed",
+      retryAfterSeconds: CHECK_FAILED_RETRY_AFTER_SECONDS,
+    };
   }
 }

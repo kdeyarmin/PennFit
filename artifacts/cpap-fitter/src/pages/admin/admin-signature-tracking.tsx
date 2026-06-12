@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { Input, Label, Select } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   cancelSignatureTracking,
@@ -433,6 +434,7 @@ function SignatureRow({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const isOutstanding = item.status === "awaiting_signature";
   const age = daysSince(item.createdAt);
 
@@ -546,14 +548,17 @@ function SignatureRow({
                 size="sm"
                 isLoading={handDelivered.isPending}
                 onClick={() => {
-                  if (
-                    window.confirm(
-                      "Mark this document as hand-delivered? It will be counted as outstanding until the signed copy comes back.",
-                    )
-                  ) {
+                  void (async () => {
+                    const ok = await confirm({
+                      title: "Mark as hand-delivered?",
+                      description:
+                        "It will be counted as outstanding until the signed copy comes back.",
+                      confirmLabel: "Mark hand-delivered",
+                    });
+                    if (!ok) return;
                     setMsg(null);
                     handDelivered.mutate();
-                  }
+                  })();
                 }}
               >
                 Mark hand-delivered
@@ -575,10 +580,16 @@ function SignatureRow({
               size="sm"
               isLoading={cancel.isPending}
               onClick={() => {
-                if (window.confirm("Remove this from the signature queue?")) {
+                void (async () => {
+                  const ok = await confirm({
+                    title: "Remove from the signature queue?",
+                    confirmLabel: "Remove",
+                    destructive: true,
+                  });
+                  if (!ok) return;
                   setMsg(null);
                   cancel.mutate();
-                }
+                })();
               }}
             >
               Cancel
@@ -595,6 +606,7 @@ function SignatureRow({
             {msg.text}
           </div>
         )}
+        {ConfirmDialogEl}
       </td>
     </tr>
   );

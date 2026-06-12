@@ -72,6 +72,8 @@ export function MaskRecommendationCard({
             <img
               src={getMaskImage(mask.type)}
               alt={`${mask.manufacturer} ${mask.name}`}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-contain p-3"
             />
           </div>

@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import {
   ApiError,
   type ConversationMessageAttachment,
+  getGetConversationQueryKey,
   useGetConversation,
   useGetAdminMe,
   useSendSmsReminder,
@@ -65,7 +66,18 @@ import { Sparkles } from "lucide-react";
 // shows up at the bottom on the next render.
 
 export function ConversationDetailPage({ id }: { id: string }) {
-  const { data, isPending, isError, error, refetch } = useGetConversation(id);
+  // Poll the open thread (app-review 2026-06-10, P2-11): a patient
+  // reply lands via webhook, and without a poll the CSR staring at
+  // the thread never sees it (global staleTime is 60s and nothing
+  // invalidates on inbound). Same 60s cadence as the nav badge;
+  // background tabs don't poll, focus refetch catches up on return.
+  const { data, isPending, isError, error, refetch } = useGetConversation(id, {
+    query: {
+      queryKey: getGetConversationQueryKey(id),
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: true,
+    },
+  });
 
   if (isError) {
     return (

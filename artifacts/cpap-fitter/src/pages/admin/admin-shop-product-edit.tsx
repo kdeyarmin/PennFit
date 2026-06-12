@@ -1,6 +1,8 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
+
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   archiveShopProduct,
   fetchShopProductDetails,
@@ -177,6 +179,7 @@ export function AdminShopProductEditPage() {
   // the operator owns it. Keyed remount-free because the query result
   // is stable for a given productId.
   const [form, setForm] = useState<FormState | null>(null);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [errors, setErrors] = useState<string[]>([]);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
@@ -245,14 +248,17 @@ export function AdminShopProductEditPage() {
     },
   });
 
-  function onArchive() {
+  async function onArchive() {
     if (!product) return;
-    const confirmed = window.confirm(
-      `Remove "${product.name}" from the storefront?\n\n` +
+    const confirmed = await confirm({
+      title: `Remove "${product.name}" from the storefront?`,
+      description:
         "The product is archived in Stripe, not deleted — order history " +
         "is unaffected and it can be re-activated from the Stripe " +
         "Dashboard. Existing subscriptions keep billing.",
-    );
+      confirmLabel: "Archive product",
+      destructive: true,
+    });
     if (!confirmed) return;
     setErrors([]);
     archiveMutation.mutate();
@@ -651,7 +657,7 @@ export function AdminShopProductEditPage() {
           type="button"
           data-testid="archive-product"
           disabled={!product || archiveMutation.isPending || isSubmitting}
-          onClick={onArchive}
+          onClick={() => void onArchive()}
           style={{
             background: "#fff",
             color: "#991b1b",
@@ -671,6 +677,7 @@ export function AdminShopProductEditPage() {
           {archiveMutation.isPending ? "Archiving…" : "Archive product"}
         </button>
       </section>
+      {ConfirmDialogEl}
     </div>
   );
 }

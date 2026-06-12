@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { checkLoginRateLimit, DEFAULT_RATE_LIMIT } from "./rate-limit";
+import {
+  CHECK_FAILED_RETRY_AFTER_SECONDS,
+  checkLoginRateLimit,
+  DEFAULT_RATE_LIMIT,
+} from "./rate-limit";
 import type { AuthRepository } from "./repository";
 
 function fakeRepo(failures: { byEmail: number; byIp: number }): AuthRepository {
@@ -61,7 +65,7 @@ describe("checkLoginRateLimit", () => {
     expect(decision.reason).toBe("ip_locked");
   });
 
-  it("fails open on a repo error", async () => {
+  it("fails closed on a repo error (app-review 2026-06-10 P2-18)", async () => {
     const broken: AuthRepository = {
       ...fakeRepo({ byEmail: 0, byIp: 0 }),
       async countRecentFailures() {
@@ -78,10 +82,12 @@ describe("checkLoginRateLimit", () => {
       // Silence the default console.error so tests stay clean.
       () => {},
     );
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("check_failed");
+    expect(decision.retryAfterSeconds).toBe(CHECK_FAILED_RETRY_AFTER_SECONDS);
   });
 
-  it("invokes the onError hook with the input context on fail-open", async () => {
+  it("invokes the onError hook with the input context on fail-closed", async () => {
     const broken: AuthRepository = {
       ...fakeRepo({ byEmail: 0, byIp: 0 }),
       async countRecentFailures() {
@@ -100,7 +106,7 @@ describe("checkLoginRateLimit", () => {
         calls.push({ err, ctx });
       },
     );
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.ctx).toEqual({
       emailLower: "alice@example.com",
@@ -124,7 +130,7 @@ describe("checkLoginRateLimit", () => {
         throw new Error("logger blew up");
       },
     );
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
   });
 
   it("swallows a rejecting async onError so observability never blocks the gate", async () => {
@@ -146,7 +152,7 @@ describe("checkLoginRateLimit", () => {
         throw new Error("async logger blew up");
       },
     );
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
   });
 
   it("ignores per-IP check when IP is null", async () => {
@@ -223,12 +229,12 @@ describe("checkLoginRateLimit", () => {
         // explicitly pass undefined to trigger the default
         undefined,
       );
-      expect(decision.allowed).toBe(true);
+      expect(decision.allowed).toBe(false);
       expect(errorSpy).toHaveBeenCalledOnce();
       // The message should mention the library name and the error message.
       const [msg] = errorSpy.mock.calls[0]!;
       expect(String(msg)).toContain("resupply-auth");
-      expect(String(msg)).toContain("fail-open");
+      expect(String(msg)).toContain("fail-closed");
     } finally {
       errorSpy.mockRestore();
     }
