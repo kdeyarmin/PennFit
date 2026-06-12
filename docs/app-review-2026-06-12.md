@@ -20,7 +20,21 @@ needed): P2-3 (payment-plan scan is now keyset-paginated), P2-4 (all
 seven env-cron jobs now `unschedule` when their cron var is unset),
 P2-5 (ISA13 values come from an atomic counter table, migration 0308),
 P2-6 (the ERA reconciler now has per-claim replay idempotency and a
-`dispatch_failed` operator-replay path).
+`dispatch_failed` operator-replay path), P2-9 (the cart quantity input
+now drafts raw keystrokes, commits only ≥1, and settles 0/empty to 1
+on blur), P2-20 (the vision-runtime health probe re-checks on a capped
+backoff instead of latching "degraded").
+
+**UX P2 fixes also shipped in this PR:** P2-7 (global demo-mode banner
+
+- one-click exit — `?demo=1` persisted in localStorage with nothing on
+  the customer-facing surface saying so), P2-8 (`/measure` redirects to
+  `/capture` with `replace`, removing the back-button trap), P2-11 (the
+  conversations inbox and open thread now poll on the same 60s cadence
+  as the nav badge, plus focus refetch), P2-12 (episodes bulk SMS/email
+  now confirms before messaging every selected patient), P2-13 (a failed
+  "Send due reminders" batch renders a destructive alert warning about
+  double-sends, and the two-click confirm state resets on error).
 
 ## Verified-current corrections (things prior docs got wrong or that have since shipped)
 
@@ -140,20 +154,15 @@ In priority order; the P-numbers reference
    surface, plus Playwright journeys for cart → Stripe checkout,
    sign-up/sign-in, and one admin mutation (priority order already in
    `e2e/README.md`).
-4. **Customer-visible UX P2s** — P2-7 (`?demo=1` persistently flips
-   prod into fake-data mode, no banner/exit), P2-8 (back-button trap
-   at `/measure`), P2-20 (camera "degraded" dead end), P2-9 (cart
-   qty-0 silent delete), P2-11 (admin inbox never live-refreshes),
-   P2-12/13 (bulk send no-confirm / silent failure).
-5. **Refactor the four monoliths** before they cost a real bug:
+4. **Refactor the four monoliths** before they cost a real bug:
    `pages/admin/patient-detail.tsx` (2754 LOC),
    `pages/admin/admin-documents.tsx` (2183),
    `routes/admin/reports.ts` (2514 — split per report type),
    `lib/stripe/webhook-handler.ts` (1878 — event-handler registry).
-6. **Resilience on outbound calls** — explicit timeouts on external
+5. **Resilience on outbound calls** — explicit timeouts on external
    HTTP and a consecutive-failure backoff on the pollers
    (`office-ally-inbound-poll`, therapy nightly sync).
-7. **Frontend polish** — standardize loading skeletons + a single
+6. **Frontend polish** — standardize loading skeletons + a single
    toast queue; WebP/`srcset` for product images on `/shop`; a mobile
    pass on the desktop-first admin console; server-sync the
    signed-in wishlist (currently localStorage-only).

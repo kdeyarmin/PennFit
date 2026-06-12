@@ -523,6 +523,7 @@ import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
+import { DemoBanner } from "@/demo/DemoBanner";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -606,15 +607,18 @@ function GuardedMeasure() {
   // brief post-extraction window where capturedImage has been cleared
   // for privacy but /measure hasn't navigated to /questionnaire yet —
   // bouncing back to /capture in that window strands the user.
+  // `replace` so the image-less /measure entry doesn't stay in history
+  // (Back from /capture would re-mount it and bounce forward again —
+  // the P2-8 back-button trap).
   if (!canStayOnMeasure(capturedImage, measurements))
-    return <Redirect to="/capture" />;
+    return <Redirect to="/capture" replace />;
   return <Measure />;
 }
 function GuardedQuestionnaire() {
   const { measurements } = useFitterStore();
   const consented = useFitterEmailGate();
   if (!consented) return <Redirect to="/consent" />;
-  if (!measurements) return <Redirect to="/capture" />;
+  if (!measurements) return <Redirect to="/capture" replace />;
   return <Questionnaire />;
 }
 function GuardedResults() {
@@ -1138,10 +1142,13 @@ function AppInner() {
             */}
             <ErrorBoundary>
               {/*
-                Demo mode is controlled from the admin Settings page
-                (/admin/settings) rather than a global page banner — see
-                the "Demo mode" card in admin-settings.tsx.
+                Admins toggle demo mode from /admin/settings, but the
+                banner must be GLOBAL (P2-7): `?demo=1` persists in
+                localStorage, so a customer who followed a shared demo
+                link would otherwise browse a fake-data storefront with
+                no indication and no way out.
               */}
+              <DemoBanner />
               <WouterRouter base={basePath}>
                 <TopRouter />
               </WouterRouter>

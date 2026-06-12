@@ -40,6 +40,11 @@ export function AdminReminders() {
       queryClient.invalidateQueries({ queryKey: ["admin-reminders"] });
       setConfirmingSend(false);
     },
+    onError: () => {
+      // Drop back out of the confirm state so retrying after a failure
+      // takes two deliberate clicks again — not one accidental one.
+      setConfirmingSend(false);
+    },
   });
 
   const subs = list.data?.subscribers ?? [];
@@ -97,6 +102,22 @@ export function AdminReminders() {
                 before running this in production.
               </span>
             )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* A failed batch must be loud (app-review 2026-06-10, P2-13):
+          with no error rendered, the operator's natural reaction is to
+          click "Send" again — and if the failure happened mid-batch,
+          a re-click risks double-sending to anyone already texted. */}
+      {send.error && (
+        <Alert variant="destructive" data-testid="alert-send-failed">
+          <AlertTriangle className="w-4 h-4" />
+          <AlertTitle>Send failed</AlertTitle>
+          <AlertDescription>
+            The reminder batch did not complete. Some reminders may already have
+            gone out — check the conversations inbox before retrying to avoid
+            double-sending.
           </AlertDescription>
         </Alert>
       )}
