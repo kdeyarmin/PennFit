@@ -169,7 +169,7 @@ function fmtDelta(deltaPct: number | null): string {
 /** Pure: render the digest to a plain-text email body. */
 export function formatDigestText(digest: OwnerDigest): string {
   const lines = [
-    `PennFit weekly owner digest — week of ${digest.windowStart}`,
+    `PennPaps weekly owner digest — week of ${digest.windowStart}`,
     "",
   ];
   for (const m of digest.metrics) {
@@ -290,7 +290,7 @@ export async function runOwnerDigest(
   await sendImpl(
     sendgrid,
     recipients,
-    `PennFit weekly digest — week of ${digest.windowStart}`,
+    `PennPaps weekly digest — week of ${digest.windowStart}`,
     formatDigestText(digest),
   );
 

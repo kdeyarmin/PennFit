@@ -32,11 +32,16 @@ import type { AuthDeps } from "./types";
 
 export interface AuthRouterOptions {
   /**
-   * Brand label used in email subjects + signatures. e.g.
-   * "PennFit" or "Resupply". Required because the lib serves
-   * both products from the same code path.
+   * Software/product name used in email subjects + body copy,
+   * e.g. "PennPaps". Required because the lib is brand-neutral.
    */
   productName: string;
+  /**
+   * Company name rendered as the closing signature of every
+   * outbound email, e.g. "Penn Home Medical Supply". Optional;
+   * omitted → no signature block.
+   */
+  signatureName?: string;
   /**
    * UI path prefix for the verify-email + reset-password links
    * built into outbound emails. Mount the same router twice to
