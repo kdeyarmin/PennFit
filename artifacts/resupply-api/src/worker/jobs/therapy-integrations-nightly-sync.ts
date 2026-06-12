@@ -109,6 +109,21 @@ export function normalizeSnapshotForPersistence(snapshot: unknown): unknown {
     ];
   });
 
+  // Observability: dropped nights were previously invisible — a vendor
+  // shipping unparseable dates on EVERY night made the sync read as
+  // "successful" while persisting zero usage data. Counts only, no
+  // night contents (vendor payloads are PHI-adjacent).
+  if (normalizedNights.length < nights.length) {
+    logger.warn(
+      {
+        event: "therapy_sync_nights_dropped",
+        received: nights.length,
+        kept: normalizedNights.length,
+      },
+      "therapy-nightly-sync: dropped nights with unsalvageable dates during normalization",
+    );
+  }
+
   return { ...snap, recentNights: normalizedNights };
 }
 
