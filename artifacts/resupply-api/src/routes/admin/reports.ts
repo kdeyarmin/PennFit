@@ -102,7 +102,11 @@ const router: IRouter = Router();
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 90;
 
-const PRACTICE_NAME = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+// Read at call time (not module load) so the boot/save-time company-
+// info hydration of RESUPPLY_PRACTICE_NAME is honoured without a
+// restart.
+const practiceName = (): string =>
+  process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
 
 function parseRange(req: import("express").Request): {
   from: Date;
@@ -963,7 +967,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Cash-pay orders",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Order #", width: 110 },
         { label: "Date", width: 70 },
@@ -1008,7 +1012,7 @@ router.get(
     const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromOrders(orders),
     });
     setDownloadHeaders(
@@ -1029,7 +1033,7 @@ router.get(
     const csv = renderQboCsv({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromOrders(orders),
     });
     setDownloadHeaders(
@@ -1073,7 +1077,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Returns & RMAs",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Return #", width: 90 },
         { label: "Order #", width: 90 },
@@ -1118,7 +1122,7 @@ router.get(
     const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromReturns(rows),
     });
     setDownloadHeaders(
@@ -1139,7 +1143,7 @@ router.get(
     const csv = renderQboCsv({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromReturns(rows),
     });
     setDownloadHeaders(
@@ -1277,7 +1281,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Revenue summary",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Day", width: 100 },
         { label: "Orders", width: 80, rightAlign: true },
@@ -1339,7 +1343,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Refunds journal",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Return #", width: 100 },
         { label: "Order #", width: 100 },
@@ -1407,7 +1411,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Insurance claims",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Claim #", width: 100 },
         { label: "DOS", width: 70 },
@@ -1454,7 +1458,7 @@ router.get(
     const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromClaims(rows),
     });
     setDownloadHeaders(
@@ -1475,7 +1479,7 @@ router.get(
     const csv = renderQboCsv({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromClaims(rows),
     });
     setDownloadHeaders(
@@ -1530,7 +1534,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Customer activity",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Day", width: 100 },
         { label: "New customers", width: 140, rightAlign: true },
@@ -1600,7 +1604,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "Patient payments",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Payment #", width: 100 },
         { label: "Date", width: 80 },
@@ -1642,7 +1646,7 @@ router.get(
     const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromPatientPayments(rows),
     });
     setDownloadHeaders(
@@ -1663,7 +1667,7 @@ router.get(
     const csv = renderQboCsv({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows: buildQbRowsFromPatientPayments(rows),
     });
     setDownloadHeaders(
@@ -1713,7 +1717,7 @@ router.get(
     const pdf = await renderTablePdf({
       title: "All financial data",
       range: rangeLabel(from, to),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       columns: [
         { label: "Date", width: 75 },
         { label: "Category", width: 130 },
@@ -1754,7 +1758,7 @@ router.get(
     const iif = await renderIifWithAccounts({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows,
     });
     setDownloadHeaders(
@@ -1775,7 +1779,7 @@ router.get(
     const csv = renderQboCsv({
       from: from.toISOString().slice(0, 10),
       to: to.toISOString().slice(0, 10),
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows,
     });
     setDownloadHeaders(
@@ -1951,7 +1955,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Cash-pay orders",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Order #", width: 110 },
           { label: "Date", width: 70 },
@@ -2001,7 +2005,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Returns & RMAs",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Return #", width: 100 },
           { label: "Order #", width: 100 },
@@ -2039,7 +2043,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Revenue summary",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Day", width: 100 },
           { label: "Orders", width: 80, rightAlign: true },
@@ -2079,7 +2083,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Refunds journal",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Return #", width: 100 },
           { label: "Resolved", width: 90 },
@@ -2116,7 +2120,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Insurance claims",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Claim #", width: 100 },
           { label: "DOS", width: 70 },
@@ -2164,7 +2168,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Customer activity",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Day", width: 100 },
           { label: "New customers", width: 140, rightAlign: true },
@@ -2207,7 +2211,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "Patient payments",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Payment #", width: 100 },
           { label: "Date", width: 80 },
@@ -2247,7 +2251,7 @@ async function buildReportArtifact(
       const pdf = await renderTablePdf({
         title: "All financial data",
         range: rangeLabel(from, to),
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         columns: [
           { label: "Date", width: 75 },
           { label: "Category", width: 130 },
@@ -2306,7 +2310,7 @@ async function buildReportArtifact(
       const iif = await renderIifWithAccounts({
         from: fromIso,
         to: toIso,
-        practiceName: PRACTICE_NAME,
+        practiceName: practiceName(),
         rows,
       });
       return {
@@ -2318,7 +2322,7 @@ async function buildReportArtifact(
     const csv = renderQboCsv({
       from: fromIso,
       to: toIso,
-      practiceName: PRACTICE_NAME,
+      practiceName: practiceName(),
       rows,
     });
     return {
@@ -2405,14 +2409,14 @@ router.post(
     }
 
     const filename = `pennpaps-${slug}-${rangeSlug(from, effectiveTo)}.${artifact.filenameExt}`;
-    const subject = `[${PRACTICE_NAME}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
+    const subject = `[${practiceName()}] ${slug} report — ${rangeLabel(from, effectiveTo)}`;
     const notePara = note ? `<p>${escapeHtml(note)}</p>` : "";
     const html = [
       `<p>Hi,</p>`,
       `<p>Attached is the <strong>${escapeHtml(slug)}</strong> report for the period <strong>${escapeHtml(rangeLabel(from, effectiveTo))}</strong>, generated as <strong>${escapeHtml(format)}</strong>.</p>`,
       notePara,
       `<p>Requested by ${escapeHtml(req.adminEmail ?? "an admin")}.</p>`,
-      `<p>— ${escapeHtml(PRACTICE_NAME)}</p>`,
+      `<p>— ${escapeHtml(practiceName())}</p>`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -2424,7 +2428,7 @@ router.post(
       ``,
       `Requested by ${req.adminEmail ?? "an admin"}.`,
       ``,
-      `— ${PRACTICE_NAME}`,
+      `— ${practiceName()}`,
     ].join("\n");
 
     try {

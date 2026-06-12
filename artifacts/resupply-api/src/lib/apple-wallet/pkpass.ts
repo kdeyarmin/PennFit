@@ -176,8 +176,14 @@ function buildPassJson(
   return JSON.stringify(pass);
 }
 
+// SHA-1 is MANDATED by Apple's .pkpass format: manifest.json must map
+// each archive file to its SHA-1 digest or Wallet rejects the pass.
+// It is an integrity checksum over non-secret pass content, not a
+// password hash or signature primitive (authenticity comes from the
+// PKCS#7 signature below) — so a weak-crypto scanner flag on this
+// line is a false positive to dismiss, not a fixable finding.
 function sha1Hex(buf: Buffer): string {
-  return createHash("sha1").update(buf).digest("hex");
+  return createHash("sha1").update(buf).digest("hex"); // CodeQL[js/weak-cryptographic-algorithm] SHA-1 is Apple-mandated for .pkpass manifest digests (integrity check, not a security primitive)
 }
 
 function buildManifestJson(entries: ZipEntry[]): string {

@@ -134,7 +134,7 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
     label: "Advance Beneficiary Notice of Non-coverage (ABN)",
     documentType: "agreement",
     description:
-      "Notice to a Medicare beneficiary that an item may not be covered, with the CMS-R-131 option structure. Must be issued and signed BEFORE delivery.",
+      "Notice to a Medicare beneficiary that an item may not be covered, with the CMS-R-131 option structure. Must be issued and signed BEFORE delivery. IMPORTANT: this template mirrors the option structure but is NOT the official OMB-approved CMS-R-131 form — for Medicare liability-shifting you must use the current official CMS-R-131 from cms.gov (March 2026 revision); use this template only as staff reference or for non-Medicare payers.",
     title: "Advance Beneficiary Notice of Non-coverage (ABN)",
     fields: {
       agreement_type:

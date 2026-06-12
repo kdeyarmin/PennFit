@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/accordion";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
-import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact";
+import { useCompanyContact } from "@/lib/contact";
 import {
   ChevronRight,
   Clock,
@@ -223,6 +223,7 @@ export function HelpArticleShell({
   metaDescription,
   testIdPrefix,
 }: HelpArticleShellProps) {
+  const contact = useCompanyContact();
   useDocumentTitle(title, metaDescription);
   const prefix = testIdPrefix ?? slugify(title);
 
@@ -508,13 +509,13 @@ export function HelpArticleShell({
                     <Sparkles className="w-4 h-4" />
                     Ask PennBot
                   </Button>
-                  <a href={`tel:${SUPPORT_PHONE_E164}`}>
+                  <a href={`tel:${contact.phoneE164}`}>
                     <Button
                       variant="outline"
                       className="rounded-full glass-panel border-border/60 gap-2"
                     >
                       <PhoneCall className="w-4 h-4" />
-                      {SUPPORT_PHONE_DISPLAY}
+                      {contact.phoneDisplay}
                     </Button>
                   </a>
                 </div>

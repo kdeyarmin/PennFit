@@ -49,12 +49,7 @@ import {
 } from "lucide-react";
 
 import { SignedIn } from "@/lib/identity";
-import {
-  SUPPORT_EMAIL,
-  SUPPORT_HOURS,
-  SUPPORT_PHONE_DISPLAY,
-  SUPPORT_PHONE_E164,
-} from "@/lib/contact";
+import { getCompanyContact, useCompanyContact } from "@/lib/contact";
 import { streamChatMessage, type ChatMessage } from "@/lib/chat-api";
 import {
   PENNBOT_OPEN_EVENT,
@@ -162,7 +157,12 @@ const DEFAULT_PROMPTS = [
  * as a clear "we're offline, here are the real ways to reach us"
  * rather than the more transient-sounding "connection issue".
  */
-const UNAVAILABLE_FALLBACK_TEXT = `PennBot is offline right now. For help, call ${SUPPORT_PHONE_DISPLAY} (${SUPPORT_HOURS}) or email ${SUPPORT_EMAIL} — our team will answer anything I would have.`;
+// Computed at call time so the contact details reflect the
+// admin-saved company info once it loads.
+function unavailableFallbackText(): string {
+  const c = getCompanyContact();
+  return `PennBot is offline right now. For help, call ${c.phoneDisplay} (${c.hours}) or email ${c.email} — our team will answer anything I would have.`;
+}
 
 interface UiMessage extends ChatMessage {
   /** Local-only id for React keying. */
@@ -230,6 +230,7 @@ function persistMessages(messages: UiMessage[]): void {
 }
 
 export function FloatingContactLauncher() {
+  const contact = useCompanyContact();
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
@@ -475,7 +476,7 @@ export function FloatingContactLauncher() {
                 ...m,
                 pending: false,
                 meta,
-                content: UNAVAILABLE_FALLBACK_TEXT,
+                content: unavailableFallbackText(),
               };
             }
             return { ...m, pending: false, meta };
@@ -520,7 +521,7 @@ export function FloatingContactLauncher() {
               ...m,
               pending: false,
               meta: "degraded",
-              content: `Something went wrong reaching the chat service. You can try again, or call ${SUPPORT_PHONE_DISPLAY} (${SUPPORT_HOURS}) or email ${SUPPORT_EMAIL}.`,
+              content: `Something went wrong reaching the chat service. You can try again, or call ${contact.phoneDisplay} (${contact.hours}) or email ${contact.email}.`,
             };
           }),
         );
@@ -533,7 +534,14 @@ export function FloatingContactLauncher() {
         setSending(false);
       }
     },
-    [messages, sending, location],
+    [
+      messages,
+      sending,
+      location,
+      contact.email,
+      contact.hours,
+      contact.phoneDisplay,
+    ],
   );
 
   const retryLastTurn = useCallback(() => {
@@ -691,13 +699,15 @@ export function FloatingContactLauncher() {
             )}
             role="dialog"
             aria-modal="true"
-            aria-label="PennPaps support"
+            aria-label={`${contact.name} support`}
             data-testid="floating-contact-popover"
           >
             <div className="px-4 py-3 bg-[hsl(var(--penn-navy))] text-white flex items-center justify-between shrink-0">
               <div>
-                <div className="text-sm font-semibold">PennPaps support</div>
-                <div className="text-[11px] opacity-80">{SUPPORT_HOURS}</div>
+                <div className="text-sm font-semibold">
+                  {contact.name} support
+                </div>
+                <div className="text-[11px] opacity-80">{contact.hours}</div>
               </div>
               <div className="flex items-center gap-1">
                 {tab === "chat" && !isFreshConversation && (
@@ -847,7 +857,7 @@ export function FloatingContactLauncher() {
                 className="flex-1 overflow-y-auto p-2"
               >
                 <a
-                  href={`tel:${SUPPORT_PHONE_E164}`}
+                  href={`tel:${contact.phoneE164}`}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
                   data-testid="floating-contact-phone"
                 >
@@ -859,12 +869,12 @@ export function FloatingContactLauncher() {
                       Call us
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      {SUPPORT_PHONE_DISPLAY}
+                      {contact.phoneDisplay}
                     </span>
                   </span>
                 </a>
                 <a
-                  href={`mailto:${SUPPORT_EMAIL}`}
+                  href={`mailto:${contact.email}`}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
                   data-testid="floating-contact-email"
                 >
@@ -876,7 +886,7 @@ export function FloatingContactLauncher() {
                       Email
                     </span>
                     <span className="block text-xs text-muted-foreground truncate">
-                      {SUPPORT_EMAIL}
+                      {contact.email}
                     </span>
                   </span>
                 </a>
