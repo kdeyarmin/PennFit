@@ -11,9 +11,10 @@ so nothing already fixed or already roadmapped is re-reported as new.
 
 **Shipped in this PR:** P2-1, P2-2, P2-15, P2-16, P2-18, P2-19 from
 the June-10 audit, plus the new DLQ monitor (B1 below) — each with
-regression tests. P1-5 (trust proxy) remains deliberately deferred:
-the correct fix needs live confirmation of Railway's XFF behavior
-behind Cloudflare, which a code-only change can't provide.
+regression tests. P1-5 (trust proxy) was initially deferred pending
+live XFF confirmation, then fixed in a follow-up PR with a fail-safe
+design that needs no runtime probe — see its entry under
+"Recommended next".
 
 **Verified already fixed on main since the June-10 audit** (no action
 needed): P2-3 (payment-plan scan is now keyset-paginated), P2-4 (all
@@ -156,11 +157,17 @@ names only; no payloads, no PHI.
 In priority order; the P-numbers reference
 [`app-review-2026-06-10.md`](./app-review-2026-06-10.md).
 
-1. **P1-5 — trust proxy behind Cloudflare.** Needs a live check of the
-   XFF chain on `pennpaps.com` vs `*.up.railway.app`, then trust both
-   hops or derive the client from `CF-Connecting-IP` after validating
-   the immediate peer. Until then every per-IP limiter keys on
-   Cloudflare edge IPs for custom-domain traffic.
+1. ~~**P1-5 — trust proxy behind Cloudflare.**~~ **Fixed (follow-up
+   PR):** rather than the "trust 2 hops" variant (which would have
+   needed live XFF confirmation and opened an XFF-spoofing hole on
+   the direct Railway host), `app.set("trust proxy", …)` now uses a
+   predicate that trusts hop 0 unconditionally (exactly the old
+   `trust proxy = 1`) plus Cloudflare's published ranges at any hop
+   (`lib/trusted-proxies.ts`). Every path is provably equal-or-better
+   than before — Cloudflare-routed traffic resolves to the real
+   client; direct traffic and spoof attempts are unchanged — so no
+   runtime probe was required. Extensible via
+   `RESUPPLY_TRUSTED_PROXY_CIDRS`.
 2. **Error tracking / metrics.** Logging is pino-to-stdout only — no
    exception aggregation, no APM. Given the "every log line is
    world-readable" PHI posture, prefer self-hosted Sentry/GlitchTip or
