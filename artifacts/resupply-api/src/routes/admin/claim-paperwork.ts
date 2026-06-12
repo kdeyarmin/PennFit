@@ -95,18 +95,23 @@ router.get(
   },
 );
 
-// ── GET /admin/patients/:patientId/paperwork ─────────────────────────
-router.get(
-  "/admin/patients/:patientId/paperwork",
+// ── POST /admin/patients/paperwork/query ─────────────────────────────
+// Accepts patientId in the body to avoid exposing PHI identifiers in the
+// URL (resolves CodeQL js/sensitive-get-query for GET + path param).
+const patientIdBody = z.object({ patientId: z.string().uuid() }).strict();
+
+router.post(
+  "/admin/patients/paperwork/query",
+  // Throttle ahead of the auth gate so the pre-auth window is covered.
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
-    const patientId = uuid.safeParse(req.params.patientId);
-    if (!patientId.success) {
-      res.status(400).json({ error: "invalid_patient_id" });
+    const parsed = patientIdBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const rows = await listPatientRequirements(patientId.data);
+    const rows = await listPatientRequirements(parsed.data.patientId);
     res.json(holdSummary(rows));
   },
 );
