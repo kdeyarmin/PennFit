@@ -116,6 +116,8 @@ export async function buildSignedPacketPdf(
           signerUserAgent: sig.signer_user_agent,
           signerReason: sig.signer_reason,
           dateReceived: sig.date_received,
+          documentChoices:
+            (sig.document_choices as Record<string, string> | null) ?? null,
         }
       : null,
   });
