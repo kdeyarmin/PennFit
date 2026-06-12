@@ -50,6 +50,7 @@ import {
   type ManualDocumentType,
   type ManualDocumentTypeDef,
 } from "@/lib/admin/manual-documents-api";
+import { openPdfInNewTab, summarizePdfError } from "@/lib/admin/pdf-download";
 import { sendErrorText } from "@/lib/admin/send-error";
 
 type BadgeVariant =
@@ -130,6 +131,31 @@ export function AdminDocumentsPage() {
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [openPacketId, setOpenPacketId] = useState<string | null>(null);
   const [packetError, setPacketError] = useState<string | null>(null);
+  // Row-level "PDF" links pre-flight the fetch (lib/admin/pdf-download)
+  // so a render failure surfaces as a message here instead of raw JSON
+  // in a new tab.
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+  const [docPdfError, setDocPdfError] = useState<string | null>(null);
+  const [packetPdfError, setPacketPdfError] = useState<string | null>(null);
+
+  const openRowPdf = async (
+    id: string,
+    url: string,
+    setError: (text: string | null) => void,
+  ) => {
+    setError(null);
+    setPdfBusyId(id);
+    try {
+      const result = await openPdfInNewTab(url);
+      if (!result.ok) {
+        setError(
+          `Couldn’t generate the PDF: ${summarizePdfError(result.error)}`,
+        );
+      }
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
 
   const catalogQuery = useQuery({
     queryKey: ["manual-documents", "catalog"],
@@ -332,6 +358,14 @@ export function AdminDocumentsPage() {
               )}
             </div>
           )}
+          {docPdfError && (
+            <div
+              className="px-5 pt-3 text-sm"
+              style={{ color: "hsl(0 70% 45%)" }}
+            >
+              {docPdfError}
+            </div>
+          )}
           {listQuery.isPending ? (
             <div className="p-6">
               <Spinner label="Loading documents…" />
@@ -414,15 +448,21 @@ export function AdminDocumentsPage() {
                         {fmtDate(d.created_at)}
                       </td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
-                        <a
-                          href={manualDocumentPdfUrl(d.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs font-semibold mr-3"
+                        <button
+                          type="button"
+                          disabled={pdfBusyId === d.id}
+                          onClick={() =>
+                            void openRowPdf(
+                              d.id,
+                              manualDocumentPdfUrl(d.id),
+                              setDocPdfError,
+                            )
+                          }
+                          className="text-xs font-semibold mr-3 disabled:opacity-50"
                           style={{ color: "hsl(var(--penn-navy))" }}
                         >
-                          PDF
-                        </a>
+                          {pdfBusyId === d.id ? "Opening…" : "PDF"}
+                        </button>
                         <Button
                           intent="ghost"
                           size="sm"
@@ -443,6 +483,14 @@ export function AdminDocumentsPage() {
           title="Packets"
           subtitle="Bundles of the documents above, sent as one combined PDF — generated cover sheet first, then each document."
         >
+          {packetPdfError && (
+            <div
+              className="px-5 pt-3 text-sm"
+              style={{ color: "hsl(0 70% 45%)" }}
+            >
+              {packetPdfError}
+            </div>
+          )}
           {packetsQuery.isPending ? (
             <div className="p-6">
               <Spinner label="Loading packets…" />
@@ -514,15 +562,21 @@ export function AdminDocumentsPage() {
                         {fmtDate(p.created_at)}
                       </td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
-                        <a
-                          href={manualDocumentPacketPdfUrl(p.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs font-semibold mr-3"
+                        <button
+                          type="button"
+                          disabled={pdfBusyId === p.id}
+                          onClick={() =>
+                            void openRowPdf(
+                              p.id,
+                              manualDocumentPacketPdfUrl(p.id),
+                              setPacketPdfError,
+                            )
+                          }
+                          className="text-xs font-semibold mr-3 disabled:opacity-50"
                           style={{ color: "hsl(var(--penn-navy))" }}
                         >
-                          PDF
-                        </a>
+                          {pdfBusyId === p.id ? "Opening…" : "PDF"}
+                        </button>
                         <Button
                           intent="ghost"
                           size="sm"
@@ -983,6 +1037,31 @@ function DocumentEditorForm({
       }),
   });
 
+  // Download persists the form first (same contract as the send paths,
+  // so the PDF matches what's typed) and pre-flights the fetch so a
+  // render failure shows here instead of raw JSON in a new tab.
+  const download = useMutation({
+    mutationFn: async () => {
+      await persistDocument();
+      return openPdfInNewTab(manualDocumentPdfUrl(doc.id));
+    },
+    onSuccess: (result) => {
+      if (!result.ok) {
+        setMsg({
+          kind: "err",
+          text: `Download failed: ${summarizePdfError(result.error)}`,
+        });
+        return;
+      }
+      onSaved();
+    },
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: describeError(err).detail ?? "Download failed.",
+      }),
+  });
+
   const setField = (key: string, value: string) =>
     setFields((prev) => ({ ...prev, [key]: value }));
 
@@ -1147,13 +1226,16 @@ function DocumentEditorForm({
           <Button onClick={() => save.mutate()} isLoading={save.isPending}>
             Save
           </Button>
-          <a
-            href={manualDocumentPdfUrl(doc.id)}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Button
+            intent="secondary"
+            isLoading={download.isPending}
+            onClick={() => {
+              setMsg(null);
+              download.mutate();
+            }}
           >
-            <Button intent="secondary">Download PDF</Button>
-          </a>
+            Download PDF
+          </Button>
           <Button
             intent="ghost"
             isLoading={del.isPending}
@@ -1760,6 +1842,31 @@ function PacketEditorForm({
       setMsg({ kind: "err", text: sendErrorText(err, "Fax failed.") }),
   });
 
+  // Download persists the form first (same contract as the send paths,
+  // so the combined PDF matches what's typed) and pre-flights the fetch
+  // so a render failure shows here instead of raw JSON in a new tab.
+  const download = useMutation({
+    mutationFn: async () => {
+      await persistPacket();
+      return openPdfInNewTab(manualDocumentPacketPdfUrl(packet.id));
+    },
+    onSuccess: (result) => {
+      if (!result.ok) {
+        setMsg({
+          kind: "err",
+          text: `Download failed: ${summarizePdfError(result.error)}`,
+        });
+        return;
+      }
+      onSaved();
+    },
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: describeError(err).detail ?? "Download failed.",
+      }),
+  });
+
   // The packet endpoints require ≥1 member and a destination — catch
   // both here so the operator gets a plain message instead of a raw
   // validation error after a server round-trip.
@@ -2014,13 +2121,17 @@ function PacketEditorForm({
           >
             Save
           </Button>
-          <a
-            href={manualDocumentPacketPdfUrl(packet.id)}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Button
+            intent="secondary"
+            isLoading={download.isPending}
+            onClick={() => {
+              if (!guardPacket()) return;
+              setMsg(null);
+              download.mutate();
+            }}
           >
-            <Button intent="secondary">Download PDF</Button>
-          </a>
+            Download PDF
+          </Button>
           <Button
             intent="secondary"
             isLoading={emailMut.isPending}
