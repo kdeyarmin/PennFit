@@ -13,6 +13,7 @@ import type {
   DeviceClass,
 } from "./prescription-request-pdf";
 
+import { getDocumentSupplierName } from "./company-info";
 import { getTrackingCodeForDocument } from "./signature-tracking/service";
 
 import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
@@ -110,7 +111,7 @@ export async function resolvePrescriptionRequestInputs(
       faxE164: provider.fax_e164 ?? null,
     },
     supplier: {
-      practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+      practiceName: await getDocumentSupplierName(),
       faxE164: supplierFax,
       email: process.env.RESUPPLY_SUPPLIER_RETURN_EMAIL?.trim() || null,
     },

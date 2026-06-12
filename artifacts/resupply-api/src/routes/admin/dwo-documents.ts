@@ -14,6 +14,7 @@ import {
   validateDwoInput,
   type DwoPdfInput,
 } from "../../lib/billing/dwo-pdf";
+import { getDocumentSupplierName } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -185,7 +186,7 @@ router.get(
       },
       provider,
       generatedOn: new Date(),
-      supplierName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+      supplierName: await getDocumentSupplierName(),
     };
 
     const errors = validateDwoInput(input);

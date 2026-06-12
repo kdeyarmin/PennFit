@@ -209,7 +209,11 @@ async function inviteProviderUser(
   // what they're being invited to (reviewing + e-signing their
   // patients' documents).
   const rendered = renderProviderPortalInviteEmail(
-    { productName: "PennFit Provider Portal", publicBaseUrl: baseUrl },
+    {
+      productName: "PennPaps Provider Portal",
+      signatureName: "Penn Home Medical Supply",
+      publicBaseUrl: baseUrl,
+    },
     {
       rawToken: token.raw,
       ttlMs: INVITE_TOKEN_TTL_MS,

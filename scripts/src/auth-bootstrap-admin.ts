@@ -80,7 +80,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (roleRaw !== "admin" && roleRaw !== "agent") {
     fail("--role must be 'admin' or 'agent' (default: admin).");
   }
-  const productName = args.get("product") ?? "Resupply";
+  const productName = args.get("product") ?? "PennPaps";
   const publicBaseUrl =
     args.get("base-url") ??
     process.env.SHOP_PUBLIC_BASE_URL ??
@@ -214,6 +214,7 @@ async function main(): Promise<void> {
   if (argsParsed.sendEmail) {
     const ctx = {
       productName: argsParsed.productName,
+      signatureName: "Penn Home Medical Supply",
       publicBaseUrl: argsParsed.publicBaseUrl,
       uiPathPrefix: argsParsed.uiPathPrefix,
     };

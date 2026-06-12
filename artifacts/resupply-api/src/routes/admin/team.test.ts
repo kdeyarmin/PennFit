@@ -256,6 +256,10 @@ describe("team.ts — DELETE /admin/team/:id guards", () => {
     // instead of erasing the person's other login.
     expect(SRC).toContain("authUserHasNonStaffOwner");
     expect(SRC).toContain('from("shop_customers")');
+    // shop_customers has NO `id` column — its PK is customer_id.
+    // Selecting `id` makes PostgREST 400 and the whole delete 500.
+    expect(SRC).toContain('.select("customer_id")');
+    expect(SRC).not.toMatch(/from\("shop_customers"\)\s*\.select\("id"\)/);
     expect(SRC).toContain('.eq("portal_auth_user_id", authUserId)');
     expect(SRC).toContain('from("provider_portal_accounts")');
     expect(SRC).toContain("preserveAsCustomer: preserve");

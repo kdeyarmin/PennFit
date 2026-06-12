@@ -1073,6 +1073,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "PacWare (DME billing) CSV import & export",
           },
           {
+            href: "/admin/outbound-messages",
+            label: "Outbound Messages",
+            icon: Send,
+            matchPrefix: "/admin/outbound-messages",
+            requiredPermission: "admin.tools.manage",
+            hint: "Every outbound SMS and email with its delivery result (sent / delivered / failed)",
+          },
+          {
             href: "/admin/delivery-failures",
             label: "Delivery Failures",
             icon: TruckIcon,

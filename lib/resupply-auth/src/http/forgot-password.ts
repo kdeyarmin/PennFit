@@ -34,6 +34,7 @@ const FORGOT_RATE_LIMIT = {
 
 interface MakeForgotPasswordHandlerOptions {
   productName: string;
+  signatureName?: string;
   uiPathPrefix?: string;
 }
 
@@ -149,6 +150,7 @@ export function makeForgotPasswordHandler(
 
     const ctx: AuthEmailContext = {
       productName: options.productName,
+      signatureName: options.signatureName,
       publicBaseUrl: deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };
