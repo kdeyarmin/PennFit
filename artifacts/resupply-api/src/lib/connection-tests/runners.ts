@@ -182,11 +182,11 @@ export function computeConnectionTestStatus(
 
 // ── Fixed, PHI-free test message bodies ──────────────────────────────
 
-const TEST_EMAIL_SUBJECT = "PennFit connection test";
+const TEST_EMAIL_SUBJECT = "PennPaps connection test";
 
 function testEmailHtml(stamp: string): string {
   return [
-    `<p>This is a connection test from the PennFit admin console.</p>`,
+    `<p>This is a connection test from the PennPaps admin console.</p>`,
     `<p>If you are reading this, your SendGrid email integration is`,
     ` working correctly.</p>`,
     `<p style="color:#888;font-size:12px">Sent ${stamp}</p>`,
@@ -195,7 +195,7 @@ function testEmailHtml(stamp: string): string {
 
 function testEmailText(stamp: string): string {
   return (
-    `This is a connection test from the PennFit admin console.\n\n` +
+    `This is a connection test from the PennPaps admin console.\n\n` +
     `If you are reading this, your SendGrid email integration is ` +
     `working correctly.\n\nSent ${stamp}`
   );
@@ -203,12 +203,12 @@ function testEmailText(stamp: string): string {
 
 // Single-segment ASCII so it never splits / transcodes to UCS-2.
 const TEST_SMS_BODY =
-  "PennFit connection test: your Twilio SMS integration is working. " +
+  "PennPaps connection test: your Twilio SMS integration is working. " +
   "(automated message from the admin console)";
 
 // Spoken by the connection-test TwiML route after Twilio fetches it.
 export const TEST_VOICE_MESSAGE =
-  "This is a connection test from Penn Fit. " +
+  "This is a connection test from Penn Paps. " +
   "Your outbound voice integration is working correctly. Goodbye.";
 
 const CHAT_TEST_PROMPT = "Connection test. Reply with the single word: OK.";

@@ -33,6 +33,7 @@ const SignUpBody = z.object({
 
 interface MakeSignUpHandlerOptions {
   productName: string;
+  signatureName?: string;
   uiPathPrefix?: string;
 }
 
@@ -80,6 +81,7 @@ export function makeSignUpHandler(
     const t = now();
     const ctx: AuthEmailContext = {
       productName: options.productName,
+      signatureName: options.signatureName,
       publicBaseUrl: deps.publicBaseUrl,
       uiPathPrefix: options.uiPathPrefix,
     };

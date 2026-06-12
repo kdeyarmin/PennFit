@@ -18,6 +18,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { getDocumentSupplierName } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   findBestAdherenceWindow,
@@ -119,8 +120,7 @@ router.get(
 
     const result = findBestAdherenceWindow(nights, anchorDate, asOfDate);
 
-    const supplierName =
-      process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+    const supplierName = await getDocumentSupplierName();
     const inputs: AttestationInputs = {
       patient: {
         legalFirstName: patientRow.legal_first_name,
