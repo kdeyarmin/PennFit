@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import {
   fetchShopProductDetails,
@@ -160,6 +160,7 @@ function buildPatch(
 
 export function AdminShopProductEditPage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [, params] = useRoute<{ productId: string }>(
     "/admin/shop/inventory/:productId/edit",
   );
@@ -196,6 +197,17 @@ export function AdminShopProductEditPage() {
     mutationFn: (patch: PatchShopProductDetailsInput) =>
       patchShopProductDetails(productId, patch),
     onSuccess: () => {
+      // The inventory grid caches its list for 30s ("shop-inventory",
+      // kept in lockstep with QUERY_KEY in admin-shop-inventory.tsx —
+      // not imported so this page's lazy chunk doesn't pull in the
+      // whole grid module). Without the invalidation, navigating back
+      // re-renders the still-fresh cached rows and a name edit looks
+      // lost until the next refetch. Same for this page's own details
+      // query, so re-opening the editor shows the saved values.
+      void queryClient.invalidateQueries({ queryKey: ["shop-inventory"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-shop-product-details", productId],
+      });
       setLocation("/admin/shop/inventory");
     },
     onError: (err) => {
