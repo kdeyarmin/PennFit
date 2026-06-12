@@ -1,4 +1,4 @@
--- 0319_counter_orders — Front Desk walk-in / counter ordering.
+-- 0320_counter_orders — Front Desk walk-in / counter ordering.
 --
 -- Adds the columns the CSR "Front Desk" counter-order endpoint
 -- (POST /admin/shop/counter-orders) needs to record an order rung up

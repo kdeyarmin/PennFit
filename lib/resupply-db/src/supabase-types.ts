@@ -3833,33 +3833,6 @@ export interface Database {
         >;
         Relationships: [];
       };
-      appointment_requests: {
-        Row: {
-          id: string;
-          requester_email: string;
-          requester_name: string | null;
-          requester_phone: string | null;
-          topic: string;
-          preferred_window: string | null;
-          notes: string | null;
-          status: "new" | "contacted" | "scheduled" | "declined" | "cancelled";
-          attached_patient_id: string | null;
-          assigned_admin_user_id: string | null;
-          triaged_at: string | null;
-          scheduled_for: string | null;
-          meeting_url: string | null;
-          meeting_provider: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: Partial<
-          Database["resupply"]["Tables"]["appointment_requests"]["Row"]
-        >;
-        Update: Partial<
-          Database["resupply"]["Tables"]["appointment_requests"]["Row"]
-        >;
-        Relationships: [];
-      };
       shop_order_loss_claims: {
         Row: {
           id: string;
@@ -4321,7 +4294,7 @@ export interface Database {
           ready_for_pickup_at: string | null;
           picked_up_at: string | null;
           ready_for_pickup_email_sent_at: string | null;
-          // Migration 0319: Front Desk walk-in / counter ordering.
+          // Migration 0320: Front Desk walk-in / counter ordering.
           // `source` distinguishes storefront (Stripe) from a CSR
           // counter order; `payment_method` records how an in-person
           // order was paid ('cash' | 'insurance'; NULL for storefront
