@@ -85,6 +85,7 @@ import { registerInvitePasswordExpiryNotifyJob } from "./jobs/invite-password-ex
 import { registerLowStockAlertsJob } from "./jobs/low-stock-alerts.js";
 import { registerPrescriptionRequestAutoDraftJob } from "./jobs/prescription-request-auto-draft.js";
 import { registerConversationOrphanAssigneeSweepJob } from "./jobs/conversation-orphan-assignee-sweep.js";
+import { registerPaymentFailedAlertJob } from "./jobs/payment-failed-alert.js";
 import { registerIfProvisioned } from "./lib/table-guard.js";
 import { resolvePgBossPoolMax } from "./lib/pgboss-pool.js";
 
@@ -749,6 +750,12 @@ async function doStartWorker(): Promise<void> {
   // sit pinned to the ghost admin forever, hidden from the
   // unassigned queue.
   await registerConversationOrphanAssigneeSweepJob(boss);
+
+  // On-demand — retry-backed `payment_failed` patient alert dispatch,
+  // enqueued by the Stripe invoice.payment_failed webhook so a
+  // transient SendGrid/DB failure doesn't silently lose the alert
+  // after the webhook has already ACKed.
+  await registerPaymentFailedAlertJob(boss);
 
   workerReady = true;
   logger.info(
