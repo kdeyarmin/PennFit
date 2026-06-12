@@ -174,18 +174,23 @@ In priority order; the P-numbers reference
    surface, plus Playwright journeys for cart → Stripe checkout,
    sign-up/sign-in, and one admin mutation (priority order already in
    `e2e/README.md`).
-4. **Refactor the four monoliths** before they cost a real bug:
-   `pages/admin/patient-detail.tsx` (2754 LOC),
-   `pages/admin/admin-documents.tsx` (2183),
-   `routes/admin/reports.ts` (2514 — split per report type),
-   `lib/stripe/webhook-handler.ts` (1878 — event-handler registry).
+4. ~~Refactor the four monoliths~~ — **done in this PR**:
+   `patient-detail.tsx` 2,755→864 (11 tab modules),
+   `admin-documents.tsx` 2,183→524 (7 modules), `reports.ts` 2,514→65
+   (per-report modules + a compile-enforced registry),
+   `webhook-handler.ts` 1,878→979 (event-family modules; the families
+   pinned by new-events.test.ts's source-text assertions stay inline).
+   All existing tests pass unmodified.
 5. **Resilience on outbound calls** — explicit timeouts on external
    HTTP and a consecutive-failure backoff on the pollers
    (`office-ally-inbound-poll`, therapy nightly sync).
-6. **Frontend polish** — standardize loading skeletons + a single
-   toast queue; WebP/`srcset` for product images on `/shop`; a mobile
-   pass on the desktop-first admin console; server-sync the
-   signed-in wishlist (currently localStorage-only).
+6. **Frontend polish** — partially **done in this PR**: all 10
+   remaining `window.confirm` sites migrated to `useConfirmDialog`;
+   below-the-fold images get `loading="lazy"`/`decoding="async"`.
+   Verified already fine (stale audit claims): skeletons are
+   standardized on the shared component, and the admin console has a
+   mobile hamburger/Sheet drawer. Still open: WebP/`srcset` (needs an
+   image pipeline) and server-syncing the signed-in wishlist.
 
 ## C. Feature opportunities
 
