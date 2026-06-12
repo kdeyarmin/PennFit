@@ -4220,7 +4220,12 @@ export interface Database {
           unit_cost_cents: number | null;
           cost_source: string | null;
           cost_captured_at: string | null;
-          paid_at: string;
+          // Migration 0320: nullable. NULL = the line was dispensed but is
+          // not paid yet (e.g. a counter order billed to insurance, paid
+          // on adjudication). Stamped when payment is actually received;
+          // revenue/margin analytics filter on paid_at, so NULL lines are
+          // correctly excluded until paid.
+          paid_at: string | null;
           created_at: string;
         };
         Insert: Partial<
@@ -4294,6 +4299,15 @@ export interface Database {
           ready_for_pickup_at: string | null;
           picked_up_at: string | null;
           ready_for_pickup_email_sent_at: string | null;
+          // Migration 0320: Front Desk walk-in / counter ordering.
+          // `source` distinguishes storefront (Stripe) from a CSR
+          // counter order; `payment_method` records how an in-person
+          // order was paid ('cash' | 'insurance'; NULL for storefront
+          // Stripe orders); `counter_csr_email` is the staff member who
+          // rang it up.
+          source: string;
+          payment_method: string | null;
+          counter_csr_email: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

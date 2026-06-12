@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
+  Store,
   Inbox,
   MessageSquareText,
   ListChecks,
@@ -214,6 +215,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         href: "/admin",
         matchPrefix: "/admin",
         hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
+      },
+      {
+        label: "Front Desk",
+        icon: Store,
+        href: "/admin/front-desk",
+        matchPrefix: "/admin/front-desk",
+        hint: "Capture a walk-in customer and ring up a counter order in real time",
+        requiredPermission: "orders.create",
       },
       {
         label: "Conversations",
