@@ -21,6 +21,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
+import { getDocumentSupplierName } from "../../lib/company-info.js";
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { renderManualDocumentPacketForFax } from "../../lib/manual-documents/packet-service.js";
 import { renderManualDocumentForFax } from "../../lib/manual-documents/render-for-fax.js";
@@ -153,7 +154,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  const practiceName = await getDocumentSupplierName();
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",

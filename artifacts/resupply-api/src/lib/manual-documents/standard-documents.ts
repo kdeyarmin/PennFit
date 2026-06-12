@@ -10,7 +10,10 @@
 // simply creates an ordinary editable manual_documents draft via the
 // existing POST /admin/manual-documents.
 //
-// Content posture: templates carry STANDARD WORDING ONLY. Every
+// Content posture: templates carry STANDARD WORDING ONLY and are
+// ready to send as-is — no staff-facing instructions appear in the
+// document text (operator guidance belongs in `description`, which is
+// shown in the library list but never rendered into the PDF). Every
 // patient-identifying field (name, DOB, address, …) is left blank so a
 // template contains no PHI and the existing "Prefill from chart" /
 // blanks-only merge keeps working on a draft created from one.
@@ -81,24 +84,12 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
         "A7039 — Non-disposable filter used with PAP device — qty 1 per 6 months",
         "A7046 — Humidifier water chamber, replacement — qty 1 per 6 months",
         "E0562 — Heated humidifier used with PAP device — qty 1",
-        "",
-        "(Strike any items not ordered; adjust quantities as prescribed.)",
       ].join("\n"),
       directions:
         "Use PAP device nightly during all sleep at the pressure setting determined by titration or auto-titrating range. Replace supplies per the quantities listed, as needed for hygiene and effective therapy.",
       length_of_need: "99 (lifetime medical need)",
     },
-    body: [
-      "This order must contain all elements required for a Standard Written Order under 42 CFR 410.38 before items are dispensed or a claim is submitted:",
-      "  1. Beneficiary name or Medicare Beneficiary Identifier (MBI)",
-      "  2. Order date",
-      "  3. General description of the item(s) — description, HCPCS code, or brand name/model",
-      "  4. Quantity to be dispensed, if applicable",
-      "  5. Treating practitioner name or NPI",
-      "  6. Treating practitioner signature",
-      "",
-      "Complete the blank patient and prescriber fields above (or use “Prefill from chart”), then send for the treating practitioner's signature. Keep the signed order on file before delivery.",
-    ].join("\n"),
+    body: "",
   },
   {
     key: "cmn_pap",
@@ -108,12 +99,9 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
       "Medical-necessity certification for CPAP/BiPAP with the Medicare PAP coverage criteria (NCD 240.4 / PAP LCD) as an editable justification template. For payers that still request a CMN — CMS retired its own CMN forms effective Jan 1, 2023.",
     title: "Certificate of Medical Necessity — PAP Therapy",
     fields: {
-      diagnosis:
-        "G47.33 — Obstructive sleep apnea (adult). (Add or replace ICD-10 codes as documented.)",
-      equipment: [
+      diagnosis: "G47.33 — Obstructive sleep apnea (adult)",
+      equipment:
         "E0601 — CPAP device, with heated humidifier (E0562) and related supplies",
-        "(Replace with E0470/E0471 bi-level codes if a bi-level device is ordered.)",
-      ].join("\n"),
       length_of_need: "99 (lifetime medical need)",
       clinical_justification: [
         "The patient had a face-to-face clinical evaluation prior to the sleep test documenting signs and symptoms of obstructive sleep apnea.",
@@ -127,7 +115,7 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
         "PAP therapy is medically necessary to treat the patient's obstructive sleep apnea. For continued Medicare coverage beyond the first 90 days, adherence (use ≥ 4 hours per night on 70% of nights during a consecutive 30-day period) and clinical benefit will be documented at a face-to-face re-evaluation.",
       ].join("\n"),
     },
-    body: "Complete the blank patient and physician fields (or use “Prefill from chart”), check the applicable coverage criterion, fill in the study date and AHI/RDI, and obtain the physician's signature. Keep the supporting sleep study and clinical notes on file.",
+    body: "",
   },
   {
     key: "abn_medicare",
@@ -159,7 +147,7 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
         "Signing below means that you have received and understand this notice. You also receive a copy.",
       ].join("\n"),
     },
-    body: "Issue this notice BEFORE delivering the item. The beneficiary (or their representative) must personally select ONE option, sign, and date. Give the beneficiary a copy and keep the signed original on file. An ABN signed after delivery is not valid.",
+    body: "",
   },
   {
     key: "aob_financial",
@@ -182,7 +170,7 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
         "5. TERM. This agreement applies to all items and services furnished to me by the supplier from the effective date below until I revoke it in writing.",
       ].join("\n"),
     },
-    body: "Have the patient (or their authorized representative) sign and date. Keep the signed agreement in the patient's chart; it covers ongoing resupply under the same payer unless revoked or the payer changes.",
+    body: "",
   },
   {
     key: "supplier_standards",
@@ -212,18 +200,14 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
         "______________________________________________   ____",
         "______________________________________________   ____",
         "______________________________________________   ____",
-        "",
-        "(List each item with a description detailed enough to identify it — brand name, model, and HCPCS code — and the quantity delivered.)",
       ].join("\n"),
     },
     body: [
       "BENEFICIARY ACKNOWLEDGMENT: I acknowledge receipt of the items listed above, delivered to the address shown, in good condition and in the quantities listed. I received instruction on the use, care, and maintenance of this equipment, and information on warranty coverage and how to reach the supplier with questions or problems.",
       "",
-      "The signature below must be that of the beneficiary or their designee, and the date of signature is the date of delivery. If a designee signs, print the designee's name and relationship to the beneficiary:",
+      "The signature below is that of the beneficiary or their designee; the date of signature is the date of delivery. If a designee signs, print the designee's name and relationship to the beneficiary:",
       "",
       "Designee name / relationship: _____________________________________",
-      "",
-      "Keep the signed delivery ticket on file — it is the proof-of-delivery record for these items.",
     ].join("\n"),
   },
   {
@@ -250,7 +234,7 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
         "3. TIMING. I understand this refill contact occurred no sooner than 14 calendar days before the expected delivery or shipping date, and that items are not dispensed automatically — this refill was requested by me (or my caregiver/designee).",
       ].join("\n"),
     },
-    body: "Complete one of these for each refill cycle (a phone-call record entered by staff is acceptable — note the staff member, date, and method). Keep it on file with the delivery record to support the resupply claim.",
+    body: "",
   },
 ] as const;
 

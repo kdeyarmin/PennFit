@@ -26,6 +26,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { getDocumentSupplierName } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   renderSwo,
@@ -169,8 +170,7 @@ router.get(
       faxE164: providerRes.data.fax_e164,
     };
 
-    const supplierName =
-      process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+    const supplierName = await getDocumentSupplierName();
     const inputs: SwoInputs = {
       patient,
       prescription,
