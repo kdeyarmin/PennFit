@@ -92,19 +92,54 @@ router.post(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    // Pull every claim with non-zero patient responsibility.
-    const { data: claims, error: claimsErr } = await supabase
-      .schema("resupply")
-      .from("insurance_claims")
-      .select(
-        "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents",
-      )
-      .eq("patient_id", idParsed.data.id)
-      .gt("patient_responsibility_cents", 0)
-      .in("status", ["paid", "denied", "appealed", "closed"])
-      .order("date_of_service", { ascending: false });
-    if (claimsErr) throw claimsErr;
-    if (!claims || claims.length === 0) {
+    // Pull every claim with non-zero patient responsibility. Paged:
+    // an unranged read silently truncates at PostgREST's ~1000-row
+    // response cap, and on a statement that means an UNDERSTATED
+    // balance mailed to the patient — money-facing, so page even
+    // though a 1000-open-claim patient is implausible today.
+    const CLAIM_PAGE = 1000;
+    const MAX_CLAIM_PAGES = 10;
+    const claims: Array<{
+      id: string;
+      payer_name: string;
+      date_of_service: string;
+      total_billed_cents: number;
+      total_paid_cents: number;
+      patient_responsibility_cents: number;
+    }> = [];
+    let exhausted = false;
+    for (let page = 0; page < MAX_CLAIM_PAGES; page++) {
+      const { data: batch, error: claimsErr } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .select(
+          "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents",
+        )
+        .eq("patient_id", idParsed.data.id)
+        .gt("patient_responsibility_cents", 0)
+        .in("status", ["paid", "denied", "appealed", "closed"])
+        .order("date_of_service", { ascending: false })
+        .order("id", { ascending: true })
+        .range(page * CLAIM_PAGE, page * CLAIM_PAGE + CLAIM_PAGE - 1);
+      if (claimsErr) throw claimsErr;
+      claims.push(...(batch ?? []));
+      if (!batch || batch.length < CLAIM_PAGE) {
+        exhausted = true;
+        break;
+      }
+    }
+    // The page-loop bound must never become its own silent truncation:
+    // a statement built from a partial claim set understates the
+    // patient's balance. If we ran out of budget with a full final
+    // page, refuse to generate rather than mail a wrong number.
+    if (!exhausted) {
+      res.status(500).json({
+        error: "claim_set_too_large",
+        message: `patient has more than ${CLAIM_PAGE * MAX_CLAIM_PAGES} open-responsibility claims — refusing to generate a potentially incomplete statement`,
+      });
+      return;
+    }
+    if (claims.length === 0) {
       res.status(409).json({
         error: "no_open_balance",
         message: "patient has no claims with patient_responsibility_cents > 0",
