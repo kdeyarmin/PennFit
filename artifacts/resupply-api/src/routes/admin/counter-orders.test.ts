@@ -273,6 +273,16 @@ describe("POST /admin/shop/counter-orders", () => {
     expect(orderPayload.paid_at).toBeUndefined();
     expect(orderPayload.ready_for_pickup_at).toBeTruthy();
     expect(orderPayload.payment_method).toBe("insurance");
+
+    // Line items are recorded (dispensing / COGS) but with paid_at NULL,
+    // so revenue/margin analytics (which filter on paid_at) don't count
+    // the pending insurance sale as paid revenue until the claim pays.
+    const itemRows = (
+      getSupabaseWritePayloads("shop_order_items", "insert") as Array<
+        Array<Record<string, unknown>>
+      >
+    )[0];
+    expect(itemRows[0].paid_at).toBeNull();
   });
 
   it("400 when a shipped order omits the shipping address", async () => {

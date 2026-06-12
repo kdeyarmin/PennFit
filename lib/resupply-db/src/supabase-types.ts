@@ -4220,7 +4220,12 @@ export interface Database {
           unit_cost_cents: number | null;
           cost_source: string | null;
           cost_captured_at: string | null;
-          paid_at: string;
+          // Migration 0320: nullable. NULL = the line was dispensed but is
+          // not paid yet (e.g. a counter order billed to insurance, paid
+          // on adjudication). Stamped when payment is actually received;
+          // revenue/margin analytics filter on paid_at, so NULL lines are
+          // correctly excluded until paid.
+          paid_at: string | null;
           created_at: string;
         };
         Insert: Partial<

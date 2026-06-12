@@ -365,9 +365,13 @@ router.post(
     if (orderErr) throw orderErr;
     const orderId = orderRow.id;
 
-    // Line items. paid_at is NOT NULL on shop_order_items, so we stamp
-    // now() in both lanes — it records when the line was captured at the
-    // counter. The order's own status/paid_at carry the payment state.
+    // Line items. `paid_at` is the paid-revenue signal that analytics
+    // filter on, so we stamp it only when money was actually received:
+    // now() for cash, NULL for insurance (the line is recorded for the
+    // dispensing / COGS record but stays out of paid-revenue reports
+    // until the claim is adjudicated and paid). Mirror the order's own
+    // status/paid_at.
+    const itemPaidAt = isCash ? nowIso : null;
     const itemRows: ShopOrderItemInsert[] = items.map((it) => {
       const priced = priceById.get(it.priceId)!;
       return {
@@ -379,7 +383,7 @@ router.post(
         quantity: it.quantity,
         unit_amount_cents: priced.unitAmountCents,
         currency: priced.currency,
-        paid_at: nowIso,
+        paid_at: itemPaidAt,
       };
     });
     const { error: itemsErr } = await supabase

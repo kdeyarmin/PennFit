@@ -26,6 +26,18 @@
 -- All three are nullable with no backfill so this is a pure additive,
 -- idempotent change — existing storefront orders are untouched.
 --
+-- Also makes shop_order_items.paid_at NULLABLE. It used to be NOT NULL
+-- because the storefront only ever inserts line items at paid-time (the
+-- Stripe webhook), so a line item implied a paid sale — and revenue /
+-- margin analytics filter on `paid_at` as a proxy for "paid revenue". A
+-- counter insurance order, though, is dispensed now but is NOT paid until
+-- the payer adjudicates, so its line items must be recorded (for the
+-- dispensing / COGS record) WITHOUT counting as paid revenue. We model
+-- "not paid yet" as paid_at = NULL: every existing `paid_at`-filtered
+-- analytics query then excludes those lines automatically, and paid_at is
+-- stamped when the claim is actually paid. Idempotent (DROP NOT NULL is a
+-- no-op when the column is already nullable).
+--
 -- Keep the flag key in sync with FEATURE_FLAG_KEYS in
 -- artifacts/resupply-api/src/lib/feature-flags.ts.
 
@@ -37,6 +49,9 @@ ALTER TABLE resupply.shop_orders
 --> statement-breakpoint
 ALTER TABLE resupply.shop_orders
   ADD COLUMN IF NOT EXISTS counter_csr_email text;
+--> statement-breakpoint
+ALTER TABLE resupply.shop_order_items
+  ALTER COLUMN paid_at DROP NOT NULL;
 --> statement-breakpoint
 INSERT INTO resupply.feature_flags (key, enabled, description, category)
 VALUES

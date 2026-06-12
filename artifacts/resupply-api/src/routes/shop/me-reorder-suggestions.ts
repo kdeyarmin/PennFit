@@ -94,6 +94,10 @@ router.get(
     >();
     for (const it of items ?? []) {
       if (!paidOrderIds.has(it.order_id)) continue;
+      // paid_at is nullable (migration 0320): an unpaid/dispensed line
+      // has no paid date. Such lines are already filtered out by the
+      // paid-order guard above, but null-check defensively before Date().
+      if (!it.paid_at) continue;
       const paidAt = new Date(it.paid_at);
       const existing = grouped.get(it.product_id);
       if (!existing) {
