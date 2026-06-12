@@ -33,6 +33,8 @@ const result = await esbuild({
     "*.node",
     "twilio",
     "stripe",
+    "pdfkit",
+    "@hyzyla/pdfium",
     "sharp",
     "better-sqlite3",
     "sqlite3",
