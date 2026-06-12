@@ -31,6 +31,7 @@ import {
   getSupabaseServiceRoleClient,
   type Json,
 } from "@workspace/resupply-db";
+import { timezoneForUsState } from "@workspace/resupply-domain";
 import {
   buildPacwarePatientCsv,
   buildPacwareResupplyDueCsv,
@@ -783,7 +784,16 @@ function buildInsert(
       obj[column] = (row as Record<string, unknown>)[field] ?? null;
     }
   }
-  if (includeAddress) obj.address = assembleAddress(row);
+  if (includeAddress) {
+    const addr = assembleAddress(row);
+    obj.address = addr;
+    // New patient with a usable address: derive the quiet-hours
+    // timezone from the state instead of leaving the Eastern DB
+    // default. Underivable states keep the default. Fill-only patches
+    // never touch timezone — an existing value is never overwritten.
+    const tz = timezoneForUsState(row.state);
+    if (addr !== null && tz) obj.timezone = tz;
+  }
   return obj;
 }
 
