@@ -401,6 +401,8 @@ function WishlistRow({ product }: { product: ShopProductView }) {
           <img
             src={resolved}
             alt={product.name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-contain p-2"
           />
         ) : (

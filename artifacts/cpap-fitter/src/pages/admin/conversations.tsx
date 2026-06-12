@@ -128,6 +128,14 @@ export function ConversationsPage() {
       query: {
         queryKey: getListConversationsQueryKey(params),
         placeholderData: keepPreviousData,
+        // Keep the open inbox live (app-review 2026-06-10, P2-11):
+        // the AppShell nav badge polls every 60s, so without a
+        // matching poll here the badge announces a new message that
+        // the inbox on screen doesn't show until a manual reload.
+        // Same cadence as the badge; background tabs don't poll
+        // (TanStack default), focus refetch catches up on return.
+        refetchInterval: 60_000,
+        refetchOnWindowFocus: true,
       },
     });
 

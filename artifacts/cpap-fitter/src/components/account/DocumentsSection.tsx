@@ -9,6 +9,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+
 import { CheckCircle2, FileText, Loader2, Trash2, Upload } from "lucide-react";
 
 import {
@@ -38,6 +40,7 @@ export function DocumentsSection() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [selectedType, setSelectedType] =
     useState<PatientDocumentType>("insurance_card");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,13 +80,13 @@ export function DocumentsSection() {
   }
 
   async function handleDelete(doc: PatientDocumentItem) {
-    if (
-      !window.confirm(
-        `Delete "${doc.filename ?? "this document"}"? This can't be undone.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Delete "${doc.filename ?? "this document"}"?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeletingId(doc.id);
     setDeleteError(null);
     try {
@@ -279,6 +282,7 @@ export function DocumentsSection() {
           ))}
         </ul>
       )}
+      {ConfirmDialogEl}
     </section>
   );
 }

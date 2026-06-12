@@ -1293,6 +1293,8 @@ function PodPhotoSection({
         <img
           src={imgUrl}
           alt="Delivery photo"
+          loading="lazy"
+          decoding="async"
           className="max-w-sm max-h-72 rounded-md border border-border/60"
           data-testid={`order-${orderId}-pod-img`}
         />

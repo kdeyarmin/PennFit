@@ -134,7 +134,13 @@ export function Measure() {
       // The /capture → /measure handoff goes through GuardedMeasure
       // (App.tsx), which already keeps users without a captured image off
       // this route, so this branch is rarely hit in practice.
-      setLocation("/capture");
+      //
+      // `replace` matters (app-review 2026-06-10, P2-8): a PUSH here
+      // leaves the image-less /measure entry in history, so pressing
+      // Back from /capture re-mounts /measure, which pushes /capture
+      // again — the user can never navigate back past this page and is
+      // herded toward re-taking the photo.
+      setLocation("/capture", { replace: true });
       return;
     }
     startedRef.current = true;

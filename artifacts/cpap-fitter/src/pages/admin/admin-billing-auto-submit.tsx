@@ -13,6 +13,8 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { Link } from "wouter";
 import {
   AlertCircle,
@@ -48,6 +50,7 @@ const READY_CAP = 200;
 
 export function AdminBillingAutoSubmitPage() {
   const queryClient = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastResult, setLastResult] = useState<AutoSubmitRunResult | null>(
     null,
@@ -116,13 +119,17 @@ export function AdminBillingAutoSubmitPage() {
   function submit(claimIds?: string[], label?: string) {
     const count = claimIds?.length ?? allReadyIds.length;
     if (count === 0) return;
-    const ok = window.confirm(
-      `Submit ${count} claim${count === 1 ? "" : "s"}${
-        label ? ` (${label})` : ""
-      } to Office Ally now? This transmits real 837P claim files.`,
-    );
-    if (!ok) return;
-    runMutation.mutate(claimIds);
+    void (async () => {
+      const ok = await confirm({
+        title: `Submit ${count} claim${count === 1 ? "" : "s"}${
+          label ? ` (${label})` : ""
+        } to Office Ally now?`,
+        description: "This transmits real 837P claim files.",
+        confirmLabel: "Submit claims",
+      });
+      if (!ok) return;
+      runMutation.mutate(claimIds);
+    })();
   }
 
   const data = readyQuery.data;
@@ -277,6 +284,7 @@ export function AdminBillingAutoSubmitPage() {
           </ul>
         </Card>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

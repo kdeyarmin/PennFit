@@ -68,6 +68,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           BASE_REF=FETCH_HEAD DIFF_TARGET= bash scripts/check-resupply-migration-prefix.sh
 
+      # Tree-wide duplicate-prefix guard (app-review 2026-06-10, P2-15).
+      # The diff-based check above can't see two PRs racing main with
+      # the same fresh prefix — neither PR's diff collides against its
+      # own base, and the duplicate only exists after BOTH merge (that
+      # is how 0208/0248/0250/0253/0254/0257 landed as duplicates).
+      # This one scans the whole tree against a frozen allowlist of the
+      # historical duplicates, so it runs on pushes to main too — the
+      # post-merge run is the one that catches the race.
+      - name: Migration prefix tree-wide duplicate check
+        run: bash scripts/check-resupply-migration-prefix-tree.sh
+
       # Migration immutability guard. Complements the prefix check above:
       # a migration that already exists on the PR base must not be edited
       # or deleted. migrate.mjs dedups applied migrations by content hash,

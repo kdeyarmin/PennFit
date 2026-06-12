@@ -598,14 +598,14 @@ describe("GET /auth/me", () => {
 
 // ── rateLimitOnError propagation ───────────────────────────────────────────────
 //
-// PR change: every handler that calls checkLoginRateLimit now plumbs
+// Every handler that calls checkLoginRateLimit plumbs
 // `deps.rateLimitOnError` through. When the rate-limit DB check throws,
-// the gate fails open (the request is allowed) AND the hook is invoked
-// so ops can alert on a sustained DB failure that silently disables the
-// brute-force gate.
+// the gate fails CLOSED (429, app-review 2026-06-10 P2-18) AND the hook
+// is invoked so ops can alert on a sustained DB failure that is now
+// blocking sign-ins.
 
 describe("rateLimitOnError — sign-in handler", () => {
-  it("invokes rateLimitOnError and still allows the request when countRecentFailures throws", async () => {
+  it("invokes rateLimitOnError and rejects with 429 when countRecentFailures throws", async () => {
     const errorCalls: Array<{ err: unknown; ctx: unknown }> = [];
     const rateLimitOnError = vi.fn((err: unknown, ctx: unknown) => {
       errorCalls.push({ err, ctx });
@@ -620,7 +620,8 @@ describe("rateLimitOnError — sign-in handler", () => {
       },
     };
 
-    // Seed a valid user so the sign-in can succeed after fail-open.
+    // Seed a valid user — the fail-closed gate must reject the
+    // request BEFORE credentials are even checked.
     await seedUserWithPassword(repo, {
       id: "u_carol",
       emailLower: "carol@example.com",
@@ -641,9 +642,9 @@ describe("rateLimitOnError — sign-in handler", () => {
       .set(CSRF_HEADER, csrf)
       .send({ email: "carol@example.com", password: "securePassw0rd!" });
 
-    // Sign-in must succeed (fail-open): the gate allowed it.
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    // Sign-in must be rejected (fail-closed) with a short Retry-After.
+    expect(res.status).toBe(429);
+    expect(res.headers["retry-after"]).toBe("30");
 
     // The rateLimitOnError hook must have been called at least once.
     expect(rateLimitOnError).toHaveBeenCalled();

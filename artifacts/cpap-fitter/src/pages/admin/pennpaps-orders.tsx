@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/admin/ui-shims";
 import { fetchAdminOrders } from "@/lib/admin/storefront-admin-api";
+import { CsrOrderRequestsPanel } from "@/components/admin/CsrOrderRequestsPanel";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
 
@@ -82,6 +83,10 @@ export function AdminOrders() {
           </p>
         </div>
       </div>
+
+      {/* CSR-created "sign & pay" orders: build an order, send the
+          customer a secure link to review, e-sign, and pay by card. */}
+      <CsrOrderRequestsPanel />
 
       {/* Filters */}
       <Card className="border-0 glass-card rounded-2xl">

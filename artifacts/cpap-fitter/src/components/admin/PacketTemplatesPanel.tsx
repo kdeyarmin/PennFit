@@ -13,6 +13,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+
 import {
   getPacketTemplateHistoryQueryKey,
   getPatientPacketTemplatesQueryKey,
@@ -133,6 +135,7 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
     PacketDocumentSection[] | null
   >(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
 
   const selected = templates.find((t) => t.key === selectedKey) ?? null;
@@ -211,13 +214,13 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
 
   const handleReset = async () => {
     if (!selected) return;
-    if (
-      !window.confirm(
-        "Revert this document to the built-in wording? Your customized version will be discarded.",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Revert to the built-in wording?",
+      description: "Your customized version will be discarded.",
+      confirmLabel: "Revert",
+      destructive: true,
+    });
+    if (!ok) return;
     setError(null);
     setMessage(null);
     try {
@@ -470,6 +473,7 @@ export function PacketTemplatesPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+      {ConfirmDialogEl}
     </Card>
   );
 }
@@ -491,17 +495,17 @@ function TemplateHistoryPanel({
   const restore = useRestorePacketTemplate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   const revisions = historyQuery.data?.revisions ?? [];
 
   const handleRestore = async (rev: PacketTemplateRevision) => {
-    if (
-      !window.confirm(
-        `Restore revision ${rev.revision ?? "?"}? It will apply to every packet sent from now on.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Restore revision ${rev.revision ?? "?"}?`,
+      description: "It will apply to every packet sent from now on.",
+      confirmLabel: "Restore",
+    });
+    if (!ok) return;
     setError(null);
     try {
       await restore.mutateAsync({ key: templateKey, revisionId: rev.id });
@@ -616,6 +620,7 @@ function TemplateHistoryPanel({
           {error}
         </div>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }

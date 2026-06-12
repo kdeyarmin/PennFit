@@ -28,6 +28,7 @@ import { Button } from "@/components/admin/Button";
 import { Badge } from "@/components/admin/Badge";
 import { Input, Select, Label } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { AdminModal } from "@/components/admin/AdminModal";
@@ -599,6 +600,7 @@ function AccountsTab() {
 
 function DocumentsTab() {
   const qc = useQueryClient();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [status, setStatus] = useState("all");
   const [creating, setCreating] = useState(false);
   const [releasing, setReleasing] = useState<SignatureRequest | null>(null);
@@ -804,13 +806,16 @@ function DocumentsTab() {
                               size="sm"
                               isLoading={pendingOn(voidM, r.id)}
                               onClick={() => {
-                                if (
-                                  window.confirm(
-                                    "Void this signature request? The provider will no longer be able to sign it.",
-                                  )
-                                ) {
-                                  voidM.mutate(r.id);
-                                }
+                                void (async () => {
+                                  const ok = await confirm({
+                                    title: "Void this signature request?",
+                                    description:
+                                      "The provider will no longer be able to sign it.",
+                                    confirmLabel: "Void request",
+                                    destructive: true,
+                                  });
+                                  if (ok) voidM.mutate(r.id);
+                                })();
                               }}
                             >
                               Void
@@ -884,6 +889,7 @@ function DocumentsTab() {
       {releasing ? (
         <ReleaseModal request={releasing} onClose={() => setReleasing(null)} />
       ) : null}
+      {ConfirmDialogEl}
     </>
   );
 }

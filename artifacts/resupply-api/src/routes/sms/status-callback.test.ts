@@ -169,9 +169,16 @@ describe("POST /sms/status-callback (video visit invites)", () => {
       verb: "eq",
       args: ["id", VIDEO_VISIT_ID],
     });
+    // First-writer-or-match guard: NULL (the callback beat the send
+    // path's SID write) or the same SID — a superseded re-sent invite's
+    // SID matches neither, so it can't clobber the current invite.
     expect(supabaseMock.filterCalls("video_visits", "update")).toContainEqual({
-      verb: "eq",
-      args: ["invite_twilio_message_sid", MESSAGE_SID],
+      verb: "or",
+      args: [
+        `invite_twilio_message_sid.is.null,invite_twilio_message_sid.eq.${JSON.stringify(
+          MESSAGE_SID,
+        )}`,
+      ],
     });
   });
 

@@ -31,6 +31,48 @@ export type ResupplySupabaseClient = SupabaseClient<Database>;
 
 let cachedClient: ResupplySupabaseClient | null = null;
 
+// Hard ceiling on a single PostgREST round-trip. Without this, a
+// stalled fetch rides undici's default headers timeout (~300s) and
+// holds the calling request — and its worker slot — the whole time.
+// The raw-pg pool got the equivalent guard (connectionTimeoutMillis)
+// after the deploy-gate hang; this is the same fix for the runtime
+// data path. 30s is generous for the slowest legitimate queries
+// (admin reports/analytics aggregates) while still far below the
+// upstream proxy timeouts that would otherwise fire first.
+export const DEFAULT_SUPABASE_FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * Resolve the per-request fetch timeout from a raw env value
+ * (`SUPABASE_FETCH_TIMEOUT_MS`). Invalid, zero, or negative values
+ * fall back to the default — same posture as `resolvePgBossPoolMax`
+ * / `DB_POOL_MAX`.
+ */
+export function resolveSupabaseFetchTimeoutMs(
+  raw: string | undefined,
+  fallback: number = DEFAULT_SUPABASE_FETCH_TIMEOUT_MS,
+): number {
+  const parsed = parseInt(raw ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Wrap a fetch implementation so every call carries a timeout
+ * AbortSignal, composed with any signal the caller already passed
+ * (whichever aborts first wins). Exported for direct unit testing.
+ */
+export function createTimeoutFetch(
+  timeoutMs: number,
+  baseFetch: typeof fetch = fetch,
+): typeof fetch {
+  return (input, init) => {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, timeoutSignal])
+      : timeoutSignal;
+    return baseFetch(input, { ...init, signal });
+  };
+}
+
 export interface SupabaseClientOptions {
   /** Override the URL (tests). */
   url?: string;
@@ -97,6 +139,11 @@ export function getSupabaseServiceRoleClient(
       // request authenticates fresh via the in-house cookie pipeline.
       autoRefreshToken: false,
       persistSession: false,
+    },
+    global: {
+      fetch: createTimeoutFetch(
+        resolveSupabaseFetchTimeoutMs(process.env.SUPABASE_FETCH_TIMEOUT_MS),
+      ),
     },
   });
   const client = rawClient as unknown as ResupplySupabaseClient;

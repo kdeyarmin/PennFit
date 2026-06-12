@@ -39,6 +39,7 @@ import {
   buildDocumentOverrides,
   type PacketCustomization,
 } from "@/components/admin/PacketTemplatesPanel";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 type BadgeVariant =
@@ -1051,6 +1052,7 @@ function PacketPresetBar({
   const [saving, setSaving] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
 
   const refresh = () =>
     qc.invalidateQueries({ queryKey: getPatientPacketPresetsQueryKey() });
@@ -1088,9 +1090,12 @@ function PacketPresetBar({
             size="sm"
             isLoading={deletePreset.isPending}
             onClick={async () => {
-              if (!window.confirm(`Delete the “${selected.name}” bundle?`)) {
-                return;
-              }
+              const ok = await confirm({
+                title: `Delete the “${selected.name}” bundle?`,
+                confirmLabel: "Delete",
+                destructive: true,
+              });
+              if (!ok) return;
               setMsg(null);
               try {
                 await deletePreset.mutateAsync({ id: selected.id });
@@ -1159,6 +1164,7 @@ function PacketPresetBar({
           {msg}
         </p>
       )}
+      {ConfirmDialogEl}
     </div>
   );
 }
