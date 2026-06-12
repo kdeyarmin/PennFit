@@ -13,6 +13,7 @@ import type PDFKit from "pdfkit";
 import {
   getPacketTemplate,
   PROOF_OF_DELIVERY_KEY,
+  resolvePacketChoiceOption,
   type CompanyProfile,
   type DeliveryDetails,
   type PacketDocumentSection,
@@ -42,6 +43,9 @@ export interface PacketPdfSignature {
   signerUserAgent: string | null;
   signerReason: string | null;
   dateReceived: string | null;
+  /** Per-document option selections (document key → option key), e.g.
+   *  the ABN's Option 1/2/3. Null on packets with no choice documents. */
+  documentChoices?: Record<string, string> | null;
 }
 
 export interface PacketPdfInput {
@@ -201,6 +205,33 @@ function drawPacket(doc: PDFKit.PDFDocument, input: PacketPdfInput): void {
         .fillColor("#1f2937")
         .text("Document content is unavailable.");
     }
+    // Choice documents (e.g. the ABN's Option 1/2/3) print every option
+    // with the signer's selection marked — the selection is part of the
+    // executed document. Before signing, all boxes render empty.
+    if (template?.choice) {
+      const selectedKey =
+        input.signature?.documentChoices?.[d.documentKey] ?? null;
+      doc.moveDown(0.6);
+      drawHeading(doc, template.choice.prompt);
+      for (const option of template.choice.options) {
+        const selected = option.key === selectedKey;
+        doc
+          .font(selected ? "Helvetica-Bold" : "Helvetica")
+          .fontSize(10)
+          .fillColor(selected ? "#0f172a" : "#1f2937")
+          .text(`${selected ? "[X]" : "[  ]"}  ${option.label}`, {
+            width: PAGE_WIDTH,
+            lineGap: 2,
+          });
+        doc
+          .font("Helvetica")
+          .fontSize(9)
+          .fillColor("#475569")
+          .text(option.detail, { indent: 22, width: PAGE_WIDTH, lineGap: 1.5 });
+        doc.moveDown(0.4);
+      }
+      doc.fillColor("#000000");
+    }
     // Each signature-required document is individually executed and
     // dated on its own page so it stands alone for an audit.
     if (d.requiresSignature && input.signature) {
@@ -247,6 +278,12 @@ function drawPacket(doc: PDFKit.PDFDocument, input: PacketPdfInput): void {
   rows.push(["Signed at", sig.signedAt ? formatDateTime(sig.signedAt) : "—"]);
   if (sig.dateReceived) {
     rows.push(["Date equipment received", sig.dateReceived]);
+  }
+  for (const [docKey, optionKey] of Object.entries(sig.documentChoices ?? {})) {
+    const docTitle =
+      input.documents.find((d) => d.documentKey === docKey)?.title ?? docKey;
+    const option = resolvePacketChoiceOption(docKey, optionKey);
+    rows.push([`${docTitle} — option selected`, option?.label ?? optionKey]);
   }
   rows.push(["IP address", sig.signerIp ?? "—"]);
   rows.push(["Device", truncate(sig.signerUserAgent ?? "—", 90)]);
@@ -365,6 +402,15 @@ function drawExecutionBlock(
       .fontSize(9)
       .fillColor("#334155")
       .text(`Date equipment received: ${sig.dateReceived}`);
+  }
+  const choiceKey = sig.documentChoices?.[documentKey];
+  if (choiceKey) {
+    const option = resolvePacketChoiceOption(documentKey, choiceKey);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(9)
+      .fillColor("#334155")
+      .text(`Option selected by signer: ${option?.label ?? choiceKey}`);
   }
 }
 

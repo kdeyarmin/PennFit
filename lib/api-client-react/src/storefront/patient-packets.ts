@@ -18,11 +18,27 @@ export interface PacketDocumentSection {
   bullets?: string[];
 }
 
+/** One selectable option on a choice document (e.g. an ABN option). */
+export interface PacketDocumentChoiceOption {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+/** A required signer-side selection (the ABN's Option 1/2/3): exactly
+ *  one option must be picked before the packet can be signed. */
+export interface PacketDocumentChoice {
+  prompt: string;
+  options: PacketDocumentChoiceOption[];
+}
+
 export interface PublicPacketDocument {
   key: string;
   title: string;
   category: string;
   requiresSignature: boolean;
+  /** Present when the signer must select one option at signing time. */
+  choice?: PacketDocumentChoice | null;
   sections: PacketDocumentSection[];
 }
 
@@ -56,6 +72,9 @@ export interface SignPacketRequest {
   dateReceived?: string | null;
   consentEsign: true;
   acknowledgedDocumentKeys: string[];
+  /** Selections for choice documents (document key → option key);
+   *  required for every document that carries a `choice`. */
+  documentChoices?: Record<string, string>;
 }
 
 export interface SignPacketResponse {
