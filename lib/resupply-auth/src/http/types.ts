@@ -128,6 +128,19 @@ export interface AuthDeps {
    */
   rateLimitOnError?: RateLimitErrorHandler;
   /**
+   * Observability hook fired by `requireSession` when the request's
+   * User-Agent hash differs from the one captured at session issue.
+   * SOFT signal only — the request proceeds regardless (browsers
+   * change their UA on every update; hard-failing would sign active
+   * users out monthly for no security gain), but a stolen-cookie
+   * replay from a different client becomes visible to log alerting.
+   * Optional; default = `console.warn`.
+   */
+  onSessionUserAgentMismatch?: (info: {
+    userId: string;
+    sessionId: string;
+  }) => void;
+  /**
    * Whether the response should set Secure cookies. Pass
    * `process.env.NODE_ENV === "production"` from the caller.
    */

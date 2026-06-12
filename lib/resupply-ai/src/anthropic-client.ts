@@ -454,6 +454,15 @@ interface AnthropicStreamEvent {
 }
 
 /**
+ * Hard ceiling on total bytes read from one streaming response.
+ * Defense in depth, not a tuning knob: real responses are bounded by
+ * max_tokens (a few hundred KB at the extreme), so anything
+ * approaching this means a broken/hostile upstream — without a cap
+ * the accumulating block/tool buffers grow until the process OOMs.
+ */
+const MAX_STREAM_RESPONSE_BYTES = 16 * 1024 * 1024;
+
+/**
  * Consume an SSE stream from the Messages API and return the assembled
  * response. Emits incremental text deltas via `onTextDelta`. Returns
  * `null` if the stream ended before any usable content arrived.
@@ -466,6 +475,7 @@ async function consumeAnthropicStream(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let totalBytes = 0;
 
   let id = "";
   let model = "";
@@ -480,6 +490,15 @@ async function consumeAnthropicStream(
       if (done) break;
       // Liveness signal for the caller's idle-timeout re-arm.
       onChunkReceived?.();
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_STREAM_RESPONSE_BYTES) {
+        // Throw (not return) so callers hit their normal error path
+        // (fallback provider / offline reply); the finally below
+        // cancels the upstream connection.
+        throw new Error(
+          `Anthropic stream exceeded ${MAX_STREAM_RESPONSE_BYTES} bytes — aborting to bound memory`,
+        );
+      }
       buffer += decoder.decode(value, { stream: true });
       let boundary = buffer.indexOf("\n\n");
       while (boundary !== -1) {

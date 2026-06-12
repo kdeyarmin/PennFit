@@ -5,10 +5,12 @@ import {
   ApiError,
   getListPatientNotesQueryKey,
   useCreatePatientNote,
+  useGetAdminMe,
   useGetPatient,
   useGetPatientTimeline,
   useListPatientNotes,
   type PatientNote,
+  type PatientNotesPage,
   type PatientPrescription,
   type PatientTimelineEvent,
 } from "@workspace/api-client-react/admin";
@@ -55,6 +57,7 @@ import {
   createAdminPatientFollowup,
   listAdminPatientFollowups,
   type AdminPatientFollowup,
+  type AdminPatientFollowupsListResponse,
 } from "@/lib/admin/patient-followups-api";
 import {
   enrollPatientOnboarding,
@@ -849,6 +852,9 @@ function NotesTab({ patientId }: { patientId: string }) {
   const { data, isPending, isError, error, refetch } =
     useListPatientNotes(patientId);
   const create = useCreatePatientNote();
+  // For the optimistic note's author chip — already cached by
+  // AppShell's own useGetAdminMe call, so this never adds a request.
+  const { data: adminMe } = useGetAdminMe();
   const [body, setBody] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Client-side filter. Notes are paginated to 50 server-side, so
@@ -873,16 +879,34 @@ function NotesTab({ patientId }: { patientId: string }) {
   async function onAdd() {
     if (!canSubmit) return;
     setSubmitError(null);
+    // Optimistic prepend: show the note (and clear the composer)
+    // immediately instead of blocking the UI on the round-trip +
+    // full-list refetch. On error the cache rolls back AND the
+    // composer text is restored so nothing the admin typed is lost.
+    const notesKey = getListPatientNotesQueryKey(patientId);
+    await queryClient.cancelQueries({ queryKey: notesKey });
+    const previous = queryClient.getQueryData<PatientNotesPage>(notesKey);
+    if (previous) {
+      const optimistic: PatientNote = {
+        id: `optimistic-${Date.now()}`,
+        body: trimmed,
+        authorEmail: adminMe?.email ?? "saving…",
+        createdAt: new Date().toISOString(),
+      };
+      queryClient.setQueryData<PatientNotesPage>(notesKey, {
+        items: [optimistic, ...previous.items],
+        count: previous.count + 1,
+      });
+    }
+    setBody("");
     try {
       await create.mutateAsync({ id: patientId, data: { body: trimmed } });
-      setBody("");
-      // Force the list to refetch — invalidating by query key is the
-      // safest way to make sure we don't have a stale cached page.
-      await queryClient.invalidateQueries({
-        queryKey: getListPatientNotesQueryKey(patientId),
-      });
+      // Re-sync so the optimistic row picks up its server id/timestamp.
+      await queryClient.invalidateQueries({ queryKey: notesKey });
       void refetch();
     } catch (err) {
+      if (previous) queryClient.setQueryData(notesKey, previous);
+      setBody(trimmed);
       const msg =
         err instanceof ApiError
           ? ((err.data as { message?: string } | undefined)?.message ??
@@ -1055,7 +1079,26 @@ function FollowupsTab({ patientId }: { patientId: string }) {
   const completeMutation = useMutation({
     mutationFn: (followupId: string) =>
       completeAdminPatientFollowup(patientId, followupId),
-    onSuccess: () => {
+    // Optimistic removal: the open queue only shows incomplete rows,
+    // so completing one should drop it instantly instead of leaving
+    // it (with a busy spinner) until the round-trip + refetch land.
+    // Rolled back on error; settled always re-syncs with the server.
+    onMutate: async (followupId) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous =
+        queryClient.getQueryData<AdminPatientFollowupsListResponse>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<AdminPatientFollowupsListResponse>(queryKey, {
+          ...previous,
+          followups: previous.followups.filter((f) => f.id !== followupId),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _followupId, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey });
     },
   });

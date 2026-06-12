@@ -11,6 +11,17 @@ describe("issueWindow", () => {
     expect(w.issuedAt.toISOString()).toBe(now.toISOString());
     expect(w.expiresAt.getTime() - now.getTime()).toBe(14 * DAY);
   });
+
+  it("clamps the initial TTL to absoluteMaxDays on misconfig", () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+    // ttlDays 100 > cap 90: without the clamp the FIRST window would
+    // outlive the ceiling slideExpiry enforces on every later bump.
+    const w = issueWindow(now, { ttlDays: 100, absoluteMaxDays: 90 });
+    expect(w.expiresAt.getTime() - now.getTime()).toBe(90 * DAY);
+    // Default cap (90) applies when absoluteMaxDays is omitted.
+    const w2 = issueWindow(now, { ttlDays: 365 });
+    expect(w2.expiresAt.getTime() - now.getTime()).toBe(90 * DAY);
+  });
 });
 
 describe("slideExpiry", () => {

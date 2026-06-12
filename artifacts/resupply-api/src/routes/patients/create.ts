@@ -40,6 +40,7 @@ import {
   type Json,
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
+import { timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -140,6 +141,10 @@ router.post(
     // defaults to active when the body omits it — same default as
     // the schema's `.default("active")`.
     const nowIso = new Date().toISOString();
+    // Derive the quiet-hours timezone from the address state when we
+    // can; otherwise omit the column so the DB default (Eastern,
+    // migration 0161) applies. Unrecognized states never guess.
+    const derivedTimezone = timezoneForUsState(body.address?.state);
     const { data: inserted, error: insErr } = await supabase
       .schema("resupply")
       .from("patients")
@@ -151,6 +156,7 @@ router.post(
         phone_e164: body.phoneE164 ?? null,
         email: body.email ?? null,
         address: (body.address ?? null) as unknown as Json,
+        ...(derivedTimezone ? { timezone: derivedTimezone } : {}),
         status: body.status ?? "active",
         insurance_payer: body.insurancePayer ?? null,
         cadence_override_days: body.cadenceOverrideDays ?? null,

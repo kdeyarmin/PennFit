@@ -11,6 +11,7 @@ import { hashToken } from "../token";
 
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
+import { hashUserAgent } from "./user-agent";
 
 export function makeRequireSession(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
@@ -47,6 +48,26 @@ export function makeRequireSession(deps: AuthDeps) {
     if (!user || user.status === "locked" || user.status === "revoked") {
       authError(res, 401, "session_required", "Sign-in required.");
       return;
+    }
+
+    // Soft User-Agent re-check. Sign-in/MFA-verify stamp
+    // sha256(User-Agent) on the session row; until now it was stored
+    // but never read back. A mismatch is a stolen-cookie signal worth
+    // surfacing to ops, but NOT grounds to block: browsers change
+    // their UA string on every update, so hard-failing would sign
+    // active users out monthly. Only compared when both sides exist —
+    // legacy rows and UA-less clients stay silent.
+    if (session.userAgentHash) {
+      const currentHash = hashUserAgent(req);
+      if (currentHash && !currentHash.equals(session.userAgentHash)) {
+        (
+          deps.onSessionUserAgentMismatch ??
+          (({ userId, sessionId }) =>
+            console.warn(
+              `[resupply-auth] session user-agent mismatch (soft signal): user=${userId} session=${sessionId}`,
+            ))
+        )({ userId: user.id, sessionId: session.id });
+      }
     }
 
     // Sliding expiry. Cheap UPDATE; we don't await it on the hot
