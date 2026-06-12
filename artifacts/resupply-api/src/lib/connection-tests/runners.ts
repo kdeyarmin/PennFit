@@ -208,7 +208,7 @@ const TEST_SMS_BODY =
 
 // Spoken by the connection-test TwiML route after Twilio fetches it.
 export const TEST_VOICE_MESSAGE =
-  "This is a connection test from Penn Fit. " +
+  "This is a connection test from Penn Paps. " +
   "Your outbound voice integration is working correctly. Goodbye.";
 
 const CHAT_TEST_PROMPT = "Connection test. Reply with the single word: OK.";
