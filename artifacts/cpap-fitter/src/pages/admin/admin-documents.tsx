@@ -9,8 +9,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError } from "@workspace/api-client-react/admin";
-
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Badge } from "@/components/admin/Badge";
@@ -52,6 +50,7 @@ import {
   type ManualDocumentType,
   type ManualDocumentTypeDef,
 } from "@/lib/admin/manual-documents-api";
+import { sendErrorText } from "@/lib/admin/send-error";
 
 type BadgeVariant =
   | "neutral"
@@ -83,27 +82,6 @@ const PACKET_STATUS_LABEL: Record<ManualDocumentPacketStatus, string> = {
   draft: "Draft",
   sent: "Sent",
 };
-
-// Friendly text for the error codes the send/attach endpoints return;
-// falls back to describeError for everything else.
-function sendErrorText(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) {
-    const code = (err.data as { error?: string } | null)?.error;
-    switch (code) {
-      case "email_not_configured":
-        return "Email sending isn't configured on this server — download the PDF instead.";
-      case "fax_not_configured":
-        return "Fax sending isn't configured on this server — download the PDF instead.";
-      case "no_recipient_email":
-        return "Enter an email address first.";
-      case "no_recipient_fax":
-        return "Enter a fax number first.";
-      case "packet_documents_missing":
-        return "Some documents in this packet have been deleted — save the packet to drop them, then resend.";
-    }
-  }
-  return describeError(err).detail ?? fallback;
-}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
