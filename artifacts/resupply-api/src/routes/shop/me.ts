@@ -22,6 +22,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { logger } from "../../lib/logger";
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import {
@@ -164,7 +165,14 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
     .select("customer_id, email_lower, display_name, shipping_address_json")
     .single();
   if (error) {
-    res.status(500).json({ error: "update_failed", message: error.message });
+    // Log the PostgREST detail server-side; the customer gets only the
+    // stable error code (June-10 audit, P3 — a raw DB error message
+    // can leak schema/table names to an end user).
+    logger.error(
+      { event: "shop_me_profile_update_failed", err: error.message },
+      "shop/me: profile update failed",
+    );
+    res.status(500).json({ error: "update_failed" });
     return;
   }
   if (!row) {

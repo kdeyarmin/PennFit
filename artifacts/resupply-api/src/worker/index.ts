@@ -137,6 +137,42 @@ export async function startWorker(): Promise<void> {
   return workerStartInFlight;
 }
 
+/**
+ * Run one job registration, capturing a failure instead of letting it
+ * abort the remaining ~60 registrations (June-10 audit, P3): before
+ * this guard, the FIRST throwing register call left every job after it
+ * offline while the boot backoff loop retried the whole worker — and a
+ * deterministic failure in one job (the May 2026 DLQ-FK incident class)
+ * kept the entire worker tier down. Failures are collected and
+ * re-thrown as ONE aggregate after every registration has been
+ * attempted, so the healthy jobs come online immediately and the boot
+ * retry loop still re-runs for the failed ones. Re-registration on
+ * retry is safe: createQueue and schedule are upserts, and a duplicate
+ * work() subscription doesn't double-process (job fetch is atomic).
+ */
+export async function safeRegister(
+  label: string,
+  failures: string[],
+  fn: () => Promise<void>,
+): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    failures.push(label);
+    logger.error(
+      {
+        event: "worker_job_registration_failed",
+        job: label,
+        err:
+          err instanceof Error
+            ? { name: err.name, message: err.message, stack: err.stack }
+            : String(err),
+      },
+      `worker: registering '${label}' failed — continuing with remaining jobs`,
+    );
+  }
+}
+
 async function doStartWorker(): Promise<void> {
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) {
@@ -367,82 +403,131 @@ async function doStartWorker(): Promise<void> {
     bossInstance = boss;
   }
 
+  const registrationFailures: string[] = [];
+
   // Register reminder + attachment-sweep jobs. The handlers
   // themselves tolerate a partially-configured messaging surface
   // (they log+exit-0 instead of failing the job) so a half-configured
   // deploy doesn't fill the pg-boss retry queue with permanent
   // failures. See jobs/reminders.ts for the full rationale.
-  await registerReminderJobs(boss);
+  await safeRegister("registerReminderJobs", registrationFailures, () =>
+    registerReminderJobs(boss),
+  );
   // Daily multi-channel escalation for unanswered reminders (#7).
   // Additive companion to the hourly scan; feature-flagged
   // (reminder_escalation.dispatcher) and reuses the SEND_* queues.
-  await registerReminderEscalationJob(boss);
-  await registerPrescriptionAttachmentSweepJob(boss);
+  await safeRegister(
+    "registerReminderEscalationJob",
+    registrationFailures,
+    () => registerReminderEscalationJob(boss),
+  );
+  await safeRegister(
+    "registerPrescriptionAttachmentSweepJob",
+    registrationFailures,
+    () => registerPrescriptionAttachmentSweepJob(boss),
+  );
   // Phase G.13 — daily smart-trigger evaluator scan. Idempotent
   // re-run; the partial-unique index on
   // patient_smart_trigger_events guarantees no double-fires.
-  await registerSmartTriggerEvaluatorJob(boss);
+  await safeRegister(
+    "registerSmartTriggerEvaluatorJob",
+    registrationFailures,
+    () => registerSmartTriggerEvaluatorJob(boss),
+  );
   // Phase G.14 — daily smart-trigger send-due dispatch (50 min
   // after the evaluator). Email then SMS; both channels share
   // sent_at so a patient is never nudged twice.
-  await registerSmartTriggerSendJob(boss);
+  await safeRegister("registerSmartTriggerSendJob", registrationFailures, () =>
+    registerSmartTriggerSendJob(boss),
+  );
   // Phase G.15 — daily Rx-renewal dispatch (30 min after smart-
   // trigger send so we don't double-burst the email vendor).
   // Email then SMS; both channels share renewal_requested_at.
-  await registerRxRenewalSendJob(boss);
+  await safeRegister("registerRxRenewalSendJob", registrationFailures, () =>
+    registerRxRenewalSendJob(boss),
+  );
   // D-12 — daily prune of expired idempotency_keys rows.
   // Rows past their 24h TTL are functionally inert (treated as misses
   // by the middleware) but accumulate indefinitely without a prune.
-  await registerIdempotencyKeysPruneJob(boss);
+  await safeRegister(
+    "registerIdempotencyKeysPruneJob",
+    registrationFailures,
+    () => registerIdempotencyKeysPruneJob(boss),
+  );
   // HIPAA retention sweep — nightly. Backfills retention_until_at
   // on legacy rows and flags expired rows for compliance review.
   // Destruction itself is human-triggered via the admin UI.
-  await registerPatientDocumentsRetentionSweepJob(boss);
+  await safeRegister(
+    "registerPatientDocumentsRetentionSweepJob",
+    registrationFailures,
+    () => registerPatientDocumentsRetentionSweepJob(boss),
+  );
   // Recall notification send-side worker — drains queued
   // recall_notifications rows once per day. The matcher
   // (POST /admin/equipment-recalls/:id/match-assets) populates
   // the queue; this job actually delivers email + SMS.
-  await registerIfProvisioned(
-    boss,
-    "recall-notifications.send",
-    ["equipment_recalls", "recall_notifications"],
-    registerRecallNotificationSendJob,
+  await safeRegister("recall-notifications.send", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "recall-notifications.send",
+      ["equipment_recalls", "recall_notifications"],
+      registerRecallNotificationSendJob,
+    ),
   );
   // Patient hygiene weekly nudge — emails patients with overdue
   // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
-  await registerIfProvisioned(
-    boss,
+  await safeRegister(
     "patient-maintenance.weekly-nudge",
-    ["patient_maintenance_log", "patient_maintenance_nudges"],
-    registerMaintenanceNudgeJob,
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        "patient-maintenance.weekly-nudge",
+        ["patient_maintenance_log", "patient_maintenance_nudges"],
+        registerMaintenanceNudgeJob,
+      ),
   );
   // Telehealth video-visit reminder — every 10 min, texts/emails the
   // join link to patients whose SCHEDULED visit starts within the next
   // hour. Gated by telehealth.video + the per-channel reminder flags.
-  await registerIfProvisioned(
-    boss,
-    "video-visits.reminder-sweep",
-    ["video_visits"],
-    registerVideoVisitReminderJob,
+  await safeRegister("video-visits.reminder-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "video-visits.reminder-sweep",
+      ["video_visits"],
+      registerVideoVisitReminderJob,
+    ),
   );
   // Abandoned-fitter re-engagement — daily 09:37 UTC. Scans
   // resupply.fitter_leads for opted-in rows aged 3–30 days that
   // never produced a public.orders row, emails a "finish your
   // fitting" nudge, and stamps nudged_at so it never re-sends.
-  await registerFitterLeadReengageJob(boss);
+  await safeRegister(
+    "registerFitterLeadReengageJob",
+    registrationFailures,
+    () => registerFitterLeadReengageJob(boss),
+  );
   // First-day fitter-lead nudge — hourly at :19. Catches the
   // in-funnel patient who started 18-30 hours ago and never
   // finished. Sends email + SMS (when opted in via the phone field
   // added in 0121) with same-day-warm copy. Uses a separate
   // first_day_nudged_at column so the 3-30d worker above can still
   // fire later if the patient stays cold.
-  await registerFitterLeadFirstDayNudgeJob(boss);
+  await safeRegister(
+    "registerFitterLeadFirstDayNudgeJob",
+    registrationFailures,
+    () => registerFitterLeadFirstDayNudgeJob(boss),
+  );
   // Hourly at :29 — attribute newly-placed orders back to the
   // fitter_leads row whose email matches the order. Stamps
   // first_order_id + flips journey_stage='converted' so the supply-
   // campaign dispatcher stops sending to a patient who already
   // bought. Sequenced before the campaign tick (:43).
-  await registerFitterConversionAttributionJob(boss);
+  await safeRegister(
+    "registerFitterConversionAttributionJob",
+    registrationFailures,
+    () => registerFitterConversionAttributionJob(boss),
+  );
   // Hourly at :43 — multi-touch supply-campaign nurture for leads
   // who completed the fitter (reached /results) but haven't ordered
   // yet. Six touchpoints over 60 days with copy that escalates
@@ -450,14 +535,20 @@ async function doStartWorker(): Promise<void> {
   // discount → educational → final. Gated by both
   // RESUPPLY_FITTER_SUPPLY_CAMPAIGN_ENABLED (boot) and
   // fitter_supply_campaign.dispatcher (runtime flag).
-  await registerFitterSupplyCampaignJob(boss);
+  await safeRegister(
+    "registerFitterSupplyCampaignJob",
+    registrationFailures,
+    () => registerFitterSupplyCampaignJob(boss),
+  );
   // Cart-abandonment sweep — hourly at :13. Runs the same dispatcher
   // that backs POST /admin/shop/abandoned-carts/send-due so abandoned
   // carts get nudged without a human clicking the button. Suppression
   // (comm-prefs, DND, 24h cool-down, single-nudge-per-cart) is owned
   // by the shared helper. Off by default — flip
   // RESUPPLY_CART_ABANDONMENT_CRON_ENABLED=1 to turn it on.
-  await registerCartAbandonmentJob(boss);
+  await safeRegister("registerCartAbandonmentJob", registrationFailures, () =>
+    registerCartAbandonmentJob(boss),
+  );
   // Failed-email order digest — daily at 13:00 UTC. Scans
   // public.orders for rows with email_status=failed in the last 24h
   // and sends a single PHI-safe summary email to
@@ -465,58 +556,89 @@ async function doStartWorker(): Promise<void> {
   // without hand-querying the DB. Body contains only order_reference
   // + created_at; patient name, email, error text NEVER appear.
   // Off by default — requires the flag AND the recipient env var.
-  await registerFailedEmailDigestJob(boss);
+  await safeRegister("registerFailedEmailDigestJob", registrationFailures, () =>
+    registerFailedEmailDigestJob(boss),
+  );
   // Daily counts-only "N confirmed resupply orders are ready to sync
   // to PacWare" reminder to RESUPPLY_ADMIN_ALERTS_EMAIL. PacWare has
   // no API, so confirmed orders ship only after an operator exports
   // the CSV — this closes the "patient said yes but nobody exported"
   // gap. Runs only when the operator's pacware.auto_sync toggle is on.
-  await registerPacwareReadyToSyncDigestJob(boss);
+  await safeRegister(
+    "registerPacwareReadyToSyncDigestJob",
+    registrationFailures,
+    () => registerPacwareReadyToSyncDigestJob(boss),
+  );
   // Adherence coaching progress sweep — refresh latest_compliance_pct
   // on open plans and auto-flip outreach_made → improving when the
   // patient's recent 30-night adherence crosses target.
-  await registerIfProvisioned(
-    boss,
-    "coaching-plan.progress-sweep",
-    ["patient_coaching_plans"],
-    registerCoachingProgressJob,
+  await safeRegister("coaching-plan.progress-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "coaching-plan.progress-sweep",
+      ["patient_coaching_plans"],
+      registerCoachingProgressJob,
+    ),
   );
   // Adherence coaching auto-enroll sweep (RT #R3) — daily at 05:23,
   // after nightly-sync + progress-sweep. Scores active early-window
   // patients and opens a coaching plan for the at-risk ones with no
   // recent/open plan. OFF by default — flip
   // RESUPPLY_COACHING_AUTO_ENROLL_ENABLED=1 to turn it on.
-  await registerCoachingAutoEnrollJob(boss);
+  await safeRegister(
+    "registerCoachingAutoEnrollJob",
+    registrationFailures,
+    () => registerCoachingAutoEnrollJob(boss),
+  );
   // Learned insurance-estimate stats (O2) — weekly recompute of P50/P90
   // patient OOP per payer slug from adjudicated claims, into the small
   // table the public estimate route reads. Inert until 0230 lands.
-  await registerIfProvisioned(
-    boss,
+  await safeRegister(
     "insurance-estimate.stats-refresh",
-    ["payer_estimate_stats"],
-    registerPayerEstimateStatsJob,
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        "insurance-estimate.stats-refresh",
+        ["payer_estimate_stats"],
+        registerPayerEstimateStatsJob,
+      ),
   );
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase
   // service-role client and are idempotent on re-run.
-  await registerOnboardingCheckinJobs(boss);
+  await safeRegister(
+    "registerOnboardingCheckinJobs",
+    registrationFailures,
+    () => registerOnboardingCheckinJobs(boss),
+  );
 
   // Bulk-campaign send worker (Phase B). On-demand: tick jobs are
   // enqueued by the /admin/bulk-campaigns/:id/start endpoint and
   // self-re-enqueue every TICK_INTERVAL_SECONDS until the campaign
   // is drained, paused, or cancelled.
-  await registerBulkCampaignTickJob(boss);
+  await safeRegister("registerBulkCampaignTickJob", registrationFailures, () =>
+    registerBulkCampaignTickJob(boss),
+  );
 
   // Nightly bulk refresh of every active therapy-cloud link. Runs at
   // 04:30 UTC; persists snapshot recentNights into the canonical
   // patient_therapy_nights table for downstream consumers.
-  await registerTherapyNightlySyncJob(boss);
+  await safeRegister(
+    "registerTherapyNightlySyncJob",
+    registrationFailures,
+    () => registerTherapyNightlySyncJob(boss),
+  );
 
   // Eligibility re-verification batch (Biller #31). Queue + worker
   // always register; the recurring cron only attaches when
   // ELIGIBILITY_REVERIFY_CRON is set (opt-in — it emits outbound 270s).
-  await registerEligibilityReverifyBatchJob(boss);
+  await safeRegister(
+    "registerEligibilityReverifyBatchJob",
+    registrationFailures,
+    () => registerEligibilityReverifyBatchJob(boss),
+  );
 
   // Automatic claim submission (auto-submit engine). Queue + worker
   // always register (so the operator "approve & submit" route works);
@@ -524,61 +646,99 @@ async function doStartWorker(): Promise<void> {
   // and even then transmits nothing until the billing.auto_submit_claims
   // feature flag is flipped ON in the admin Control Center (opt-in — it
   // emits outbound 837P claim files).
-  await registerAutoSubmitBatchJob(boss);
+  await safeRegister("registerAutoSubmitBatchJob", registrationFailures, () =>
+    registerAutoSubmitBatchJob(boss),
+  );
 
   // Bill-hold sweep (0253). Backfills the default signed-paperwork
   // requirement set onto draft claims that lack one (so the hold covers
   // ALL claims) and auto-bumps stale reminders. Queue + worker always
   // register; the recurring cron attaches only when BILL_HOLD_SWEEP_CRON
   // is set (opt-in — it seeds holds across the draft-claim backlog).
-  await registerBillHoldSweepJob(boss);
+  await safeRegister("registerBillHoldSweepJob", registrationFailures, () =>
+    registerBillHoldSweepJob(boss),
+  );
 
   // Proactive clinical outreach (RT #23). Queue + worker always register;
   // the recurring cron only attaches when CLINICAL_OUTREACH_CRON is set
   // (opt-in — it emits outbound patient contact).
-  await registerClinicalOutreachBatchJob(boss);
+  await safeRegister(
+    "registerClinicalOutreachBatchJob",
+    registrationFailures,
+    () => registerClinicalOutreachBatchJob(boss),
+  );
 
   // Outreach-playbook dispatcher — every 5 minutes. Executes the next
   // due touch (SMS / email / staff call task) for playbook runs that
   // staff explicitly started from /admin/playbooks. Runtime-gated by
   // the outreach_playbooks.dispatcher feature flag; only ever acts on
   // operator-initiated runs, so it registers unconditionally.
-  await registerOutreachPlaybookTickJob(boss);
+  await safeRegister(
+    "registerOutreachPlaybookTickJob",
+    registrationFailures,
+    () => registerOutreachPlaybookTickJob(boss),
+  );
 
   // SLA auto-escalation (CSR C2). Flags conversations past their SLA
   // deadline as escalated so they surface in the inbox "escalated" view.
   // Internal visibility flag only (no patient contact). Queue + worker
   // always register; the recurring cron only attaches when
   // RESUPPLY_SLA_ESCALATION_CRON is set.
-  await registerSlaEscalationSweepJob(boss);
+  await safeRegister(
+    "registerSlaEscalationSweepJob",
+    registrationFailures,
+    () => registerSlaEscalationSweepJob(boss),
+  );
 
   // Daily snapshot of the therapy-fleet metrics into
   // therapy_fleet_daily_metrics, 30 min after the nightly sync, so the
   // fleet trend / sparklines reflect freshly-synced nights.
-  await registerTherapyFleetSnapshotJob(boss);
+  await safeRegister(
+    "registerTherapyFleetSnapshotJob",
+    registrationFailures,
+    () => registerTherapyFleetSnapshotJob(boss),
+  );
 
   // Daily headline-KPI snapshot (06:30 UTC) into metrics_daily — the F2
   // metrics substrate the threshold evaluator + owner digest read from.
-  await registerMetricsSnapshotJob(boss);
+  await safeRegister("registerMetricsSnapshotJob", registrationFailures, () =>
+    registerMetricsSnapshotJob(boss),
+  );
 
   // Evaluate metric_thresholds against the fresh snapshot (06:45 UTC)
   // and write metric_alerts on a breach.
-  await registerMetricAlertsEvaluatorJob(boss);
+  await safeRegister(
+    "registerMetricAlertsEvaluatorJob",
+    registrationFailures,
+    () => registerMetricAlertsEvaluatorJob(boss),
+  );
 
   // Email a SendGrid digest of new KPI alerts to admins (06:50 UTC).
-  await registerMetricAlertsNotifyJob(boss);
+  await safeRegister(
+    "registerMetricAlertsNotifyJob",
+    registrationFailures,
+    () => registerMetricAlertsNotifyJob(boss),
+  );
 
   // Daily dead-letter-queue depth report (06:55 UTC) — surfaces jobs
   // that exhausted their retries; without it a DLQ fills silently.
-  await registerDlqMonitorJob(boss);
+  await safeRegister("registerDlqMonitorJob", registrationFailures, () =>
+    registerDlqMonitorJob(boss),
+  );
 
   // Weekly owner KPI digest (Mondays 13:00 UTC).
-  await registerOwnerDigestJob(boss);
+  await safeRegister("registerOwnerDigestJob", registrationFailures, () =>
+    registerOwnerDigestJob(boss),
+  );
 
   // Nightly therapy-fleet alerts scan (05:15 UTC): maintains the
   // internal alert feed and, when the (default-off) auto-outreach flag
   // is on, sends consented at-risk patients a gentle adherence SMS.
-  await registerTherapyFleetAlertsJob(boss);
+  await safeRegister(
+    "registerTherapyFleetAlertsJob",
+    registrationFailures,
+    () => registerTherapyFleetAlertsJob(boss),
+  );
 
   // Daily CPAP setup-deadline outreach (05:05 UTC, BEFORE the 05:15
   // alerts-scan). Turns the 90-day setup-adherence countdown into
@@ -586,7 +746,11 @@ async function doStartWorker(): Promise<void> {
   // keep coverage") for on_track/at_risk patients. Shares the alerts-scan
   // 14-day frequency-cap key so the two never double-text a patient.
   // Gated by the same therapy_fleet.auto_outreach + sms.reminders flags.
-  await registerSetupDeadlineOutreachJob(boss);
+  await safeRegister(
+    "registerSetupDeadlineOutreachJob",
+    registrationFailures,
+    () => registerSetupDeadlineOutreachJob(boss),
+  );
 
   // Daily prior-authorization expiry sweep — flips approved → expired
   // on the day after approved_through, and emits CSR heads-up alerts
@@ -594,11 +758,13 @@ async function doStartWorker(): Promise<void> {
   // claims start denying. The /patients/:id/prior-authorizations
   // route header has long claimed this sweep existed; this is its
   // implementation. Runs at 03:47 UTC daily.
-  await registerIfProvisioned(
-    boss,
-    "prior-auth.expiry-sweep",
-    ["prior_authorizations"],
-    registerPriorAuthExpirySweepJob,
+  await safeRegister("prior-auth.expiry-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "prior-auth.expiry-sweep",
+      ["prior_authorizations"],
+      registerPriorAuthExpirySweepJob,
+    ),
   );
 
   // Daily post-delivery follow-up dispatcher. Scans paid shop orders
@@ -606,13 +772,21 @@ async function doStartWorker(): Promise<void> {
   // a "how did it go?" email + push. Highest-ROI satisfaction surface
   // a DME supplier has; also creates a clean intake for early returns
   // before the patient gives up. Runs at 14:23 UTC daily.
-  await registerShopOrderDeliveryFollowupJob(boss);
+  await safeRegister(
+    "registerShopOrderDeliveryFollowupJob",
+    registrationFailures,
+    () => registerShopOrderDeliveryFollowupJob(boss),
+  );
 
   // Daily sweep that re-sends signing links for unsigned patient
   // packets (email + SMS), capped per packet. Runtime-gated by the
   // patient_packets.autoremind feature flag (OFF by default). Runs at
   // 15:33 UTC daily.
-  await registerPatientPacketReminderJob(boss);
+  await safeRegister(
+    "registerPatientPacketReminderJob",
+    registrationFailures,
+    () => registerPatientPacketReminderJob(boss),
+  );
 
   // Daily therapy-milestone evaluator + sender. Scans
   // patient_therapy_nights for engagement signals (100th night, first
@@ -621,11 +795,13 @@ async function doStartWorker(): Promise<void> {
   // patient_therapy_milestones UNIQUE constraint. Runs at 04:53 UTC,
   // paired with the therapy nightly sync (04:30) so we work against
   // fresh data.
-  await registerIfProvisioned(
-    boss,
-    "therapy-milestones.run",
-    ["patient_therapy_milestones"],
-    registerTherapyMilestonesJob,
+  await safeRegister("therapy-milestones.run", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "therapy-milestones.run",
+      ["patient_therapy_milestones"],
+      registerTherapyMilestonesJob,
+    ),
   );
 
   // Weekly lapsed-customer win-back. Mondays at 13:17 UTC. Sends one
@@ -633,14 +809,22 @@ async function doStartWorker(): Promise<void> {
   // order is 180–730 days old (lapsed but not stale-registration)
   // and who hasn't been win-back'd within the past 12 months. Honors
   // communication_preferences.emailMarketing.
-  await registerLapsedCustomerWinbackJob(boss);
+  await safeRegister(
+    "registerLapsedCustomerWinbackJob",
+    registrationFailures,
+    () => registerLapsedCustomerWinbackJob(boss),
+  );
 
   // Daily deductible-reset push — short-circuits unless current month
   // is November. Sends a "use your benefits before Jan 1" email to
   // every active customer (paid order within the past 730 days) who
   // hasn't been stamped for the current year. Daily-and-short-circuit
   // makes the cron self-healing across deploys that miss Nov 1.
-  await registerDeductibleResetPushJob(boss);
+  await safeRegister(
+    "registerDeductibleResetPushJob",
+    registrationFailures,
+    () => registerDeductibleResetPushJob(boss),
+  );
 
   // Daily quarterly therapy-summary email — every 90 days per
   // patient, pushes the same 90-day rollup that /shop/me/quarterly-
@@ -649,7 +833,11 @@ async function doStartWorker(): Promise<void> {
   // and primary-care physicians get the summary at the cadence
   // they ask for. Runs at 06:17 UTC, gated by emailMarketing on
   // the patient's shop_customers comm-prefs.
-  await registerQuarterlyTherapySummaryJob(boss);
+  await safeRegister(
+    "registerQuarterlyTherapySummaryJob",
+    registrationFailures,
+    () => registerQuarterlyTherapySummaryJob(boss),
+  );
 
   // Daily lifecycle touchpoints — birthday + sleep-therapy
   // anniversary celebration emails. Calendar signals complement the
@@ -657,72 +845,102 @@ async function doStartWorker(): Promise<void> {
   // adherence month) and consistently show the highest open + click
   // rates in DME coaching literature. Runs at 13:33 UTC, idempotent
   // via year stamps on patients.
-  await registerLifecycleTouchpointsJob(boss);
+  await safeRegister(
+    "registerLifecycleTouchpointsJob",
+    registrationFailures,
+    () => registerLifecycleTouchpointsJob(boss),
+  );
 
   // Every 15 minutes — poll Office Ally's outbound SFTP directory
   // for 999 / 277CA / 835 files we haven't already processed.
   // No-op when no clearinghouse_credentials row exists and no
   // OFFICE_ALLY_* env is configured (dev / preview).
-  await registerOfficeAllyInboundPollJob(boss);
+  await safeRegister(
+    "registerOfficeAllyInboundPollJob",
+    registrationFailures,
+    () => registerOfficeAllyInboundPollJob(boss),
+  );
 
   // Every 6 hours — refresh PA Medicaid MCO 7-day SLA status
   // (mig 0133). Stamps mco_sla_target_date + status and queues
   // CSR alerts on at-risk + missed transitions.
-  await registerPaMcoSlaSweepJob(boss);
+  await safeRegister("registerPaMcoSlaSweepJob", registrationFailures, () =>
+    registerPaMcoSlaSweepJob(boss),
+  );
 
   // Daily CMS PECOS Order/Referring sync. Powers the preflight
   // "ordering provider not PECOS-enrolled" denial blocker.
-  await registerIfProvisioned(
-    boss,
-    "pecos.sync",
-    ["providers", "providers_pecos_status"],
-    registerPecosSyncJob,
+  await safeRegister("pecos.sync", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "pecos.sync",
+      ["providers", "providers_pecos_status"],
+      registerPecosSyncJob,
+    ),
   );
 
   // Daily capped-rental month advance (mig 0134). For each active
   // cycle past the next anniversary, generates a draft monthly
   // claim with the correct KH/KI/KX modifier rotation.
-  await registerCappedRentalAdvanceJob(boss);
+  await safeRegister(
+    "registerCappedRentalAdvanceJob",
+    registrationFailures,
+    () => registerCappedRentalAdvanceJob(boss),
+  );
 
   // Auto-charge due patient payment-plan installments off-session
   // (mig 0255). Triple-gated: opt-in cron (BILLING_PAYMENT_PLAN_
   // AUTOCHARGE_CRON), the seeded-OFF billing.payment_plan_autocharge
   // flag, and per-plan patient authorization. Inert by default.
-  await registerPaymentPlanAutochargeJob(boss);
+  await safeRegister(
+    "registerPaymentPlanAutochargeJob",
+    registrationFailures,
+    () => registerPaymentPlanAutochargeJob(boss),
+  );
 
   // Auto-charge a patient's outstanding balance off-session against the
   // card they saved + authorized in the portal (mig 0260). Triple-gated:
   // opt-in cron (BILLING_PATIENT_AUTOPAY_CRON), the seeded-OFF
   // billing.patient_autopay flag, and the per-patient autopay toggle.
   // Inert by default.
-  await registerPatientAutopayChargeJob(boss);
+  await safeRegister(
+    "registerPatientAutopayChargeJob",
+    registrationFailures,
+    () => registerPatientAutopayChargeJob(boss),
+  );
 
   // Weekly DWO / CMN renewal sweep (mig 0134). T-60/T-30/T-7 CSR
   // alerts before expires_on.
-  await registerIfProvisioned(
-    boss,
-    "dwo.expiry-sweep",
-    ["dwo_documents"],
-    registerDwoExpirySweepJob,
+  await safeRegister("dwo.expiry-sweep", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "dwo.expiry-sweep",
+      ["dwo_documents"],
+      registerDwoExpirySweepJob,
+    ),
   );
 
   // Every minute — drain webhook_deliveries with exponential
   // backoff retries. HMAC-SHA256-signed POSTs to subscriber URLs.
-  await registerIfProvisioned(
-    boss,
-    "webhook.dispatch",
-    ["webhook_deliveries", "webhook_subscriptions"],
-    registerWebhookDispatcherJob,
+  await safeRegister("webhook.dispatch", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "webhook.dispatch",
+      ["webhook_deliveries", "webhook_subscriptions"],
+      registerWebhookDispatcherJob,
+    ),
   );
 
   // Every 5 minutes — auto-workflow pass: heuristic-score + AI-scrub
   // risky drafts, AI-analyze fresh denials, publish
   // billing_statement.due for patients with cooldown-clear balances.
-  await registerIfProvisioned(
-    boss,
-    "billing.auto-workflow",
-    ["insurance_claims"],
-    registerAutoWorkflowJob,
+  await safeRegister("billing.auto-workflow", registrationFailures, () =>
+    registerIfProvisioned(
+      boss,
+      "billing.auto-workflow",
+      ["insurance_claims"],
+      registerAutoWorkflowJob,
+    ),
   );
 
   // Hourly — warn invited team members whose operator-typed
@@ -730,16 +948,25 @@ async function doStartWorker(): Promise<void> {
   // at ~T-2 days) and again the moment it expires. Idempotency via
   // stamp columns on resupply_auth.password_credentials added in
   // migration 0143.
-  await registerInvitePasswordExpiryNotifyJob(boss);
+  await safeRegister(
+    "registerInvitePasswordExpiryNotifyJob",
+    registrationFailures,
+    () => registerInvitePasswordExpiryNotifyJob(boss),
+  );
 
   // Every 6 hours — shop inventory low-stock alert digest. Reads
   // Stripe catalog, dedups per-SKU via resupply.low_stock_alert_state,
   // emails RESUPPLY_ADMIN_EMAILS one rollup per tick.
-  await registerIfProvisioned(
-    boss,
+  await safeRegister(
     "shop-inventory.low-stock-alerts",
-    ["low_stock_alert_state"],
-    registerLowStockAlertsJob,
+    registrationFailures,
+    () =>
+      registerIfProvisioned(
+        boss,
+        "shop-inventory.low-stock-alerts",
+        ["low_stock_alert_state"],
+        registerLowStockAlertsJob,
+      ),
   );
 
   // Daily 13:43 UTC — pre-build draft prescription_request_packets
@@ -747,20 +974,42 @@ async function doStartWorker(): Promise<void> {
   // have to hunt for them. Gated by
   // RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED=1 (off in dev/preview);
   // does NOT auto-fax — CSR reviews + sends.
-  await registerPrescriptionRequestAutoDraftJob(boss);
+  await safeRegister(
+    "registerPrescriptionRequestAutoDraftJob",
+    registrationFailures,
+    () => registerPrescriptionRequestAutoDraftJob(boss),
+  );
 
   // Sunday 04:13 UTC — weekly orphan-assignee sweep. Unpins
   // conversations whose assignee was revoked (Team admin UI flipped
   // admin_users.status='revoked'); the conversations would otherwise
   // sit pinned to the ghost admin forever, hidden from the
   // unassigned queue.
-  await registerConversationOrphanAssigneeSweepJob(boss);
+  await safeRegister(
+    "registerConversationOrphanAssigneeSweepJob",
+    registrationFailures,
+    () => registerConversationOrphanAssigneeSweepJob(boss),
+  );
 
   // On-demand — retry-backed `payment_failed` patient alert dispatch,
   // enqueued by the Stripe invoice.payment_failed webhook so a
   // transient SendGrid/DB failure doesn't silently lose the alert
   // after the webhook has already ACKed.
-  await registerPaymentFailedAlertJob(boss);
+  await safeRegister(
+    "registerPaymentFailedAlertJob",
+    registrationFailures,
+    () => registerPaymentFailedAlertJob(boss),
+  );
+
+  if (registrationFailures.length > 0) {
+    // Throw AFTER attempting everything: the boot backoff loop in
+    // index.ts re-runs doStartWorker, retrying the failed
+    // registrations while the already-registered jobs keep working.
+    throw new Error(
+      `worker: ${registrationFailures.length} job registration(s) failed: ` +
+        registrationFailures.join(", "),
+    );
+  }
 
   workerReady = true;
   logger.info(

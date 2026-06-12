@@ -117,6 +117,26 @@ a deliberately downgraded staffer regain full admin during any
 `admin_users` read hiccup. The legacy fallback for "lookup succeeded,
 no row" (pre-Phase-A accounts) is preserved.
 
+### A7. Worker survives a single job-registration failure (June-10 P3)
+
+`worker/index.ts`: all ~60 job registrations now run through a
+`safeRegister` guard — one throwing register call no longer aborts the
+rest (the May 2026 DLQ-FK incident class kept the entire worker tier
+down). Failures are logged per-job and re-thrown as ONE aggregate after
+everything has been attempted, so healthy jobs come online immediately
+while the boot backoff loop retries the failed ones. Re-registration
+on retry is safe: createQueue/schedule are upserts and duplicate
+`work()` subscriptions don't double-process.
+
+### A8. Small P3 hygiene (June-10 audit)
+
+- `routes/admin/shop-returns.ts`: `?limit=abc` no longer reaches
+  PostgREST as `.limit(NaN)` (Math.max/min propagate NaN).
+- `routes/shop/me.ts`: the profile-update failure path no longer
+  echoes the raw PostgREST error message to the customer (schema/table
+  names could leak); the detail is logged server-side and the client
+  gets the stable `update_failed` code.
+
 ### B1. Dead-letter-queue monitor (new finding, this review)
 
 Every queue routes exhausted jobs to a per-queue DLQ
@@ -169,27 +189,31 @@ In priority order; the P-numbers reference
 
 ## C. Feature opportunities
 
-New ideas from this review — each closes a loop between systems that
-already exist:
+**Correction (verified during implementation):** all four "new
+feature ideas" originally drafted for this section turned out to be
+already built — the codebase is ahead of its own audits:
 
-1. **Eligibility-gated reminders.** The 270 verifier, 271
-   auto-processing, and `eligibility-reverify-batch` all exist, but
-   the reminder scan never consults eligibility. An
-   "eligibility stale/terminated" predicate in the outreach plan stops
-   texting patients whose coverage lapsed — saves CSR time and
-   prevents un-billable orders.
-2. **Channel escalation ladder.** SendGrid delivery events are
-   persisted (and flow again post-P0-2); use bounces/non-delivery to
-   escalate SMS → email → voice-callback task instead of the current
-   pick-one channel.
-3. **Therapy-data-driven cadence.** Therapy snapshots and adherence
-   predictions exist as read surfaces; feeding usage signals into the
-   `outreach-plan` rules (low-usage patients get a coaching touch, not
-   a resupply push) closes the loop the therapy-cloud adapters were
-   built for.
-4. **Estimated out-of-pocket at cart.** The insurance-estimate engine
-   exists standalone; surface it during checkout for insurance-linked
-   customers.
+1. ~~Eligibility-gated reminders~~ — implemented at the order-confirm
+   step (`lib/messaging/order-flow.ts`, `consultCoverageEligibility`,
+   flag `resupply.eligibility_enforcement`, fail-open, raises a CSR
+   coverage alert). Gating the confirm rather than the reminder send
+   is arguably the better control point: the patient still gets
+   contacted ("update your insurance") while a non-billable shipment
+   is held for a CSR.
+2. ~~Channel escalation ladder~~ — implemented as
+   `reminders.escalation-scan` (`worker/jobs/reminder-escalation.ts`):
+   unresolved episodes escalate SMS → email after 3 days, then raise a
+   CSR "call them" alert once every channel is exhausted. Flag
+   `reminder_escalation.dispatcher`.
+3. ~~Therapy-data-driven cadence~~ — substantially covered:
+   `coaching-auto-enroll` puts at-risk patients on coaching plans,
+   `therapy_fleet.auto_outreach` sends consented adherence nudges, and
+   `resupply.usage_compliance_check` holds resupply confirmations for
+   effectively-unused devices.
+4. ~~Estimated out-of-pocket at cart~~ — the cart already routes
+   insurance-holding customers to the $0 insurance flow, a different
+   (and simpler) solve for the same problem. An inline estimate
+   remains a possible enhancement, not a gap.
 
 Still-open items endorsed from the June-07 research (ROI order):
 real-time CSR alerting/paging on SLA breach (C1), sentiment/urgency
