@@ -35,7 +35,11 @@ export interface PaymentFailedAlertJobData {
 export async function registerPaymentFailedAlertJob(
   boss: PgBoss,
 ): Promise<void> {
-  await createQueueWithDlq(boss, PAYMENT_FAILED_ALERT_JOB, VENDOR_SEND_QUEUE_OPTS);
+  await createQueueWithDlq(
+    boss,
+    PAYMENT_FAILED_ALERT_JOB,
+    VENDOR_SEND_QUEUE_OPTS,
+  );
   await boss.work<PaymentFailedAlertJobData>(
     PAYMENT_FAILED_ALERT_JOB,
     async (jobs) => {

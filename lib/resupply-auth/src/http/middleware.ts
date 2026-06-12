@@ -60,11 +60,13 @@ export function makeRequireSession(deps: AuthDeps) {
     if (session.userAgentHash) {
       const currentHash = hashUserAgent(req);
       if (currentHash && !currentHash.equals(session.userAgentHash)) {
-        (deps.onSessionUserAgentMismatch ??
+        (
+          deps.onSessionUserAgentMismatch ??
           (({ userId, sessionId }) =>
             console.warn(
               `[resupply-auth] session user-agent mismatch (soft signal): user=${userId} session=${sessionId}`,
-            )))({ userId: user.id, sessionId: session.id });
+            ))
+        )({ userId: user.id, sessionId: session.id });
       }
     }
 

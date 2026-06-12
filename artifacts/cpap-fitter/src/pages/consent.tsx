@@ -151,9 +151,9 @@ export function Consent() {
         >
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
           <p className="flex-1">
-            Your browser is blocking temporary storage (often private
-            browsing). You can still complete the fitting, but refreshing or
-            closing this tab will restart it from the beginning.
+            Your browser is blocking temporary storage (often private browsing).
+            You can still complete the fitting, but refreshing or closing this
+            tab will restart it from the beginning.
           </p>
           <button
             type="button"

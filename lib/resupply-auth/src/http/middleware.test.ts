@@ -172,9 +172,7 @@ describe("requireSession", () => {
       .set("User-Agent", "BrowserB/2.0");
     // Soft signal: observed, never blocked.
     expect(r.status).toBe(200);
-    expect(mismatches).toEqual([
-      { userId: "u_ua", sessionId: inserted.id },
-    ]);
+    expect(mismatches).toEqual([{ userId: "u_ua", sessionId: inserted.id }]);
 
     // Matching UA stays silent.
     const r2 = await supertest(app)
