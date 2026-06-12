@@ -2,6 +2,11 @@
 // here invalidates prior acknowledgements at the application layer
 // — every patient sees a "please review and re-sign" banner when
 // the most recent acknowledgement on file is for an older version.
+//
+// The June 2026 rewording (PennPaps → Penn Home Medical Supply, the
+// registered DME name) deliberately did NOT bump versions: per the
+// owner, name corrections apply to patients signing going forward —
+// previously signed acknowledgements remain valid.
 
 export type FormKind =
   | "hipaa_npp"
@@ -20,7 +25,7 @@ export interface FormDescriptor {
 export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
   hipaa_npp: {
     kind: "hipaa_npp",
-    version: "2026.06",
+    version: "2024.01",
     title: "Notice of Privacy Practices",
     body:
       "Penn Home Medical Supply protects your health information per HIPAA. We may " +
@@ -30,7 +35,7 @@ export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
   },
   aob: {
     kind: "aob",
-    version: "2026.06",
+    version: "2024.01",
     title: "Assignment of Benefits",
     body:
       "By signing, you authorize Penn Home Medical Supply to bill your insurance " +
@@ -48,7 +53,7 @@ export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
   },
   financial_responsibility: {
     kind: "financial_responsibility",
-    version: "2026.06",
+    version: "2024.01",
     title: "Financial Responsibility",
     body:
       "You are responsible for any deductible, copayment, or " +
@@ -57,7 +62,7 @@ export const INTAKE_FORMS: Record<FormKind, FormDescriptor> = {
   },
   supplier_standards: {
     kind: "supplier_standards",
-    version: "2026.06",
+    version: "2024.01",
     title: "DMEPOS Supplier Standards",
     body:
       "Penn Home Medical Supply is a Medicare-enrolled DMEPOS supplier and adheres " +
