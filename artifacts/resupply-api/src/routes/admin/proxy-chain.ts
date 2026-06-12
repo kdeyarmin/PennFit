@@ -62,6 +62,12 @@ router.get(
       headers[name] = Array.isArray(value) ? value.join(", ") : (value ?? null);
     }
 
+    const trustProxySetting = req.app.get("trust proxy");
+    const trustProxy =
+      typeof trustProxySetting === "function"
+        ? "[function]"
+        : (trustProxySetting ?? null);
+
     res.json({
       capturedAt: new Date().toISOString(),
       host: req.headers.host ?? null,
@@ -71,7 +77,7 @@ router.get(
       },
       headers,
       expressResolution: {
-        trustProxy: req.app.get("trust proxy"),
+        trustProxy,
         ip: req.ip ?? null,
         ips: req.ips,
         protocol: req.protocol,
