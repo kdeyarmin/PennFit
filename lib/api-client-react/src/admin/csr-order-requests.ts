@@ -75,7 +75,7 @@ export interface CreateCsrOrderResponse {
 }
 
 export interface ResendCsrOrderResponse {
-  status: string;
+  status: CsrOrderRequestStatus;
   signingLink: string;
   emailSent: boolean;
   smsSent: boolean;
