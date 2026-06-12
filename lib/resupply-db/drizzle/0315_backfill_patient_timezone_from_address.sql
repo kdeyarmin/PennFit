@@ -9,9 +9,9 @@
 -- effectively 12pm–11pm local: inside the TCPA 8am–9pm bound, but well
 -- outside our internal 9am–8pm policy.
 --
--- Mapping: each state to its DOMINANT IANA zone (same table as
--- timezoneForUsState in lib/resupply-domain/src/us-timezone.ts, which
--- now sets the column at patient-create). Split-zone states map to
+-- Mapping: non-Eastern states → DOMINANT IANA zone. This is a subset of
+-- timezoneForUsState (lib/resupply-domain/src/us-timezone.ts) so rows whose
+-- derived zone is still 'America/New_York' are left untouched. Split-zone states map to
 -- their majority side — at worst a one-hour skew, strictly better than
 -- the three-hour Eastern-default error. Both USPS codes and full state
 -- names are matched (CSV/PacWare imports carry either).
