@@ -4593,6 +4593,48 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["csr_macros"]["Row"]>;
         Relationships: [];
       };
+      // Migration 0318: CSR-created "sign & pay" orders. `status` tracks
+      // the link lifecycle only (sent → viewed → signed, or canceled);
+      // payment state is derived by joining stripe_session_id onto
+      // shop_orders at read time.
+      csr_order_requests: {
+        Row: {
+          id: string;
+          order_reference: string;
+          status: "sent" | "viewed" | "signed" | "canceled";
+          customer_name: string;
+          customer_email: string | null;
+          customer_phone: string | null;
+          items: Json;
+          amount_total_cents: number;
+          currency: string;
+          note_to_customer: string | null;
+          documents: Json;
+          link_version: number;
+          expires_at: string | null;
+          sent_at: string | null;
+          first_viewed_at: string | null;
+          signed_at: string | null;
+          signer_name: string | null;
+          signature_image: string | null;
+          signer_ip: string | null;
+          signer_user_agent: string | null;
+          consent_esign: boolean | null;
+          canceled_at: string | null;
+          canceled_by_email: string | null;
+          stripe_session_id: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["csr_order_requests"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["csr_order_requests"]["Row"]
+        >;
+        Relationships: [];
+      };
       shop_return_notes: {
         Row: {
           id: string;

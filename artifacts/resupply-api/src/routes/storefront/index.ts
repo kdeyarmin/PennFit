@@ -8,6 +8,7 @@ import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
 import patientPacketsRouter from "./patient-packets.js";
+import csrOrdersRouter from "./csr-orders.js";
 import chatRouter from "./chat.js";
 import sleepCoachRouter from "./sleep-coach.js";
 import meClaimsRouter from "./me-claims.js";
@@ -33,6 +34,10 @@ router.use(remindersRouter);
 // new-patient document packet. Token-gated (HMAC); no login. Mounted
 // before attachSignedIn so it stays unauthenticated.
 router.use(patientPacketsRouter);
+// /api/csr-orders/view + /sign + /checkout — public "sign & pay" flow
+// for CSR-created orders. Token-gated (HMAC); no login. Mounted before
+// attachSignedIn so it stays unauthenticated.
+router.use(csrOrdersRouter);
 router.use(chatRouter);
 // Patient-portal session resolution for the routers below. They read
 // `req.shopCustomerId` (the signed-in patient's customer key) — without

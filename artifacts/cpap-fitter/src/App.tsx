@@ -513,6 +513,11 @@ const PatientPacketSign = lazyWithRetry(() =>
     default: m.PatientPacketSign,
   })),
 );
+const OrderPay = lazyWithRetry(() =>
+  import("@/pages/order-pay").then((m) => ({
+    default: m.OrderPay,
+  })),
+);
 const VideoVisitPage = lazyWithRetry(() =>
   import("@/pages/video-visit").then((m) => ({
     default: m.VideoVisitPage,
@@ -1020,6 +1025,10 @@ function PatientRouter() {
             <Route path="/reminders" component={Reminders} />
             <Route path="/reminders/manage" component={RemindersManage} />
             <Route path="/patient-packet-sign" component={PatientPacketSign} />
+            {/* Public token-gated "review, sign & pay" page for
+                CSR-created orders (link arrives by SMS/email; token
+                rides the query string like /patient-packet-sign). */}
+            <Route path="/order-pay" component={OrderPay} />
             {/* Public token-gated telehealth join page (link arrives by
                 SMS/email; token rides the query string like
                 /patient-packet-sign). */}
