@@ -53,9 +53,9 @@ function stripComments(src: string): string {
 describe("shop/me-* routes — signed-in scoping (IDOR guard)", () => {
   it("found the me-* route files", () => {
     // If the glob ever comes back empty the suite would pass vacuously;
-    // pin a floor (24 files as of 2026-06-10, after the patient-facing
-    // appointment-request route was removed).
-    expect(ME_ROUTE_FILES.length).toBeGreaterThanOrEqual(24);
+    // pin a floor (23 files as of 2026-06-12, after the Apple Wallet
+    // pass route was removed).
+    expect(ME_ROUTE_FILES.length).toBeGreaterThanOrEqual(23);
   });
 
   for (const file of ME_ROUTE_FILES) {
