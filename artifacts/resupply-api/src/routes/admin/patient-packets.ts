@@ -57,6 +57,7 @@ import {
   PACKET_TEMPLATES,
   getPacketTemplate,
   isRequiredPacketDocumentKey,
+  isStandalonePacketDocumentKey,
   isValidPacketDocumentKey,
 } from "../../lib/patient-packet/templates";
 import { signPatientPacketToken } from "../../lib/patient-packet-token";
@@ -224,6 +225,7 @@ router.get(
           requiresSignature: t.requiresSignature,
           defaultIncluded: t.defaultIncluded,
           required: isRequiredPacketDocumentKey(t.key),
+          standalone: isStandalonePacketDocumentKey(t.key),
           customized: effective.customized,
           sections: effective.sections,
           defaultSections: defaultTemplateSections(t.key),
