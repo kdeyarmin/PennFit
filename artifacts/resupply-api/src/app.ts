@@ -300,7 +300,8 @@ const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",
   makeAuthRouter(authDeps, {
-    productName: "Resupply",
+    productName: "PennPaps",
+    signatureName: "Penn Home Medical Supply",
     // Admin SPA pages live under /admin/{reset-password,verify-email}
     // — emit links that land there instead of on the customer pages.
     uiPathPrefix: "/admin",
@@ -325,7 +326,8 @@ const storefrontAuthDeps: AuthDeps = { ...authDeps, allowSignUp: true };
 app.use(
   "/api/auth",
   makeAuthRouter(storefrontAuthDeps, {
-    productName: "Penn Home Medical Supply",
+    productName: "PennPaps",
+    signatureName: "Penn Home Medical Supply",
   }),
 );
 logger.info(
@@ -354,7 +356,8 @@ const providerAuthDeps: AuthDeps = { ...authDeps, allowSignUp: false };
 app.use(
   "/api/provider/auth",
   makeAuthRouter(providerAuthDeps, {
-    productName: "PennFit Provider Portal",
+    productName: "PennPaps Provider Portal",
+    signatureName: "Penn Home Medical Supply",
   }),
 );
 logger.info(

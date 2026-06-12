@@ -65,6 +65,9 @@ export interface CompanyInfo {
 // what it used to.
 const DEFAULTS = {
   name: "PennPaps",
+  // The registered DME business name. "PennPaps" is only the online
+  // storefront brand; official paperwork carries the legal name.
+  legalName: "Penn Home Medical Supply",
   phoneE164: "+18144710627",
   phoneDisplay: "(814) 471-0627",
   supportEmail: "support@pennpaps.com",
@@ -98,7 +101,7 @@ function envFallbackInfo(): CompanyInfo {
   const name = envName || DEFAULTS.name;
   return {
     name,
-    legalName: name,
+    legalName: envName || DEFAULTS.legalName,
     phoneE164: DEFAULTS.phoneE164,
     phoneDisplay: DEFAULTS.phoneDisplay,
     supportPhoneE164: DEFAULTS.phoneE164,
@@ -221,6 +224,21 @@ export function invalidateCompanyInfoCache(): void {
  */
 export function getCompanyInfoSync(): CompanyInfo {
   return cache?.info ?? envFallbackInfo();
+}
+
+/**
+ * Name to print on official DME documents — SWO/CMN/DWO letterheads,
+ * fax covers, prescription requests, manual documents, and report
+ * sign-offs. Always the registered legal name ("Penn Home Medical
+ * Supply"), never the online-storefront brand ("PennPaps").
+ */
+export async function getDocumentSupplierName(): Promise<string> {
+  return (await getCompanyInfo()).legalName;
+}
+
+/** Synchronous variant for non-async contexts (warm cache or fallback). */
+export function getDocumentSupplierNameSync(): string {
+  return getCompanyInfoSync().legalName;
 }
 
 // The literal strings that were historically hardcoded across chat

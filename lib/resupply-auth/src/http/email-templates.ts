@@ -15,8 +15,12 @@
 import { stripTrailingSlashes } from "../string-utils";
 
 export interface AuthEmailContext {
-  /** "PennFit" / "Resupply" — appears in subject + signature. */
+  /** Software/product name, e.g. "PennPaps" — appears in the subject
+   *  line and body copy. */
   productName: string;
+  /** Company name rendered as the closing signature, e.g.
+   *  "Penn Home Medical Supply". Omitted → no signature block. */
+  signatureName?: string;
   /** Where /verify-email and /reset-password live, no trailing slash. */
   publicBaseUrl: string;
   /**
@@ -59,6 +63,19 @@ function makeLink(
 // header injection (e.g. "PennFit\r\nBcc: attacker@evil.com").
 function safeSubjectValue(s: string): string {
   return s.replace(/[\r\n]/g, "");
+}
+
+// Shared closing signature so every auth email signs off the same way
+// (matching the "— Penn Home Medical Supply" convention used by the
+// patient-facing reminder/renewal emails in resupply-api).
+function signatureHtml(ctx: AuthEmailContext): string {
+  return ctx.signatureName
+    ? `\n<p style="margin:24px 0 0;color:#6b7280;font-size:12px;">${escapeHtml(ctx.signatureName)}</p>`
+    : "";
+}
+
+function signatureText(ctx: AuthEmailContext): string {
+  return ctx.signatureName ? `\n\n— ${ctx.signatureName}` : "";
 }
 
 /**
@@ -112,13 +129,13 @@ export function renderVerifyEmail(
     html: `<p>Welcome to ${safeName}.</p>
 <p>Click the link below to verify your email address:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in ${expiry}. If you didn't create this account, you can ignore this email.</p>`,
+<p>This link expires in ${expiry}. If you didn't create this account, you can ignore this email.</p>${signatureHtml(ctx)}`,
     text: `Welcome to ${ctx.productName}.
 
 Verify your email address by visiting:
 ${link}
 
-This link expires in ${expiry}. If you didn't create this account, you can ignore this email.`,
+This link expires in ${expiry}. If you didn't create this account, you can ignore this email.${signatureText(ctx)}`,
   };
 }
 
@@ -175,7 +192,7 @@ ${files.map((f) => `  * ${f}`).join("\n")}
 <p>Click the link below to create your password and get started:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
 <p>This link expires in ${expiry}.</p>
-${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>`,
+${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>${signatureHtml(ctx)}`,
     text: `${greetingText}
 
 Your care team has invited you to set up your ${ctx.productName} patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.
@@ -185,7 +202,7 @@ ${link}
 
 This link expires in ${expiry}.
 
-${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.`,
+${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.${signatureText(ctx)}`,
   };
 }
 
@@ -278,7 +295,7 @@ ${detailsHtml}
 <p>To get started, click the link below to set your password and activate your account:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
 <p>This invitation link expires in ${expiry}. If it expires before you set your password, an administrator can send you a fresh one.</p>
-${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>`,
+${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>${signatureHtml(ctx)}`,
     text: `${greetingText}
 
 You've been invited to join the ${ctx.productName} team. ${ctx.productName} is where our team manages CPAP resupply day to day — patient records, orders and shipments, supply reminders, and the schedules behind them.
@@ -291,7 +308,7 @@ ${link}
 
 This invitation link expires in ${expiry}. If it expires before you set your password, an administrator can send you a fresh one.
 
-${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.`,
+${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.${signatureText(ctx)}`,
   };
 }
 
@@ -321,8 +338,8 @@ export interface ProviderPortalInviteEmailArgs {
  * password). Explains what the portal is for (reviewing and e-signing
  * their patients' documents), gives them their username, and links
  * the set-password step. `ctx.productName` should be the portal's
- * display name (e.g. "PennFit Provider Portal") — it is rendered
- * after "the", as in "invited to the PennFit Provider Portal".
+ * display name (e.g. "PennPaps Provider Portal") — it is rendered
+ * after "the", as in "invited to the PennPaps Provider Portal".
  */
 export function renderProviderPortalInviteEmail(
   ctx: AuthEmailContext,
@@ -376,7 +393,7 @@ ${files.map((f) => `  * ${f}`).join("\n")}
 <p>Click the link below to set your password and activate your account:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
 <p>This invitation link expires in ${expiry}. If it expires before you set your password, the practice can send you a fresh one.</p>
-${portalUrl ? `<p>After your password is set, you can sign in any time at <a href="${escapeHtml(portalUrl)}">${escapeHtml(portalUrl)}</a>.</p>\n` : ""}${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>`,
+${portalUrl ? `<p>After your password is set, you can sign in any time at <a href="${escapeHtml(portalUrl)}">${escapeHtml(portalUrl)}</a>.</p>\n` : ""}${attachmentsHtml}<p>If you weren't expecting this invitation, you can safely ignore this email.</p>${signatureHtml(ctx)}`,
     text: `${greetingText}
 
 ${invitedByText} to the ${ctx.productName}, a secure portal where you can review and electronically sign documents for your patients — prescriptions, orders, and certificates of medical necessity — from any browser.
@@ -388,7 +405,7 @@ ${link}
 
 This invitation link expires in ${expiry}. If it expires before you set your password, the practice can send you a fresh one.
 
-${portalUrl ? `After your password is set, you can sign in any time at ${portalUrl}.\n\n` : ""}${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.`,
+${portalUrl ? `After your password is set, you can sign in any time at ${portalUrl}.\n\n` : ""}${attachmentsText}If you weren't expecting this invitation, you can safely ignore this email.${signatureText(ctx)}`,
   };
 }
 
@@ -411,12 +428,12 @@ export function renderPasswordResetEmail(
     html: `<p>We received a request to reset your ${safeName} password.</p>
 <p>Click the link below to choose a new one:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
-<p>This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>`,
+<p>This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>${signatureHtml(ctx)}`,
     text: `We received a request to reset your ${ctx.productName} password.
 
 Choose a new one by visiting:
 ${link}
 
-This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.`,
+This link expires in ${expiry}. If you didn't request a password reset, you can ignore this email — your current password will keep working.${signatureText(ctx)}`,
   };
 }

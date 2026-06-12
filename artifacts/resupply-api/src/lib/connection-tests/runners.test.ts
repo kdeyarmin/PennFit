@@ -106,7 +106,7 @@ describe("runEmailTest", () => {
     // The test email must carry no PHI and a fixed subject.
     expect(sendEmail.mock.calls[0][0]).toMatchObject({
       to: "ops@pennpaps.com",
-      subject: "PennFit connection test",
+      subject: "PennPaps connection test",
     });
   });
 

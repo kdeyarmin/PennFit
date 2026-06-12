@@ -108,6 +108,7 @@ import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
+import outboundMessagesRouter from "./admin/outbound-messages.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
@@ -952,6 +953,9 @@ router.use(npsSummaryRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
 // (per-message + audit-log failure events). Read-only.
 router.use(deliveryFailuresRouter);
+// /admin/outbound-messages — outbound SMS/email send log with delivery
+// results (admin / super-admin only). Read-only.
+router.use(outboundMessagesRouter);
 // /admin/lookup — global cross-entity lookup bar. Phone (HMAC),
 // email, UUID, and Stripe-session-id-aware. Read-only.
 router.use(lookupRouter);

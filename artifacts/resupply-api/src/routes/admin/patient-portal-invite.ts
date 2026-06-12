@@ -356,7 +356,11 @@ router.post(
 
     const attachments = await patientInviteAttachments();
     const rendered = renderPatientPortalInviteEmail(
-      { productName: "PennPaps", publicBaseUrl: baseUrl },
+      {
+        productName: "PennPaps",
+        signatureName: "Penn Home Medical Supply",
+        publicBaseUrl: baseUrl,
+      },
       {
         rawToken: token.raw,
         ttlMs: INVITE_TOKEN_TTL_MS,
@@ -484,7 +488,11 @@ router.post(
 
     const attachments = await patientInviteAttachments();
     const rendered = renderPatientPortalInviteEmail(
-      { productName: "PennPaps", publicBaseUrl: baseUrl },
+      {
+        productName: "PennPaps",
+        signatureName: "Penn Home Medical Supply",
+        publicBaseUrl: baseUrl,
+      },
       {
         rawToken: token.raw,
         ttlMs: INVITE_TOKEN_TTL_MS,

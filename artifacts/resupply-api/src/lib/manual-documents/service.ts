@@ -8,6 +8,7 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { getDocumentSupplierNameSync } from "../company-info";
 import { getTrackingCodeForDocument } from "../signature-tracking/service";
 import { isManualDocumentType, type ManualDocumentType } from "./catalog";
 import { renderManualDocumentPdf, type ManualDocumentPdfInput } from "./pdf";
@@ -43,9 +44,9 @@ const ROW_COLUMNS =
 
 export const MANUAL_DOCUMENT_ROW_COLUMNS = ROW_COLUMNS;
 
-/** Practice / supplier name for the PDF letterhead. */
+/** Supplier name for the PDF letterhead — the registered DME legal name. */
 export function manualDocumentSupplierName(): string {
-  return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  return getDocumentSupplierNameSync();
 }
 
 /** Load one row by id. Returns null when not found or the type is bad. */

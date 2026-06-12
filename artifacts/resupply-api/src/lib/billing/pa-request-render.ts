@@ -21,6 +21,7 @@ import {
   type PaRequestPostalAddress,
 } from "./pa-request-pdf";
 import { resolveBillingIdentity } from "./identity-resolver";
+import { getDocumentSupplierName } from "../company-info";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -223,7 +224,7 @@ export async function buildPaRequestPdf(
   const supplierName =
     identity.source !== "stub"
       ? identity.billingProvider.organizationName
-      : process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+      : await getDocumentSupplierName();
 
   // 5. Requested item line(s) + merged modifiers.
   const requiredModifiers = (payerProfile?.required_claim_modifiers ??

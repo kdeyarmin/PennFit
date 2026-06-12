@@ -334,7 +334,8 @@ router.post(
       role: coarseAuthRoleFor(role),
       roleLabel: ROLE_EMAIL_LABEL[role],
       displayName: displayName ?? prior?.display_name ?? null,
-      productName: "Resupply",
+      productName: "PennPaps",
+      signatureName: "Penn Home Medical Supply",
       uiPathPrefix: "/admin",
       initialPassword: useInitialPassword
         ? (initialPassword as string)
@@ -460,7 +461,8 @@ router.post(
       role: coarseAuthRoleFor(row.role as AdminRole),
       roleLabel: ROLE_EMAIL_LABEL[row.role as AdminRole],
       displayName: row.display_name,
-      productName: "Resupply",
+      productName: "PennPaps",
+      signatureName: "Penn Home Medical Supply",
       uiPathPrefix: "/admin",
       attachments: await staffInviteAttachments(row.role as AdminRole),
     });
@@ -878,7 +880,7 @@ async function authUserHasNonStaffOwner(
     supabase
       .schema("resupply")
       .from("shop_customers")
-      .select("id")
+      .select("customer_id")
       .eq("auth_user_id", authUserId)
       .limit(1)
       .maybeSingle(),

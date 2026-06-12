@@ -25,6 +25,7 @@ import {
   validateCmnAnswers,
 } from "../../lib/billing/cmn-forms";
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
+import { getDocumentSupplierName } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -331,7 +332,7 @@ router.get(
     const supplierName =
       identity.source !== "stub"
         ? identity.billingProvider.organizationName
-        : process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+        : await getDocumentSupplierName();
 
     const pdf = await renderCmnPdf({
       formType: c.form_type,
