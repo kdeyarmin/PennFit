@@ -2,6 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldCheck } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { GeneralEmailLink } from "@/components/company-contact";
 
 export function Privacy() {
   useDocumentTitle(
@@ -211,13 +212,8 @@ export function Privacy() {
               "Start Over" clears them. For data you submitted with an order
               (contact, shipping, insurance, prescription), you may contact
               PennPaps directly at{" "}
-              <a
-                href="mailto:info@pennpaps.com"
-                className="underline hover:text-primary"
-              >
-                info@pennpaps.com
-              </a>{" "}
-              to request a copy, correction, or deletion subject to applicable
+              <GeneralEmailLink className="underline hover:text-primary" /> to
+              request a copy, correction, or deletion subject to applicable
               recordkeeping requirements. To stop receiving texts at any time,
               reply STOP to any message from PennPaps.
             </p>

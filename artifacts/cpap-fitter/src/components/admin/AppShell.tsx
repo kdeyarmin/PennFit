@@ -79,6 +79,7 @@ import {
   Send,
   PlayCircle,
   BookOpenCheck,
+  Building2,
 } from "lucide-react";
 import {
   Sheet,
@@ -1110,6 +1111,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Settings,
             matchPrefix: "/admin/settings",
             hint: "Practice settings & integrations",
+          },
+          {
+            href: "/admin/company-information",
+            label: "Company information",
+            icon: Building2,
+            matchPrefix: "/admin/company-information",
+            hint: "Company name, addresses, and contact info used on documents, the storefront, and messages",
           },
           {
             href: "/admin/closures",

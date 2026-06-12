@@ -5,6 +5,10 @@ import { LearnVideoLibrary } from "@/components/learn-video-library";
 import { NewsletterSignup } from "@/components/newsletter-signup";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
+  SupportEmailText,
+  SupportPhoneText,
+} from "@/components/company-contact";
+import {
   BookOpen,
   Moon,
   Wind,
@@ -432,8 +436,8 @@ const articles: Article[] = [
         or fix in real time. We text or email you a join link — no app to
         install and no account needed, just a phone, tablet, or computer with a
         camera. Calls are encrypted directly between you and the team and are
-        never recorded. To set one up, call (814) 471-0627, email
-        support@pennpaps.com, or ask in the site chat.
+        never recorded. To set one up, call <SupportPhoneText />, email{" "}
+        <SupportEmailText />, or ask in the site chat.
       </>
     ),
   },

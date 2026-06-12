@@ -62,6 +62,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { applyCompanyIdentityToText } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
@@ -70,7 +71,7 @@ import {
   buildChatSystemPrompt,
   MAX_CHAT_TURNS,
   MAX_USER_MESSAGE_CHARS,
-  OFFLINE_FALLBACK_REPLY,
+  offlineFallbackReply,
 } from "../../lib/storefront/chatbotKnowledge.js";
 import {
   CHAT_TOOLS,
@@ -135,8 +136,13 @@ function isTransientNetworkError(err: unknown): boolean {
   return err instanceof Error; // TypeError from fetch, socket reset, DNS, …
 }
 
-const DEGRADED_FALLBACK_REPLY =
-  "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.";
+// A function (not a constant) so the phone/email reflect the
+// admin-saved company info at reply time.
+function degradedFallbackReply(): string {
+  return applyCompanyIdentityToText(
+    "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.",
+  );
+}
 
 const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -412,11 +418,11 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     );
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: OFFLINE_FALLBACK_REPLY });
+      writeSseEvent(res, { type: "chunk", text: offlineFallbackReply() });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({ reply: OFFLINE_FALLBACK_REPLY, offline: true });
+      res.json({ reply: offlineFallbackReply(), offline: true });
     }
     return;
   }
@@ -434,11 +440,11 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     );
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      writeSseEvent(res, { type: "chunk", text: degradedFallbackReply() });
       writeSseEvent(res, { type: "done", degraded: true });
       res.end();
     } else {
-      res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+      res.json({ reply: degradedFallbackReply(), degraded: true });
     }
     return;
   }
@@ -491,11 +497,11 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   if (!apiKey || apiKey.trim() === "") {
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: OFFLINE_FALLBACK_REPLY });
+      writeSseEvent(res, { type: "chunk", text: offlineFallbackReply() });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({ reply: OFFLINE_FALLBACK_REPLY, offline: true });
+      res.json({ reply: offlineFallbackReply(), offline: true });
     }
     return;
   }
@@ -522,7 +528,7 @@ async function handleJson(
       { event: "chat_openai_circuit_open" },
       "chat: openai circuit open — returning degraded fallback without calling upstream",
     );
-    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    res.json({ reply: degradedFallbackReply(), degraded: true });
     return;
   }
 
@@ -585,7 +591,7 @@ async function handleJson(
           { event: "chat_openai_http_error", status },
           "chat: openai HTTP error (returning degraded fallback)",
         );
-        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        res.json({ reply: degradedFallbackReply(), degraded: true });
         return;
       }
       // The vendor responded (even a 4xx is "reachable") → reset the breaker.
@@ -600,7 +606,7 @@ async function handleJson(
           },
           "chat: openai HTTP error",
         );
-        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        res.json({ reply: degradedFallbackReply(), degraded: true });
         return;
       }
 
@@ -618,7 +624,7 @@ async function handleJson(
           { event: "chat_empty_reply", round },
           "chat: openai returned empty content",
         );
-        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        res.json({ reply: degradedFallbackReply(), degraded: true });
         return;
       }
 
@@ -651,7 +657,7 @@ async function handleJson(
       { event: "chat_tool_cap_hit" },
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    res.json({ reply: degradedFallbackReply(), degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -660,7 +666,7 @@ async function handleJson(
       },
       "chat: exception (returning degraded fallback)",
     );
-    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    res.json({ reply: degradedFallbackReply(), degraded: true });
   } finally {
     clearTimeout(timer);
   }
@@ -874,7 +880,7 @@ async function handleStreaming(
       );
       if (result.degraded) {
         if (totalChars === 0) {
-          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: degradedFallbackReply() });
         }
         safeEvent({ type: "done", degraded: true });
         safeEnd();
@@ -894,7 +900,7 @@ async function handleStreaming(
           { event: "chat_empty_reply", streaming: true, round },
           "chat: openai stream returned no content",
         );
-        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "chunk", text: degradedFallbackReply() });
         degraded = true;
       }
       logger.info(
@@ -918,7 +924,7 @@ async function handleStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: degradedFallbackReply() });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -932,7 +938,7 @@ async function handleStreaming(
       "chat: exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: degradedFallbackReply() });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -1102,7 +1108,7 @@ async function handleAnthropicJson(
           },
           "chat: anthropic call failed",
         );
-        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        res.json({ reply: degradedFallbackReply(), degraded: true });
         return;
       }
       const text = getResponseText(result.response).trim();
@@ -1128,7 +1134,7 @@ async function handleAnthropicJson(
           { event: "chat_empty_reply", vendor: "anthropic", round },
           "chat: anthropic returned empty content",
         );
-        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        res.json({ reply: degradedFallbackReply(), degraded: true });
         return;
       }
       logger.info(
@@ -1151,7 +1157,7 @@ async function handleAnthropicJson(
       { event: "chat_tool_cap_hit", vendor: "anthropic" },
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    res.json({ reply: degradedFallbackReply(), degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -1161,7 +1167,7 @@ async function handleAnthropicJson(
       },
       "chat: anthropic exception (returning degraded fallback)",
     );
-    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+    res.json({ reply: degradedFallbackReply(), degraded: true });
   }
 }
 
@@ -1243,7 +1249,7 @@ async function handleAnthropicStreaming(
           "chat: anthropic stream failed",
         );
         if (totalChars === 0) {
-          safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+          safeEvent({ type: "chunk", text: degradedFallbackReply() });
         }
         safeEvent({ type: "done", degraded: true });
         safeEnd();
@@ -1280,7 +1286,7 @@ async function handleAnthropicStreaming(
           },
           "chat: anthropic stream returned no content",
         );
-        safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        safeEvent({ type: "chunk", text: degradedFallbackReply() });
         safeEvent({ type: "done", degraded: true });
         safeEnd();
         return;
@@ -1308,7 +1314,7 @@ async function handleAnthropicStreaming(
       "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: degradedFallbackReply() });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
@@ -1323,7 +1329,7 @@ async function handleAnthropicStreaming(
       "chat: anthropic exception during stream (returning degraded fallback)",
     );
     if (totalChars === 0) {
-      safeEvent({ type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+      safeEvent({ type: "chunk", text: degradedFallbackReply() });
     }
     safeEvent({ type: "done", degraded: true });
     safeEnd();
