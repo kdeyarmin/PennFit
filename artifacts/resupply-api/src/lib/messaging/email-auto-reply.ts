@@ -91,7 +91,7 @@ const EMAIL_REPLY_ADDENDUM = [
   'When you CAN answer, write "reply" as a complete, ready-to-send email',
   "body: a short friendly greeting, the answer in a warm conversational",
   "tone (contractions, no corporate boilerplate), and end with the sign-off",
-  "line exactly: — The PennPaps Team. Plain text only — no markdown, no",
+  "line exactly: — Penn Home Medical Supply. Plain text only — no markdown, no",
   "bullet characters, no links other than plain https:// URLs. Keep it",
   "concise (a few short paragraphs at most).",
   "",

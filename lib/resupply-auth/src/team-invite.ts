@@ -69,6 +69,12 @@ export interface InviteArgs {
   displayName: string | null;
   productName: string;
   /**
+   * Company name rendered as the closing signature of the invite
+   * email, e.g. "Penn Home Medical Supply". Optional; omitted →
+   * no signature block.
+   */
+  signatureName?: string;
+  /**
    * Human-readable role label shown in the welcome email's
    * account-details block (e.g. "Customer service rep"). Callers with
    * a granular role catalog should pass the same label their UI
@@ -296,6 +302,7 @@ export async function inviteTeamMember(
   const rendered = renderTeamInviteEmail(
     {
       productName: args.productName,
+      signatureName: args.signatureName,
       publicBaseUrl: baseUrl,
       uiPathPrefix: args.uiPathPrefix,
     },

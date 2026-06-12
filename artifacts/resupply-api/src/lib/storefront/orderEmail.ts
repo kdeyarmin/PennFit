@@ -113,7 +113,7 @@ export function generateOrderReference(): string {
  */
 function composeEmailBody(order: OrderPayload, orderReference: string): string {
   const lines: string[] = [];
-  lines.push(`PENN FIT — NEW MASK ORDER`);
+  lines.push(`PENNPAPS — NEW MASK ORDER`);
   lines.push(`Reference: ${orderReference}`);
   lines.push(`Submitted: ${new Date().toISOString()}`);
   lines.push("");
