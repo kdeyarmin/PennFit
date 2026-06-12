@@ -17,6 +17,16 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
+// Rate limiters are not under test here; keep them from interfering with the
+// route contract / causing cross-test flakiness.
+vi.mock("../../middlewares/admin-rate-limit", () => ({
+  adminReadRateLimiter: (
+    _req: import("express").Request,
+    _res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => next(),
+}));
+
 import proxyChainRouter from "./proxy-chain";
 
 function makeApp(trustProxy?: number | boolean): Express {
