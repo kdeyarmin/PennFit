@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS resupply.csr_order_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   order_reference text NOT NULL UNIQUE,
   -- Link lifecycle only: 'sent' | 'viewed' | 'signed' | 'canceled'.
-  status text NOT NULL DEFAULT 'sent',
+  status text NOT NULL DEFAULT 'sent'
+    CHECK (status IN ('sent', 'viewed', 'signed', 'canceled')),
   customer_name text NOT NULL,
   customer_email text,
   customer_phone text,
