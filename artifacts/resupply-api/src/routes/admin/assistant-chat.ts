@@ -62,6 +62,7 @@ import {
   type AnthropicTool,
 } from "../../lib/llm-provider.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
+import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit.js";
 
 const router: IRouter = Router();
 
@@ -228,6 +229,7 @@ async function applyToolCalls(
 
 router.post(
   "/admin/assistant/chat",
+  adminWriteRateLimiter,
   requireAdmin,
   assistantLimiter,
   async (req, res) => {
