@@ -169,6 +169,10 @@ describe("POST /sms/status-callback (video visit invites)", () => {
       verb: "eq",
       args: ["id", VIDEO_VISIT_ID],
     });
+    expect(supabaseMock.filterCalls("video_visits", "update")).toContainEqual({
+      verb: "eq",
+      args: ["invite_twilio_message_sid", MESSAGE_SID],
+    });
   });
 
   it("records the error code and audits on a delivery failure", async () => {

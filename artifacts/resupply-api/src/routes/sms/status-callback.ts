@@ -274,7 +274,8 @@ async function updateVideoVisitInviteDelivery(
         invite_twilio_message_sid: messageSid,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", videoVisitId);
+      .eq("id", videoVisitId)
+      .eq("invite_twilio_message_sid", messageSid);
     if (status === "sent") {
       // Same no-regress rule as the paths above: callbacks are
       // unordered and re-POSTed, so a late `sent` must never downgrade
