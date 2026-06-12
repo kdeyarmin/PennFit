@@ -1031,9 +1031,6 @@ ROLES = [
                 ("Follow-Ups",
                  "Scheduled callbacks and appointments in a today-first "
                  "queue; complete or reschedule in a click."),
-                ("Appointment Requests",
-                 "Patient-initiated requests to accept, decline, or counter "
-                 "with an alternate time."),
                 ("Delivery Failures",
                  "Bounced texts and emails plus carrier shipping exceptions, "
                  "queued for follow-up."),
