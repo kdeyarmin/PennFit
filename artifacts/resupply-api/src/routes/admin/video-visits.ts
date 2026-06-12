@@ -760,20 +760,6 @@ router.post(
       return;
     }
 
-    // A re-send supersedes the previous attempt: clear the stale
-    // delivery outcome BEFORE sending so the prior message's terminal
-    // state can't masquerade as this attempt's (callbacks for the new
-    // SID only start after Twilio accepts the send below).
-    await supabase
-      .schema("resupply")
-      .from("video_visits")
-      .update({
-        invite_delivery_status: null,
-        invite_delivery_error_code: null,
-        invite_twilio_message_sid: null,
-      })
-      .eq("id", visit.id);
-
     const joinUrl = patientJoinUrl(visit.id, visit.link_version);
     const delivery = await deliverInvite({
       visitId: visit.id,
@@ -795,6 +781,8 @@ router.post(
       .update({
         invite_channel: body.channel,
         invite_delivered: delivery.delivered,
+        invite_delivery_status: null,
+        invite_delivery_error_code: null,
         invite_twilio_message_sid: delivery.messageSid ?? null,
         updated_at: new Date().toISOString(),
       })
