@@ -169,8 +169,48 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Fulfillment validation up front so we never persist a half-formed
+    // Collapse duplicate-priceId lines (sum quantities). The
+    // shop_order_items unique index is
+    // (stripe_session_id, product_id, price_id), so two lines with the
+    // same price would 500 the items insert AFTER the order row is
+    // already written — orphaning an order with a total but no lines
+    // (there's no surrounding transaction). Deduping up front means the
+    // cart guard, the server-side total, and the insert all see exactly
+    // one row per price.
+    const items = Array.from(
+      body.items
+        .reduce(
+          (m, it) => m.set(it.priceId, (m.get(it.priceId) ?? 0) + it.quantity),
+          new Map<string, number>(),
+        )
+        .entries(),
+    ).map(([priceId, quantity]) => ({ priceId, quantity }));
+
+    // Resolve the order's customer binding. shop_orders attaches to a
+    // patient via email-lower, so when the CSR selects an existing patient
+    // (the UI sends only patientId, never PHI email) we look the email up
+    // server-side rather than surfacing it in the search results. An
+    // explicit customerEmail / customerId from the caller still wins. A
+    // bad patientId 404s before we touch Stripe or write anything.
+    let customerEmail = body.customerEmail ?? null;
+    if (body.patientId) {
+      const { data: patientRow, error: patErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("email")
+        .eq("id", body.patientId)
+        .maybeSingle();
+      if (patErr) throw patErr;
+      if (!patientRow) {
+        res.status(404).json({ error: "patient_not_found" });
+        return;
+      }
+      if (!customerEmail && !body.customerId && patientRow.email) {
+        customerEmail = patientRow.email;
+      }
+    }
     // order. Pickup needs an active location; ship needs an address.
     const isPickup = body.fulfillmentMethod === "pickup";
     let pickupLocationId: string | null = null;
@@ -207,7 +247,7 @@ router.post(
 
     // Catalog guard — identical fence the storefront applies. Counter
     // lines are always one_time (no in-person subscription lane).
-    const cartItems = body.items.map((it) => ({
+    const cartItems = items.map((it) => ({
       priceId: it.priceId,
       quantity: it.quantity,
       mode: "one_time" as const,
@@ -230,9 +270,7 @@ router.post(
     // active catalog product, so a retrieve here yields the trustworthy
     // unit_amount + owning product id. One retrieve per unique price
     // (cart bounded to 20).
-    const uniquePriceIds = Array.from(
-      new Set(body.items.map((i) => i.priceId)),
-    );
+    const uniquePriceIds = items.map((i) => i.priceId);
     const priceById = new Map<
       string,
       { unitAmountCents: number; currency: string; productId: string }
@@ -269,13 +307,12 @@ router.post(
     // Compute the order total server-side and assemble the line rows.
     let amountTotalCents = 0;
     let currency: string | null = null;
-    for (const it of body.items) {
+    for (const it of items) {
       const priced = priceById.get(it.priceId)!;
       amountTotalCents += priced.unitAmountCents * it.quantity;
       currency = currency ?? priced.currency;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
     const isCash = body.paymentMethod === "cash";
     // Synthetic, namespaced, collision-free session id (see header).
@@ -308,7 +345,7 @@ router.post(
         ? { shipping_address_json: shippingAddress as unknown as Json }
         : {}),
       ...(body.customerId ? { customer_id: body.customerId } : {}),
-      ...(body.customerEmail ? { customer_email: body.customerEmail } : {}),
+      ...(customerEmail ? { customer_email: customerEmail } : {}),
       // `paid` means money received. Cash is collected at the counter, so
       // it's paid now. An insurance order is NOT paid until the payer
       // adjudicates and pays the claim — it stays `pending` while the
@@ -331,7 +368,7 @@ router.post(
     // Line items. paid_at is NOT NULL on shop_order_items, so we stamp
     // now() in both lanes — it records when the line was captured at the
     // counter. The order's own status/paid_at carry the payment state.
-    const itemRows: ShopOrderItemInsert[] = body.items.map((it) => {
+    const itemRows: ShopOrderItemInsert[] = items.map((it) => {
       const priced = priceById.get(it.priceId)!;
       return {
         order_id: orderId,

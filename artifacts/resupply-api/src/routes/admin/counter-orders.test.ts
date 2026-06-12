@@ -84,6 +84,7 @@ const ORDER_ID = "ord_9999";
 const PRICE_ID = "price_abc123xyz";
 const PRODUCT_ID = "prod_abc123";
 const LOCATION_ID = "11111111-1111-4111-8111-111111111111";
+const PATIENT_ID = "22222222-2222-4222-8222-222222222222";
 
 function makeApp(): Express {
   const app = express();
@@ -286,5 +287,73 @@ describe("POST /admin/shop/counter-orders", () => {
       });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("shipping_address_required");
+  });
+
+  it("collapses duplicate price lines into one item row (atomicity)", async () => {
+    stubCsr();
+    stubStripeReady(1000);
+    getActivePickupLocationByIdMock.mockResolvedValue({ id: LOCATION_ID });
+    stageSupabaseResponse("shop_orders", "insert", { data: { id: ORDER_ID } });
+    stageSupabaseResponse("shop_order_items", "insert", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/counter-orders")
+      .send({
+        items: [
+          { priceId: PRICE_ID, quantity: 2 },
+          { priceId: PRICE_ID, quantity: 1 },
+        ],
+        paymentMethod: "cash",
+        fulfillmentMethod: "pickup",
+        pickupLocationId: LOCATION_ID,
+      });
+
+    expect(res.status).toBe(201);
+    // One line row (summed qty 3), not two — so the (session, product,
+    // price) unique index can't be violated.
+    const rows = (
+      getSupabaseWritePayloads("shop_order_items", "insert") as Array<
+        Array<Record<string, unknown>>
+      >
+    )[0];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].quantity).toBe(3);
+    expect(res.body.order.amountTotalCents).toBe(1000 * 3);
+  });
+
+  it("resolves an existing patient's email from patientId for linkage", async () => {
+    stubCsr();
+    stubStripeReady(2000);
+    getActivePickupLocationByIdMock.mockResolvedValue({ id: LOCATION_ID });
+    // Patient lookup → email; then order + items insert.
+    stageSupabaseResponse("patients", "select", {
+      data: { email: "walkin@patient.example.com" },
+    });
+    stageSupabaseResponse("shop_orders", "insert", { data: { id: ORDER_ID } });
+    stageSupabaseResponse("shop_order_items", "insert", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/counter-orders")
+      .send({ ...PICKUP_CASH_BODY, patientId: PATIENT_ID });
+
+    expect(res.status).toBe(201);
+    const [orderPayload] = getSupabaseWritePayloads(
+      "shop_orders",
+      "insert",
+    ) as Array<Record<string, unknown>>;
+    expect(orderPayload.customer_email).toBe("walkin@patient.example.com");
+  });
+
+  it("404s when patientId matches no patient", async () => {
+    stubCsr();
+    stubStripeReady();
+    stageSupabaseResponse("patients", "select", { data: null });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/admin/shop/counter-orders")
+      .send({ ...PICKUP_CASH_BODY, patientId: PATIENT_ID });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("patient_not_found");
   });
 });
