@@ -13,29 +13,29 @@ card in `pages/help.tsx`. The coverage test fails until all three exist.
 
 ## Patient-facing features
 
-| Feature                                    | Help article                      | Status                                    |
-| ------------------------------------------ | --------------------------------- | ----------------------------------------- |
-| Virtual mask fitter                        | `/help/find-your-mask`            | Covered                                   |
-| Ordering a recommended mask                | `/help/place-an-order`            | Covered                                   |
-| Shop & checkout                            | `/help/shop-and-checkout`         | Covered                                   |
-| Order tracking                             | `/help/track-your-order`          | Covered                                   |
-| Account creation & sign-in                 | `/help/create-an-account`         | Covered                                   |
-| Password reset                             | `/help/reset-password`            | Covered                                   |
-| Resupply reminders (signup + manage links) | `/help/resupply-reminders`        | Covered                                   |
-| Insurance estimates                        | `/help/insurance-estimate`        | Covered                                   |
-| Returns, exchanges & comfort guarantee     | `/help/returns-and-refunds`       | Covered                                   |
-| Wishlist & reorder                         | `/help/save-to-wishlist`          | Covered                                   |
-| Auto-ship subscriptions                    | `/help/manage-subscriptions`      | Covered                                   |
-| Payment methods & billing (Stripe portal)  | `/help/payment-methods`           | Covered                                   |
-| Communication preferences, STOP, quiet hrs | `/help/communication-preferences` | Covered                                   |
-| Document upload & required e-sign forms    | `/help/documents-and-forms`       | Covered                                   |
-| Caregiver / designated contact             | `/help/caregiver-access`          | Covered                                   |
-| Equipment registry & recall alerts         | `/help/equipment-and-recalls`     | Covered                                   |
-| Phone ordering (AI voice assistant)        | `/help/order-by-phone`            | Covered                                   |
-| In-account messages thread                 | —                                 | Gap (low: UI is self-describing)          |
-| Referral program                           | —                                 | Gap (add when program is promoted)        |
-| Data export & privacy rights               | —                                 | Gap (privacy page covers contact path)    |
-| NPS / post-delivery survey                 | —                                 | Gap (low: one-tap survey)                 |
+| Feature                                    | Help article                      | Status                                 |
+| ------------------------------------------ | --------------------------------- | -------------------------------------- |
+| Virtual mask fitter                        | `/help/find-your-mask`            | Covered                                |
+| Ordering a recommended mask                | `/help/place-an-order`            | Covered                                |
+| Shop & checkout                            | `/help/shop-and-checkout`         | Covered                                |
+| Order tracking                             | `/help/track-your-order`          | Covered                                |
+| Account creation & sign-in                 | `/help/create-an-account`         | Covered                                |
+| Password reset                             | `/help/reset-password`            | Covered                                |
+| Resupply reminders (signup + manage links) | `/help/resupply-reminders`        | Covered                                |
+| Insurance estimates                        | `/help/insurance-estimate`        | Covered                                |
+| Returns, exchanges & comfort guarantee     | `/help/returns-and-refunds`       | Covered                                |
+| Wishlist & reorder                         | `/help/save-to-wishlist`          | Covered                                |
+| Auto-ship subscriptions                    | `/help/manage-subscriptions`      | Covered                                |
+| Payment methods & billing (Stripe portal)  | `/help/payment-methods`           | Covered                                |
+| Communication preferences, STOP, quiet hrs | `/help/communication-preferences` | Covered                                |
+| Document upload & required e-sign forms    | `/help/documents-and-forms`       | Covered                                |
+| Caregiver / designated contact             | `/help/caregiver-access`          | Covered                                |
+| Equipment registry & recall alerts         | `/help/equipment-and-recalls`     | Covered                                |
+| Phone ordering (AI voice assistant)        | `/help/order-by-phone`            | Covered                                |
+| In-account messages thread                 | —                                 | Gap (low: UI is self-describing)       |
+| Referral program                           | —                                 | Gap (add when program is promoted)     |
+| Data export & privacy rights               | —                                 | Gap (privacy page covers contact path) |
+| NPS / post-delivery survey                 | —                                 | Gap (low: one-tap survey)              |
 
 Clinical/educational topics (cleaning, troubleshooting, travel, therapy
 data) live under `/learn` and the chatbot knowledge base by design — the
