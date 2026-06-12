@@ -142,6 +142,7 @@ WORKSPACE — the day-to-day desk:
       * Bulk Campaigns (/admin/bulk-campaigns) — batch SMS/email sends.
       * Alert Library (/admin/alerts) — curated one-off alerts (permission: admin.tools.manage).
       * Reminders (/admin/pennpaps/reminders) — resupply reminder schedule.
+      * Playbooks (/admin/playbooks) — situation-based contact templates (cadence + wording).
       * Canned Replies (/admin/macros) — CSR quick-reply macros (permission: admin.tools.manage).
       * Automated messages (/admin/templates) — system-sent message copy (permission: admin.tools.manage).
 
@@ -155,14 +156,14 @@ PATIENTS & CLINICAL:
       * Awaiting signatures (/admin/signature-tracking) — documents out for a provider signature.
       * E-signature portal (/admin/provider-portal) — provider e-sign staging + signed items.
       * Inbound faxes (/admin/inbound-faxes) — triage returned faxes, sleep studies, Rx renewals.
-  - Clinical work (permission: clinical.read for most tabs):
+  - Therapy monitoring (the boards that surface who needs attention):
+      * RT Overview (/admin/rt-overview), Therapy Fleet (/admin/therapy-fleet) — device-cloud
+        adherence data, Setup Adherence (/admin/therapy-compliance),
+        Resupply Opportunities (/admin/therapy-resupply), RT outcomes (/admin/rt-outcomes).
+  - Clinical work (acting on what monitoring surfaced; permission: clinical.read for most tabs):
       * Clinical encounters (/admin/clinical), Interventions (/admin/clinical/interventions),
         Mask-fit feedback (/admin/clinical/mask-fit), Clinical outreach (/admin/clinical/outreach),
         Adherence coaching (/admin/coaching), Video library (/admin/clinical/education-videos).
-  - Therapy monitoring:
-      * RT Overview (/admin/rt-overview), RT outcomes (/admin/rt-outcomes),
-        Therapy Fleet (/admin/therapy-fleet) — device-cloud adherence data,
-        Resupply Opportunities (/admin/therapy-resupply), Setup Adherence (/admin/therapy-compliance).
   - Providers & recalls:
       * Providers (/admin/providers), Recalls (/admin/equipment-recalls).
 
@@ -177,20 +178,19 @@ ORDERS & SHOP:
       * Customers (/admin/shop/customers), Reviews (/admin/shop/reviews),
         Product Q&A (/admin/shop/product-questions), Abandoned Carts (/admin/shop/abandoned-carts),
         Back-in-Stock (/admin/shop/back-in-stock), Insurance Leads (/admin/shop/insurance-leads),
-        Fitter Prospects (/admin/fitter-leads), Fitter Invites (/admin/fitter-invites).
+        Fitter Invites (/admin/fitter-invites), Fitter Prospects (/admin/fitter-leads).
 
 BILLING (the claims + revenue-cycle hub):
   - Dashboards (read-only money views):
       * Billing Hub (/admin/billing), Denials & DSO (/admin/billing/denials),
         Collections forecast (/admin/billing/collections-forecast),
         Payer profitability (/admin/billing/payer-profitability).
-  - Worklists:
-      * AI queue (/admin/billing/ai-queue),
-        Verify insurance (/admin/billing/verify) — run an on-demand 270/271 for any patient,
+  - Worklists (tabs follow the claim lifecycle):
+      * Verify insurance (/admin/billing/verify) — run an on-demand 270/271 for any patient,
         Eligibility (/admin/billing/eligibility), Re-verification (/admin/billing/eligibility-recheck),
-        Auto-submit (/admin/billing/auto-submit), Prior auths (/admin/billing/prior-auths),
-        Denials worklist (/admin/billing/denials-worklist), CMN / DIF worklist (/admin/billing/cmn),
-        Bill hold (/admin/billing/bill-hold).
+        Prior auths (/admin/billing/prior-auths), CMN / DIF worklist (/admin/billing/cmn),
+        Bill hold (/admin/billing/bill-hold), Auto-submit (/admin/billing/auto-submit),
+        AI queue (/admin/billing/ai-queue), Denials worklist (/admin/billing/denials-worklist).
   - A/R & collections:
       * A/R aging (/admin/billing/aging), Filing deadlines (/admin/billing/timely-filing),
         Secondary claims (/admin/billing/secondary), Statement send (/admin/billing/statements),
@@ -214,20 +214,20 @@ ANALYTICS & REPORTS:
 SYSTEM (mostly admin / super-admin):
   - Automation: Rules (/admin/rules), Compliance Rules (/admin/compliance-rules),
     Rule Tester (/admin/rule-tester) — dry-run a rule before enabling it.
-  - Operations: Operations (/admin/operations), Integrations (/admin/integrations) — therapy-cloud /
-    payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange with the legacy billing
-    system, Outbound Messages (/admin/outbound-messages) — every outbound SMS/email with its
-    delivery result (admin/super-admin only), Delivery Failures (/admin/delivery-failures),
-    Webhook Deliveries (/admin/webhook-deliveries).
+  - Operations: Operations (/admin/operations), Outbound Messages (/admin/outbound-messages) —
+    every outbound SMS/email with its delivery result (admin/super-admin only),
+    Delivery Failures (/admin/delivery-failures), Integrations (/admin/integrations) —
+    therapy-cloud / payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange
+    with the legacy billing system, Webhook Deliveries (/admin/webhook-deliveries).
   - Settings (day-to-day): Settings (/admin/settings), Company information
     (/admin/company-information) — company name, addresses, support contact, and identifiers
     used on documents, the storefront, chat, and SMS/email branding, Closures (/admin/closures),
     Team (/admin/team) — invite/role management (admin-only), Locations (/admin/locations) —
     only with multi-branch enabled, Account security (/admin/security) — your own password + MFA.
-  - Setup & advanced: Account Setup (/admin/account-setup) — launch checklist,
-    Control Center (/admin/control-center) — feature flags, Connection tests (/admin/connection-tests),
+  - Setup & advanced (in launch order): Account Setup (/admin/account-setup) — launch checklist,
     Configuration & tests (/admin/system/configuration) — SUPER-ADMIN ONLY: where vendor API
-    keys/secrets are entered, Bot playground (/admin/bot-playground).
+    keys/secrets are entered, Connection tests (/admin/connection-tests),
+    Control Center (/admin/control-center) — feature flags, Bot playground (/admin/bot-playground).
 `;
 
 const ROLES_SECTION = `

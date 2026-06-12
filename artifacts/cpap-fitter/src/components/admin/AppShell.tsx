@@ -96,7 +96,6 @@ import { getMfaStatus } from "@/lib/admin/mfa-api";
 // the multi-branch feature is enabled; the entry stays hidden otherwise.
 const MULTI_LOCATION_NAV_TOKEN = "feature:multi_location";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
-import { StartVideoVisitButton } from "./StartVideoVisitModal";
 import { GlobalLookup } from "./GlobalLookup";
 import { AdminAssistantWidget } from "./AdminAssistantWidget";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
@@ -198,8 +197,8 @@ type NavGroup = {
  * one. The six groups:
  *
  *   1. WORKSPACE  — the daily driver: home, conversations, schedule, outreach
- *   2. PATIENTS & CLINICAL — records, documents & e-sign, RT clinical work,
- *      therapy monitoring, providers
+ *   2. PATIENTS & CLINICAL — records, documents & e-sign, therapy
+ *      monitoring, RT clinical work, providers
  *   3. ORDERS & SHOP — fulfillment, inventory, storefront & leads
  *   4. BILLING    — money dashboards, claim worklists, A/R & collections, tools
  *   5. ANALYTICS & REPORTS — exports, financial, performance, customer/clinical
@@ -304,13 +303,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Resolve an audience, then draft and send a bulk email",
           },
           {
-            href: "/admin/playbooks",
-            label: "Playbooks",
-            icon: BookOpenCheck,
-            matchPrefix: "/admin/playbooks",
-            hint: "Situation-based contact templates — cadence + wording for SMS, email, and call outreach",
-          },
-          {
             href: "/admin/alerts",
             label: "Alert Library",
             icon: AlertOctagon,
@@ -324,6 +316,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: BellRing,
             matchPrefix: "/admin/pennpaps/reminders",
             hint: "Scheduled patient resupply reminders",
+          },
+          {
+            href: "/admin/playbooks",
+            label: "Playbooks",
+            icon: BookOpenCheck,
+            matchPrefix: "/admin/playbooks",
+            hint: "Situation-based contact templates — cadence + wording for SMS, email, and call outreach",
           },
           {
             href: "/admin/macros",
@@ -418,6 +417,52 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
+        // Monitoring comes before clinical work: the population boards
+        // surface the patients who need attention; the clinical-work
+        // worklists are where the RT acts on what the boards surfaced.
+        label: "Therapy monitoring",
+        icon: HeartPulse,
+        hint: "Population therapy monitoring — adherence board, fleet, setups, resupply, RT outcomes",
+        tabs: [
+          {
+            href: "/admin/rt-overview",
+            label: "RT Overview",
+            icon: HeartPulse,
+            matchPrefix: "/admin/rt-overview",
+            hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
+          },
+          {
+            href: "/admin/therapy-fleet",
+            label: "Therapy Fleet",
+            icon: HeartPulse,
+            matchPrefix: "/admin/therapy-fleet",
+            hint: "Population compliance cohorts and clinical outreach worklist",
+          },
+          {
+            href: "/admin/therapy-compliance",
+            label: "Setup Adherence",
+            icon: ClipboardCheck,
+            matchPrefix: "/admin/therapy-compliance",
+            hint: "CMS 90-day adherence tracker for new Medicare setups",
+          },
+          {
+            href: "/admin/therapy-resupply",
+            label: "Resupply Opportunities",
+            icon: PackageCheck,
+            matchPrefix: "/admin/therapy-resupply",
+            hint: "Device-reported supplies due for replacement — drives resupply orders",
+          },
+          {
+            href: "/admin/rt-outcomes",
+            label: "RT outcomes",
+            icon: Stethoscope,
+            matchPrefix: "/admin/rt-outcomes",
+            requiredPermission: "clinical.read",
+            hint: "Per-therapist activity: encounters, patients, interventions",
+          },
+        ],
+      },
+      {
         label: "Clinical work",
         icon: Stethoscope,
         hint: "RT clinical work — encounters, interventions, mask-fit, coaching",
@@ -468,49 +513,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/clinical/education-videos",
             requiredPermission: "reports.read",
             hint: "Manage the short-video education library shown on the storefront /learn pages",
-          },
-        ],
-      },
-      {
-        label: "Therapy monitoring",
-        icon: HeartPulse,
-        hint: "Population therapy monitoring — adherence board, RT outcomes, fleet, resupply",
-        tabs: [
-          {
-            href: "/admin/rt-overview",
-            label: "RT Overview",
-            icon: HeartPulse,
-            matchPrefix: "/admin/rt-overview",
-            hint: "At-a-glance therapy board: alerts, AHI, leak, usage",
-          },
-          {
-            href: "/admin/rt-outcomes",
-            label: "RT outcomes",
-            icon: Stethoscope,
-            matchPrefix: "/admin/rt-outcomes",
-            requiredPermission: "clinical.read",
-            hint: "Per-therapist activity: encounters, patients, interventions",
-          },
-          {
-            href: "/admin/therapy-fleet",
-            label: "Therapy Fleet",
-            icon: HeartPulse,
-            matchPrefix: "/admin/therapy-fleet",
-            hint: "Population compliance cohorts and clinical outreach worklist",
-          },
-          {
-            href: "/admin/therapy-resupply",
-            label: "Resupply Opportunities",
-            icon: PackageCheck,
-            matchPrefix: "/admin/therapy-resupply",
-            hint: "Device-reported supplies due for replacement — drives resupply orders",
-          },
-          {
-            href: "/admin/therapy-compliance",
-            label: "Setup Adherence",
-            icon: ClipboardCheck,
-            matchPrefix: "/admin/therapy-compliance",
-            hint: "CMS 90-day adherence tracker for new Medicare setups",
           },
         ],
       },
@@ -649,18 +651,18 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "New benefit-verification requests",
           },
           {
-            href: "/admin/fitter-leads",
-            label: "Fitter Prospects",
-            icon: UsersRound,
-            matchPrefix: "/admin/fitter-leads",
-            hint: "Fitter funnel + supply-campaign conversion",
-          },
-          {
             href: "/admin/fitter-invites",
             label: "Fitter Invites",
             icon: ScanFace,
             matchPrefix: "/admin/fitter-invites",
             hint: "Invite patients to the AI mask fitter + review results",
+          },
+          {
+            href: "/admin/fitter-leads",
+            label: "Fitter Prospects",
+            icon: UsersRound,
+            matchPrefix: "/admin/fitter-leads",
+            hint: "Fitter funnel + supply-campaign conversion",
           },
         ],
       },
@@ -710,17 +712,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
+        // Tabs follow the claim lifecycle: verify coverage → eligibility
+        // worklists → prior auth → paperwork gates (CMN, bill hold) →
+        // transmit → fix what bounced (AI queue) → appeal denials.
         label: "Worklists",
         icon: ListChecks,
-        hint: "Daily billing worklists — AI queue, verify insurance, eligibility, prior auths, denials, CMN",
+        hint: "Daily billing worklists in claim order — verify insurance, eligibility, prior auths, CMN, bill hold, submit, denials",
         tabs: [
-          {
-            href: "/admin/billing/ai-queue",
-            label: "AI queue",
-            icon: Bot,
-            matchPrefix: "/admin/billing/ai-queue",
-            hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
-          },
           {
             href: "/admin/billing/verify",
             label: "Verify insurance",
@@ -744,27 +742,11 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Active coverages due for re-verification — never-checked, terminating soon, or stale",
           },
           {
-            href: "/admin/billing/auto-submit",
-            label: "Auto-submit",
-            icon: Send,
-            matchPrefix: "/admin/billing/auto-submit",
-            requiredPermission: "admin.tools.manage",
-            hint: "Claims ready to transmit — preflight-clean + active eligibility. Approve a batch or let the cron send them.",
-          },
-          {
             href: "/admin/billing/prior-auths",
             label: "Prior auths",
             icon: ShieldAlert,
             matchPrefix: "/admin/billing/prior-auths",
             hint: "Missed / at-risk SLA + auths expiring soon + drafts to submit",
-          },
-          {
-            href: "/admin/billing/denials-worklist",
-            label: "Denials worklist",
-            icon: Gavel,
-            matchPrefix: "/admin/billing/denials-worklist",
-            requiredPermission: "reports.read",
-            hint: "Open denials ranked by recoverable $ × win-probability",
           },
           {
             href: "/admin/billing/cmn",
@@ -781,6 +763,29 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/bill-hold",
             requiredPermission: "reports.read",
             hint: "Claims held from billing until their signed paperwork is back",
+          },
+          {
+            href: "/admin/billing/auto-submit",
+            label: "Auto-submit",
+            icon: Send,
+            matchPrefix: "/admin/billing/auto-submit",
+            requiredPermission: "admin.tools.manage",
+            hint: "Claims ready to transmit — preflight-clean + active eligibility. Approve a batch or let the cron send them.",
+          },
+          {
+            href: "/admin/billing/ai-queue",
+            label: "AI queue",
+            icon: Bot,
+            matchPrefix: "/admin/billing/ai-queue",
+            hint: "Scrubber-blocked + denial-analyzer worklist with auto-resubmit",
+          },
+          {
+            href: "/admin/billing/denials-worklist",
+            label: "Denials worklist",
+            icon: Gavel,
+            matchPrefix: "/admin/billing/denials-worklist",
+            requiredPermission: "reports.read",
+            hint: "Open denials ranked by recoverable $ × win-probability",
           },
         ],
       },
@@ -1047,7 +1052,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Operations",
         icon: Activity,
-        hint: "Background job health, integrations, delivery failures, webhooks",
+        hint: "Background job health, message delivery, integrations, webhooks",
         tabs: [
           {
             href: "/admin/operations",
@@ -1055,6 +1060,21 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Activity,
             matchPrefix: "/admin/operations",
             hint: "Health of background jobs and pipelines",
+          },
+          {
+            href: "/admin/outbound-messages",
+            label: "Outbound Messages",
+            icon: Send,
+            matchPrefix: "/admin/outbound-messages",
+            requiredPermission: "admin.tools.manage",
+            hint: "Every outbound SMS and email with its delivery result (sent / delivered / failed)",
+          },
+          {
+            href: "/admin/delivery-failures",
+            label: "Delivery Failures",
+            icon: TruckIcon,
+            matchPrefix: "/admin/delivery-failures",
+            hint: "Bounced messages and shipping exceptions",
           },
           {
             href: "/admin/integrations",
@@ -1071,21 +1091,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             requiredPermission: "admin.tools.manage",
             badgeKey: "pacwareReadyToSync",
             hint: "PacWare (DME billing) CSV import & export",
-          },
-          {
-            href: "/admin/outbound-messages",
-            label: "Outbound Messages",
-            icon: Send,
-            matchPrefix: "/admin/outbound-messages",
-            requiredPermission: "admin.tools.manage",
-            hint: "Every outbound SMS and email with its delivery result (sent / delivered / failed)",
-          },
-          {
-            href: "/admin/delivery-failures",
-            label: "Delivery Failures",
-            icon: TruckIcon,
-            matchPrefix: "/admin/delivery-failures",
-            hint: "Bounced messages and shipping exceptions",
           },
           {
             href: "/admin/webhook-deliveries",
@@ -1156,11 +1161,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        // Set-and-forget surfaces: the launch checklist, the feature
-        // on/off switches, and the super-admin credential/test pages.
+        // Set-and-forget surfaces, in launch order: work the checklist,
+        // enter vendor credentials, test the connections, switch the
+        // features on, then rehearse the bots.
         label: "Setup & advanced",
         icon: SlidersHorizontal,
-        hint: "Launch checklist, feature switches, vendor credentials & connection tests, bot rehearsal",
+        hint: "Launch checklist, vendor credentials & connection tests, feature switches, bot rehearsal",
         tabs: [
           {
             href: "/admin/account-setup",
@@ -1170,11 +1176,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "New-account / production launch checklist",
           },
           {
-            href: "/admin/control-center",
-            label: "Control Center",
-            icon: ToggleLeft,
-            matchPrefix: "/admin/control-center",
-            hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
+            href: "/admin/system/configuration",
+            label: "Configuration & tests",
+            icon: SlidersHorizontal,
+            matchPrefix: "/admin/system/configuration",
+            requiredPermission: "system.config.manage",
+            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
           },
           {
             href: "/admin/connection-tests",
@@ -1185,12 +1192,11 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
           },
           {
-            href: "/admin/system/configuration",
-            label: "Configuration & tests",
-            icon: SlidersHorizontal,
-            matchPrefix: "/admin/system/configuration",
-            requiredPermission: "system.config.manage",
-            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
+            href: "/admin/control-center",
+            label: "Control Center",
+            icon: ToggleLeft,
+            matchPrefix: "/admin/control-center",
+            hint: "On/off switches for major features (voice, SMS, campaigns, AI billing, …)",
           },
           {
             href: "/admin/bot-playground",
@@ -2020,10 +2026,6 @@ export function AppShell({
           rightSlot={
             adminEmail ? (
               <div className="flex items-center gap-3">
-                {/* Universal telehealth launcher — start a video visit
-                    with any patient (or someone not in the system yet)
-                    from anywhere in the console. */}
-                <StartVideoVisitButton size="sm" label="Video visit" />
                 <GlobalLookup />
                 <AdminHeaderChip email={adminEmail} role={adminRole} />
               </div>
