@@ -15,31 +15,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APPSHELL_SRC = readFileSync(path.join(__dirname, "AppShell.tsx"), "utf8");
 
 // ---------------------------------------------------------------------------
-// New nav item: Appointment requests (Inbox group)
+// Retired: Appointment requests (Schedule group).
+//
+// The patient-initiated appointment-requests process was removed from the
+// app; this guard keeps the nav entry from being re-added.
 // ---------------------------------------------------------------------------
-describe("AppShell NAV_GROUPS — appointment-requests entry (Inbox group)", () => {
-  it("registers the /admin/appointment-requests href", () => {
-    expect(APPSHELL_SRC).toContain('href: "/admin/appointment-requests"');
+describe("AppShell NAV_GROUPS — retired appointment-requests entry absent", () => {
+  it("does not register the /admin/appointment-requests nav item", () => {
+    expect(APPSHELL_SRC).not.toContain('href: "/admin/appointment-requests"');
+    expect(APPSHELL_SRC).not.toContain('label: "Appointment requests"');
   });
 
-  it("uses 'Appointment requests' as the label", () => {
-    expect(APPSHELL_SRC).toContain('label: "Appointment requests"');
-  });
-
-  it("uses /admin/appointment-requests as the matchPrefix", () => {
-    expect(APPSHELL_SRC).toContain(
-      'matchPrefix: "/admin/appointment-requests"',
-    );
-  });
-
-  it("includes a descriptive hint for the CSR appointment-requests queue", () => {
-    expect(APPSHELL_SRC).toContain(
-      "CSR queue for patient-initiated appointment requests",
-    );
-  });
-
-  it("imports CalendarPlus from lucide-react (icon used by the new item)", () => {
-    expect(APPSHELL_SRC).toContain("CalendarPlus");
+  it("no longer imports the CalendarPlus icon (only the removed item used it)", () => {
+    expect(APPSHELL_SRC).not.toContain("CalendarPlus");
   });
 });
 

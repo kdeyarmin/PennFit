@@ -10,8 +10,7 @@
 //
 // requireAdmin gates everything: every signed-in staff member (admin or
 // agent) can both VIEW and EDIT the shared calendar — it is a company-wide
-// schedule, not a per-user one. Distinct from /admin/appointment-requests
-// (the inbound, patient-initiated triage queue).
+// schedule, not a per-user one.
 //
 // Assignment: an appointment can be assigned to another staff member
 // (`assigned_to_user_id` / `assigned_to_email`, distinct from the created_by

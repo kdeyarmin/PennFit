@@ -75,7 +75,6 @@ import conversationTriageRouter from "./admin/conversation-triage.js";
 import patientAddressHistoryRouter from "./admin/patient-address-history.js";
 import patientTimelineRouter from "./admin/patient-timeline.js";
 import csrShiftsRouter from "./admin/csr-shifts.js";
-import appointmentRequestsRouter from "./admin/appointment-requests.js";
 import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
 import carrierLabelsRouter from "./admin/carrier-labels.js";
 import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
@@ -813,8 +812,7 @@ router.use(officeClosuresRouter);
 router.use(officeHoursRouter);
 // /admin/company-calendar — shared, staff-wide appointment calendar
 // (patient fittings/setups/follow-ups). Any signed-in staff member can
-// view and edit; distinct from the patient-initiated appointment_requests
-// triage queue.
+// view and edit.
 router.use(companyCalendarRouter);
 // /admin/coaching-plans/* — adherence coaching workflow that
 // layers an outreach state machine on top of csr_compliance_alerts.
@@ -838,9 +836,6 @@ router.use(patientTimelineRouter);
 // HIPAA audit-log archive — list flagged rows + admin destroy.
 // CSR shift schedule — who's on now + admin scheduling.
 router.use(csrShiftsRouter);
-// /admin/appointment-requests — CSR queue for patient-initiated
-// appointment requests (fitting help, telehealth, etc.).
-router.use(appointmentRequestsRouter);
 // /admin/shop/orders/:orderId/loss-claims — lost-shipment workflow
 // for paid orders that never arrived. Lifecycle: open →
 // carrier_filed → resolved_refunded | resolved_reshipped |

@@ -91,6 +91,24 @@ export async function getBillHoldWorklist(): Promise<BillHoldWorklist> {
   return (await res.json()) as BillHoldWorklist;
 }
 
+export async function getPatientPaperwork(
+  patientId: string,
+): Promise<PaperworkSummary> {
+  const url = "/resupply-api/admin/patients/paperwork/query";
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify({ patientId }),
+  });
+  if (!res.ok) throw await err(res, "POST", url);
+  return (await res.json()) as PaperworkSummary;
+}
+
 export async function getClaimPaperwork(
   claimId: string,
 ): Promise<PaperworkSummary> {
