@@ -35,8 +35,9 @@ describe("ConsoleRoute — session-required gate still present", () => {
     expect(SRC).toContain('Redirect to="/admin/sign-in"');
   });
 
-  it("still returns null while the session probe is pending", () => {
-    expect(SRC).toContain("isPending) return null");
+  it("still renders a loading indicator while the session probe is pending", () => {
+    expect(SRC).toContain("isPending)");
+    expect(SRC).toContain("Spinner");
   });
 
   it("renders AdminConsole after successful session probe", () => {
