@@ -7,7 +7,7 @@ custom domain (`pennpaps.com` → Cloudflare → Railway edge → app),
 `req.ip` resolves to a Cloudflare colo IP, so every IP-keyed rate
 limiter buckets all custom-domain visitors together. The fix was
 **deliberately deferred** because writing it blind is dangerous: if
-Railway's edge *appends* to a client-supplied `X-Forwarded-For` instead
+Railway's edge _appends_ to a client-supplied `X-Forwarded-For` instead
 of stripping it, then `trust proxy = 2` would let anyone hitting
 `pennfit.up.railway.app` directly spoof their rate-limit identity — a
 worse failure than today's over-blocking.
@@ -57,18 +57,18 @@ in the chains.
 
 ## Step 3 — interpret
 
-| Question the fix depends on | Where to look |
-| --- | --- |
-| **Does Railway strip or append a client-supplied XFF?** | In **D**, does `headers["x-forwarded-for"]` start with `9.9.9.9`? If yes, Railway **appends** → a plain `trust proxy = 2` is spoofable on the Railway host and must NOT be used. If `9.9.9.9` is gone and only your real IP remains, Railway **strips** → hop-count trust is viable. |
-| **How many hops on each host?** | Count the entries in `headers["x-forwarded-for"]` in **A** vs **C** (clean requests). Expected: custom domain = 2 (you, then Cloudflare's egress), Railway host = 1 (just you). If the counts vary across repeated runs, hop-count trust is not viable at all. |
-| **Does Cloudflare's `CF-Connecting-IP` survive Railway's edge?** | In **A**, `headers["cf-connecting-ip"]` should equal your real IP. In **C** it should be `null`. In **B**/**D**, check whether a *client-forged* `CF-Connecting-IP` would also pass through (repeat with `-H "CF-Connecting-IP: 9.9.9.9"` if you want this explicitly) — it will on the Railway host, which is why CF-Connecting-IP must only ever be trusted after validating the request actually traversed Cloudflare. |
-| **What is the immediate peer?** | `socket.remoteAddress` in all four — Railway's internal proxy address. If it's a stable documented range, a `trust proxy` *function* can pin it. |
-| **What does today's code resolve?** | `expressResolution.ip` in **A** — expect a Cloudflare colo IP (the bug). In **C** — expect your real IP (why testing on the Railway host masks it). |
+| Question the fix depends on                                      | Where to look                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Does Railway strip or append a client-supplied XFF?**          | In **D**, does `headers["x-forwarded-for"]` start with `9.9.9.9`? If yes, Railway **appends** → a plain `trust proxy = 2` is spoofable on the Railway host and must NOT be used. If `9.9.9.9` is gone and only your real IP remains, Railway **strips** → hop-count trust is viable.                                                                                                                                      |
+| **How many hops on each host?**                                  | Count the entries in `headers["x-forwarded-for"]` in **A** vs **C** (clean requests). Expected: custom domain = 2 (you, then Cloudflare's egress), Railway host = 1 (just you). If the counts vary across repeated runs, hop-count trust is not viable at all.                                                                                                                                                            |
+| **Does Cloudflare's `CF-Connecting-IP` survive Railway's edge?** | In **A**, `headers["cf-connecting-ip"]` should equal your real IP. In **C** it should be `null`. In **B**/**D**, check whether a _client-forged_ `CF-Connecting-IP` would also pass through (repeat with `-H "CF-Connecting-IP: 9.9.9.9"` if you want this explicitly) — it will on the Railway host, which is why CF-Connecting-IP must only ever be trusted after validating the request actually traversed Cloudflare. |
+| **What is the immediate peer?**                                  | `socket.remoteAddress` in all four — Railway's internal proxy address. If it's a stable documented range, a `trust proxy` _function_ can pin it.                                                                                                                                                                                                                                                                          |
+| **What does today's code resolve?**                              | `expressResolution.ip` in **A** — expect a Cloudflare colo IP (the bug). In **C** — expect your real IP (why testing on the Railway host masks it).                                                                                                                                                                                                                                                                       |
 
 ## Step 4 — what to ask Railway support (the guarantee layer)
 
-The captures above tell you the *observed* behavior; Railway support
-tells you whether it's *guaranteed*. Ask:
+The captures above tell you the _observed_ behavior; Railway support
+tells you whether it's _guaranteed_. Ask:
 
 1. Does Railway's edge proxy **strip/sanitize a client-supplied
    `X-Forwarded-For`** header, or append to it? Is this documented and
@@ -90,11 +90,11 @@ With the answers in hand, the fix lands in
 choosing between:
 
 - **Railway strips client XFF, fixed single hop** → a `trust proxy`
-  *function* (or hop-count) that trusts Railway's hop always and
+  _function_ (or hop-count) that trusts Railway's hop always and
   Cloudflare's hop only when the immediate XFF entry is inside
   [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/).
   A bare `trust proxy = 2` is still wrong even here: Railway-host
-  traffic has only one hop, so 2 would trust the *client's* own header.
+  traffic has only one hop, so 2 would trust the _client's_ own header.
 - **Railway appends, or hop count varies** → ignore XFF arithmetic
   entirely; derive the client from `CF-Connecting-IP` **only after**
   validating the request traversed Cloudflare (immediate forwarded hop

@@ -41,9 +41,7 @@ beforeEach(() => {
 
 describe("auth gating", () => {
   it("401 when not signed in", async () => {
-    const res = await request(makeApp()).get(
-      "/admin/diagnostics/proxy-chain",
-    );
+    const res = await request(makeApp()).get("/admin/diagnostics/proxy-chain");
     expect(res.status).toBe(401);
   });
 
@@ -54,9 +52,7 @@ describe("auth gating", () => {
       role: "agent",
       granularRole: "csr",
     };
-    const res = await request(makeApp()).get(
-      "/admin/diagnostics/proxy-chain",
-    );
+    const res = await request(makeApp()).get("/admin/diagnostics/proxy-chain");
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({
       error: "permission_denied",
@@ -103,9 +99,7 @@ describe("echo contract", () => {
   });
 
   it("reports the socket peer and host with no forwarding headers at all", async () => {
-    const res = await request(makeApp()).get(
-      "/admin/diagnostics/proxy-chain",
-    );
+    const res = await request(makeApp()).get("/admin/diagnostics/proxy-chain");
     expect(res.status).toBe(200);
     expect(res.body.host).toMatch(/127\.0\.0\.1/);
     expect(res.body.socket.remoteAddress).toBeTruthy();
