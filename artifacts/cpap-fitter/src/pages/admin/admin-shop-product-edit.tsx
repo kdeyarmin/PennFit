@@ -647,26 +647,26 @@ export function AdminShopProductEditPage() {
           product can be re-activated from the Stripe Dashboard. Admin role
           required.
         </p>
-<button
-  type="button"
-  data-testid="archive-product"
-  disabled={!product || archiveMutation.isPending || isSubmitting}
-  onClick={onArchive}
-  style={{
-    background: "#fff",
-    color: "#991b1b",
-    border: "1px solid #fecaca",
-    padding: "10px 20px",
-    fontSize: 14,
-    fontWeight: 600,
-    borderRadius: 6,
-    cursor: !product
-      ? "not-allowed"
-      : archiveMutation.isPending
-        ? "wait"
-        : "pointer",
-    opacity: !product || archiveMutation.isPending ? 0.7 : 1,
-  }}
+        <button
+          type="button"
+          data-testid="archive-product"
+          disabled={!product || archiveMutation.isPending || isSubmitting}
+          onClick={onArchive}
+          style={{
+            background: "#fff",
+            color: "#991b1b",
+            border: "1px solid #fecaca",
+            padding: "10px 20px",
+            fontSize: 14,
+            fontWeight: 600,
+            borderRadius: 6,
+            cursor: !product
+              ? "not-allowed"
+              : archiveMutation.isPending
+                ? "wait"
+                : "pointer",
+            opacity: !product || archiveMutation.isPending ? 0.7 : 1,
+          }}
         >
           {archiveMutation.isPending ? "Archiving…" : "Archive product"}
         </button>
