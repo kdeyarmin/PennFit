@@ -3,6 +3,8 @@
 // branch behavior (locked user, expired session, role gating) at
 // a smaller scope.
 
+import { createHash } from "node:crypto";
+
 import express from "express";
 import supertest from "supertest";
 import { describe, expect, it } from "vitest";
@@ -138,6 +140,49 @@ describe("requireSession", () => {
     // Sliding expiry advanced.
     const refreshed = repo.__sessions().find((s) => s.id === inserted.id);
     expect(refreshed!.expiresAt.getTime()).toBeGreaterThan(before.getTime());
+  });
+
+  it("fires the soft UA-mismatch observer but still admits the request", async () => {
+    const { repo, deps } = harness();
+    const mismatches: Array<{ userId: string; sessionId: string }> = [];
+    deps.onSessionUserAgentMismatch = (info) => mismatches.push(info);
+    await seedUserWithPassword(repo, {
+      id: "u_ua",
+      emailLower: "ua@example.com",
+      password: "p",
+    });
+    const tok = issueToken();
+    const inserted = await repo.insertSession({
+      tokenHash: tok.hash,
+      userId: "u_ua",
+      expiresAt: new Date(Date.now() + 60_000),
+      ip: null,
+      // Hash captured at "sign-in" for a DIFFERENT browser than the
+      // one making the request below.
+      userAgentHash: createHash("sha256").update("BrowserA/1.0").digest(),
+    });
+
+    const app = express();
+    app.get("/protected", makeRequireSession(deps), (_req, res) => {
+      res.json({ ok: true });
+    });
+    const r = await supertest(app)
+      .get("/protected")
+      .set("Cookie", `${SESSION_COOKIE}=${tok.raw}`)
+      .set("User-Agent", "BrowserB/2.0");
+    // Soft signal: observed, never blocked.
+    expect(r.status).toBe(200);
+    expect(mismatches).toEqual([
+      { userId: "u_ua", sessionId: inserted.id },
+    ]);
+
+    // Matching UA stays silent.
+    const r2 = await supertest(app)
+      .get("/protected")
+      .set("Cookie", `${SESSION_COOKIE}=${tok.raw}`)
+      .set("User-Agent", "BrowserA/1.0");
+    expect(r2.status).toBe(200);
+    expect(mismatches).toHaveLength(1);
   });
 });
 

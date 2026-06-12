@@ -22,7 +22,7 @@
 // would lock a user out within a 5-minute window if they fat-finger
 // twice in a row.
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { type Request, type Response } from "express";
 import { z } from "zod";
@@ -41,6 +41,7 @@ import { verifyTotpCode } from "../totp";
 
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
+import { hashUserAgent } from "./user-agent";
 
 // Either a 6-digit TOTP code OR a recovery code. The recovery
 // branch accepts anything 1..32 chars and normalizes on the server;
@@ -58,12 +59,6 @@ const VerifyBody = z
     (b) => Boolean(b.code) !== Boolean(b.recoveryCode),
     "exactly one of `code` or `recoveryCode` is required",
   );
-
-function hashUserAgent(req: Request): Buffer | null {
-  const ua = req.headers["user-agent"];
-  if (!ua || typeof ua !== "string") return null;
-  return createHash("sha256").update(ua).digest();
-}
 
 export function makeVerifySignInMfaHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
