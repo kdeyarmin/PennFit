@@ -9,11 +9,18 @@ cross-checked against the prior reviews
 [`feature-review-and-gap-research-2026-06-07.md`](./feature-review-and-gap-research-2026-06-07.md))
 so nothing already fixed or already roadmapped is re-reported as new.
 
-**Shipped in this PR (Wave 1):** P2-1, P2-15, P2-16, P2-18, P2-19 from
+**Shipped in this PR:** P2-1, P2-2, P2-15, P2-16, P2-18, P2-19 from
 the June-10 audit, plus the new DLQ monitor (B1 below) — each with
 regression tests. P1-5 (trust proxy) remains deliberately deferred:
 the correct fix needs live confirmation of Railway's XFF behavior
 behind Cloudflare, which a code-only change can't provide.
+
+**Verified already fixed on main since the June-10 audit** (no action
+needed): P2-3 (payment-plan scan is now keyset-paginated), P2-4 (all
+seven env-cron jobs now `unschedule` when their cron var is unset),
+P2-5 (ISA13 values come from an atomic counter table, migration 0308),
+P2-6 (the ERA reconciler now has per-claim replay idempotency and a
+`dispatch_failed` operator-replay path).
 
 ## Verified-current corrections (things prior docs got wrong or that have since shipped)
 
@@ -46,7 +53,18 @@ a per-request `AbortSignal.timeout` (default 30s, env-tunable via
 whole time; the raw-pg pool had the equivalent guard
 (`connectionTimeoutMillis`) but the runtime data path never did.
 
-### A2. Tree-wide migration duplicate-prefix CI guard (P2-15)
+### A2. Bulk-campaign tick chain survives a transient status re-read failure (P2-2)
+
+`worker/jobs/bulk-campaign-tick.ts`: the step-6 campaign-status
+re-read discarded the PostgREST error, so a transient blip was
+indistinguishable from an admin cancel — the self-re-enqueueing chain
+died and the campaign wedged in `'sending'` until a manual
+pause→resume. An errored re-read now logs and falls through to the
+finalize/reschedule path; the tick entry re-checks status before doing
+any work, so a genuinely cancelled campaign just gets one harmless
+no-op tick.
+
+### A3. Tree-wide migration duplicate-prefix CI guard (P2-15)
 
 `scripts/check-resupply-migration-prefix-tree.sh`, wired into the CI
 drift job for PRs **and pushes to main**. The existing diff-based check
@@ -57,7 +75,7 @@ allowlist of the 20 historical duplicates catches the race on the
 post-merge main run. The allowlist must never grow — fix new
 collisions by renaming the just-merged file to the next free prefix.
 
-### A3. RUN_DB_MIGRATIONS gate hardening (P2-16)
+### A4. RUN_DB_MIGRATIONS gate hardening (P2-16)
 
 `lib/resupply-db/scripts/deploy-migrate.mjs` (classifier in
 `run-db-migrations-gate.mjs`): truthy spellings (`true`/`1`/`yes`/`on`,
@@ -66,7 +84,7 @@ else fails the deploy loudly**. Previously `TRUE` or `1` silently
 skipped migrations while the deploy proceeded — the schema-drift
 incident class in the repo's own post-mortem.
 
-### A4. Auth rate limiter fails closed (P2-18)
+### A5. Auth rate limiter fails closed (P2-18)
 
 `lib/resupply-auth/src/rate-limit.ts`: a failed
 `countRecentFailures` check now denies the attempt (429, reason
@@ -75,7 +93,7 @@ brute-force protection. Availability cost is negligible — if the
 rate-limit table is unreachable, the credential lookup on the same
 repo would fail anyway.
 
-### A5. requireAdmin granular-role lookup fails closed (P2-19)
+### A6. requireAdmin granular-role lookup fails closed (P2-19)
 
 `artifacts/resupply-api/src/middlewares/requireAdmin.ts`: a PostgREST
 **error** (previously silently ignored — only thrown errors hit the
@@ -109,38 +127,33 @@ In priority order; the P-numbers reference
    hops or derive the client from `CF-Connecting-IP` after validating
    the immediate peer. Until then every per-IP limiter keys on
    Cloudflare edge IPs for custom-domain traffic.
-2. **Money/wedge P2 cluster** — P2-3 (payment-plan query truncates at
-   ~1000 rows; plans past the cap never autocharge), P2-2
-   (bulk-campaign wedges in `'sending'` on a transient read error),
-   P2-6 (partially-reconciled 835 permanently stuck; `reconcileEra`
-   not idempotent), P2-5 (ISA13 control-number collisions).
-3. **Error tracking / metrics.** Logging is pino-to-stdout only — no
+2. **Error tracking / metrics.** Logging is pino-to-stdout only — no
    exception aggregation, no APM. Given the "every log line is
    world-readable" PHI posture, prefer self-hosted Sentry/GlitchTip or
    aggressive `beforeSend` scrubbing reusing `lib/logger.ts`'s
    redaction list. Feed business counters into the existing
    `metrics-snapshot` / `metric-alerts-evaluator` substrate rather
    than a new system.
-4. **Full-app-mount regression tests + money-path E2E.** P0-2/P0-3
+3. **Full-app-mount regression tests + money-path E2E.** P0-2/P0-3
    escaped because route tests mount routers without the real `app`
    middleware chain. Add one full-app-mount test per webhook/CSRF
    surface, plus Playwright journeys for cart → Stripe checkout,
    sign-up/sign-in, and one admin mutation (priority order already in
    `e2e/README.md`).
-5. **Customer-visible UX P2s** — P2-7 (`?demo=1` persistently flips
+4. **Customer-visible UX P2s** — P2-7 (`?demo=1` persistently flips
    prod into fake-data mode, no banner/exit), P2-8 (back-button trap
    at `/measure`), P2-20 (camera "degraded" dead end), P2-9 (cart
    qty-0 silent delete), P2-11 (admin inbox never live-refreshes),
    P2-12/13 (bulk send no-confirm / silent failure).
-6. **Refactor the four monoliths** before they cost a real bug:
+5. **Refactor the four monoliths** before they cost a real bug:
    `pages/admin/patient-detail.tsx` (2754 LOC),
    `pages/admin/admin-documents.tsx` (2183),
    `routes/admin/reports.ts` (2514 — split per report type),
    `lib/stripe/webhook-handler.ts` (1878 — event-handler registry).
-7. **Resilience on outbound calls** — explicit timeouts on external
+6. **Resilience on outbound calls** — explicit timeouts on external
    HTTP and a consecutive-failure backoff on the pollers
    (`office-ally-inbound-poll`, therapy nightly sync).
-8. **Frontend polish** — standardize loading skeletons + a single
+7. **Frontend polish** — standardize loading skeletons + a single
    toast queue; WebP/`srcset` for product images on `/shop`; a mobile
    pass on the desktop-first admin console; server-sync the
    signed-in wishlist (currently localStorage-only).
