@@ -27,6 +27,7 @@ import {
   type MaskEntry,
   type MaskType,
 } from "../../data/maskCatalog.js";
+import { applyCompanyIdentityToText } from "../company-info.js";
 
 /** Number of conversation turns the chat route will accept per call. */
 export const MAX_CHAT_TURNS = 12;
@@ -1828,19 +1829,28 @@ export function buildChatSystemPrompt(): string {
     .map((s) => s.trim())
     .join("\n\n");
 
-  if (prompt.length > MAX_SYSTEM_PROMPT_CHARS) {
+  // The knowledge text above ships with the historical brand/contact
+  // strings; rewrite them to whatever the admin saved on the Company
+  // information page (no-op until the org row exists).
+  const rewritten = applyCompanyIdentityToText(prompt);
+  if (rewritten.length > MAX_SYSTEM_PROMPT_CHARS) {
     throw new Error(
-      `chatbotKnowledge: system prompt is ${prompt.length} chars, ` +
+      `chatbotKnowledge: system prompt is ${rewritten.length} chars, ` +
         `over the ${MAX_SYSTEM_PROMPT_CHARS} cap. Trim before deploying.`,
     );
   }
-  return prompt;
+  return rewritten;
 }
 
 /**
  * Static fallback reply when the OpenAI key isn't configured (dev or
  * a misconfigured deploy). The caller surfaces it with `offline: true`
- * so the UI can switch to a "we'll get back to you" tone.
+ * so the UI can switch to a "we'll get back to you" tone. A function
+ * (not a constant) so the phone/email/hours reflect the admin-saved
+ * company info at reply time.
  */
-export const OFFLINE_FALLBACK_REPLY =
-  "Sorry — chat is offline at the moment. The fastest way to reach us is (814) 471-0627 Mon-Fri 9-5 ET, or support@pennpaps.com any time. Our /faq and /insurance pages also cover most questions if you want to take a look.";
+export function offlineFallbackReply(): string {
+  return applyCompanyIdentityToText(
+    "Sorry — chat is offline at the moment. The fastest way to reach us is (814) 471-0627 Mon-Fri 9-5 ET, or support@pennpaps.com any time. Our /faq and /insurance pages also cover most questions if you want to take a look.",
+  );
+}

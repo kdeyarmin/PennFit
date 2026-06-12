@@ -419,20 +419,6 @@ export function buildChecklistItems(
         "WEB_PUSH_VAPID_PUBLIC_KEY + WEB_PUSH_VAPID_PRIVATE_KEY + WEB_PUSH_VAPID_SUBJECT",
     }),
     vendorItem({
-      id: "vendor-apple-wallet",
-      group: "Storefront",
-      title: "Apple Wallet order passes",
-      description:
-        "Signed Apple Wallet passes for orders. Disabled until all five signing vars are set.",
-      configured:
-        isSet(env, "APPLE_WALLET_SIGNER_CERT_PEM") &&
-        isSet(env, "APPLE_WALLET_SIGNER_KEY_PEM") &&
-        isSet(env, "APPLE_WALLET_WWDR_CERT_PEM") &&
-        isSet(env, "APPLE_WALLET_PASS_TYPE_ID") &&
-        isSet(env, "APPLE_WALLET_TEAM_ID"),
-      envHint: "the five APPLE_WALLET_* signing vars",
-    }),
-    vendorItem({
       id: "vendor-public-bucket",
       group: "Storage",
       title: "Public storage bucket",

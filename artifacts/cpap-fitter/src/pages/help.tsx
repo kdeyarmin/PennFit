@@ -31,7 +31,7 @@ import {
   Stethoscope,
   Phone,
 } from "lucide-react";
-import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact";
+import { useCompanyContact } from "@/lib/contact";
 
 /**
  * Help Center hub.
@@ -291,6 +291,7 @@ function TopicCard({ topic }: { topic: HelpTopic }) {
 }
 
 export function Help() {
+  const contact = useCompanyContact();
   useDocumentTitle(
     "Help Center",
     "Step-by-step guides for every PennPaps feature: the Virtual Mask Fitter, ordering, the supply shop, order tracking, accounts, resupply reminders, insurance estimates, and returns.",
@@ -569,14 +570,14 @@ export function Help() {
             <Sparkles className="w-4 h-4" />
             Ask PennBot
           </Button>
-          <a href={`tel:${SUPPORT_PHONE_E164}`}>
+          <a href={`tel:${contact.phoneE164}`}>
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60 gap-2"
             >
               <PhoneCall className="w-4 h-4" />
-              {SUPPORT_PHONE_DISPLAY}
+              {contact.phoneDisplay}
             </Button>
           </a>
         </div>

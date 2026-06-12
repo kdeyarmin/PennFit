@@ -817,6 +817,185 @@ router.post(
   },
 );
 
+// PATCH /admin/shop/products/:productId/details — edit the catalog
+// copy of an existing SKU (name, description, tagline, replacement
+// hint, manufacturer, model number, photo) without leaving the app.
+// Until this endpoint, those fields were create-only and later edits
+// required the Stripe Dashboard; stock/threshold/price already have
+// their own dedicated PATCH endpoints above and stay untouched here.
+//
+// Field semantics:
+//   - omitted        → unchanged
+//   - null           → cleared (metadata key deleted via the ""
+//                      sentinel; imageUrl null empties images[])
+//   - name/description can be updated but not cleared — the catalog
+//     projection requires both, so the schema doesn't accept null.
+//
+// Identity fields are deliberately NOT editable here: `shop_sku` is
+// the stable identifier the seed script and collision guard key on,
+// and `category`/`bundle_contents` change which storefront section
+// (and card layout) the SKU renders in — both are "archive and
+// re-create" operations per the create endpoint's docs.
+//
+// Same guard rails as the sibling PATCH handlers: prod_ prefix check,
+// catalog-membership precheck via projectProduct, 503 in preview
+// mode, per-admin mutation rate limit, cache invalidation on success.
+
+const patchDetailsBodySchema = z
+  .object({
+    name: z.string().trim().min(2).max(250).optional(),
+    description: z.string().trim().min(2).max(2000).optional(),
+    tagline: z.string().trim().min(1).max(250).nullish(),
+    replacementHint: z.string().trim().min(1).max(250).nullish(),
+    manufacturer: z.string().trim().min(1).max(120).nullish(),
+    modelNumber: z.string().trim().min(1).max(120).nullish(),
+    imageUrl: z
+      .string()
+      .trim()
+      .url()
+      .startsWith("https://", "image URL must use https://")
+      .max(500)
+      .nullish(),
+  })
+  .strict();
+
+router.patch(
+  "/admin/shop/products/:productId/details",
+  requirePermission("admin.tools.manage"),
+  adminProductMutationLimiter,
+  async (req, res) => {
+    const productId = String(req.params.productId ?? "");
+    if (!productId.startsWith("prod_")) {
+      res.status(400).json({ error: "invalid_product_id" });
+      return;
+    }
+    const parsed = patchDetailsBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const input = parsed.data;
+    const changedFields = (
+      Object.keys(input) as Array<keyof typeof input>
+    ).filter((k) => input[k] !== undefined);
+    if (changedFields.length === 0) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: [{ path: "", message: "provide at least one field to update" }],
+      });
+      return;
+    }
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    let existing;
+    try {
+      existing = await stripe.products.retrieve(productId, {
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      if (status === 404) {
+        res.status(404).json({ error: "product_not_found" });
+        return;
+      }
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe retrieve failed (details)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_retrieve_failed",
+      });
+      return;
+    }
+    const existingProjected: ShopProductView | null = projectProduct(existing);
+    if (!existingProjected) {
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+
+    // Stripe metadata semantics: "" deletes the key (the null →
+    // cleared contract), a string records the new value, an absent
+    // key in the patch object leaves the stored value untouched.
+    const metadataPatch: Record<string, string> = {};
+    const metadataKeyByField = {
+      tagline: "tagline",
+      replacementHint: "replacement_hint",
+      manufacturer: "manufacturer",
+      modelNumber: "model_number",
+    } as const;
+    for (const [field, metaKey] of Object.entries(metadataKeyByField) as Array<
+      [keyof typeof metadataKeyByField, string]
+    >) {
+      const value = input[field];
+      if (value === undefined) continue;
+      metadataPatch[metaKey] = value === null ? "" : value;
+    }
+
+    const updatePayload: Stripe.ProductUpdateParams = {
+      expand: ["default_price"],
+    };
+    if (input.name !== undefined) updatePayload.name = input.name;
+    if (input.description !== undefined) {
+      updatePayload.description = input.description;
+    }
+    if (Object.keys(metadataPatch).length > 0) {
+      updatePayload.metadata = metadataPatch;
+    }
+    if (input.imageUrl !== undefined) {
+      updatePayload.images = input.imageUrl === null ? [] : [input.imageUrl];
+    }
+
+    let updated;
+    try {
+      updated = await stripe.products.update(productId, updatePayload);
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe update failed (details)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_update_failed",
+      });
+      return;
+    }
+
+    const projected: ShopProductView | null = projectProduct(updated);
+    if (!projected) {
+      res.status(422).json({ error: "unprojectable_product" });
+      return;
+    }
+
+    // Catalog copy changed — flush the public 60s cache so the
+    // storefront serves the edit immediately.
+    invalidateShopProductsCache();
+
+    req.log?.info?.(
+      { productId, changedFields },
+      "shop/admin/products: details updated",
+    );
+    res.json({ product: projected });
+  },
+);
+
 // POST /admin/shop/products — create a new SKU in the Stripe catalog.
 //
 // What this writes (idempotent against `metadata.shop_sku`):

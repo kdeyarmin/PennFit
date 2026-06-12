@@ -152,6 +152,19 @@ export const RATE_LIMITS = {
   },
 
   /**
+   * POST /resupply-api/stripe/webhook — Stripe-signed. Signature
+   * verification (HMAC) is the primary gate; this limiter is a
+   * pre-verification DoS shield so a flood of forged payloads can't
+   * exhaust CPU on body parsing or the signature math. 300/min/IP
+   * is well above any real Stripe delivery burst.
+   */
+  stripe_webhook: {
+    windowMs: 60 * 1000,
+    limit: 300,
+    doc: "POST /resupply-api/stripe/webhook — pre-verification DoS shield, Stripe HMAC still gates body",
+  },
+
+  /**
    * Vendor push webhooks (ResMed AirView, Philips Care, React
    * Health). HMAC verification is the primary authorization gate;
    * this is purely a pre-verification DoS shield so a flood of

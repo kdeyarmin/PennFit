@@ -14,11 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
-import {
-  SUPPORT_EMAIL,
-  SUPPORT_PHONE_DISPLAY,
-  SUPPORT_PHONE_E164,
-} from "@/lib/contact";
+import { useCompanyContact } from "@/lib/contact";
 
 /**
  * Public policy page for the 60-day comfort/fit guarantee. Linked
@@ -27,6 +23,7 @@ import {
  * the rules.
  */
 export function ComfortGuaranteePage() {
+  const contact = useCompanyContact();
   useDocumentTitle(
     "60-day comfort guarantee",
     "Penn Home Medical Supply backs every CPAP mask with a 60-day comfort guarantee — swap for a different size or style if it doesn't fit.",
@@ -185,27 +182,27 @@ export function ComfortGuaranteePage() {
           Email{" "}
           <a
             className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
-            href={`mailto:${SUPPORT_EMAIL}`}
+            href={`mailto:${contact.email}`}
           >
-            {SUPPORT_EMAIL}
+            {contact.email}
           </a>{" "}
           with your order number, or call{" "}
           <a
             className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
-            href={`tel:${SUPPORT_PHONE_E164}`}
+            href={`tel:${contact.phoneE164}`}
           >
-            {SUPPORT_PHONE_DISPLAY}
+            {contact.phoneDisplay}
           </a>{" "}
           Monday–Friday, 8am–6pm ET. If you&apos;re signed in, you can also
           start it directly from your order history.
         </p>
         <div className="flex flex-wrap gap-3">
-          <a href={`mailto:${SUPPORT_EMAIL}`}>
+          <a href={`mailto:${contact.email}`}>
             <Button variant="outline">
               <Mail className="w-4 h-4 mr-2" /> Email support
             </Button>
           </a>
-          <a href={`tel:${SUPPORT_PHONE_E164}`}>
+          <a href={`tel:${contact.phoneE164}`}>
             <Button variant="outline">
               <Phone className="w-4 h-4 mr-2" /> Call us
             </Button>

@@ -218,7 +218,9 @@ SYSTEM (mostly admin / super-admin):
   - Operations: Operations (/admin/operations), Integrations (/admin/integrations) — therapy-cloud /
     payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange with the legacy billing
     system, Delivery Failures (/admin/delivery-failures), Webhook Deliveries (/admin/webhook-deliveries).
-  - Settings (day-to-day): Settings (/admin/settings), Closures (/admin/closures),
+  - Settings (day-to-day): Settings (/admin/settings), Company information
+    (/admin/company-information) — company name, addresses, support contact, and identifiers
+    used on documents, the storefront, chat, and SMS/email branding, Closures (/admin/closures),
     Team (/admin/team) — invite/role management (admin-only), Locations (/admin/locations) —
     only with multi-branch enabled, Account security (/admin/security) — your own password + MFA.
   - Setup & advanced: Account Setup (/admin/account-setup) — launch checklist,

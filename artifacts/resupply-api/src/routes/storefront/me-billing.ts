@@ -234,34 +234,42 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     state?: string;
     zip?: string;
   } | null;
-  const { pdf } = await renderStatementPdf({
-    patient: {
-      name: `${patient.legal_first_name} ${patient.legal_last_name}`,
-      address: address?.line1
-        ? {
-            line1: address.line1,
-            line2: address.line2,
-            city: address.city ?? "",
-            state: address.state ?? "",
-            zip: address.zip ?? "",
-          }
-        : undefined,
-      email: patient.email,
-    },
-    dmeOrganization: {
-      legalName:
-        identity.organization?.legal_name ??
-        identity.billingProvider.organizationName,
-      addressLine1: identity.billingProvider.address.line1,
-      city: identity.billingProvider.address.city,
-      state: identity.billingProvider.address.state,
-      zip: identity.billingProvider.address.zip,
-      phoneE164: identity.organization?.phone_e164 ?? "+10000000000",
-      billingEmail:
-        identity.organization?.billing_email ?? "billing@example.com",
-    },
-    lineItems,
-  });
+  let pdf: Buffer;
+  try {
+    const result = await renderStatementPdf({
+      patient: {
+        name: `${patient.legal_first_name} ${patient.legal_last_name}`,
+        address: address?.line1
+          ? {
+              line1: address.line1,
+              line2: address.line2,
+              city: address.city ?? "",
+              state: address.state ?? "",
+              zip: address.zip ?? "",
+            }
+          : undefined,
+        email: patient.email,
+      },
+      dmeOrganization: {
+        legalName:
+          identity.organization?.legal_name ??
+          identity.billingProvider.organizationName,
+        addressLine1: identity.billingProvider.address.line1,
+        city: identity.billingProvider.address.city,
+        state: identity.billingProvider.address.state,
+        zip: identity.billingProvider.address.zip,
+        phoneE164: identity.organization?.phone_e164 ?? "+10000000000",
+        billingEmail:
+          identity.organization?.billing_email ?? "billing@example.com",
+      },
+      lineItems,
+    });
+    pdf = result.pdf;
+  } catch (err) {
+    logger.warn({ err }, "billing_statement.pdf render failed");
+    res.status(500).json({ error: "render_failed" });
+    return;
+  }
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(

@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
+import { SupportPhoneLink } from "@/components/company-contact";
 import {
   Card,
   CardContent,
@@ -380,10 +381,8 @@ export function HowItWorks() {
                 Our care team offers secure telehealth video calls for equipment
                 setups, mask fitting help, and troubleshooting — no app to
                 install, just a link we text or email you. Call{" "}
-                <a className="underline" href="tel:+18144710627">
-                  (814) 471-0627
-                </a>{" "}
-                or ask in chat to set one up.
+                <SupportPhoneLink className="underline" /> or ask in chat to set
+                one up.
               </p>
             </div>
             <Link href="/faq#telehealth-video-visits">

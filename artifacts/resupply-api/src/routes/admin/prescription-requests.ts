@@ -257,10 +257,11 @@ router.post(
     }
 
     // Register the signature-tracking row so the packet gets a stable
-    // tracking code + barcode and shows up in the outstanding-signatures
-    // dashboard. Snapshot the provider/patient labels for at-a-glance
-    // rendering. Best-effort: a tracking failure must not fail the
-    // packet create (the PDF just renders without a barcode).
+    // tracking code + barcode. It only appears on the outstanding-
+    // signatures dashboard once actually sent (recordTrackingSent bumps
+    // sent_count on dispatch). Snapshot the provider/patient labels for
+    // at-a-glance rendering. Best-effort: a tracking failure must not
+    // fail the packet create (the PDF just renders without a barcode).
     let trackingCode: string | null = null;
     try {
       const reg = await registerSignatureTracking(supabase, {

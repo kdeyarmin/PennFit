@@ -37,6 +37,7 @@ import {
 } from "recharts";
 
 import { Spinner } from "@/components/admin/Spinner";
+import { useCompanyContact } from "@/lib/contact";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   fetchTherapyUsageReport,
@@ -226,6 +227,7 @@ function CoverBand({
   generatedAt: string;
   groupCount: number;
 }) {
+  const contact = useCompanyContact();
   return (
     <header
       className="relative overflow-hidden px-8 pt-9 pb-8"
@@ -250,7 +252,7 @@ function CoverBand({
       >
         <span>PennFit</span>
         <span style={{ opacity: 0.5 }}>·</span>
-        <span>PennPAPs Therapy Management</span>
+        <span>{contact.name} Therapy Management</span>
       </div>
 
       <h2
@@ -681,6 +683,7 @@ function CapabilitiesSection() {
 }
 
 function ReportFooter() {
+  const contact = useCompanyContact();
   return (
     <footer
       className="flex flex-col gap-1 border-t pt-5 text-[11px]"
@@ -697,9 +700,9 @@ function ReportFooter() {
             color: "hsl(var(--penn-navy))",
           }}
         >
-          PennFit · PennPAPs
+          PennFit · {contact.name}
         </span>
-        <span>info@pennpaps.com</span>
+        <span>{contact.generalEmail}</span>
       </div>
       <p>
         Confidential — prepared for the named referring practice. Metrics are

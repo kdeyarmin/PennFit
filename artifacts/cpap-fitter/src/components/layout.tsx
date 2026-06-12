@@ -17,12 +17,7 @@ import { MiniCart } from "@/components/shop/mini-cart";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { FloatingContactLauncher } from "@/components/floating-contact-launcher";
 import { useWishlist } from "@/lib/wishlist";
-import {
-  SUPPORT_EMAIL,
-  SUPPORT_HOURS,
-  SUPPORT_PHONE_DISPLAY,
-  SUPPORT_PHONE_E164,
-} from "@/lib/contact";
+import { useCompanyContact } from "@/lib/contact";
 
 // Wishlist nav indicator — small heart with count badge that
 // only renders once the shopper has saved at least one item, so
@@ -237,6 +232,7 @@ function YourOrdersNavLink() {
  * @returns The layout element containing header, navigation, main content, and footer
  */
 export function Layout({ children }: { children: React.ReactNode }) {
+  const contact = useCompanyContact();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -636,24 +632,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <ul className="space-y-1 text-sm">
                   <li>
                     <a
-                      href={`tel:${SUPPORT_PHONE_E164}`}
+                      href={`tel:${contact.phoneE164}`}
                       className="text-muted-foreground hover:text-primary transition-colors"
                       data-testid="footer-support-phone"
                     >
-                      {SUPPORT_PHONE_DISPLAY}
+                      {contact.phoneDisplay}
                     </a>
                   </li>
                   <li>
                     <a
-                      href={`mailto:${SUPPORT_EMAIL}`}
+                      href={`mailto:${contact.email}`}
                       className="text-muted-foreground hover:text-primary transition-colors break-all"
                       data-testid="footer-support-email"
                     >
-                      {SUPPORT_EMAIL}
+                      {contact.email}
                     </a>
                   </li>
                   <li className="text-xs text-muted-foreground/80">
-                    {SUPPORT_HOURS}
+                    {contact.hours}
                   </li>
                 </ul>
               </div>

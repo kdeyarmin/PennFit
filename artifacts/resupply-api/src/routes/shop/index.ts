@@ -56,7 +56,6 @@ import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
 import meBillingPortalRouter from "./me-billing-portal";
 import meCaregiverRouter from "./me-caregiver";
-import meWalletPassRouter from "./me-wallet-pass";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -144,11 +143,6 @@ router.use(meBillingPortalRouter);
 // on behalf of the patient). Critical for the elderly CPAP cohort
 // where adult-child / spouse caregivers manage logistics.
 router.use(meCaregiverRouter);
-// /shop/me/wallet-pass.pkpass — Apple Wallet member card. Returns
-// 503 unless Apple Wallet env vars are configured (PASS_TYPE_ID,
-// TEAM_ID, signer key + cert PEMs, WWDR cert PEM) — same posture
-// as messaging / push.
-router.use(meWalletPassRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);

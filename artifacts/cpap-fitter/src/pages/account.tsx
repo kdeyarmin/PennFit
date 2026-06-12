@@ -23,6 +23,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
+import { SupportEmailLink } from "@/components/company-contact";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
@@ -56,7 +57,6 @@ import { CustomerChatSection } from "@/components/customer-chat-section";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { CaregiverSection } from "@/components/caregiver-section";
 import { PushPromptBanner } from "@/components/push-prompt-banner";
-import { WalletPassSection } from "@/components/wallet-pass-section";
 import {
   EquipmentRegistrySection,
   EsignFormsSection,
@@ -439,7 +439,6 @@ function AccountInner() {
                 <EsignFormsSection />
                 <ReferralProgramSection />
                 <CaregiverSection />
-                <WalletPassSection />
                 <CommPrefsSection />
                 <DataExportSection />
               </>
@@ -492,12 +491,7 @@ function DataExportSection() {
         orders, subscriptions, returns, reviews, communication preferences. The
         download is a JSON file; clinical / insurance data isn&apos;t included
         (those live in a separate system — email{" "}
-        <a
-          className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
-          href="mailto:support@pennpaps.com"
-        >
-          support@pennpaps.com
-        </a>{" "}
+        <SupportEmailLink className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline" />{" "}
         for that).
       </p>
       <div>

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
+import companyInfoRouter from "./company-info.js";
 import recommendRouter from "./recommend.js";
 import ordersRouter from "./orders.js";
 import trackOrderRouter from "./track-order.js";
@@ -19,6 +20,9 @@ import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// /api/company-info — public business identity (name, support phone /
+// email / hours) sourced from the admin Company information page.
+router.use(companyInfoRouter);
 router.use(recommendRouter);
 router.use(ordersRouter);
 router.use(trackOrderRouter);

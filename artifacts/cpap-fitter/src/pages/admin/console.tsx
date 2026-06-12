@@ -423,6 +423,11 @@ const AdminShopProductNewPage = lazyWithRetry(() =>
     default: m.AdminShopProductNewPage,
   })),
 );
+const AdminShopProductEditPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shop-product-edit").then((m) => ({
+    default: m.AdminShopProductEditPage,
+  })),
+);
 const AdminShopInventoryReconcilePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-shop-inventory-reconcile").then((m) => ({
     default: m.AdminShopInventoryReconcilePage,
@@ -810,6 +815,13 @@ function AdminConsole() {
               path="/admin/billing/config/organization"
               component={AdminBillingConfigOrganizationPage}
             />
+            {/* Settings-group alias for the same page: the company
+                identity feeds documents, storefront, chat, and SMS/email
+                branding — not just billing. */}
+            <Route
+              path="/admin/company-information"
+              component={AdminBillingConfigOrganizationPage}
+            />
             <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}
@@ -899,6 +911,10 @@ function AdminConsole() {
             <Route
               path="/admin/shop/inventory/new"
               component={AdminShopProductNewPage}
+            />
+            <Route
+              path="/admin/shop/inventory/:productId/edit"
+              component={AdminShopProductEditPage}
             />
             <Route
               path="/admin/shop/inventory/reconcile"

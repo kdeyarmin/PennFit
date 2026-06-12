@@ -508,11 +508,18 @@ router.get(
     const supabase = getSupabaseServiceRoleClient();
     const loaded = await loadPacketForRender(supabase, parsed.data.id, res);
     if (!loaded) return;
-    const pdf = await renderManualDocumentPacketToPdf(
-      supabase,
-      loaded.packet,
-      loaded.documents,
-    );
+    let pdf: Buffer;
+    try {
+      pdf = await renderManualDocumentPacketToPdf(
+        supabase,
+        loaded.packet,
+        loaded.documents,
+      );
+    } catch (err) {
+      logger.warn({ err }, "manual_document_packet.pdf render failed");
+      res.status(500).json({ error: "render_failed" });
+      return;
+    }
 
     await logAudit({
       action: "manual_document_packet.downloaded",
