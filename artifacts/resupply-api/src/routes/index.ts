@@ -54,6 +54,7 @@ import adminProviderEsignRouter from "./admin/provider-esign.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
+import referralReviewsRouter from "./admin/referral-reviews.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
@@ -773,7 +774,12 @@ router.use(complianceAttestationRouter);
 // The webhook lives at /fax/webhook (mounted elsewhere); this is
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
-router.use(inboundFaxesRouter); // /admin/equipment-recalls/* — manufacturer recall registry + the
+router.use(inboundFaxesRouter);
+// /admin/referral-reviews/* — the Referral Reviewer: AI-extracted
+// intake from faxed/uploaded referral packets, human-reviewed and
+// explicitly accepted into a new patient record.
+router.use(referralReviewsRouter);
+// /admin/equipment-recalls/* — manufacturer recall registry + the
 // scan endpoint that surfaces affected patients. Required for
 // Philips-DreamStation-style workflows where every DME needs to
 // know which dispensed serials are in the recall lot.

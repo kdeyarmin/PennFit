@@ -23,8 +23,8 @@ export default function NotFound() {
           Page not found
         </h1>
         <p className="text-sm mb-6" style={{ color: "hsl(var(--ink-2))" }}>
-          That route is not part of the admin console. Phase 0 only ships the
-          home placeholder.
+          That admin route doesn't exist. Use the link below to return to the
+          console home.
         </p>
         <Link
           href="/admin"

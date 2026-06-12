@@ -351,25 +351,23 @@ describe("tryClaimReminderDedupKey — source structural checks (PR change)", ()
 
   it("returns true on successful INSERT (won the race)", () => {
     // The success branch returns true so the caller proceeds.
-    const successComment = SRC.indexOf("won the race");
-    expect(successComment).toBeGreaterThan(-1);
-    const returnTrueIdx = SRC.indexOf(
-      "return { proceed: true, key }",
-      successComment,
-    );
-    expect(returnTrueIdx).toBeGreaterThan(successComment);
+    // The comment and return are on the same line.
+    expect(SRC).toContain("won the race");
+    expect(SRC).toContain("return { proceed: true, key }");
+    // Both appear before the 23505 unique-violation branch.
+    const returnTrueIdx = SRC.indexOf("return { proceed: true, key }");
+    const uniqueViolationIdx = SRC.indexOf('error.code === "23505"');
+    expect(returnTrueIdx).toBeLessThan(uniqueViolationIdx);
   });
 
-  it("returns true (fail-open) on unexpected DB errors — better duplicate than silence", () => {
-    // Any non-23505 error still returns true so the send proceeds.
+  it("throws (fail-closed) on unexpected DB errors — prevents duplicate reminders on retry", () => {
+    // Any non-23505 error throws so pg-boss retries the job instead of
+    // sending a duplicate reminder without idempotency protection.
     expect(SRC).toContain("reminder_dedup_insert_failed");
-    const failOpenIdx = SRC.indexOf("reminder_dedup_insert_failed");
-    // After the warn, must return true
-    const returnTrueAfterFailIdx = SRC.indexOf(
-      "return { proceed: true, key }",
-      failOpenIdx,
-    );
-    expect(returnTrueAfterFailIdx).toBeGreaterThan(failOpenIdx);
+    const failClosedIdx = SRC.indexOf("reminder_dedup_insert_failed");
+    // After the error log, must throw
+    const throwIdx = SRC.indexOf("throw new Error", failClosedIdx);
+    expect(throwIdx).toBeGreaterThan(failClosedIdx);
   });
 
   it("builds the dedup key from channel, patientId, episodeId, and today's UTC date", () => {

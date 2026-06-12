@@ -188,6 +188,31 @@ export const RATE_LIMITS = {
     limit: 60,
     doc: "Provider portal — prescriber-facing, public discovery + login flow",
   },
+
+  /**
+   * POST /resupply-api/email/sendgrid-events — SendGrid Event Webhook.
+   * ECDSA signature verification is the real authorization gate; this
+   * pre-verification DoS shield keeps a flood of unsigned/forged
+   * payloads from burning CPU on body parsing or signature math.
+   * 300/min/IP mirrors the Stripe webhook limiter.
+   */
+  sendgrid_events: {
+    windowMs: 60 * 1000,
+    limit: 300,
+    doc: "POST /email/sendgrid-events — pre-verification DoS shield, SendGrid ECDSA still gates body",
+  },
+
+  /**
+   * POST /shop/validate-address — public address-validation probe.
+   * Pure local heuristic (no third-party API cost), but still a
+   * public POST that should not be hammered. 60/min/IP is generous
+   * for any legitimate checkout flow.
+   */
+  shop_validate_address: {
+    windowMs: 60 * 1000,
+    limit: 60,
+    doc: "POST /shop/validate-address — public local-heuristic probe, no third-party cost",
+  },
 } as const;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

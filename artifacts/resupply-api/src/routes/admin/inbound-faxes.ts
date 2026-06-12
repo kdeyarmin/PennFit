@@ -130,6 +130,26 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
 
+    // Linked referral reviews (one batched lookup) so the triage UI can
+    // badge faxes the Referral Reviewer has picked up.
+    const reviewByFaxId = new Map<string, { id: string; status: string }>();
+    const faxIds = (data ?? []).map((r) => r.id);
+    if (faxIds.length > 0) {
+      const { data: reviews } = await supabase
+        .schema("resupply")
+        .from("referral_reviews")
+        .select("id, status, inbound_fax_id")
+        .in("inbound_fax_id", faxIds);
+      for (const rev of reviews ?? []) {
+        if (rev.inbound_fax_id) {
+          reviewByFaxId.set(rev.inbound_fax_id, {
+            id: rev.id,
+            status: rev.status,
+          });
+        }
+      }
+    }
+
     res.json({
       faxes: (data ?? []).map((r) => ({
         id: r.id,
@@ -156,6 +176,8 @@ router.get(
         autoFiledAt: r.auto_filed_at,
         signatureTrackingId: r.signature_tracking_id,
         chartDocumentId: r.chart_document_id,
+        referralReviewId: reviewByFaxId.get(r.id)?.id ?? null,
+        referralReviewStatus: reviewByFaxId.get(r.id)?.status ?? null,
       })),
     });
   },
@@ -183,6 +205,15 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Linked referral review (when the Referral Reviewer opened one for
+    // this fax) so the triage UI can deep-link to it.
+    const { data: review } = await supabase
+      .schema("resupply")
+      .from("referral_reviews")
+      .select("id, status")
+      .eq("inbound_fax_id", row.id)
+      .limit(1)
+      .maybeSingle();
     res.json({
       id: row.id,
       twilioFaxSid: row.twilio_fax_sid,
@@ -212,6 +243,8 @@ router.get(
       autoFiledAt: row.auto_filed_at,
       signatureTrackingId: row.signature_tracking_id,
       chartDocumentId: row.chart_document_id,
+      referralReviewId: review?.id ?? null,
+      referralReviewStatus: review?.status ?? null,
     });
   },
 );

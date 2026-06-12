@@ -163,6 +163,11 @@ const AdminInboundFaxesPage = lazyWithRetry(() =>
     default: m.AdminInboundFaxesPage,
   })),
 );
+const AdminReferralReviewsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-referral-reviews").then((m) => ({
+    default: m.AdminReferralReviewsPage,
+  })),
+);
 const AdminPrescriptionRequestsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-prescription-requests").then((m) => ({
     default: m.AdminPrescriptionRequestsPage,
@@ -990,6 +995,10 @@ function AdminConsole() {
               component={AdminInboundFaxesPage}
             />
             <Route
+              path="/admin/referral-reviews"
+              component={AdminReferralReviewsPage}
+            />
+            <Route
               path="/admin/patients/:patientId/prescription-requests"
               component={AdminPrescriptionRequestsPage}
             />
@@ -1183,7 +1192,12 @@ function AdminConsole() {
 // session is present.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
-  if (isPending) return null;
+  if (isPending)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner label="Checking sign-in…" />
+      </div>
+    );
   if (!data) return <Redirect to="/admin/sign-in" />;
   return <AdminConsole />;
 }
