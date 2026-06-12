@@ -108,7 +108,13 @@ router.post(
   async (req, res) => {
     const parsed = patientIdBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "invalid_body" });
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
       return;
     }
     const rows = await listPatientRequirements(parsed.data.patientId);
