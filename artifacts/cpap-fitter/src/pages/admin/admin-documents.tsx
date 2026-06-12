@@ -9,6 +9,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { ApiError } from "@workspace/api-client-react/admin";
+
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Badge } from "@/components/admin/Badge";
@@ -81,6 +83,27 @@ const PACKET_STATUS_LABEL: Record<ManualDocumentPacketStatus, string> = {
   draft: "Draft",
   sent: "Sent",
 };
+
+// Friendly text for the error codes the send/attach endpoints return;
+// falls back to describeError for everything else.
+function sendErrorText(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    const code = (err.data as { error?: string } | null)?.error;
+    switch (code) {
+      case "email_not_configured":
+        return "Email sending isn't configured on this server — download the PDF instead.";
+      case "fax_not_configured":
+        return "Fax sending isn't configured on this server — download the PDF instead.";
+      case "no_recipient_email":
+        return "Enter an email address first.";
+      case "no_recipient_fax":
+        return "Enter a fax number first.";
+      case "packet_documents_missing":
+        return "Some documents in this packet have been deleted — save the packet to drop them, then resend.";
+    }
+  }
+  return describeError(err).detail ?? fallback;
+}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -172,6 +195,18 @@ export function AdminDocumentsPage() {
       else next.add(id);
       return next;
     });
+
+  // Packet members follow the table's order, not the order the boxes
+  // were ticked; ids checked under a different status filter (so not
+  // currently listed) keep their tick order at the end.
+  const orderedCheckedIds = (): string[] => {
+    const ordered = documents
+      .filter((d) => checkedIds.has(d.id))
+      .map((d) => d.id);
+    const seen = new Set(ordered);
+    for (const id of checkedIds) if (!seen.has(id)) ordered.push(id);
+    return ordered;
+  };
 
   const createPacket = useMutation({
     mutationFn: (documentIds: string[]) =>
@@ -299,7 +334,7 @@ export function AdminDocumentsPage() {
                   isLoading={createPacket.isPending}
                   onClick={() => {
                     setPacketError(null);
-                    createPacket.mutate([...checkedIds]);
+                    createPacket.mutate(orderedCheckedIds());
                   }}
                 >
                   Create packet from selected
@@ -944,17 +979,21 @@ function DocumentEditorForm({
       }),
   });
 
+  // The send paths persist the form first so the rendered PDF always
+  // matches what's typed — same contract as the packet editor.
+  const persistDocument = () =>
+    updateManualDocument(doc.id, {
+      title: title.trim(),
+      fields,
+      body: body.trim() ? body : null,
+      recipientName: recipientName.trim() || null,
+      recipientAddress: recipientAddress.trim() || null,
+      recipientEmail: recipientEmail.trim() || null,
+      recipientFaxE164: recipientFax.trim() || null,
+    });
+
   const save = useMutation({
-    mutationFn: () =>
-      updateManualDocument(doc.id, {
-        title: title.trim(),
-        fields,
-        body: body.trim() ? body : null,
-        recipientName: recipientName.trim() || null,
-        recipientAddress: recipientAddress.trim() || null,
-        recipientEmail: recipientEmail.trim() || null,
-        recipientFaxE164: recipientFax.trim() || null,
-      }),
+    mutationFn: persistDocument,
     onSuccess: () => {
       setMsg({ kind: "ok", text: "Saved." });
       onSaved();
@@ -1160,6 +1199,7 @@ function DocumentEditorForm({
           documentId={doc.id}
           defaultEmail={recipientEmail}
           defaultFax={recipientFax}
+          persist={persistDocument}
           onChanged={onSaved}
         />
       </div>
@@ -1289,15 +1329,22 @@ function SendActions({
   documentId,
   defaultEmail,
   defaultFax,
+  persist,
   onChanged,
 }: {
   documentId: string;
   defaultEmail: string;
   defaultFax: string;
+  persist: () => Promise<unknown>;
   onChanged: () => void;
 }) {
-  const [email, setEmail] = useState(defaultEmail);
-  const [fax, setFax] = useState(defaultFax);
+  // The destination inputs mirror the Recipient block above (including
+  // "Prefill from chart") until the operator types a different
+  // destination here — then their override wins.
+  const [emailOverride, setEmailOverride] = useState<string | null>(null);
+  const [faxOverride, setFaxOverride] = useState<string | null>(null);
+  const email = emailOverride ?? defaultEmail;
+  const fax = faxOverride ?? defaultFax;
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<{ id: string; name: string } | null>(
     null,
@@ -1306,34 +1353,39 @@ function SendActions({
     null,
   );
 
+  // Send paths persist the form first so the emailed/faxed PDF always
+  // matches what's typed in the editor above.
   const emailMut = useMutation({
-    mutationFn: () =>
-      sendManualDocumentEmail(documentId, { email: email.trim() || undefined }),
+    mutationFn: async () => {
+      await persist();
+      return sendManualDocumentEmail(documentId, { email: email.trim() });
+    },
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Emailed to the recipient." });
+      setMsg({ kind: "ok", text: "Saved and emailed to the recipient." });
       onChanged();
     },
     onError: (err) =>
-      setMsg({
-        kind: "err",
-        text: describeError(err).detail ?? "Email failed.",
-      }),
+      setMsg({ kind: "err", text: sendErrorText(err, "Email failed.") }),
   });
 
   const faxMut = useMutation({
-    mutationFn: () =>
-      sendManualDocumentFax(documentId, { fax: fax.trim() || undefined }),
+    mutationFn: async () => {
+      await persist();
+      return sendManualDocumentFax(documentId, { fax: fax.trim() });
+    },
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Fax queued." });
+      setMsg({ kind: "ok", text: "Saved and queued the fax." });
       onChanged();
     },
     onError: (err) =>
-      setMsg({ kind: "err", text: describeError(err).detail ?? "Fax failed." }),
+      setMsg({ kind: "err", text: sendErrorText(err, "Fax failed.") }),
   });
 
   const attachMut = useMutation({
-    mutationFn: (patientId: string) =>
-      attachManualDocument(documentId, { patientId }),
+    mutationFn: async (patientId: string) => {
+      await persist();
+      return attachManualDocument(documentId, { patientId });
+    },
     onSuccess: () => {
       setMsg({
         kind: "ok",
@@ -1377,13 +1429,17 @@ function SendActions({
             type="email"
             placeholder="name@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => setEmailOverride(e.target.value)}
           />
         </div>
         <Button
           intent="secondary"
           isLoading={emailMut.isPending}
           onClick={() => {
+            if (!email.trim()) {
+              setMsg({ kind: "err", text: "Enter an email address first." });
+              return;
+            }
             setMsg(null);
             emailMut.mutate();
           }}
@@ -1400,13 +1456,17 @@ function SendActions({
             id="sendFax"
             placeholder="+12155551234"
             value={fax}
-            onChange={(e) => setFax(e.target.value)}
+            onChange={(e) => setFaxOverride(e.target.value)}
           />
         </div>
         <Button
           intent="secondary"
           isLoading={faxMut.isPending}
           onClick={() => {
+            if (!fax.trim()) {
+              setMsg({ kind: "err", text: "Enter a fax number first." });
+              return;
+            }
             setMsg(null);
             faxMut.mutate();
           }}
@@ -1509,6 +1569,10 @@ function SendActions({
           {msg.text}
         </div>
       )}
+      <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        “Email document”, “Send fax”, and “File to chart” save your edits first,
+        so the PDF always matches what's typed above.
+      </p>
     </div>
   );
 }
@@ -1700,10 +1764,7 @@ function PacketEditorForm({
       onSaved();
     },
     onError: (err) =>
-      setMsg({
-        kind: "err",
-        text: describeError(err).detail ?? "Email failed.",
-      }),
+      setMsg({ kind: "err", text: sendErrorText(err, "Email failed.") }),
   });
 
   const faxMut = useMutation({
@@ -1718,8 +1779,36 @@ function PacketEditorForm({
       onSaved();
     },
     onError: (err) =>
-      setMsg({ kind: "err", text: describeError(err).detail ?? "Fax failed." }),
+      setMsg({ kind: "err", text: sendErrorText(err, "Fax failed.") }),
   });
+
+  // The packet endpoints require ≥1 member and a destination — catch
+  // both here so the operator gets a plain message instead of a raw
+  // validation error after a server round-trip.
+  const guardPacket = (needs?: "email" | "fax"): boolean => {
+    if (docIds.length === 0) {
+      setMsg({
+        kind: "err",
+        text: "Add at least one document to the packet first.",
+      });
+      return false;
+    }
+    if (needs === "email" && !recipientEmail.trim()) {
+      setMsg({
+        kind: "err",
+        text: "Enter a recipient email (in the Recipient section) first.",
+      });
+      return false;
+    }
+    if (needs === "fax" && !recipientFax.trim()) {
+      setMsg({
+        kind: "err",
+        text: "Enter a recipient fax number (in the Recipient section) first.",
+      });
+      return false;
+    }
+    return true;
+  };
 
   const move = (index: number, delta: -1 | 1) =>
     setDocIds((prev) => {
@@ -1735,7 +1824,12 @@ function PacketEditorForm({
   const remove = (id: string) =>
     setDocIds((prev) => prev.filter((d) => d !== id));
 
-  const addable = [...checkedIds].filter((id) => !docIds.includes(id));
+  // Same ordering rule as packet creation: table order first, then any
+  // checked ids not currently listed (hidden by the status filter).
+  const addable = [
+    ...allDocuments.filter((d) => checkedIds.has(d.id)).map((d) => d.id),
+    ...[...checkedIds].filter((id) => !allDocuments.some((d) => d.id === id)),
+  ].filter((id) => !docIds.includes(id));
 
   return (
     <Card
@@ -1932,7 +2026,14 @@ function PacketEditorForm({
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => save.mutate()} isLoading={save.isPending}>
+          <Button
+            onClick={() => {
+              if (!guardPacket()) return;
+              setMsg(null);
+              save.mutate();
+            }}
+            isLoading={save.isPending}
+          >
             Save
           </Button>
           <a
@@ -1946,6 +2047,7 @@ function PacketEditorForm({
             intent="secondary"
             isLoading={emailMut.isPending}
             onClick={() => {
+              if (!guardPacket("email")) return;
               setMsg(null);
               emailMut.mutate();
             }}
@@ -1956,6 +2058,7 @@ function PacketEditorForm({
             intent="secondary"
             isLoading={faxMut.isPending}
             onClick={() => {
+              if (!guardPacket("fax")) return;
               setMsg(null);
               faxMut.mutate();
             }}
