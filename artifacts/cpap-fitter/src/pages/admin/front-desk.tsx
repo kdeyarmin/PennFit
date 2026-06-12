@@ -629,10 +629,16 @@ function OrderPlaced({
   const [handedOver, setHandedOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canHandOver =
-    order.fulfillmentMethod === "pickup" &&
-    order.status === "paid" &&
-    !handedOver;
+  // Fulfillment is independent of payment: the patient walks out with the
+  // supplies whether they paid cash or it's billed to insurance. So a
+  // pickup order can always be handed over — an insurance order stays
+  // `pending` (awaiting the payer) but is still dispensed now.
+  const canHandOver = order.fulfillmentMethod === "pickup" && !handedOver;
+
+  const paymentLabel =
+    order.paymentMethod === "cash"
+      ? "Cash — collected"
+      : "Insurance — awaiting adjudication";
 
   async function handOver() {
     setError(null);
@@ -659,10 +665,14 @@ function OrderPlaced({
             {formatCents(order.amountTotalCents, order.currency ?? "usd")}
           </dd>
           <dt className="text-muted-foreground">Payment</dt>
-          <dd className="text-right capitalize">{order.paymentMethod}</dd>
-          <dt className="text-muted-foreground">Status</dt>
-          <dd className="text-right capitalize">
-            {handedOver ? "picked up" : order.status}
+          <dd className="text-right">{paymentLabel}</dd>
+          <dt className="text-muted-foreground">Fulfillment</dt>
+          <dd className="text-right">
+            {handedOver
+              ? "Handed over"
+              : order.fulfillmentMethod === "pickup"
+                ? "Ready at counter"
+                : "Ship"}
           </dd>
           <dt className="text-muted-foreground">Items</dt>
           <dd className="text-right">{order.itemCount}</dd>

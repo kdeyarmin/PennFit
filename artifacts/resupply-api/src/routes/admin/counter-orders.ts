@@ -9,11 +9,14 @@
 //                 fulfillment is `pickup`, so the CSR can immediately
 //                 mark it picked up (POST /admin/shop/orders/:id/picked-up)
 //                 and hand the product over.
-//   * insurance — no money collected at the counter. The order is
-//                 recorded as `status='pending'` and flagged for the
-//                 billing worklist; the existing claims pipeline (on the
-//                 patient record) takes it from there. We deliberately do
-//                 NOT reimplement claim generation here.
+//   * insurance — the supplies are still dispensed now (handed over /
+//                 shipped) — fulfillment is independent of payment. But
+//                 `paid` means money RECEIVED, and an insurance order is
+//                 not paid until the payer adjudicates and pays the
+//                 claim, so it is recorded as `status='pending'`. The
+//                 existing claims pipeline (on the patient record) files
+//                 and works the claim — we deliberately do NOT reimplement
+//                 claim generation here.
 //
 // Catalog + pricing trust model:
 //   The client sends only { priceId, quantity } per line. We NEVER trust
@@ -287,12 +290,30 @@ router.post(
       amount_total_cents: amountTotalCents,
       currency,
       fulfillment_method: body.fulfillmentMethod,
-      ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
+      // Pickup goods are physically at the counter the instant the order
+      // is rung up, so the order is "ready for pickup" immediately — stamp
+      // it on insert. This lets the Front Desk hand the item over right
+      // away via the existing POST /admin/shop/orders/:id/picked-up
+      // endpoint (which requires ready_for_pickup_at but, correctly, does
+      // NOT require status='paid'). Fulfillment is independent of payment:
+      // the patient walks out with the supplies in both lanes. No
+      // ready-for-pickup email is sent (the patient is standing here).
+      ...(pickupLocationId
+        ? {
+            pickup_location_id: pickupLocationId,
+            ready_for_pickup_at: nowIso,
+          }
+        : {}),
       ...(shippingAddress
         ? { shipping_address_json: shippingAddress as unknown as Json }
         : {}),
       ...(body.customerId ? { customer_id: body.customerId } : {}),
       ...(body.customerEmail ? { customer_email: body.customerEmail } : {}),
+      // `paid` means money received. Cash is collected at the counter, so
+      // it's paid now. An insurance order is NOT paid until the payer
+      // adjudicates and pays the claim — it stays `pending` while the
+      // supplies are still dispensed above. paid_at is only stamped for
+      // cash.
       ...(isCash ? { paid_at: nowIso } : {}),
       created_at: nowIso,
       updated_at: nowIso,

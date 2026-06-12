@@ -221,6 +221,9 @@ describe("POST /admin/shop/counter-orders", () => {
     expect(orderPayload.amount_total_cents).toBe(4999 * 2);
     expect(String(orderPayload.stripe_session_id)).toMatch(/^counter-/);
     expect(orderPayload.pickup_location_id).toBe(LOCATION_ID);
+    // Pickup goods are ready at the counter immediately — stamped on
+    // insert so the order can be handed over right away.
+    expect(orderPayload.ready_for_pickup_at).toBeTruthy();
 
     const itemPayloads = getSupabaseWritePayloads(
       "shop_order_items",
@@ -263,7 +266,11 @@ describe("POST /admin/shop/counter-orders", () => {
       "insert",
     ) as Array<Record<string, unknown>>;
     expect(orderPayload.status).toBe("pending");
+    // Not paid until the payer adjudicates — but still dispensable: the
+    // goods are handed over now (ready_for_pickup_at stamped), the order
+    // stays pending until the claim is paid.
     expect(orderPayload.paid_at).toBeUndefined();
+    expect(orderPayload.ready_for_pickup_at).toBeTruthy();
     expect(orderPayload.payment_method).toBe("insurance");
   });
 
