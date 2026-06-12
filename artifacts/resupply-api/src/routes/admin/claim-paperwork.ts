@@ -29,7 +29,7 @@ import {
   type PaperworkRequirementRow,
   type RequirementType,
 } from "../../lib/billing/bill-hold";
-import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { adminRateLimit, adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { logger } from "../../lib/logger";
 
@@ -79,6 +79,7 @@ const uuid = z.string().uuid();
 // ── GET /admin/claims/:claimId/paperwork ─────────────────────────────
 router.get(
   "/admin/claims/:claimId/paperwork",
+  adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
     const claimId = uuid.safeParse(req.params.claimId);
@@ -94,6 +95,7 @@ router.get(
 // ── GET /admin/patients/:patientId/paperwork ─────────────────────────
 router.get(
   "/admin/patients/:patientId/paperwork",
+  adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
     const patientId = uuid.safeParse(req.params.patientId);

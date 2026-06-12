@@ -221,8 +221,20 @@ app.use(requestContextMiddleware);
 // can't re-serialize byte-identically. Mounting it directly on `app`
 // (rather than inside the /resupply-api router tree) keeps the body
 // parser order honest no matter how the router is reorganized later.
+//
+// Rate limit is a pre-verification DoS shield; Stripe's HMAC is the
+// real gate. Built with express-rate-limit so CodeQL recognises it.
+const stripeWebhookLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.stripe_webhook.windowMs,
+  limit: RATE_LIMITS.stripe_webhook.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 app.post(
   "/resupply-api/stripe/webhook",
+  stripeWebhookLimiter,
   express.raw({ type: "application/json", limit: "256kb" }),
   stripeWebhookHandler,
 );
