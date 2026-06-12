@@ -25,6 +25,7 @@ import { isFeatureEnabled } from "./lib/feature-flags";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
+import { createTrustProxyFn } from "./lib/trusted-proxies";
 import { errorHandler } from "./middlewares/errorHandler";
 import {
   requireCsrfOnAdminMutations,
@@ -54,7 +55,17 @@ const app: Express = express();
 // We're behind Railway's reverse proxy. Without trust proxy, every request
 // looks like it came from 127.0.0.1, which breaks rate limiting and
 // audit-log IP capture.
-app.set("trust proxy", 1);
+//
+// The custom domain adds Cloudflare as a SECOND hop in front of
+// Railway, so the historical `trust proxy = 1` resolved req.ip to the
+// Cloudflare colo IP for all custom-domain traffic — every IP-keyed
+// limiter bucketed those visitors together (app-review 2026-06-10,
+// P1-5). The predicate trusts hop 0 unconditionally (exactly the old
+// behavior) plus Cloudflare's published ranges at any hop, so
+// Cloudflare-routed requests resolve to the real client while direct
+// Railway traffic and spoof attempts behave exactly as before. See
+// lib/trusted-proxies.ts for the case-by-case safety argument.
+app.set("trust proxy", createTrustProxyFn());
 
 // Security headers — mounted FIRST so every response (including the
 // Stripe webhook below, every CORS preflight, and every error handler
