@@ -425,6 +425,17 @@ export function Shop() {
             sort={sort}
             onSortChange={setSort}
           />
+          {/* Screen-reader announcement of the visible result count.
+              Sighted users see the grid shrink as search / sort /
+              machine-filter changes apply; without a live region a
+              screen-reader user gets no feedback that anything
+              happened. aria-live=polite waits for the current
+              utterance, so rapid typing doesn't spam. */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {filteredProducts.length === 1
+              ? "1 product shown"
+              : `${filteredProducts.length} products shown`}
+          </p>
           {/* Phase F.1 — parts-finder toggle. Hidden when the user
               isn't signed in or has no device on file. Filter is
               applied below in both the search and category render
