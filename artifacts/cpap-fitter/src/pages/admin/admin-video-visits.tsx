@@ -69,6 +69,7 @@ function inviteLabel(v: VideoVisit): string {
     return `${channel} (undelivered${code ? ` · ${code}` : ""})`;
   }
   if (v.inviteDeliveryStatus === "delivered") return `${channel} (delivered)`;
+  if (v.inviteDeliveryStatus === "sent") return `${channel} (sent)`;
   if (v.inviteDelivered === false) return `${channel} (failed)`;
   return v.inviteDelivered ? `${channel} (sent)` : channel;
 }
