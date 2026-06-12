@@ -93,3 +93,91 @@ describe("patient-packet templates", () => {
     expect(text).toContain("2026-06-06");
   });
 });
+
+// ── Refill / continued-use confirmation (standalone e-sign) ───────
+import {
+  isStandalonePacketDocumentKey,
+  isStandaloneSelection,
+} from "./templates";
+
+describe("refill_continued_use template", () => {
+  it("is a signed, standalone, non-onboarding document", () => {
+    const t = getPacketTemplate("refill_continued_use")!;
+    expect(t).toBeDefined();
+    expect(t.requiresSignature).toBe(true);
+    expect(t.defaultIncluded).toBe(false);
+    expect(isRequiredPacketDocumentKey(t.key)).toBe(false);
+    expect(isStandalonePacketDocumentKey(t.key)).toBe(true);
+  });
+
+  it("covers the Medicare refill-documentation elements", () => {
+    const t = getPacketTemplate("refill_continued_use")!;
+    const text = JSON.stringify(t.build(FALLBACK_COMPANY));
+    expect(text).toMatch(/still using my PAP device/i);
+    expect(text).toMatch(/10-day supply or less/i);
+    expect(text).toMatch(/14 calendar days/i);
+    expect(text).toMatch(/requested by me/i);
+    expect(text).toContain(FALLBACK_COMPANY.legalName);
+  });
+
+  it("isStandaloneSelection only accepts non-empty all-standalone sets", () => {
+    expect(isStandaloneSelection(["refill_continued_use"])).toBe(true);
+    expect(isStandaloneSelection([])).toBe(false);
+    expect(
+      isStandaloneSelection(["refill_continued_use", "assignment_of_benefits"]),
+    ).toBe(false);
+    expect(isStandaloneSelection(["assignment_of_benefits"])).toBe(false);
+  });
+});
+
+// ── ABN (CMS-R-131 structure) with signer option picker ──────────
+import { packetChoiceDocuments, resolvePacketChoiceOption } from "./templates";
+
+describe("abn_medicare template", () => {
+  it("is a signed, standalone, non-onboarding document with a 3-option choice", () => {
+    const t = getPacketTemplate("abn_medicare")!;
+    expect(t).toBeDefined();
+    expect(t.requiresSignature).toBe(true);
+    expect(t.defaultIncluded).toBe(false);
+    expect(isRequiredPacketDocumentKey(t.key)).toBe(false);
+    expect(isStandalonePacketDocumentKey(t.key)).toBe(true);
+    expect(t.choice).toBeDefined();
+    const keys = t.choice!.options.map((o) => o.key);
+    expect(keys).toEqual(["option_1", "option_2", "option_3"]);
+    expect(new Set(keys).size).toBe(3);
+    for (const o of t.choice!.options) {
+      expect(o.label.length).toBeGreaterThan(0);
+      expect(o.detail.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("carries the CMS-R-131 wording elements", () => {
+    const t = getPacketTemplate("abn_medicare")!;
+    const body = JSON.stringify(t.build(FALLBACK_COMPANY));
+    expect(body).toMatch(/Medicare may not pay/i);
+    expect(body).toMatch(/1-800-MEDICARE/);
+    const options = JSON.stringify(t.choice);
+    expect(options).toMatch(/Medicare Summary Notice/i);
+    expect(options).toMatch(/do not bill Medicare/i);
+    expect(options).toMatch(/not responsible for payment/i);
+  });
+
+  it("packetChoiceDocuments finds choice docs; other docs have none", () => {
+    const found = packetChoiceDocuments([
+      "abn_medicare",
+      "assignment_of_benefits",
+      "refill_continued_use",
+    ]);
+    expect(found.map((c) => c.documentKey)).toEqual(["abn_medicare"]);
+  });
+
+  it("resolvePacketChoiceOption resolves valid options and rejects others", () => {
+    expect(
+      resolvePacketChoiceOption("abn_medicare", "option_2")?.label,
+    ).toMatch(/do not bill Medicare/i);
+    expect(resolvePacketChoiceOption("abn_medicare", "option_9")).toBeNull();
+    expect(
+      resolvePacketChoiceOption("assignment_of_benefits", "option_1"),
+    ).toBeNull();
+  });
+});

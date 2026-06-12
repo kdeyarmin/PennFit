@@ -39,7 +39,6 @@ import {
   Boxes,
   AlertOctagon,
   CalendarOff,
-  CalendarPlus,
   TruckIcon,
   Activity,
   BarChart3,
@@ -255,12 +254,12 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        // One time-based home: the shared calendar plus the two
-        // date-driven queues (scheduled callbacks and appointment
-        // requests) that used to be separate sidebar entries.
+        // One time-based home: the shared calendar plus the
+        // date-driven callback queue that used to be a separate
+        // sidebar entry.
         label: "Schedule",
         icon: CalendarDays,
-        hint: "The shared company calendar, scheduled callbacks, and patient appointment requests",
+        hint: "The shared company calendar and scheduled callbacks",
         tabs: [
           {
             href: "/admin/company-calendar",
@@ -283,13 +282,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/followups",
             hint: "Today's queue of CSR-scheduled callbacks across customers and patients",
             badgeKey: "overdueFollowups",
-          },
-          {
-            href: "/admin/appointment-requests",
-            label: "Appointment requests",
-            icon: CalendarPlus,
-            matchPrefix: "/admin/appointment-requests",
-            hint: "CSR queue for patient-initiated appointment requests",
           },
         ],
       },
