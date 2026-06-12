@@ -393,6 +393,11 @@ const AdminDeliveryFailuresPage = lazyWithRetry(() =>
     default: m.AdminDeliveryFailuresPage,
   })),
 );
+const AdminOutboundMessagesPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-outbound-messages").then((m) => ({
+    default: m.AdminOutboundMessagesPage,
+  })),
+);
 const AdminWebhookDeliveriesPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-webhook-deliveries").then((m) => ({
     default: m.AdminWebhookDeliveriesPage,
@@ -1124,6 +1129,10 @@ function AdminConsole() {
             <Route
               path="/admin/delivery-failures"
               component={AdminDeliveryFailuresPage}
+            />
+            <Route
+              path="/admin/outbound-messages"
+              component={AdminOutboundMessagesPage}
             />
             <Route
               path="/admin/webhook-deliveries"
