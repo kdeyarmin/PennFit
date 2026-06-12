@@ -177,9 +177,9 @@ function buildPassJson(
 }
 
 function sha1Hex(buf: Buffer): string {
-  // CodeQL[js/weak-cryptographic-algorithm] SHA-1 is mandated by Apple's PKPass
-  // specification for the manifest integrity checksum (PassKit Programming Guide,
-  // manifest.json). Security comes from the PKCS#7 detached signature, not the hash.
+  // SHA-1 is mandated by Apple's PKPass specification for the manifest integrity
+  // checksum (PassKit Programming Guide, manifest.json). Security comes from the
+  // PKCS#7 detached signature, not the hash.
   return createHash("sha1").update(buf).digest("hex");
 }
 
