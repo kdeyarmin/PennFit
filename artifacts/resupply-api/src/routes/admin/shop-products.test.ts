@@ -1181,3 +1181,92 @@ describe("PATCH /admin/shop/products/:productId/details", () => {
     );
   });
 });
+
+describe("POST /admin/shop/products/:productId/archive", () => {
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect([401, 403]).toContain(res.status);
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admin roles (requireAdminOnly, not admin.tools.manage)", async () => {
+    mockAdmin.current = {
+      userId: "user_agent",
+      email: "agent@penn.example.com",
+      role: "agent",
+    };
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect(res.status).toBe(403);
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects ids that don't start with prod_", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/x/archive",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_product_id");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 in preview mode (no Stripe key)", async () => {
+    stubVerifiedAdmin();
+    stripeConfigured = false;
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+  });
+
+  it("refuses products that are not in the shop catalog", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({ id: "prod_x", metadata: {} });
+    projectProductMock.mockReturnValueOnce(null);
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("product_not_in_catalog");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("sets active=false and flushes the catalog cache", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Retiring SKU",
+      metadata: {},
+    });
+    stripeUpdateMock.mockResolvedValue({ id: "prod_x", active: false });
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, productId: "prod_x" });
+    expect(stripeUpdateMock).toHaveBeenCalledWith("prod_x", { active: false });
+    expect(invalidateCacheMock).toHaveBeenCalled();
+  });
+
+  it("forwards Stripe update failures as 5xx", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "SKU",
+      metadata: {},
+    });
+    stripeUpdateMock.mockRejectedValueOnce(
+      Object.assign(new Error("boom"), { statusCode: 502 }),
+    );
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/archive",
+    );
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("stripe_archive_failed");
+  });
+});

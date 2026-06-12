@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import {
+  archiveShopProduct,
   fetchShopProductDetails,
   InventoryUnavailableError,
   patchShopProductDetails,
@@ -221,6 +222,41 @@ export function AdminShopProductEditPage() {
       setErrors(message.split("; "));
     },
   });
+
+  const archiveMutation = useMutation({
+    mutationFn: () => archiveShopProduct(productId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["shop-inventory"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin-shop-product-details", productId],
+      });
+      setLocation("/admin/shop/inventory");
+    },
+    onError: (err) => {
+      if (err instanceof InventoryUnavailableError) {
+        setErrors([
+          "Stripe is not configured in this environment — set STRIPE_SECRET_KEY to archive products.",
+        ]);
+        return;
+      }
+      // Most common real-world failure: a non-admin role hitting the
+      // requireAdminOnly gate — the server's 403 message explains it.
+      setErrors([err instanceof Error ? err.message : "Archive failed"]);
+    },
+  });
+
+  function onArchive() {
+    if (!product) return;
+    const confirmed = window.confirm(
+      `Remove "${product.name}" from the storefront?\n\n` +
+        "The product is archived in Stripe, not deleted — order history " +
+        "is unaffected and it can be re-activated from the Stripe " +
+        "Dashboard. Existing subscriptions keep billing.",
+    );
+    if (!confirmed) return;
+    setErrors([]);
+    archiveMutation.mutate();
+  }
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -592,6 +628,45 @@ export function AdminShopProductEditPage() {
           </button>
         </div>
       </form>
+
+      <section
+        style={{
+          border: "1px solid #fecaca",
+          borderRadius: 8,
+          padding: 20,
+          marginTop: 32,
+          background: "#fff",
+        }}
+      >
+        <h2 style={{ ...SECTION_TITLE_STYLE, color: "#991b1b" }}>
+          Remove from storefront
+        </h2>
+        <p style={{ ...FIELD_HINT_STYLE, marginTop: 0, marginBottom: 12 }}>
+          Archives the product in Stripe so it disappears from the shop. Order
+          history is unaffected, existing subscriptions keep billing, and the
+          product can be re-activated from the Stripe Dashboard. Admin role
+          required.
+        </p>
+        <button
+          type="button"
+          data-testid="archive-product"
+          disabled={archiveMutation.isPending || isSubmitting}
+          onClick={onArchive}
+          style={{
+            background: "#fff",
+            color: "#991b1b",
+            border: "1px solid #fecaca",
+            padding: "10px 20px",
+            fontSize: 14,
+            fontWeight: 600,
+            borderRadius: 6,
+            cursor: archiveMutation.isPending ? "wait" : "pointer",
+            opacity: archiveMutation.isPending ? 0.7 : 1,
+          }}
+        >
+          {archiveMutation.isPending ? "Archiving…" : "Archive product"}
+        </button>
+      </section>
     </div>
   );
 }

@@ -58,6 +58,18 @@ existing products instead of duplicating them. Image paths are
 relative to the cpap-fitter `public/` directory and resolved against
 `SHOP_PUBLIC_BASE_URL`.
 
+## Retiring an item
+
+Open the product's **Edit details** page and use **Archive product**
+(bottom of the page; requires the admin role — agents can add and
+edit but not retire). This archives the product in Stripe: it leaves
+the storefront within seconds, in-flight carts holding it are
+rejected at checkout validation, order history is unaffected, and
+existing subscriptions keep billing. To bring it back, re-activate
+the product in the Stripe Dashboard, or create the SKU again (the
+seed script re-activates archived SKUs; the admin create form's
+collision check only considers active products).
+
 ## Prerequisites (one-time, per environment)
 
 - `STRIPE_SECRET_KEY` set — without it the shop serves the built-in
