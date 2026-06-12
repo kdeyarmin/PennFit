@@ -156,7 +156,7 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
       .eq("status", "sent");
     if (viewStampErr) {
       logger.warn(
-        { err: viewStampErr.message, orderRequestId: order.id },
+        { err: viewStampErr, orderRequestId: order.id },
         "csr-orders.view: first-view stamp failed (non-fatal)",
       );
     }
