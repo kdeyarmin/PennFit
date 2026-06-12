@@ -86,7 +86,7 @@ tells you whether it's _guaranteed_. Ask:
 ## Step 5 — write the fix
 
 With the answers in hand, the fix lands in
-`artifacts/resupply-api/src/app.ts` (`app.set("trust proxy", 1)`),
+`artifacts/resupply-api/src/app.ts` (currently `app.set("trust proxy", createTrustProxyFn())`),
 choosing between:
 
 - **Railway strips client XFF, fixed single hop** → a `trust proxy`
