@@ -182,9 +182,9 @@ async function tryClaimReminderDedupKey(
     );
     return { proceed: false, key };
   }
-  // Any other error: log and proceed (fail-open). Better one duplicate
-  // SMS than a silently broken reminder pipeline.
-  logger.warn(
+  // Any other error: fail the job so pg-boss retries it rather than
+  // sending a duplicate reminder without idempotency protection.
+  logger.error(
     {
       event: "reminder_dedup_insert_failed",
       err: { code: error.code, message: error.message },
@@ -193,9 +193,11 @@ async function tryClaimReminderDedupKey(
       episode_id: episodeId,
       job_id: jobId,
     },
-    "reminders: dedup insert failed — proceeding without idempotency protection",
+    "reminders: dedup insert failed — failing job for pg-boss retry",
   );
-  return { proceed: true, key };
+  throw new Error(
+    `reminder_dedup_insert_failed: ${error.message} (job_id=${jobId})`,
+  );
 }
 
 async function releaseReminderDedupKey(

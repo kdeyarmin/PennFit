@@ -1192,7 +1192,12 @@ function AdminConsole() {
 // session is present.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
-  if (isPending) return null;
+  if (isPending)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner label="Checking sign-in…" />
+      </div>
+    );
   if (!data) return <Redirect to="/admin/sign-in" />;
   return <AdminConsole />;
 }

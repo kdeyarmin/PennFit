@@ -264,6 +264,25 @@ export function AdminBotPlaygroundPage() {
           synthetic data and simulated tools — nothing here touches a real
           customer, places an order, or messages support.
         </p>
+        {info.isError && (
+          <div
+            className="flex items-center gap-3 p-3 rounded-lg border text-sm"
+            style={{
+              borderColor: "hsl(var(--destructive) / 0.4)",
+              color: "hsl(var(--destructive))",
+            }}
+          >
+            <span>Couldn't load playground config — scenarios may be incomplete.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void info.refetch()}
+              style={{ flexShrink: 0 }}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
         {info.data && (
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Active AI provider:{" "}

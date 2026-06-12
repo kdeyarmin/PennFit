@@ -9,8 +9,16 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { validateAddress } from "../../lib/address-validation";
+import { RATE_LIMITS } from "../../lib/rate-limits-config";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+const validateAddressLimiter = rateLimit({
+  windowMs: RATE_LIMITS.shop_validate_address.windowMs,
+  max: RATE_LIMITS.shop_validate_address.limit,
+  name: "shop_validate_address",
+});
 
 const body = z
   .object({
@@ -23,7 +31,7 @@ const body = z
   })
   .strict();
 
-router.post("/shop/validate-address", async (req, res) => {
+router.post("/shop/validate-address", validateAddressLimiter, async (req, res) => {
   const parsed = body.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_body" });
