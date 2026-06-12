@@ -146,6 +146,19 @@ export async function dispatchPaymentFailedAlertOrThrow(
     },
   });
 
+  // dispatchAlert maps recoverable SendGrid API errors (429/5xx) to a
+  // `vendor_error` OUTCOME rather than throwing — surface those as a
+  // throw here so the pg-boss job's retry/DLQ budget actually applies.
+  // Every other non-ok status (flag off upstream, missing template,
+  // suppressed/missing patient contact) is unresolvable: retrying
+  // can't fix it, so completing the job with the logged outcome is
+  // correct.
+  if (outcome.status === "vendor_error") {
+    throw new Error(
+      `payment_failed alert dispatch hit a vendor error (status=${outcome.vendorStatus ?? "?"}, code=${outcome.vendorCode ?? "?"}) — retrying`,
+    );
+  }
+
   log?.info?.(
     {
       event: "payment_failed_alert_dispatched",
