@@ -1,12 +1,15 @@
 // Pins the security-header values the middleware emits — specifically
-// the Permissions-Policy camera allowlist. This process serves BOTH the
-// JSON API and the cpap-fitter SPA's HTML (post-May-2026 consolidation),
-// and the face-scan capture page calls getUserMedia: an empty `camera=()`
-// allowlist on the top-level document makes Chromium reject it with
-// NotAllowedError. That regression shipped once (the production face-scan
-// was dead on arrival — docs/app-review-2026-06-10.md P0-1) and the e2e
-// suite can't catch it because it stubs getUserMedia. `camera=(self)` is
-// load-bearing; everything else stays denied.
+// the Permissions-Policy camera/microphone allowlists. This process serves
+// BOTH the JSON API and the cpap-fitter SPA's HTML (post-May-2026
+// consolidation); the face-scan capture page calls getUserMedia({video})
+// and the telehealth video-visit page calls getUserMedia({video, audio}):
+// an empty `camera=()` / `microphone=()` allowlist on the top-level
+// document makes Chromium reject it with NotAllowedError. That regression
+// shipped twice (the production face-scan was dead on arrival —
+// docs/app-review-2026-06-10.md P0-1 — and later the video visit, blocked
+// by `microphone=()`) and the e2e suite can't catch it because it stubs
+// getUserMedia. `camera=(self)` and `microphone=(self)` are load-bearing;
+// everything else stays denied.
 
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it } from "vitest";
@@ -36,10 +39,15 @@ describe("securityHeaders Permissions-Policy", () => {
     expect(policy).not.toContain("camera=()");
   });
 
+  it("allows same-origin microphone (the video visit needs getUserMedia audio)", () => {
+    const policy = run().get("Permissions-Policy") ?? "";
+    expect(policy).toContain("microphone=(self)");
+    expect(policy).not.toContain("microphone=()");
+  });
+
   it("keeps every other capability denied", () => {
     const policy = run().get("Permissions-Policy") ?? "";
     expect(policy).toContain("geolocation=()");
-    expect(policy).toContain("microphone=()");
     expect(policy).toContain("payment=()");
     expect(policy).toContain("usb=()");
   });
