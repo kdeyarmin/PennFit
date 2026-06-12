@@ -423,6 +423,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Triage queue for inbound faxes — sleep studies, Rx renewals, chart notes",
             badgeKey: "newInboundFaxes",
           },
+          {
+            href: "/admin/referral-reviews",
+            label: "Referral reviewer",
+            icon: FilePlus2,
+            matchPrefix: "/admin/referral-reviews",
+            hint: "AI-extracted intake from faxed or uploaded referral packets — review, verify insurance, and accept into a new patient record",
+          },
         ],
       },
       {

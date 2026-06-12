@@ -41,6 +41,10 @@ export interface InboundFaxListItem {
   autoFiledAt: string | null;
   signatureTrackingId: string | null;
   chartDocumentId: string | null;
+  /** Linked Referral Reviewer entry, when the `fax.referral_review`
+   *  flag opened one for this fax. */
+  referralReviewId: string | null;
+  referralReviewStatus: string | null;
 }
 
 export interface PatchInboundFaxRequest {
