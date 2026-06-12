@@ -19,6 +19,7 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -290,11 +291,24 @@ router.patch(
 
 router.delete(
   "/me/payment-methods",
-  rateLimit({
+  expressRateLimit({
     windowMs: 5 * 60_000,
-    max: 30,
-    name: "me_autopay_remove",
-    keyFn: customerKeyFn,
+    limit: 30,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const customerId = (req as unknown as { shopCustomerId?: string })
+        .shopCustomerId;
+      if (typeof customerId === "string" && customerId.length > 0) {
+        return `me_autopay_remove:${customerId}`;
+      }
+      return ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "0.0.0.0");
+    },
+    message: {
+      error: "too_many_requests",
+      limiter: "me_autopay_remove",
+      message: "You're going a little fast. Please wait a moment and try again.",
+    },
   }),
   async (req, res) => {
     const customerId = req.shopCustomerId ?? null;
