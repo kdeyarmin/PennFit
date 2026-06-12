@@ -33,7 +33,10 @@ import type Stripe from "stripe";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requirePermission } from "../../middlewares/requireAdmin";
+import {
+  requireAdminOnly,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import {
   getStripeClient,
@@ -996,6 +999,114 @@ router.patch(
   },
 );
 
+// POST /admin/shop/products/:productId/archive — retire a SKU from
+// the storefront. This is the "DELETE counterpart" the create
+// endpoint's docs promised: per those docs it runs behind
+// requireAdminOnly (role === "admin"), NOT the broader
+// admin.tools.manage permission the other catalog mutations use —
+// agents can add and edit products, only admins can retire them.
+//
+// Semantics: sets `active: false` on the Stripe Product. The public
+// catalog lists only active products, so the SKU disappears from the
+// storefront on the next cache flush (forced below); validate-cart
+// then rejects any in-flight cart line for it. Nothing is deleted:
+// order history keeps resolving, and the product can be re-activated
+// from the Stripe Dashboard or by re-running the seed script (it
+// dedupes on SKU regardless of active state and re-activates).
+// Do NOT re-create the SKU through the admin create form: its
+// collision guard searches active products only, so it would mint a
+// DUPLICATE product carrying the same supposedly-stable SKU.
+// Idempotent: archiving an already-inactive product is a 200 no-op.
+//
+// We deliberately do NOT archive the product's Price objects: Stripe
+// keeps billing existing subscriptions on their original price, and
+// an archived product's prices are unreachable through the catalog
+// anyway. Touching them would add failure modes for zero storefront
+// effect.
+router.post(
+  "/admin/shop/products/:productId/archive",
+  requireAdminOnly,
+  adminProductMutationLimiter,
+  async (req, res) => {
+    const productId = String(req.params.productId ?? "");
+    if (!productId.startsWith("prod_")) {
+      res.status(400).json({ error: "invalid_product_id" });
+      return;
+    }
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    // Catalog-membership guard — same fence as the PATCH handlers.
+    // Keeps this endpoint from being a generic "deactivate any Stripe
+    // product" lever.
+    let existing;
+    try {
+      existing = await stripe.products.retrieve(productId, {
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      if (status === 404) {
+        res.status(404).json({ error: "product_not_found" });
+        return;
+      }
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe retrieve failed (archive)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_retrieve_failed",
+      });
+      return;
+    }
+    // Idempotency short-circuit BEFORE the projection fence:
+    // projectProduct rejects inactive products, so without this a
+    // repeat archive (double-click, retry, concurrent admins) would
+    // 404 even though the product is in exactly the requested state.
+    if (existing.active === false) {
+      res.json({ ok: true, productId });
+      return;
+    }
+    const existingProjected: ShopProductView | null = projectProduct(existing);
+    if (!existingProjected) {
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+
+    try {
+      await stripe.products.update(productId, { active: false });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe archive failed",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_archive_failed",
+      });
+      return;
+    }
+
+    // Drop the public catalog cache so the SKU disappears from the
+    // storefront immediately instead of riding out the 60s TTL.
+    invalidateShopProductsCache();
+
+    req.log?.info?.({ productId }, "shop/admin/products: product archived");
+    res.json({ ok: true, productId });
+  },
+);
+
 // POST /admin/shop/products — create a new SKU in the Stripe catalog.
 //
 // What this writes (idempotent against `metadata.shop_sku`):
@@ -1027,8 +1138,8 @@ router.patch(
 // Authorization:
 //   requireAdmin — agents can add products. Adding a SKU is not a
 //   destructive operation (the worst case is "unused product in
-//   the catalog" which an operator can archive in the Stripe
-//   Dashboard). The DELETE counterpart, if/when added, must use
+//   the catalog" which an operator can archive). The DELETE
+//   counterpart is POST /:productId/archive above, gated by
 //   requireAdminOnly.
 //
 // Failure mode: orphaned product

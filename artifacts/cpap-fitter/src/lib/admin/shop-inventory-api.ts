@@ -523,6 +523,34 @@ export async function patchShopProductDetails(
   }
 }
 
+// POST /admin/shop/products/:id/archive — retire a SKU from the
+// storefront (sets the Stripe product inactive). requireAdminOnly on
+// the server: agents get a 403 with the server's explanation, which
+// we surface verbatim. Nothing is deleted — the SKU can be
+// re-activated from the Stripe Dashboard.
+export async function archiveShopProduct(productId: string): Promise<void> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/products/${encodeURIComponent(productId)}/archive`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", ...csrfHeader() },
+    },
+  );
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (!res.ok) {
+    let detail = `Archive failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) detail = body.error;
+    } catch {
+      // non-JSON error body — status-only message is enough
+    }
+    throw new Error(detail);
+  }
+}
+
 // SKU collision error surfaced by `createShopProduct`. The API
 // returns 409 with the existing Stripe product id; the form page
 // uses that id to render an "Edit existing SKU" link instead of a
