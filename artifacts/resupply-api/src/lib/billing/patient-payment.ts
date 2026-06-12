@@ -20,6 +20,7 @@ import type Stripe from "stripe";
 
 import { getStripeClient, readStripeConfigOrNull } from "../stripe/config";
 import { stripeErrLogFields } from "../stripe/err-log-fields";
+import { getDocumentSupplierNameSync } from "../company-info";
 import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -359,7 +360,7 @@ export async function createPaymentCheckoutSession(
               currency: "usd",
               unit_amount: totalCents,
               product_data: {
-                name: "Patient balance — PennPaps",
+                name: `Patient balance — ${getDocumentSupplierNameSync()}`,
               },
             },
           },
@@ -456,8 +457,9 @@ export interface CreateAdhocCheckoutSessionInput {
   amountCents: number;
   /**
    * Customer-visible line-item label on the Stripe hosted page and the
-   * emailed receipt. Defaults to a generic "Payment to PennPaps". Keep
-   * it free of PHI — Stripe's receipt is not encrypted.
+   * emailed receipt. Defaults to a generic "Payment to Penn Home
+   * Medical Supply" (the registered DME name). Keep it free of PHI —
+   * Stripe's receipt is not encrypted.
    */
   description?: string | null;
   /** Where Stripe sends the patient after a successful payment. */
@@ -531,7 +533,7 @@ export async function createAdhocPaymentCheckoutSession(
   const label =
     input.description && input.description.trim().length > 0
       ? input.description.trim().slice(0, 200)
-      : "Payment to PennPaps";
+      : `Payment to ${getDocumentSupplierNameSync()}`;
 
   let session: Stripe.Checkout.Session;
   try {

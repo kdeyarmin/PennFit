@@ -28,6 +28,7 @@ import {
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
+import { getDocumentSupplierNameSync } from "../company-info";
 import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -55,7 +56,10 @@ export function readStatementMessagingConfig(
     twilioAuthToken: env.TWILIO_AUTH_TOKEN ?? null,
     twilioPhoneNumber: env.TWILIO_PHONE_NUMBER ?? null,
     twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID ?? null,
-    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    // Billing statements come from the DME entity, so they carry the
+    // registered legal name ("Penn Home Medical Supply"), not the
+    // storefront display brand.
+    practiceName: getDocumentSupplierNameSync(),
   };
 }
 
