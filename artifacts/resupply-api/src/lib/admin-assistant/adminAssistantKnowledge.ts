@@ -216,7 +216,9 @@ SYSTEM (mostly admin / super-admin):
     Rule Tester (/admin/rule-tester) — dry-run a rule before enabling it.
   - Operations: Operations (/admin/operations), Integrations (/admin/integrations) — therapy-cloud /
     payer / clearinghouse connectors, PacWare (/admin/pacware) — CSV exchange with the legacy billing
-    system, Delivery Failures (/admin/delivery-failures), Webhook Deliveries (/admin/webhook-deliveries).
+    system, Outbound Messages (/admin/outbound-messages) — every outbound SMS/email with its
+    delivery result (admin/super-admin only), Delivery Failures (/admin/delivery-failures),
+    Webhook Deliveries (/admin/webhook-deliveries).
   - Settings (day-to-day): Settings (/admin/settings), Company information
     (/admin/company-information) — company name, addresses, support contact, and identifiers
     used on documents, the storefront, chat, and SMS/email branding, Closures (/admin/closures),
