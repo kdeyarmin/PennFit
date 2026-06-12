@@ -878,7 +878,7 @@ async function authUserHasNonStaffOwner(
     supabase
       .schema("resupply")
       .from("shop_customers")
-      .select("id")
+      .select("customer_id")
       .eq("auth_user_id", authUserId)
       .limit(1)
       .maybeSingle(),
