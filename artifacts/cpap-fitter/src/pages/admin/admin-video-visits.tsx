@@ -53,6 +53,26 @@ const STATUS_BADGE: Record<
   cancelled: { label: "Cancelled", variant: "danger" },
 };
 
+/** Invite-column label. Prefers the carrier-side outcome from the
+ *  Twilio status callback (inviteDeliveryStatus) over the weaker
+ *  "vendor accepted" flag — an SMS Twilio accepted but the carrier
+ *  dropped (A2P filtering etc.) reads "undelivered · <code>", not
+ *  "sent". */
+function inviteLabel(v: VideoVisit): string {
+  if (!v.inviteChannel || v.inviteChannel === "none") return "Link only";
+  const channel = v.inviteChannel.toUpperCase();
+  if (
+    v.inviteDeliveryStatus === "undelivered" ||
+    v.inviteDeliveryStatus === "failed"
+  ) {
+    const code = v.inviteDeliveryErrorCode;
+    return `${channel} (undelivered${code ? ` · ${code}` : ""})`;
+  }
+  if (v.inviteDeliveryStatus === "delivered") return `${channel} (delivered)`;
+  if (v.inviteDelivered === false) return `${channel} (failed)`;
+  return v.inviteDelivered ? `${channel} (sent)` : channel;
+}
+
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -271,17 +291,7 @@ export function AdminVideoVisitsPage() {
                       <td className="py-2.5 pr-4">
                         {formatDateTime(v.scheduledAt)}
                       </td>
-                      <td className="py-2.5 pr-4">
-                        {v.inviteChannel === "none" || !v.inviteChannel
-                          ? "Link only"
-                          : `${v.inviteChannel.toUpperCase()} ${
-                              v.inviteDelivered === false
-                                ? "(failed)"
-                                : v.inviteDelivered
-                                  ? "(sent)"
-                                  : ""
-                            }`}
-                      </td>
+                      <td className="py-2.5 pr-4">{inviteLabel(v)}</td>
                       <td className="py-2.5 pr-4">
                         {formatDateTime(v.createdAt)}
                       </td>

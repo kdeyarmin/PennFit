@@ -37,6 +37,7 @@ vi.mock("../../lib/messaging/safe-audit", () => ({
 import statusCallbackRouter from "./status-callback";
 
 const RECALL_NOTIFICATION_ID = "66666666-6666-4666-8666-666666666666";
+const VIDEO_VISIT_ID = "77777777-7777-4777-8777-777777777777";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 const MESSAGE_SID = "SM_test_sid";
 
@@ -140,6 +141,91 @@ describe("POST /sms/status-callback (recall notifications)", () => {
       .send({ MessageSid: MESSAGE_SID, MessageStatus: "delivered" });
 
     expect(supabaseMock.callCount("recall_notifications", "update")).toBe(0);
+    expect(supabaseMock.callCount("messages", "update")).toBe(1);
+  });
+});
+
+describe("POST /sms/status-callback (video visit invites)", () => {
+  it("stamps the invite delivery outcome onto the visit row, not messages", async () => {
+    const res = await request(makeApp())
+      .post(`/resupply-api/sms/status-callback?videoVisitId=${VIDEO_VISIT_ID}`)
+      .type("form")
+      .send({ MessageSid: MESSAGE_SID, MessageStatus: "delivered" });
+
+    expect(res.status).toBe(200);
+    expect(supabaseMock.callCount("video_visits", "update")).toBe(1);
+    expect(supabaseMock.callCount("messages", "update")).toBe(0);
+
+    const [payload] = supabaseMock.writePayloads(
+      "video_visits",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(payload).toMatchObject({
+      invite_delivery_status: "delivered",
+      invite_delivery_error_code: null,
+      invite_twilio_message_sid: MESSAGE_SID,
+    });
+    expect(supabaseMock.filterCalls("video_visits", "update")).toContainEqual({
+      verb: "eq",
+      args: ["id", VIDEO_VISIT_ID],
+    });
+  });
+
+  it("records the error code and audits on a delivery failure", async () => {
+    const res = await request(makeApp())
+      .post(`/resupply-api/sms/status-callback?videoVisitId=${VIDEO_VISIT_ID}`)
+      .type("form")
+      .send({
+        MessageSid: MESSAGE_SID,
+        MessageStatus: "undelivered",
+        ErrorCode: "30034",
+      });
+
+    expect(res.status).toBe(200);
+    const [payload] = supabaseMock.writePayloads(
+      "video_visits",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(payload).toMatchObject({
+      invite_delivery_status: "undelivered",
+      invite_delivery_error_code: "30034",
+    });
+    expect(safeAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "messaging.delivery.failed",
+        targetTable: "video_visits",
+        targetId: VIDEO_VISIT_ID,
+        metadata: expect.objectContaining({
+          video_visit_id: VIDEO_VISIT_ID,
+          twilio_message_sid: MESSAGE_SID,
+          status: "undelivered",
+          error_code: "30034",
+        }),
+      }),
+    );
+  });
+
+  it("guards a late `sent` against regressing a final delivery state", async () => {
+    await request(makeApp())
+      .post(`/resupply-api/sms/status-callback?videoVisitId=${VIDEO_VISIT_ID}`)
+      .type("form")
+      .send({ MessageSid: MESSAGE_SID, MessageStatus: "sent" });
+
+    expect(supabaseMock.filterCalls("video_visits", "update")).toContainEqual({
+      verb: "or",
+      args: [
+        "invite_delivery_status.is.null,invite_delivery_status.not.in.(delivered,undelivered,failed)",
+      ],
+    });
+  });
+
+  it("ignores a malformed videoVisitId and falls back to the messages path", async () => {
+    await request(makeApp())
+      .post("/resupply-api/sms/status-callback?videoVisitId=not-a-uuid")
+      .type("form")
+      .send({ MessageSid: MESSAGE_SID, MessageStatus: "delivered" });
+
+    expect(supabaseMock.callCount("video_visits", "update")).toBe(0);
     expect(supabaseMock.callCount("messages", "update")).toBe(1);
   });
 });

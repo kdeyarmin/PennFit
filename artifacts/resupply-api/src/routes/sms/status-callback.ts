@@ -6,13 +6,14 @@
 // MessageSid (we stamped the SID into vendorMetadata at send time)
 // and audit any failure so the admin inbox can surface bounces.
 //
-// Recall-notification sends are the one outbound SMS path with NO
-// messages row (the recall sweep writes only to recall_notifications),
-// so those sends bake `recallNotificationId=<row id>` into the callback
-// URL instead of `conversationId`. Twilio signs the full URL including
-// the query string, so the id is authenticated by the signature
-// middleware; when present we stamp the delivery outcome onto the
-// recall row and skip the messages lookup entirely.
+// Two outbound SMS paths have NO messages row, so their sends bake the
+// owning row's id into the callback URL instead of `conversationId`;
+// Twilio signs the full URL including the query string, so the id is
+// authenticated by the signature middleware. When present we stamp the
+// delivery outcome onto that row and skip the messages lookup entirely:
+//   * `recallNotificationId=<id>` — recall_notifications (recall sweep).
+//   * `videoVisitId=<id>`         — video_visits (telehealth invite
+//     SMS; columns from migration 0315).
 //
 // 200 every signed request. Twilio retries 5xx with exponential
 // backoff, which would amplify any downstream incident.
@@ -77,6 +78,12 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     typeof rawRecallId === "string" && /^[0-9a-f-]{36}$/i.test(rawRecallId)
       ? rawRecallId
       : null;
+  const rawVideoVisitId = req.query.videoVisitId;
+  const videoVisitId =
+    typeof rawVideoVisitId === "string" &&
+    /^[0-9a-f-]{36}$/i.test(rawVideoVisitId)
+      ? rawVideoVisitId
+      : null;
 
   const messageSid = parsed.MessageSid;
   const status = parsed.MessageStatus;
@@ -94,6 +101,13 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
       status,
       parsed.ErrorCode ?? null,
     );
+  } else if (videoVisitId) {
+    await updateVideoVisitInviteDelivery(
+      videoVisitId,
+      messageSid,
+      status,
+      parsed.ErrorCode ?? null,
+    );
   } else {
     await updateMessageDelivery(messageSid, status, parsed.ErrorCode ?? null);
   }
@@ -103,12 +117,17 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
       action: "messaging.delivery.failed",
       adminEmail: null,
       adminUserId: null,
-      targetTable: recallNotificationId ? "recall_notifications" : "messages",
-      targetId: recallNotificationId,
+      targetTable: recallNotificationId
+        ? "recall_notifications"
+        : videoVisitId
+          ? "video_visits"
+          : "messages",
+      targetId: recallNotificationId ?? videoVisitId,
       metadata: {
         channel: "sms",
         conversation_id: conversationId,
         recall_notification_id: recallNotificationId,
+        video_visit_id: videoVisitId,
         twilio_message_sid: messageSid,
         status,
         error_code: parsed.ErrorCode ?? null,
@@ -225,6 +244,56 @@ async function updateRecallNotificationDelivery(
         err: serializeErr(err),
       },
       "sms.status-callback: failed to update recall_notifications row",
+    );
+  }
+}
+
+/**
+ * Stamp a terminal invite-delivery status onto a video_visits row,
+ * keyed by primary key (the id rode in the signed callback URL). Also
+ * stamps the SID — the callback can land before the send path writes
+ * it. Touches ONLY the invite_delivery_* columns, never `status` or
+ * `invite_delivered`: those belong to the visit lifecycle / send path
+ * and a webhook must not race them. Never throws (same
+ * retry-amplification rationale as the paths above).
+ */
+async function updateVideoVisitInviteDelivery(
+  videoVisitId: string,
+  messageSid: string,
+  status: string,
+  errorCode: string | null,
+): Promise<void> {
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    let updateQuery = supabase
+      .schema("resupply")
+      .from("video_visits")
+      .update({
+        invite_delivery_status: status,
+        invite_delivery_error_code: errorCode,
+        invite_twilio_message_sid: messageSid,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", videoVisitId);
+    if (status === "sent") {
+      // Same no-regress rule as the paths above: callbacks are
+      // unordered and re-POSTed, so a late `sent` must never downgrade
+      // a row that already reached delivered/undelivered/failed.
+      updateQuery = updateQuery.or(
+        "invite_delivery_status.is.null,invite_delivery_status.not.in.(delivered,undelivered,failed)",
+      );
+    }
+    const { error } = await updateQuery;
+    if (error) throw error;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "sms_status_video_visit_update_failed",
+        message_sid: messageSid,
+        video_visit_id: videoVisitId,
+        err: serializeErr(err),
+      },
+      "sms.status-callback: failed to update video_visits row",
     );
   }
 }

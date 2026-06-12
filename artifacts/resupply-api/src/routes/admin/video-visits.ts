@@ -39,7 +39,10 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import { readPracticeName } from "../../lib/messaging/messaging-config";
+import {
+  readPracticeName,
+  readSmsConfigOrNull,
+} from "../../lib/messaging/messaging-config";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
@@ -85,6 +88,21 @@ function publicBaseUrl(): string {
 function patientJoinUrl(visitId: string, linkVersion: number): string {
   const token = signVideoVisitToken(visitId, "patient", linkVersion);
   return `${publicBaseUrl()}/video-visit?token=${encodeURIComponent(token)}`;
+}
+
+/** Twilio delivery status callback for an invite SMS. The visit id
+ *  rides in the query string (Twilio signs the full URL, so it's
+ *  authenticated by the signature middleware) — same correlation
+ *  pattern as the recall-notification sends. MUST be built on the
+ *  same public base the /sms/status-callback signature middleware
+ *  reconstructs (readSmsConfigOrNull), NOT publicBaseUrl() above:
+ *  a different origin (e.g. SHOP_PUBLIC_BASE_URL) breaks Twilio's
+ *  signature validation and every callback is rejected. */
+function inviteStatusCallbackUrl(visitId: string): string | undefined {
+  const base = readSmsConfigOrNull()?.publicBaseUrl;
+  return base
+    ? `${base}/resupply-api/sms/status-callback?videoVisitId=${encodeURIComponent(visitId)}`
+    : undefined;
 }
 
 function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
@@ -180,8 +198,12 @@ function renderInviteEmailText(
 
 /** Deliver the join link over the chosen channel. Never throws on a
  *  vendor/config failure — the staff member always gets a copy-able
- *  link back regardless. */
+ *  link back regardless. `delivered: true` means the VENDOR accepted
+ *  the send; for SMS the carrier-side outcome arrives later on the
+ *  status callback (correlated by visitId) and lands in the visit's
+ *  invite_delivery_status. */
 async function deliverInvite(opts: {
+  visitId: string;
   channel: "email" | "sms";
   email: string | null;
   phone: string | null;
@@ -189,7 +211,7 @@ async function deliverInvite(opts: {
   practiceName: string;
   scheduledAt: string | null;
   link: string;
-}): Promise<{ delivered: boolean; reason?: string }> {
+}): Promise<{ delivered: boolean; reason?: string; messageSid?: string }> {
   const greeting = opts.firstName?.trim() ? opts.firstName.trim() : "there";
   const when = formatWhen(opts.scheduledAt);
   try {
@@ -219,13 +241,15 @@ async function deliverInvite(opts: {
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
     const twilio = tryCreateTwilioSms();
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
-    await twilio.sendSms({
+    const statusCallbackUrl = inviteStatusCallbackUrl(opts.visitId);
+    const sent = await twilio.sendSms({
       to: opts.phone,
       body: when
         ? `Hi ${greeting}, this is ${opts.practiceName}. Your video visit is set for ${when}. Join from your phone or computer: ${opts.link}`
         : `Hi ${greeting}, this is ${opts.practiceName}. Join your secure video visit from your phone or computer: ${opts.link}`,
+      ...(statusCallbackUrl ? { statusCallbackUrl } : {}),
     });
-    return { delivered: true };
+    return { delivered: true, messageSid: sent.messageSid };
   } catch (err) {
     logger.warn(
       { err, channel: opts.channel },
@@ -249,6 +273,8 @@ interface VisitListRow {
   link_version: number;
   invite_channel: string | null;
   invite_delivered: boolean | null;
+  invite_delivery_status: string | null;
+  invite_delivery_error_code: string | null;
   staff_joined_at: string | null;
   patient_joined_at: string | null;
   started_at: string | null;
@@ -283,6 +309,11 @@ function toApiVisit(r: VisitListRow) {
     createdByEmail: r.created_by_email,
     inviteChannel: r.invite_channel,
     inviteDelivered: r.invite_delivered,
+    // Carrier-side outcome from the Twilio status callback (SMS only;
+    // null until a callback lands). invite_delivered above only means
+    // "vendor accepted the send".
+    inviteDeliveryStatus: r.invite_delivery_status,
+    inviteDeliveryErrorCode: r.invite_delivery_error_code,
     staffJoinedAt: r.staff_joined_at,
     patientJoinedAt: r.patient_joined_at,
     startedAt: r.started_at,
@@ -292,7 +323,7 @@ function toApiVisit(r: VisitListRow) {
 }
 
 const VISIT_SELECT =
-  "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name)";
+  "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, invite_delivery_status, invite_delivery_error_code, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name)";
 
 // adminReadRateLimiter (a direct express-rate-limit instance) runs
 // BEFORE requireAdmin — the auth gate does a DB-backed session lookup,
@@ -440,6 +471,7 @@ async function createVisitAndRespond(
   let deliveryError: string | null = null;
   if (body.channel !== "none") {
     const delivery = await deliverInvite({
+      visitId: visit.id,
       channel: body.channel,
       email: recipientEmail,
       phone: recipientPhone,
@@ -453,7 +485,12 @@ async function createVisitAndRespond(
     await supabase
       .schema("resupply")
       .from("video_visits")
-      .update({ invite_delivered: delivered })
+      .update({
+        invite_delivered: delivered,
+        // SMS only — the status callback correlates by visit id and
+        // can land before this write, so it also stamps the SID.
+        invite_twilio_message_sid: delivery.messageSid ?? null,
+      })
       .eq("id", visit.id);
     visit.invite_delivered = delivered;
   }
@@ -667,7 +704,7 @@ router.post(
       .schema("resupply")
       .from("video_visits")
       .select(
-        "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name, status, email, phone_e164)",
+        "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, invite_delivery_status, invite_delivery_error_code, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name, status, email, phone_e164)",
       )
       .eq("id", idCheck.data)
       .maybeSingle();
@@ -723,8 +760,23 @@ router.post(
       return;
     }
 
+    // A re-send supersedes the previous attempt: clear the stale
+    // delivery outcome BEFORE sending so the prior message's terminal
+    // state can't masquerade as this attempt's (callbacks for the new
+    // SID only start after Twilio accepts the send below).
+    await supabase
+      .schema("resupply")
+      .from("video_visits")
+      .update({
+        invite_delivery_status: null,
+        invite_delivery_error_code: null,
+        invite_twilio_message_sid: null,
+      })
+      .eq("id", visit.id);
+
     const joinUrl = patientJoinUrl(visit.id, visit.link_version);
     const delivery = await deliverInvite({
+      visitId: visit.id,
       channel: body.channel,
       email: recipientEmail,
       phone: recipientPhone,
@@ -743,6 +795,7 @@ router.post(
       .update({
         invite_channel: body.channel,
         invite_delivered: delivery.delivered,
+        invite_twilio_message_sid: delivery.messageSid ?? null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", visit.id);
