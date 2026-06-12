@@ -526,8 +526,8 @@ export async function patchShopProductDetails(
 // POST /admin/shop/products/:id/archive — retire a SKU from the
 // storefront (sets the Stripe product inactive). requireAdminOnly on
 // the server: agents get a 403 with the server's explanation, which
-// we surface verbatim. Nothing is deleted — the SKU can be
-// re-activated from the Stripe Dashboard.
+// we surface verbatim. Nothing is deleted — restore from
+// /admin/shop/inventory/archived (or the Stripe Dashboard).
 export async function archiveShopProduct(productId: string): Promise<void> {
   const res = await fetch(
     `/resupply-api/admin/shop/products/${encodeURIComponent(productId)}/archive`,
@@ -541,6 +541,79 @@ export async function archiveShopProduct(productId: string): Promise<void> {
   }
   if (!res.ok) {
     let detail = `Archive failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) detail = body.error;
+    } catch {
+      // non-JSON error body — status-only message is enough
+    }
+    throw new Error(detail);
+  }
+}
+
+// One row of GET /admin/shop/products/archived.
+export interface ArchivedShopProductRow {
+  id: string;
+  name: string;
+  sku: string | null;
+  category: string | null;
+  /** Stripe last-modified epoch seconds — effectively the archive time. */
+  updatedAt: number | null;
+}
+
+export async function listArchivedShopProducts(): Promise<
+  ArchivedShopProductRow[]
+> {
+  const res = await fetch("/resupply-api/admin/shop/products/archived", {
+    headers: { Accept: "application/json" },
+  });
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (!res.ok) {
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body — status alone is enough
+    }
+    throw new ApiError(res, data, { method: "GET", url: res.url });
+  }
+  const json = (await res.json()) as { products?: ArchivedShopProductRow[] };
+  return json.products ?? [];
+}
+
+// 409 from restore: an ACTIVE product already carries this SKU
+// (someone re-created it after the archive). Restoring would put two
+// active products with the same SKU in the catalog.
+export class SkuConflictError extends Error {
+  constructor(public readonly conflictingProductId: string | null) {
+    super("sku_conflict");
+    this.name = "SkuConflictError";
+  }
+}
+
+// POST /admin/shop/products/:id/restore — bring an archived SKU back
+// to the storefront. Same requireAdminOnly tier as archive.
+export async function restoreShopProduct(productId: string): Promise<void> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/products/${encodeURIComponent(productId)}/restore`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", ...csrfHeader() },
+    },
+  );
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as {
+      productId?: string;
+    };
+    throw new SkuConflictError(body.productId ?? null);
+  }
+  if (!res.ok) {
+    let detail = `Restore failed (${res.status})`;
     try {
       const body = (await res.json()) as { error?: string };
       if (body.error) detail = body.error;
