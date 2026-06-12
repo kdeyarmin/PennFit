@@ -76,6 +76,7 @@ function makeApp(): Express {
       adminEmail: req.adminEmail,
       adminUserId: req.adminUserId,
       adminRole: req.adminRole,
+      adminGranularRole: req.adminGranularRole,
     });
   });
   app.get("/admin-only", limiter, requireAdminOnly, (req, res) => {
@@ -207,6 +208,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       adminEmail: "alice@example.com",
       adminUserId: "u_admin",
       adminRole: "admin",
+      adminGranularRole: "admin",
     });
   });
 
@@ -364,6 +366,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       // requirePermission would consult.
       expect(res.status).toBe(200);
       expect(res.body.adminRole).toBe("admin");
+      expect(res.body.adminGranularRole).toBe("csr");
     });
 
     it("falls back to the coarse role when NO admin_users row exists (legacy)", async () => {
