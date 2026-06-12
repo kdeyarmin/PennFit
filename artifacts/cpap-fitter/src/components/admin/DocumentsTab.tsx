@@ -4,15 +4,15 @@
 // portal (insurance cards, sleep studies, prescriptions, etc.), mark
 // them reviewed (with optional note), and delete on operator confirm.
 //
-// The "Mark all reviewed" bulk action is best-effort: it iterates and
-// swallows per-doc failures so a single permission error doesn't strand
-// the queue. The optimistic UI update reflects the assumed-success state
-// regardless; CSRs can re-open the tab if a hard failure is suspected.
+// The "Mark all reviewed" bulk action is best-effort: it iterates so a
+// single permission error doesn't strand the queue, but only documents
+// whose call succeeded lose their "New" badge — failures keep the badge
+// and surface a count so the CSR knows to retry.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/admin/EmptyState";
-import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
@@ -58,13 +58,14 @@ function formatDocBytes(bytes: number): string {
 export function DocumentsTab({ patientId }: { patientId: string }) {
   const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [docs, setDocs] = useState<AdminPatientDocument[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // noteOpenId: which doc has the note field expanded (for explicit mark-reviewed)
   const [noteOpenId, setNoteOpenId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   // markingAllReviewed: bulk action in flight
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -74,9 +75,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
       const rows = await listPatientDocuments(patientId);
       setDocs(rows);
     } catch (err) {
-      setLoadError(
-        err instanceof Error ? err.message : "Couldn't load documents.",
-      );
+      setLoadError(err ?? new Error("Couldn't load documents."));
     }
   }, [patientId]);
 
@@ -94,9 +93,24 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
     setNoteText("");
   }
 
+  // Downloading a document auto-marks it reviewed server-side (opening a
+  // file counts as an acknowledgement) — mirror that locally so the "New"
+  // badge doesn't linger until the next reload.
+  function markReviewedLocally(docId: string) {
+    const now = new Date().toISOString();
+    setDocs((prev) =>
+      prev
+        ? prev.map((d) =>
+            d.id === docId && !d.reviewedAt ? { ...d, reviewedAt: now } : d,
+          )
+        : prev,
+    );
+  }
+
   async function handleMarkReviewed(doc: AdminPatientDocument, note?: string) {
     if (doc.reviewedAt) return;
     setReviewingId(doc.id);
+    setReviewError(null);
     try {
       await markPatientDocumentReviewed(patientId, doc.id, note || undefined);
       const now = new Date().toISOString();
@@ -104,14 +118,17 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
         prev
           ? prev.map((d) =>
               d.id === doc.id
-                ? { ...d, reviewedAt: now, reviewNote: note ?? null }
+                ? { ...d, reviewedAt: now, reviewNote: note?.trim() || null }
                 : d,
             )
           : prev,
       );
       closeNoteField();
-    } catch {
-      // Non-fatal: badge stays, CSR can try again.
+    } catch (err) {
+      // Badge stays; tell the CSR why so they know to try again.
+      setReviewError(
+        describeError(err).detail ?? "Couldn't mark reviewed — try again.",
+      );
     } finally {
       setReviewingId(null);
     }
@@ -122,19 +139,28 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
     const unreviewed = docs.filter((d) => !d.reviewedAt);
     if (unreviewed.length === 0) return;
     setMarkingAll(true);
+    setReviewError(null);
     const now = new Date().toISOString();
+    const failed = new Set<string>();
     for (const doc of unreviewed) {
       try {
         await markPatientDocumentReviewed(patientId, doc.id);
       } catch {
-        // best-effort — carry on
+        failed.add(doc.id); // best-effort — carry on, but keep its badge
       }
     }
     setDocs((prev) =>
       prev
-        ? prev.map((d) => (!d.reviewedAt ? { ...d, reviewedAt: now } : d))
+        ? prev.map((d) =>
+            !d.reviewedAt && !failed.has(d.id) ? { ...d, reviewedAt: now } : d,
+          )
         : prev,
     );
+    if (failed.size > 0) {
+      setReviewError(
+        `${failed.size} document${failed.size === 1 ? "" : "s"} couldn't be marked reviewed — try again.`,
+      );
+    }
     setMarkingAll(false);
   }
 
@@ -163,10 +189,10 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
     }
   }
 
-  if (loadError) {
+  if (loadError != null) {
     return (
       <ErrorPanel
-        error={new Error(loadError)}
+        error={loadError}
         onRetry={() => void load()}
         title="Couldn't load documents"
       />
@@ -225,6 +251,11 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
           {deleteError}
         </p>
       )}
+      {reviewError && (
+        <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
+          {reviewError}
+        </p>
+      )}
       {docs.length === 0 ? (
         <EmptyState title="No documents uploaded yet." />
       ) : (
@@ -266,6 +297,7 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
                         target="_blank"
                         rel="noopener"
                         download={doc.filename ?? undefined}
+                        onClick={() => markReviewedLocally(doc.id)}
                         className="text-sm font-medium underline truncate"
                         style={{ color: "#1d4ed8" }}
                       >

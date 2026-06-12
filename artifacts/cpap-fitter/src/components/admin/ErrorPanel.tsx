@@ -55,21 +55,30 @@ export function describeError(error: unknown): {
     const status = error.status;
     const statusLabel = status > 0 ? `HTTP ${status}` : null;
 
-    // Validation errors carry { error: "invalid_query", issues: [...] }.
+    // Validation errors carry { error: "invalid_query" | "invalid_body",
+    // issues: [...] }; some routes also attach a human-readable `message`.
     const data = error.data as
       | {
           error?: string;
+          message?: string;
           issues?: Array<{ path?: string; message?: string }>;
         }
       | null
       | undefined;
 
-    if (data?.error === "invalid_query" && data.issues && data.issues.length) {
+    if (
+      (data?.error === "invalid_query" || data?.error === "invalid_body") &&
+      data.issues &&
+      data.issues.length
+    ) {
       const first = data.issues[0];
       return {
         statusLabel,
         detail: `Invalid request: ${first.path ?? "field"} — ${first.message ?? "validation failed"}`,
       };
+    }
+    if (typeof data?.message === "string" && data.message.trim() !== "") {
+      return { statusLabel, detail: truncate(data.message) };
     }
     if (status === 401)
       return {

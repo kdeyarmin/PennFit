@@ -49,6 +49,26 @@ describe("describeError — ApiError handling", () => {
     });
     expect(describeError(err).detail).toMatch(/region — bad value/);
   });
+
+  test("invalid_body validation surfaces the first issue", () => {
+    const err = apiError(400, {
+      error: "invalid_body",
+      issues: [{ path: "recipientFaxE164", message: "Fax must be E.164" }],
+    });
+    expect(describeError(err).detail).toMatch(
+      /recipientFaxE164 — Fax must be E\.164/,
+    );
+  });
+
+  test("a server-provided message wins over the generic status copy", () => {
+    const err = apiError(502, {
+      error: "fax_send_failed",
+      message: "Telnyx fax error: number unreachable",
+    });
+    expect(describeError(err).detail).toBe(
+      "Telnyx fax error: number unreachable",
+    );
+  });
 });
 
 describe("describeError — non-ApiError (plain Error) handling", () => {
