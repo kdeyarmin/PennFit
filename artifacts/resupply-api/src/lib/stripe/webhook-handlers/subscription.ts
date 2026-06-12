@@ -203,11 +203,8 @@ async function upsertSubscription(
     last_stripe_event_at: eventCreatedAtIso,
     updated_at: new Date().toISOString(),
   };
-  // Don't overwrite a known customer_id with __unknown — the creation
-  // event always carries it; later updates may come from system
-  // events (e.g. invoice retry) that may not.
-  if (customerId) update.customer_id = customerId;
-
+  // customerId is guaranteed non-null here (we return early when missing).
+  update.customer_id = customerId;
   const { data: updated, error: updateErr } = await supabase
     .schema("resupply")
     .from("shop_subscriptions")
