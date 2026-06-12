@@ -318,6 +318,31 @@ export function Results() {
     );
   }
 
+  if (data.topRecommendations.length === 0) {
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-12">
+        <div className="glass-card rounded-2xl p-8 text-center space-y-4">
+          <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground" />
+          <h1 className="text-xl font-semibold">No matches found</h1>
+          <p className="text-sm text-muted-foreground">
+            We weren't able to rank masks for these measurements. This can
+            happen when the facial dimensions are outside our current model
+            range. Try retaking the photo or browsing the full catalog.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3 pt-2">
+            <Button onClick={() => setLocation("/capture")}>
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Retake photo
+            </Button>
+            <Button variant="outline" onClick={() => setLocation("/masks")}>
+              Browse all masks
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const topConfidencePct = Math.round(
     (data.topRecommendations[0]?.confidence ?? 0) * 100,
   );

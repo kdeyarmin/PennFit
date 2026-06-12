@@ -271,9 +271,16 @@ function AccountInner() {
   if (loadError) {
     return (
       <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
-        <div className="glass-card rounded-2xl p-6 text-center">
-          <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
+        <div className="glass-card rounded-2xl p-6 text-center space-y-3">
+          <AlertCircle className="h-6 w-6 mx-auto text-destructive" />
           <p className="text-sm text-muted-foreground">{loadError}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void reload()}
+          >
+            Try again
+          </Button>
         </div>
       </div>
     );

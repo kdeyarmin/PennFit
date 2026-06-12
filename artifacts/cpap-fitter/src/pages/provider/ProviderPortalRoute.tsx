@@ -78,7 +78,29 @@ function Gated({
   if (me.isError) {
     const status = me.error instanceof ProviderApiError ? me.error.status : 500;
     if (status === 401) return <Redirect to="/provider/sign-in" />;
-    return <NoAccess />;
+    // 403 / role mismatch → genuinely no access.
+    if (status === 403) return <NoAccess />;
+    // 5xx or network failure → transient error, not an access decision.
+    return (
+      <ProviderAuthLayout>
+        <Card className="p-6 text-center">
+          <h1 className="text-xl font-bold text-slate-900">
+            Couldn't connect to the portal
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            There was a temporary problem loading your account. Please try
+            again.
+          </p>
+          <Button
+            variant="secondary"
+            className="mt-5"
+            onClick={() => void me.refetch()}
+          >
+            Try again
+          </Button>
+        </Card>
+      </ProviderAuthLayout>
+    );
   }
   if (!me.data.account.mfaEnrolled && !allowUnenrolled) {
     return <Redirect to="/provider/mfa-setup" />;

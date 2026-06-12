@@ -188,6 +188,7 @@ export function Questionnaire() {
             size="icon"
             onClick={handleBack}
             disabled={currentIndex === 0}
+            aria-label="Previous question"
             className="h-9 w-9 rounded-full glass-panel border-0 disabled:opacity-40"
           >
             <ArrowLeft className="h-4 w-4" />

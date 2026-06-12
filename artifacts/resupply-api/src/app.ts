@@ -276,6 +276,17 @@ app.use(
 // BEFORE the global parser; the router-level raw() and the global
 // json() both skip an already-read body, so req.body stays a Buffer
 // all the way to the signature middleware.
+// Pre-verification DoS shield for the SendGrid Event Webhook.
+// Mirrors the Stripe and integration-webhook limiters above.
+const sendgridEventsLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.sendgrid_events.windowMs,
+  limit: RATE_LIMITS.sendgrid_events.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
+app.use("/resupply-api/email/sendgrid-events", sendgridEventsLimiter);
 app.use(
   "/resupply-api/email/sendgrid-events",
   express.raw({ type: "application/json", limit: "1mb" }),

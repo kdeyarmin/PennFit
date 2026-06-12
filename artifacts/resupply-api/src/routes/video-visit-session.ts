@@ -10,7 +10,7 @@
 // an error page.
 
 import { Router, type IRouter } from "express";
-import expressRateLimit from "express-rate-limit";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -31,6 +31,7 @@ const sessionLimiter = expressRateLimit({
   limit: 60,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
   message: { error: "too_many_requests" },
 });
 

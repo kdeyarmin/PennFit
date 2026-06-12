@@ -4,6 +4,7 @@ import {
   CardContent,
   Skeleton,
   Badge,
+  Button,
 } from "@/components/admin/ui-shims";
 import { fetchAdminAnalytics } from "@/lib/admin/storefront-admin-api";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
@@ -27,7 +28,7 @@ const STATUS_TONE: Record<
 export function AdminAnalytics() {
   useDocumentTitle("Admin · Analytics");
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["admin-analytics"],
     queryFn: fetchAdminAnalytics,
   });
@@ -55,8 +56,18 @@ export function AdminAnalytics() {
 
       {error && (
         <Card className="border-destructive/40 glass-card rounded-2xl">
-          <CardContent className="p-4 text-sm text-destructive">
-            Could not load analytics: {(error as Error).message}
+          <CardContent className="p-4 flex items-center justify-between gap-4">
+            <p className="text-sm text-destructive">
+              Could not load analytics: {(error as Error).message}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void refetch()}
+              className="shrink-0"
+            >
+              Retry
+            </Button>
           </CardContent>
         </Card>
       )}

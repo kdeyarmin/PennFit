@@ -799,7 +799,7 @@ function GuardedOrderSuccess() {
       cancelled = true;
     };
   }, []);
-  if (state === "checking") return null;
+  if (state === "checking") return <RouteFallback />;
   if (state === "deny") return <Redirect to="/" />;
   return <OrderSuccess />;
 }
