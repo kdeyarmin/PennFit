@@ -4321,6 +4321,15 @@ export interface Database {
           ready_for_pickup_at: string | null;
           picked_up_at: string | null;
           ready_for_pickup_email_sent_at: string | null;
+          // Migration 0318: Front Desk walk-in / counter ordering.
+          // `source` distinguishes storefront (Stripe) from a CSR
+          // counter order; `payment_method` records how an in-person
+          // order was paid ('cash' | 'insurance'; NULL for storefront
+          // Stripe orders); `counter_csr_email` is the staff member who
+          // rang it up.
+          source: string;
+          payment_method: string | null;
+          counter_csr_email: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

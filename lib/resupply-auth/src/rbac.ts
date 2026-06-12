@@ -65,6 +65,9 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   returns.manage          — open / transition / annotate loss claims,
  *                              proof-of-delivery, and other fulfillment-
  *                              lifecycle ops below the approve gate
+ *   orders.create           — ring up a counter / walk-in order on the
+ *                              Front Desk (cash or bill-to-insurance);
+ *                              front-line CSR + up
  *   compliance.read         — view compliance alerts + reports
  *   compliance.resolve      — close out a compliance alert
  *   audit.export            — download audit-log CSV
@@ -108,6 +111,7 @@ export type Permission =
   | "returns.read"
   | "returns.approve"
   | "returns.manage"
+  | "orders.create"
   | "compliance.read"
   | "compliance.resolve"
   | "audit.export"
@@ -140,6 +144,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "returns.read",
   "returns.approve",
   "returns.manage",
+  "orders.create",
   "compliance.read",
   "compliance.resolve",
   "audit.export",
@@ -233,6 +238,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "returns.read",
     "returns.approve",
     "returns.manage",
+    "orders.create",
     "compliance.read",
     "compliance.resolve",
     "audit.read",
@@ -265,6 +271,7 @@ const EFFECTIVE_ROLE_PERMISSIONS: Record<
     "patients.update",
     "returns.read",
     "returns.manage",
+    "orders.create",
     "compliance.read",
     "reports.read",
     "inventory.read",

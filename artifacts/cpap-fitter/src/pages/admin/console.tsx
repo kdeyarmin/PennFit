@@ -57,6 +57,11 @@ import { DashboardPage } from "@/pages/admin/dashboard";
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
+const FrontDeskPage = lazyWithRetry(() =>
+  import("@/pages/admin/front-desk").then((m) => ({
+    default: m.FrontDeskPage,
+  })),
+);
 const AdminPatientsDuplicatesPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-patients-duplicates").then((m) => ({
     default: m.AdminPatientsDuplicatesPage,
@@ -861,6 +866,7 @@ function AdminConsole() {
                 />
               )}
             </Route>
+            <Route path="/admin/front-desk" component={FrontDeskPage} />
             <Route path="/admin/patients" component={PatientsPage} />
             <Route
               path="/admin/patient-packets"

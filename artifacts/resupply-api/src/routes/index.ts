@@ -28,6 +28,7 @@ import conversationsSearchRouter from "./admin/conversations-search.js";
 import conversationDraftReplyRouter from "./admin/conversation-draft-reply.js";
 import clickToDialRouter from "./admin/click-to-dial.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
+import counterOrdersRouter from "./admin/counter-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
@@ -643,6 +644,11 @@ router.use(shopProductsAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shop/counter-orders — Front Desk walk-in ordering. A CSR rings
+// up a cash or bill-to-insurance order for a walk-in customer without
+// Stripe Hosted Checkout. requirePermission("orders.create") gate is on
+// the route itself.
+router.use(counterOrdersRouter);
 // /admin/shop/orders/:orderId/notes — internal CSR notes per shop
 // order (Phase 14). Mounted after the orders router so the more-
 // specific /notes path doesn't shadow any future detail GET.
