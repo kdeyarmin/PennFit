@@ -138,7 +138,6 @@ WORKSPACE — the day-to-day desk:
       * Company Calendar (/admin/company-calendar) — shared team schedule.
       * Video visits (/admin/video-visits) — telehealth video calls with patients (equipment setups, mask troubleshooting, follow-ups). Create a visit and the patient gets a secure join link by text or email — no app on their side. Also reachable from the "Video visit" button in the top header (works for people not in the system yet) and the Telehealth action on every patient chart.
       * Follow-ups (/admin/followups) — scheduled callbacks/tasks.
-      * Appointment requests (/admin/appointment-requests).
   - Outreach (send surfaces + the reusable content behind them):
       * Bulk Campaigns (/admin/bulk-campaigns) — batch SMS/email sends.
       * Alert Library (/admin/alerts) — curated one-off alerts (permission: admin.tools.manage).

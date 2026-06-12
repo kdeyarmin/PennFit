@@ -4,9 +4,7 @@
 // in-person fittings & setups, follow-ups, consultations) on a month grid
 // that the whole company sees, track each one through its lifecycle
 // (scheduled → completed / canceled / no-show), filter by type or owner,
-// and drill into a day. Distinct from /admin/appointment-requests (the
-// inbound, patient-initiated triage queue) — these are the confirmed,
-// scheduled events.
+// and drill into a day. These are the confirmed, scheduled events.
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

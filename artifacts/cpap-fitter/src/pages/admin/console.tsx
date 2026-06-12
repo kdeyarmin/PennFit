@@ -338,11 +338,6 @@ const AdminVideoVisitsPage = lazyWithRetry(() =>
     default: m.AdminVideoVisitsPage,
   })),
 );
-const AdminAppointmentRequestsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-appointment-requests").then((m) => ({
-    default: m.AdminAppointmentRequestsPage,
-  })),
-);
 const AdminIntegrationsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-integrations").then((m) => ({
     default: m.AdminIntegrationsPage,
@@ -1090,10 +1085,6 @@ function AdminConsole() {
             <Route
               path="/admin/company-calendar"
               component={AdminCompanyCalendarPage}
-            />
-            <Route
-              path="/admin/appointment-requests"
-              component={AdminAppointmentRequestsPage}
             />
             <Route
               path="/admin/video-visits"
