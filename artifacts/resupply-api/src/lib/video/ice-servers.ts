@@ -48,6 +48,16 @@ const DEFAULT_STUN_URLS = [
 // including mid-call ICE restarts.
 const NTS_TOKEN_TTL_SECONDS = 86_400;
 const NTS_CACHE_MS = 60 * 60 * 1000;
+// The join endpoint awaits the mint inline, and the Twilio SDK's own
+// HTTP timeout is ~30s — a stalled (not failing) Twilio would add that
+// to every cold-cache join. A hang must degrade like any other failure,
+// so the mint races a hard cap well under anything a user would wait.
+const NTS_MINT_TIMEOUT_MS = 5_000;
+// After a failed/timed-out mint, skip NTS entirely for a beat instead
+// of paying the round-trip on EVERY join during a Twilio outage.
+// Short on purpose: connectivity for CGNAT callers is degraded while
+// the backoff holds, so we re-probe quickly.
+const NTS_FAILURE_BACKOFF_MS = 60 * 1000;
 
 interface NtsCache {
   servers: IceServerEntry[];
@@ -55,10 +65,12 @@ interface NtsCache {
 }
 
 let ntsCache: NtsCache | null = null;
+let ntsFailureBackoffUntil = 0;
 
-/** Test-only: clear the cached NTS token. */
+/** Test-only: clear the cached NTS token + failure backoff. */
 export function resetIceServerCacheForTest(): void {
   ntsCache = null;
+  ntsFailureBackoffUntil = 0;
 }
 
 function staticTurnServers(): IceServerEntry | null {
@@ -121,12 +133,20 @@ export async function resolveIceServers(opts?: {
   if (ntsCache && ntsCache.expiresAt > now()) {
     return [...baseline, ...ntsCache.servers];
   }
+  if (ntsFailureBackoffUntil > now()) {
+    // Recent mint failure — don't pay another round-trip yet.
+    return baseline;
+  }
 
   const nts = (opts?.ntsClientFactory ?? tryCreateNtsClient)();
   if (!nts) return baseline; // Twilio not configured — STUN only.
 
   try {
-    const token = await nts.createIceToken(NTS_TOKEN_TTL_SECONDS);
+    const token = await withTimeout(
+      nts.createIceToken(NTS_TOKEN_TTL_SECONDS),
+      NTS_MINT_TIMEOUT_MS,
+    );
+    ntsFailureBackoffUntil = 0;
     const servers: IceServerEntry[] = token.iceServers;
     ntsCache = {
       servers,
@@ -136,6 +156,7 @@ export async function resolveIceServers(opts?: {
     };
     return [...baseline, ...servers];
   } catch (err) {
+    ntsFailureBackoffUntil = now() + NTS_FAILURE_BACKOFF_MS;
     // Pass the Error object itself so the logger's redaction policy
     // applies to message/stack rather than leaking a raw string.
     logger.warn(
@@ -143,8 +164,35 @@ export async function resolveIceServers(opts?: {
         event: "video.ice.nts_token_failed",
         err: err instanceof Error ? err : new Error(String(err)),
       },
-      "Twilio NTS token mint failed — falling back to STUN-only ICE",
+      "Twilio NTS token mint failed — falling back to STUN-only ICE (backing off)",
     );
     return baseline;
   }
+}
+
+/**
+ * Race a promise against a hard deadline. The rejected-timeout path is
+ * caught by resolveIceServers' degrade-to-baseline handler; the losing
+ * SDK promise keeps running to completion in the background (harmless —
+ * its result is simply discarded) and its eventual rejection, if any,
+ * is swallowed so it can't surface as an unhandled rejection.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`NTS token mint timed out after ${ms}ms`));
+      promise.catch(() => {});
+    }, ms);
+    timer.unref?.();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
 }
