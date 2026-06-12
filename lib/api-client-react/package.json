@@ -12,5 +12,14 @@
   },
   "peerDependencies": {
     "react": ">=18"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "^4.1.6"
   }
 }
