@@ -65,7 +65,11 @@ docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
   -c "INSERT INTO storage.buckets (id, name, public) VALUES ('$BUCKET','$BUCKET', false) ON CONFLICT (id) DO NOTHING;" >/dev/null
 
 echo "[dev-db] 5/5 bootstrap dev admin ($ADMIN_EMAIL)"
-SRK="$(supabase status -o env 2>/dev/null | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"$/\1/p')"
+SRK="$(supabase status -o env 2>/dev/null | awk -F= '$1=="SERVICE_ROLE_KEY"{gsub(/"/,"",$2); print $2}')"
+if [[ -z "${SRK:-}" ]]; then
+  echo "[dev-db] failed to read SERVICE_ROLE_KEY from 'supabase status -o env' output" >&2
+  exit 1
+fi
 export DATABASE_URL="$DB_URL"
 export SUPABASE_URL="http://127.0.0.1:54321"
 export SUPABASE_SERVICE_ROLE_KEY="$SRK"
