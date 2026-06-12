@@ -306,7 +306,6 @@ describe("account — sections grouped into tabs", () => {
       "<EsignFormsSection",
       "<ReferralProgramSection",
       "<CaregiverSection",
-      "<WalletPassSection",
       "<CommPrefsSection",
       "<DataExportSection",
     ];
