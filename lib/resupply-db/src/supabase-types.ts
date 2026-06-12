@@ -3334,6 +3334,47 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["inbound_faxes"]["Row"]>;
         Relationships: [];
       };
+      // AI referral intake reviews (migration 0321). One row per referral
+      // packet (an inbound fax or an admin-uploaded PDF) holding the
+      // structured AI extraction and the human accept/dismiss lifecycle.
+      referral_reviews: {
+        Row: {
+          id: string;
+          source: "fax" | "upload";
+          inbound_fax_id: string | null;
+          media_object_key: string | null;
+          media_content_type: string | null;
+          media_size_bytes: number | null;
+          status:
+            | "pending"
+            | "extracted"
+            | "accepted"
+            | "dismissed"
+            | "failed"
+            | "offline"
+            | "unsupported";
+          extraction: Json | null;
+          extraction_model: string | null;
+          extracted_at: string | null;
+          error_reason: string | null;
+          created_patient_id: string | null;
+          accepted_at: string | null;
+          accepted_by_user_id: string | null;
+          dismissed_at: string | null;
+          dismissed_by_user_id: string | null;
+          dismiss_note: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["referral_reviews"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["referral_reviews"]["Row"]
+        >;
+        Relationships: [];
+      };
       voice_calls: {
         Row: {
           id: string;
@@ -3833,33 +3874,6 @@ export interface Database {
         >;
         Relationships: [];
       };
-      appointment_requests: {
-        Row: {
-          id: string;
-          requester_email: string;
-          requester_name: string | null;
-          requester_phone: string | null;
-          topic: string;
-          preferred_window: string | null;
-          notes: string | null;
-          status: "new" | "contacted" | "scheduled" | "declined" | "cancelled";
-          attached_patient_id: string | null;
-          assigned_admin_user_id: string | null;
-          triaged_at: string | null;
-          scheduled_for: string | null;
-          meeting_url: string | null;
-          meeting_provider: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: Partial<
-          Database["resupply"]["Tables"]["appointment_requests"]["Row"]
-        >;
-        Update: Partial<
-          Database["resupply"]["Tables"]["appointment_requests"]["Row"]
-        >;
-        Relationships: [];
-      };
       shop_order_loss_claims: {
         Row: {
           id: string;
@@ -4247,7 +4261,12 @@ export interface Database {
           unit_cost_cents: number | null;
           cost_source: string | null;
           cost_captured_at: string | null;
-          paid_at: string;
+          // Migration 0320: nullable. NULL = the line was dispensed but is
+          // not paid yet (e.g. a counter order billed to insurance, paid
+          // on adjudication). Stamped when payment is actually received;
+          // revenue/margin analytics filter on paid_at, so NULL lines are
+          // correctly excluded until paid.
+          paid_at: string | null;
           created_at: string;
         };
         Insert: Partial<
@@ -4321,6 +4340,15 @@ export interface Database {
           ready_for_pickup_at: string | null;
           picked_up_at: string | null;
           ready_for_pickup_email_sent_at: string | null;
+          // Migration 0320: Front Desk walk-in / counter ordering.
+          // `source` distinguishes storefront (Stripe) from a CSR
+          // counter order; `payment_method` records how an in-person
+          // order was paid ('cash' | 'insurance'; NULL for storefront
+          // Stripe orders); `counter_csr_email` is the staff member who
+          // rang it up.
+          source: string;
+          payment_method: string | null;
+          counter_csr_email: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;

@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Filter,
   Wind,
@@ -15,6 +16,8 @@ import {
   Activity,
   Tag,
   Sparkles,
+  AlertCircle,
+  RefreshCcw,
 } from "lucide-react";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -37,7 +40,7 @@ export function Masks() {
     "Mask catalog",
     "Browse the full PennPaps CPAP mask catalog: nasal, nasal pillow, full face, and hybrid masks with sizing, weight, noise level, and price tier.",
   );
-  const { data, isLoading } = useListMasks();
+  const { data, isLoading, isError, refetch } = useListMasks();
   const [filter, setFilter] = useState<MaskEntryType | "all">("all");
 
   // Guard both hops: a non-JSON /api/masks response (transient
@@ -119,6 +122,25 @@ export function Masks() {
           </Button>
         </div>
       </div>
+
+      {isError && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Couldn't load the mask catalog</AlertTitle>
+          <AlertDescription className="flex items-center gap-3">
+            This looks like a temporary connection problem.
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void refetch()}
+              className="shrink-0"
+            >
+              <RefreshCcw className="h-3.5 w-3.5 mr-1.5" />
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

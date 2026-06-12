@@ -34,6 +34,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
 import { ObjectStorageService } from "../object-storage/objectStorage";
+import { openReferralReviewForFax } from "../referral-review/open-for-fax";
 
 import { autoFileSignedFax } from "./auto-file-signed";
 
@@ -224,6 +225,34 @@ export async function ingestInboundFax(
   // with the same fax. Best-effort + never throws.
   if (!barcodeFiled) {
     await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+  }
+
+  // Step 5: referral review (opt-in). When `fax.referral_review` is on and
+  // the fax wasn't a barcode-tracked signed return (those are OUR documents
+  // coming back, not referrals), open a referral_reviews row and enqueue
+  // the AI extraction pass so the Referral Reviewer queue picks it up.
+  // SKIPPED when no media persisted (nothing to extract). Best-effort —
+  // never throws into the webhook; an enqueue failure leaves the row
+  // `pending` and the admin "Re-run extraction" button recovers it.
+  if (media.persisted && !barcodeFiled) {
+    try {
+      if (await isFeatureEnabled("fax.referral_review")) {
+        await openReferralReviewForFax(
+          {
+            faxId: rowId,
+            mediaObjectKey: media.objectKey,
+            mediaContentType: media.contentType,
+            mediaSizeBytes: media.bytes?.byteLength ?? null,
+          },
+          logger,
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err, fax_id_first8: rowId.slice(0, 8) },
+        "fax_inbound_referral_review_failed",
+      );
+    }
   }
 
   return { kind: "inserted", id: rowId, mediaPersisted: media.persisted };

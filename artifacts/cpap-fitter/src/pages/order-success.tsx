@@ -43,8 +43,18 @@ export function OrderSuccess() {
   useDocumentTitle("Order confirmed");
   const [, setLocation] = useLocation();
   const { reset } = useFitterStore();
-  const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(
-    null,
+  // Lazily initialize from sessionStorage so there's no flash of
+  // empty content. GuardedOrderSuccess already verified the key exists
+  // before mounting this component, so the parse almost always succeeds.
+  const [confirmation] = useState<OrderConfirmation | null>(
+    () => {
+      try {
+        const stored = sessionStorage.getItem("fitter_order_confirmation");
+        return stored ? (JSON.parse(stored) as OrderConfirmation) : null;
+      } catch {
+        return null;
+      }
+    },
   );
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
@@ -72,18 +82,6 @@ export function OrderSuccess() {
            still visible on screen for manual copy, so fail silently */
       });
   };
-
-  // The route-level OrderSuccessGate in App.tsx already verified that the
-  // confirmation exists in sessionStorage before mounting this component.
-  // We just hydrate it into local state on first mount.
-  useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("fitter_order_confirmation");
-      if (stored) setConfirmation(JSON.parse(stored));
-    } catch {
-      /* fall through — the gate will redirect on next route change */
-    }
-  }, []);
 
   if (!confirmation) return null;
 

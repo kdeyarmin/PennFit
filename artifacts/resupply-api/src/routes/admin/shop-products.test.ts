@@ -38,6 +38,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const stripeRetrieveMock = vi.fn();
 const stripeUpdateMock = vi.fn();
 const stripeSearchMock = vi.fn();
+const stripeListMock = vi.fn();
 const stripeProductCreateMock = vi.fn();
 const stripePriceCreateMock = vi.fn();
 const stripePriceUpdateMock = vi.fn();
@@ -49,6 +50,7 @@ vi.mock("../../lib/stripe/config", () => ({
       retrieve: (...a: unknown[]) => stripeRetrieveMock(...a),
       update: (...a: unknown[]) => stripeUpdateMock(...a),
       search: (...a: unknown[]) => stripeSearchMock(...a),
+      list: (...a: unknown[]) => stripeListMock(...a),
       create: (...a: unknown[]) => stripeProductCreateMock(...a),
     },
     prices: {
@@ -203,6 +205,7 @@ beforeEach(() => {
   stripeRetrieveMock.mockReset();
   stripeUpdateMock.mockReset();
   stripeSearchMock.mockReset();
+  stripeListMock.mockReset();
   stripeProductCreateMock.mockReset();
   stripePriceCreateMock.mockReset();
   stripePriceUpdateMock.mockReset();
@@ -1286,5 +1289,172 @@ describe("POST /admin/shop/products/:productId/archive — idempotency", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, productId: "prod_x" });
     expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /admin/shop/products/archived", () => {
+  it("rejects non-admin roles", async () => {
+    mockAdmin.current = {
+      userId: "user_agent",
+      email: "agent@penn.example.com",
+      role: "agent",
+    };
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products/archived",
+    );
+    expect(res.status).toBe(403);
+    expect(stripeListMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 in preview mode (no Stripe key)", async () => {
+    stubVerifiedAdmin();
+    stripeConfigured = false;
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products/archived",
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+  });
+
+  it("lists only inactive products carrying shop metadata", async () => {
+    stubVerifiedAdmin();
+    stripeListMock.mockResolvedValue({
+      data: [
+        {
+          id: "prod_shop",
+          name: "Retired mask",
+          updated: 1760000000,
+          metadata: { shop_sku: "rm-mask-old", category: "mask" },
+        },
+        {
+          id: "prod_other",
+          name: "Unrelated Stripe object",
+          updated: 1760000001,
+          metadata: {},
+        },
+        {
+          id: "prod_badcat",
+          name: "Bad category",
+          updated: 1760000002,
+          metadata: { shop_sku: "x", category: "not-a-category" },
+        },
+      ],
+    });
+    const res = await request(makeApp()).get(
+      "/resupply-api/admin/shop/products/archived",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.products).toEqual([
+      {
+        id: "prod_shop",
+        name: "Retired mask",
+        sku: "rm-mask-old",
+        category: "mask",
+        updatedAt: 1760000000,
+      },
+    ]);
+    expect(stripeListMock).toHaveBeenCalledWith({ active: false, limit: 100 });
+  });
+});
+
+describe("POST /admin/shop/products/:productId/restore", () => {
+  it("rejects non-admin roles", async () => {
+    mockAdmin.current = {
+      userId: "user_agent",
+      email: "agent@penn.example.com",
+      role: "agent",
+    };
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/restore",
+    );
+    expect(res.status).toBe(403);
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects ids that don't start with prod_", async () => {
+    stubVerifiedAdmin();
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/x/restore",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_product_id");
+  });
+
+  it("returns 503 in preview mode (no Stripe key)", async () => {
+    stubVerifiedAdmin();
+    stripeConfigured = false;
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/restore",
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("stripe_not_configured");
+  });
+
+  it("is a 200 no-op when the product is already active in the catalog", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Already active",
+      active: true,
+      metadata: { shop_sku: "sku-a", category: "mask" },
+    });
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/restore",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, productId: "prod_x" });
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses inactive products without shop metadata", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Not a shop product",
+      active: false,
+      metadata: {},
+    });
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/restore",
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("product_not_in_catalog");
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("409s when an active product already carries the same SKU", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Retired mask",
+      active: false,
+      metadata: { shop_sku: "rm-mask-old", category: "mask" },
+    });
+    stripeSearchMock.mockResolvedValue({ data: [{ id: "prod_dupe" }] });
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/restore",
+    );
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: "sku_conflict", productId: "prod_dupe" });
+    expect(stripeUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("sets active=true and flushes the catalog cache", async () => {
+    stubVerifiedAdmin();
+    stripeRetrieveMock.mockResolvedValue({
+      id: "prod_x",
+      name: "Retired mask",
+      active: false,
+      metadata: { shop_sku: "rm-mask-old", category: "mask" },
+    });
+    stripeSearchMock.mockResolvedValue({ data: [] });
+    stripeUpdateMock.mockResolvedValue({ id: "prod_x", active: true });
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/products/prod_x/restore",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, productId: "prod_x" });
+    expect(stripeUpdateMock).toHaveBeenCalledWith("prod_x", { active: true });
+    expect(invalidateCacheMock).toHaveBeenCalled();
   });
 });

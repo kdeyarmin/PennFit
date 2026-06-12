@@ -369,10 +369,23 @@ function matchLine(
   }
   // Fall back to HCPCS-only when no modifier-aware match: better to
   // attach the payment to the right HCPCS than to leave it unmatched.
-  for (const local of locals) {
-    if (local.hcpcs_code === era.hcpcsCode) return local;
+  // When SEVERAL local lines share the HCPCS (modifier rotations like
+  // KH/KI/KJ on capped rentals), first-match-wins may post to the
+  // wrong line — surface that ambiguity to ops instead of staying
+  // silent. HCPCS codes + counts only; no patient data.
+  const sameHcpcs = locals.filter((l) => l.hcpcs_code === era.hcpcsCode);
+  if (sameHcpcs.length > 1) {
+    logger.warn(
+      {
+        event: "era_line_match_ambiguous_fallback",
+        hcpcs_code: era.hcpcsCode,
+        era_modifiers: normaliseMods(era.modifiers),
+        candidate_lines: sameHcpcs.length,
+      },
+      "era_reconciler: no modifier-aware line match — posting to the first of multiple same-HCPCS lines; verify the claim",
+    );
   }
-  return null;
+  return sameHcpcs[0] ?? null;
 }
 
 function normaliseMods(mods: readonly string[]): string {

@@ -332,20 +332,36 @@ export async function handleVoiceWsConnection(
     ),
   });
 
-  const bridge = new VoiceBridge({
-    client,
-    sink,
-    dispatcher,
-    ...(ttsStreamer ? { ttsStreamer } : {}),
-    ...(ttsSynthesizer ? { tts: ttsSynthesizer } : {}),
-    // Cover the dead air while a tool runs (identity/inventory/address
-    // lookups) on the ElevenLabs path so the caller isn't met with
-    // silence mid-call. No-op on the cedar path (the model owns its own
-    // audio there) — the bridge guards on the external-voice path itself.
-    ...(externalVoice
-      ? { filler: { phrases: DEFAULT_TOOL_CALL_FILLER_PHRASES } }
-      : {}),
-  });
+  // RealtimeClient's constructor OPENS the OpenAI WebSocket, so a throw
+  // from anything between client construction and the bridge taking
+  // ownership would leak that socket (the upgrade-path catch only
+  // closes the Twilio side — it has no reference to `client`). Guard
+  // the handoff: if the bridge can't be constructed, close the client
+  // before propagating.
+  let bridge: VoiceBridge;
+  try {
+    bridge = new VoiceBridge({
+      client,
+      sink,
+      dispatcher,
+      ...(ttsStreamer ? { ttsStreamer } : {}),
+      ...(ttsSynthesizer ? { tts: ttsSynthesizer } : {}),
+      // Cover the dead air while a tool runs (identity/inventory/address
+      // lookups) on the ElevenLabs path so the caller isn't met with
+      // silence mid-call. No-op on the cedar path (the model owns its own
+      // audio there) — the bridge guards on the external-voice path itself.
+      ...(externalVoice
+        ? { filler: { phrases: DEFAULT_TOOL_CALL_FILLER_PHRASES } }
+        : {}),
+    });
+  } catch (err) {
+    try {
+      client.close(1011, "bridge-construction-failed");
+    } catch {
+      /* never mask the original error with a close failure */
+    }
+    throw err;
+  }
 
   // Hoisted force-cleanup timer (assignment happens further down in
   // the ws.on("close")/("error") handlers via `scheduleForceCleanup`).
@@ -914,7 +930,19 @@ export async function handleVoiceDiagnosticWsConnection(
     allowedToolNames: new Set<ToolName>(),
   });
 
-  const bridge = new VoiceBridge({ client, sink, dispatcher });
+  // Same leak guard as the production handler: the RealtimeClient
+  // constructor already opened the OpenAI WS.
+  let bridge: VoiceBridge;
+  try {
+    bridge = new VoiceBridge({ client, sink, dispatcher });
+  } catch (err) {
+    try {
+      client.close(1011, "bridge-construction-failed");
+    } catch {
+      /* never mask the original error with a close failure */
+    }
+    throw err;
+  }
 
   // Same agent-speaks-first kick as the production handler: the operator
   // dialed in, so the agent greets the moment both legs are ready.

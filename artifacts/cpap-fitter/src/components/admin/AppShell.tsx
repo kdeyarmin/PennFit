@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
+  Store,
   Inbox,
   MessageSquareText,
   ListChecks,
@@ -216,6 +217,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Your day at a glance — KPIs, today's worklist, and quick links into every queue",
       },
       {
+        label: "Front Desk",
+        icon: Store,
+        href: "/admin/front-desk",
+        matchPrefix: "/admin/front-desk",
+        hint: "Capture a walk-in customer and ring up a counter order in real time",
+        requiredPermission: "orders.create",
+      },
+      {
         label: "Conversations",
         icon: MessageSquareText,
         hint: "Inbound threads, multi-channel cases, and open service episodes",
@@ -413,6 +422,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/inbound-faxes",
             hint: "Triage queue for inbound faxes — sleep studies, Rx renewals, chart notes",
             badgeKey: "newInboundFaxes",
+          },
+          {
+            href: "/admin/referral-reviews",
+            label: "Referral reviewer",
+            icon: FilePlus2,
+            matchPrefix: "/admin/referral-reviews",
+            hint: "AI-extracted intake from faxed or uploaded referral packets — review, verify insurance, and accept into a new patient record",
           },
         ],
       },

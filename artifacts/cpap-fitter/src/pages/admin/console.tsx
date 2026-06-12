@@ -57,6 +57,11 @@ import { DashboardPage } from "@/pages/admin/dashboard";
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
+const FrontDeskPage = lazyWithRetry(() =>
+  import("@/pages/admin/front-desk").then((m) => ({
+    default: m.FrontDeskPage,
+  })),
+);
 const AdminPatientsDuplicatesPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-patients-duplicates").then((m) => ({
     default: m.AdminPatientsDuplicatesPage,
@@ -156,6 +161,11 @@ const AdminProviderEsignPage = lazyWithRetry(() =>
 const AdminInboundFaxesPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-inbound-faxes").then((m) => ({
     default: m.AdminInboundFaxesPage,
+  })),
+);
+const AdminReferralReviewsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-referral-reviews").then((m) => ({
+    default: m.AdminReferralReviewsPage,
   })),
 );
 const AdminPrescriptionRequestsPage = lazyWithRetry(() =>
@@ -421,6 +431,11 @@ const AdminShopInventoryPage = lazyWithRetry(() =>
 const AdminShopProductNewPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-shop-product-new").then((m) => ({
     default: m.AdminShopProductNewPage,
+  })),
+);
+const AdminShopArchivedProductsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-shop-archived-products").then((m) => ({
+    default: m.AdminShopArchivedProductsPage,
   })),
 );
 const AdminShopProductEditPage = lazyWithRetry(() =>
@@ -861,6 +876,7 @@ function AdminConsole() {
                 />
               )}
             </Route>
+            <Route path="/admin/front-desk" component={FrontDeskPage} />
             <Route path="/admin/patients" component={PatientsPage} />
             <Route
               path="/admin/patient-packets"
@@ -911,6 +927,10 @@ function AdminConsole() {
             <Route
               path="/admin/shop/inventory/new"
               component={AdminShopProductNewPage}
+            />
+            <Route
+              path="/admin/shop/inventory/archived"
+              component={AdminShopArchivedProductsPage}
             />
             <Route
               path="/admin/shop/inventory/:productId/edit"
@@ -973,6 +993,10 @@ function AdminConsole() {
             <Route
               path="/admin/inbound-faxes"
               component={AdminInboundFaxesPage}
+            />
+            <Route
+              path="/admin/referral-reviews"
+              component={AdminReferralReviewsPage}
             />
             <Route
               path="/admin/patients/:patientId/prescription-requests"
@@ -1168,7 +1192,12 @@ function AdminConsole() {
 // session is present.
 export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
-  if (isPending) return null;
+  if (isPending)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner label="Checking sign-in…" />
+      </div>
+    );
   if (!data) return <Redirect to="/admin/sign-in" />;
   return <AdminConsole />;
 }

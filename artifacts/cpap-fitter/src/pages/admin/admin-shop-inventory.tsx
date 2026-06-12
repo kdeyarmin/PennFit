@@ -786,26 +786,49 @@ export function AdminShopInventoryPage() {
           >
             Shop Inventory
           </h1>
-          {/* Add Product button — wouter <Link> would also work, but
+          {/* Header actions — wouter <Link> would also work, but
               an <a> with the BASE_URL prefix matches the rest of the
               cross-page navigation in this console and avoids pulling
               wouter into the page-level imports. */}
-          <a
-            href={`${import.meta.env.BASE_URL}admin/shop/inventory/new`}
+          <div
             style={{
-              background: "#0a1f44",
-              color: "#fff",
-              padding: "8px 16px",
-              fontSize: 13,
-              fontWeight: 600,
-              borderRadius: 6,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
               flexShrink: 0,
             }}
           >
-            + Add product
-          </a>
+            <a
+              href={`${import.meta.env.BASE_URL}admin/shop/inventory/archived`}
+              style={{
+                color: "hsl(var(--ink-2))",
+                padding: "8px 12px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              View archived
+            </a>
+            <a
+              href={`${import.meta.env.BASE_URL}admin/shop/inventory/new`}
+              style={{
+                background: "#0a1f44",
+                color: "#fff",
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 6,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              + Add product
+            </a>
+          </div>
         </div>
         <p
           style={{

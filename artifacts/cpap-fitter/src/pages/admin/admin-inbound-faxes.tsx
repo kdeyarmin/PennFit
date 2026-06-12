@@ -556,6 +556,33 @@ function TriageModal({
           </div>
 
           <AutoFileBanner fax={fax} />
+          {fax?.referralReviewId && (
+            <div
+              className="rounded border p-3 text-xs flex items-center gap-2"
+              style={{
+                backgroundColor: "#eff6ff",
+                borderColor: "#bfdbfe",
+                color: "#1d4ed8",
+              }}
+            >
+              <Sparkles className="h-4 w-4 shrink-0" />
+              <span>
+                The Referral Reviewer picked up this fax
+                {fax.referralReviewStatus === "extracted"
+                  ? " and has an extraction ready"
+                  : fax.referralReviewStatus === "accepted"
+                    ? " — it was accepted into a patient record"
+                    : ""}
+                .
+              </span>
+              <a
+                className="font-semibold underline whitespace-nowrap"
+                href={`/admin/referral-reviews?review=${encodeURIComponent(fax.referralReviewId)}`}
+              >
+                Open review
+              </a>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* PDF preview pane */}

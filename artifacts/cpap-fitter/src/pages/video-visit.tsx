@@ -100,9 +100,15 @@ export function VideoVisitPage() {
           We couldn't load your visit
         </h1>
         <p className="mt-3 text-sm text-slate-600">
-          Please check your connection and refresh this page. If the problem
+          Please check your connection and try again. If the problem
           continues, contact your care team.
         </p>
+        <button
+          onClick={() => void session.refetch()}
+          className="mt-5 px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+        >
+          Try again
+        </button>
       </CenteredCard>
     );
   }

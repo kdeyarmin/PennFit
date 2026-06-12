@@ -43,6 +43,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import {
+  isShopCategory,
   projectProduct,
   SHOP_CATEGORIES,
   type ShopProductView,
@@ -1103,6 +1104,196 @@ router.post(
     invalidateShopProductsCache();
 
     req.log?.info?.({ productId }, "shop/admin/products: product archived");
+    res.json({ ok: true, productId });
+  },
+);
+
+// The catalog-membership fence for INACTIVE products. projectProduct
+// can't be used here (it rejects inactive products by design), so the
+// archived listing/restore endpoints fall back to the raw metadata
+// fence: a shop product always carries `shop_sku` + a valid
+// `category`. Anything else in the Stripe account (test products,
+// legacy objects) stays invisible.
+function isArchivedShopProduct(p: Stripe.Product): boolean {
+  const meta = (p.metadata ?? {}) as Record<string, string | undefined>;
+  return !!meta.shop_sku && isShopCategory(meta.category);
+}
+
+// GET /admin/shop/products/archived — list retired SKUs so an admin
+// can restore one without opening the Stripe Dashboard. Same
+// requireAdminOnly tier as archive/restore: the list exists to feed
+// the restore action.
+router.get(
+  "/admin/shop/products/archived",
+  requireAdminOnly,
+  async (req, res) => {
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    let inactive;
+    try {
+      // One page of 100 covers this catalog (~30 active SKUs today);
+      // an account would need 100+ ARCHIVED shop products before
+      // pagination matters, at which point cleanup is overdue anyway.
+      inactive = await stripe.products.list({ active: false, limit: 100 });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe list failed (archived)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_list_failed",
+      });
+      return;
+    }
+
+    const products = inactive.data.filter(isArchivedShopProduct).map((p) => {
+      const meta = (p.metadata ?? {}) as Record<string, string | undefined>;
+      return {
+        id: p.id,
+        name: p.name,
+        sku: meta.shop_sku ?? null,
+        category: meta.category ?? null,
+        // Stripe `updated` is the last-modified epoch — for an
+        // archived product that's effectively the archive time.
+        updatedAt: typeof p.updated === "number" ? p.updated : null,
+      };
+    });
+
+    res.json({ products });
+  },
+);
+
+// POST /admin/shop/products/:productId/restore — bring an archived
+// SKU back to the storefront (sets `active: true`). requireAdminOnly,
+// mirroring archive: retire/restore are both admin-tier lifecycle
+// operations.
+//
+// SKU-uniqueness guard: if an ACTIVE product already carries the same
+// `shop_sku` (someone re-created it after the archive), restoring
+// would put two active products with the same supposedly-stable SKU
+// in the catalog. We 409 with the conflicting product id instead.
+//
+// Idempotent: restoring an already-active catalog product is a 200
+// no-op.
+router.post(
+  "/admin/shop/products/:productId/restore",
+  requireAdminOnly,
+  adminProductMutationLimiter,
+  async (req, res) => {
+    const productId = String(req.params.productId ?? "");
+    if (!productId.startsWith("prod_")) {
+      res.status(400).json({ error: "invalid_product_id" });
+      return;
+    }
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    let existing;
+    try {
+      existing = await stripe.products.retrieve(productId, {
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      if (status === 404) {
+        res.status(404).json({ error: "product_not_found" });
+        return;
+      }
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe retrieve failed (restore)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_retrieve_failed",
+      });
+      return;
+    }
+
+    // Idempotency short-circuit: already active and projectable means
+    // the product is in exactly the requested state.
+    if (existing.active === true) {
+      if (projectProduct(existing)) {
+        res.json({ ok: true, productId });
+        return;
+      }
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+
+    if (!isArchivedShopProduct(existing)) {
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+    const sku = (existing.metadata ?? {}).shop_sku ?? "";
+
+    // SKU collision guard. shop_sku values are [a-z0-9-]+ (enforced
+    // at create/seed time), so safe to interpolate into the Stripe
+    // search query.
+    try {
+      const collision = await stripe.products.search({
+        query: `metadata['shop_sku']:'${sku}' AND active:'true'`,
+        limit: 1,
+      });
+      if (collision.data[0]) {
+        res.status(409).json({
+          error: "sku_conflict",
+          productId: collision.data[0].id,
+        });
+        return;
+      }
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe search failed (restore)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_search_failed",
+      });
+      return;
+    }
+
+    try {
+      await stripe.products.update(productId, { active: true });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        { productId, ...stripeErrLogFields(err) },
+        "shop/admin/products: stripe restore failed",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_restore_failed",
+      });
+      return;
+    }
+
+    // Surface the restored SKU on the storefront immediately.
+    invalidateShopProductsCache();
+
+    req.log?.info?.({ productId }, "shop/admin/products: product restored");
     res.json({ ok: true, productId });
   },
 );
