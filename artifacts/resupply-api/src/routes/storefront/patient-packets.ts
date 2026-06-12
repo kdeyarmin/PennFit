@@ -29,7 +29,9 @@ import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPacketDocumentSections } from "../../lib/patient-packet/content";
 import {
   getPacketTemplate,
+  packetChoiceDocuments,
   packetRequiresDateReceived,
+  resolvePacketChoiceOption,
   type DeliveryDetails,
 } from "../../lib/patient-packet/templates";
 import { verifyPatientPacketToken } from "../../lib/patient-packet-token";
@@ -182,6 +184,9 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
         title: d.title,
         category: t?.category ?? "consent",
         requiresSignature: d.requires_signature,
+        // Signer-side option selection (e.g. the ABN's Option 1/2/3) —
+        // code-defined; content overrides never alter the options.
+        choice: t?.choice ?? null,
         // Send-time snapshot (tokens resolved here); legacy rows without
         // a snapshot build from the code template exactly as before.
         sections: renderPacketDocumentSections({
@@ -231,6 +236,13 @@ const signBody = z
       .nullable(),
     consentEsign: z.literal(true),
     acknowledgedDocumentKeys: z.array(z.string().min(1).max(64)).max(20),
+    // Per-document option selections (document key → option key) for
+    // choice documents like the ABN. Validated against the template
+    // catalog below — every choice document in the packet must have a
+    // valid selection, made by the signer.
+    documentChoices: z
+      .record(z.string().min(1).max(64), z.string().min(1).max(64))
+      .optional(),
   })
   .strict();
 
@@ -291,6 +303,28 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
     return;
   }
 
+  // Choice documents (e.g. the ABN's Option 1/2/3): the signer must
+  // have selected a valid option for every choice document present, and
+  // submissions may not carry selections for documents that have none.
+  const choiceDocs = packetChoiceDocuments([...requiredKeys]);
+  const submittedChoices = b.documentChoices ?? {};
+  const documentChoices: Record<string, string> = {};
+  for (const { documentKey } of choiceDocs) {
+    const optionKey = submittedChoices[documentKey];
+    if (!optionKey || !resolvePacketChoiceOption(documentKey, optionKey)) {
+      res.status(400).json({ error: "document_choice_required", documentKey });
+      return;
+    }
+    documentChoices[documentKey] = optionKey;
+  }
+  const unexpected = Object.keys(submittedChoices).filter(
+    (k) => !choiceDocs.some((c) => c.documentKey === k),
+  );
+  if (unexpected.length > 0) {
+    res.status(400).json({ error: "unexpected_document_choices", unexpected });
+    return;
+  }
+
   const nowIso = new Date().toISOString();
   const ip = req.ip ?? null;
   const userAgent = (req.get("user-agent") ?? "").slice(0, 500) || null;
@@ -310,6 +344,8 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
       signer_user_agent: userAgent,
       signer_reason: signerReason,
       date_received: b.dateReceived ?? null,
+      document_choices:
+        Object.keys(documentChoices).length > 0 ? documentChoices : null,
     });
   if (sigErr) throw sigErr;
 
