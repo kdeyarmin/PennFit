@@ -32,9 +32,15 @@ BUCKET="${SUPABASE_STORAGE_BUCKET_PRIVATE:-attachments}"
 echo "[dev-db] 1/5 supabase start"
 supabase start
 
-# The db container name is supabase_db_<project>; <project> defaults to the
-# working-directory basename (here: workspace). Resolve it defensively.
-DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -1)"
+# The db container name is supabase_db_<project>; this repo pins project_id=workspace.
+DB_CONTAINER="supabase_db_workspace"
+if ! docker ps --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then
+  DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -1)"
+fi
+if [[ -z "${DB_CONTAINER:-}" ]]; then
+  echo "[dev-db] could not find a running Supabase db container (did 'supabase start' succeed?)" >&2
+  exit 1
+fi
 echo "[dev-db] db container: $DB_CONTAINER"
 
 echo "[dev-db] 2/5 apply migrations"
