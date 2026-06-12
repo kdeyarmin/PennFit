@@ -375,9 +375,12 @@ function SendPacketPanel({
     setPacketKind(kind);
     const next: Record<string, boolean> = {};
     for (const t of templates) {
+      // Standalone mode starts with nothing selected when there's a
+      // choice of documents (the operator picks the one they need);
+      // a single standalone document is selected (and locked) for them.
       next[t.key] =
         kind === "standalone"
-          ? t.standalone
+          ? t.standalone && standaloneTemplates.length === 1
           : !t.standalone && t.defaultIncluded;
     }
     setSelectedKeys(next);
@@ -783,13 +786,13 @@ function SendPacketPanel({
                     onChange={() => switchPacketKind("standalone")}
                   />
                   <span style={{ color: "hsl(var(--ink-1))" }}>
-                    Refill confirmation only
+                    Single-document signature
                     <span
                       className="block text-xs"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      Sends just the continued-use confirmation for an
-                      e-signature — no onboarding documents.
+                      Sends just the selected document (refill confirmation,
+                      ABN) for an e-signature — no onboarding documents.
                     </span>
                   </span>
                 </label>

@@ -593,9 +593,10 @@ async function buildAndDeliverPacket(
       // would mislabel the signing page and every reminder.
       title:
         input.title ??
-        (isStandaloneSelection(input.uniqueKeys) &&
-        input.uniqueKeys.length === 1
-          ? getPacketTemplate(input.uniqueKeys[0]!)!.title
+        (isStandaloneSelection(input.uniqueKeys)
+          ? input.uniqueKeys.length === 1
+            ? getPacketTemplate(input.uniqueKeys[0]!)!.title
+            : "Document Signature Request"
           : "New Patient Document Packet"),
       status: "sent",
       recipient_name: input.recipientName,

@@ -60,6 +60,26 @@ export interface PacketBuildContext {
   deliveryDetails?: DeliveryDetails | null;
 }
 
+/** One selectable option on a choice document (e.g. an ABN option). */
+export interface PacketDocumentChoiceOption {
+  key: string;
+  label: string;
+  /** Full option wording shown beside the radio and printed in the PDF. */
+  detail: string;
+}
+
+/**
+ * A signer-side selection some documents require — the signer must
+ * personally pick exactly one option before the packet can be signed
+ * (the ABN's Option 1/2/3 is the canonical case; a notice with a
+ * pre-selected option is not valid). Code-defined like the rest of the
+ * template; operator content overrides never alter the options.
+ */
+export interface PacketDocumentChoice {
+  prompt: string;
+  options: PacketDocumentChoiceOption[];
+}
+
 export interface PacketDocumentTemplate {
   key: string;
   title: string;
@@ -73,6 +93,8 @@ export interface PacketDocumentTemplate {
   /** Whether this document is selected by default in a standard new
    *  patient packet. */
   defaultIncluded: boolean;
+  /** Present when the signer must select one option at signing time. */
+  choice?: PacketDocumentChoice;
   build: (
     company: CompanyProfile,
     ctx?: PacketBuildContext,
@@ -420,6 +442,70 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       },
     ],
   },
+  {
+    key: "abn_medicare",
+    title: "Advance Beneficiary Notice of Non-coverage (ABN)",
+    category: "financial",
+    version: "2026-06-12.v1",
+    summary:
+      "Notice that Medicare may not pay for a specific item (CMS-R-131 structure). The signer must personally pick Option 1, 2, or 3 at signing time. Customize the item / cost / reason for this packet before sending.",
+    requiresSignature: true,
+    defaultIncluded: false,
+    choice: {
+      prompt:
+        "Choose ONE option below. We cannot choose an option for you. Your choice is recorded with your signature.",
+      options: [
+        {
+          key: "option_1",
+          label: "Option 1 — I want the item(s), bill Medicare",
+          detail:
+            "I want the item(s) listed above. I want Medicare billed for an official decision on payment, which is sent to me on a Medicare Summary Notice (MSN). I understand that if Medicare doesn't pay, I am responsible for payment, but I can appeal to Medicare by following the directions on the MSN.",
+        },
+        {
+          key: "option_2",
+          label: "Option 2 — I want the item(s), do not bill Medicare",
+          detail:
+            "I want the item(s) listed above, but do not bill Medicare. I am responsible for payment and cannot appeal because Medicare is not billed.",
+        },
+        {
+          key: "option_3",
+          label: "Option 3 — I don't want the item(s)",
+          detail:
+            "I don't want the item(s) listed above. I understand I am not responsible for payment, and I cannot appeal to see if Medicare would pay.",
+        },
+      ],
+    },
+    build: (c) => [
+      {
+        paragraphs: [
+          `NOTE: Medicare may not pay for the item(s) listed below, supplied by ${c.legalName}. Medicare does not pay for everything, even some care that you or your health care provider have good reason to think you need.`,
+        ],
+      },
+      {
+        heading: "Item(s), estimated cost, and reason Medicare may not pay",
+        paragraphs: [
+          "Item(s) / service(s): ____________________________________________",
+          "Reason Medicare may not pay: _____________________________________",
+          "Estimated cost: $________",
+          "(To be completed by the supplier for this notice before it is sent — use “Customize” in the send panel.)",
+        ],
+      },
+      {
+        heading: "What you need to do now",
+        bullets: [
+          "Read this notice carefully so you can make an informed decision about your care.",
+          `Ask us any questions — you can reach ${c.legalName} at ${c.phone} or ${c.email}.`,
+          "Choose ONE option in the selection below. We cannot choose an option for you.",
+        ],
+      },
+      {
+        heading: "Additional information",
+        paragraphs: [
+          "This notice gives our opinion, not an official Medicare decision. If you have other questions about this notice or Medicare billing, call 1-800-MEDICARE (1-800-633-4227 / TTY 1-877-486-2048). Signing below means that you have received and understand this notice, and your selected option is recorded with your signature. You also receive a copy.",
+        ],
+      },
+    ],
+  },
 ];
 
 /** The document key whose presence requires capturing a date-received
@@ -491,7 +577,10 @@ export function isRequiredPacketDocumentKey(key: string): boolean {
  * packets (any selection touching a non-standalone document) keep the
  * all-required guarantee unchanged.
  */
-const STANDALONE_DOC_KEYS = new Set<string>(["refill_continued_use"]);
+const STANDALONE_DOC_KEYS = new Set<string>([
+  "refill_continued_use",
+  "abn_medicare",
+]);
 
 export function isStandalonePacketDocumentKey(key: string): boolean {
   return STANDALONE_DOC_KEYS.has(key);
@@ -507,6 +596,33 @@ export function isStandaloneSelection(keys: string[]): boolean {
  *  must record the date they received the equipment). */
 export function packetRequiresDateReceived(documentKeys: string[]): boolean {
   return documentKeys.includes(PROOF_OF_DELIVERY_KEY);
+}
+
+/**
+ * The choice documents present in a packet: each one needs the signer
+ * to pick exactly one option before the packet can be signed. The sign
+ * route validates the submission against this; the signing UI renders
+ * a radio group per entry.
+ */
+export function packetChoiceDocuments(
+  documentKeys: string[],
+): { documentKey: string; choice: PacketDocumentChoice }[] {
+  const out: { documentKey: string; choice: PacketDocumentChoice }[] = [];
+  for (const key of documentKeys) {
+    const choice = getPacketTemplate(key)?.choice;
+    if (choice) out.push({ documentKey: key, choice });
+  }
+  return out;
+}
+
+/** Resolve a recorded option key to its full option, for rendering the
+ *  signed PDF / admin detail. Null when the key isn't a valid option. */
+export function resolvePacketChoiceOption(
+  documentKey: string,
+  optionKey: string,
+): PacketDocumentChoiceOption | null {
+  const choice = getPacketTemplate(documentKey)?.choice;
+  return choice?.options.find((o) => o.key === optionKey) ?? null;
 }
 
 const TEMPLATE_BY_KEY = new Map<string, PacketDocumentTemplate>(
