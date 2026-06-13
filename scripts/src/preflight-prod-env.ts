@@ -299,6 +299,40 @@ function requireNonEmptyList(
   );
 }
 
+/**
+ * Validate an optional integration credential group that must be all-or-none.
+ *
+ * Runtime adapters intentionally degrade when no credentials are present, but a
+ * partial set is almost always an operator mistake: the adapter reports
+ * unavailable and no data transmits even though the secret store looks
+ * configured. This check makes that state visible before launch.
+ */
+function checkAllOrNoneGroup(
+  name: string,
+  vars: readonly string[],
+  options: {
+    absentDetail: string;
+    completeDetail: string;
+    partialSeverity?: Severity;
+  },
+): void {
+  const present = vars.filter((n) => getTrimmed(n) !== undefined);
+  const missing = vars.filter((n) => getTrimmed(n) === undefined);
+  if (present.length === 0) {
+    record(name, "warn", options.absentDetail);
+    return;
+  }
+  if (missing.length > 0) {
+    record(
+      name,
+      options.partialSeverity ?? "fail",
+      `partially configured (${present.length}/${vars.length} set) — missing: ${missing.join(", ")}`,
+    );
+    return;
+  }
+  record(name, "pass", options.completeDetail);
+}
+
 // Forbids known placeholder values that ship in .env.example. Matching
 // these in production means the operator copied the example file but
 /**
@@ -773,6 +807,89 @@ function runChecks(): void {
       record("ELEVENLABS_API_KEY", "pass", "set");
     }
   }
+
+  // Therapy-cloud pull adapters. All three vendor packages read their
+  // credential sets as all-or-none; partial config makes nightly sync skip
+  // the vendor as "not_configured". Fail partial groups here so launch
+  // operators don't mistake a half-filled secret store for a live feed.
+  checkAllOrNoneGroup(
+    "AIRVIEW",
+    [
+      "AIRVIEW_API_BASE_URL",
+      "AIRVIEW_OAUTH_TOKEN_URL",
+      "AIRVIEW_CLIENT_ID",
+      "AIRVIEW_CLIENT_SECRET",
+      "AIRVIEW_DME_ID",
+    ],
+    {
+      absentDetail:
+        "unset (ResMed AirView therapy-cloud sync disabled; fine if no AirView patients are in scope)",
+      completeDetail: "fully configured for ResMed AirView sync",
+    },
+  );
+  checkAllOrNoneGroup(
+    "CARE_ORCHESTRATOR",
+    [
+      "CARE_ORCHESTRATOR_API_BASE_URL",
+      "CARE_ORCHESTRATOR_OAUTH_TOKEN_URL",
+      "CARE_ORCHESTRATOR_CLIENT_ID",
+      "CARE_ORCHESTRATOR_CLIENT_SECRET",
+      "CARE_ORCHESTRATOR_PARTNER_ID",
+    ],
+    {
+      absentDetail:
+        "unset (Philips Care Orchestrator therapy-cloud sync disabled; fine if no Philips patients are in scope)",
+      completeDetail: "fully configured for Philips Care Orchestrator sync",
+    },
+  );
+  checkAllOrNoneGroup(
+    "REACT_HEALTH",
+    [
+      "REACT_HEALTH_API_BASE_URL",
+      "REACT_HEALTH_OAUTH_TOKEN_URL",
+      "REACT_HEALTH_CLIENT_ID",
+      "REACT_HEALTH_CLIENT_SECRET",
+      "REACT_HEALTH_ACCOUNT_ID",
+    ],
+    {
+      absentDetail:
+        "unset (React Health / 3B therapy-cloud sync disabled; fine if no React Health patients are in scope)",
+      completeDetail: "fully configured for React Health / 3B sync",
+    },
+  );
+
+  // Telnyx fax and Web Push are optional, but their runtime gates also
+  // require complete groups. Partial sets become launch-blocking because
+  // they make an integration look configured while send/webhook paths are
+  // still disabled or fail-closed.
+  checkAllOrNoneGroup(
+    "TELNYX_FAX",
+    [
+      "TELNYX_API_KEY",
+      "TELNYX_FAX_CONNECTION_ID",
+      "TELNYX_FAX_FROM_NUMBER",
+      "TELNYX_PUBLIC_KEY",
+    ],
+    {
+      absentDetail:
+        "unset (Telnyx fax send + inbound fax webhooks disabled; fine if fax is out of scope)",
+      completeDetail:
+        "fully configured for Telnyx outbound fax + webhook verification",
+    },
+  );
+  checkAllOrNoneGroup(
+    "WEB_PUSH_VAPID",
+    [
+      "WEB_PUSH_VAPID_PUBLIC_KEY",
+      "WEB_PUSH_VAPID_PRIVATE_KEY",
+      "WEB_PUSH_VAPID_SUBJECT",
+    ],
+    {
+      absentDetail:
+        "unset (browser push notifications disabled; SPA hides the enable-push toggle)",
+      completeDetail: "fully configured for browser push notifications",
+    },
+  );
 
   // Belt-and-braces: any email-shaped env var landing on @example.com
   // in production is a placeholder leak even if it isn't one of the
