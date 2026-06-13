@@ -200,7 +200,7 @@ async function findEligibilityBlocksForSubmit(input: {
     MANUAL_SUBMIT_ELIGIBILITY_FRESH_DAYS * 24 * 60 * 60 * 1000;
 
   for (const [coverageId, claimsForCoverage] of coverageToClaims) {
-    let latest: Awaited<ReturnType<typeof getCachedEligibility>> | null = null;
+    let latest: Awaited<ReturnType<typeof getCachedEligibility>> | null;
     try {
       latest = await getCachedEligibility(coverageId, freshnessMs);
       if (

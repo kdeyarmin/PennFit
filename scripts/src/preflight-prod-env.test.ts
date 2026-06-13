@@ -11,7 +11,20 @@ import { resolve, dirname } from "node:path";
 import { describe, it, expect } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const SCRIPT_PACKAGE_DIR = resolve(__dirname, "..");
 const SCRIPT = resolve(__dirname, "preflight-prod-env.ts");
+const SUBPROCESS_ENV_PASSTHROUGH = [
+  "SystemRoot",
+  "WINDIR",
+  "COMSPEC",
+  "ComSpec",
+  "PATHEXT",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+] as const;
 
 // 48-byte buffer base64-encoded — decodes to exactly 48 bytes,
 // comfortably above the 32-byte minimum the script enforces for HMAC keys.
@@ -86,8 +99,16 @@ function run(env: Record<string, string>): {
   stdout: string;
   stderr: string;
 } {
+  const childEnv = { ...env };
+  for (const key of SUBPROCESS_ENV_PASSTHROUGH) {
+    if (process.env[key] && childEnv[key] == null) {
+      childEnv[key] = process.env[key];
+    }
+  }
+
   const result = spawnSync(process.execPath, ["--import", "tsx", SCRIPT], {
-    env,
+    cwd: SCRIPT_PACKAGE_DIR,
+    env: childEnv,
     encoding: "utf8",
     timeout: 30_000,
   });
