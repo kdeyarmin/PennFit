@@ -32,6 +32,27 @@ describe("manual-document catalog", () => {
   it("the free-form 'other' type has no structured fields", () => {
     expect(getManualDocumentTypeDef("other").fields).toHaveLength(0);
   });
+
+  it("marks payer-required identifiers to render as blanks without storing fake values", () => {
+    const cmnFields = getManualDocumentTypeDef("cmn").fields;
+    for (const key of [
+      "patient_name",
+      "date_of_birth",
+      "ordering_physician",
+      "physician_npi",
+    ]) {
+      expect(cmnFields.find((f) => f.key === key)?.renderWhenBlank, key).toBe(
+        true,
+      );
+    }
+
+    const normalized = normalizeManualDocumentFields("cmn", {
+      patient_name: "",
+      ordering_physician: "   ",
+      diagnosis: "G47.33",
+    });
+    expect(normalized).toEqual({ diagnosis: "G47.33" });
+  });
 });
 
 describe("normalizeManualDocumentFields", () => {

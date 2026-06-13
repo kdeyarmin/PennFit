@@ -407,7 +407,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
     key: "refill_continued_use",
     title: "Resupply Refill Request & Continued Use Confirmation",
     category: "consent",
-    version: "2026-06-12.v1",
+    version: "2026-06-13.v1",
     summary:
       "Per-refill confirmation that the patient still uses PAP therapy and needs the requested supplies (Medicare refill-request documentation). Sent on its own each refill cycle, not part of onboarding.",
     requiresSignature: true,
@@ -423,14 +423,15 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
         bullets: [
           "I am still using my PAP device, and I continue to need resupply items to stay on therapy.",
           "The supplies I am requesting are for my own use, as prescribed by my treating practitioner.",
-          "My existing supplies are nearly used up — I have approximately a 10-day supply or less remaining, or will by the expected delivery date.",
+          "I affirmatively confirm that the refill is needed before the items are dispensed.",
         ],
       },
       {
         heading: "How this request works",
         bullets: [
           `This refill was requested by me (or my caregiver on my behalf); ${c.legalName} does not ship supplies automatically without a request.`,
-          "I understand this confirmation is made no sooner than 14 calendar days before the expected delivery or shipping date.",
+          "I understand this confirmation is captured within 30 calendar days from the expected end of my current supply.",
+          "I understand the refill will not be delivered sooner than 10 calendar days before my current supply ends.",
           "I understand the quantities provided follow my prescription and my insurer's replacement schedule.",
         ],
       },
@@ -446,7 +447,7 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
     key: "abn_medicare",
     title: "Advance Beneficiary Notice of Non-coverage (ABN)",
     category: "financial",
-    version: "2026-06-12.v1",
+    version: "2026-06-13.v1",
     summary:
       "Notice that Medicare may not pay for a specific item (CMS-R-131 structure). The signer must personally pick Option 1, 2, or 3 at signing time. Customize the item / cost / reason for this packet before sending.",
     requiresSignature: true,
@@ -476,6 +477,11 @@ export const PACKET_TEMPLATES: PacketDocumentTemplate[] = [
       ],
     },
     build: (c) => [
+      {
+        paragraphs: [
+          "CMS form note: Original Medicare fee-for-service liability transfer requires the current official CMS-R-131 ABN form (OMB-approved through 03/31/2029) when that form is required. This electronic packet document records the item/reason/cost fields and the beneficiary's option selection for the packet record, but is not a substitute for the official CMS form when Medicare requires that form.",
+        ],
+      },
       {
         paragraphs: [
           `NOTE: Medicare may not pay for the item(s) listed below, supplied by ${c.legalName}. Medicare does not pay for everything, even some care that you or your health care provider have good reason to think you need.`,
