@@ -318,6 +318,38 @@ describe("account — sections grouped into tabs", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Dirty-state protection across account tabs
+// ---------------------------------------------------------------------------
+
+describe("account — dirty tab changes require confirmation", () => {
+  it("imports the shared discard-confirmation helper", () => {
+    expect(SRC).toContain("confirmDiscardUnsavedChanges");
+  });
+
+  it("tracks dirty state from profile and communication preferences", () => {
+    expect(SRC).toContain("profileDirty");
+    expect(SRC).toContain("commPrefsDirty");
+    expect(SRC).toContain("onDirtyChange={setProfileDirty}");
+    expect(SRC).toContain("onDirtyChange={setCommPrefsDirty}");
+  });
+
+  it("guards both clicked tabs and hash-driven tab changes", () => {
+    expect(SRC).toContain("guardedAccountTab");
+    expect(SRC).toContain("onChange={changeAccountTab}");
+    expect(SRC).toContain(
+      "setActiveTab((current) => guardedAccountTab(current, tab))",
+    );
+  });
+
+  it("only prompts when leaving a dirty mounted section", () => {
+    expect(SRC).toContain('current === "overview" && profileDirty');
+    expect(SRC).toContain('current === "account" && commPrefsDirty');
+    expect(SRC).toContain("!confirmDiscardUnsavedChanges()");
+    expect(SRC).toContain("return current");
+  });
+});
+
 // Pure-logic mirror of hashToAccountTab (kept verbatim with account.tsx).
 describe("hashToAccountTab", () => {
   function hashToAccountTab(
