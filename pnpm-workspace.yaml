@@ -58,7 +58,7 @@ overrides:
   "@tailwindcss/oxide>@tailwindcss/oxide-linux-x64-musl": "-"
   "@tailwindcss/oxide>@tailwindcss/oxide-win32-arm64-msvc": "-"
   "@tailwindcss/oxide>@tailwindcss/oxide-win32-x64-msvc": "-"
-  esbuild: ">=0.28.1"
+  esbuild: ^0.28.1
   esbuild>@esbuild/aix-ppc64: "-"
   esbuild>@esbuild/android-arm: "-"
   esbuild>@esbuild/android-arm64: "-"
@@ -138,7 +138,7 @@ overrides:
   # Moved from package.json "pnpm.overrides" during pnpm 11 upgrade
   # (pnpm 11 no longer reads the package.json field). esbuild and uuid
   # are intentionally omitted here — pnpm-workspace.yaml already pins
-  # them to stricter versions above (esbuild >=0.28.1, uuid ^14.0.0).
+  # them to stricter versions above (esbuild ^0.28.1, uuid ^14.0.0).
   ip-address: ">=10.1.1"
   # (a former `fast-xml-builder` override was removed 2026-06: no package
   # by that name — or `fast-xml-parser` — exists anywhere in the graph,
