@@ -655,6 +655,14 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
   return null;
 }
 
+function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation(`/account#${hash}`, { replace: true });
+  }, [hash, setLocation]);
+  return null;
+}
+
 function GuardedOrder() {
   const { chosenMask } = useFitterStore();
   const consented = useFitterEmailGate();
@@ -1020,6 +1028,12 @@ function PatientRouter() {
             />
             <Route path="/shop/orders" component={GuardedShopOrders} />
             <Route path="/shop/wishlist" component={ShopWishlist} />
+            <Route path="/account/insights">
+              {() => <AccountHashRedirect hash="insights" />}
+            </Route>
+            <Route path="/account/orders">
+              {() => <AccountHashRedirect hash="orders" />}
+            </Route>
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />
             <Route path="/reminders" component={Reminders} />

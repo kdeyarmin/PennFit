@@ -98,13 +98,14 @@ export async function resolveSmsRecipientForShopOrder(
   // Escape LIKE metacharacters so an email containing `_` or
   // `%` doesn't cross-match other patients' phone numbers.
   const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const { data: patient } = await supabase
+  const { data: patients } = await supabase
     .schema("resupply")
     .from("patients")
     .select("phone_e164, legal_first_name, timezone, address")
     .ilike("email", escapedEmail)
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
+  if (!patients || patients.length !== 1) return null;
+  const patient = patients[0]!;
   if (!patient?.phone_e164) return null;
 
   const address = patient.address as { zip?: string } | null;

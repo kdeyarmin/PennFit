@@ -68,6 +68,19 @@ describe("GuardedOrderSuccess — state machine", () => {
   });
 });
 
+describe("Account notification deep links", () => {
+  it("registers path-style account aliases so old notification payloads avoid the 404 route", () => {
+    expect(SRC).toContain('path="/account/insights"');
+    expect(SRC).toContain('path="/account/orders"');
+  });
+
+  it("redirects account aliases to the hash tabs the account page understands", () => {
+    expect(SRC).toContain('<AccountHashRedirect hash="insights" />');
+    expect(SRC).toContain('<AccountHashRedirect hash="orders" />');
+    expect(SRC).toContain("setLocation(`/account#${hash}`, { replace: true })");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Fast path — sessionStorage
 // ---------------------------------------------------------------------------

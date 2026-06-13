@@ -117,14 +117,22 @@ export async function dispatchPaymentFailedAlertOrThrow(
   }
 
   // Email → patients.id (case-insensitive).
-  const { data: patient, error: pErr } = await supabase
+  const { data: patients, error: pErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapeIlike(email))
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (pErr) throw pErr;
+  const patientCount = patients?.length ?? 0;
+  if (patientCount > 1) {
+    log?.info?.(
+      { event: "payment_failed_alert_skipped", reason: "ambiguous_patient" },
+      "alerts: payment_failed trigger - multiple patients match shop_customer email",
+    );
+    return;
+  }
+  const patient = patientCount === 1 ? patients![0] : null;
   if (!patient?.id) {
     log?.info?.(
       { event: "payment_failed_alert_skipped", reason: "no_patient" },

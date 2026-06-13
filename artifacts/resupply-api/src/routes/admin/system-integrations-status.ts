@@ -58,7 +58,7 @@ router.get(
       },
       stripe: {
         configured: !!env.STRIPE_SECRET_KEY,
-        webhookSigningConfigured: !!env.STRIPE_WEBHOOK_SECRET,
+        webhookSigningConfigured: !!env.STRIPE_WEBHOOK_SIGNING_SECRET,
       },
       openai: {
         configured: !!env.OPENAI_API_KEY,
