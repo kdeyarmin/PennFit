@@ -128,10 +128,17 @@ router.get(
   requireProviderMfaEnrolled,
   async (req, res) => {
     const account = req.providerAccount!;
-    const statusFilter = z
+    // 400 on garbage rather than silently coercing it to "pending" —
+    // a typo'd filter returning the wrong queue is confusing to debug.
+    const statusParsed = z
       .enum(["pending", "signed", "declined", "all"])
-      .catch("pending")
-      .parse(req.query.status);
+      .optional()
+      .safeParse(req.query.status === undefined ? undefined : req.query.status);
+    if (!statusParsed.success) {
+      res.status(400).json({ error: "invalid_status" });
+      return;
+    }
+    const statusFilter = statusParsed.data ?? "pending";
     const supabase = getSupabaseServiceRoleClient();
     let query = supabase
       .schema("resupply")

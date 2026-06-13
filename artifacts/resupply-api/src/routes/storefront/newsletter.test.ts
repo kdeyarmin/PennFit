@@ -42,7 +42,10 @@ describe("POST /api/newsletter/subscribe", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
-    const payloads = getSupabaseWritePayloads("newsletter_subscribers", "upsert");
+    const payloads = getSupabaseWritePayloads(
+      "newsletter_subscribers",
+      "upsert",
+    );
     expect(payloads).toHaveLength(1);
     expect(payloads[0]).toMatchObject({
       email: "reader@example.com",

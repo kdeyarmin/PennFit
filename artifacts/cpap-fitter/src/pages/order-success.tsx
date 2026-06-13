@@ -93,9 +93,9 @@ export function OrderSuccess() {
           We couldn&apos;t load your confirmation details
         </h1>
         <p className="text-muted-foreground mb-8">
-          Don&apos;t worry — if you just placed an order, it was received.
-          Check your email for the confirmation, or contact us and we&apos;ll
-          look it up for you.
+          Don&apos;t worry — if you just placed an order, it was received. Check
+          your email for the confirmation, or contact us and we&apos;ll look it
+          up for you.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Button asChild>

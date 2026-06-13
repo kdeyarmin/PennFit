@@ -198,12 +198,14 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       // failure. Surface through the same observability hook so a
       // sustained outage is visible to ops.
       try {
-        await (deps.rateLimitOnError ??
+        await (
+          deps.rateLimitOnError ??
           ((e: unknown) =>
             console.error(
               "[resupply-auth] mfa failure-count probe failed (failing closed)",
               e,
-            )))(err, { emailLower: mfaSentinel, ip: req.ip ?? null });
+            ))
+        )(err, { emailLower: mfaSentinel, ip: req.ip ?? null });
       } catch {
         // Observability must never throw past the gate.
       }

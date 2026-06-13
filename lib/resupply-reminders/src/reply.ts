@@ -381,10 +381,12 @@ export async function replyInConversation(
     );
   }
 
-  // Refresh latest-message projection (best-effort).
+  // Refresh latest-message projection (best-effort). Use the same
+  // channel-adjusted body persisted to the messages row above, so the
+  // projection source never diverges from messages.body for long SMS.
   await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
-    body,
+    body: conv.channel === "sms" ? smsBody : body,
     direction: "outbound",
     messageAt: sentAt,
   });
