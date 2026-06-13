@@ -91,10 +91,11 @@ type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
 // in the app keep working now that the sections live behind tabs:
 //   /account#messages  → Messages
 //   /account#autoship  → Orders & returns (SubscriptionsSection has id="autoship")
-function hashToAccountTab(hash: string): AccountTabId | null {
+export function hashToAccountTab(hash: string): AccountTabId | null {
   const h = hash.replace(/^#/, "");
+  if (h === "insights") return "overview";
   if (h === "messages") return "messages";
-  if (h === "autoship") return "orders";
+  if (h === "autoship" || h === "orders") return "orders";
   return null;
 }
 

@@ -431,7 +431,7 @@ async function sendShippingNotificationIfNew(args: {
         const counts = await sendPushToCustomer(claimedRow.customer_id, {
           title: "Your PennPaps order shipped",
           body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
-          url: `/account/orders`,
+          url: `/account#orders`,
           tag: `shop_order_shipped:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {
@@ -1117,7 +1117,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
         await sendPushToCustomer(claimedRow.customer_id, {
           title: "Your PennPaps order is ready for pickup",
           body: `Ready to collect at ${location.name}`,
-          url: `/account/orders`,
+          url: `/account#orders`,
           tag: `shop_order_ready_for_pickup:${claimedRow.id}`,
         });
       } catch (err) {

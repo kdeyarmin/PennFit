@@ -161,7 +161,12 @@ export function verifyLinkToken(
   const sigBuf = base64urlDecode(sigEncoded);
   if (!sigBuf) return { valid: false, reason: "malformed" };
 
-  const expectedSig = hmacSign(payloadEncoded);
+  let expectedSig: Buffer;
+  try {
+    expectedSig = hmacSign(payloadEncoded);
+  } catch {
+    return { valid: false, reason: "bad-signature" };
+  }
   if (sigBuf.length !== expectedSig.length) {
     return { valid: false, reason: "bad-signature" };
   }

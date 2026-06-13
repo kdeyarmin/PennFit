@@ -87,6 +87,21 @@ describe("standard payer-document library", () => {
       }
     }
   });
+
+  it("keeps refill and ABN wording aligned with current Medicare documentation posture", () => {
+    const refill = getStandardDocumentTemplate("refill_continued_use")!;
+    const refillText = JSON.stringify({
+      description: refill.description,
+      fields: refill.fields,
+    });
+    expect(refillText).toMatch(/within 30 calendar days/i);
+    expect(refillText).toMatch(/10 calendar days/i);
+    expect(refillText).toMatch(/not shipped automatically/i);
+    expect(refillText).not.toMatch(/14 calendar days/i);
+
+    const abn = getStandardDocumentTemplate("abn_medicare")!;
+    expect(JSON.stringify(abn.fields)).toMatch(/official CMS-R-131 ABN form/i);
+  });
 });
 
 describe("standard packet library", () => {

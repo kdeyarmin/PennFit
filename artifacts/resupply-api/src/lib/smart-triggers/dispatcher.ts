@@ -455,7 +455,7 @@ export async function runSmartTriggerSendDue(
         void sendPushToCustomerByEmail(patient.email, {
           title: renderers.subjectForKind(row.kind as TriggerKind),
           body: renderers.pushBody(row.kind as TriggerKind),
-          url: "/account/insights",
+          url: "/account#insights",
           tag: `smart_trigger:${row.eventId}`,
         }).catch((err) => {
           logger.warn(

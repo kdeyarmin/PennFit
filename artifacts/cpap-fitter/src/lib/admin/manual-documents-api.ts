@@ -24,6 +24,7 @@ export interface ManualDocumentField {
   label: string;
   kind: ManualDocumentFieldKind;
   placeholder?: string;
+  renderWhenBlank?: boolean;
 }
 
 export interface ManualDocumentTypeDef {

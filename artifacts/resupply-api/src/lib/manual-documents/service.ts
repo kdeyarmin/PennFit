@@ -8,10 +8,18 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { getDocumentSupplierNameSync } from "../company-info";
+import {
+  getCompanyInfo,
+  getCompanyInfoSync,
+  getDocumentSupplierNameSync,
+} from "../company-info";
 import { getTrackingCodeForDocument } from "../signature-tracking/service";
 import { isManualDocumentType, type ManualDocumentType } from "./catalog";
-import { renderManualDocumentPdf, type ManualDocumentPdfInput } from "./pdf";
+import {
+  renderManualDocumentPdf,
+  type ManualDocumentPdfInput,
+  type ManualDocumentSupplierContact,
+} from "./pdf";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -47,6 +55,36 @@ export const MANUAL_DOCUMENT_ROW_COLUMNS = ROW_COLUMNS;
 /** Supplier name for the PDF letterhead — the registered DME legal name. */
 export function manualDocumentSupplierName(): string {
   return getDocumentSupplierNameSync();
+}
+
+function formatCompanyAddress(
+  address: ReturnType<typeof getCompanyInfoSync>["address"],
+): string | null {
+  if (!address) return null;
+  const parts: string[] = [];
+  if (address.line1) parts.push(address.line1);
+  if (address.line2) parts.push(address.line2);
+  const cityLine = [
+    address.city,
+    [address.state, address.zip].filter(Boolean).join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  if (cityLine) parts.push(cityLine);
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+/** Supplier contact/identifier block for official payer PDFs. */
+export async function manualDocumentSupplierContact(): Promise<ManualDocumentSupplierContact> {
+  const info = await getCompanyInfo();
+  return {
+    address: formatCompanyAddress(info.address),
+    phone: info.phoneDisplay,
+    fax: info.faxE164,
+    email: info.generalEmail,
+    npi: info.organizationalNpi,
+    website: info.websiteUrl,
+  };
 }
 
 /** Load one row by id. Returns null when not found or the type is bad. */
@@ -91,6 +129,7 @@ export async function buildManualDocumentPdfInput(
     "manual_document",
     row.id,
   ).catch(() => null);
+  const supplierContact = await manualDocumentSupplierContact();
   return {
     documentType: row.document_type,
     title: row.title,
@@ -102,6 +141,7 @@ export async function buildManualDocumentPdfInput(
     },
     fields: (row.fields ?? null) as Record<string, unknown> | null,
     body: row.body,
+    supplierContact,
     supplierName: manualDocumentSupplierName(),
     generatedOn,
     trackingCode,

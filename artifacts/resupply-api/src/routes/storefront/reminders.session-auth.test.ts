@@ -26,6 +26,7 @@ import request from "supertest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseCallCount,
   getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 import {
@@ -61,6 +62,9 @@ const SUB_ROW = {
   created_at: "2026-04-01T00:00:00Z",
   updated_at: "2026-04-01T00:00:00Z",
 };
+const CSRF_TOKEN = "reminders-csrf-token-abc";
+const SESSION_COOKIE = "pf_session=session-token-123";
+const CSRF_COOKIE = `pf_csrf=${CSRF_TOKEN}`;
 
 async function buildApp(): Promise<Express> {
   // Dynamic import — must happen AFTER the vi.mock() calls above so the
@@ -221,6 +225,65 @@ describe("PATCH /api/reminders/manage — session-auth fallback (P5)", () => {
       });
     expect(res.status).toBe(401);
   });
+
+  it("with a session cookie but no CSRF token returns 403 before updating", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", SESSION_COOKIE)
+      .send({
+        items: [
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
+        ],
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+    expect(getSupabaseCallCount("reminder_subscriptions", "update")).toBe(0);
+  });
+
+  it("with a session cookie and matching CSRF tokens updates normally", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", `${SESSION_COOKIE}; ${CSRF_COOKIE}`)
+      .set("x-pf-csrf", CSRF_TOKEN)
+      .send({
+        items: [
+          {
+            sku: "maskCushion",
+            lastReplacedAt: "2026-05-01",
+            intervalDays: 30,
+          },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    const filters = getSupabaseFilterCalls("reminder_subscriptions", "update");
+    expect(filters).toContainEqual({
+      verb: "eq",
+      args: ["email", "pat@example.com"],
+    });
+  });
 });
 
 describe("POST /api/reminders/manage/unsubscribe — session-auth fallback (P5)", () => {
@@ -250,6 +313,23 @@ describe("POST /api/reminders/manage/unsubscribe — session-auth fallback (P5)"
     const app = await buildApp();
     const res = await request(app).post("/api/reminders/manage/unsubscribe");
     expect(res.status).toBe(401);
+  });
+
+  it("with a session cookie but no CSRF token returns 403 before unsubscribing", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .post("/api/reminders/manage/unsubscribe")
+      .set("Cookie", SESSION_COOKIE);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+    expect(getSupabaseCallCount("reminder_subscriptions", "update")).toBe(0);
   });
 });
 

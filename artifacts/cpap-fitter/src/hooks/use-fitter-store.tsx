@@ -56,6 +56,7 @@ interface FitterContextType extends FitterState {
 }
 
 const FitterContext = createContext<FitterContextType | undefined>(undefined);
+const MEASUREMENTS_STORAGE_KEY = "fitter_measurements";
 
 /**
  * Write-probe sessionStorage. Reading `window.sessionStorage` alone
@@ -73,11 +74,43 @@ function probeSessionStorage(): boolean {
   }
 }
 
+function isFacialMeasurements(value: unknown): value is FacialMeasurements {
+  if (!value || typeof value !== "object") return false;
+  const m = value as Record<string, unknown>;
+  const method = m.calibrationMethod;
+  return (
+    typeof m.noseWidth === "number" &&
+    typeof m.noseHeight === "number" &&
+    typeof m.noseToChin === "number" &&
+    typeof m.mouthWidth === "number" &&
+    typeof m.faceWidthAtCheekbones === "number" &&
+    (method === "creditCard" || method === "iris" || method === "manual")
+  );
+}
+
+function readStoredMeasurements(): FacialMeasurements | null {
+  try {
+    const stored = sessionStorage.getItem(MEASUREMENTS_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!isFacialMeasurements(parsed)) return null;
+    return {
+      noseWidth: parsed.noseWidth,
+      noseHeight: parsed.noseHeight,
+      noseToChin: parsed.noseToChin,
+      mouthWidth: parsed.mouthWidth,
+      faceWidthAtCheekbones: parsed.faceWidthAtCheekbones,
+      calibrationMethod: parsed.calibrationMethod,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function FitterProvider({ children }: { children: ReactNode }) {
   const [storagePersisted] = useState(probeSessionStorage);
-  const [measurements, setMeasurements] = useState<FacialMeasurements | null>(
-    null,
-  );
+  const [measurements, setMeasurementsState] =
+    useState<FacialMeasurements | null>(readStoredMeasurements);
 
   // Load initial answers from sessionStorage.
   const [answers, setAnswers] = useState<Partial<QuestionnaireAnswers>>(() => {
@@ -180,8 +213,27 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setMeasurements = (nextMeasurements: FacialMeasurements) => {
+    setMeasurementsState(nextMeasurements);
+    try {
+      sessionStorage.setItem(
+        MEASUREMENTS_STORAGE_KEY,
+        JSON.stringify({
+          noseWidth: nextMeasurements.noseWidth,
+          noseHeight: nextMeasurements.noseHeight,
+          noseToChin: nextMeasurements.noseToChin,
+          mouthWidth: nextMeasurements.mouthWidth,
+          faceWidthAtCheekbones: nextMeasurements.faceWidthAtCheekbones,
+          calibrationMethod: nextMeasurements.calibrationMethod,
+        }),
+      );
+    } catch (e) {
+      console.error("Failed to persist fitter measurements", e);
+    }
+  };
+
   const reset = () => {
-    setMeasurements(null);
+    setMeasurementsState(null);
     setAnswers({});
     setCapturedImage(null);
     setChosenMaskState(null);
@@ -194,6 +246,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem("fitter_email");
       sessionStorage.removeItem("fitter_email_consent");
       sessionStorage.removeItem("fitter_invite_token");
+      sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY);
     } catch {
       // Storage unusable — nothing was persisted, nothing to clear.
     }

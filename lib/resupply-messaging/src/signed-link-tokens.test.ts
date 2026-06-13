@@ -142,13 +142,16 @@ describe("signLinkToken / verifyLinkToken", () => {
     ).toThrow(/RESUPPLY_LINK_HMAC_KEY/);
   });
 
-  it("throws when verifying if HMAC key is unset", () => {
+  it("returns invalid when verifying if HMAC key is unset", () => {
     const token = signLinkToken({
       conversationId: "x",
       action: "confirm",
     });
     delete process.env[KEY_ENV];
-    expect(() => verifyLinkToken(token)).toThrow(/RESUPPLY_LINK_HMAC_KEY/);
+    const result = verifyLinkToken(token);
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.reason).toBe("bad-signature");
   });
 
   it("rejects unknown action at sign time", () => {
