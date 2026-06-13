@@ -52,11 +52,11 @@ function isSameOriginNavigation(
   if (url.origin !== window.location.origin) return false;
 
   const current = new URL(window.location.href);
-  return !(
-    url.pathname === current.pathname &&
-    url.search === current.search &&
-    url.hash !== current.hash
-  );
+  // Ignore in-page navigation (hash changes) and no-op clicks on the current URL.
+  if (url.pathname === current.pathname && url.search === current.search) {
+    return false;
+  }
+  return true;
 }
 
 export function useUnsavedChangesWarning(
