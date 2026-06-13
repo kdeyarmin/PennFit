@@ -363,7 +363,7 @@ const INSURANCE_PRE_DISPENSE_CHECKS: ChecklistItem[] = [
   },
   {
     id: "abn",
-    label: "ABN need reviewed",
+    label: "ABN needs review",
     detail:
       "If coverage is uncertain, collect the required ABN or route to billing before dispense.",
   },
