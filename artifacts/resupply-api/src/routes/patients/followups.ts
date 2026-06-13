@@ -308,13 +308,14 @@ router.patch(
 
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: row } = await supabase
+    const { data: row, error: lookupErr } = await supabase
       .schema("resupply")
       .from("patient_followups")
       .select("id, patient_id, completed_at, body, due_at")
       .eq("id", followupId)
       .limit(1)
       .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!row || row.patient_id !== patientId) {
       res.status(404).json({ error: "followup_not_found" });
       return;
