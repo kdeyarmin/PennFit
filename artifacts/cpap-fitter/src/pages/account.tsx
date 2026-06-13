@@ -95,9 +95,17 @@ type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
 export function hashToAccountTab(hash: string): AccountTabId | null {
   const h = hash.replace(/^#/, "");
   if (h === "insights") return "overview";
+  if (h === "overview") return "overview";
   if (h === "messages") return "messages";
+  if (h === "therapy") return "therapy";
+  if (h === "account") return "account";
   if (h === "autoship" || h === "orders") return "orders";
   return null;
+}
+
+function accountTabToHash(tab: AccountTabId): string {
+  if (tab === "overview") return "";
+  return `#${tab}`;
 }
 
 function AccountTabBar({
@@ -241,7 +249,21 @@ function AccountInner() {
   useEffect(() => {
     function onHashChange() {
       const tab = hashToAccountTab(window.location.hash);
-      if (tab) setActiveTab((current) => guardedAccountTab(current, tab));
+      if (!tab) return;
+      setActiveTab((current) => {
+        const next = guardedAccountTab(current, tab);
+        if (next === current && tab !== current) {
+          const currentHash = accountTabToHash(current);
+          if (window.location.hash !== currentHash) {
+            window.history.replaceState(
+              window.history.state,
+              "",
+              `${window.location.pathname}${window.location.search}${currentHash}`,
+            );
+          }
+        }
+        return next;
+      });
     }
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);

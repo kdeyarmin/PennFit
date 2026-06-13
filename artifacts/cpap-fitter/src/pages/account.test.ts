@@ -337,9 +337,8 @@ describe("account — dirty tab changes require confirmation", () => {
   it("guards both clicked tabs and hash-driven tab changes", () => {
     expect(SRC).toContain("guardedAccountTab");
     expect(SRC).toContain("onChange={changeAccountTab}");
-    expect(SRC).toContain(
-      "setActiveTab((current) => guardedAccountTab(current, tab))",
-    );
+    expect(SRC).toContain("const next = guardedAccountTab(current, tab);");
+    expect(SRC).toContain("window.history.replaceState");
   });
 
   it("only prompts when leaving a dirty mounted section", () => {
