@@ -28,11 +28,18 @@ import {
   type ProviderRef,
 } from "@workspace/resupply-integrations-office-ally";
 
-import { countOutstandingByClaim } from "./bill-hold";
+import {
+  countOutstandingByClaim,
+  seedDefaultRequirementsForClaim,
+} from "./bill-hold";
 import {
   gateCoverageEligibility,
   type CoverageBlock,
 } from "./coverage-eligibility";
+import {
+  getCachedEligibility,
+  verifyEligibility,
+} from "./eligibility-verifier";
 import {
   resolveBillingIdentity,
   resolveClearinghouse,
@@ -50,9 +57,10 @@ type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
  * single batch (deduped per coverage). Bounds the synchronous request:
  * at ~1-2s per real-time round-trip this keeps the worst case to ~20s,
  * and a large batch is almost always already-verified (cache hits)
- * anyway. Coverages beyond the cap fall back to consult-only / fail-open.
+ * anyway. Coverages beyond the cap are blocked until eligibility is checked.
  */
 const MAX_PRECHECK_REALTIME_REFRESHES = 10;
+const MANUAL_SUBMIT_ELIGIBILITY_FRESH_DAYS = 90;
 
 export interface BatchSubmitInput {
   claimIds: string[];
@@ -119,6 +127,139 @@ async function releaseClaimsToDraft(
   }
 }
 
+async function findUninitializedBillHoldClaims(
+  supabase: SupabaseClient,
+  claimIds: string[],
+): Promise<Set<string>> {
+  const uninitialized = new Set(claimIds);
+  if (claimIds.length === 0) return uninitialized;
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("claim_paperwork_requirements")
+    .select("claim_id")
+    .in("claim_id", claimIds);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    const claimId = (row as { claim_id: string | null }).claim_id;
+    if (claimId) uninitialized.delete(claimId);
+  }
+  return uninitialized;
+}
+
+async function findEligibilityBlocksForSubmit(input: {
+  supabase: SupabaseClient;
+  claims: ClaimRow[];
+  payerName: string;
+  adminEmail: string | null;
+}): Promise<
+  Array<{
+    claimId: string;
+    reason:
+      | "no_coverage"
+      | "eligibility_missing_or_stale"
+      | "eligibility_inactive"
+      | "prior_auth_required"
+      | "eligibility_lookup_failed";
+    payerName: string;
+    eligibilityCheckId: string | null;
+  }>
+> {
+  const blocks: Array<{
+    claimId: string;
+    reason:
+      | "no_coverage"
+      | "eligibility_missing_or_stale"
+      | "eligibility_inactive"
+      | "prior_auth_required"
+      | "eligibility_lookup_failed";
+    payerName: string;
+    eligibilityCheckId: string | null;
+  }> = [];
+  const coverageToClaims = new Map<string, ClaimRow[]>();
+  for (const claim of input.claims) {
+    if (!claim.insurance_coverage_id) {
+      blocks.push({
+        claimId: claim.id,
+        reason: "no_coverage",
+        payerName: input.payerName,
+        eligibilityCheckId: null,
+      });
+      continue;
+    }
+    const list = coverageToClaims.get(claim.insurance_coverage_id) ?? [];
+    list.push(claim);
+    coverageToClaims.set(claim.insurance_coverage_id, list);
+  }
+
+  const refreshEnabled = await isFeatureEnabled(
+    "billing.eligibility_precheck_refresh",
+  );
+  const clearinghouse = refreshEnabled
+    ? await resolveClearinghouse({ supabase: input.supabase })
+    : null;
+  const realtimeAvailable = !!clearinghouse?.realtimeConfig;
+  let freshChecks = 0;
+  const freshnessMs =
+    MANUAL_SUBMIT_ELIGIBILITY_FRESH_DAYS * 24 * 60 * 60 * 1000;
+
+  for (const [coverageId, claimsForCoverage] of coverageToClaims) {
+    let latest: Awaited<ReturnType<typeof getCachedEligibility>> | null;
+    try {
+      latest = await getCachedEligibility(coverageId, freshnessMs);
+      if (
+        !latest &&
+        realtimeAvailable &&
+        freshChecks < MAX_PRECHECK_REALTIME_REFRESHES
+      ) {
+        await verifyEligibility({
+          insuranceCoverageId: coverageId,
+          patientId: claimsForCoverage[0]!.patient_id,
+          requestedByEmail: input.adminEmail ?? "system:eligibility-precheck",
+        });
+        freshChecks += 1;
+        latest = await getCachedEligibility(coverageId, freshnessMs);
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "billing.eligibility_precheck.failed_closed",
+          coverageId,
+          errName: err instanceof Error ? err.name : "unknown",
+        },
+        "billing: eligibility precheck failed; blocking submit",
+      );
+      for (const claim of claimsForCoverage) {
+        blocks.push({
+          claimId: claim.id,
+          reason: "eligibility_lookup_failed",
+          payerName: input.payerName,
+          eligibilityCheckId: null,
+        });
+      }
+      continue;
+    }
+
+    const reason = !latest
+      ? "eligibility_missing_or_stale"
+      : latest.is_active !== true
+        ? "eligibility_inactive"
+        : latest.requires_prior_auth === true
+          ? "prior_auth_required"
+          : null;
+    if (!reason) continue;
+    for (const claim of claimsForCoverage) {
+      blocks.push({
+        claimId: claim.id,
+        reason,
+        payerName: input.payerName,
+        eligibilityCheckId: latest?.id ?? null,
+      });
+    }
+  }
+
+  return blocks;
+}
+
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
 ): Promise<BatchSubmitResult> {
@@ -171,6 +312,42 @@ export async function executeOfficeAllyBatchSubmit(
   // out the door. Feature-flagged so it can be turned off whole-cloth, and
   // inert for any claim that has no requirements tracked against it.
   if (await isFeatureEnabled("billing.bill_hold")) {
+    const uninitialized = await findUninitializedBillHoldClaims(
+      supabase,
+      claims.map((c) => c.id),
+    );
+    const initializationFailures: Array<{
+      claimId: string;
+      reason: string;
+    }> = [];
+    for (const claimId of uninitialized) {
+      try {
+        await seedDefaultRequirementsForClaim(claimId, {
+          supabase,
+          createdByEmail: input.adminEmail ?? "system:office-ally-submit",
+        });
+      } catch (err) {
+        logger.warn(
+          {
+            event: "billing.bill_hold.initialize_failed",
+            claimId,
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "office-ally-batch: bill-hold initialization failed; blocking submit",
+        );
+        initializationFailures.push({
+          claimId,
+          reason: "paperwork_checklist_uninitialized",
+        });
+      }
+    }
+    if (initializationFailures.length > 0) {
+      return {
+        ok: false,
+        kind: "bill_hold",
+        detail: { held: initializationFailures },
+      };
+    }
     const outstanding = await countOutstandingByClaim(
       claims.map((c) => c.id),
       supabase,
@@ -213,7 +390,21 @@ export async function executeOfficeAllyBatchSubmit(
     };
   }
 
-  // Eligibility precheck (feature-flagged). Before we transmit, consult
+  const eligibilityBlocks = await findEligibilityBlocksForSubmit({
+    supabase,
+    claims: claims as ClaimRow[],
+    payerName: payer.payer_legal_name,
+    adminEmail: input.adminEmail,
+  });
+  if (eligibilityBlocks.length > 0) {
+    return {
+      ok: false,
+      kind: "eligibility_blocked",
+      detail: { blocked: eligibilityBlocks },
+    };
+  }
+
+  // Legacy eligibility precheck (feature-flagged). Before we transmit, consult
   // each claim's most recent parsed 270/271. A coverage that is
   // explicitly inactive or flags prior-auth-required would deny, so we
   // hold the whole batch and hand the offending claims back for the CSR

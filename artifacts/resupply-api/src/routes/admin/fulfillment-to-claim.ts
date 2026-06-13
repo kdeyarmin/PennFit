@@ -31,6 +31,20 @@ const router: IRouter = Router();
 
 const params = z.object({ fulfillmentId: z.string().uuid() });
 
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "23505" &&
+    "message" in err &&
+    typeof (err as { message?: unknown }).message === "string" &&
+    (err as { message: string }).message.includes(
+      "insurance_claims_open_fulfillment_uidx",
+    )
+  );
+}
+
 const body = z
   .object({
     dateOfService: z
@@ -137,7 +151,27 @@ router.post(
       })
       .select("id")
       .single();
-    if (claimErr) throw claimErr;
+    if (claimErr) {
+      if (isUniqueViolation(claimErr)) {
+        const { data: raceWinner } = await supabase
+          .schema("resupply")
+          .from("insurance_claims")
+          .select("id, status")
+          .eq("fulfillment_id", idParsed.data.fulfillmentId)
+          .not("status", "in", "(denied,closed)")
+          .limit(1)
+          .maybeSingle();
+        res.status(409).json({
+          error: "claim_exists",
+          claimId: raceWinner?.id ?? null,
+          status: raceWinner?.status ?? null,
+          message:
+            "This fulfillment already has an open claim. Work that claim instead of creating a duplicate.",
+        });
+        return;
+      }
+      throw claimErr;
+    }
 
     // Insert the line items (carrying the per-unit COGS snapshot the
     // builder resolved from product_costs — migration 0193).
@@ -211,6 +245,22 @@ router.post(
           createdByEmail: req.adminEmail ?? null,
         });
       } catch (err) {
+        const { error: holdErr } = await supabase
+          .schema("resupply")
+          .from("insurance_claims")
+          .update({
+            bill_hold: true,
+            bill_hold_reason:
+              "Paperwork checklist failed to initialize; regenerate before billing.",
+            bill_hold_updated_at: new Date().toISOString(),
+          })
+          .eq("id", claimRow.id);
+        if (holdErr) {
+          logger.warn(
+            { err: holdErr, claimId: claimRow.id },
+            "fulfillment-to-claim: fail-safe bill-hold flag failed",
+          );
+        }
         logger.warn(
           { err, claimId: claimRow.id },
           "fulfillment-to-claim: bill-hold seed failed (non-fatal)",

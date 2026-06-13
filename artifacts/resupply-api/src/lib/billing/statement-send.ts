@@ -391,8 +391,17 @@ async function deliverOnChannel(
     try {
       pdfUrl = await deps.signPdfUrl(stmt.statement_pdf_object_key);
     } catch {
-      pdfUrl = null; // fail-soft — send the balance notice without a link
+      pdfUrl = null;
     }
+  }
+  if (deps.signPdfUrl && !pdfUrl) {
+    const outcome: SendOutcome = {
+      kind: "failed",
+      channel,
+      reason: "statement_pdf_link_unavailable",
+    };
+    await persistOutcome(supabase, stmt.id, outcome);
+    return outcome;
   }
 
   const outcome = await send(
@@ -458,6 +467,14 @@ export async function sendOneStatement(
   if (!stmt) return { kind: "skipped", reason: "statement_not_found" };
   if ((stmt.total_patient_responsibility_cents ?? 0) <= 0) {
     const outcome: SendOutcome = { kind: "skipped", reason: "zero_balance" };
+    await persistOutcome(supabase, statementId, outcome);
+    return outcome;
+  }
+  if (!stmt.statement_pdf_object_key) {
+    const outcome: SendOutcome = {
+      kind: "skipped",
+      reason: "statement_pdf_missing",
+    };
     await persistOutcome(supabase, statementId, outcome);
     return outcome;
   }
@@ -589,6 +606,7 @@ export async function runStatementBatchSend(
     .select("id, total_patient_responsibility_cents")
     .eq("delivery_status", "pending")
     .gt("total_patient_responsibility_cents", 0)
+    .not("statement_pdf_object_key", "is", null)
     // Electronic = everything EXCEPT mail-preference. Excluding only
     // 'mail' keeps null (pre-0257) AND any legacy sms/in_person rows on
     // the electronic path (handled by pickStatementChannel) rather than

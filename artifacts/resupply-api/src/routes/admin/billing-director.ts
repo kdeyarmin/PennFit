@@ -65,6 +65,9 @@ router.get(
         .gte("ingested_at", t30d),
       supabase
         .schema("resupply")
+        .rpc("fulfillments_to_bill_count", { p_since: t7d }),
+      supabase
+        .schema("resupply")
         .from("insurance_claims")
         .select("id")
         .eq("status", "draft")
@@ -123,6 +126,7 @@ router.get(
       { data: freshDenials },
       { data: stuckSubmitted },
       { data: partialEras },
+      { data: fulfillmentsToBillRaw },
       { data: scrubBlocking },
       { data: scrubFixable },
       { data: deniedNoAnalysis },
@@ -132,6 +136,9 @@ router.get(
       { count: webhooksExhausted24h },
       { data: denialRateRows },
     ] = results;
+
+    // PostgREST serialises bigint as a string; coerce defensively.
+    const fulfillmentsToBillCount = Number(fulfillmentsToBillRaw ?? 0);
 
     // Money rollups.
     const dollarsInStuckSubmitted = (stuckSubmitted ?? []).reduce(
@@ -188,6 +195,7 @@ router.get(
         freshDenials: freshDenials?.length ?? 0,
         stuckSubmittedNoAck: stuckSubmitted?.length ?? 0,
         partialEras: partialEras?.length ?? 0,
+        fulfillmentsToBill: fulfillmentsToBillCount,
         scrubBlocking: scrubBlocking?.length ?? 0,
         scrubFixable: scrubFixable?.length ?? 0,
         deniedNeedsAnalysis: deniedNoAnalysis?.length ?? 0,

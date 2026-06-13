@@ -237,6 +237,25 @@ describe("sendOneStatement", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("skips an unrendered statement without sending", async () => {
+    stageStatement({ statement_pdf_object_key: null });
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
+    const send = vi.fn<SendFn>();
+    const outcome = await sendOneStatement(
+      getSupabaseServiceRoleClient(),
+      "stmt-1",
+      { send, cfg: stubCfg() },
+    );
+    expect(outcome).toEqual({
+      kind: "skipped",
+      reason: "statement_pdf_missing",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("skips (no send) when the patient opted out of the only channel", async () => {
     stageStatement();
     stagePatient({ phone_e164: null });
@@ -248,6 +267,38 @@ describe("sendOneStatement", () => {
       { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
     );
     expect(outcome.kind).toBe("skipped");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("fails without sending when a rendered statement link cannot be signed", async () => {
+    stageStatement();
+    stagePatient();
+    stageCustomerPrefs({});
+    stageClaim();
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
+
+    const send = vi.fn<SendFn>();
+    const signPdfUrl = vi.fn().mockResolvedValue(null);
+    const outcome = await sendOneStatement(
+      getSupabaseServiceRoleClient(),
+      "stmt-1",
+      {
+        send,
+        signPdfUrl,
+        cfg: stubCfg(),
+        now: new Date("2026-06-01T17:00:00Z"),
+      },
+    );
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      channel: "email",
+      reason: "statement_pdf_link_unavailable",
+    });
+    expect(signPdfUrl).toHaveBeenCalledWith("statements/stmt-1.pdf");
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -335,7 +386,7 @@ describe("runStatementBatchSend", () => {
         id: "stmt-1",
         patient_id: "pat-1",
         total_patient_responsibility_cents: 5000,
-        statement_pdf_object_key: null,
+        statement_pdf_object_key: "statements/stmt-1.pdf",
         delivery_status: "pending",
       },
       error: null,
