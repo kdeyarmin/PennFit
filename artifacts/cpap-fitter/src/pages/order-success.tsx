@@ -81,7 +81,36 @@ export function OrderSuccess() {
       });
   };
 
-  if (!confirmation) return null;
+  if (!confirmation) {
+    // GuardedOrderSuccess verified the sessionStorage key existed, but
+    // the parse can still fail (corrupted value, storage cleared
+    // between guard and mount). A blank page strands the customer —
+    // tell them the order DID go through and route them somewhere
+    // useful instead.
+    return (
+      <div className="container max-w-2xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-semibold mb-3">
+          We couldn&apos;t load your confirmation details
+        </h1>
+        <p className="text-muted-foreground mb-8">
+          Don&apos;t worry — if you just placed an order, it was received.
+          Check your email for the confirmation, or contact us and we&apos;ll
+          look it up for you.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Button asChild>
+            <Link href="/">
+              <Home className="w-4 h-4 mr-2" />
+              Return home
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/track-order">Track my order</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const handleStartOver = () => {
     sessionStorage.removeItem("fitter_order_confirmation");

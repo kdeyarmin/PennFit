@@ -27,13 +27,15 @@ router.get(
   requireAdmin,
   async (_req, res) => {
     // pgVersion / migrationCount / lastMigrationAt are returned as
-    // placeholders: PostgREST doesn't expose `SHOW server_version`, and
-    // the on-DB migration bookkeeping table is only consulted by the
-    // deploy migrator (`scripts/migrate.mjs`). The Supabase dashboard
-    // surfaces both pieces directly to operators; here we return nulls
-    // to keep the response shape stable for the existing SPA renderer.
+    // nulls: PostgREST doesn't expose `SHOW server_version`, and the
+    // on-DB migration bookkeeping table (drizzle.resupply_migrations)
+    // is only reachable by the deploy migrator (`scripts/migrate.mjs`),
+    // not the exposed-schema Supabase client. Null (not 0) so the SPA
+    // renders an honest "not tracked here" instead of the misleading
+    // "0 migrations applied / never" a fresh operator would read as a
+    // broken database. The Supabase dashboard surfaces both directly.
     const pgVersion: string | null = null;
-    const migrationCount = 0;
+    const migrationCount: number | null = null;
     const lastMigrationAt: string | null = null;
 
     const env = process.env;

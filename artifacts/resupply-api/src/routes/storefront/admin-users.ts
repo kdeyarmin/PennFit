@@ -69,10 +69,13 @@ const roleChangeBody = z.object({
   role: z.enum(["admin", "agent"]),
 });
 
-// Best-effort admin audit write. Writes to `resupply.audit_log` via
-// the Supabase client. Failures are intentionally swallowed: the
-// caller has already committed the user-visible side effect by the
-// time we're called, and a propagated error would 500 a successful
+// Best-effort admin audit write. Writes to `public.admin_audit_log`
+// via the Supabase client — the same active table the sibling
+// admin.ts routes use (the legacy `resupply.audit_log` table was
+// retired with the compliance-machinery cleanup; new writers must not
+// target it). Failures are intentionally swallowed: the caller has
+// already committed the user-visible side effect by the time we're
+// called, and a propagated error would 500 a successful
 // invite/role-change. We DO emit a structured ERROR with a stable
 // `event` tag so a logging consumer can alert on systemic admin-audit
 // outages (`event=admin_audit_write_failed`, count > N over M minutes).
@@ -83,10 +86,11 @@ async function writeAudit(
   try {
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase
-      .schema("resupply")
-      .from("audit_log")
+      .schema("public")
+      .from("admin_audit_log")
       .insert({
-        operator_email: req.adminEmail ?? "system",
+        admin_email: req.adminEmail ?? "system",
+        admin_user_id: req.adminUserId ?? "system",
         action,
         ip: req.ip ?? null,
       });

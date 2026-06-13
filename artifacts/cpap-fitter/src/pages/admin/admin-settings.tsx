@@ -26,7 +26,7 @@ interface SystemInfo {
     nodeEnv: string | null;
   };
   database: {
-    migrationCount: number;
+    migrationCount: number | null;
     lastMigrationAt: string | null;
   };
   publicUrls: {
@@ -179,9 +179,18 @@ function DemoModeCard() {
 
 function Body({ data }: { data: SystemInfo }) {
   const uptimeLabel = formatUptime(data.server.uptimeSeconds);
+  // Migration bookkeeping lives in a schema only the deploy migrator
+  // can reach — null means "not tracked here", which must not render
+  // as the alarming "0 / never".
+  const migrationsApplied =
+    data.database.migrationCount === null
+      ? "Not tracked here — see deploy logs or the Supabase dashboard"
+      : String(data.database.migrationCount);
   const lastMigration = data.database.lastMigrationAt
     ? new Date(data.database.lastMigrationAt).toLocaleString()
-    : "never";
+    : data.database.migrationCount === null
+      ? "Not tracked here"
+      : "never";
 
   return (
     <div className="space-y-6">
@@ -201,7 +210,7 @@ function Body({ data }: { data: SystemInfo }) {
       <Card title="Database">
         <DefList
           rows={[
-            ["Migrations applied", String(data.database.migrationCount)],
+            ["Migrations applied", migrationsApplied],
             ["Last migration", lastMigration],
           ]}
         />

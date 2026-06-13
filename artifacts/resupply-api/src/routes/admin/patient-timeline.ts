@@ -127,9 +127,39 @@ router.get(
         .order("created_at", { ascending: false })
         .limit(30),
     ]);
-    for (const q of queries) {
-      if (q.error) throw q.error;
-    }
+    // Degrade per-source instead of failing the whole feed: one broken
+    // source (e.g. a retired/renamed table) must not 500 the entire
+    // timeline — the aggregator's value is everything else still
+    // rendering. Failed sources are logged and reported to the SPA.
+    const SOURCE_NAMES = [
+      "episodes",
+      "fulfillments",
+      "conversations",
+      "patient_address_history",
+      "patient_grievances",
+      "patient_coaching_plans",
+      "recall_notifications",
+      "video_visits",
+    ] as const;
+    const degradedSources: string[] = [];
+    queries.forEach((q, i) => {
+      if (q.error) {
+        degradedSources.push(SOURCE_NAMES[i] ?? `source_${i}`);
+        req.log?.warn?.(
+          {
+            event: "patient_timeline_source_failed",
+            source: SOURCE_NAMES[i] ?? `source_${i}`,
+            pgCode:
+              typeof q.error === "object" &&
+              q.error !== null &&
+              "code" in q.error
+                ? (q.error as { code?: string }).code
+                : null,
+          },
+          "patient timeline: source query failed — continuing without it",
+        );
+      }
+    });
     const [
       episodes,
       fulfillments,
@@ -301,7 +331,7 @@ router.get(
     }
 
     events.sort((a, b) => (a.at < b.at ? 1 : -1));
-    res.json({ events: events.slice(0, 200) });
+    res.json({ events: events.slice(0, 200), degradedSources });
   },
 );
 

@@ -47,7 +47,13 @@ echo "[dev-db] 2/5 apply migrations"
 DATABASE_URL="$DB_URL" node lib/resupply-db/scripts/migrate.mjs
 
 echo "[dev-db] 3/5 grant data-API roles on resupply schemas"
-for s in resupply resupply_auth; do
+# `public` is included because the storefront tables (orders,
+# reminder_subscriptions, admin_audit_log, newsletter_subscribers, …)
+# live there and the local Supabase stack does NOT auto-expose new
+# entities to the data-API roles (see supabase/config.toml note) —
+# without this, every public-schema query 42501s ("permission denied")
+# and e.g. the admin Orders page renders "Internal error".
+for s in public resupply resupply_auth; do
   docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres \
     -c "GRANT ALL ON SCHEMA auth TO postgres;" \
     -c "GRANT USAGE ON SCHEMA $s TO service_role;" \

@@ -1194,7 +1194,9 @@ export function ConsoleRoute() {
   const { data, isPending } = authHooks.useSession();
   if (isPending)
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      // admin-root scopes the admin theme tokens (hard rule R7) — even
+      // this transient spinner must not render with storefront tokens.
+      <div className="admin-root min-h-screen flex items-center justify-center">
         <Spinner label="Checking sign-in…" />
       </div>
     );

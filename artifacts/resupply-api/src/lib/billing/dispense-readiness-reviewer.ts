@@ -845,20 +845,34 @@ async function runDeterministicChecks(
   }
 
   // ── Open issues (warnings only) ──
-  const { count: openGrievances } = await supabase
+  // The count query previously failed OPEN (a Supabase error silently
+  // suppressed the warning). Surface the degraded state explicitly so
+  // a CSR knows the check did not run, rather than reading "no
+  // warning" as "no open grievances".
+  const { count: openGrievances, error: grievancesErr } = await supabase
     .schema("resupply")
     .from("patient_grievances")
     .select("id", { count: "exact", head: true })
     .eq("patient_id", input.patientId)
     .neq("status", "resolved");
-  if ((openGrievances ?? 0) > 0) {
+  if (grievancesErr) {
+    findings.push(
+      warning(
+        "patient_grievances",
+        "open_issues",
+        "Could not check for open grievances",
+        "The grievance lookup failed — verify manually before dispense.",
+        "Check the patient's record directly; grievances are tracked out of band by the business owner.",
+      ),
+    );
+  } else if ((openGrievances ?? 0) > 0) {
     findings.push(
       warning(
         "patient_grievances",
         "open_issues",
         `${openGrievances} open grievance(s) on file`,
         "Acknowledge + resolve before dispense if material to the product.",
-        "Open the grievance queue at /admin/grievances.",
+        "Grievances are tracked out of band — check with the business owner before dispensing.",
       ),
     );
   }

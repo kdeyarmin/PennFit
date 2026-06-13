@@ -380,6 +380,24 @@ export function Shop() {
     };
   }, [data]);
 
+  // Honour a #shop-section-<category> deep link (e.g. the Insights
+  // "Shop replacement cushions" CTA lands on /shop#shop-section-cushion).
+  // The catalog loads asynchronously, so the target element usually
+  // doesn't exist at first paint and the browser's native hash scroll
+  // silently no-ops — re-scroll once the sections have rendered.
+  useEffect(() => {
+    if (loading || typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash.startsWith("shop-section-")) return;
+    // rAF so the effect runs after the section nodes are committed.
+    const raf = requestAnimationFrame(() => {
+      document
+        .getElementById(hash)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loading]);
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-6xl">
       <ShopHero />

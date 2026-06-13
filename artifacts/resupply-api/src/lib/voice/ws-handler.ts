@@ -1282,10 +1282,13 @@ async function runPostCallSummary(
         prompt_version: PROMPT_VERSION,
         outcome: summary.outcome,
         sentiment: summary.sentiment,
+        // Counts only — `concerns` / `followUps` are free-text derived
+        // from the patient's speech (clinical PHI). The full text is
+        // persisted to the conversation's `messages` row for staff
+        // review; audit metadata must stay structural so re-enabling
+        // a durable audit sink never lands voice-derived PHI in it.
         concerns_count: summary.concerns.length,
-        concerns: summary.concerns,
         follow_ups_count: summary.followUps.length,
-        follow_ups: summary.followUps,
         recommends_handoff: summary.recommendsHandoff,
         complete: summary.complete,
       },

@@ -75,8 +75,5 @@ router.use(meBillingRouter);
 // recent parsed 270/271 on file. Falls back to the static
 // payer-average table when unavailable.
 router.use(meInsuranceEstimateRouter);
-// /api/me/rights-requests + /api/me/disclosures — HIPAA
-// §164.522/524/526/528 rights submission + the §164.528 accounting
-// of disclosures (non-TPO entries from patient_disclosure_log).
 
 export default router;
