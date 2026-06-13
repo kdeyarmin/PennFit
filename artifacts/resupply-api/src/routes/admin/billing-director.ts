@@ -65,6 +65,12 @@ router.get(
         .gte("ingested_at", t30d),
       supabase
         .schema("resupply")
+        .from("fulfillments")
+        .select("id")
+        .gte("shipped_at", t7d)
+        .limit(2000),
+      supabase
+        .schema("resupply")
         .from("insurance_claims")
         .select("id")
         .eq("status", "draft")
@@ -123,6 +129,7 @@ router.get(
       { data: freshDenials },
       { data: stuckSubmitted },
       { data: partialEras },
+      { data: recentFulfillments },
       { data: scrubBlocking },
       { data: scrubFixable },
       { data: deniedNoAnalysis },
@@ -132,6 +139,25 @@ router.get(
       { count: webhooksExhausted24h },
       { data: denialRateRows },
     ] = results;
+
+    const recentFulfillmentIds = (recentFulfillments ?? []).map((f) => f.id);
+    let fulfillmentsToBillCount = 0;
+    if (recentFulfillmentIds.length > 0) {
+      const { data: claimedRows, error: claimedErr } = await supabase
+        .schema("resupply")
+        .from("insurance_claims")
+        .select("fulfillment_id")
+        .in("fulfillment_id", recentFulfillmentIds);
+      if (claimedErr) throw claimedErr;
+      const claimed = new Set(
+        (claimedRows ?? [])
+          .map((row) => row.fulfillment_id as string | null)
+          .filter((id): id is string => !!id),
+      );
+      fulfillmentsToBillCount = recentFulfillmentIds.filter(
+        (id) => !claimed.has(id),
+      ).length;
+    }
 
     // Money rollups.
     const dollarsInStuckSubmitted = (stuckSubmitted ?? []).reduce(
@@ -188,6 +214,7 @@ router.get(
         freshDenials: freshDenials?.length ?? 0,
         stuckSubmittedNoAck: stuckSubmitted?.length ?? 0,
         partialEras: partialEras?.length ?? 0,
+        fulfillmentsToBill: fulfillmentsToBillCount,
         scrubBlocking: scrubBlocking?.length ?? 0,
         scrubFixable: scrubFixable?.length ?? 0,
         deniedNeedsAnalysis: deniedNoAnalysis?.length ?? 0,

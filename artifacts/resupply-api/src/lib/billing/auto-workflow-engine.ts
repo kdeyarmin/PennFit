@@ -17,10 +17,8 @@
 //   3. STATEMENT closed-with-balance claims
 //      For each closed/paid claim with patient_responsibility_cents > 0
 //      and no statement generated in the last 30 days (per patient),
-//      queue a statement-generation event. We DON'T auto-render the
-//      PDF here (the route does that, and we'd need a delivery
-//      channel); we publish a webhook event the CSR queue / external
-//      systems can consume.
+//      generate one complete patient statement with real line items and
+//      a persisted PDF before publishing the due events.
 //
 // Each pass is independently bounded — a slow OpenAI call in pass 1
 // doesn't block pass 2's denials from being analyzed.
@@ -34,6 +32,10 @@ import {
 
 import { analyzeDenial } from "./ai-denial-analyzer";
 import { scrubClaim, SCRUB_PROMPT_VERSION } from "./ai-claim-scrubber";
+import {
+  generatePatientBillingStatement,
+  StatementGenerationError,
+} from "./statement-generation";
 import { scoreAndPersist } from "./heuristic-denial-scorer";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
@@ -271,17 +273,6 @@ async function runStatementPass(
   const patientIds = [...new Set((candidates ?? []).map((c) => c.patient_id))];
   if (patientIds.length === 0) return;
 
-  // Sum patient_responsibility_cents per patient so the placeholder
-  // statement row carries an informative total for the watching
-  // worker / CSR queue.
-  const totalByPatient = new Map<string, number>();
-  for (const c of candidates ?? []) {
-    totalByPatient.set(
-      c.patient_id,
-      (totalByPatient.get(c.patient_id) ?? 0) + c.patient_responsibility_cents,
-    );
-  }
-
   // Look up which patients had a statement generated in the cooldown window.
   const { data: recent } = await supabase
     .schema("resupply")
@@ -293,41 +284,51 @@ async function runStatementPass(
 
   for (const patientId of patientIds) {
     if (onCooldown.has(patientId)) continue;
-    // Insert a placeholder `patient_billing_statements` row BEFORE
-    // publishing — otherwise the cooldown above (which reads from
-    // this table) is never armed and we'd re-emit
-    // `billing_statement.due` every cron iteration. The placeholder
-    // carries an empty line_items_json and no PDF / delivery method;
-    // the watching worker fills those in when it renders.
-    const { error: insertErr } = await supabase
-      .schema("resupply")
-      .from("patient_billing_statements")
-      .insert({
-        patient_id: patientId,
-        line_items_json: [] as unknown as Json,
-        total_patient_responsibility_cents: totalByPatient.get(patientId) ?? 0,
-        delivery_method: null,
-        generated_by_email: "system:auto_workflow",
+    // Generate a complete statement before publishing. The statement row is
+    // the cooldown marker, and it is safe for send queues because it has
+    // real line items plus a rendered PDF copy.
+    try {
+      const generated = await generatePatientBillingStatement({
+        patientId,
+        generatedByEmail: "system:auto_workflow",
+        supabase,
       });
-    if (insertErr) {
-      // Don't publish the event if we couldn't arm the cooldown —
-      // otherwise the next cron iteration would re-publish. Count + log it
-      // (was a silent `continue`) so a systemic insert failure shows up in
-      // the tick summary instead of looking like "no statements were due."
+      void publishEvent({
+        eventType: "billing_statement.generated",
+        payload: {
+          statement_id: generated.statementId,
+          patient_id: patientId,
+          total_cents: generated.totalPatientResponsibilityCents,
+          claim_count: generated.claimCount,
+          source: "auto_workflow",
+        },
+      });
+      void publishEvent({
+        eventType: "billing_statement.due",
+        payload: {
+          statement_id: generated.statementId,
+          patient_id: patientId,
+          total_cents: generated.totalPatientResponsibilityCents,
+        },
+      });
+      stats.statementsQueued += 1;
+      continue;
+    } catch (err) {
+      if (
+        err instanceof StatementGenerationError &&
+        err.code === "no_open_balance"
+      ) {
+        continue;
+      }
       stats.errors += 1;
       logger.warn(
         {
-          err: insertErr.message,
+          err,
           patientId,
         },
-        "auto-workflow.statements: placeholder insert failed",
+        "auto-workflow.statements: generation failed",
       );
       continue;
     }
-    void publishEvent({
-      eventType: "billing_statement.due",
-      payload: { patient_id: patientId },
-    });
-    stats.statementsQueued += 1;
   }
 }
