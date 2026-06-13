@@ -205,7 +205,7 @@ export function Order() {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitted },
+    formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
