@@ -102,6 +102,9 @@ export interface PatientPacketSummary {
   completed_at: string | null;
   expires_at: string | null;
   created_at: string;
+  /** Set when the signed PDF was auto-filed to the patient's chart. */
+  chart_document_id: string | null;
+  chart_filed_at: string | null;
 }
 
 export interface PatientPacketDocumentRow {
@@ -140,9 +143,6 @@ export interface PatientPacketDetail {
     updated_at: string;
     /** Itemized Proof of Delivery snapshot, when one was captured. */
     delivery_details: PacketDeliveryDetails | null;
-    /** Set when the signed PDF was auto-filed to the patient's chart. */
-    chart_document_id: string | null;
-    chart_filed_at: string | null;
   };
   documents: PatientPacketDocumentRow[];
   signature: PatientPacketSignatureRow | null;

@@ -41,6 +41,11 @@ import {
 } from "@/components/admin/PacketTemplatesPanel";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import {
+  patientPacketReceiptDescription,
+  patientPacketReceiptLabel,
+  patientPacketReceiptVariant,
+} from "@/components/admin/patient-packet-status";
 
 type BadgeVariant =
   | "neutral"
@@ -192,7 +197,7 @@ export function AdminPatientPacketsPage() {
                   >
                     <th className="px-5 py-2 font-medium">Recipient</th>
                     <th className="px-5 py-2 font-medium">Packet</th>
-                    <th className="px-5 py-2 font-medium">Status</th>
+                    <th className="px-5 py-2 font-medium">Receipt</th>
                     <th className="px-5 py-2 font-medium">Sent</th>
                     <th className="px-5 py-2 font-medium">Signed</th>
                     <th className="px-5 py-2 font-medium text-right">
@@ -230,8 +235,8 @@ export function AdminPatientPacketsPage() {
                         {p.title}
                       </td>
                       <td className="px-5 py-3">
-                        <Badge variant={STATUS_VARIANT[p.status]}>
-                          {STATUS_LABEL[p.status]}
+                        <Badge variant={patientPacketReceiptVariant(p)}>
+                          {patientPacketReceiptLabel(p)}
                         </Badge>
                       </td>
                       <td
@@ -255,7 +260,7 @@ export function AdminPatientPacketsPage() {
                             className="text-xs font-semibold mr-3"
                             style={{ color: "hsl(var(--penn-navy))" }}
                           >
-                            PDF
+                            Signed PDF
                           </a>
                         )}
                         <Button
@@ -504,7 +509,8 @@ function SendPacketPanel({
                   ? "Emailed the signing link."
                   : result.smsSent
                     ? "Texted the signing link."
-                    : "No message was sent — share the secure link below directly."}
+                    : "No message was sent — share the secure link below directly."}{" "}
+              Track signature receipt in Recent packets.
             </div>
             {result.contact &&
               (result.contact.matchedId ? (
@@ -515,9 +521,10 @@ function SendPacketPanel({
                     color: "hsl(142 60% 25%)",
                   }}
                 >
-                  Filed to{" "}
+                  Linked to{" "}
                   <strong>{result.contact.matchedName ?? "the patient"}</strong>
-                  ’s chart — the signed documents will appear there.
+                  ’s chart. Once signed, the documents will be filed there
+                  automatically.
                 </div>
               ) : result.contact.ambiguous ? (
                 <div
@@ -910,6 +917,7 @@ function SendPacketPanel({
                   <div className="flex flex-wrap gap-2" id="channels">
                     <button
                       type="button"
+                      aria-pressed={useEmail}
                       onClick={() => setUseEmail((v) => !v)}
                       className="rounded-md border px-3 py-1.5 text-sm font-medium"
                       style={{
@@ -928,6 +936,7 @@ function SendPacketPanel({
                     </button>
                     <button
                       type="button"
+                      aria-pressed={useSms}
                       onClick={() => setUseSms((v) => !v)}
                       className="rounded-md border px-3 py-1.5 text-sm font-medium"
                       style={{
@@ -1243,6 +1252,26 @@ function PacketDetailPanel({
       }
     >
       <div className="p-5 space-y-5">
+        <div
+          className="rounded-md border p-3 text-sm"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3
+              className="font-semibold"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              Signature receipt
+            </h3>
+            <Badge variant={patientPacketReceiptVariant(packet)}>
+              {patientPacketReceiptLabel(packet)}
+            </Badge>
+          </div>
+          <p className="mt-1" style={{ color: "hsl(var(--ink-2))" }}>
+            {patientPacketReceiptDescription(packet)}
+          </p>
+        </div>
+
         {/* Signing link */}
         {signingLink && (
           <div>
@@ -1340,7 +1369,7 @@ function PacketDetailPanel({
               className="font-semibold mb-1"
               style={{ color: "hsl(var(--ink-2))" }}
             >
-              Electronic signature
+              Electronic signature received
             </h3>
             <p style={{ color: "hsl(var(--ink-2))" }}>
               Signed by <strong>{signature.signer_name}</strong> (

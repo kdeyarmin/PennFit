@@ -639,7 +639,7 @@ router.get(
       .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at",
+        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at, chart_document_id, chart_filed_at",
       )
       .order("created_at", { ascending: false })
       .limit(100);
@@ -673,7 +673,7 @@ router.get(
       .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at",
+        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at, chart_document_id, chart_filed_at",
       )
       .eq("patient_id", parsed.data.id)
       .order("created_at", { ascending: false })
