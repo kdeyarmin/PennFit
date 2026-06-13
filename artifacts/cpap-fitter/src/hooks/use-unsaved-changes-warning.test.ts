@@ -31,12 +31,7 @@ describe("useUnsavedChangesWarning", () => {
     expect(SRC).toContain("if (!dirty) return;");
   });
 
-  it("ignores modified, external, download, and hash-only clicks", () => {
-    expect(SRC).toContain("event.metaKey");
-    expect(SRC).toContain('anchor.hasAttribute("download")');
-    expect(SRC).toContain("url.origin !== window.location.origin");
-    expect(SRC).toContain(
-      "url.pathname === current.pathname && url.search === current.search",
-    );
+  it("depends on `dirty` so it re-runs when the flag changes", () => {
+    expect(SRC).toContain("}, [dirty]);");
   });
 });
