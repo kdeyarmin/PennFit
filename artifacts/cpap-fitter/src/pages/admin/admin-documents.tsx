@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
@@ -169,13 +170,26 @@ export function AdminDocumentsPage() {
             </h1>
             <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
               Type out a CMN, prescription, agreement, delivery ticket, or fax
-              cover by hand, then send each one on its own — or select several
-              and send them together as a packet.
+              cover as a manual PDF for email, fax, download, or chart filing.
+              For patient electronic signatures, send a Document packet.
             </p>
           </div>
-          <Button onClick={() => setComposing((s) => !s)}>
-            {composing ? "Close" : "New document"}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Link
+              href="/admin/patient-packets"
+              className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-semibold transition-all"
+              style={{
+                backgroundColor: "hsl(var(--surface-2))",
+                color: "hsl(var(--penn-navy-deep))",
+                borderColor: "hsl(var(--penn-gold))",
+              }}
+            >
+              Send for e-sign
+            </Link>
+            <Button onClick={() => setComposing((s) => !s)}>
+              {composing ? "Close" : "New document"}
+            </Button>
+          </div>
         </div>
 
         {composing && (
@@ -302,7 +316,7 @@ export function AdminDocumentsPage() {
           ) : documents.length === 0 ? (
             <EmptyState
               title="No documents yet"
-              hint="Click “New document” to type out a Certificate of Medical Necessity, prescription/order, agreement, delivery ticket, fax cover, or free-form letter. Each can be sent on its own or bundled into a packet."
+              hint="Click New document to type out a Certificate of Medical Necessity, prescription/order, agreement, delivery ticket, fax cover, or free-form letter. These manual PDFs can be emailed, faxed, downloaded, filed, or bundled into a combined PDF packet."
             />
           ) : (
             <div className="overflow-x-auto">
@@ -406,7 +420,7 @@ export function AdminDocumentsPage() {
 
         <Card
           title="Packets"
-          subtitle="Bundles of the documents above, sent as one combined PDF — generated cover sheet first, then each document."
+          subtitle="Bundles of the documents above, sent as one combined PDF for email, fax, download, or chart filing. This is not an electronic-signature packet."
         >
           {packetPdfError && (
             <div
