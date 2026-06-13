@@ -68,3 +68,72 @@ describe("GET /admin/manual-documents/catalog", () => {
     expect(res.body.types.length).toBe(6);
   });
 });
+
+describe("GET /admin/manual-documents/prefill", () => {
+  it("prefills CMN sleep-study coverage details from the patient chart", async () => {
+    mockAdmin.current = ADMIN;
+    supabaseMock.stage("patients", "select", {
+      data: {
+        id: "11111111-1111-4111-8111-111111111111",
+        legal_first_name: "Pat",
+        legal_last_name: "Patient",
+        date_of_birth: "1970-01-02",
+        phone_e164: "+12155550123",
+        email: "pat@example.com",
+        address: null,
+      },
+    });
+    supabaseMock.stage("prescriptions", "select", { data: [] });
+    supabaseMock.stage("sleep_studies", "select", {
+      data: {
+        diagnosis_icd10: "G47.33",
+        study_date: "2026-05-20",
+        ahi: "18.4",
+        rdi: null,
+        interpreting_provider_id: null,
+      },
+    });
+
+    const res = await request(makeApp()).get(
+      "/admin/manual-documents/prefill?patientId=11111111-1111-4111-8111-111111111111&documentType=cmn",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.fields.clinical_justification).toContain(
+      "[x] AHI or RDI ≥ 15 events per hour",
+    );
+    expect(res.body.fields.clinical_justification).toContain(
+      "Sleep study date: 2026-05-20   AHI/RDI: 18.4",
+    );
+    expect(res.body.fields.diagnosis).toBe("G47.33");
+  });
+
+  it("leaves CMN sleep-study coverage blanks when the chart has no study", async () => {
+    mockAdmin.current = ADMIN;
+    supabaseMock.stage("patients", "select", {
+      data: {
+        id: "22222222-2222-4222-8222-222222222222",
+        legal_first_name: "No",
+        legal_last_name: "Study",
+        date_of_birth: "1980-03-04",
+        phone_e164: null,
+        email: null,
+        address: null,
+      },
+    });
+    supabaseMock.stage("prescriptions", "select", { data: [] });
+    supabaseMock.stage("sleep_studies", "select", { data: null });
+
+    const res = await request(makeApp()).get(
+      "/admin/manual-documents/prefill?patientId=22222222-2222-4222-8222-222222222222&documentType=cmn",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.fields.clinical_justification).toContain(
+      "[ ] AHI or RDI ≥ 15 events per hour",
+    );
+    expect(res.body.fields.clinical_justification).toContain(
+      "Sleep study date: ______________   AHI/RDI: ______________",
+    );
+  });
+});

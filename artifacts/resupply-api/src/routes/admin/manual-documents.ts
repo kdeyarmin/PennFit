@@ -246,6 +246,50 @@ const prefillQuery = z
   })
   .strict();
 
+function formatSleepStudyMetric(raw: unknown): string {
+  if (raw == null) return "";
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "";
+  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, "");
+}
+
+function buildCmnClinicalJustification(
+  study: {
+    study_date?: string | null;
+    ahi?: unknown;
+    rdi?: unknown;
+  } | null,
+): string {
+  const ahi = formatSleepStudyMetric(study?.ahi);
+  const rdi = formatSleepStudyMetric(study?.rdi);
+  const qualifyingMetric = ahi || rdi;
+  const qualifyingValue = qualifyingMetric ? Number(qualifyingMetric) : null;
+  const checkedAtLeast15 =
+    qualifyingValue != null &&
+    Number.isFinite(qualifyingValue) &&
+    qualifyingValue >= 15;
+  const checkedFiveTo14 =
+    qualifyingValue != null &&
+    Number.isFinite(qualifyingValue) &&
+    qualifyingValue >= 5 &&
+    qualifyingValue <= 14;
+  const metricLabel = ahi && rdi ? `${ahi} / ${rdi}` : ahi || rdi;
+  const date = study?.study_date || "______________";
+  const metric = metricLabel || "______________";
+
+  return [
+    "The patient had a face-to-face clinical evaluation prior to the sleep test documenting signs and symptoms of obstructive sleep apnea.",
+    "",
+    "A Medicare-covered sleep test (in-laboratory polysomnogram or home sleep apnea test) established a diagnosis of obstructive sleep apnea with:",
+    `  [${checkedAtLeast15 ? "x" : " "}] AHI or RDI ≥ 15 events per hour; or`,
+    `  [${checkedFiveTo14 ? "x" : " "}] AHI or RDI ≥ 5 and ≤ 14 events per hour WITH documented excessive daytime sleepiness, impaired cognition, mood disorder, insomnia, hypertension, ischemic heart disease, or history of stroke.`,
+    "",
+    `Sleep study date: ${date}   AHI/RDI: ${metric}`,
+    "",
+    "PAP therapy is medically necessary to treat the patient's obstructive sleep apnea. For continued Medicare coverage beyond the first 90 days, adherence (use ≥ 4 hours per night on 70% of nights during a consecutive 30-day period) and clinical benefit will be documented at a face-to-face re-evaluation.",
+  ].join("\n");
+}
+
 function formatJsonAddress(raw: unknown): string {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "";
   const r = raw as Record<string, unknown>;
@@ -300,7 +344,9 @@ router.get(
       supabase
         .schema("resupply")
         .from("sleep_studies")
-        .select("diagnosis_icd10, study_date, interpreting_provider_id")
+        .select(
+          "diagnosis_icd10, study_date, ahi, rdi, interpreting_provider_id",
+        )
         .eq("patient_id", patientId)
         .order("study_date", { ascending: false })
         .limit(1)
@@ -373,6 +419,7 @@ router.get(
         physician_address: providerAddress,
         diagnosis,
         equipment: itemLines,
+        clinical_justification: buildCmnClinicalJustification(studyRes.data),
       },
       prescription: {
         patient_name: patientName,
