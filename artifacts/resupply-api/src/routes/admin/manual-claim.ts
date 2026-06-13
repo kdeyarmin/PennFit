@@ -180,6 +180,22 @@ router.post(
           createdByEmail: req.adminEmail ?? null,
         });
       } catch (err) {
+        const { error: holdErr } = await supabase
+          .schema("resupply")
+          .from("insurance_claims")
+          .update({
+            bill_hold: true,
+            bill_hold_reason:
+              "Paperwork checklist failed to initialize; regenerate before billing.",
+            bill_hold_updated_at: new Date().toISOString(),
+          })
+          .eq("id", newId);
+        if (holdErr) {
+          logger.warn(
+            { err: holdErr.message, claimId: newId },
+            "manual-claim: fail-safe bill-hold flag failed",
+          );
+        }
         logger.warn(
           { err, claimId: newId },
           "manual-claim: bill-hold seed failed (non-fatal)",

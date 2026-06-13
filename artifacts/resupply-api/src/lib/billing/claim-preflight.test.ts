@@ -80,6 +80,27 @@ describe("preflightClaim", () => {
     expect(out.errorCount).toBe(0);
   });
 
+  it("blocks submit when required paperwork is still outstanding", async () => {
+    stageHappyPath(
+      {},
+      {
+        paperworkOverride: [
+          {
+            status: "outstanding",
+            required: true,
+            label: "Signed proof of delivery",
+          },
+        ],
+      },
+    );
+    const out = await preflightClaim(CLAIM_ID);
+    const item = out.items.find((i) => i.key === "bill_hold");
+    expect(item?.severity).toBe("error");
+    expect(item?.label).toBe("On bill hold — signed paperwork outstanding");
+    expect(out.readyToSubmit).toBe(false);
+  });
+
+
   it("surfaces active coverage from a recent parsed 271", async () => {
     stageHappyPath();
     stageSupabaseResponse("eligibility_checks", "select", {
@@ -529,6 +550,11 @@ interface DataOverrides {
       | "suspended";
     enrollment_effective_on?: string | null;
   };
+  paperworkOverride?: Array<{
+    status: "outstanding" | "satisfied" | "waived" | "voided";
+    required: boolean;
+    label: string;
+  }>;
 }
 
 function stageHappyPath(
@@ -557,6 +583,7 @@ function stageHappyPath(
       fulfillment_id: null,
     },
   });
+  stageClaimPaperwork(data.paperworkOverride);
   stagePayerProfile(
     data.payerOverride ?? {
       paper_only: false,
@@ -581,6 +608,24 @@ function stageHappyPath(
     );
     return new Date(todayUtc - daysAgo * MS_PER_DAY).toISOString().slice(0, 10);
   }
+}
+
+function stageClaimPaperwork(
+  rows:
+    | Array<{
+        status: "outstanding" | "satisfied" | "waived" | "voided";
+        required: boolean;
+        label: string;
+      }>
+    | undefined = [
+    { status: "satisfied", required: true, label: "Signed prescription" },
+    { status: "satisfied", required: true, label: "Proof of delivery" },
+    { status: "satisfied", required: true, label: "Assignment of Benefits" },
+  ],
+): void {
+  stageSupabaseResponse("claim_paperwork_requirements", "select", {
+    data: rows,
+  });
 }
 
 function stagePayerProfile(overrides: {

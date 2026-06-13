@@ -18,7 +18,11 @@
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { listClaimRequirements, outstandingLabels } from "./bill-hold";
+import {
+  listClaimRequirements,
+  outstandingLabels,
+  seedDefaultRequirementsForClaim,
+} from "./bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import {
@@ -124,11 +128,27 @@ export async function preflightClaim(
 
   // ── Bill hold (outstanding signed paperwork) ────────────────────
   // Blocks submit when the claim still owes a required signed document.
-  // Feature-flagged to match the batch-submit gate exactly. Fail-soft: a
-  // ledger read error just omits the row (the gate still re-checks).
+  // Feature-flagged to match the batch-submit gate exactly. Fail-closed:
+  // missing/unreadable paperwork state blocks submit until a CSR can verify it.
   if (await isFeatureEnabled("billing.bill_hold")) {
     try {
-      const reqs = await listClaimRequirements(claim.id, supabase);
+      let reqs = await listClaimRequirements(claim.id, supabase);
+      if (reqs.length === 0) {
+        await seedDefaultRequirementsForClaim(claim.id, {
+          supabase,
+          createdByEmail: "system:preflight",
+        });
+        reqs = await listClaimRequirements(claim.id, supabase);
+      }
+      if (reqs.length === 0) {
+        items.push({
+          key: "bill_hold",
+          severity: "error",
+          label: "Paperwork checklist not initialized",
+          detail:
+            "The claim has no bill-hold requirement rows. Re-run the paperwork setup before submitting so Rx, POD, and AOB checks cannot be skipped.",
+        });
+      }
       const missing = outstandingLabels(reqs);
       if (missing.length > 0) {
         items.push({
@@ -154,6 +174,13 @@ export async function preflightClaim(
         },
         "preflight: bill-hold surface skipped (non-fatal)",
       );
+      items.push({
+        key: "bill_hold",
+        severity: "error",
+        label: "Paperwork checklist unavailable",
+        detail:
+          "The bill-hold ledger could not be read or initialized. Resolve the paperwork check before submitting this claim.",
+      });
     }
   }
 

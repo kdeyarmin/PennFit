@@ -6,7 +6,7 @@
 // Pulls from /admin/billing/director-summary (single round-trip,
 // aggregate-only — no PHI), so the page is cheap to refresh.
 //
-// Six KPI tiles up top, then three sections:
+// Seven KPI tiles up top, then focused billing sections:
 //   1. Work queues — counts that need a human, each linking to the
 //      filtered worklist that actually contains the items.
 //   2. Money in flight — three dollar totals that materially impact
@@ -17,6 +17,7 @@
 //
 // All deep links use existing /admin/billing/* sub-pages.
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -37,6 +38,8 @@ import { Card, KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
+  createClaimFromFulfillment,
+  fetchBillingDashboard,
   fetchDirectorSummary,
   formatMoneyCents,
   formatPercent,
@@ -53,12 +56,58 @@ const WINDOW_LABEL: Record<
 };
 
 export function AdminBillingHubPage() {
-  const { data, isPending, isError, error, refetch } = useQuery({
+  const [creatingFulfillmentId, setCreatingFulfillmentId] = useState<
+    string | null
+  >(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createdClaim, setCreatedClaim] = useState<{
+    id: string;
+    patientId: string;
+  } | null>(null);
+
+  const {
+    data,
+    isPending,
+    isError,
+    error,
+    refetch: refetchDirector,
+  } = useQuery({
     queryKey: ["admin-billing-director-summary"],
     queryFn: fetchDirectorSummary,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
+  const {
+    data: dashboard,
+    isPending: dashboardPending,
+    isError: dashboardIsError,
+    error: dashboardError,
+    refetch: refetchDashboard,
+  } = useQuery({
+    queryKey: ["admin-billing-dashboard"],
+    queryFn: fetchBillingDashboard,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  async function handleCreateClaim(fulfillmentId: string) {
+    setCreatingFulfillmentId(fulfillmentId);
+    setCreateError(null);
+    setCreatedClaim(null);
+    try {
+      const created = await createClaimFromFulfillment(fulfillmentId);
+      setCreatedClaim({ id: created.id, patientId: created.patientId });
+      await Promise.all([refetchDirector(), refetchDashboard()]);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error
+          ? err.message
+          : "Claim creation failed. Refresh and try again.",
+      );
+    } finally {
+      setCreatingFulfillmentId(null);
+    }
+  }
 
   const kpis = [
     {
@@ -68,6 +117,17 @@ export function AdminBillingHubPage() {
       href: "/admin/billing/ai-queue",
       icon: ClipboardList,
       tone: "navy" as const,
+    },
+    {
+      label: "Ready to bill",
+      value:
+        data?.counts.fulfillmentsToBill ??
+        dashboard?.counts.fulfillmentsToBill ??
+        "—",
+      hint: "Shipped fulfillments with no claim",
+      href: "/admin/billing",
+      icon: ClipboardCheck,
+      tone: "gold" as const,
     },
     {
       label: "Fresh denials",
@@ -129,7 +189,15 @@ export function AdminBillingHubPage() {
         </p>
       </header>
 
-      {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
+      {isError && (
+        <ErrorPanel error={error} onRetry={() => void refetchDirector()} />
+      )}
+      {dashboardIsError && (
+        <ErrorPanel
+          error={dashboardError}
+          onRetry={() => void refetchDashboard()}
+        />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {kpis.map((k) => (
@@ -149,6 +217,108 @@ export function AdminBillingHubPage() {
           </Link>
         ))}
       </div>
+
+      <Card
+        title="Fulfillments ready to bill"
+        subtitle="Shipped items that do not have an insurance claim yet"
+      >
+        {dashboardPending ? (
+          <Spinner label="Loading fulfillments…" />
+        ) : (dashboard?.fulfillmentsToBill.length ?? 0) === 0 ? (
+          <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
+            No shipped fulfillments are waiting for claim creation.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {createError && (
+              <p
+                className="rounded border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "#fecaca",
+                  color: "#991b1b",
+                  background: "#fef2f2",
+                }}
+              >
+                {createError}
+              </p>
+            )}
+            {createdClaim && (
+              <p
+                className="rounded border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "#bbf7d0",
+                  color: "#166534",
+                  background: "#f0fdf4",
+                }}
+              >
+                Draft claim {createdClaim.id.slice(0, 8)} created.{" "}
+                <Link
+                  href={`/admin/patients/${createdClaim.patientId}/insurance-claims`}
+                  className="font-semibold underline"
+                >
+                  Open claim workbench
+                </Link>
+              </p>
+            )}
+            <ul
+              className="divide-y"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              {(dashboard?.fulfillmentsToBill ?? []).map((f) => {
+                const isCreating = creatingFulfillmentId === f.id;
+                return (
+                  <li
+                    key={f.id}
+                    className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p
+                        className="text-sm font-medium"
+                        style={{ color: "hsl(var(--ink-1))" }}
+                      >
+                        {f.itemSku || "Unlabeled item"}{" "}
+                        <span
+                          className="font-normal"
+                          style={{ color: "hsl(var(--ink-3))" }}
+                        >
+                          x {f.quantity ?? 1}
+                        </span>
+                      </p>
+                      <p
+                        className="text-xs"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        Shipped {formatDate(f.shippedAt)} · fulfillment{" "}
+                        {f.id.slice(0, 8)}
+                      </p>
+                      <Link
+                        href={`/admin/patients/${f.patientId}`}
+                        className="text-xs underline"
+                        style={{ color: "hsl(var(--penn-navy))" }}
+                      >
+                        Open patient
+                      </Link>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleCreateClaim(f.id)}
+                      disabled={creatingFulfillmentId !== null}
+                      className="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{
+                        borderColor: "hsl(var(--penn-navy))",
+                        color: "hsl(var(--penn-navy))",
+                        background: "#fff",
+                      }}
+                    >
+                      {isCreating ? "Creating..." : "Create claim"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card
@@ -497,6 +667,13 @@ function QueueRow({
       </span>
     </li>
   );
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
 }
 
 function DollarRow({
