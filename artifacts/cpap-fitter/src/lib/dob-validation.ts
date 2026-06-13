@@ -1,25 +1,20 @@
+import { todayAppDateIso } from "@/lib/utils";
+
 // DOB plausibility window: anyone born between 1900-01-01 and today is
 // in scope. The HTML5 date picker enforces the same bounds via min/max
 // on the <input>, but this function is the authoritative gate so a
 // paste-in-future-date or browser without HTML5 validation can't slip
-// through.
-// NOTE: an alternate local-date-string implementation was discarded
-// in favor of the UTC end-of-today path below (Task #72 merge
-// preference).
+// through. "Today" follows the practice timezone: America/New_York.
 export const DOB_MIN = "1900-01-01";
 
 /**
- * Returns the current local date as a YYYY-MM-DD string. Used to
+ * Returns the current practice date as a YYYY-MM-DD string. Used to
  * populate the `max` attribute on the DOB <input> so the native date
  * picker won't offer a future date. The authoritative gate against
  * future dates remains `isPlausibleDob` below.
  */
 export function todayLocalDateString(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return todayAppDateIso();
 }
 
 /**
@@ -32,12 +27,13 @@ export function todayLocalDateString(): string {
  *    (catches invalid dates like 2000-02-30 that Date.UTC silently rolls
  *    over to 2000-03-01).
  *  - The date is not before DOB_MIN (1900-01-01).
- *  - The date is not after UTC end-of-today so a same-day sign-up in
- *    any timezone is accepted.
+ *  - The date is not after the current practice date.
  */
 export function isPlausibleDob(value: string): boolean {
   const [y, m, d] = value.split("-").map(Number);
   if (!y || !m || !d) return false;
+  const canonical = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (value !== canonical) return false;
   const parsed = new Date(Date.UTC(y, m - 1, d));
   if (
     parsed.getUTCFullYear() !== y ||
@@ -47,17 +43,5 @@ export function isPlausibleDob(value: string): boolean {
     return false;
   }
   if (parsed < new Date(DOB_MIN)) return false;
-  // Use UTC end-of-today so a same-day signup in any timezone is OK.
-  const now = new Date();
-  const todayEnd = new Date(
-    Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate(),
-      23,
-      59,
-      59,
-    ),
-  );
-  return parsed <= todayEnd;
+  return value <= todayAppDateIso();
 }

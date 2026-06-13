@@ -46,6 +46,7 @@ import {
   type InsuranceCoverage,
 } from "@/lib/admin/clinical-tabs-api";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { formatAppDate, formatAppDateTime, todayAppDateIso } from "@/lib/utils";
 
 const HCPCS_RE = /^[A-Z]\d{4}$/;
 
@@ -386,7 +387,7 @@ export function AdminBillingVerifyPage() {
                           Member {c.memberId}
                           {c.planName ? ` · ${c.planName}` : ""}
                           {c.verifiedAt
-                            ? ` · last verified ${new Date(c.verifiedAt).toLocaleDateString()}`
+                            ? ` · last verified ${formatAppDate(c.verifiedAt)}`
                             : " · never verified"}
                         </span>
                       </span>
@@ -494,7 +495,7 @@ export function AdminBillingVerifyPage() {
                             className="text-[11px]"
                             style={{ color: "hsl(var(--ink-3))" }}
                           >
-                            {new Date(c.requested_at).toLocaleString()}
+                            {formatAppDateTime(c.requested_at)}
                           </span>
                         </div>
                         {c.is_active != null && (
@@ -588,10 +589,7 @@ function QuickCheckSection() {
     hcpcsValid;
 
   const selectedPayer = electronicPayers.find((p) => p.id === payerProfileId);
-  // Local-time max for the DOB picker — toISOString() is UTC and can be
-  // a day off near midnight.
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = todayAppDateIso();
 
   const check = useMutation({
     mutationFn: () =>

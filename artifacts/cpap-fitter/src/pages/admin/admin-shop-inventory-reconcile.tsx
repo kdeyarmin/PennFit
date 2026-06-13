@@ -7,6 +7,7 @@ import {
   startReconciliation,
   type ReconciliationListItem,
 } from "@/lib/admin/inventory-reconciliation-api";
+import { formatAppDate, todayAppDateIso } from "@/lib/utils";
 
 // Inventory reconciliation list page.
 //
@@ -26,22 +27,15 @@ import {
 const QUERY_KEY = ["inventory-reconciliations"] as const;
 
 function defaultPeriodLabel(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
+  return todayAppDateIso().slice(0, 7);
 }
 
 function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return formatAppDate(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export function AdminShopInventoryReconcilePage() {

@@ -129,10 +129,16 @@ describe("formatDate — full ISO timestamp", () => {
   // through `new Date(value)` and then the local timezone renders the date.
 
   it("accepts an ISO timestamp without returning '—'", () => {
-    // We can't assert the exact day because it depends on the local timezone,
-    // but we can assert it returns something valid and doesn't regress to '—'.
+    // This checks the instant path stays valid; the boundary-specific test
+    // below asserts the New York timezone behavior.
     const formatted = formatDate("2026-05-22T12:00:00.000Z");
     expect(formatted).not.toBe("—");
+  });
+
+  it("renders ISO timestamps in New York time across a UTC day boundary", () => {
+    const formatted = formatDate("2026-06-13T03:30:00.000Z");
+    expect(formatted).not.toBe("—");
+    expect(extractDay(formatted)).toBe(12);
   });
 
   it("returns '—' for an invalid ISO timestamp", () => {
@@ -157,6 +163,12 @@ describe("formatDateTime", () => {
     const formatted = formatDateTime("2026-05-22T15:30:00.000Z");
     expect(formatted).not.toBe("—");
     expect(typeof formatted).toBe("string");
+  });
+
+  it("uses New York time for date-time timestamps", () => {
+    const formatted = formatDateTime("2026-06-13T03:30:00.000Z");
+    expect(formatted).not.toBe("—");
+    expect(extractDay(formatted)).toBe(12);
   });
 
   it("returns '—' for a garbage string", () => {

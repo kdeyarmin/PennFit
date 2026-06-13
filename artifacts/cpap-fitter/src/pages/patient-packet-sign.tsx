@@ -48,7 +48,7 @@ import {
   SIGNATURE_STYLES,
   renderTypedSignatureDataUrl,
 } from "@/lib/typed-signature";
-import { cn } from "@/lib/utils";
+import { cn, todayAppDateIso } from "@/lib/utils";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const PAGE_TITLE = "Sign your documents";
@@ -585,7 +585,7 @@ export function PatientPacketSign() {
                 id="dateReceived"
                 type="date"
                 value={dateReceived}
-                max={new Date().toISOString().slice(0, 10)}
+                max={todayAppDateIso()}
                 onChange={(e) => setDateReceived(e.target.value)}
               />
               <p className="text-xs text-slate-400">

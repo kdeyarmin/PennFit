@@ -35,6 +35,7 @@ import {
   type AccountThread,
 } from "@/lib/account-api";
 import { useShopIdentity } from "@/lib/identity";
+import { formatAppDateTime, formatAppTime, todayAppDateIso } from "@/lib/utils";
 
 /** How often we re-fetch while the tab is visible. */
 const POLL_INTERVAL_MS = 30_000;
@@ -409,18 +410,13 @@ const STATUS_META: Record<
 };
 
 function formatTime(d: Date): string {
-  const today = new Date();
-  if (
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
-  ) {
-    return d.toLocaleTimeString(undefined, {
+  if (todayAppDateIso(d) === todayAppDateIso()) {
+    return formatAppTime(d, {
       hour: "numeric",
       minute: "2-digit",
     });
   }
-  return d.toLocaleString(undefined, {
+  return formatAppDateTime(d, {
     month: "short",
     day: "numeric",
     hour: "numeric",
