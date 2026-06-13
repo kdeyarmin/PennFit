@@ -31,6 +31,7 @@ import {
   type CaregiverView,
 } from "@/lib/account-api";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { formatAppDate } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -156,7 +157,7 @@ export function CaregiverSection() {
                   className="text-xs text-muted-foreground mt-2"
                   data-testid="account-caregiver-consent-at"
                 >
-                  Added {new Date(active.consentAt).toLocaleDateString()}
+                  Added {formatAppDate(active.consentAt)}
                 </p>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">

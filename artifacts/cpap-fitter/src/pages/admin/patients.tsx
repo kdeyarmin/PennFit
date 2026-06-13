@@ -46,6 +46,7 @@ import { useBulkSelection } from "@/hooks/use-bulk-selection";
 import { useFilteredList } from "@/hooks/use-filtered-list";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 import { fullName, formatDateTime } from "@/lib/admin/format";
+import { todayAppDateIso } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
 
@@ -351,7 +352,7 @@ export function PatientsPage() {
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `patients-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `patients-export-${todayAppDateIso()}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

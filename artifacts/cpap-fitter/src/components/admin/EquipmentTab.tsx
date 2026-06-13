@@ -14,6 +14,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { todayAppDateIso } from "@/lib/utils";
 import {
   createPatientEquipment,
   listPatientEquipment,
@@ -228,9 +229,7 @@ function AddEquipmentModal({
   const [serialNumber, setSerialNumber] = useState("");
   const [pressureSetting, setPressureSetting] = useState("");
   const [humidifierSetting, setHumidifierSetting] = useState("");
-  const [dispensedAt, setDispensedAt] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [dispensedAt, setDispensedAt] = useState(todayAppDateIso());
   const [error, setError] = useState<string | null>(null);
 
   const create = useMutation({
