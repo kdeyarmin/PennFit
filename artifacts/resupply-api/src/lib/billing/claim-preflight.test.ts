@@ -100,7 +100,6 @@ describe("preflightClaim", () => {
     expect(out.readyToSubmit).toBe(false);
   });
 
-
   it("surfaces active coverage from a recent parsed 271", async () => {
     stageHappyPath();
     stageSupabaseResponse("eligibility_checks", "select", {
