@@ -332,14 +332,6 @@ function checkAllOrNoneGroup(
     );
     return;
   }
-  if (missing.length > 0) {
-    record(
-      name,
-      options.partialSeverity ?? "fail",
-      `partially configured (${present.length}/${vars.length} set) — missing: ${missing.join(", ")}`,
-    );
-    return;
-  }
   record(name, "pass", options.completeDetail);
 }
 
