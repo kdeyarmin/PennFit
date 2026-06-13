@@ -274,8 +274,11 @@ describe("account — sections grouped into tabs", () => {
 
   it("keeps deep links working via hashToAccountTab + a hashchange listener", () => {
     expect(SRC).toContain("function hashToAccountTab");
+    expect(SRC).toContain('if (h === "insights") return "overview"');
     expect(SRC).toContain('if (h === "messages") return "messages"');
-    expect(SRC).toContain('if (h === "autoship") return "orders"');
+    expect(SRC).toContain(
+      'if (h === "autoship" || h === "orders") return "orders"',
+    );
     expect(SRC).toContain('addEventListener("hashchange"');
   });
 
@@ -317,12 +320,19 @@ describe("account — sections grouped into tabs", () => {
 
 // Pure-logic mirror of hashToAccountTab (kept verbatim with account.tsx).
 describe("hashToAccountTab", () => {
-  function hashToAccountTab(hash: string): "messages" | "orders" | null {
+  function hashToAccountTab(
+    hash: string,
+  ): "overview" | "messages" | "orders" | null {
     const h = hash.replace(/^#/, "");
+    if (h === "insights") return "overview";
     if (h === "messages") return "messages";
-    if (h === "autoship") return "orders";
+    if (h === "autoship" || h === "orders") return "orders";
     return null;
   }
+
+  it("maps #insights to Overview tab", () => {
+    expect(hashToAccountTab("#insights")).toBe("overview");
+  });
 
   it("maps #messages → Messages tab", () => {
     expect(hashToAccountTab("#messages")).toBe("messages");
@@ -330,6 +340,10 @@ describe("hashToAccountTab", () => {
 
   it("maps #autoship → Orders & returns tab", () => {
     expect(hashToAccountTab("#autoship")).toBe("orders");
+  });
+
+  it("maps #orders to Orders & returns tab", () => {
+    expect(hashToAccountTab("#orders")).toBe("orders");
   });
 
   it("returns null for empty / unknown hashes (defaults to Overview)", () => {

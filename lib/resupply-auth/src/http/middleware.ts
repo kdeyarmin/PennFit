@@ -5,7 +5,14 @@
 
 import type { NextFunction, Request, Response } from "express";
 
-import { readCookie, SESSION_COOKIE } from "../cookies";
+import {
+  appendSetCookie,
+  buildCsrfCookie,
+  buildSessionCookie,
+  CSRF_COOKIE,
+  readCookie,
+  SESSION_COOKIE,
+} from "../cookies";
 import { isExpired, slideExpiry } from "../session";
 import { hashToken } from "../token";
 
@@ -81,6 +88,26 @@ export function makeRequireSession(deps: AuthDeps) {
     );
     if (nextExpires.getTime() !== session.expiresAt.getTime()) {
       await deps.repo.bumpSession(session.id, nextExpires, t);
+      const maxAgeSeconds = Math.max(
+        0,
+        Math.ceil((nextExpires.getTime() - t.getTime()) / 1000),
+      );
+      const csrfRaw = readCookie(req, CSRF_COOKIE);
+      appendSetCookie(
+        res,
+        [
+          buildSessionCookie(raw, {
+            secure: deps.secureCookies,
+            maxAgeSeconds,
+          }),
+          csrfRaw
+            ? buildCsrfCookie(csrfRaw, {
+                secure: deps.secureCookies,
+                maxAgeSeconds,
+              })
+            : null,
+        ].filter((cookie): cookie is string => Boolean(cookie)),
+      );
     }
 
     req.authUser = user;

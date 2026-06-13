@@ -9,7 +9,7 @@ import express from "express";
 import supertest from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { SESSION_COOKIE } from "../cookies";
+import { CSRF_COOKIE, SESSION_COOKIE } from "../cookies";
 import { readAuthEnv } from "../env";
 import { makeMemoryRepo, seedUserWithPassword } from "../test-helpers";
 import { issueToken } from "../token";
@@ -31,6 +31,11 @@ function harness() {
     secureCookies: false,
   };
   return { repo, deps };
+}
+
+function getSetCookie(header: string | string[] | undefined): string[] {
+  if (!header) return [];
+  return Array.isArray(header) ? header : [header];
 }
 
 describe("requireSession", () => {
@@ -140,6 +145,49 @@ describe("requireSession", () => {
     // Sliding expiry advanced.
     const refreshed = repo.__sessions().find((s) => s.id === inserted.id);
     expect(refreshed!.expiresAt.getTime()).toBeGreaterThan(before.getTime());
+    const setCookie = getSetCookie(r.headers["set-cookie"]);
+    expect(
+      setCookie?.some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`)),
+    ).toBe(true);
+  });
+
+  it("reissues the CSRF companion cookie when a sliding request carries one", async () => {
+    const { repo, deps } = harness();
+    await seedUserWithPassword(repo, {
+      id: "u_csrf",
+      emailLower: "csrf@example.com",
+      password: "p",
+    });
+    const tok = issueToken();
+    await repo.insertSession({
+      tokenHash: tok.hash,
+      userId: "u_csrf",
+      expiresAt: new Date(Date.now() + 60_000),
+      ip: null,
+      userAgentHash: null,
+    });
+
+    const app = express();
+    app.get("/protected", makeRequireSession(deps), (_req, res) => {
+      res.json({ ok: true });
+    });
+    const r = await supertest(app)
+      .get("/protected")
+      .set(
+        "Cookie",
+        `${SESSION_COOKIE}=${tok.raw}; ${CSRF_COOKIE}=csrf-token-123`,
+      );
+
+    expect(r.status).toBe(200);
+    const setCookie = getSetCookie(r.headers["set-cookie"]);
+    expect(
+      setCookie?.some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`)),
+    ).toBe(true);
+    expect(
+      setCookie?.some((cookie) =>
+        cookie.startsWith(`${CSRF_COOKIE}=csrf-token-123`),
+      ),
+    ).toBe(true);
   });
 
   it("fires the soft UA-mismatch observer but still admits the request", async () => {
