@@ -12,6 +12,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { isManualDocumentType } from "./catalog";
 import { renderManualDocumentPacketPdf } from "./packet-pdf";
 import {
+  manualDocumentSupplierContact,
   buildManualDocumentPdfInput,
   manualDocumentSupplierName,
   MANUAL_DOCUMENT_ROW_COLUMNS,
@@ -133,6 +134,7 @@ export async function renderManualDocumentPacketToPdf(
     documents: inputs,
     includeCoverSheet: packet.include_cover_sheet,
     supplierName: manualDocumentSupplierName(),
+    supplierContact: manualDocumentSupplierContact(),
     generatedOn,
   });
 }
