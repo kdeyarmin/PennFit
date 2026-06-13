@@ -1,7 +1,7 @@
 // "Sign & pay orders" panel on the admin Orders page.
 //
 // A CSR builds an order here (free-form line items priced in dollars,
-// optional paperwork from the patient-packet template catalog) and the
+// optional standalone paperwork from the patient-packet template catalog) and the
 // customer receives a secure link to review, e-sign, and pay via
 // Stripe. The panel lists recent requests with a derived lifecycle
 // badge (Sent → Viewed → Signed → Paid) plus resend / cancel actions.
@@ -481,12 +481,13 @@ function CreateCsrOrderModal({
     );
   }
 
-  const selectableTemplates = templates.data?.templates ?? [];
+  const selectableTemplates =
+    templates.data?.templates.filter((t) => t.standalone) ?? [];
 
   return (
     <AdminModal
       title="Create a sign & pay order"
-      description="The customer gets a secure link to review the order, e-sign any paperwork, and pay by card through Stripe."
+      description="The customer gets a secure link to review the order, e-sign standalone paperwork, and pay by card through Stripe."
       onClose={onClose}
       className="max-w-3xl"
     >
@@ -602,7 +603,7 @@ function CreateCsrOrderModal({
         {/* Paperwork */}
         <div className="space-y-2">
           <div className="text-sm font-medium">
-            Paperwork to sign{" "}
+            Standalone paperwork to sign{" "}
             <span className="text-muted-foreground font-normal">
               (optional)
             </span>
@@ -611,7 +612,7 @@ function CreateCsrOrderModal({
             <Skeleton className="h-16 w-full" />
           ) : selectableTemplates.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No document templates available.
+              No standalone document templates available.
             </p>
           ) : (
             <div className="grid gap-1.5 sm:grid-cols-2 max-h-48 overflow-y-auto rounded-lg border border-border/40 p-3">
@@ -640,6 +641,10 @@ function CreateCsrOrderModal({
               ))}
             </div>
           )}
+          <p className="text-xs text-muted-foreground">
+            Only standalone forms are available here. Use Document packets for
+            onboarding or custom patient e-sign packets.
+          </p>
         </div>
 
         {/* Note */}
