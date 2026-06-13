@@ -40,8 +40,8 @@ the comments at the top of `scripts/migrate.mjs` before touching this area.
 ### Apply Path
 
 `scripts/migrate.mjs` is the canonical apply script. It is invoked by
-`scripts/post-merge.sh` locally and by `scripts/deploy-migrate.mjs` during
-deploys when `RUN_DB_MIGRATIONS=true`.
+`scripts/post-merge.sh` locally and by `lib/resupply-db/scripts/deploy-migrate.mjs`
+during deploys when `RUN_DB_MIGRATIONS=true`.
 
 The migrator:
 
