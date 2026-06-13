@@ -27,6 +27,7 @@ import { Table, type Column } from "@/components/admin/Table";
 import { openPdfInNewTab, summarizePdfError } from "@/lib/admin/pdf-download";
 import { formatDate } from "@/lib/admin/format";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { todayAppDateIso } from "@/lib/utils";
 import {
   prescriptionAttachmentDownloadUrl,
   removePrescriptionAttachment,
@@ -479,9 +480,7 @@ function AddPrescriptionModal({
   const create = useCreatePrescription();
   const [itemSku, setItemSku] = useState("");
   const [cadenceDays, setCadenceDays] = useState("90");
-  const [validFrom, setValidFrom] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [validFrom, setValidFrom] = useState(todayAppDateIso());
   const [validUntil, setValidUntil] = useState("");
   const [hcpcsCode, setHcpcsCode] = useState("");
   const [prescriberName, setPrescriberName] = useState("");

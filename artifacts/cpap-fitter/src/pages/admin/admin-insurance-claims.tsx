@@ -36,6 +36,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
@@ -279,9 +280,7 @@ function CreateClaimDialog({
 }) {
   const queryClient = useQueryClient();
   const [payerName, setPayerName] = useState("");
-  const [dateOfService, setDateOfService] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [dateOfService, setDateOfService] = useState(todayAppDateIso());
   const [claimNumber, setClaimNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);

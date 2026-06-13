@@ -11,6 +11,8 @@
  * If you add a new SKU, update it in those places too.
  * (OpenAPI/orval pipeline was retired in Task #37; these files are edited manually.)
  */
+import { todayAppDateIso } from "@/lib/utils";
+
 export type ReminderSku =
   | "maskCushion"
   | "maskFrameHeadgear"
@@ -92,9 +94,5 @@ export function labelForSku(sku: string): string {
 }
 
 export function todayIso(): string {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return todayAppDateIso();
 }

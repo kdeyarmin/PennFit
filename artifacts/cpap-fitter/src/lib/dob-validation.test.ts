@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { DOB_MIN, isPlausibleDob } from "./dob-validation";
+import { appDateIsoOffset, todayAppDateIso } from "./utils";
 
 // ---------------------------------------------------------------------------
 // isPlausibleDob
@@ -19,9 +20,7 @@ describe("isPlausibleDob", () => {
     });
 
     it("accepts today's date (same-day newborn registration)", () => {
-      const now = new Date();
-      const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
-      expect(isPlausibleDob(today)).toBe(true);
+      expect(isPlausibleDob(todayAppDateIso())).toBe(true);
     });
 
     it("accepts a leap-year date that actually exists (2000-02-29)", () => {
@@ -53,12 +52,7 @@ describe("isPlausibleDob", () => {
 
   describe("future dates", () => {
     it("rejects tomorrow's date", () => {
-      const now = new Date();
-      const tomorrow = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
-      );
-      const s = `${tomorrow.getUTCFullYear()}-${String(tomorrow.getUTCMonth() + 1).padStart(2, "0")}-${String(tomorrow.getUTCDate()).padStart(2, "0")}`;
-      expect(isPlausibleDob(s)).toBe(false);
+      expect(isPlausibleDob(appDateIsoOffset(1))).toBe(false);
     });
 
     it("rejects a year far in the future", () => {
@@ -141,20 +135,12 @@ describe("isPlausibleDob", () => {
 
   describe("edge cases around today boundary", () => {
     it("accepts a date 1 day before today", () => {
-      const now = new Date();
-      const yesterday = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1),
-      );
-      const s = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
-      expect(isPlausibleDob(s)).toBe(true);
+      expect(isPlausibleDob(appDateIsoOffset(-1))).toBe(true);
     });
 
-    it("uses UTC end-of-today, so a caller in UTC-12 can register a same-day newborn", () => {
-      // We verify todayEnd is UTC 23:59:59, not local midnight. We do this
-      // by mocking Date to a fixed UTC moment and confirming today passes.
+    it("uses the New York date at the UTC-midnight boundary", () => {
       const fixed = new Date("2025-03-15T00:00:00.000Z");
       const realDate = globalThis.Date;
-      // Minimal spy: Date() constructor returns fixed; Date.UTC is unchanged.
       const MockDate = class extends realDate {
         constructor(...args: unknown[]) {
           if (args.length === 0) {
@@ -171,8 +157,8 @@ describe("isPlausibleDob", () => {
       } as typeof Date;
       globalThis.Date = MockDate;
       try {
-        expect(isPlausibleDob("2025-03-15")).toBe(true);
-        expect(isPlausibleDob("2025-03-16")).toBe(false);
+        expect(isPlausibleDob("2025-03-14")).toBe(true);
+        expect(isPlausibleDob("2025-03-15")).toBe(false);
       } finally {
         globalThis.Date = realDate;
       }

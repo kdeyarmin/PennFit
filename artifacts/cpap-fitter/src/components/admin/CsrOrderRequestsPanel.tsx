@@ -32,6 +32,7 @@ import {
 import { AdminModal } from "@/components/admin/AdminModal";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { formatAppDateTime } from "@/lib/utils";
 
 function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -261,7 +262,7 @@ export function CsrOrderRequestsPanel() {
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                          {r.sentAt ? new Date(r.sentAt).toLocaleString() : "—"}
+                          {formatAppDateTime(r.sentAt)}
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           {open && (

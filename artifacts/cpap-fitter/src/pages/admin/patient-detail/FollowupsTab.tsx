@@ -17,6 +17,10 @@ import { Button } from "@/components/admin/Button";
 import { Label } from "@/components/admin/Input";
 import { formatDateTime } from "@/lib/admin/format";
 import {
+  appDateTimeLocalInputValue,
+  parseAppDateTimeLocalInput,
+} from "@/lib/utils";
+import {
   AdminPatientFollowupsNotFoundError,
   completeAdminPatientFollowup,
   createAdminPatientFollowup,
@@ -253,15 +257,14 @@ function FollowupsList({
 }
 
 function defaultFollowupDueLocal(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return appDateTimeLocalInputValue({
+    daysFromToday: 1,
+    hour: 9,
+    minute: 0,
+  });
 }
 
 function parseFollowupDueLocal(s: string): Date | null {
   if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  return parseAppDateTimeLocalInput(s);
 }
