@@ -56,7 +56,9 @@ describe("GuardedOrderSuccess — state machine", () => {
   });
 
   it("renders a loading fallback while in the 'checking' state (no blank screen while fetch is in flight)", () => {
-    expect(GUARDED_SRC).toContain('if (state === "checking") return <RouteFallback />');
+    expect(GUARDED_SRC).toContain(
+      'if (state === "checking") return <RouteFallback />',
+    );
   });
 
   it("redirects to '/' while in the 'deny' state", () => {

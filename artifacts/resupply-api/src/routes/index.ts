@@ -186,6 +186,7 @@ import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
 import connectionTestsRouter from "./admin/connection-tests.js";
+import proxyChainRouter from "./admin/proxy-chain.js";
 import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
 import patientPacketsAdminRouter from "./admin/patient-packets.js";
@@ -609,6 +610,12 @@ router.use(pacwareRouter);
 // email / SMS / voice / chat. Verifies a credential (including one just
 // saved in System Configuration) actually works. system.config.manage.
 router.use(connectionTestsRouter);
+// /admin/diagnostics/proxy-chain — echoes the forwarding-header chain
+// (socket peer, XFF, CF-Connecting-IP) plus Express's req.ip resolution
+// for the calling request. Operator tool for confirming Railway's XFF
+// behavior live and validating/diagnosing the current `trust proxy`
+// predicate (docs/runbooks/verify-xff-chain.md). system.config.manage.
+router.use(proxyChainRouter);
 // /admin/bot-playground/* — admin sandbox to exercise the storefront,
 // account, and voice bots against scripted situations (synthetic data,
 // simulated tools) and inspect their system prompts. admin.tools.manage.
