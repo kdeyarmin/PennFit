@@ -8,6 +8,7 @@
 //     returns the full history
 //   * POST creates + audits with non-PHI metadata
 //   * PATCH-complete sets completed_at + audits; 409 on already-completed
+//   * PATCH-reopen clears completed_at + audits; 409 on already-open
 //   * Critical: audit metadata never contains the body content
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -385,6 +386,75 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
       due_at: "2026-05-10T16:00:00.000Z",
     });
     // No body content in the audit envelope.
+    expect(JSON.stringify(audit.metadata)).not.toContain("Call Anna");
+  });
+});
+
+describe("PATCH /admin/shop/customers/:userId/followups/:id/reopen", () => {
+  it("403s without a matching CSRF pair", async () => {
+    mockAdmin.current = ADMIN;
+    const res = await request(makeApp()).patch(
+      `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/reopen`,
+    );
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("409s when the followup is already open", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: {
+        id: FOLLOWUP_ID,
+        customer_id: USER_ID,
+        completed_at: null,
+        body: "anything",
+      },
+    });
+    const res = await request(makeApp())
+      .patch(`/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/reopen`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_open");
+  });
+
+  it("reopens a completed followup + audits", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: {
+        id: FOLLOWUP_ID,
+        customer_id: USER_ID,
+        completed_at: new Date("2026-05-04T16:00:00Z").toISOString(),
+        body: "Call Anna 5/10",
+        due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
+      },
+    });
+    stageSupabaseResponse("shop_customer_followups", "update", {
+      data: {
+        id: FOLLOWUP_ID,
+        completed_at: null,
+      },
+    });
+
+    const res = await request(makeApp())
+      .patch(`/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/reopen`)
+      .set("Cookie", CSRF_COOKIE)
+      .set("x-pf-csrf", CSRF_TOKEN);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: FOLLOWUP_ID, completedAt: null });
+
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.action).toBe("shop_customer.followup.reopen");
+    expect(audit.metadata).toEqual({
+      customer_id: USER_ID,
+      body_length: "Call Anna 5/10".length,
+      due_at: "2026-05-10T16:00:00.000Z",
+    });
     expect(JSON.stringify(audit.metadata)).not.toContain("Call Anna");
   });
 });
