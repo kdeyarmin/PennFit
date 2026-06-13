@@ -81,7 +81,9 @@ forbid_imports_in() {
   done
 }
 
-# Rule 1: resupply-contracts may only import zod (or relative paths).
+# Rule 1: legacy resupply-contracts guard. That package was deleted during
+# the consolidation, but this remains harmless and keeps the whitelist pinned
+# if the package is ever restored.
 # Positive whitelist instead of negative lookahead because ripgrep's
 # default regex (RE2) does not support lookaheads. We grep every
 # non-relative import and subtract zod; whatever is left is a violation.
@@ -160,18 +162,13 @@ forbid_imports_in lib/resupply-telecom/src \
 # Rule 5: removed in Task #37 — @workspace/resupply-testing was deleted as
 # part of the consolidation sweep (it had zero importers).
 
-# Rule 6: the resupply-* libraries, the dashboard/worker artifacts, AND
-# the resupply-api server itself must not import the storefront's UI
-# client (`@workspace/api-client-react`). That client is generated from
-# the storefront OpenAPI spec and is meant for the customer-facing
-# cpap-fitter SPA only — it is React-Query React code, not server code.
+# Rule 6: resupply-* libraries, the resupply-api server/worker tree, and the
+# historical dashboard path (if it ever reappears) must not import the
+# storefront/admin React UI client (`@workspace/api-client-react`). That
+# client is hand-maintained React hook code for cpap-fitter, not server code.
 #
-# The storefront's Zod SCHEMAS (`@workspace/api-zod`) are a different
-# package and are not banned anywhere; resupply-api's storefront router
-# (folded in by Task #37) imports them directly to validate request /
-# response bodies. There is no need for an explicit "carve-out" because
-# Rule 6 only enumerates packages that ARE forbidden — not listing
-# `@workspace/api-zod` already permits it everywhere.
+# Rule 6 only bans the React client package. Server-side schemas, route
+# validators, and plain request helpers are not part of this ban.
 #
 # Quote-agnostic: forbid both single- and double-quoted forms.
 for resdir in lib/resupply-domain/src \
@@ -187,9 +184,10 @@ for resdir in lib/resupply-domain/src \
 done
 
 # Rule 7: only @workspace/resupply-db is allowed to construct a pg Pool
-# or import the `pg` package directly. Every other resupply package —
-# API, worker, dashboard, future query helpers — must read/write
-# through the Supabase service-role client exported from
+# or import the `pg` package directly. Every other resupply package,
+# the API/worker tree, the historical dashboard path if restored, and
+# future query helpers must read/write through the Supabase service-role
+# client exported from
 # @workspace/resupply-db (`getSupabaseServiceRoleClient()`). The few
 # legacy callers that still consume `getDbPool()` are shrinking and
 # the rule below tolerates that for now; the goal is that `pg`
@@ -241,24 +239,17 @@ for intdir in lib/resupply-integrations*/src; do
     "@workspace/resupply-db['\"]"
 done
 
-# Rule 8: every audit_log INSERT must go through @workspace/resupply-audit.
-# logAudit() in lib/resupply-audit/src/ is the only allowed write site;
-# direct Drizzle `.insert(auditLog)` and raw `INSERT INTO ... audit_log`
-# from anywhere else are forbidden so the metadata sanitizer (PHI
-# denylist + size + depth caps in lib/resupply-audit/src/sanitize.ts)
-# cannot be bypassed. A bypassed audit row that contains PHI is a
-# HIPAA-reportable event, so this gate is worth its own architecture
-# rule.
+# Rule 8: do not add new direct audit_log writers.
+# The in-app compliance/audit subsystem has been retired and
+# @workspace/resupply-audit is a no-op compatibility shim, but old code still
+# has many references. Keep any remaining audit_log INSERTs behind the helper
+# path instead of adding fresh raw SQL or schema writes elsewhere.
 #
-# Scope is INSERTS ONLY. SELECT / UPDATE / DELETE against audit_log
-# remain allowed — audit-log reads are legitimate, and integration
-# tests need DELETE to clean up after themselves.
+# Scope is INSERTS ONLY. Historical SELECT / UPDATE / DELETE access remains
+# allowed so degraded readers and integration-test cleanup do not trip this
+# legacy guard.
 #
-# Allowed location: lib/resupply-audit/src/ (the helper and its tests).
-# Test files elsewhere are NOT exempt — a test that needs an audit row
-# should call logAudit(), not bypass it. Bypassing in tests would
-# defeat the "logAudit is the only path" invariant the moment a future
-# refactor copy/pastes the test fixture into production code.
+# Allowed location: lib/resupply-audit/src/ (the historical helper path).
 for noaudit in artifacts/resupply-api/src \
                lib/resupply-domain/src \
                lib/resupply-testing/src \

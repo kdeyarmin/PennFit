@@ -30,7 +30,9 @@ import {
   Skeleton,
 } from "@/components/admin/ui-shims";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { formatAppDateTime } from "@/lib/utils";
 
 function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -96,6 +98,7 @@ function parsePriceToCents(price: string): number | null {
 
 export function CsrOrderRequestsPanel() {
   const { toast } = useToast();
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
 
@@ -142,11 +145,14 @@ export function CsrOrderRequestsPanel() {
     );
   };
 
-  const handleCancel = (r: CsrOrderRequestSummary) => {
+  const handleCancel = async (r: CsrOrderRequestSummary) => {
     if (
-      !window.confirm(
-        `Cancel order ${r.orderReference} for ${r.customerName}? The customer's link will stop working immediately.`,
-      )
+      !(await confirm({
+        title: `Cancel order ${r.orderReference}?`,
+        description: `${r.customerName}'s link will stop working immediately.`,
+        confirmLabel: "Cancel order",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -170,139 +176,142 @@ export function CsrOrderRequestsPanel() {
   const requests = data?.requests ?? [];
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-display text-xl font-bold tracking-tight">
-            Sign &amp; pay orders
-          </h2>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Build an order for a customer and send them a secure link to review,
-            sign paperwork, and pay by card.
-          </p>
+    <>
+      <div className="space-y-3">
+        <div className="flex items-end justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="text-display text-xl font-bold tracking-tight">
+              Sign &amp; pay orders
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Build an order for a customer and send them a secure link to
+              review, sign paperwork, and pay by card.
+            </p>
+          </div>
+          <Button
+            onClick={() => setShowCreate(true)}
+            data-testid="button-create-csr-order"
+          >
+            <Plus className="w-4 h-4 mr-1.5" /> Create order
+          </Button>
         </div>
-        <Button
-          onClick={() => setShowCreate(true)}
-          data-testid="button-create-csr-order"
-        >
-          <Plus className="w-4 h-4 mr-1.5" /> Create order
-        </Button>
-      </div>
 
-      <Card className="border-0 glass-card rounded-2xl">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground uppercase tracking-wide bg-muted/30">
-                <tr>
-                  <th className="text-left py-3 px-4">Reference</th>
-                  <th className="text-left py-3 px-4">Customer</th>
-                  <th className="text-left py-3 px-4">Total</th>
-                  <th className="text-left py-3 px-4">Paperwork</th>
-                  <th className="text-left py-3 px-4">Status</th>
-                  <th className="text-left py-3 px-4">Sent</th>
-                  <th className="text-right py-3 px-4">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading && (
-                  <tr className="border-t border-border/40">
-                    <td colSpan={7} className="py-3 px-4">
-                      <Skeleton className="h-5 w-full" />
-                    </td>
-                  </tr>
-                )}
-                {!isLoading && requests.length === 0 && (
+        <Card className="border-0 glass-card rounded-2xl">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground uppercase tracking-wide bg-muted/30">
                   <tr>
-                    <td
-                      colSpan={7}
-                      className="py-10 text-center text-muted-foreground"
-                    >
-                      No sign &amp; pay orders yet. Create one to send a
-                      customer a secure sign-and-pay link.
-                    </td>
+                    <th className="text-left py-3 px-4">Reference</th>
+                    <th className="text-left py-3 px-4">Customer</th>
+                    <th className="text-left py-3 px-4">Total</th>
+                    <th className="text-left py-3 px-4">Paperwork</th>
+                    <th className="text-left py-3 px-4">Status</th>
+                    <th className="text-left py-3 px-4">Sent</th>
+                    <th className="text-right py-3 px-4">Actions</th>
                   </tr>
-                )}
-                {requests.map((r) => {
-                  const status = deriveStatus(r);
-                  const open =
-                    status === "sent" ||
-                    status === "viewed" ||
-                    status === "signed" ||
-                    status === "expired";
-                  return (
-                    <tr key={r.id} className="border-t border-border/40">
-                      <td className="py-3 px-4 font-mono text-xs">
-                        {r.orderReference}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div>{r.customerName}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {r.customerEmail ?? r.customerPhone ?? ""}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-medium whitespace-nowrap">
-                        {formatUsd(r.amountTotalCents)}
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">
-                        {r.documents.length === 0
-                          ? "—"
-                          : `${r.documents.length} doc${r.documents.length === 1 ? "" : "s"}`}
-                      </td>
-                      <td className="py-3 px-4">
-                        <Badge variant={STATUS_TONE[status]}>
-                          {STATUS_LABEL[status]}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                        {r.sentAt ? new Date(r.sentAt).toLocaleString() : "—"}
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        {open && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mr-2"
-                              disabled={resend.isPending}
-                              onClick={() => handleResend(r)}
-                              data-testid={`button-resend-${r.orderReference}`}
-                            >
-                              <Send className="w-3.5 h-3.5 mr-1" /> Resend
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={cancel.isPending}
-                              onClick={() => handleCancel(r)}
-                              data-testid={`button-cancel-${r.orderReference}`}
-                            >
-                              <X className="w-3.5 h-3.5 mr-1" /> Cancel
-                            </Button>
-                          </>
-                        )}
+                </thead>
+                <tbody>
+                  {isLoading && (
+                    <tr className="border-t border-border/40">
+                      <td colSpan={7} className="py-3 px-4">
+                        <Skeleton className="h-5 w-full" />
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {error && (
-            <div className="p-4 text-sm text-destructive border-t border-border/40">
-              Could not load sign &amp; pay orders: {error.message}
+                  )}
+                  {!isLoading && requests.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="py-10 text-center text-muted-foreground"
+                      >
+                        No sign &amp; pay orders yet. Create one to send a
+                        customer a secure sign-and-pay link.
+                      </td>
+                    </tr>
+                  )}
+                  {requests.map((r) => {
+                    const status = deriveStatus(r);
+                    const open =
+                      status === "sent" ||
+                      status === "viewed" ||
+                      status === "signed" ||
+                      status === "expired";
+                    return (
+                      <tr key={r.id} className="border-t border-border/40">
+                        <td className="py-3 px-4 font-mono text-xs">
+                          {r.orderReference}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div>{r.customerName}</div>
+                          <div className="text-muted-foreground text-xs">
+                            {r.customerEmail ?? r.customerPhone ?? ""}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-medium whitespace-nowrap">
+                          {formatUsd(r.amountTotalCents)}
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {r.documents.length === 0
+                            ? "—"
+                            : `${r.documents.length} doc${r.documents.length === 1 ? "" : "s"}`}
+                        </td>
+                        <td className="py-3 px-4">
+                          <Badge variant={STATUS_TONE[status]}>
+                            {STATUS_LABEL[status]}
+                          </Badge>
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
+                          {formatAppDateTime(r.sentAt)}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          {open && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mr-2"
+                                disabled={resend.isPending}
+                                onClick={() => handleResend(r)}
+                                data-testid={`button-resend-${r.orderReference}`}
+                              >
+                                <Send className="w-3.5 h-3.5 mr-1" /> Resend
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={cancel.isPending}
+                                onClick={() => handleCancel(r)}
+                                data-testid={`button-cancel-${r.orderReference}`}
+                              >
+                                <X className="w-3.5 h-3.5 mr-1" /> Cancel
+                              </Button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            {error && (
+              <div className="p-4 text-sm text-destructive border-t border-border/40">
+                Could not load sign &amp; pay orders: {error.message}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      {showCreate && (
-        <CreateCsrOrderModal
-          onClose={() => setShowCreate(false)}
-          onCreated={() => void invalidate()}
-        />
-      )}
-    </div>
+        {showCreate && (
+          <CreateCsrOrderModal
+            onClose={() => setShowCreate(false)}
+            onCreated={() => void invalidate()}
+          />
+        )}
+      </div>
+      {ConfirmDialogEl}
+    </>
   );
 }
 

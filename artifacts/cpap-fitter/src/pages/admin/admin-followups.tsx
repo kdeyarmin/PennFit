@@ -11,7 +11,7 @@
 //   * Today (due_at >= now AND due_at <= end of today) — amber.
 //   * Upcoming (everything else, i.e. due tomorrow or later) — muted.
 //
-// "End of today" is computed from the browser's local clock so the
+// "End of today" is computed in the practice's New York timezone so the
 // bucket aligns with calendar days rather than a rolling 24h window.
 //
 // Each row links to the relevant admin context and has a one-click
@@ -31,6 +31,11 @@ import {
 } from "@/lib/admin/followups-list-api";
 import { completeAdminCustomerFollowup } from "@/lib/admin/customer-followups-api";
 import { completeAdminPatientFollowup } from "@/lib/admin/patient-followups-api";
+import {
+  formatAppDateTime,
+  parseAppDateTimeLocalInput,
+  todayAppDateIso,
+} from "@/lib/utils";
 
 export function AdminFollowupsPage() {
   const qc = useQueryClient();
@@ -151,17 +156,11 @@ function bucketize(rows: AdminFollowupRow[]): {
   upcoming: AdminFollowupRow[];
 } {
   const now = new Date();
-  const endOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    59,
-    999,
-  );
   const nowMs = now.getTime();
-  const endOfTodayMs = endOfToday.getTime();
+  const endOfToday = parseAppDateTimeLocalInput(
+    `${todayAppDateIso(now)}T23:59`,
+  );
+  const endOfTodayMs = (endOfToday?.getTime() ?? nowMs) + 59_999;
   const overdue: AdminFollowupRow[] = [];
   const today: AdminFollowupRow[] = [];
   const upcoming: AdminFollowupRow[] = [];
@@ -288,8 +287,7 @@ function Row({
             marginBottom: 2,
           }}
         >
-          Due {new Date(row.dueAt).toLocaleString()} · scheduled by{" "}
-          {row.createdByEmail}
+          Due {formatAppDateTime(row.dueAt)} · scheduled by {row.createdByEmail}
           {row.kind === "patient" && (
             <span
               style={{

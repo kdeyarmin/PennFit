@@ -20,6 +20,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { formatAppDate } from "@/lib/utils";
 import {
   createManualDocumentPacket,
   getManualDocumentCatalog,
@@ -139,7 +140,7 @@ export function AdminDocumentsPage() {
   const createPacket = useMutation({
     mutationFn: (documentIds: string[]) =>
       createManualDocumentPacket({
-        title: `Document packet — ${new Date().toLocaleDateString(undefined, {
+        title: `Document packet — ${formatAppDate(new Date(), {
           year: "numeric",
           month: "short",
           day: "numeric",

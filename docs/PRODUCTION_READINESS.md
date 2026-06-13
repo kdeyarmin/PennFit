@@ -223,9 +223,12 @@ catches drift:
 - [ ] No PHI in logs. Audit by running:
       `rg "patient\.firstName|patient\.lastName|email_address|phone" artifacts/resupply-api/src --glob="!*.test.ts" --glob="!*.md"`
       and confirming no log lines reference these fields directly.
-- [ ] Audit log writes on every admin read of PHI (covered by the
-      `conversation.view`, `patient.view`, `audit.export.csv` pattern;
-      new admin endpoints should follow suit).
+- [ ] No new in-app audit-log readers or writers. The historical
+      `@workspace/resupply-audit` package is a no-op compatibility
+      shim; compliance evidence is handled out of band by the business
+      owner. New admin endpoints should follow the route-specific
+      degraded-response pattern instead of adding `.from("audit_log")`
+      calls.
 - [ ] `RESUPPLY_LINK_HMAC_KEY` rotation procedure documented (rotation
       invalidates every in-flight signed link, so coordinate with a
       send-pause window).

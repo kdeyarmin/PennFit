@@ -22,7 +22,7 @@
 //   The middleware resolves the session via the in-house pf_session
 //   cookie. A request that doesn't carry one (or carries an
 //   expired / revoked / locked cookie) gets a 401. The
-//   `customerIdResolver` in api-server's auth-deps maps the
+//   `customerIdResolver` in resupply-api's auth-deps maps the
 //   resolved auth.users.id to `shop_customers.customer_id` so
 //   every downstream join keeps working. The resolver also
 //   returns the user's email + display name, which the middleware

@@ -274,11 +274,7 @@ function AccountInner() {
         <div className="glass-card rounded-2xl p-6 text-center space-y-3">
           <AlertCircle className="h-6 w-6 mx-auto text-destructive" />
           <p className="text-sm text-muted-foreground">{loadError}</p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void reload()}
-          >
+          <Button size="sm" variant="outline" onClick={() => void reload()}>
             Try again
           </Button>
         </div>

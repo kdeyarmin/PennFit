@@ -48,6 +48,7 @@ import {
   type WorklistEntry,
   type WorklistReason,
 } from "@/lib/admin/therapy-fleet-api";
+import { appDateIsoOffset } from "@/lib/utils";
 
 const ALERT_LABELS: Record<string, string> = {
   compliance_risk: "Compliance risk",
@@ -807,7 +808,7 @@ const ACTION_BADGE: Record<
 };
 
 function isoInDays(days: number): string {
-  return new Date(Date.now() + days * 86400_000).toISOString().slice(0, 10);
+  return appDateIsoOffset(days);
 }
 
 // Per-row triage controls: shows the current state (if any) plus quick

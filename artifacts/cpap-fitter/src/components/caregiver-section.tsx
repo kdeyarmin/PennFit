@@ -30,10 +30,13 @@ import {
   setCaregiver,
   type CaregiverView,
 } from "@/lib/account-api";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { formatAppDate } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function CaregiverSection() {
+  const [confirm, ConfirmDialogEl] = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<CaregiverView | null>(null);
   const [editing, setEditing] = useState(false);
@@ -96,7 +99,17 @@ export function CaregiverSection() {
   }
 
   async function handleRevoke() {
-    if (!confirm("Remove this designated contact?")) return;
+    if (
+      !(await confirm({
+        title: "Remove designated contact?",
+        description:
+          "They will stop receiving shipped and delivered supply notifications.",
+        confirmLabel: "Remove contact",
+        destructive: true,
+      }))
+    ) {
+      return;
+    }
     try {
       await revokeCaregiver();
       setCurrent(null);
@@ -111,172 +124,175 @@ export function CaregiverSection() {
   const active = current && !current.revokedAt ? current : null;
 
   return (
-    <section
-      id="caregiver"
-      className="glass-card rounded-2xl p-6 space-y-3"
-      data-testid="account-caregiver-section"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <UserPlus className="h-5 w-5 text-muted-foreground" />
-          <h2 className="font-semibold">Designated contact</h2>
-        </div>
-        {active && !editing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => openForm(active)}
-            data-testid="account-caregiver-edit"
-          >
-            Edit
-          </Button>
-        )}
-      </div>
-
-      {!editing ? (
-        active ? (
-          <div className="space-y-2">
-            <div className="rounded-xl glass-panel p-4">
-              <p className="font-medium">{active.name}</p>
-              <p className="text-sm text-muted-foreground">{active.email}</p>
-              <p
-                className="text-xs text-muted-foreground mt-2"
-                data-testid="account-caregiver-consent-at"
-              >
-                Added {new Date(active.consentAt).toLocaleDateString()}
-              </p>
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              We&apos;ll send {active.name.split(" ")[0]} a separate email when
-              your supplies ship and when they arrive. Claims and billing detail
-              stay private to your account.
-            </p>
+    <>
+      <section
+        id="caregiver"
+        className="glass-card rounded-2xl p-6 space-y-3"
+        data-testid="account-caregiver-section"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-muted-foreground" />
+            <h2 className="font-semibold">Designated contact</h2>
+          </div>
+          {active && !editing && (
             <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRevoke}
-              className="gap-1.5"
-              data-testid="account-caregiver-revoke"
-            >
-              <X className="h-3.5 w-3.5" />
-              Remove contact
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Add one person — a spouse, adult child, or home-health aide — who
-              should receive a copy of shipped &amp; delivered notifications
-              along with you.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openForm()}
-              data-testid="account-caregiver-add"
-            >
-              <UserPlus className="h-4 w-4 mr-1.5" />
-              Add a designated contact
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Their email is only used for supplies-status updates — never
-              claims, EOB, or billing detail.
-            </p>
-          </div>
-        )
-      ) : (
-        <form
-          onSubmit={handleSave}
-          className="space-y-3"
-          data-testid="account-caregiver-form"
-        >
-          <div className="space-y-2">
-            <Label htmlFor="caregiver-name">Their name</Label>
-            <Input
-              id="caregiver-name"
-              data-testid="caregiver-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={120}
-              placeholder="e.g. Anna Reyes"
-              autoComplete="name"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="caregiver-email">Their email</Label>
-            <Input
-              id="caregiver-email"
-              data-testid="caregiver-email"
-              type="email"
-              inputMode="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              maxLength={200}
-              placeholder="anna@example.com"
-              autoComplete="email"
-              required
-            />
-          </div>
-          <div
-            className="flex flex-row items-start space-x-3 space-y-0 pt-1 cursor-pointer"
-            onClick={() => setConsented(!consented)}
-          >
-            <Checkbox
-              id="caregiver-consent"
-              checked={consented}
-              onCheckedChange={(c) => setConsented(c as boolean)}
-            />
-            <div className="space-y-1 leading-none">
-              <label
-                htmlFor="caregiver-consent"
-                className="text-sm font-medium cursor-pointer"
-              >
-                I&apos;m authorized to share supplies-status with this person
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Required by HIPAA. You can remove them anytime.
-              </p>
-            </div>
-          </div>
-
-          {error && (
-            <p
-              className="text-sm text-destructive"
-              data-testid="account-caregiver-error"
-              role="alert"
-            >
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <Button
-              type="submit"
-              size="sm"
-              disabled={
-                saving ||
-                !name.trim() ||
-                !EMAIL_RE.test(email.trim()) ||
-                !consented
-              }
-              data-testid="account-caregiver-save"
-              className="gap-1.5"
-            >
-              <ShieldCheck className="h-4 w-4" />
-              {saving ? "Saving…" : "Save contact"}
-            </Button>
-            <Button
-              type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setEditing(false)}
+              onClick={() => openForm(active)}
+              data-testid="account-caregiver-edit"
             >
-              Cancel
+              Edit
             </Button>
-          </div>
-        </form>
-      )}
-    </section>
+          )}
+        </div>
+
+        {!editing ? (
+          active ? (
+            <div className="space-y-2">
+              <div className="rounded-xl glass-panel p-4">
+                <p className="font-medium">{active.name}</p>
+                <p className="text-sm text-muted-foreground">{active.email}</p>
+                <p
+                  className="text-xs text-muted-foreground mt-2"
+                  data-testid="account-caregiver-consent-at"
+                >
+                  Added {formatAppDate(active.consentAt)}
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                We&apos;ll send {active.name.split(" ")[0]} a separate email
+                when your supplies ship and when they arrive. Claims and billing
+                detail stay private to your account.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRevoke}
+                className="gap-1.5"
+                data-testid="account-caregiver-revoke"
+              >
+                <X className="h-3.5 w-3.5" />
+                Remove contact
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Add one person — a spouse, adult child, or home-health aide —
+                who should receive a copy of shipped &amp; delivered
+                notifications along with you.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openForm()}
+                data-testid="account-caregiver-add"
+              >
+                <UserPlus className="h-4 w-4 mr-1.5" />
+                Add a designated contact
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Their email is only used for supplies-status updates — never
+                claims, EOB, or billing detail.
+              </p>
+            </div>
+          )
+        ) : (
+          <form
+            onSubmit={handleSave}
+            className="space-y-3"
+            data-testid="account-caregiver-form"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="caregiver-name">Their name</Label>
+              <Input
+                id="caregiver-name"
+                data-testid="caregiver-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={120}
+                placeholder="e.g. Anna Reyes"
+                autoComplete="name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="caregiver-email">Their email</Label>
+              <Input
+                id="caregiver-email"
+                data-testid="caregiver-email"
+                type="email"
+                inputMode="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                maxLength={200}
+                placeholder="anna@example.com"
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div
+              className="flex flex-row items-start space-x-3 space-y-0 pt-1 cursor-pointer"
+              onClick={() => setConsented(!consented)}
+            >
+              <Checkbox
+                id="caregiver-consent"
+                checked={consented}
+                onCheckedChange={(c) => setConsented(c as boolean)}
+              />
+              <div className="space-y-1 leading-none">
+                <label
+                  htmlFor="caregiver-consent"
+                  className="text-sm font-medium cursor-pointer"
+                >
+                  I&apos;m authorized to share supplies-status with this person
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Required by HIPAA. You can remove them anytime.
+                </p>
+              </div>
+            </div>
+
+            {error && (
+              <p
+                className="text-sm text-destructive"
+                data-testid="account-caregiver-error"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={
+                  saving ||
+                  !name.trim() ||
+                  !EMAIL_RE.test(email.trim()) ||
+                  !consented
+                }
+                data-testid="account-caregiver-save"
+                className="gap-1.5"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {saving ? "Saving…" : "Save contact"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </section>
+      {ConfirmDialogEl}
+    </>
   );
 }

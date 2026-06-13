@@ -66,6 +66,9 @@ top-level structure is:
 - pnpm **v11+** (pinned to `pnpm@11.5.2` via `packageManager`).
   With Corepack enabled (`corepack enable`), the pinned pnpm is
   selected automatically from the repo root.
+  If pnpm is not on PATH or Corepack cannot fetch the pinned package
+  manager, install the same version CI uses with
+  `npm install -g pnpm@11.5.2`.
 - Postgres **v14+** (we run v16). No extensions required — the
   active resupply schema only relies on `gen_random_uuid()`, which
   has been built into Postgres core since v13.

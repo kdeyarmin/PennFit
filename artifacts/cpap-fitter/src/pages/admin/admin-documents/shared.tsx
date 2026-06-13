@@ -5,6 +5,7 @@ import type {
   ManualDocumentPacketStatus,
   ManualDocumentStatus,
 } from "@/lib/admin/manual-documents-api";
+import { formatAppDate } from "@/lib/utils";
 
 export type BadgeVariant =
   | "neutral"
@@ -40,15 +41,11 @@ export const PACKET_STATUS_LABEL: Record<ManualDocumentPacketStatus, string> = {
 };
 
 export function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? "—"
-    : d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+  return formatAppDate(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export function Textarea({
