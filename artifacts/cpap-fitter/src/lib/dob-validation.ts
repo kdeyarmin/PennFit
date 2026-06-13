@@ -32,6 +32,8 @@ export function todayLocalDateString(): string {
 export function isPlausibleDob(value: string): boolean {
   const [y, m, d] = value.split("-").map(Number);
   if (!y || !m || !d) return false;
+  const canonical = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (value !== canonical) return false;
   const parsed = new Date(Date.UTC(y, m - 1, d));
   if (
     parsed.getUTCFullYear() !== y ||
