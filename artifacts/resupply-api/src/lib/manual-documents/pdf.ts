@@ -25,6 +25,15 @@ const MARGIN = 72;
 const PAGE_WIDTH = 612;
 const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
+export interface ManualDocumentSupplierContact {
+  address?: string | null;
+  phone?: string | null;
+  fax?: string | null;
+  email?: string | null;
+  npi?: string | null;
+  website?: string | null;
+}
+
 export interface ManualDocumentPdfInput {
   documentType: ManualDocumentType;
   title: string;
@@ -39,6 +48,8 @@ export interface ManualDocumentPdfInput {
   body?: string | null;
   /** Practice / supplier name for the letterhead. */
   supplierName: string;
+  /** Supplier identifiers/contact printed under the letterhead when known. */
+  supplierContact?: ManualDocumentSupplierContact | null;
   /** Passed in (not derived) so tests are deterministic. */
   generatedOn: Date;
   /**
@@ -116,6 +127,7 @@ export function drawManualDocument(
       width: USABLE_WIDTH,
     })
     .fillColor("#000000");
+  drawSupplierContact(doc, input.supplierContact);
   doc.moveDown(1);
 
   // ── Title + date ────────────────────────────────────────────────
@@ -159,11 +171,13 @@ export function drawManualDocument(
     input.documentType,
     input.fields,
   );
-  const filled = def.fields.filter((f) => values[f.key]);
-  if (filled.length > 0) {
+  const renderFields = def.fields.filter(
+    (f) => values[f.key] || f.renderWhenBlank,
+  );
+  if (renderFields.length > 0) {
     header(doc, "Details");
-    for (const f of filled) {
-      const value = values[f.key]!;
+    for (const f of renderFields) {
+      const value = values[f.key] ?? blankValueFor(f.kind);
       if (f.kind === "textarea") {
         doc
           .fontSize(10)
@@ -181,7 +195,7 @@ export function drawManualDocument(
   // ── Free-form body ──────────────────────────────────────────────
   const body = (input.body ?? "").trim();
   if (body) {
-    if (filled.length > 0) {
+    if (renderFields.length > 0) {
       rule(doc);
       doc.moveDown(0.8);
     }
@@ -198,9 +212,12 @@ export function drawManualDocument(
     doc
       .fontSize(10)
       .font("Helvetica")
-      .text("Signature: ____________________________________", {
-        width: USABLE_WIDTH,
-      });
+      .text(
+        `${signatureLabelFor(input.documentType)}: ____________________________________`,
+        {
+          width: USABLE_WIDTH,
+        },
+      );
     doc.moveDown(0.4);
     doc.text("Date: __________________", { width: USABLE_WIDTH });
   }
@@ -231,6 +248,56 @@ export function drawManualDocument(
       )
       .fillColor("#000000");
     doc.page.margins.bottom = savedBottomMargin;
+  }
+}
+
+export function drawSupplierContact(
+  doc: PDFKit.PDFDocument,
+  contact?: ManualDocumentSupplierContact | null,
+): void {
+  if (!contact) return;
+  const lines = [
+    contact.address,
+    [
+      contact.phone ? `Phone ${contact.phone}` : null,
+      contact.fax ? `Fax ${contact.fax}` : null,
+    ]
+      .filter(Boolean)
+      .join("  |  "),
+    [contact.email, contact.website, contact.npi ? `NPI ${contact.npi}` : null]
+      .filter(Boolean)
+      .join("  |  "),
+  ]
+    .map((line) => (line ?? "").trim())
+    .filter(Boolean);
+  if (lines.length === 0) return;
+  doc
+    .fontSize(8)
+    .font("Helvetica")
+    .fillColor("#555555")
+    .text(lines.join("\n"), { width: USABLE_WIDTH, lineGap: 1 })
+    .fillColor("#000000");
+}
+
+function blankValueFor(kind: "text" | "textarea" | "date"): string {
+  if (kind === "textarea") {
+    return "____________________________________________\n____________________________________________";
+  }
+  return "________________________________";
+}
+
+function signatureLabelFor(documentType: ManualDocumentType): string {
+  switch (documentType) {
+    case "cmn":
+    case "prescription":
+      return "Practitioner signature";
+    case "delivery_ticket":
+      return "Beneficiary/designee signature";
+    case "agreement":
+      return "Patient/responsible party signature";
+    case "cover_letter":
+    case "other":
+      return "Signature";
   }
 }
 
