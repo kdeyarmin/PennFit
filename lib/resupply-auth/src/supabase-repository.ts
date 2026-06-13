@@ -372,6 +372,22 @@ export function supabaseAuthRepository(
       if (error) throw error;
     },
 
+    async expireUnconsumedEmailTokens(input) {
+      // Mark prior live tokens expired-as-of-now (NOT consumed —
+      // consumed_at means "redeemed"; an invalidated link should read
+      // as expired to the user, and to anyone auditing the rows).
+      const iso = input.at.toISOString();
+      const { error } = await supabase
+        .schema("resupply_auth")
+        .from("email_tokens")
+        .update({ expires_at: iso })
+        .eq("user_id", input.userId)
+        .eq("purpose", input.purpose)
+        .is("consumed_at", null)
+        .gt("expires_at", iso);
+      if (error) throw error;
+    },
+
     async consumeEmailToken(input) {
       // Single-statement UPDATE ... WHERE ... RETURNING is atomic at
       // the row level: concurrent callers serialize on Postgres's

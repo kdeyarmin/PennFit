@@ -152,6 +152,18 @@ export const RATE_LIMITS = {
   },
 
   /**
+   * POST /api/newsletter/subscribe — anonymous marketing email
+   * capture. Each accepted request upserts one row, no email is
+   * sent. Same abuse shape as reminder signup (drive-by form spam),
+   * same tight per-IP budget.
+   */
+  newsletter_subscribe: {
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    doc: "POST /api/newsletter/subscribe — anonymous marketing signup upsert",
+  },
+
+  /**
    * POST /resupply-api/stripe/webhook — Stripe-signed. Signature
    * verification (HMAC) is the primary gate; this limiter is a
    * pre-verification DoS shield so a flood of forged payloads can't

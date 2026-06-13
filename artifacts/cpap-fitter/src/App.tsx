@@ -656,9 +656,14 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
 }
 
 function GuardedOrder() {
-  const { chosenMask } = useFitterStore();
+  const { chosenMask, measurements } = useFitterStore();
   const consented = useFitterEmailGate();
   if (!consented) return <Redirect to="/consent" />;
+  // An order without sizing data is a fulfillment problem for the DME
+  // team — require measurements alongside the chosen mask. Both are
+  // sessionStorage-backed, so a mid-flow refresh keeps the user here;
+  // missing measurements means the flow was never completed.
+  if (!measurements) return <Redirect to="/" replace />;
   if (!chosenMask) return <Redirect to="/results" />;
   return <Order />;
 }
@@ -1022,6 +1027,17 @@ function PatientRouter() {
             <Route path="/shop/wishlist" component={ShopWishlist} />
             <Route path="/account" component={GuardedAccount} />
             <Route path="/account/billing" component={GuardedAccountBilling} />
+            {/* Push-notification deep links. The backend sends pushes
+                with url=/account/orders (shipping updates) and
+                /account/insights (smart triggers); both surfaces are
+                tabs on /account, not standalone routes, so redirect to
+                the hash form that hashToAccountTab() understands. */}
+            <Route path="/account/orders">
+              <Redirect to="/account#orders" replace />
+            </Route>
+            <Route path="/account/insights">
+              <Redirect to="/account#insights" replace />
+            </Route>
             <Route path="/reminders" component={Reminders} />
             <Route path="/reminders/manage" component={RemindersManage} />
             <Route path="/patient-packet-sign" component={PatientPacketSign} />

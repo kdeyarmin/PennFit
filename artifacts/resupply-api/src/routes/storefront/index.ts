@@ -7,6 +7,7 @@ import trackOrderRouter from "./track-order.js";
 import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
+import newsletterRouter from "./newsletter.js";
 import patientPacketsRouter from "./patient-packets.js";
 import csrOrdersRouter from "./csr-orders.js";
 import chatRouter from "./chat.js";
@@ -30,6 +31,9 @@ router.use(trackOrderRouter);
 router.use(adminRouter);
 router.use(usageEventsRouter);
 router.use(remindersRouter);
+// /api/newsletter/subscribe — anonymous marketing email capture.
+// Mounted before attachSignedIn; rate-limited per-IP in app.ts.
+router.use(newsletterRouter);
 // /api/patient-packets/view + /sign — public e-signature flow for the
 // new-patient document packet. Token-gated (HMAC); no login. Mounted
 // before attachSignedIn so it stays unauthenticated.

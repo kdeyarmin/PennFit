@@ -142,13 +142,16 @@ describe("signLinkToken / verifyLinkToken", () => {
     ).toThrow(/RESUPPLY_LINK_HMAC_KEY/);
   });
 
-  it("throws when verifying if HMAC key is unset", () => {
+  it("returns invalid (does NOT throw) when verifying with the HMAC key unset", () => {
+    // A misconfigured runtime must show the patient a friendly
+    // invalid-link page on /email/click, not an unhandled 500.
     const token = signLinkToken({
       conversationId: "x",
       action: "confirm",
     });
     delete process.env[KEY_ENV];
-    expect(() => verifyLinkToken(token)).toThrow(/RESUPPLY_LINK_HMAC_KEY/);
+    const r = verifyLinkToken(token);
+    expect(r).toEqual({ valid: false, reason: "bad-signature" });
   });
 
   it("rejects unknown action at sign time", () => {

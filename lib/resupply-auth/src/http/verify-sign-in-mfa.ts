@@ -189,10 +189,32 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         );
         return;
       }
-    } catch {
-      // Probe failure here just means we degrade to the IP edge
-      // limit + 30-sec TOTP step protection. Don't fail-closed —
-      // a flaky DB on this call shouldn't bounce all sign-ins.
+    } catch (err) {
+      // Fail CLOSED, matching checkLoginRateLimit's posture on the
+      // password step: if the brute-force counter can't be read, the
+      // gate it backs is off — and an attacker who can degrade the DB
+      // shouldn't gain unlimited TOTP guesses for it. A transient DB
+      // blip costs one retried sign-in attempt, which is the cheaper
+      // failure. Surface through the same observability hook so a
+      // sustained outage is visible to ops.
+      try {
+        await (deps.rateLimitOnError ??
+          ((e: unknown) =>
+            console.error(
+              "[resupply-auth] mfa failure-count probe failed (failing closed)",
+              e,
+            )))(err, { emailLower: mfaSentinel, ip: req.ip ?? null });
+      } catch {
+        // Observability must never throw past the gate.
+      }
+      res.setHeader("Retry-After", "60");
+      authError(
+        res,
+        429,
+        "rate_limited",
+        "We couldn't verify your code right now. Please try again in a minute.",
+      );
+      return;
     }
 
     let secret;
@@ -441,7 +463,10 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       },
     });
 
-    const maxAge = ttlDays * 24 * 60 * 60;
+    // Clamp to the same 90-day absolute ceiling issueWindow applies to
+    // the DB row — a misconfigured AUTH_SESSION_TTL_DAYS > 90 must not
+    // mint a cookie that outlives the server-side session.
+    const maxAge = Math.min(ttlDays, 90) * 24 * 60 * 60;
     appendSetCookie(res, [
       buildSessionCookie(token.raw, {
         secure: deps.secureCookies,

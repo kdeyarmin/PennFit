@@ -75,9 +75,32 @@ function probeSessionStorage(): boolean {
 
 export function FitterProvider({ children }: { children: ReactNode }) {
   const [storagePersisted] = useState(probeSessionStorage);
-  const [measurements, setMeasurements] = useState<FacialMeasurements | null>(
-    null,
-  );
+
+  // Numeric facial measurements survive a mid-flow refresh (a common
+  // mobile failure mode — tab restore / accidental pull-to-refresh on
+  // /questionnaire, /results, or /order) so the patient doesn't have
+  // to retake the photo. ONLY the numeric measurement object is
+  // persisted — capturedImage stays memory-only and never reaches any
+  // storage (privacy invariant: images never leave the browser, and
+  // never even leave React memory).
+  const [measurements, setMeasurementsState] =
+    useState<FacialMeasurements | null>(() => {
+      try {
+        const stored = sessionStorage.getItem("fitter_measurements");
+        return stored ? JSON.parse(stored) : null;
+      } catch {
+        return null;
+      }
+    });
+
+  const setMeasurements = (next: FacialMeasurements) => {
+    setMeasurementsState(next);
+    try {
+      sessionStorage.setItem("fitter_measurements", JSON.stringify(next));
+    } catch (e) {
+      console.error("Failed to persist fitter measurements", e);
+    }
+  };
 
   // Load initial answers from sessionStorage.
   const [answers, setAnswers] = useState<Partial<QuestionnaireAnswers>>(() => {
@@ -181,7 +204,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   };
 
   const reset = () => {
-    setMeasurements(null);
+    setMeasurementsState(null);
     setAnswers({});
     setCapturedImage(null);
     setChosenMaskState(null);
@@ -189,6 +212,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setEmailConsentState(false);
     setInviteTokenState(null);
     try {
+      sessionStorage.removeItem("fitter_measurements");
       sessionStorage.removeItem("fitter_answers");
       sessionStorage.removeItem("fitter_chosen_mask");
       sessionStorage.removeItem("fitter_email");

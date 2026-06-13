@@ -141,6 +141,13 @@ export function makeSignUpHandler(
     }
 
     const token = issueToken();
+    // Re-sign-up / re-send flows must not stack concurrently valid
+    // verification links — only the most recent one should work.
+    await deps.repo.expireUnconsumedEmailTokens({
+      userId,
+      purpose: "signup_verify",
+      at: t,
+    });
     await deps.repo.insertEmailToken({
       tokenHash: token.hash,
       userId,

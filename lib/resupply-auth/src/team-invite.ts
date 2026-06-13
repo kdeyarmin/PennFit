@@ -281,10 +281,21 @@ export async function inviteTeamMember(
     };
   }
 
-  // 2. Issue a fresh password_reset token. We don't revoke prior
-  //    tokens — they expire on their own and a user clicking an old
-  //    link gets a clean "expired" error from /auth/reset-password.
+  // 2. Issue a fresh password_reset token, expiring any prior live
+  //    ones first. Re-inviting (or re-sending) must not leave a stack
+  //    of concurrently valid links in old emails — a user clicking a
+  //    superseded link gets a clean "expired" error from
+  //    /auth/reset-password.
   const token = issueToken();
+  const { error: expireErr } = await supabase
+    .schema("resupply_auth")
+    .from("email_tokens")
+    .update({ expires_at: nowIso })
+    .eq("user_id", authUserId)
+    .eq("purpose", "password_reset")
+    .is("consumed_at", null)
+    .gt("expires_at", nowIso);
+  if (expireErr) throw expireErr;
   const expiresAt = new Date(now.getTime() + INVITE_TOKEN_TTL_MS);
   const { error: tokErr } = await supabase
     .schema("resupply_auth")

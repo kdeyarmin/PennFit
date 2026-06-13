@@ -116,15 +116,31 @@ export async function dispatchPaymentFailedAlertOrThrow(
     return;
   }
 
-  // Email → patients.id (case-insensitive).
-  const { data: patient, error: pErr } = await supabase
+  // Email → patients.id (case-insensitive). Require EXACTLY one match:
+  // when two patients share an email, resolving arbitrarily could send
+  // a payment-failed alert to the wrong patient. Skip + log instead.
+  const { data: patientRows, error: pErr } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapeIlike(email))
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (pErr) throw pErr;
+  if (!patientRows || patientRows.length === 0) {
+    log?.info?.(
+      { event: "payment_failed_alert_skipped", reason: "no_patient" },
+      "alerts: payment_failed trigger — no patient matches shop_customer email",
+    );
+    return;
+  }
+  if (patientRows.length > 1) {
+    log?.warn?.(
+      { event: "payment_failed_alert_skipped", reason: "ambiguous_patient" },
+      "alerts: payment_failed trigger — multiple patients share the shop_customer email; refusing to pick one",
+    );
+    return;
+  }
+  const patient = patientRows[0];
   if (!patient?.id) {
     log?.info?.(
       { event: "payment_failed_alert_skipped", reason: "no_patient" },

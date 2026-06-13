@@ -86,6 +86,28 @@ describe("maybeDispatchPaymentFailedAlert", () => {
     expect(getSupabaseCallCount("patients", "select")).toBe(1);
   });
 
+  it("skips when MULTIPLE patients share the shop_customer email (ambiguity guard)", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { email_lower: "shared@example.com" },
+    });
+    // Two rows back from the .limit(2) probe → refuse to pick one.
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "p_1" }, { id: "p_2" }],
+    });
+    await maybeDispatchPaymentFailedAlert({
+      stripeCustomerId: "cus_123",
+      amountDueCents: 1000,
+      currency: "usd",
+    });
+    // Identity chain ran, but the dispatch chain must not start —
+    // alerts config (alert_library) is never consulted.
+    expect(getSupabaseCallCount("patients", "select")).toBe(1);
+    expect(getSupabaseCallCount("alert_library", "select")).toBe(0);
+  });
+
   it("never throws when a DB read errors (fire-and-forget safety)", async () => {
     stageSupabaseResponse("feature_flags", "select", {
       data: { enabled: true },

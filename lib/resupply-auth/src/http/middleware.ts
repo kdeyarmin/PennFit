@@ -5,7 +5,14 @@
 
 import type { NextFunction, Request, Response } from "express";
 
-import { readCookie, SESSION_COOKIE } from "../cookies";
+import {
+  appendSetCookie,
+  buildCsrfCookie,
+  buildSessionCookie,
+  CSRF_COOKIE,
+  readCookie,
+  SESSION_COOKIE,
+} from "../cookies";
 import { isExpired, slideExpiry } from "../session";
 import { hashToken } from "../token";
 
@@ -81,6 +88,34 @@ export function makeRequireSession(deps: AuthDeps) {
     );
     if (nextExpires.getTime() !== session.expiresAt.getTime()) {
       await deps.repo.bumpSession(session.id, nextExpires, t);
+
+      // Re-issue the browser cookies with a Max-Age matching the new
+      // DB expiry. Without this, the cookie keeps the fixed Max-Age
+      // stamped at sign-in (ttlDays) and the browser drops it while
+      // the DB row is still valid — active users get signed out at
+      // exactly ttlDays even though the session "slides". Same raw
+      // values, new lifetime; the CSRF companion slides in lockstep
+      // so the double-submit pair can't drift apart.
+      const remainingSeconds = Math.max(
+        1,
+        Math.floor((nextExpires.getTime() - t.getTime()) / 1000),
+      );
+      const cookies = [
+        buildSessionCookie(raw, {
+          secure: deps.secureCookies,
+          maxAgeSeconds: remainingSeconds,
+        }),
+      ];
+      const csrfRaw = readCookie(req, CSRF_COOKIE);
+      if (csrfRaw) {
+        cookies.push(
+          buildCsrfCookie(csrfRaw, {
+            secure: deps.secureCookies,
+            maxAgeSeconds: remainingSeconds,
+          }),
+        );
+      }
+      appendSetCookie(res, cookies);
     }
 
     req.authUser = user;

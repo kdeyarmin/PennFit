@@ -400,6 +400,38 @@ describe("POST /auth/reset-password", () => {
     expect(h.audit.actions).toContain("auth.password_reset_completed");
   });
 
+  it("invalidates earlier reset links when a new one is requested (no token stacking)", async () => {
+    const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_stack",
+      emailLower: "stack@example.com",
+      emailVerified: true,
+      password: "old password",
+    });
+
+    await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "stack@example.com" });
+    const firstToken = extractEmailToken(h.emails[0]!.text);
+
+    await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "stack@example.com" });
+    const secondToken = extractEmailToken(h.emails[1]!.text);
+
+    // The superseded first link must be dead…
+    const firstRes = await supertest(h.app)
+      .post("/auth/reset-password")
+      .send({ token: firstToken, password: "brand new long password" });
+    expect(firstRes.status).toBe(410);
+
+    // …and the most recent link must still work.
+    const secondRes = await supertest(h.app)
+      .post("/auth/reset-password")
+      .send({ token: secondToken, password: "brand new long password" });
+    expect(secondRes.status).toBe(200);
+  });
+
   // Regression for the bug task-68 closes: an operator typed the
   // user's invite password via team-invite (must_change=true,
   // set_by_admin_at=now), the user reset it from a different

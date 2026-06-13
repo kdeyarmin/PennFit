@@ -548,6 +548,21 @@ app.use("/api/reminders", (req: Request, res, next) => {
   return reminderSignupLimiter(req, res, next);
 });
 
+// POST /api/newsletter/subscribe — anonymous marketing signup. Same
+// drive-by form-spam abuse shape as reminder signup: tight per-IP cap.
+const newsletterSubscribeLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many newsletter signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/newsletter", newsletterSubscribeLimiter);
+
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and
 // non-admin paths; enforces double-submit (`pf_csrf` cookie ⇄

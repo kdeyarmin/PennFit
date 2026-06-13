@@ -423,3 +423,84 @@ describe("GET /api/reminders/manage — null session email falls through to 401"
     expect(res.status).toBe(401);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CSRF — session-cookie-authenticated mutations require the double-submit
+// pair. The capability-token path (no pf_session cookie) is untouched: an
+// anonymous request has nothing for an attacker to replay.
+// ---------------------------------------------------------------------------
+
+describe("CSRF on /api/reminders/manage mutations (requireCsrfWhenSession)", () => {
+  const PATCH_BODY = {
+    items: [
+      { sku: "maskCushion", lastReplacedAt: "2026-05-01", intervalDays: 30 },
+    ],
+  };
+
+  it("403s a PATCH that rides a session cookie without the X-PF-CSRF header", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", "pf_session=sess-raw; pf_csrf=csrf-raw")
+      .send(PATCH_BODY);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("admits a PATCH with a session cookie + matching X-PF-CSRF header", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .set("Cookie", "pf_session=sess-raw; pf_csrf=csrf-raw")
+      .set("X-PF-CSRF", "csrf-raw")
+      .send(PATCH_BODY);
+
+    expect(res.status).toBe(200);
+  });
+
+  it("403s an unsubscribe POST that rides a session cookie without the header", async () => {
+    mockSession.current = {
+      customerId: "cust-1",
+      email: "pat@example.com",
+      displayName: "Pat Q.",
+    };
+    const app = await buildApp();
+
+    const res = await request(app)
+      .post("/api/reminders/manage/unsubscribe")
+      .set("Cookie", "pf_session=sess-raw; pf_csrf=csrf-raw");
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("token-only mutations (no session cookie) stay CSRF-exempt", async () => {
+    stageSupabaseResponse("reminder_subscriptions", "update", {
+      data: SUB_ROW,
+    });
+    const app = await buildApp();
+
+    const res = await request(app)
+      .patch("/api/reminders/manage")
+      .query({ token: "abc123abc123abc123" })
+      .send(PATCH_BODY);
+
+    expect(res.status).toBe(200);
+  });
+});

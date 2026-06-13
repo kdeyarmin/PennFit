@@ -13,6 +13,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { appendSetCookie, buildClearCookies } from "../cookies";
 import { writeUserChosenPassword } from "../credential-writes";
 import { hashPassword } from "../password";
 import { validatePassword } from "../password-policy";
@@ -168,6 +169,10 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
       adminUserId: consumed.userId,
       ip: req.ip ?? null,
     });
+
+    // Every DB session was just revoked — clear the browser cookies
+    // too so a stale pf_session doesn't linger until its next 401.
+    appendSetCookie(res, buildClearCookies({ secure: deps.secureCookies }));
 
     res.status(200).json({ ok: true });
   };

@@ -179,6 +179,18 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
         createdAt: now(),
       });
     },
+    async expireUnconsumedEmailTokens(input) {
+      for (const row of emailTokens.values()) {
+        if (
+          row.userId === input.userId &&
+          row.purpose === input.purpose &&
+          !row.consumedAt &&
+          row.expiresAt.getTime() > input.at.getTime()
+        ) {
+          row.expiresAt = input.at;
+        }
+      }
+    },
     async consumeEmailToken(input) {
       const key = input.tokenHash.toString("hex");
       const row = emailTokens.get(key);

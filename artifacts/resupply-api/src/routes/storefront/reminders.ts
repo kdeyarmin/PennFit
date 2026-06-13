@@ -43,6 +43,7 @@ import {
   sendReminderConfirmation,
   sendReminderManageLink,
 } from "../../lib/storefront/reminderEmail.js";
+import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
 
 type ReminderSubscriptionRow =
@@ -349,59 +350,70 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
 
 // ---------- PATCH /reminders/manage[?token=...] ----------
 // Auth: token in query OR signed-in session. See resolveManageLookup.
-router.patch("/reminders/manage", attachSignedIn, async (req, res) => {
-  const lookup = resolveManageLookup(req);
-  if (!lookup.ok) {
-    res.status(lookup.status).json({ error: lookup.message });
-    return;
-  }
-  const bodyParsed = UpdateReminderSubscriptionBody.safeParse(req.body);
-  if (!bodyParsed.success) {
-    res.status(400).json({
-      error: "Invalid update",
-      details: bodyParsed.error.issues.map(
-        (i) => `${i.path.join(".")}: ${i.message}`,
-      ),
-    });
-    return;
-  }
+// CSRF: the capability-token path has no cookie-replay surface, but the
+// session path does — requireCsrfWhenSession enforces the double-submit
+// check whenever a pf_session cookie rides along (the SPA fetch helpers
+// already attach X-PF-CSRF on every state-changing request).
+router.patch(
+  "/reminders/manage",
+  attachSignedIn,
+  requireCsrfWhenSession,
+  async (req, res) => {
+    const lookup = resolveManageLookup(req);
+    if (!lookup.ok) {
+      res.status(lookup.status).json({ error: lookup.message });
+      return;
+    }
+    const bodyParsed = UpdateReminderSubscriptionBody.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "Invalid update",
+        details: bodyParsed.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`,
+        ),
+      });
+      return;
+    }
 
-  const dateIssues = findInvalidDates(bodyParsed.data.items);
-  if (dateIssues) {
-    res.status(400).json({ error: "Invalid update", details: dateIssues });
-    return;
-  }
+    const dateIssues = findInvalidDates(bodyParsed.data.items);
+    if (dateIssues) {
+      res.status(400).json({ error: "Invalid update", details: dateIssues });
+      return;
+    }
 
-  const itemsWithDue = withNextDue(bodyParsed.data.items);
+    const itemsWithDue = withNextDue(bodyParsed.data.items);
 
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: updated, error } = await supabase
-    .schema("public")
-    .from("reminder_subscriptions")
-    .update({
-      items: itemsWithDue as unknown as Json,
-      status: "active",
-      updated_at: new Date().toISOString(),
-    })
-    .eq(lookup.column, lookup.value)
-    .select(
-      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
-    )
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!updated) {
-    res.status(404).json({ error: "Subscription not found" });
-    return;
-  }
-  res.json(toView(updated));
-});
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: updated, error } = await supabase
+      .schema("public")
+      .from("reminder_subscriptions")
+      .update({
+        items: itemsWithDue as unknown as Json,
+        status: "active",
+        updated_at: new Date().toISOString(),
+      })
+      .eq(lookup.column, lookup.value)
+      .select(
+        "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+      )
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
+      res.status(404).json({ error: "Subscription not found" });
+      return;
+    }
+    res.json(toView(updated));
+  },
+);
 
 // ---------- POST /reminders/manage/unsubscribe[?token=...] ----------
 // Auth: token in query OR signed-in session. See resolveManageLookup.
+// CSRF: same posture as PATCH /reminders/manage above.
 router.post(
   "/reminders/manage/unsubscribe",
   attachSignedIn,
+  requireCsrfWhenSession,
   async (req, res) => {
     const lookup = resolveManageLookup(req);
     if (!lookup.ok) {
