@@ -355,21 +355,21 @@ export function AdminReferralReviewsPage() {
   };
 
   // Deep-link from the Patients page ("Upload referral" button links here
-  // with ?upload=1) opens the file picker straight away, so staff don't have
-  // to hunt for the upload control. The param is stripped after firing so a
-  // refresh or back-navigation doesn't re-open the picker.
-  const autoUploadFired = useRef(false);
+  // with ?upload=1) highlights the upload button so staff don't have to hunt
+  // for the control. The param is stripped so a refresh or back-navigation
+  // doesn't re-trigger it. We intentionally avoid auto-clicking the file
+  // picker — browsers block programmatic file-input clicks outside of a
+  // direct user gesture.
+  const [highlightUpload, setHighlightUpload] = useState(false);
   useEffect(() => {
-    if (autoUploadFired.current) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("upload") !== "1") return;
-    autoUploadFired.current = true;
     params.delete("upload");
     const qs = params.toString();
     const next =
       window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
     window.history.replaceState(null, "", next);
-    fileInputRef.current?.click();
+    setHighlightUpload(true);
   }, []);
 
   const reviews = listQuery.data?.reviews ?? [];
@@ -405,7 +405,15 @@ export function AdminReferralReviewsPage() {
           <Button
             intent="secondary"
             isLoading={uploadMutation.isPending}
-            onClick={() => fileInputRef.current?.click()}
+            className={
+              highlightUpload
+                ? "ring-2 ring-offset-1 ring-[hsl(var(--penn-gold))]"
+                : ""
+            }
+            onClick={() => {
+              setHighlightUpload(false);
+              fileInputRef.current?.click();
+            }}
           >
             <Upload className="h-4 w-4" /> Upload referral PDF
           </Button>
