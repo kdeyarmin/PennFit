@@ -168,7 +168,8 @@ export async function generatePatientBillingStatement(
       state: identity.billingProvider.address.state,
       zip: identity.billingProvider.address.zip,
       phoneE164: identity.organization?.phone_e164 ?? "+10000000000",
-      billingEmail: identity.organization?.billing_email ?? "billing@example.com",
+      billingEmail:
+        identity.organization?.billing_email ?? "billing@example.com",
     },
     lineItems: claims.map((c) => ({
       claimId: c.id,
@@ -217,6 +218,20 @@ export async function generatePatientBillingStatement(
     pdf: result.pdf,
     adminUserId: input.adminUserId ?? null,
   });
+
+  if (
+    input.generatedByEmail === "system:auto_workflow" &&
+    !persisted.objectKey
+  ) {
+    await supabase
+      .schema("resupply")
+      .from("patient_billing_statements")
+      .delete()
+      .eq("id", row.id);
+    throw new Error(
+      "auto-workflow statement PDF could not be persisted; refusing to arm statement cooldown",
+    );
+  }
 
   return {
     statementId: row.id,

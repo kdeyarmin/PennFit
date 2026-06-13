@@ -65,10 +65,7 @@ router.get(
         .gte("ingested_at", t30d),
       supabase
         .schema("resupply")
-        .from("fulfillments")
-        .select("id")
-        .gte("shipped_at", t7d)
-        .limit(2000),
+        .rpc("fulfillments_to_bill_count", { p_since: t7d }),
       supabase
         .schema("resupply")
         .from("insurance_claims")
@@ -129,7 +126,7 @@ router.get(
       { data: freshDenials },
       { data: stuckSubmitted },
       { data: partialEras },
-      { data: recentFulfillments },
+      { data: fulfillmentsToBillRaw },
       { data: scrubBlocking },
       { data: scrubFixable },
       { data: deniedNoAnalysis },
@@ -140,24 +137,8 @@ router.get(
       { data: denialRateRows },
     ] = results;
 
-    const recentFulfillmentIds = (recentFulfillments ?? []).map((f) => f.id);
-    let fulfillmentsToBillCount = 0;
-    if (recentFulfillmentIds.length > 0) {
-      const { data: claimedRows, error: claimedErr } = await supabase
-        .schema("resupply")
-        .from("insurance_claims")
-        .select("fulfillment_id")
-        .in("fulfillment_id", recentFulfillmentIds);
-      if (claimedErr) throw claimedErr;
-      const claimed = new Set(
-        (claimedRows ?? [])
-          .map((row) => row.fulfillment_id as string | null)
-          .filter((id): id is string => !!id),
-      );
-      fulfillmentsToBillCount = recentFulfillmentIds.filter(
-        (id) => !claimed.has(id),
-      ).length;
-    }
+    // PostgREST serialises bigint as a string; coerce defensively.
+    const fulfillmentsToBillCount = Number(fulfillmentsToBillRaw ?? 0);
 
     // Money rollups.
     const dollarsInStuckSubmitted = (stuckSubmitted ?? []).reduce(

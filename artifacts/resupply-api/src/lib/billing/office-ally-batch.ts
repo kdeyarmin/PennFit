@@ -36,7 +36,10 @@ import {
   gateCoverageEligibility,
   type CoverageBlock,
 } from "./coverage-eligibility";
-import { getCachedEligibility, verifyEligibility } from "./eligibility-verifier";
+import {
+  getCachedEligibility,
+  verifyEligibility,
+} from "./eligibility-verifier";
 import {
   resolveBillingIdentity,
   resolveClearinghouse,
@@ -211,8 +214,7 @@ async function findEligibilityBlocksForSubmit(input: {
         await verifyEligibility({
           insuranceCoverageId: coverageId,
           patientId: claimsForCoverage[0]!.patient_id,
-          requestedByEmail:
-            input.adminEmail ?? "system:eligibility-precheck",
+          requestedByEmail: input.adminEmail ?? "system:eligibility-precheck",
         });
         freshChecks += 1;
         latest = await getCachedEligibility(coverageId, freshnessMs);
@@ -237,14 +239,13 @@ async function findEligibilityBlocksForSubmit(input: {
       continue;
     }
 
-    const reason =
-      !latest
-        ? "eligibility_missing_or_stale"
-        : latest.is_active !== true
-          ? "eligibility_inactive"
-          : latest.requires_prior_auth === true
-            ? "prior_auth_required"
-            : null;
+    const reason = !latest
+      ? "eligibility_missing_or_stale"
+      : latest.is_active !== true
+        ? "eligibility_inactive"
+        : latest.requires_prior_auth === true
+          ? "prior_auth_required"
+          : null;
     if (!reason) continue;
     for (const claim of claimsForCoverage) {
       blocks.push({

@@ -192,7 +192,7 @@ router.post(
           .eq("id", newId);
         if (holdErr) {
           logger.warn(
-            { err: holdErr.message, claimId: newId },
+            { err: holdErr, claimId: newId },
             "manual-claim: fail-safe bill-hold flag failed",
           );
         }

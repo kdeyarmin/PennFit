@@ -36,7 +36,12 @@ function isUniqueViolation(err: unknown): boolean {
     !!err &&
     typeof err === "object" &&
     "code" in err &&
-    (err as { code?: unknown }).code === "23505"
+    (err as { code?: unknown }).code === "23505" &&
+    "message" in err &&
+    typeof (err as { message?: unknown }).message === "string" &&
+    (err as { message: string }).message.includes(
+      "insurance_claims_open_fulfillment_uidx",
+    )
   );
 }
 
@@ -252,7 +257,7 @@ router.post(
           .eq("id", claimRow.id);
         if (holdErr) {
           logger.warn(
-            { err: holdErr.message, claimId: claimRow.id },
+            { err: holdErr, claimId: claimRow.id },
             "fulfillment-to-claim: fail-safe bill-hold flag failed",
           );
         }
