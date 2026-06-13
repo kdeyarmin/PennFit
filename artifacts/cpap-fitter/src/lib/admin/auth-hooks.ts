@@ -1,4 +1,4 @@
-// Auth wiring for the resupply-dashboard.
+// Auth wiring for the admin surface mounted inside cpap-fitter.
 //
 // Constructed once at module load:
 //   * `authClient` — the fetch wrapper bound to /resupply-api/auth.
