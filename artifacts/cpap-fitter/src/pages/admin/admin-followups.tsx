@@ -287,8 +287,7 @@ function Row({
             marginBottom: 2,
           }}
         >
-          Due {formatAppDateTime(row.dueAt)} · scheduled by{" "}
-          {row.createdByEmail}
+          Due {formatAppDateTime(row.dueAt)} · scheduled by {row.createdByEmail}
           {row.kind === "patient" && (
             <span
               style={{

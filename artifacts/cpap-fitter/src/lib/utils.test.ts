@@ -20,9 +20,9 @@ describe("app timezone date helpers", () => {
   });
 
   it("formats instants using the New York calendar date", () => {
-    expect(
-      formatAppDate("2026-06-13T03:30:00.000Z", { day: "numeric" }),
-    ).toBe("12");
+    expect(formatAppDate("2026-06-13T03:30:00.000Z", { day: "numeric" })).toBe(
+      "12",
+    );
   });
 
   it("keeps date-only values on their calendar date", () => {

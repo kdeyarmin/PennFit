@@ -110,6 +110,10 @@ describe("isPlausibleDob", () => {
       expect(isPlausibleDob("1985-06")).toBe(false);
     });
 
+    it("rejects non-canonical date parts (must be zero-padded YYYY-MM-DD)", () => {
+      expect(isPlausibleDob("1985-6-15")).toBe(false);
+    });
+
     it("rejects non-numeric year", () => {
       expect(isPlausibleDob("abcd-06-15")).toBe(false);
     });
