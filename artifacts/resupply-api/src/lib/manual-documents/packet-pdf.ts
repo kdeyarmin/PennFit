@@ -23,6 +23,7 @@ import type PDFKit from "pdfkit";
 import { getManualDocumentTypeDef } from "./catalog";
 import {
   drawManualDocument,
+  drawSupplierContact,
   type ManualDocumentPdfInput,
   type ManualDocumentSupplierContact,
 } from "./pdf";
@@ -218,34 +219,6 @@ function field(doc: PDFKit.PDFDocument, label: string, value: string): void {
     .text(`${label}: `, { continued: true, width: USABLE_WIDTH });
   doc.font("Helvetica").text(value, { width: USABLE_WIDTH });
   doc.moveDown(0.2);
-}
-
-function drawSupplierContact(
-  doc: PDFKit.PDFDocument,
-  contact?: ManualDocumentSupplierContact | null,
-): void {
-  if (!contact) return;
-  const lines = [
-    contact.address,
-    [
-      contact.phone ? `Phone ${contact.phone}` : null,
-      contact.fax ? `Fax ${contact.fax}` : null,
-    ]
-      .filter(Boolean)
-      .join("  |  "),
-    [contact.email, contact.website, contact.npi ? `NPI ${contact.npi}` : null]
-      .filter(Boolean)
-      .join("  |  "),
-  ]
-    .map((line) => (line ?? "").trim())
-    .filter(Boolean);
-  if (lines.length === 0) return;
-  doc
-    .fontSize(8)
-    .font("Helvetica")
-    .fillColor("#555555")
-    .text(lines.join("\n"), { width: USABLE_WIDTH, lineGap: 1 })
-    .fillColor("#000000");
 }
 
 function rule(doc: PDFKit.PDFDocument): void {

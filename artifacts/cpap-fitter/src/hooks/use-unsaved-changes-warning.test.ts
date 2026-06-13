@@ -44,6 +44,8 @@ describe("useUnsavedChangesWarning", () => {
     expect(SRC).toContain("event.metaKey");
     expect(SRC).toContain('anchor.hasAttribute("download")');
     expect(SRC).toContain("url.origin !== window.location.origin");
-    expect(SRC).toContain("url.hash !== current.hash");
+    expect(SRC).toContain(
+      "url.pathname === current.pathname && url.search === current.search",
+    );
   });
 });

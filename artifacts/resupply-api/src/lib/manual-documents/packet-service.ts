@@ -123,6 +123,7 @@ export async function renderManualDocumentPacketToPdf(
   for (const row of documents) {
     inputs.push(await buildManualDocumentPdfInput(supabase, row, generatedOn));
   }
+  const supplierContact = await manualDocumentSupplierContact();
   return renderManualDocumentPacketPdf({
     title: packet.title,
     recipient: {
@@ -133,8 +134,8 @@ export async function renderManualDocumentPacketToPdf(
     },
     documents: inputs,
     includeCoverSheet: packet.include_cover_sheet,
+    supplierContact,
     supplierName: manualDocumentSupplierName(),
-    supplierContact: manualDocumentSupplierContact(),
     generatedOn,
   });
 }

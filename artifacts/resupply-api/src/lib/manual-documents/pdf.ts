@@ -251,7 +251,7 @@ export function drawManualDocument(
   }
 }
 
-function drawSupplierContact(
+export function drawSupplierContact(
   doc: PDFKit.PDFDocument,
   contact?: ManualDocumentSupplierContact | null,
 ): void {
