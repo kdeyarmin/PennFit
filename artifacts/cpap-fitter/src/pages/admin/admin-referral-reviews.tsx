@@ -354,6 +354,26 @@ export function AdminReferralReviewsPage() {
     uploadMutation.mutate(file);
   };
 
+  // Deep-link from the Patients page ("Upload referral" button links here
+  // with ?upload=1) opens the file picker straight away, so staff don't have
+  // to hunt for the upload control. The param is stripped after firing so a
+  // refresh or back-navigation doesn't re-open the picker.
+  const autoUploadFired = useRef(false);
+  useEffect(() => {
+    if (autoUploadFired.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upload") !== "1") return;
+    autoUploadFired.current = true;
+    params.delete("upload");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+    fileInputRef.current?.click();
+  }, []);
+
   const reviews = listQuery.data?.reviews ?? [];
 
   return (
@@ -367,8 +387,9 @@ export function AdminReferralReviewsPage() {
             Referral reviewer
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "hsl(var(--ink-3))" }}>
-            Faxed referral packets, AI-extracted for your review — nothing is
-            entered until you accept.
+            Upload a referral PDF (or triage a faxed packet) and the AI
+            pre-fills a new patient for your review — nothing is entered until
+            you accept.
           </p>
         </div>
         <div className="flex items-center gap-2">
