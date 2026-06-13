@@ -269,7 +269,8 @@ function buildCmnClinicalJustification(
     Number.isFinite(ahiValue) ? ahiValue : null,
     Number.isFinite(rdiValue) ? rdiValue : null,
   ].filter((v): v is number => v != null);
-  const qualifyingValue = candidates.length > 0 ? Math.max(...candidates) : null;
+  const qualifyingValue =
+    candidates.length > 0 ? Math.max(...candidates) : null;
 
   const checkedAtLeast15 = qualifyingValue != null && qualifyingValue >= 15;
   const checkedFiveTo14 =
