@@ -1,42 +1,115 @@
-// Static regression checks for fitter measurement persistence. The
-// captured camera image must remain in memory only; numeric measurements
-// may survive a refresh so the flow can continue safely.
+// @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { beforeEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(path.join(__dirname, "use-fitter-store.tsx"), "utf8");
+import { FitterProvider, useFitterStore } from "./use-fitter-store";
+
+const MEASUREMENTS_STORAGE_KEY = "fitter_measurements";
+
+const sampleMeasurements: FacialMeasurements = {
+  noseWidth: 31,
+  noseHeight: 42,
+  noseToChin: 88,
+  mouthWidth: 51,
+  faceWidthAtCheekbones: 139,
+  calibrationMethod: "creditCard",
+};
+
+function StoreProbe() {
+  const store = useFitterStore();
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "output",
+      { "data-testid": "measurements" },
+      JSON.stringify(store.measurements),
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          store.setMeasurements({
+            ...sampleMeasurements,
+            capturedImage: "data:image/png;base64,not-for-storage",
+          } as FacialMeasurements),
+      },
+      "save measurements",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          store.setCapturedImage("data:image/png;base64,also-not-for-storage"),
+      },
+      "save image",
+    ),
+    React.createElement(
+      "button",
+      { type: "button", onClick: store.reset },
+      "reset",
+    ),
+  );
+}
+
+function renderStore() {
+  render(
+    React.createElement(FitterProvider, null, React.createElement(StoreProbe)),
+  );
+}
+
+function visibleMeasurements(): FacialMeasurements | null {
+  return JSON.parse(screen.getByTestId("measurements").textContent ?? "null");
+}
+
+beforeEach(() => {
+  cleanup();
+  sessionStorage.clear();
+});
 
 describe("use-fitter-store measurement persistence", () => {
-  it("loads initial measurements from the fitter_measurements session key", () => {
-    expect(SRC).toContain(
-      'const MEASUREMENTS_STORAGE_KEY = "fitter_measurements"',
+  it("loads numeric measurements from sessionStorage on provider mount", () => {
+    sessionStorage.setItem(
+      MEASUREMENTS_STORAGE_KEY,
+      JSON.stringify({
+        ...sampleMeasurements,
+        capturedImage: "data:image/png;base64,should-be-dropped",
+      }),
     );
-    expect(SRC).toContain(
-      "useState<FacialMeasurements | null>(readStoredMeasurements)",
-    );
+
+    renderStore();
+
+    expect(visibleMeasurements()).toEqual(sampleMeasurements);
   });
 
-  it("persists only numeric measurement fields and calibration method", () => {
-    const setterStart = SRC.indexOf("const setMeasurements =");
-    const resetStart = SRC.indexOf("const reset =", setterStart);
-    const setterSrc = SRC.slice(setterStart, resetStart);
+  it("persists only measurement numbers and calibration method", () => {
+    renderStore();
 
-    expect(setterSrc).toContain("sessionStorage.setItem(");
-    expect(setterSrc).toContain("MEASUREMENTS_STORAGE_KEY");
-    expect(setterSrc).toContain("noseWidth: nextMeasurements.noseWidth");
-    expect(setterSrc).toContain(
-      "calibrationMethod: nextMeasurements.calibrationMethod",
+    fireEvent.click(screen.getByRole("button", { name: "save image" }));
+    fireEvent.click(screen.getByRole("button", { name: "save measurements" }));
+
+    const persisted = JSON.parse(
+      sessionStorage.getItem(MEASUREMENTS_STORAGE_KEY) ?? "null",
     );
-    expect(setterSrc).not.toContain("capturedImage");
+    expect(persisted).toEqual(sampleMeasurements);
+    expect(persisted).not.toHaveProperty("capturedImage");
   });
 
   it("clears persisted measurements on reset", () => {
-    expect(SRC).toContain(
-      "sessionStorage.removeItem(MEASUREMENTS_STORAGE_KEY)",
+    sessionStorage.setItem(
+      MEASUREMENTS_STORAGE_KEY,
+      JSON.stringify(sampleMeasurements),
     );
+    renderStore();
+
+    fireEvent.click(screen.getByRole("button", { name: "reset" }));
+
+    expect(sessionStorage.getItem(MEASUREMENTS_STORAGE_KEY)).toBeNull();
+    expect(visibleMeasurements()).toBeNull();
   });
 });
