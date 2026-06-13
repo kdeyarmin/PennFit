@@ -194,7 +194,7 @@ describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
     const [pushEmail, pushPayload] =
       sendPushToCustomerByEmailMock.mock.calls[0]!;
     expect(pushEmail).toBe("anna@example.com");
-    expect(pushPayload.url).toBe("/account#insights");
+    expect(pushPayload.url).toBe("/account/insights");
     expect(pushPayload.tag).toMatch(/^smart_trigger:/);
     expect(pushPayload.title).toBe("Your CPAP mask seal may need attention");
   });
