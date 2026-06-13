@@ -1,8 +1,8 @@
 // Tests for hooks/use-unsaved-changes-warning.ts.
 //
 // The hook is intentionally tiny, but it owns a high-risk workflow: preventing
-// accidental data loss when a form is dirty. Static checks keep the two guard
-// paths from drifting apart.
+// accidental data loss when a form is dirty. Static checks keep the guard logic
+// from drifting during refactors.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
