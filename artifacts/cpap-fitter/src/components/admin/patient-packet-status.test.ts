@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  fmtPatientPacketDate,
   patientPacketReceiptDescription,
   patientPacketReceiptLabel,
 } from "./patient-packet-status";
@@ -31,5 +32,11 @@ describe("patient packet receipt helpers", () => {
         patient_id: "patient-1",
       }),
     ).toContain("Download the signed PDF");
+  });
+
+  it("formats receipt dates in the practice timezone", () => {
+    expect(fmtPatientPacketDate("2026-06-13T03:30:00.000Z")).toBe(
+      "Jun 12, 2026",
+    );
   });
 });

@@ -1,4 +1,5 @@
 import type { PatientPacketStatus } from "@workspace/api-client-react/admin";
+import { formatAppDate } from "@/lib/utils";
 
 export type BadgeVariant =
   | "neutral"
@@ -27,15 +28,11 @@ export const STATUS_LABEL: Record<PatientPacketStatus, string> = {
 };
 
 export function fmtPatientPacketDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? "—"
-    : d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+  return formatAppDate(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export function patientPacketReceiptLabel(packet: {

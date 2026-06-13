@@ -370,7 +370,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(pushCustId).toBe("user_alice");
     expect(pushPayload).toMatchObject({
       title: "Your PennPaps order shipped",
-      url: "/account#orders",
+      url: "/account/orders",
     });
     expect(pushPayload.body).toContain("UPS");
     expect(pushPayload.body).toContain("1Z999");

@@ -27,16 +27,16 @@ let app: Express;
 
 // Dynamic import (not a top-level `import`) so the env-var defaults
 // above are in place before app.ts runs its boot-time validation.
-// The 30 s budget is generous on purpose — when the rest of the
+// The 60 s budget is generous on purpose — when the rest of the
 // suite is loading in parallel, the worker pool that resolves this
 // import can be CPU-starved for several seconds before it gets a
-// turn. The previous 10 s default tripped intermittently on busy
+// turn. Lower hook budgets have tripped intermittently on busy
 // CI runners; the import itself completes in ~100 ms once it does
 // get the CPU.
 beforeAll(async () => {
   const mod = (await import("./app")) as { default: Express };
   app = mod.default;
-}, 30_000);
+}, 60_000);
 
 describe("shop route tree mount (smoke)", () => {
   it("rejects an unauthenticated GET /shop/me/comm-prefs with 401", async () => {
