@@ -366,11 +366,9 @@ export function AdminReferralReviewsPage() {
     autoUploadFired.current = true;
     params.delete("upload");
     const qs = params.toString();
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
-    );
+    const next =
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+    window.history.replaceState(null, "", next);
     fileInputRef.current?.click();
   }, []);
 
