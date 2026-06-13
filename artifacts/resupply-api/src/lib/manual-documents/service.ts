@@ -9,6 +9,7 @@
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
+  getCompanyInfo,
   getCompanyInfoSync,
   getDocumentSupplierNameSync,
 } from "../company-info";
@@ -74,8 +75,8 @@ function formatCompanyAddress(
 }
 
 /** Supplier contact/identifier block for official payer PDFs. */
-export function manualDocumentSupplierContact(): ManualDocumentSupplierContact {
-  const info = getCompanyInfoSync();
+export async function manualDocumentSupplierContact(): Promise<ManualDocumentSupplierContact> {
+  const info = await getCompanyInfo();
   return {
     address: formatCompanyAddress(info.address),
     phone: info.phoneDisplay,
@@ -128,6 +129,7 @@ export async function buildManualDocumentPdfInput(
     "manual_document",
     row.id,
   ).catch(() => null);
+  const supplierContact = await manualDocumentSupplierContact();
   return {
     documentType: row.document_type,
     title: row.title,
@@ -139,8 +141,8 @@ export async function buildManualDocumentPdfInput(
     },
     fields: (row.fields ?? null) as Record<string, unknown> | null,
     body: row.body,
+    supplierContact,
     supplierName: manualDocumentSupplierName(),
-    supplierContact: manualDocumentSupplierContact(),
     generatedOn,
     trackingCode,
   };
