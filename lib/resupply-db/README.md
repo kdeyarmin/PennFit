@@ -86,8 +86,8 @@ deleted. New migrations are hand-written SQL and reviewed manually.
 
 ## Migration Prefix Moratorium
 
-Any added migration file must use a 4-digit prefix strictly higher than every
-existing SQL migration file and unique within the directory. Do not reuse
+Any added migration file must use a unique 4-digit prefix > 0066 (enforced by
+`scripts/check-resupply-migration-prefix*.sh`). Prefer using the next free prefix
+(higher than the current max) so fresh-DB replay order doesn't change. Do not reuse
 legacy duplicate prefixes. See `./drizzle/README.md` and
-`docs/migration-state-investigation-2026-05-08.md` for the incident history
-and the eventual rewrite procedure.
+`docs/migration-state-investigation-2026-05-08.md` for the incident history and rewrite procedure.
