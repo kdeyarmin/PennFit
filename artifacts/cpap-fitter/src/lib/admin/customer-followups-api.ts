@@ -30,6 +30,11 @@ export interface CompleteAdminCustomerFollowupResponse {
   completedAt: string | null;
 }
 
+export interface ReopenAdminCustomerFollowupResponse {
+  id: string;
+  completedAt: string | null;
+}
+
 export class AdminCustomerFollowupsNotFoundError extends Error {
   constructor() {
     super("Customer or followup not found.");
@@ -106,4 +111,25 @@ export async function completeAdminCustomerFollowup(
     throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
   }
   return (await res.json()) as CompleteAdminCustomerFollowupResponse;
+}
+
+export async function reopenAdminCustomerFollowup(
+  userId: string,
+  followupId: string,
+): Promise<ReopenAdminCustomerFollowupResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/customers/${encodeURIComponent(userId)}/followups/${encodeURIComponent(followupId)}/reopen`,
+    {
+      method: "PATCH",
+      headers: { Accept: "application/json", ...csrfHeader() },
+    },
+  );
+  if (res.status === 404) {
+    throw new AdminCustomerFollowupsNotFoundError();
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
+  }
+  return (await res.json()) as ReopenAdminCustomerFollowupResponse;
 }
