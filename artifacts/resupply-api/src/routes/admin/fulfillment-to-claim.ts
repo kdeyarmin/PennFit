@@ -252,7 +252,7 @@ router.post(
           .eq("id", claimRow.id);
         if (holdErr) {
           logger.warn(
-            { err: holdErr.message, claimId: claimRow.id },
+            { err: holdErr, claimId: claimRow.id },
             "fulfillment-to-claim: fail-safe bill-hold flag failed",
           );
         }
