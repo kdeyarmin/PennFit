@@ -91,6 +91,31 @@ const VALID_PROD_ENV: Record<string, string> = {
   ANTHROPIC_API_KEY: "sk-ant" + "-fake-sample-1234567890abcdef",
   DEEPGRAM_API_KEY: "0123456789abcdef0123456789abcdef01234567",
   ELEVENLABS_API_KEY: "sk-elevenlabs-fake-sample-abc123def456",
+  // Optional outside integrations are set to coherent sample groups so the
+  // happy-path fixture remains warning-free. Individual tests below remove
+  // whole groups or make them partial to exercise graceful-degrade checks.
+  AIRVIEW_API_BASE_URL: "https://airview.example.test/api",
+  AIRVIEW_OAUTH_TOKEN_URL: "https://airview.example.test/oauth/token",
+  AIRVIEW_CLIENT_ID: "airview-client",
+  AIRVIEW_CLIENT_SECRET: "airview-secret",
+  AIRVIEW_DME_ID: "airview-dme",
+  CARE_ORCHESTRATOR_API_BASE_URL: "https://care.example.test/api",
+  CARE_ORCHESTRATOR_OAUTH_TOKEN_URL: "https://care.example.test/oauth/token",
+  CARE_ORCHESTRATOR_CLIENT_ID: "care-client",
+  CARE_ORCHESTRATOR_CLIENT_SECRET: "care-secret",
+  CARE_ORCHESTRATOR_PARTNER_ID: "care-partner",
+  REACT_HEALTH_API_BASE_URL: "https://react-health.example.test/api",
+  REACT_HEALTH_OAUTH_TOKEN_URL: "https://react-health.example.test/oauth/token",
+  REACT_HEALTH_CLIENT_ID: "react-client",
+  REACT_HEALTH_CLIENT_SECRET: "react-secret",
+  REACT_HEALTH_ACCOUNT_ID: "react-account",
+  TELNYX_API_KEY: "KEY0123456789abcdef",
+  TELNYX_FAX_CONNECTION_ID: "1234567890",
+  TELNYX_FAX_FROM_NUMBER: "+12155550199",
+  TELNYX_PUBLIC_KEY: "a".repeat(64),
+  WEB_PUSH_VAPID_PUBLIC_KEY: "B".repeat(87),
+  WEB_PUSH_VAPID_PRIVATE_KEY: "c".repeat(43),
+  WEB_PUSH_VAPID_SUBJECT: "mailto:info@pennpaps.com",
 };
 
 /** Run the preflight script as a subprocess with the given env. */
@@ -1278,6 +1303,112 @@ describe("STRIPE_WEBHOOK_SECRET vs STRIPE_WEBHOOK_SIGNING_SECRET name confusion"
       .some((l) => /\bSTRIPE_WEBHOOK_SECRET\b/.test(l));
     expect(legacyMention).toBe(false);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Optional outside integrations with all-or-none credential groups
+// ---------------------------------------------------------------------------
+
+const THERAPY_AND_OPTIONAL_GROUPS: Array<{
+  displayName: string;
+  vars: string[];
+  samplePartial: Record<string, string | undefined>;
+  disabledText: string;
+  configuredText: string;
+}> = [
+  {
+    displayName: "AIRVIEW",
+    vars: [
+      "AIRVIEW_API_BASE_URL",
+      "AIRVIEW_OAUTH_TOKEN_URL",
+      "AIRVIEW_CLIENT_ID",
+      "AIRVIEW_CLIENT_SECRET",
+      "AIRVIEW_DME_ID",
+    ],
+    samplePartial: { AIRVIEW_CLIENT_ID: "airview-client" },
+    disabledText: "AirView therapy-cloud sync disabled",
+    configuredText: "ResMed AirView sync",
+  },
+  {
+    displayName: "CARE_ORCHESTRATOR",
+    vars: [
+      "CARE_ORCHESTRATOR_API_BASE_URL",
+      "CARE_ORCHESTRATOR_OAUTH_TOKEN_URL",
+      "CARE_ORCHESTRATOR_CLIENT_ID",
+      "CARE_ORCHESTRATOR_CLIENT_SECRET",
+      "CARE_ORCHESTRATOR_PARTNER_ID",
+    ],
+    samplePartial: { CARE_ORCHESTRATOR_CLIENT_ID: "care-client" },
+    disabledText: "Care Orchestrator therapy-cloud sync disabled",
+    configuredText: "Philips Care Orchestrator sync",
+  },
+  {
+    displayName: "REACT_HEALTH",
+    vars: [
+      "REACT_HEALTH_API_BASE_URL",
+      "REACT_HEALTH_OAUTH_TOKEN_URL",
+      "REACT_HEALTH_CLIENT_ID",
+      "REACT_HEALTH_CLIENT_SECRET",
+      "REACT_HEALTH_ACCOUNT_ID",
+    ],
+    samplePartial: { REACT_HEALTH_CLIENT_ID: "react-client" },
+    disabledText: "React Health / 3B therapy-cloud sync disabled",
+    configuredText: "React Health / 3B sync",
+  },
+  {
+    displayName: "TELNYX_FAX",
+    vars: [
+      "TELNYX_API_KEY",
+      "TELNYX_FAX_CONNECTION_ID",
+      "TELNYX_FAX_FROM_NUMBER",
+      "TELNYX_PUBLIC_KEY",
+    ],
+    samplePartial: { TELNYX_API_KEY: "KEY0123456789abcdef" },
+    disabledText: "Telnyx fax send + inbound fax webhooks disabled",
+    configuredText: "Telnyx outbound fax + webhook verification",
+  },
+  {
+    displayName: "WEB_PUSH_VAPID",
+    vars: [
+      "WEB_PUSH_VAPID_PUBLIC_KEY",
+      "WEB_PUSH_VAPID_PRIVATE_KEY",
+      "WEB_PUSH_VAPID_SUBJECT",
+    ],
+    samplePartial: { WEB_PUSH_VAPID_PUBLIC_KEY: "B".repeat(87) },
+    disabledText: "browser push notifications disabled",
+    configuredText: "browser push notifications",
+  },
+];
+
+function withoutEnvVars(vars: string[]): Record<string, undefined> {
+  return Object.fromEntries(vars.map((name) => [name, undefined]));
+}
+
+describe("optional outside integration credential groups", () => {
+  for (const group of THERAPY_AND_OPTIONAL_GROUPS) {
+    it(`warns, but exits 0, when ${group.displayName} is completely unset`, () => {
+      const { exitCode, stdout } = run(withEnv(withoutEnvVars(group.vars)));
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain(group.displayName);
+      expect(stdout).toContain(group.disabledText);
+    });
+
+    it(`fails when ${group.displayName} is partially configured`, () => {
+      const { exitCode, stdout } = run(
+        withEnv({ ...withoutEnvVars(group.vars), ...group.samplePartial }),
+      );
+      expect(exitCode).toBe(1);
+      expect(stdout).toContain(group.displayName);
+      expect(stdout).toContain("partially configured");
+    });
+
+    it(`passes when ${group.displayName} is fully configured`, () => {
+      const { exitCode, stdout } = run(VALID_PROD_ENV);
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain(group.displayName);
+      expect(stdout).toContain(group.configuredText);
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
