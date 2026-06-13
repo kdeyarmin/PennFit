@@ -533,6 +533,13 @@ export function PatientsPage() {
           <Button intent="secondary" onClick={() => setImporting(true)}>
             Import CSV
           </Button>
+          <Button
+            intent="secondary"
+            onClick={() => setLocation("/admin/referral-reviews?upload=1")}
+            title="Upload a referral PDF and let the AI pre-fill a new patient for you"
+          >
+            Upload referral
+          </Button>
           <Button onClick={() => setCreating(true)}>+ New customer</Button>
         </div>
       </header>

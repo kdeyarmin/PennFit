@@ -354,6 +354,24 @@ export function AdminReferralReviewsPage() {
     uploadMutation.mutate(file);
   };
 
+  // Deep-link from the Patients page ("Upload referral" button links here
+  // with ?upload=1) highlights the upload button so staff don't have to hunt
+  // for the control. The param is stripped so a refresh or back-navigation
+  // doesn't re-trigger it. We intentionally avoid auto-clicking the file
+  // picker — browsers block programmatic file-input clicks outside of a
+  // direct user gesture.
+  const [highlightUpload, setHighlightUpload] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upload") !== "1") return;
+    params.delete("upload");
+    const qs = params.toString();
+    const next =
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+    window.history.replaceState(null, "", next);
+    setHighlightUpload(true);
+  }, []);
+
   const reviews = listQuery.data?.reviews ?? [];
 
   return (
@@ -367,8 +385,9 @@ export function AdminReferralReviewsPage() {
             Referral reviewer
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "hsl(var(--ink-3))" }}>
-            Faxed referral packets, AI-extracted for your review — nothing is
-            entered until you accept.
+            Upload a referral PDF (or triage a faxed packet) and the AI
+            pre-fills a new patient for your review — nothing is entered until
+            you accept.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -386,7 +405,15 @@ export function AdminReferralReviewsPage() {
           <Button
             intent="secondary"
             isLoading={uploadMutation.isPending}
-            onClick={() => fileInputRef.current?.click()}
+            className={
+              highlightUpload
+                ? "ring-2 ring-offset-1 ring-[hsl(var(--penn-gold))]"
+                : ""
+            }
+            onClick={() => {
+              setHighlightUpload(false);
+              fileInputRef.current?.click();
+            }}
           >
             <Upload className="h-4 w-4" /> Upload referral PDF
           </Button>
