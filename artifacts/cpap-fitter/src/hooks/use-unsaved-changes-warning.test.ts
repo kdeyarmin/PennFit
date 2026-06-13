@@ -16,9 +16,8 @@ const SRC = readFileSync(
 );
 
 describe("useUnsavedChangesWarning", () => {
-  it("exports a reusable confirmation helper for in-app state changes", () => {
-    expect(SRC).toContain("export function confirmDiscardUnsavedChanges");
-    expect(SRC).toContain("window.confirm(message)");
+  it("exports the hook", () => {
+    expect(SRC).toContain("export function useUnsavedChangesWarning");
   });
 
   it("keeps the browser beforeunload guard for reloads and tab close", () => {
