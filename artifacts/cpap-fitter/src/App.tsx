@@ -658,7 +658,8 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
 function AccountHashRedirect({ hash }: { hash: "insights" | "orders" }) {
   const [, setLocation] = useLocation();
   useEffect(() => {
-    setLocation(`/account#${hash}`, { replace: true });
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    setLocation(`/account${search}#${hash}`, { replace: true });
   }, [hash, setLocation]);
   return null;
 }
