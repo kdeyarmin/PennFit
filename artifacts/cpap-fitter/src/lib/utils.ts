@@ -41,20 +41,20 @@ function dateOnlyAtAppNoon(dateOnly: string): Date | null {
   return date;
 }
 
-function getAppDateTimeParts(date = new Date()) {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
+const APP_DATE_TIME_PARTS_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: APP_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
 
+function getAppDateTimeParts(date = new Date()) {
   const values: Record<string, string> = {};
-  for (const part of formatter.formatToParts(date)) {
+  for (const part of APP_DATE_TIME_PARTS_FORMATTER.formatToParts(date)) {
     if (part.type !== "literal") values[part.type] = part.value;
   }
 
