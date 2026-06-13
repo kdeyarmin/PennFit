@@ -10,7 +10,6 @@ import {
   ApiError,
 } from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -206,7 +205,7 @@ export function Order() {
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitted },
+    formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -217,7 +216,7 @@ export function Order() {
       patient: fitterEmail ? { email: fitterEmail } : undefined,
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
-      consentToContact: false,
+      consentToContact: true,
       website: "",
     } as Partial<FormValues> as FormValues,
     mode: "onBlur",
@@ -226,7 +225,6 @@ export function Order() {
   const stateValue = watch("shippingAddress.state");
   const relationshipValue = watch("insurance.policyholderRelationship");
   const hasRxValue = watch("prescription.hasExistingPrescription");
-  const consentValue = watch("consentToContact");
 
   useEffect(() => {
     track("order_started");
@@ -918,44 +916,6 @@ export function Order() {
                 </Link>
                 .
               </p>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="consent-checkbox"
-                data-testid="checkbox-consent"
-                checked={consentValue === true}
-                aria-invalid={errors.consentToContact ? "true" : "false"}
-                aria-describedby={
-                  isSubmitted && errors.consentToContact
-                    ? "consent-checkbox-error"
-                    : undefined
-                }
-                onCheckedChange={(checked) =>
-                  setValue("consentToContact", checked === true, {
-                    shouldValidate: true,
-                  })
-                }
-              />
-              <div className="flex-1">
-                <Label
-                  htmlFor="consent-checkbox"
-                  className="text-sm font-normal cursor-pointer leading-relaxed"
-                >
-                  I consent to be contacted by Penn Home Medical Supply
-                  regarding this order, and agree to the SMS / contact and
-                  data-storage terms above.
-                </Label>
-                {isSubmitted && errors.consentToContact && (
-                  <p
-                    id="consent-checkbox-error"
-                    role="alert"
-                    className="text-xs text-destructive mt-1"
-                  >
-                    {errors.consentToContact.message}
-                  </p>
-                )}
-              </div>
             </div>
           </CardContent>
         </Card>

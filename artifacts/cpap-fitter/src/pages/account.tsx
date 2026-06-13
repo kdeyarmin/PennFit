@@ -26,6 +26,7 @@ import { Link } from "wouter";
 import { SupportEmailLink } from "@/components/company-contact";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
+import { confirmDiscardUnsavedChanges } from "@/hooks/use-unsaved-changes-warning";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   AlertCircle,
@@ -94,9 +95,17 @@ type AccountTabId = (typeof ACCOUNT_TABS)[number]["id"];
 export function hashToAccountTab(hash: string): AccountTabId | null {
   const h = hash.replace(/^#/, "");
   if (h === "insights") return "overview";
+  if (h === "overview") return "overview";
   if (h === "messages") return "messages";
+  if (h === "therapy") return "therapy";
+  if (h === "account") return "account";
   if (h === "autoship" || h === "orders") return "orders";
   return null;
+}
+
+function accountTabToHash(tab: AccountTabId): string {
+  if (tab === "overview") return "";
+  return `#${tab}`;
 }
 
 function AccountTabBar({
@@ -209,6 +218,8 @@ function AccountInner() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
   const unreadMessages = useShopMessagesUnread();
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [commPrefsDirty, setCommPrefsDirty] = useState(false);
 
   // Which account tab is open. Honour a deep-link hash on first paint
   // (/account#messages, /account#autoship), then keep listening so a
@@ -218,14 +229,52 @@ function AccountInner() {
       ? (hashToAccountTab(window.location.hash) ?? "overview")
       : "overview",
   );
+
+  const guardedAccountTab = React.useCallback(
+    (current: AccountTabId, next: AccountTabId): AccountTabId => {
+      if (current === next) return current;
+      const leavingDirtyProfile = current === "overview" && profileDirty;
+      const leavingDirtyCommPrefs = current === "account" && commPrefsDirty;
+      if (
+        (leavingDirtyProfile || leavingDirtyCommPrefs) &&
+        !confirmDiscardUnsavedChanges()
+      ) {
+        return current;
+      }
+      return next;
+    },
+    [profileDirty, commPrefsDirty],
+  );
+
   useEffect(() => {
     function onHashChange() {
       const tab = hashToAccountTab(window.location.hash);
-      if (tab) setActiveTab(tab);
+      if (!tab) return;
+      setActiveTab((current) => {
+        const next = guardedAccountTab(current, tab);
+        if (next === current && tab !== current) {
+          const currentHash = accountTabToHash(current);
+          if (window.location.hash !== currentHash) {
+            window.history.replaceState(
+              window.history.state,
+              "",
+              `${window.location.pathname}${window.location.search}${currentHash}`,
+            );
+          }
+        }
+        return next;
+      });
     }
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  }, [guardedAccountTab]);
+
+  const changeAccountTab = React.useCallback(
+    (next: AccountTabId) => {
+      setActiveTab((current) => guardedAccountTab(current, next));
+    },
+    [guardedAccountTab],
+  );
 
   // Probe preview mode the same way the cart does so we can disable
   // payment actions cleanly when Stripe isn't configured.
@@ -372,7 +421,7 @@ function AccountInner() {
         <div className="lg:col-span-2">
           <AccountTabBar
             active={activeTab}
-            onChange={setActiveTab}
+            onChange={changeAccountTab}
             unreadMessages={unreadMessages}
           />
           <div className="space-y-6 mt-6">
@@ -389,6 +438,7 @@ function AccountInner() {
                 <ProfileSection
                   profile={data.profile!}
                   onSaved={() => void reload()}
+                  onDirtyChange={setProfileDirty}
                 />
                 {/*
                   Device + physician info. Both fields are stored on
@@ -443,7 +493,7 @@ function AccountInner() {
                 <EsignFormsSection />
                 <ReferralProgramSection />
                 <CaregiverSection />
-                <CommPrefsSection />
+                <CommPrefsSection onDirtyChange={setCommPrefsDirty} />
                 <DataExportSection />
               </>
             )}

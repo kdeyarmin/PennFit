@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { checkBiometricAvailability } from "@/lib/native-runtime";
 
 /**
@@ -19,7 +20,11 @@ import { checkBiometricAvailability } from "@/lib/native-runtime";
  * Transactional (order shipped, refund issued) is not user-toggleable
  * here — those land via the order-detail email flow regardless.
  */
-export function CommPrefsSection() {
+export function CommPrefsSection({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [prefs, setPrefs] = useState<CommunicationPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -166,7 +171,12 @@ export function CommPrefsSection() {
 
       <BiometricLockToggle />
 
-      <DndEditor prefs={prefs} onSave={save} saving={saving} />
+      <DndEditor
+        prefs={prefs}
+        onSave={save}
+        saving={saving}
+        onDirtyChange={onDirtyChange}
+      />
 
       {error && (
         <p className="text-xs text-rose-700" role="alert">
@@ -229,15 +239,23 @@ function DndEditor({
   prefs,
   onSave,
   saving,
+  onDirtyChange,
 }: {
   prefs: CommunicationPreferences;
   onSave: (next: CommunicationPreferences) => void;
   saving: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [start, setStart] = useState<number | null>(prefs.dndStartHour);
   const [end, setEnd] = useState<number | null>(prefs.dndEndHour);
   const [tz, setTz] = useState<string | null>(prefs.timezone);
   const [dirty, setDirty] = useState(false);
+
+  useUnsavedChangesWarning(dirty);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
 
   // Auto-detect timezone if the user has none set.
   useEffect(() => {

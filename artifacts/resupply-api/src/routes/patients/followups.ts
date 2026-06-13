@@ -6,6 +6,7 @@
 //   GET    /patients/:id/followups?include=completed — full history
 //   POST   /patients/:id/followups          — create
 //   PATCH  /patients/:id/followups/:fid/complete — mark complete
+//   PATCH  /patients/:id/followups/:fid/reopen — undo complete
 //
 // Mounted under /patients/* (the resupply patient flow's prefix), not
 // /admin/shop/* — patients and shop customers are distinct identity
@@ -277,6 +278,93 @@ router.patch(
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
       logger.warn({ err }, "patient.followup.complete audit write failed");
+    });
+
+    res.json({
+      id: updatedRow.id,
+      completedAt: updatedRow.completed_at,
+    });
+  },
+);
+
+router.patch(
+  "/patients/:id/followups/:fid/reopen",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = patientIdParam.safeParse(req.params.id);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const patientId = parsed.data;
+
+    const fIdCheck = followupIdParam.safeParse(req.params.fid);
+    if (!fIdCheck.success) {
+      res.status(400).json({ error: "invalid_followup_id" });
+      return;
+    }
+    const followupId = fIdCheck.data;
+
+    const supabase = getSupabaseServiceRoleClient();
+
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .select("id, patient_id, completed_at, body, due_at")
+      .eq("id", followupId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!row || row.patient_id !== patientId) {
+      res.status(404).json({ error: "followup_not_found" });
+      return;
+    }
+    if (row.completed_at === null) {
+      res.status(409).json({
+        error: "already_open",
+        message: "This followup is already open.",
+      });
+      return;
+    }
+
+    const { data: updatedRow, error } = await supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .update({
+        completed_at: null,
+        completed_by_email: null,
+        completed_by_user_id: null,
+      })
+      .eq("id", followupId)
+      .eq("patient_id", patientId)
+      .not("completed_at", "is", null)
+      .select("id, completed_at")
+      .maybeSingle();
+    if (error) throw error;
+    if (!updatedRow) {
+      res.status(409).json({
+        error: "already_open",
+        message: "This followup is already open.",
+      });
+      return;
+    }
+
+    await logAudit({
+      action: "patient.followup.reopen",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_followups",
+      targetId: followupId,
+      metadata: {
+        patient_id: patientId,
+        body_length: row.body.length,
+        due_at: row.due_at,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.followup.reopen audit write failed");
     });
 
     res.json({
