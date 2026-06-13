@@ -15,6 +15,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceCoverage,
   createPriorAuthorization,
@@ -122,9 +123,7 @@ function AddSleepStudyModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [studyDate, setStudyDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [studyDate, setStudyDate] = useState(todayAppDateIso());
   const [studyType, setStudyType] = useState<SleepStudyType>("psg");
   const [ahi, setAhi] = useState("");
   const [lowestSpo2Pct, setLowestSpo2Pct] = useState("");

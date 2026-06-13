@@ -46,6 +46,7 @@ import {
   type PacwareStatus,
   type PacwareSyncTarget,
 } from "@/lib/admin/pacware-api";
+import { todayAppDateIso } from "@/lib/utils";
 
 const statusKey = ["admin", "pacware", "status"] as const;
 
@@ -481,7 +482,7 @@ function SyncCard() {
 
   const autoSync = settings?.autoSync ?? false;
   const pending = settings?.pending;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayAppDateIso();
 
   return (
     <Card>

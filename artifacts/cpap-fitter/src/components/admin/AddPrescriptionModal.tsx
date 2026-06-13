@@ -18,6 +18,7 @@ import {
 
 import { Button } from "@/components/admin/Button";
 import { Input, Label } from "@/components/admin/Input";
+import { todayAppDateIso } from "@/lib/utils";
 
 export function AddPrescriptionModal({
   patientId,
@@ -31,9 +32,7 @@ export function AddPrescriptionModal({
   const create = useCreatePrescription();
   const [itemSku, setItemSku] = useState("");
   const [cadenceDays, setCadenceDays] = useState("90");
-  const [validFrom, setValidFrom] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [validFrom, setValidFrom] = useState(todayAppDateIso());
   const [validUntil, setValidUntil] = useState("");
   const [hcpcsCode, setHcpcsCode] = useState("");
   const [prescriberName, setPrescriberName] = useState("");
