@@ -77,7 +77,7 @@ describe("Account notification deep links", () => {
   it("redirects account aliases to the hash tabs the account page understands", () => {
     expect(SRC).toContain('<AccountHashRedirect hash="insights" />');
     expect(SRC).toContain('<AccountHashRedirect hash="orders" />');
-    expect(SRC).toContain("setLocation(`/account#${hash}`, { replace: true })");
+    expect(SRC).toContain("setLocation(`/account${search}#${hash}`, { replace: true })");
   });
 });
 
