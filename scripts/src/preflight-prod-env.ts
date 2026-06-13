@@ -316,10 +316,20 @@ function checkAllOrNoneGroup(
     partialSeverity?: Severity;
   },
 ): void {
-  const present = vars.filter((n) => getTrimmed(n) !== undefined);
-  const missing = vars.filter((n) => getTrimmed(n) === undefined);
-  if (present.length === 0) {
+  const rawPresent = vars.filter((n) => process.env[n] !== undefined);
+  if (rawPresent.length === 0) {
     record(name, "warn", options.absentDetail);
+    return;
+  }
+
+  const missing = vars.filter((n) => getTrimmed(n) === undefined);
+  const present = vars.length - missing.length;
+  if (missing.length > 0) {
+    record(
+      name,
+      options.partialSeverity ?? "fail",
+      `partially configured (${present}/${vars.length} set) — missing: ${missing.join(", ")}`,
+    );
     return;
   }
   if (missing.length > 0) {
