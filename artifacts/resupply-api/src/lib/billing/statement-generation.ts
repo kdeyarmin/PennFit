@@ -218,6 +218,17 @@ export async function generatePatientBillingStatement(
     adminUserId: input.adminUserId ?? null,
   });
 
+  if (input.generatedByEmail === "system:auto_workflow" && !persisted.objectKey) {
+    await supabase
+      .schema("resupply")
+      .from("patient_billing_statements")
+      .delete()
+      .eq("id", row.id);
+    throw new Error(
+      "auto-workflow statement PDF could not be persisted; refusing to arm statement cooldown",
+    );
+  }
+
   return {
     statementId: row.id,
     pdf: result.pdf,
@@ -226,4 +237,3 @@ export async function generatePatientBillingStatement(
     deliveryMethod,
     chartDocumentId: persisted.chartDocumentId,
   };
-}
