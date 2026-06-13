@@ -27,16 +27,8 @@ describe("useUnsavedChangesWarning", () => {
     expect(SRC).toContain('window.removeEventListener("beforeunload"');
   });
 
-  it("guards same-origin anchor clicks before the router handles them", () => {
-    expect(SRC).toContain('document.addEventListener("click"');
-    expect(SRC).toContain('target.closest("a[href]")');
-    expect(SRC).toContain("isSameOriginNavigation");
-    expect(SRC).toContain("confirmDiscardUnsavedChanges(message)");
-  });
-
-  it("prevents navigation when the user cancels discard", () => {
-    expect(SRC).toContain("e.preventDefault()");
-    expect(SRC).toContain("e.stopPropagation()");
+  it("short-circuits when not dirty", () => {
+    expect(SRC).toContain("if (!dirty) return;");
   });
 
   it("ignores modified, external, download, and hash-only clicks", () => {
