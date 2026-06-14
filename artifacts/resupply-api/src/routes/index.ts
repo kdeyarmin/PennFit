@@ -56,6 +56,7 @@ import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import referralReviewsRouter from "./admin/referral-reviews.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
+import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
@@ -791,6 +792,11 @@ router.use(referralReviewsRouter);
 // Philips-DreamStation-style workflows where every DME needs to
 // know which dispensed serials are in the recall lot.
 router.use(equipmentRecallsRouter);
+// /admin/asset-recovery/* — worklist for recovering CPAP machines from
+// patients who discontinued therapy, so the device can be refurbished
+// and redeployed. The ACTION half of the discontinuation signals the
+// smart-trigger + lapsed-winback jobs already detect.
+router.use(assetRecoveryRouter);
 // /admin/analytics/* — clinical-side analytics (resupply funnel,
 // compliance cohorts, CSR productivity). Distinct from storefront
 // analytics at /admin/storefront/analytics which covers orders +
