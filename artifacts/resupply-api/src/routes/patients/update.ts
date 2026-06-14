@@ -43,10 +43,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { assertAssignableLocation } from "../../lib/locations/assignable";
 import { logger } from "../../lib/logger";
@@ -151,7 +148,12 @@ router.patch(
     if ("status" in body && body.status) updates.status = body.status;
     if ("locationId" in body) updates.location_id = body.locationId ?? null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // A non-null location assignment must reference an active location.
     // Clearing it (null) is always allowed. Checked before the UPDATE so
@@ -177,7 +179,6 @@ router.patch(
       // anything". We still need to return a current `updatedAt` so
       // the client's optimistic-concurrency token stays usable.
       const { data: current, error } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, updated_at")
         .eq("id", id)
@@ -208,11 +209,7 @@ router.patch(
     // into millisecond JS `Date`s; PostgREST returns the full
     // string, so the lossiness disappears and the trunc isn't needed.
     const expectedUpdatedAt = body.expectedUpdatedAt;
-    let updateQuery = supabase
-      .schema("resupply")
-      .from("patients")
-      .update(updates)
-      .eq("id", id);
+    let updateQuery = supabase.from("patients").update(updates).eq("id", id);
     if (expectedUpdatedAt) {
       updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
     }
@@ -246,7 +243,6 @@ router.patch(
         // with the same response as a missing row, and the admin
         // would think the patient vanished.
         const { data: exists, error: existsErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .select("id")
           .eq("id", id)
