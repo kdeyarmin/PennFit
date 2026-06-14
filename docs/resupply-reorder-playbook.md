@@ -53,7 +53,8 @@ guidance.
 5. **Promote auto-ship (Subscribe & Save).** For anyone who keeps
    forgetting or finds reordering a chore, set-and-forget is the real
    answer: ships automatically on the chosen cadence, pause/skip/cancel
-   anytime, and 10% off the one-time price on the cash-pay program.
+   anytime, at the same price as ordering one-time (no markup, no
+   membership fee — it's sold as convenience, not a discount).
 
 ## Where each lever lives in the code
 
