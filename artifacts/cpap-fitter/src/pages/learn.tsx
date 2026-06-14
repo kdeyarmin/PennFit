@@ -495,6 +495,22 @@ export function Learn() {
             Prefer to watch? See our short video guides →
           </Link>
         </p>
+        <p className="text-sm text-muted-foreground">
+          Just need a quick answer?{" "}
+          <Link
+            href="/faq"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            FAQ
+          </Link>{" "}
+          · Looking for step-by-step how-tos?{" "}
+          <Link
+            href="/help"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Help Center
+          </Link>
+        </p>
       </header>
 
       {/*

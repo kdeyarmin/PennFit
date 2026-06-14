@@ -341,6 +341,22 @@ export function Help() {
           the Virtual Mask Fitter, ordering and checkout, tracking, your
           account, resupply reminders, insurance estimates, and returns.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Just need a quick answer?{" "}
+          <Link
+            href="/faq"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            FAQ
+          </Link>{" "}
+          · Want the in-depth version?{" "}
+          <Link
+            href="/learn"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Learn
+          </Link>
+        </p>
 
         {/* Search */}
         <div className="max-w-xl mx-auto pt-2">
