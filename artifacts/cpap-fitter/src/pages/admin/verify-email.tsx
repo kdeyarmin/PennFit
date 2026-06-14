@@ -124,6 +124,10 @@ export function VerifyEmailPage() {
             >
               {errorMessage}
             </p>
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              Already verified? This can happen when a link is opened twice — if
+              so, you can just sign in.
+            </p>
             <Link
               href={`${basePath}/sign-in`}
               className="text-xs underline block text-center"
