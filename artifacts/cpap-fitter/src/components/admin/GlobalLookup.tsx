@@ -213,7 +213,7 @@ export function GlobalLookup() {
           backgroundColor: "hsl(var(--surface-2))",
         }}
         aria-label="Global lookup"
-        aria-keyshortcuts="Meta+K Control+K"
+        aria-keyshortcuts="Meta+K Control+K /"
         role="combobox"
         aria-expanded={open && hits !== null}
         aria-controls={LISTBOX_ID}

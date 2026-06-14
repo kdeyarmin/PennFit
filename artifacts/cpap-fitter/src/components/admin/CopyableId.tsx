@@ -6,7 +6,7 @@
 // unavailable (insecure context / older browser) by surfacing the value
 // in a toast so it can still be selected.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
@@ -33,12 +33,24 @@ export function CopyableId({
 }: CopyableIdProps) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
+  // Hold the reset timer so rapid re-clicks replace it instead of
+  // stacking — otherwise an older timer can clear the check early and
+  // make it flicker.
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    },
+    [],
+  );
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       toast({ title: "Couldn't copy automatically", description: value });
     }

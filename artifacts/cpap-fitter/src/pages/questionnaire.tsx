@@ -186,7 +186,11 @@ export function Questionnaire() {
     function onKey(e: KeyboardEvent) {
       // Don't hijack typing in a field or a modified chord.
       const t = e.target as HTMLElement | null;
-      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (
+        t &&
+        (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)
+      )
+        return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (e.key === "ArrowLeft" || e.key === "Backspace") {

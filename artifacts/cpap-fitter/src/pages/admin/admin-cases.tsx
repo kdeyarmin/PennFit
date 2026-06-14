@@ -76,7 +76,11 @@ export function AdminCasesPage() {
   // Expand-all / Collapse-all control can drive every row at once.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const cases = query.data?.cases ?? [];
-  const allExpanded = cases.length > 0 && expandedIds.size === cases.length;
+  // "All expanded" means every *currently rendered* case is open — a plain
+  // size check would be wrong if the set still holds ids from a prior
+  // filter that aren't in this list.
+  const allExpanded =
+    cases.length > 0 && cases.every((c) => expandedIds.has(c.id));
   const toggleRow = (id: string) =>
     setExpandedIds((prev) => {
       const next = new Set(prev);

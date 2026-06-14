@@ -327,7 +327,7 @@ export function Consent() {
               aria-invalid={email.length > 0 && !emailValid}
               aria-describedby={
                 email.length > 0 && !emailValid
-                  ? "fitter-email-error"
+                  ? "fitter-email-error fitter-email-help"
                   : "fitter-email-help"
               }
             />
@@ -402,7 +402,7 @@ export function Consent() {
                 aria-invalid={phoneFilled && !phoneValid}
                 aria-describedby={
                   phoneFilled && !phoneValid
-                    ? "fitter-phone-error"
+                    ? "fitter-phone-error fitter-phone-help"
                     : "fitter-phone-help"
                 }
               />
