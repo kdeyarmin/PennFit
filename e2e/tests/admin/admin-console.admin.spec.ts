@@ -31,6 +31,6 @@ test("authenticated admin reaches the console (not sign-in)", async ({
 
   // The protected API is reachable with the session cookie (the SPA is
   // co-served by the same origin, so this is same-site).
-  const me = await page.request.get("/resupply-api/admin/me");
+  const me = await page.request.get("/resupply-api/me");
   expect(me.ok()).toBeTruthy();
 });
