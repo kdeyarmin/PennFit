@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   deleteMember,
@@ -73,20 +74,10 @@ const STATUS_TONE: Record<TeamStatus, string> = {
 export function AdminTeamPage() {
   return (
     <div className="space-y-6" data-testid="admin-team-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Team
-        </h1>
-        <p className="text-sm text-slate-600">
-          Invite admins and customer-service reps. Invitees receive a sign-up
-          link by email and must accept before they can log in. Revoking removes
-          access immediately; pending and revoked invites can also be deleted
-          entirely, as if they were never sent.
-        </p>
-      </header>
+      <PageHeader
+        title="Team"
+        description="Invite admins and customer-service reps. Invitees receive a sign-up link by email and must accept before they can log in. Revoking removes access immediately; pending and revoked invites can also be deleted entirely, as if they were never sent."
+      />
       <InviteCard />
       <TeamList />
     </div>

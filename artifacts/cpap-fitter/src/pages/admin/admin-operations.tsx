@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchOpsStatus,
   runAbandonedCartDispatcher,
@@ -43,19 +44,10 @@ export function AdminOperationsPage() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-operations-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Operations
-        </h1>
-        <p className="text-sm text-slate-600">
-          Vendor connectivity, dispatcher controls, and team summary. Run
-          dispatchers from here when ops needs to fire them out-of-band;
-          otherwise they'll fire on their normal cadence.
-        </p>
-      </header>
+      <PageHeader
+        title="Operations"
+        description="Vendor connectivity, dispatcher controls, and team summary. Run dispatchers from here when ops needs to fire them out-of-band; otherwise they'll fire on their normal cadence."
+      />
 
       {status.isPending ? (
         <Spinner />

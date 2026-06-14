@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { humanizeAction } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   isHighRiskFlag,
   listFeatureFlagActivity,
@@ -42,20 +43,10 @@ export function AdminControlCenterPage() {
       className="space-y-6 max-w-5xl"
       data-testid="admin-control-center-page"
     >
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Control Center
-        </h1>
-        <p className="text-sm text-slate-600">
-          On/off switches for major features. Flipping a switch takes effect
-          within a few seconds — no deploy required. Use these during incidents,
-          vendor outages, or when you need to pause a campaign without canceling
-          it.
-        </p>
-      </header>
+      <PageHeader
+        title="Control Center"
+        description="On/off switches for major features. Flipping a switch takes effect within a few seconds — no deploy required. Use these during incidents, vendor outages, or when you need to pause a campaign without canceling it."
+      />
       <SummaryTiles />
       <FlagsList />
       <ActivityPanel />
