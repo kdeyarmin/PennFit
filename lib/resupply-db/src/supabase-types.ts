@@ -1598,6 +1598,14 @@ export interface Database {
           total_allowed_cents: number;
           total_paid_cents: number;
           patient_responsibility_cents: number;
+          // Migration 0327: itemized breakdown of the patient-
+          // responsibility total, summed from the 835 PR-group CAS
+          // adjustments by CARC (1=deductible, 2=coinsurance, 3=copay).
+          // Informational; the authoritative balance stays
+          // patient_responsibility_cents. Default 0, accumulated per ERA.
+          deductible_cents: number;
+          coinsurance_cents: number;
+          copay_cents: number;
           submitted_at: string | null;
           decision_at: string | null;
           paid_at: string | null;

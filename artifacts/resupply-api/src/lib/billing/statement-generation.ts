@@ -92,6 +92,9 @@ export async function generatePatientBillingStatement(
     total_billed_cents: number;
     total_paid_cents: number;
     patient_responsibility_cents: number;
+    deductible_cents: number;
+    coinsurance_cents: number;
+    copay_cents: number;
   }> = [];
   let exhausted = false;
   for (let page = 0; page < MAX_CLAIM_PAGES; page++) {
@@ -99,7 +102,7 @@ export async function generatePatientBillingStatement(
       .schema("resupply")
       .from("insurance_claims")
       .select(
-        "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents",
+        "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents",
       )
       .eq("patient_id", input.patientId)
       .gt("patient_responsibility_cents", 0)
@@ -178,6 +181,9 @@ export async function generatePatientBillingStatement(
       billedCents: c.total_billed_cents,
       paidCents: c.total_paid_cents,
       patientResponsibilityCents: c.patient_responsibility_cents,
+      deductibleCents: c.deductible_cents,
+      coinsuranceCents: c.coinsurance_cents,
+      copayCents: c.copay_cents,
     })),
     payByDate: input.payByDate,
     paymentUrl: input.paymentUrl,
@@ -197,6 +203,9 @@ export async function generatePatientBillingStatement(
         billed_cents: c.total_billed_cents,
         paid_cents: c.total_paid_cents,
         patient_responsibility_cents: c.patient_responsibility_cents,
+        deductible_cents: c.deductible_cents,
+        coinsurance_cents: c.coinsurance_cents,
+        copay_cents: c.copay_cents,
       })) as unknown as Json,
       total_patient_responsibility_cents:
         result.totalPatientResponsibilityCents,
