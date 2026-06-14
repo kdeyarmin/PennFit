@@ -19,7 +19,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -140,12 +140,11 @@ const RESOLVED_REVIEW_STATES = new Set([
  * callers preserve their own error responses.
  */
 export async function loadDenialInputs(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: ReturnType<typeof getOrgScopedClient>,
 ): Promise<
   { ok: true; inputs: DenialClaimInput[] } | { ok: false; message: string }
 > {
   const { data: claims, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_name, total_billed_cents, total_paid_cents, denial_reason, decision_at",
@@ -163,7 +162,6 @@ export async function loadDenialInputs(
   const analysisByClaim = new Map<string, Record<string, unknown>>();
   if (claimIds.length > 0) {
     const { data: analyses, error: aErr } = await supabase
-      .schema("resupply")
       .from("claim_denial_analyses")
       .select(
         "claim_id, confidence, recommendation, can_auto_resubmit, review_status, created_at",
@@ -225,8 +223,14 @@ router.get(
     const parsed = querySchema.safeParse(req.query);
     const limit = parsed.success ? (parsed.data.limit ?? 200) : 200;
 
-    const supabase = getSupabaseServiceRoleClient();
-    const loaded = await loadDenialInputs(supabase);
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const loaded = await loadDenialInputs(db);
     if (!loaded.ok) {
       res.status(500).json({ error: "query_failed", message: loaded.message });
       return;

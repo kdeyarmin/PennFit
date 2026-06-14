@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -86,10 +86,16 @@ router.get(
   "/admin/billing/action-queue",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    const loaded = await loadDenialInputs(supabase);
+    const loaded = await loadDenialInputs(db);
     if (!loaded.ok) {
       res.status(500).json({ error: "query_failed", message: loaded.message });
       return;
@@ -99,8 +105,7 @@ router.get(
 
     // Secondary-eligible: primary-paid claims with a secondary coverage
     // on file and a remaining patient balance to bill onward.
-    const { data: secondaries, error: secErr } = await supabase
-      .schema("resupply")
+    const { data: secondaries, error: secErr } = await db
       .from("insurance_claims")
       .select("patient_responsibility_cents")
       .eq("payer_sequence", "primary")
