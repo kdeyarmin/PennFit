@@ -19,6 +19,7 @@ import { CheckCircle2, XCircle, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/admin/Button";
 import { Spinner } from "@/components/admin/Spinner";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   answerAdminProductQuestion,
   listAdminProductQuestions,
@@ -49,18 +50,10 @@ export function AdminProductQuestionsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-product-questions-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Product Q&amp;A
-        </h1>
-        <p className="text-sm text-slate-600">
-          Customer-submitted questions about shop products. Compose an answer to
-          publish on the product page; reject for spam or off-topic.
-        </p>
-      </header>
+      <PageHeader
+        title="Product Q&A"
+        description="Customer-submitted questions about shop products. Compose an answer to publish on the product page; reject for spam or off-topic."
+      />
       <div
         role="tablist"
         className="inline-flex items-center gap-1 p-1 rounded-lg bg-slate-100"

@@ -29,6 +29,7 @@ import {
   updateAdminShopReviewNote,
 } from "@/lib/admin/shop-reviews-api";
 import { useUrlState } from "@/hooks/use-url-state";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 type Tab = ReviewStatus | "all";
 
@@ -52,18 +53,10 @@ export function AdminShopReviewsPage() {
   });
   return (
     <div className="space-y-6" data-testid="admin-shop-reviews-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Shop reviews
-        </h1>
-        <p className="text-sm text-slate-600">
-          Approve or reject customer reviews before they appear on the public
-          shop.
-        </p>
-      </header>
+      <PageHeader
+        title="Shop reviews"
+        description="Approve or reject customer reviews before they appear on the public shop."
+      />
       <TabStrip tab={tab} onChange={setTab} />
       <ReviewsList key={tab} tab={tab} />
     </div>
