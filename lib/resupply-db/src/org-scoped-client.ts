@@ -1,11 +1,10 @@
 // Org-scoped Supabase client — the multi-tenant isolation chokepoint.
 //
 // See docs/multi-tenant-phase-0-engineering-plan-2026-06-14.md
-// (workstream C). The end-state of this module is a thin facade over
-// the service-role client whose `.from(table)` automatically:
+// (workstream C). A thin facade over the service-role client whose
+// `.from(table)` automatically:
 //   - appends `.eq("org_id", orgId)` to every select / update / delete,
-//   - injects `org_id: orgId` into every insert payload, and
-//   - sets the request-scoped GUC the RLS backstop reads.
+//   - injects `org_id: orgId` into every insert / upsert payload.
 //
 // Routing ALL tenant-scoped data access through this single function —
 // rather than calling `getSupabaseServiceRoleClient()` directly — is
@@ -14,19 +13,25 @@
 // isolation.sh` enforces that application code reaches the DB through
 // here.
 //
-// ─────────────────────────────────────────────────────────────────────
-// PR 0.1 — SKELETON / NO-OP.
+// SAFE TO LAND BEFORE THE CUTOVER: no application route imports this yet
+// (the cutover swaps the ~1,592 direct `getSupabaseServiceRoleClient()`
+// callsites over to it, per domain). Making the facade real therefore
+// changes NO production behavior — it just makes the chokepoint
+// functional and unit-tested, ready for the incremental cutover.
 //
-// At this stage `organizations` exists and is seeded with tenant #1, but
-// no table carries an enforced `org_id` yet (those columns land in the
-// per-domain backfill PRs, Phase 0 workstream A2). So this function is a
-// deliberate pass-through: it returns the service-role client unchanged
-// and does NOT yet filter or inject. That keeps the system single-tenant-
-// correct while giving callers the final signature to migrate to and
-// giving the CI guard a real symbol to point at. The auto-scoping facade
-// is wired in alongside the first domain backfill, once there is an
-// `org_id` column to scope on.
+// Tables operate in the `resupply` schema (where every tenant table
+// lives). Global / non-tenant tables (the `organizations` directory
+// itself, reference catalogs, the migration ledger) are NOT reached
+// through `.from()` — use `.raw()` for those and for RPC. Defaulting
+// `.from()` to ALWAYS scope is deliberate: failing toward over-scoping
+// is far safer than silently passing a tenant table through unscoped.
+//
+// NOTE: the GUC for the RLS backstop (`app.current_org_id`) is set with
+// the RLS-policy migration (workstream D), not here — service_role
+// bypasses RLS today, so the app-layer filter in this facade is the
+// real isolation guarantee.
 
+import type { Database } from "./supabase-types";
 import {
   getSupabaseServiceRoleClient,
   type ResupplySupabaseClient,
@@ -35,15 +40,102 @@ import {
 /** Stable slug of the seed tenant (the original operating company). */
 export const SEED_ORG_SLUG = "penn-home-medical";
 
+/** The tenant-anchor column present on every tenant-scoped table. */
+export const ORG_COLUMN = "org_id" as const;
+
+/** Names of the tenant-scoped tables in the `resupply` schema. */
+export type ResupplyTable = keyof Database["resupply"]["Tables"] & string;
+
+// The underlying PostgREST query builder is fluent and dynamically
+// typed across its many overloads; wrapping it faithfully without
+// re-deriving Supabase's full generic surface requires a small, local
+// escape hatch. Scoped to just the builder shim below.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type UnderlyingQueryBuilder = {
+  select: (columns?: string, options?: any) => any;
+  insert: (values: any, options?: any) => any;
+  update: (values: any, options?: any) => any;
+  upsert: (values: any, options?: any) => any;
+  delete: (options?: any) => any;
+};
+
 /**
- * Return a Supabase client scoped to the given tenant.
- *
- * PR 0.1: a no-op pass-through to the shared service-role client. The
- * `orgId` is accepted (and validated as present) so callers can be
- * migrated to the final signature now; automatic `org_id` filtering /
- * injection is added with the first domain backfill.
+ * A `.from(table)` result that auto-applies the tenant filter / tag.
+ * Each method returns the underlying PostgREST builder so the rest of
+ * the chain (`.eq`, `.order`, `.limit`, `.single`, `await`, …) works
+ * natively and unchanged.
  */
-export function getOrgScopedClient(orgId: string): ResupplySupabaseClient {
+class OrgScopedQueryBuilder {
+  constructor(
+    private readonly qb: UnderlyingQueryBuilder,
+    private readonly orgId: string,
+  ) {}
+
+  /** SELECT, scoped to the tenant. */
+  select(columns?: string, options?: any) {
+    return this.qb.select(columns, options).eq(ORG_COLUMN, this.orgId);
+  }
+
+  /** INSERT, with the tenant id forced onto every row. */
+  insert(values: any, options?: any) {
+    return this.qb.insert(this.tag(values), options);
+  }
+
+  /** UPDATE, scoped so a tenant can only update its own rows. The
+   *  tenant id is also forced onto the patch so an update can't move a
+   *  row to another tenant. */
+  update(values: any, options?: any) {
+    return this.qb
+      .update({ ...values, [ORG_COLUMN]: this.orgId }, options)
+      .eq(ORG_COLUMN, this.orgId);
+  }
+
+  /** UPSERT, with the tenant id forced onto every row. */
+  upsert(values: any, options?: any) {
+    return this.qb.upsert(this.tag(values), options);
+  }
+
+  /** DELETE, scoped so a tenant can only delete its own rows. */
+  delete(options?: any) {
+    return this.qb.delete(options).eq(ORG_COLUMN, this.orgId);
+  }
+
+  /** Force the tenant id onto a single payload or an array of them. */
+  private tag(values: any): any {
+    if (Array.isArray(values)) {
+      return values.map((v) => ({ ...v, [ORG_COLUMN]: this.orgId }));
+    }
+    return { ...values, [ORG_COLUMN]: this.orgId };
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** A Supabase facade bound to a single tenant. */
+export interface OrgScopedClient {
+  /** The tenant this client is bound to. */
+  readonly orgId: string;
+  /** Tenant-scoped access to a `resupply` table. */
+  from(table: ResupplyTable): OrgScopedQueryBuilder;
+  /**
+   * Escape hatch: the unscoped service-role client, for global /
+   * non-tenant tables (the `organizations` directory, reference
+   * catalogs) and RPC. Use sparingly and never for tenant data.
+   */
+  raw(): ResupplySupabaseClient;
+}
+
+/**
+ * Return a Supabase client scoped to the given tenant. Every
+ * `.from(table)` read/write is automatically constrained to (and
+ * tagged with) `orgId`.
+ *
+ * @param orgId  tenant id (resolved from `req.orgId` in auth middleware)
+ * @param client test seam — defaults to the shared service-role client
+ */
+export function getOrgScopedClient(
+  orgId: string,
+  client: ResupplySupabaseClient = getSupabaseServiceRoleClient(),
+): OrgScopedClient {
   if (!orgId || !orgId.trim()) {
     // Fail closed: a missing tenant must never silently widen to
     // "every tenant". Callers resolve `req.orgId` in auth middleware
@@ -53,9 +145,18 @@ export function getOrgScopedClient(orgId: string): ResupplySupabaseClient {
       "getOrgScopedClient requires a non-empty orgId (tenant context missing).",
     );
   }
-  // No-op for now — see the module header. Once tables carry `org_id`,
-  // this returns a scoping facade instead of the raw client.
-  return getSupabaseServiceRoleClient();
+  return {
+    orgId,
+    from(table: ResupplyTable): OrgScopedQueryBuilder {
+      const qb = client
+        .schema("resupply")
+        .from(table) as unknown as UnderlyingQueryBuilder;
+      return new OrgScopedQueryBuilder(qb, orgId);
+    },
+    raw(): ResupplySupabaseClient {
+      return client;
+    },
+  };
 }
 
 let cachedSeedOrgId: string | null = null;
