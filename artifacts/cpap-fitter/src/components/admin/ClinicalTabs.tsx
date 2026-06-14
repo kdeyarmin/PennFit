@@ -15,6 +15,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceCoverage,
@@ -557,7 +558,7 @@ function AddInsuranceCoverageModal({
             <option value="tertiary">Tertiary</option>
           </select>
         </div>
-        <LabeledInput
+        <LabeledPayerInput
           label="Payer"
           value={payerName}
           onChange={setPayerName}
@@ -826,7 +827,7 @@ function AddPriorAuthorizationModal({
           placeholder="E0601 or A7030-KX"
           required
         />
-        <LabeledInput
+        <LabeledPayerInput
           label="Payer"
           value={payerName}
           onChange={setPayerName}
@@ -912,6 +913,35 @@ function LabeledInput({
         step={step}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
+function LabeledPayerInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <Label>
+        {label}
+        {required && " *"}
+      </Label>
+      <PayerNameAutocomplete
+        value={value}
+        onValueChange={onChange}
         placeholder={placeholder}
         aria-label={label}
       />

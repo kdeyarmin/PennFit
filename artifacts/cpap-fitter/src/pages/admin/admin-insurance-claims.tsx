@@ -36,6 +36,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
@@ -316,9 +317,9 @@ function CreateClaimDialog({
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs font-medium block mb-1">Payer name</span>
-            <Input
+            <PayerNameAutocomplete
               value={payerName}
-              onChange={(e) => setPayerName(e.target.value)}
+              onValueChange={setPayerName}
               placeholder="e.g. Aetna, Medicare Part B"
               maxLength={120}
             />

@@ -36,6 +36,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input, Label, Select } from "@/components/admin/Input";
+import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
 import {
   acceptReferralReview,
   createReferralReviewFromUpload,
@@ -1297,10 +1298,10 @@ function InsuranceFields({
     <div className="grid grid-cols-2 gap-3">
       <div>
         <Label htmlFor={`${idPrefix}-payer`}>Payer</Label>
-        <Input
+        <PayerNameAutocomplete
           id={`${idPrefix}-payer`}
           value={value.payerName}
-          onChange={(e) => onChange({ payerName: e.target.value })}
+          onValueChange={(payerName) => onChange({ payerName })}
         />
       </div>
       <div>
