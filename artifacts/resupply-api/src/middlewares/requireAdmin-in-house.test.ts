@@ -57,6 +57,11 @@ vi.mock("@workspace/resupply-db", () => ({
       }),
     }),
   }),
+  // requireAdmin also resolves the tenant org_id (multi-tenant Phase 0).
+  // The mock replaces the whole module, so this must be provided or the
+  // `await resolveSeedOrgId()` call throws and the gate 500s.
+  resolveSeedOrgId: async () => "org_seed_test",
+  __resetSeedOrgIdForTests: () => {},
 }));
 
 import { requireAdmin, requireAdminOnly } from "./requireAdmin";

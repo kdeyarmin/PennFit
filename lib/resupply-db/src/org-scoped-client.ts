@@ -181,17 +181,27 @@ let cachedSeedOrgId: string | null = null;
  */
 export async function resolveSeedOrgId(): Promise<string | null> {
   if (cachedSeedOrgId) return cachedSeedOrgId;
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("organizations")
-    .select("id")
-    .eq("slug", SEED_ORG_SLUG)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data?.id) return null;
-  cachedSeedOrgId = data.id;
-  return cachedSeedOrgId;
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("slug", SEED_ORG_SLUG)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.id) return null;
+    cachedSeedOrgId = data.id;
+    return cachedSeedOrgId;
+  } catch {
+    // Honor the documented contract: return null rather than throwing.
+    // The service-role client can throw if its env isn't configured (or
+    // the query builder can throw on a transient client error). Callers
+    // (the auth middleware) treat a null org as "attach none and
+    // continue" — org_id is not yet an access gate, so a resolution
+    // hiccup must NOT take down the admin / signed-in surface.
+    return null;
+  }
 }
 
 /** Reset the cached seed-org id. Tests only. */
