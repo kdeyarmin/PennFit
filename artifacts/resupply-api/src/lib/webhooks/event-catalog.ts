@@ -113,6 +113,20 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDefinition[] = [
     },
     carriesPatientId: false,
   },
+  {
+    type: "claim.secondary_drafted",
+    description:
+      "Auto-workflow engine drafted a secondary / COB claim for a paid " +
+      "primary that left a patient-responsibility balance.",
+    publisher: "lib/billing/auto-workflow-engine.ts",
+    payloadFields: {
+      claim_id: "uuid",
+      primary_claim_id: "uuid",
+      patient_responsibility_cents: "number",
+      line_count: "number",
+    },
+    carriesPatientId: false,
+  },
   // ── ERA + payment ──
   {
     type: "era.ingested",

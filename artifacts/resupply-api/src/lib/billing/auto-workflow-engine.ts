@@ -20,6 +20,14 @@
 //      generate one complete patient statement with real line items and
 //      a persisted PDF before publishing the due events.
 //
+//   4. DRAFT secondary / COB claims  (flag: billing.auto_secondary_claims)
+//      For each PAID primary claim that carries a secondary coverage + a
+//      patient-responsibility balance and hasn't yet spawned a secondary,
+//      draft the secondary claim (snapshotting the primary's adjudication
+//      for the 837 2320/2330 COB loop). Status 'draft' — a biller reviews
+//      + submits through the normal batch path; we never auto-SUBMIT. Opt-
+//      in: seeded OFF, fail-soft when the flag is unset/disabled.
+//
 // Each pass is independently bounded — a slow OpenAI call in pass 1
 // doesn't block pass 2's denials from being analyzed.
 //
@@ -37,6 +45,13 @@ import {
   StatementGenerationError,
 } from "./statement-generation";
 import { scoreAndPersist } from "./heuristic-denial-scorer";
+import {
+  filterSecondaryEligible,
+  generateSecondaryClaimDraft,
+  SECONDARY_CLAIM_SELECT,
+  type EligibleCandidate,
+} from "./secondary-claim-generator";
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
@@ -51,6 +66,7 @@ export interface AutoWorkflowStats {
   scrubsTriggered: number;
   denialAnalysesTriggered: number;
   statementsQueued: number;
+  secondaryClaimsDrafted: number;
   errors: number;
 }
 
@@ -59,12 +75,14 @@ export async function runAutoWorkflowPass(): Promise<AutoWorkflowStats> {
     scrubsTriggered: 0,
     denialAnalysesTriggered: 0,
     statementsQueued: 0,
+    secondaryClaimsDrafted: 0,
     errors: 0,
   };
   const supabase = getSupabaseServiceRoleClient();
   await runScrubPass(supabase, stats);
   await runDenialAnalysisPass(supabase, stats);
   await runStatementPass(supabase, stats);
+  await runSecondaryClaimPass(supabase, stats);
   return stats;
 }
 
@@ -329,6 +347,107 @@ async function runStatementPass(
         "auto-workflow.statements: generation failed",
       );
       continue;
+    }
+  }
+}
+
+// ── Pass 4: draft secondary / COB claims for paid primaries ─────────
+
+// Exported for focused unit testing; called by runAutoWorkflowPass above.
+export async function runSecondaryClaimPass(
+  supabase: SupabaseClient,
+  stats: AutoWorkflowStats,
+): Promise<void> {
+  // Opt-in: auto-drafting claims is a billing action, so it stays behind
+  // a flag that's seeded OFF. When disabled the biller still uses the
+  // manual COB worklist (/admin/billing/secondary-eligible).
+  if (!(await isFeatureEnabled("billing.auto_secondary_claims"))) return;
+
+  // Paid primaries that carry a secondary coverage — the COB candidates.
+  // `filterSecondaryEligible` re-checks balance/sequence and drops any
+  // primary that already spawned a secondary, so this is the same set the
+  // manual worklist surfaces.
+  const { data: candidates, error: candErr } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select(SECONDARY_CLAIM_SELECT)
+    .eq("payer_sequence", "primary")
+    .eq("status", "paid")
+    .not("secondary_coverage_id", "is", null)
+    .order("patient_responsibility_cents", { ascending: false })
+    .limit(MAX_PER_PASS);
+  if (candErr) {
+    stats.errors += 1;
+    logger.warn(
+      { err: candErr.message },
+      "auto-workflow.secondary: candidate query failed",
+    );
+    return;
+  }
+  const rows = (candidates ?? []) as unknown as EligibleCandidate[];
+  if (rows.length === 0) return;
+
+  // Which of these already have a secondary? One query, then filter in
+  // memory — mirrors the GET worklist's dedupe. A failed lookup must NOT
+  // proceed with an empty `existing` set: that would attempt a duplicate
+  // create for every candidate (caught only by the unique constraint).
+  const ids = rows.map((c) => c.id);
+  const existing = new Set<string>();
+  const { data: secRows, error: secErr } = await supabase
+    .schema("resupply")
+    .from("insurance_claims")
+    .select("primary_claim_id")
+    .eq("payer_sequence", "secondary")
+    .in("primary_claim_id", ids);
+  if (secErr) {
+    stats.errors += 1;
+    logger.warn(
+      { err: secErr.message },
+      "auto-workflow.secondary: existing-secondary lookup failed",
+    );
+    return;
+  }
+  for (const r of (secRows ?? []) as Array<{
+    primary_claim_id?: string | null;
+  }>) {
+    if (r.primary_claim_id) existing.add(r.primary_claim_id);
+  }
+
+  const eligible = filterSecondaryEligible(rows, existing);
+  for (const item of eligible) {
+    try {
+      const result = await generateSecondaryClaimDraft(supabase, item.claimId);
+      if (result.status === "created") {
+        stats.secondaryClaimsDrafted += 1;
+        void publishEvent({
+          eventType: "claim.secondary_drafted",
+          payload: {
+            claim_id: result.secondaryClaimId,
+            primary_claim_id: item.claimId,
+            patient_responsibility_cents: result.cob.patientRespCents,
+            line_count: result.lineCount,
+          },
+        });
+      } else if (
+        result.status === "query_failed" ||
+        result.status === "create_failed" ||
+        result.status === "line_copy_failed"
+      ) {
+        // `exists` / `not_eligible` / `not_found` are benign no-ops (a
+        // concurrent generate or a candidate that changed under us); only
+        // real failures bump the error counter.
+        stats.errors += 1;
+        logger.warn(
+          { status: result.status, primaryClaimId: item.claimId },
+          "auto-workflow.secondary: draft failed",
+        );
+      }
+    } catch (err) {
+      stats.errors += 1;
+      logger.warn(
+        { err, primaryClaimId: item.claimId },
+        "auto-workflow.secondary: per-claim failure",
+      );
     }
   }
 }
