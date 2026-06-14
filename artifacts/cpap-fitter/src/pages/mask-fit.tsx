@@ -25,7 +25,7 @@ const OUTCOMES = ["good", "leaking", "uncomfortable"] as const;
 type Outcome = (typeof OUTCOMES)[number];
 
 export function MaskFitLanding() {
-  useDocumentTitle("Thanks for the feedback — PennPaps");
+  useDocumentTitle("Thanks for the feedback");
   const [, setLocation] = useLocation();
   const [token] = useState(() => readSearchParam("t") ?? "");
   const [fit] = useState<Outcome | null>(() => {
