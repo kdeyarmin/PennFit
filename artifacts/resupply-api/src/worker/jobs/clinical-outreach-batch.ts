@@ -14,6 +14,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
+import { resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { runClinicalOutreachBatch } from "../../lib/clinical/clinical-outreach.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
@@ -47,7 +48,17 @@ export async function registerClinicalOutreachBatchJob(
       );
       return;
     }
-    const result = await runClinicalOutreachBatch();
+    // Single-tenant bridge: no per-tenant job payload yet, so sweep the
+    // one seed org. Becomes a per-org loop when a 2nd tenant lands.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      logger.warn(
+        { queue: CLINICAL_OUTREACH_BATCH_JOB },
+        "clinical outreach batch: could not resolve seed org — skipping",
+      );
+      return;
+    }
+    const result = await runClinicalOutreachBatch({ orgId });
     await logAudit({
       action: "clinical.outreach.batch.completed",
       adminEmail: SYSTEM_ACTOR_EMAIL,
