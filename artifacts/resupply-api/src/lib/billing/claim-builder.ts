@@ -532,7 +532,7 @@ async function lookupFeeSchedule(
     .schema("resupply")
     .from("payer_fee_schedules")
     .select(
-      "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at",
+      "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at, org_id",
     )
     .eq("payer_profile_id", payerProfileId)
     .eq("hcpcs_code", hcpcsCode)

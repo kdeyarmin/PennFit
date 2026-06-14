@@ -252,6 +252,7 @@ export interface Database {
       };
       patient_checkin_attempts: {
         Row: {
+          org_id: string | null;
           id: string;
           journey_id: string;
           patient_id: string;
@@ -360,6 +361,7 @@ export interface Database {
       // /admin/system/config.
       app_config: {
         Row: {
+          org_id: string | null;
           key: string;
           value: string;
           updated_by_user_id: string | null;
@@ -406,6 +408,7 @@ export interface Database {
       };
       admin_users: {
         Row: {
+          org_id: string | null;
           id: string;
           email_lower: string;
           role:
@@ -844,6 +847,7 @@ export interface Database {
       };
       insurance_leads: {
         Row: {
+          org_id: string | null;
           id: string;
           full_name: string;
           email: string;
@@ -875,6 +879,7 @@ export interface Database {
       };
       fitter_leads: {
         Row: {
+          org_id: string | null;
           id: string;
           email: string;
           marketing_opt_in: boolean;
@@ -1758,6 +1763,7 @@ export interface Database {
       };
       payer_profiles: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -1864,6 +1870,7 @@ export interface Database {
       };
       payer_fee_schedules: {
         Row: {
+          org_id: string | null;
           id: string;
           payer_profile_id: string;
           hcpcs_code: string;
@@ -3203,6 +3210,7 @@ export interface Database {
       };
       claim_scrub_results: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           verdict: "ready" | "fixable" | "blocking" | "errored";
@@ -3873,6 +3881,7 @@ export interface Database {
       };
       feature_flags: {
         Row: {
+          org_id: string | null;
           key: string;
           enabled: boolean;
           description: string;
