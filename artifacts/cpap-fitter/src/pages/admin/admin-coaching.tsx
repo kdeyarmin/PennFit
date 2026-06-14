@@ -307,7 +307,7 @@ function PlanRow({
                     );
                     // Cancelled or empty → no-op (don't fire the mutation).
                     if (!note || note.trim().length === 0) return;
-                    transition.mutate({ next: n, resolutionNote: note });
+                    transition.mutate({ next: n, resolutionNote: note.trim() });
                     return;
                   }
                   transition.mutate({ next: n });

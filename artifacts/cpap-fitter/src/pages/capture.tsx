@@ -300,12 +300,13 @@ export function Capture() {
           <span className="font-semibold tracking-wide">Capture</span>
         </div>
         {/*
-         * Patient-friendly, single status line. The raw "Camera status:
-         * ready/warming up" + "Vision runtime: checking/ready/error"
-         * readout leaked developer jargon onto the highest-anxiety
-         * screen of the funnel ("Vision runtime: error" with no
-         * explanation). We collapse it to one plain-language line and
-         * announce it politely to assistive tech.
+         * Patient-friendly, single status line. The previous readout
+         * surfaced raw developer state ("Camera status: ready/warming
+         * up" and "Vision runtime: checking/ready/degraded") onto the
+         * highest-anxiety screen of the funnel — e.g. a literal
+         * "Vision runtime: degraded" with no explanation. We collapse
+         * it to one plain-language line and announce it politely to
+         * assistive tech.
          */}
         <div
           className="mt-2 text-xs"
