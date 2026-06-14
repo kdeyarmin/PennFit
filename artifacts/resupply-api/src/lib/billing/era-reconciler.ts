@@ -147,7 +147,7 @@ async function applyClaim(
     .schema("resupply")
     .from("insurance_claims")
     .select(
-      "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, denial_reason, decision_at",
+      "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, denial_reason, decision_at",
     )
     .eq("id", eraClaim.patientControlNumber)
     .limit(1)
@@ -260,6 +260,13 @@ async function applyClaim(
   const newTotalPaid = claim.total_paid_cents + eraClaim.paidCents;
   const newPatientResp =
     claim.patient_responsibility_cents + eraClaim.patientResponsibilityCents;
+  // Itemize the patient-responsibility delta from the 835 PR-group CAS
+  // adjustments (CARC 1/2/3) and accumulate onto the running breakdown.
+  // Informational — patient_responsibility_cents stays authoritative.
+  const respDelta = patientRespBreakdown(eraClaim);
+  const newDeductible = claim.deductible_cents + respDelta.deductibleCents;
+  const newCoinsurance = claim.coinsurance_cents + respDelta.coinsuranceCents;
+  const newCopay = claim.copay_cents + respDelta.copayCents;
 
   let newStatus: ClaimRow["status"] = claim.status;
   const denialReason = eraClaim.isDenied ? composeDenialReason(eraClaim) : null;
@@ -280,6 +287,9 @@ async function applyClaim(
       total_allowed_cents: newTotalAllowed,
       total_paid_cents: newTotalPaid,
       patient_responsibility_cents: newPatientResp,
+      deductible_cents: newDeductible,
+      coinsurance_cents: newCoinsurance,
+      copay_cents: newCopay,
       status: newStatus,
       // Stamp the decision timestamp the first time the claim lands on
       // a paid/denied decision. The prior `status === "submitted"` gate
@@ -426,6 +436,45 @@ function sumPositive(adjustments: Adjustment[], ...groups: string[]): number {
   return adjustments
     .filter((a) => groups.includes(a.groupCode))
     .reduce((s, a) => s + Math.max(0, a.amountCents), 0);
+}
+
+/** Itemized patient-responsibility components, in cents. */
+export interface PatientRespBreakdown {
+  deductibleCents: number;
+  coinsuranceCents: number;
+  copayCents: number;
+}
+
+// CARC reason codes inside the PR (patient-responsibility) adjustment
+// group that map to a named cost-share bucket.
+const PR_DEDUCTIBLE_CARC = "1";
+const PR_COINSURANCE_CARC = "2";
+const PR_COPAY_CARC = "3";
+
+/**
+ * Sum the 835 PR-group CAS adjustments into deductible / coinsurance /
+ * copay, across BOTH the claim-level CAS and every service line's CAS
+ * (the payer can itemize at either level). Only the named CARCs
+ * (1/2/3) are bucketed; any other PR reason code stays folded into the
+ * authoritative `patientResponsibilityCents` total and is intentionally
+ * not double-counted here.
+ */
+export function patientRespBreakdown(
+  eraClaim: Pick<Parsed835Claim, "adjustments" | "serviceLines">,
+): PatientRespBreakdown {
+  const all: Adjustment[] = [
+    ...eraClaim.adjustments,
+    ...eraClaim.serviceLines.flatMap((l) => l.adjustments),
+  ];
+  const sumByReason = (reason: string) =>
+    all
+      .filter((a) => a.groupCode === "PR" && a.reasonCode === reason)
+      .reduce((s, a) => s + Math.max(0, a.amountCents), 0);
+  return {
+    deductibleCents: sumByReason(PR_DEDUCTIBLE_CARC),
+    coinsuranceCents: sumByReason(PR_COINSURANCE_CARC),
+    copayCents: sumByReason(PR_COPAY_CARC),
+  };
 }
 
 function hasDenial(adjustments: Adjustment[]): boolean {
