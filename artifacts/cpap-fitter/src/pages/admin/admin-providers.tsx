@@ -30,6 +30,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import { Pagination } from "@/components/admin/Pagination";
+import { AdminModal } from "@/components/admin/AdminModal";
 import {
   createProvider,
   listProviderCaseload,
@@ -217,48 +218,32 @@ function CaseloadModal({
     queryFn: () => listProviderCaseload(provider.id),
   });
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+    <AdminModal
+      title={`Caseload — ${provider.legalName}`}
+      description={
+        <>
+          Patients with a prescription written by NPI{" "}
+          <span className="font-mono">{provider.npi}</span>. Up to 200, most
+          recent first.
+        </>
+      }
+      onClose={onClose}
+      className="max-w-3xl"
     >
-      <div
-        className="w-full max-w-3xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Caseload — {provider.legalName}
-              </h2>
-              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                Patients with a prescription written by NPI{" "}
-                <span className="font-mono">{provider.npi}</span>. Up to 200,
-                most recent first.
-              </p>
-            </div>
-            <Button intent="ghost" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-          {isPending ? (
-            <Spinner />
-          ) : isError ? (
-            <ErrorPanel error={error} onRetry={() => void refetch()} />
-          ) : data.patients.length === 0 ? (
-            <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-              No patients currently on this provider&apos;s caseload.
-            </p>
-          ) : (
-            <CaseloadTable rows={data.patients} />
-          )}
-        </div>
+      <div className="space-y-3">
+        {isPending ? (
+          <Spinner />
+        ) : isError ? (
+          <ErrorPanel error={error} onRetry={() => void refetch()} />
+        ) : data.patients.length === 0 ? (
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
+            No patients currently on this provider&apos;s caseload.
+          </p>
+        ) : (
+          <CaseloadTable rows={data.patients} />
+        )}
       </div>
-    </div>
+    </AdminModal>
   );
 }
 
@@ -445,239 +430,225 @@ function AddProviderModal({
     !create.isPending;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={() => !lookup.isPending && !create.isPending && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="add-provider-title"
+    <AdminModal
+      title="Add provider"
+      onClose={() => {
+        if (!lookup.isPending && !create.isPending) onClose();
+      }}
+      className="max-w-xl"
     >
-      <div
-        className="w-full max-w-xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
-          <h2
-            id="add-provider-title"
-            className="text-lg font-semibold"
-            style={{ color: "hsl(var(--ink-1))" }}
-          >
-            Add provider
-          </h2>
-          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Type the NPI and click Look up to pull the provider&apos;s name,
-            taxonomy, and contact info from the public NPPES registry. If the
-            lookup misses or the registry is down, fill out the whole record by
-            hand — every field below is editable.
-          </p>
+      <div className="space-y-4">
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Type the NPI and click Look up to pull the provider&apos;s name,
+          taxonomy, and contact info from the public NPPES registry. If the
+          lookup misses or the registry is down, fill out the whole record by
+          hand — every field below is editable.
+        </p>
 
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: "hsl(var(--penn-navy))" }}
-              >
-                NPI (10 digits)
-              </label>
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <label
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--penn-navy))" }}
+            >
+              NPI (10 digits)
+            </label>
+            <Input
+              value={npi}
+              // Strip formatting as the user types/pastes: NPIs copied
+              // from an EHR or PDF often carry dashes, spaces, or an
+              // "NPI:" prefix. With a bare maxLength the separators
+              // consumed the 10-char budget and silently truncated the
+              // digits, leaving the Look up button disabled with no
+              // explanation.
+              onChange={(e) =>
+                setNpi(e.target.value.replace(/\D/g, "").slice(0, 10))
+              }
+              placeholder="1234567893"
+              aria-label="NPI (10 digits)"
+              inputMode="numeric"
+            />
+          </div>
+          <Button
+            intent="secondary"
+            disabled={!npiValid || lookup.isPending}
+            onClick={() => lookup.mutate()}
+          >
+            {lookup.isPending ? "Looking up…" : "Look up"}
+          </Button>
+        </div>
+
+        {(autofilled || npi.trim().length > 0) && (
+          <div className="space-y-3 pt-3 border-t border-border/40">
+            <div>
+              <FieldLabel>Legal name *</FieldLabel>
               <Input
-                value={npi}
-                // Strip formatting as the user types/pastes: NPIs copied
-                // from an EHR or PDF often carry dashes, spaces, or an
-                // "NPI:" prefix. With a bare maxLength the separators
-                // consumed the 10-char budget and silently truncated the
-                // digits, leaving the Look up button disabled with no
-                // explanation.
-                onChange={(e) =>
-                  setNpi(e.target.value.replace(/\D/g, "").slice(0, 10))
-                }
-                placeholder="1234567893"
-                aria-label="NPI (10 digits)"
-                inputMode="numeric"
+                value={legalName}
+                onChange={(e) => setLegalName(e.target.value)}
+                aria-label="Legal name"
+                maxLength={200}
               />
             </div>
-            <Button
-              intent="secondary"
-              disabled={!npiValid || lookup.isPending}
-              onClick={() => lookup.mutate()}
-            >
-              {lookup.isPending ? "Looking up…" : "Look up"}
-            </Button>
-          </div>
-
-          {(autofilled || npi.trim().length > 0) && (
-            <div className="space-y-3 pt-3 border-t border-border/40">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <FieldLabel>Legal name *</FieldLabel>
+                <FieldLabel>Taxonomy code</FieldLabel>
                 <Input
-                  value={legalName}
-                  onChange={(e) => setLegalName(e.target.value)}
-                  aria-label="Legal name"
+                  value={taxonomyCode}
+                  onChange={(e) => setTaxonomyCode(e.target.value)}
+                  placeholder="332B00000X"
+                  aria-label="Taxonomy code"
+                  maxLength={16}
+                />
+              </div>
+              <div>
+                <FieldLabel>Practice name</FieldLabel>
+                <Input
+                  value={practiceName}
+                  onChange={(e) => setPracticeName(e.target.value)}
+                  placeholder="Sleep Health Associates"
+                  aria-label="Practice name"
                   maxLength={200}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <FieldLabel>Taxonomy code</FieldLabel>
-                  <Input
-                    value={taxonomyCode}
-                    onChange={(e) => setTaxonomyCode(e.target.value)}
-                    placeholder="332B00000X"
-                    aria-label="Taxonomy code"
-                    maxLength={16}
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Practice name</FieldLabel>
-                  <Input
-                    value={practiceName}
-                    onChange={(e) => setPracticeName(e.target.value)}
-                    placeholder="Sleep Health Associates"
-                    aria-label="Practice name"
-                    maxLength={200}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <FieldLabel>Phone (E.164)</FieldLabel>
-                  <Input
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+12155551234"
-                    aria-label="Phone (E.164)"
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Fax (E.164)</FieldLabel>
-                  <Input
-                    value={fax}
-                    onChange={(e) => setFax(e.target.value)}
-                    placeholder="+12155551235"
-                    aria-label="Fax (E.164)"
-                  />
-                </div>
-              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <FieldLabel>Email</FieldLabel>
+                <FieldLabel>Phone (E.164)</FieldLabel>
                 <Input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="office@example.com"
-                  aria-label="Email"
-                  type="email"
-                  maxLength={200}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+12155551234"
+                  aria-label="Phone (E.164)"
                 />
               </div>
+              <div>
+                <FieldLabel>Fax (E.164)</FieldLabel>
+                <Input
+                  value={fax}
+                  onChange={(e) => setFax(e.target.value)}
+                  placeholder="+12155551235"
+                  aria-label="Fax (E.164)"
+                />
+              </div>
+            </div>
+            <div>
+              <FieldLabel>Email</FieldLabel>
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="office@example.com"
+                aria-label="Email"
+                type="email"
+                maxLength={200}
+              />
+            </div>
 
-              <div className="pt-1">
-                <p
-                  className="text-xs font-semibold mb-2"
-                  style={{ color: "hsl(var(--penn-navy))" }}
-                >
-                  Practice address
-                </p>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <FieldLabel>Address line 1</FieldLabel>
-                      <Input
-                        value={addrLine1}
-                        onChange={(e) => setAddrLine1(e.target.value)}
-                        aria-label="Address line 1"
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>Address line 2</FieldLabel>
-                      <Input
-                        value={addrLine2}
-                        onChange={(e) => setAddrLine2(e.target.value)}
-                        aria-label="Address line 2"
-                      />
-                    </div>
+            <div className="pt-1">
+              <p
+                className="text-xs font-semibold mb-2"
+                style={{ color: "hsl(var(--penn-navy))" }}
+              >
+                Practice address
+              </p>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Address line 1</FieldLabel>
+                    <Input
+                      value={addrLine1}
+                      onChange={(e) => setAddrLine1(e.target.value)}
+                      aria-label="Address line 1"
+                    />
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="col-span-2">
-                      <FieldLabel>City</FieldLabel>
-                      <Input
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        aria-label="City"
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>State</FieldLabel>
-                      <Input
-                        value={stateRegion}
-                        onChange={(e) => setStateRegion(e.target.value)}
-                        placeholder="PA"
-                        aria-label="State"
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>ZIP</FieldLabel>
-                      <Input
-                        value={postalCode}
-                        onChange={(e) => setPostalCode(e.target.value)}
-                        placeholder="19103"
-                        aria-label="ZIP / postal code"
-                      />
-                    </div>
+                  <div>
+                    <FieldLabel>Address line 2</FieldLabel>
+                    <Input
+                      value={addrLine2}
+                      onChange={(e) => setAddrLine2(e.target.value)}
+                      aria-label="Address line 2"
+                    />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <FieldLabel>Country</FieldLabel>
-                      <Input
-                        value={country}
-                        onChange={(e) => setCountry(e.target.value)}
-                        placeholder="US"
-                        aria-label="Country"
-                      />
-                    </div>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="col-span-2">
+                    <FieldLabel>City</FieldLabel>
+                    <Input
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      aria-label="City"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>State</FieldLabel>
+                    <Input
+                      value={stateRegion}
+                      onChange={(e) => setStateRegion(e.target.value)}
+                      placeholder="PA"
+                      aria-label="State"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>ZIP</FieldLabel>
+                    <Input
+                      value={postalCode}
+                      onChange={(e) => setPostalCode(e.target.value)}
+                      placeholder="19103"
+                      aria-label="ZIP / postal code"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Country</FieldLabel>
+                    <Input
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      placeholder="US"
+                      aria-label="Country"
+                    />
                   </div>
                 </div>
               </div>
-
-              <div>
-                <FieldLabel>Notes</FieldLabel>
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  aria-label="Notes"
-                  maxLength={2000}
-                />
-              </div>
-
-              {autofilled && (
-                <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                  Will save as <strong>NPPES verified</strong>. Edits to the
-                  autofilled values are kept.
-                </p>
-              )}
             </div>
-          )}
 
-          {(error || formatError) && (
-            <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-              {error ?? formatError}
+            <div>
+              <FieldLabel>Notes</FieldLabel>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                aria-label="Notes"
+                maxLength={2000}
+              />
             </div>
-          )}
 
-          <div className="flex justify-end gap-2 pt-3 border-t border-border/40">
-            <Button intent="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!canSave}
-              onClick={() => create.mutate()}
-              isLoading={create.isPending}
-            >
-              Save provider
-            </Button>
+            {autofilled && (
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Will save as <strong>NPPES verified</strong>. Edits to the
+                autofilled values are kept.
+              </p>
+            )}
           </div>
+        )}
+
+        {(error || formatError) && (
+          <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+            {error ?? formatError}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-border/40">
+          <Button intent="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!canSave}
+            onClick={() => create.mutate()}
+            isLoading={create.isPending}
+          >
+            Save provider
+          </Button>
         </div>
       </div>
-    </div>
+    </AdminModal>
   );
 }
