@@ -18,6 +18,8 @@ import { RefreshCw, Webhook } from "lucide-react";
 
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   listWebhookDeliveries,
   retryWebhookDelivery,
@@ -116,12 +118,13 @@ export function AdminWebhookDeliveriesPage() {
       </div>
 
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load deliveries:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load deliveries"
+        />
       ) : query.data.deliveries.length === 0 ? (
         <div className="text-sm text-slate-500" data-testid="deliveries-empty">
           No {filter === "all" ? "" : `${filter} `}deliveries.

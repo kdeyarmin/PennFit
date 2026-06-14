@@ -16,6 +16,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   fetchOpsStatus,
   runAbandonedCartDispatcher,
@@ -55,12 +58,13 @@ export function AdminOperationsPage() {
       </header>
 
       {status.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : status.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load status:{" "}
-          {status.error instanceof Error ? status.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={status.error}
+          onRetry={() => void status.refetch()}
+          title="Couldn't load status"
+        />
       ) : status.data ? (
         <Body data={status.data} onRefresh={() => void status.refetch()} />
       ) : null}

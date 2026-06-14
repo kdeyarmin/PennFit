@@ -11,6 +11,8 @@ import { Link } from "wouter";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { humanizeStatus } from "@/components/admin/Badge";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   fetchOutboundMessages,
   type OutboundChannelFilter,
@@ -167,12 +169,13 @@ export function AdminOutboundMessagesPage() {
       ) : null}
 
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load outbound messages:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load outbound messages"
+        />
       ) : data ? (
         data.items.length === 0 ? (
           <div

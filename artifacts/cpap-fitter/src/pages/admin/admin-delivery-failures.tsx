@@ -10,6 +10,8 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
 import { humanizeAction, humanizeStatus } from "@/components/admin/Badge";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   fetchDeliveryFailures,
   type AuditFailureEvent,
@@ -93,12 +95,13 @@ export function AdminDeliveryFailuresPage() {
       </div>
 
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load failures:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load failures"
+        />
       ) : query.data ? (
         tab === "messages" ? (
           <MessageFailuresTable data={query.data} />

@@ -26,6 +26,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import {
   deleteMember,
@@ -106,14 +108,14 @@ function TeamList() {
     };
   }, [query.data]);
 
-  if (query.isPending)
-    return <div className="text-sm text-slate-500">Loading…</div>;
+  if (query.isPending) return <Spinner />;
   if (query.isError) {
     return (
-      <div className="text-sm text-rose-700" role="alert">
-        Couldn&apos;t load team:{" "}
-        {query.error instanceof Error ? query.error.message : "unknown error"}.
-      </div>
+      <ErrorPanel
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        title="Couldn't load team"
+      />
     );
   }
 
