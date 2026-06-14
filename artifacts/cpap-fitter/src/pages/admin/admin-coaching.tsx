@@ -227,24 +227,24 @@ function PlanRow({
   onChanged: () => void;
 }) {
   const transition = useMutation({
-    mutationFn: async (next: CoachingStatus) => {
+    // The terminal-state resolution note is collected in the click
+    // handler (NOT here) and passed in, so cancelling the prompt is a
+    // clean no-op. Collecting it inside mutationFn meant a cancelled
+    // prompt threw — surfacing a spurious "resolution note required"
+    // error even though the user never confirmed the transition.
+    mutationFn: async ({
+      next,
+      resolutionNote,
+    }: {
+      next: CoachingStatus;
+      resolutionNote?: string | null;
+    }) => {
       const isTerminal = next === "resolved" || next === "abandoned";
-      let resolutionNote: string | null | undefined;
-      let latestOutreachAt: string | null | undefined;
-      if (isTerminal) {
-        const note = window.prompt(
-          `Closing the plan as "${next}". Resolution note (required):`,
-        );
-        if (!note || note.trim().length === 0) {
-          throw new Error("A resolution note is required to close a plan.");
-        }
-        resolutionNote = note;
-      } else if (next === "outreach_made") {
-        latestOutreachAt = new Date().toISOString();
-      }
+      const latestOutreachAt =
+        next === "outreach_made" ? new Date().toISOString() : undefined;
       return patchCoachingPlan(plan.id, {
         status: next,
-        resolutionNote,
+        resolutionNote: isTerminal ? resolutionNote : undefined,
         latestOutreachAt,
       });
     },
@@ -300,11 +300,17 @@ function PlanRow({
                 key={n}
                 type="button"
                 onClick={() => {
-                  try {
-                    transition.mutate(n);
-                  } catch {
-                    // prompt-cancel; swallow
+                  const isTerminal = n === "resolved" || n === "abandoned";
+                  if (isTerminal) {
+                    const note = window.prompt(
+                      `Closing the plan as "${n}". Resolution note (required):`,
+                    );
+                    // Cancelled or empty → no-op (don't fire the mutation).
+                    if (!note || note.trim().length === 0) return;
+                    transition.mutate({ next: n, resolutionNote: note });
+                    return;
                   }
+                  transition.mutate({ next: n });
                 }}
                 disabled={transition.isPending}
                 className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors"

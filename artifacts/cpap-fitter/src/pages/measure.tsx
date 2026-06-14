@@ -383,7 +383,7 @@ export function Measure() {
         <div className="inline-flex items-center justify-center gap-3 mb-3">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-            Step 2 of 3 · Analyze
+            Analyze
           </span>
           <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
