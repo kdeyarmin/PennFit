@@ -1117,6 +1117,7 @@ export interface Database {
       };
       csr_compliance_alerts: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           journey_id: string | null;
@@ -1364,6 +1365,7 @@ export interface Database {
       };
       patient_smart_trigger_events: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           kind: string;
@@ -1414,6 +1416,7 @@ export interface Database {
       };
       patient_followups: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           body: string;
@@ -3507,6 +3510,7 @@ export interface Database {
       };
       recall_notifications: {
         Row: {
+          org_id: string | null;
           id: string;
           recall_id: string;
           asset_id: string;
@@ -4079,6 +4083,7 @@ export interface Database {
       };
       patient_coaching_plans: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source_alert_id: string | null;
@@ -4110,6 +4115,7 @@ export interface Database {
       };
       patient_address_history: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           line1: string | null;
@@ -4187,6 +4193,7 @@ export interface Database {
       };
       patient_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           body: string;
@@ -4412,6 +4419,7 @@ export interface Database {
       };
       patient_therapy_milestones: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           milestone_kind: "100_nights" | "365_nights" | "first_adherence_month";
