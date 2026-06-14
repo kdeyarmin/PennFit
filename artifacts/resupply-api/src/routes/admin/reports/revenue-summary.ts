@@ -17,6 +17,7 @@ import {
   rangeSlug,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
 } from "./shared";
 
 // Aggregated revenue + refund rollup, one row per calendar day.
@@ -77,10 +78,7 @@ export function rollupRevenue(
     }));
 }
 
-export function writeRevenueCsv(
-  res: import("express").Response,
-  rows: RevenueByDay[],
-): void {
+export function writeRevenueCsv(res: CsvSink, rows: RevenueByDay[]): void {
   const headers = [
     "day",
     "orders_count",
@@ -268,10 +266,7 @@ export const revenueSummaryReport: ReportModule = {
       fetchOrders(from, to),
       fetchReturns(from, to),
     ]);
-    writeRevenueCsv(
-      res as unknown as import("express").Response,
-      rollupRevenue(orders, returns),
-    );
+    writeRevenueCsv(res, rollupRevenue(orders, returns));
     return collect();
   },
 

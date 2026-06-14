@@ -15,12 +15,10 @@ import {
   rangeSlug,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
 } from "./shared";
 
-export function writeRefundsCsv(
-  res: import("express").Response,
-  rows: ReturnRow[],
-): void {
+export function writeRefundsCsv(res: CsvSink, rows: ReturnRow[]): void {
   const headers = [
     "return_id",
     "order_id",
@@ -128,10 +126,7 @@ export const refundsJournalReport: ReportModule = {
 
   async buildEmailCsv(from, to) {
     const { res, collect } = bufferedRes();
-    writeRefundsCsv(
-      res as unknown as import("express").Response,
-      await fetchReturns(from, to),
-    );
+    writeRefundsCsv(res, await fetchReturns(from, to));
     return collect();
   },
 

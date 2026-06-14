@@ -43,6 +43,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export interface SignatureRequestLike {
   header(name: string): string | undefined;
   body?: unknown;
+  // The route handlers reconstruct the public URL from
+  // `req.originalUrl` (see the header comment above). Express's
+  // Request always provides it as a string; it's optional here so the
+  // structural shape stays satisfiable by lighter test doubles.
+  originalUrl?: string;
 }
 
 export interface SignatureResponseLike {

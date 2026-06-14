@@ -74,8 +74,7 @@ async function resolvePatientForCustomer(
 }
 
 router.get("/me/billing-statements", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -135,8 +134,7 @@ interface PersistedLineItem {
 }
 
 router.get("/me/billing-statements/:id/pdf", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -298,8 +296,7 @@ const prefBody = z
   .strict();
 
 router.get("/me/statement-preferences", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -332,8 +329,7 @@ router.get("/me/statement-preferences", async (req, res) => {
 });
 
 router.put("/me/statement-preferences", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;

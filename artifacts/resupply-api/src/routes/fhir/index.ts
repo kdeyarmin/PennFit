@@ -97,7 +97,7 @@ const fhirAdminReadLimiter = expressRateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) =>
-    (req as unknown as { adminUserId?: string }).adminUserId ??
+    req.adminUserId ??
     // Bucket the IP fallback by subnet via ipKeyGenerator so IPv6 clients
     // can't rotate within a /64 to dodge the limit (ERR_ERL_KEY_GEN_IPV6).
     ipKeyGenerator(req.ip ?? "0.0.0.0"),
