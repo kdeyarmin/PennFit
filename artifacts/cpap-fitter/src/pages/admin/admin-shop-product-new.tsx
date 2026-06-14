@@ -15,6 +15,7 @@ import {
   type RecurringInterval,
   type ShopCategory,
 } from "@/lib/admin/shop-inventory-api";
+import { ManufacturerAutocomplete } from "@/components/ManufacturerAutocomplete";
 
 // Add Shop Product page.
 //
@@ -582,11 +583,10 @@ export function AdminShopProductNewPage() {
               <label htmlFor="manufacturer" style={FIELD_LABEL_STYLE}>
                 Manufacturer
               </label>
-              <input
+              <ManufacturerAutocomplete
                 id="manufacturer"
-                type="text"
                 value={form.manufacturer}
-                onChange={(e) => update("manufacturer", e.target.value)}
+                onValueChange={(v) => update("manufacturer", v)}
                 placeholder="ResMed"
                 style={INPUT_STYLE}
                 disabled={isSubmitting}

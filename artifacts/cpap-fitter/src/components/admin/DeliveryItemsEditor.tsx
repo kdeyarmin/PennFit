@@ -6,6 +6,7 @@ import type {
 } from "@workspace/api-client-react/admin";
 import { Button } from "@/components/admin/Button";
 import { Input, Label } from "@/components/admin/Input";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
 
 // Editor for a packet's itemized Proof of Delivery snapshot — the
 // equipment line items (description, HCPCS, quantity) plus the delivery
@@ -131,11 +132,11 @@ export function DeliveryItemsEditor({
                 <Label htmlFor={`${idPrefix}-item-${i}-hcpcs`}>
                   <span className="sr-only">Item {i + 1} HCPCS</span>
                 </Label>
-                <Input
+                <HcpcsCodeAutocomplete
                   id={`${idPrefix}-item-${i}-hcpcs`}
                   placeholder="HCPCS"
                   value={row.hcpcs}
-                  onChange={(e) => setItem(i, { hcpcs: e.target.value })}
+                  onValueChange={(v) => setItem(i, { hcpcs: v })}
                 />
               </div>
               <div className="w-20">

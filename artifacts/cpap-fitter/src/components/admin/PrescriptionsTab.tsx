@@ -23,6 +23,8 @@ import { Badge, humanizeStatus } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { Input, Label } from "@/components/admin/Input";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
+import { ProviderNameAutocomplete } from "@/components/admin/ProviderNameAutocomplete";
 import { Table, type Column } from "@/components/admin/Table";
 import { openPdfInNewTab, summarizePdfError } from "@/lib/admin/pdf-download";
 import { formatDate } from "@/lib/admin/format";
@@ -644,25 +646,26 @@ function AddPrescriptionModal({
             </div>
             <div>
               <Label htmlFor="rx-hcpcs">HCPCS code (optional)</Label>
-              <Input
+              <HcpcsCodeAutocomplete
                 id="rx-hcpcs"
                 value={hcpcsCode}
                 maxLength={12}
                 placeholder="e.g. E0601 or A7030-KX"
-                onChange={(e) => setHcpcsCode(e.target.value)}
+                onValueChange={setHcpcsCode}
                 disabled={isPending}
-                autoComplete="off"
               />
             </div>
             <div>
               <Label htmlFor="rx-prescriber">Prescriber name</Label>
-              <Input
+              <ProviderNameAutocomplete
                 id="rx-prescriber"
                 value={prescriberName}
                 maxLength={160}
-                onChange={(e) => setPrescriberName(e.target.value)}
+                onValueChange={setPrescriberName}
+                onSelectProvider={(p) => {
+                  if (p.npi) setPrescriberNpi(p.npi);
+                }}
                 disabled={isPending}
-                autoComplete="off"
               />
             </div>
             <div>

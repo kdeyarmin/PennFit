@@ -18,7 +18,7 @@
 // = manual, `backfill` = synthesized from old jsonb data and needs
 // confirmation.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 
@@ -318,6 +318,17 @@ function CaseloadTable({ rows }: { rows: ProviderCaseloadEntry[] }) {
   );
 }
 
+function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <label
+      className="text-xs font-semibold block mb-1"
+      style={{ color: "hsl(var(--penn-navy))" }}
+    >
+      {children}
+    </label>
+  );
+}
+
 function AddProviderModal({
   onClose,
   onCreated,
@@ -330,17 +341,36 @@ function AddProviderModal({
     null,
   );
   const [legalName, setLegalName] = useState("");
+  const [taxonomyCode, setTaxonomyCode] = useState("");
+  const [practiceName, setPracticeName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [fax, setFax] = useState("");
+  const [addrLine1, setAddrLine1] = useState("");
+  const [addrLine2, setAddrLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [stateRegion, setStateRegion] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("");
+  const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const lookup = useMutation({
     mutationFn: () => lookupNppes(npi.trim()),
     onSuccess: (r) => {
-      setAutofilled(r.provider);
-      setLegalName(r.provider.legalName);
-      setPhone(r.provider.phoneE164 ?? "");
-      setFax(r.provider.faxE164 ?? "");
+      const p = r.provider;
+      setAutofilled(p);
+      setLegalName(p.legalName);
+      setTaxonomyCode(p.taxonomyCode ?? "");
+      setPracticeName(p.practiceName ?? "");
+      setPhone(p.phoneE164 ?? "");
+      setFax(p.faxE164 ?? "");
+      setAddrLine1(p.practiceAddress?.line1 ?? "");
+      setAddrLine2(p.practiceAddress?.line2 ?? "");
+      setCity(p.practiceAddress?.city ?? "");
+      setStateRegion(p.practiceAddress?.state ?? "");
+      setPostalCode(p.practiceAddress?.postalCode ?? "");
+      setCountry(p.practiceAddress?.country ?? "");
       setError(null);
     },
     onError: (e: Error) => {
@@ -367,22 +397,52 @@ function AddProviderModal({
   });
 
   const create = useMutation({
-    mutationFn: () =>
-      createProvider({
+    mutationFn: () => {
+      const addr = {
+        line1: addrLine1.trim() || undefined,
+        line2: addrLine2.trim() || undefined,
+        city: city.trim() || undefined,
+        state: stateRegion.trim() || undefined,
+        postalCode: postalCode.trim() || undefined,
+        country: country.trim() || undefined,
+      };
+      const hasAddress = Object.values(addr).some(Boolean);
+      return createProvider({
         npi: npi.trim(),
         legalName: legalName.trim(),
-        taxonomyCode: autofilled?.taxonomyCode ?? null,
+        taxonomyCode: taxonomyCode.trim() || null,
         phoneE164: phone.trim() || null,
         faxE164: fax.trim() || null,
-        practiceName: autofilled?.practiceName ?? null,
-        practiceAddress: autofilled?.practiceAddress ?? null,
+        email: email.trim() || null,
+        practiceName: practiceName.trim() || null,
+        practiceAddress: hasAddress ? addr : null,
+        notes: notes.trim() || null,
         source: autofilled ? "nppes" : "csr_entry",
-      }),
+      });
+    },
     onSuccess: () => onCreated(),
     onError: (e: Error) => setError(e.message),
   });
 
   const npiValid = /^\d{10}$/.test(npi.trim());
+  // Mirror the backend Zod formats so the operator gets immediate feedback
+  // instead of a 400 round-trip. Optional fields only validate when filled.
+  const phoneValid = phone.trim() === "" || /^\+\d{8,15}$/.test(phone.trim());
+  const faxValid = fax.trim() === "" || /^\+\d{8,15}$/.test(fax.trim());
+  const emailValid =
+    email.trim() === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const formatError = !phoneValid
+    ? "Phone must be E.164 format, e.g. +12155551234."
+    : !faxValid
+      ? "Fax must be E.164 format, e.g. +12155551234."
+      : !emailValid
+        ? "Enter a valid email address."
+        : null;
+  const canSave =
+    npiValid &&
+    legalName.trim().length > 0 &&
+    formatError === null &&
+    !create.isPending;
 
   return (
     <div
@@ -407,9 +467,10 @@ function AddProviderModal({
             Add provider
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Type the NPI and click Look up. We&apos;ll pull the provider&apos;s
-            name, taxonomy, and contact info from the public NPPES registry for
-            you to confirm.
+            Type the NPI and click Look up to pull the provider&apos;s name,
+            taxonomy, and contact info from the public NPPES registry. If the
+            lookup misses or the registry is down, fill out the whole record by
+            hand — every field below is editable.
           </p>
 
           <div className="flex items-end gap-2">
@@ -448,12 +509,7 @@ function AddProviderModal({
           {(autofilled || npi.trim().length > 0) && (
             <div className="space-y-3 pt-3 border-t border-border/40">
               <div>
-                <label
-                  className="text-xs font-semibold block mb-1"
-                  style={{ color: "hsl(var(--penn-navy))" }}
-                >
-                  Legal name
-                </label>
+                <FieldLabel>Legal name *</FieldLabel>
                 <Input
                   value={legalName}
                   onChange={(e) => setLegalName(e.target.value)}
@@ -463,12 +519,29 @@ function AddProviderModal({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label
-                    className="text-xs font-semibold block mb-1"
-                    style={{ color: "hsl(var(--penn-navy))" }}
-                  >
-                    Phone (E.164)
-                  </label>
+                  <FieldLabel>Taxonomy code</FieldLabel>
+                  <Input
+                    value={taxonomyCode}
+                    onChange={(e) => setTaxonomyCode(e.target.value)}
+                    placeholder="332B00000X"
+                    aria-label="Taxonomy code"
+                    maxLength={16}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Practice name</FieldLabel>
+                  <Input
+                    value={practiceName}
+                    onChange={(e) => setPracticeName(e.target.value)}
+                    placeholder="Sleep Health Associates"
+                    aria-label="Practice name"
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel>Phone (E.164)</FieldLabel>
                   <Input
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -477,12 +550,7 @@ function AddProviderModal({
                   />
                 </div>
                 <div>
-                  <label
-                    className="text-xs font-semibold block mb-1"
-                    style={{ color: "hsl(var(--penn-navy))" }}
-                  >
-                    Fax (E.164)
-                  </label>
+                  <FieldLabel>Fax (E.164)</FieldLabel>
                   <Input
                     value={fax}
                     onChange={(e) => setFax(e.target.value)}
@@ -491,6 +559,96 @@ function AddProviderModal({
                   />
                 </div>
               </div>
+              <div>
+                <FieldLabel>Email</FieldLabel>
+                <Input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="office@example.com"
+                  aria-label="Email"
+                  type="email"
+                  maxLength={200}
+                />
+              </div>
+
+              <div className="pt-1">
+                <p
+                  className="text-xs font-semibold mb-2"
+                  style={{ color: "hsl(var(--penn-navy))" }}
+                >
+                  Practice address
+                </p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Address line 1</FieldLabel>
+                      <Input
+                        value={addrLine1}
+                        onChange={(e) => setAddrLine1(e.target.value)}
+                        aria-label="Address line 1"
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Address line 2</FieldLabel>
+                      <Input
+                        value={addrLine2}
+                        onChange={(e) => setAddrLine2(e.target.value)}
+                        aria-label="Address line 2"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="col-span-2">
+                      <FieldLabel>City</FieldLabel>
+                      <Input
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        aria-label="City"
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>State</FieldLabel>
+                      <Input
+                        value={stateRegion}
+                        onChange={(e) => setStateRegion(e.target.value)}
+                        placeholder="PA"
+                        aria-label="State"
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>ZIP</FieldLabel>
+                      <Input
+                        value={postalCode}
+                        onChange={(e) => setPostalCode(e.target.value)}
+                        placeholder="19103"
+                        aria-label="ZIP / postal code"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Country</FieldLabel>
+                      <Input
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        placeholder="US"
+                        aria-label="Country"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Notes</FieldLabel>
+                <Input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  aria-label="Notes"
+                  maxLength={2000}
+                />
+              </div>
+
               {autofilled && (
                 <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                   Will save as <strong>NPPES verified</strong>. Edits to the
@@ -500,9 +658,9 @@ function AddProviderModal({
             </div>
           )}
 
-          {error && (
+          {(error || formatError) && (
             <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-              {error}
+              {error ?? formatError}
             </div>
           )}
 
@@ -511,9 +669,7 @@ function AddProviderModal({
               Cancel
             </Button>
             <Button
-              disabled={
-                !npiValid || legalName.trim().length === 0 || create.isPending
-              }
+              disabled={!canSave}
               onClick={() => create.mutate()}
               isLoading={create.isPending}
             >

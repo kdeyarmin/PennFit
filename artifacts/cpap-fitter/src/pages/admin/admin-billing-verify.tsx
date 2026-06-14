@@ -32,6 +32,7 @@ import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Input, Label } from "@/components/admin/Input";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
 import { Spinner } from "@/components/admin/Spinner";
 import {
   quickCheckEligibility,
@@ -403,10 +404,10 @@ export function AdminBillingVerifyPage() {
               <div className="flex flex-wrap items-end gap-3">
                 <div className="max-w-[10rem]">
                   <Label htmlFor="verify-hcpcs">HCPCS (optional)</Label>
-                  <Input
+                  <HcpcsCodeAutocomplete
                     id="verify-hcpcs"
                     value={hcpcs}
-                    onChange={(e) => setHcpcs(e.target.value.toUpperCase())}
+                    onValueChange={(v) => setHcpcs(v.toUpperCase())}
                     placeholder="E0601"
                     maxLength={5}
                     data-testid="verify-hcpcs"
@@ -720,10 +721,10 @@ function QuickCheckSection() {
             </div>
             <div className="max-w-[10rem]">
               <Label htmlFor="quick-hcpcs">HCPCS (optional)</Label>
-              <Input
+              <HcpcsCodeAutocomplete
                 id="quick-hcpcs"
                 value={hcpcs}
-                onChange={(e) => setHcpcs(e.target.value.toUpperCase())}
+                onValueChange={(v) => setHcpcs(v.toUpperCase())}
                 placeholder="E0601"
                 maxLength={5}
                 data-testid="quick-hcpcs"

@@ -14,6 +14,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { ManufacturerAutocomplete } from "@/components/ManufacturerAutocomplete";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createPatientEquipment,
@@ -295,7 +296,7 @@ function AddEquipmentModal({
                 )}
               </select>
             </div>
-            <LabeledInput
+            <LabeledManufacturerInput
               label="Manufacturer"
               value={manufacturer}
               onChange={setManufacturer}
@@ -396,6 +397,35 @@ function LabeledInput({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
+function LabeledManufacturerInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <Label>
+        {label}
+        {required && " *"}
+      </Label>
+      <ManufacturerAutocomplete
+        value={value}
+        onValueChange={onChange}
         placeholder={placeholder}
         aria-label={label}
       />
