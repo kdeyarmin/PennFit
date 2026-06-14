@@ -11,16 +11,18 @@ import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
 // follow-ups:
 //
 //   reason="not-authorized" (HTTP 401/403/most 4xx)
-//     The signed-in user passed the session check but is not on
-//     the RESUPPLY_ADMIN_EMAILS allowlist. Resolution is "ask an
-//     admin to add me" — so we show the email, tell them to contact
-//     the resupply admin, and offer a sign-out button so they can
-//     try a different account.
+//     The signed-in user passed the session check but their account
+//     doesn't carry the admin role (access is role-based — there is
+//     no env-var allowlist anymore; see requireAdmin.ts). Resolution
+//     is "ask an admin to grant me access" — so we show the email,
+//     tell them to contact the resupply admin, and offer a sign-out
+//     button so they can try a different account.
 //
 //   reason="not-configured" (HTTP 503)
-//     The server has no allowlist set. This is a deploy-side mistake
-//     (the env var didn't ship). Resolution is "ask an SRE to fix
-//     the config" — the user retrying or signing out won't help.
+//     The server can't confirm admin access right now — a deploy-side
+//     problem (e.g. the data layer isn't reachable / fully set up).
+//     Resolution is "ask an SRE to fix the config" — the user
+//     retrying or signing out won't help.
 //
 //   reason="transient" (status 0 or 5xx that isn't 503)
 //     A network blip, a server crash, or anything else that smells
@@ -145,20 +147,17 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                The resupply API doesn't have an admin allowlist configured, so
-                it's refusing every sign-in until an administrator finishes the
-                setup. This is a deploy-side fix — signing out and back in won't
-                change the result.
+                The resupply API can't confirm admin access right now because
+                it isn't fully configured, so it's refusing every sign-in until
+                an administrator finishes the setup. This is a deploy-side fix —
+                signing out and back in won't change the result.
               </p>
               <p
                 className="text-sm leading-relaxed mb-2"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Please contact your PennPaps IT administrator and reference{" "}
-                <code className="text-xs px-1 py-0.5 bg-gray-100 rounded">
-                  RESUPPLY_ADMIN_EMAILS
-                </code>
-                .
+                Please contact your PennPaps IT administrator so they can finish
+                configuring admin access for this server.
               </p>
             </>
           ) : isTransient ? (
@@ -205,8 +204,8 @@ export function NotAuthorizedPage({
                 style={{ color: "hsl(var(--ink-2))" }}
               >
                 You're signed in as{" "}
-                <span className="font-semibold">{email}</span>, but that address
-                isn't on the resupply admin allowlist.
+                <span className="font-semibold">{email}</span>, but that account
+                doesn't have admin access.
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
@@ -220,7 +219,7 @@ export function NotAuthorizedPage({
                 >
                   {contactEmail}
                 </a>{" "}
-                and ask to be added.
+                and ask to be granted admin access.
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
