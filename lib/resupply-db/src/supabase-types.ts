@@ -1069,6 +1069,7 @@ export interface Database {
       };
       shop_back_in_stock_notifications: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           email: string;
@@ -2799,6 +2800,7 @@ export interface Database {
       // documents for the send panel (e.g. Medicare vs commercial).
       patient_packet_presets: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           description: string | null;
@@ -2821,6 +2823,7 @@ export interface Database {
       // prior revision.
       patient_packet_template_revisions: {
         Row: {
+          org_id: string | null;
           id: string;
           document_key: string;
           action: "saved" | "reverted";
@@ -2843,6 +2846,7 @@ export interface Database {
       // row reverts to the code default.
       patient_packet_template_overrides: {
         Row: {
+          org_id: string | null;
           document_key: string;
           title: string;
           sections: Json;
