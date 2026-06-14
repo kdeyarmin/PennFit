@@ -149,7 +149,7 @@ describe("runEligibilityReverificationBatch", () => {
     });
 
     const result = await runEligibilityReverificationBatch(
-      { cap: 10 },
+      { orgId: "org-1", cap: 10 },
       { verify, throttleMs: 0 },
     );
 
@@ -185,7 +185,7 @@ describe("runEligibilityReverificationBatch", () => {
 
     const verify = vi.fn();
     const result = await runEligibilityReverificationBatch(
-      { cap: 10, minHoursBetweenAttempts: 168 },
+      { orgId: "org-1", cap: 10, minHoursBetweenAttempts: 168 },
       { verify, throttleMs: 0 },
     );
 
@@ -232,7 +232,7 @@ describe("runEligibilityReverificationBatch", () => {
       });
 
     const result = await runEligibilityReverificationBatch(
-      { cap: 10 },
+      { orgId: "org-1", cap: 10 },
       { verify, throttleMs: 0 },
     );
 

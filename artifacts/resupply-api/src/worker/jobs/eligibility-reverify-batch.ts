@@ -16,6 +16,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
+import { resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { runEligibilityReverificationBatch } from "../../lib/billing/eligibility-batch.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
@@ -49,7 +50,17 @@ export async function registerEligibilityReverifyBatchJob(
       );
       return;
     }
-    const result = await runEligibilityReverificationBatch();
+    // Single-tenant bridge: no per-tenant job payload yet, so sweep the
+    // one seed org. Becomes a per-org loop when a 2nd tenant lands.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      logger.warn(
+        { queue: ELIGIBILITY_REVERIFY_BATCH_JOB },
+        "eligibility reverify batch: could not resolve seed org — skipping",
+      );
+      return;
+    }
+    const result = await runEligibilityReverificationBatch({ orgId });
     await logAudit({
       action: "billing.eligibility.reverify_batch.completed",
       adminEmail: SYSTEM_ACTOR_EMAIL,
