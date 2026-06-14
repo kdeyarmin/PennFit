@@ -56,11 +56,18 @@ export const logger = pino({
     "err.stack",
     // pino-std-serializers also exposes `err.cause` (Error chains
     // from `throw new Error(..., { cause })`), and the same leak
-    // shape repeats on the cause. Redact both fields there too.
+    // shape repeats on the cause — a PostgREST error wrapped as a
+    // `cause` carries the identical PHI-bearing fields. Keep the
+    // cause-chain redactions symmetric with the top-level `err.*`
+    // list above.
     "err.cause.message",
     "err.cause.stack",
     "err.cause.detail",
     "err.cause.details",
+    "err.cause.hint",
+    "err.cause.where",
+    "err.cause.hostname",
+    "err.cause.address",
   ],
   ...(isProduction
     ? {}
