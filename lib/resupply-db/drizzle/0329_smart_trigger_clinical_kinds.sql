@@ -1,4 +1,4 @@
--- 0325 — widen patient_smart_trigger_events.kind to the clinical rules.
+-- 0329 — widen patient_smart_trigger_events.kind to the clinical rules.
 --
 -- Two things land here:
 --

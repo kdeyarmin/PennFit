@@ -24,7 +24,7 @@
 //
 // Each entry also carries supporting metrics (recent avg AHI / leak /
 // P95 pressure / usage + the device's prescribed max pressure) from the
-// therapy_clinical_metrics RPC (migration 0326), so an RT can triage the
+// therapy_clinical_metrics RPC (migration 0330), so an RT can triage the
 // whole queue without opening each patient — e.g. read pressure_at_max
 // as "P95 19.8 of max 20". Best-effort: if the RPC is unavailable the
 // entries serve with null metrics rather than failing the report.
@@ -58,7 +58,7 @@ function int(v: unknown): number {
 // The clinical (RT-owned) smart-trigger kinds, in triage-severity order.
 // Kept in lockstep with lib/smart-triggers/index.ts PATIENT_DISPATCH_KINDS
 // (these are exactly the kinds NOT in that list) and the kind CHECK in
-// migration 0325.
+// migration 0329.
 export const CLINICAL_TRIGGER_KINDS = [
   "pressure_at_max",
   "ahi_elevated",
@@ -222,7 +222,7 @@ async function buildClinicalInsightReport(
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", ids),
-      // therapy_clinical_metrics (migration 0326). Best-effort: if the
+      // therapy_clinical_metrics (migration 0330). Best-effort: if the
       // RPC isn't applied yet / errors, entries just carry null metrics
       // rather than failing the whole report.
       supabase.schema("resupply").rpc("therapy_clinical_metrics", {
