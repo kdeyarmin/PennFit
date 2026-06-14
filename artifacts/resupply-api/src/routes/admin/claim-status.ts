@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   ClaimNotForPatientError,
@@ -101,10 +101,15 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    const { data: claim, error: claimErr } = await supabase
-      .schema("resupply")
+    const { data: claim, error: claimErr } = await db
       .from("insurance_claims")
       .select("id")
       .eq("id", parsed.data.claimId)
@@ -117,8 +122,7 @@ router.get(
       return;
     }
 
-    const { data } = await supabase
-      .schema("resupply")
+    const { data } = await db
       .from("claim_status_checks")
       .select(
         "id, status, outcome, category_code, status_code, total_charge_cents, total_paid_cents, requested_at, responded_at, error_message",
