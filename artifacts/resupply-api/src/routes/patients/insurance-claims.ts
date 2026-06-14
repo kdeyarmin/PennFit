@@ -189,6 +189,9 @@ function rowToApi(r: {
   total_allowed_cents: number;
   total_paid_cents: number;
   patient_responsibility_cents: number;
+  deductible_cents: number;
+  coinsurance_cents: number;
+  copay_cents: number;
   submitted_at: string | null;
   decision_at: string | null;
   paid_at: string | null;
@@ -209,6 +212,9 @@ function rowToApi(r: {
     totalAllowedCents: r.total_allowed_cents,
     totalPaidCents: r.total_paid_cents,
     patientResponsibilityCents: r.patient_responsibility_cents,
+    deductibleCents: r.deductible_cents,
+    coinsuranceCents: r.coinsurance_cents,
+    copayCents: r.copay_cents,
     submittedAt: r.submitted_at,
     decisionAt: r.decision_at,
     paidAt: r.paid_at,
@@ -286,7 +292,7 @@ router.get(
       .schema("resupply")
       .from("insurance_claims")
       .select(
-        "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
+        "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
       )
       .eq("patient_id", idParsed.data.id)
       .order("date_of_service", { ascending: false });
@@ -311,7 +317,7 @@ router.get(
       .schema("resupply")
       .from("insurance_claims")
       .select(
-        "id, patient_id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
+        "id, patient_id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
       )
       .eq("id", idParsed.data.claimId)
       .eq("patient_id", idParsed.data.id)
