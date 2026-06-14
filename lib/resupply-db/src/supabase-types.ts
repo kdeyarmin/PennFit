@@ -511,6 +511,7 @@ export interface Database {
       };
       call_dispositions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           conversation_id: string | null;
@@ -610,6 +611,7 @@ export interface Database {
       };
       shop_backorders: {
         Row: {
+          org_id: string | null;
           id: string;
           sku: string;
           marked_at: string;
@@ -628,6 +630,7 @@ export interface Database {
       };
       shop_sku_substitutes: {
         Row: {
+          org_id: string | null;
           id: string;
           primary_sku: string;
           alternative_sku: string;
@@ -689,6 +692,7 @@ export interface Database {
       };
       frequency_rules: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           priority: number;
@@ -716,6 +720,7 @@ export interface Database {
       // fleet / setup-adherence RPCs; CRUD via /compliance-rules.
       compliance_rules: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           priority: number;
@@ -740,6 +745,7 @@ export interface Database {
       // as more callers migrate.
       shop_returns: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           order_id: string;
@@ -776,6 +782,7 @@ export interface Database {
       };
       shop_reviews: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           product_id: string;
@@ -826,6 +833,7 @@ export interface Database {
       };
       shop_customer_followups: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           body: string;
@@ -935,6 +943,7 @@ export interface Database {
       // Mig 0243 — staff-initiated AI mask-fitter invitations.
       fitter_invites: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           recipient_email: string | null;
@@ -982,6 +991,7 @@ export interface Database {
       // campaign. One row per (lead, touch_index, channel).
       fitter_campaign_touches: {
         Row: {
+          org_id: string | null;
           id: string;
           lead_id: string;
           touch_index: number;
@@ -1009,6 +1019,7 @@ export interface Database {
       // Mig 0154 — per-click audit log. One row per CTA click.
       fitter_campaign_clicks: {
         Row: {
+          org_id: string | null;
           id: string;
           lead_id: string;
           touch_index: number;
@@ -1030,6 +1041,7 @@ export interface Database {
       };
       shop_product_questions: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           customer_id: string;
@@ -1097,6 +1109,7 @@ export interface Database {
       };
       shop_customer_push_subscriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           endpoint: string;
@@ -1152,6 +1165,7 @@ export interface Database {
       };
       shop_customer_message_template_overrides: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           template_key: string;
@@ -1224,6 +1238,7 @@ export interface Database {
       };
       alert_message_overrides: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           alert_key: string;
@@ -1272,6 +1287,7 @@ export interface Database {
       };
       patient_integration_snapshots: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source: string;
@@ -1389,6 +1405,7 @@ export interface Database {
       };
       physician_fax_outreach: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string | null;
@@ -1486,6 +1503,7 @@ export interface Database {
       };
       sleep_studies: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           study_date: string;
@@ -1521,6 +1539,7 @@ export interface Database {
       };
       insurance_coverages: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           rank: "primary" | "secondary" | "tertiary";
@@ -1746,6 +1765,7 @@ export interface Database {
       };
       insurance_claim_events: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           event_type:
@@ -1945,6 +1965,7 @@ export interface Database {
       };
       claim_status_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           payer_profile_id: string | null;
@@ -1975,6 +1996,7 @@ export interface Database {
       };
       locations: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           code: string | null;
@@ -2009,6 +2031,7 @@ export interface Database {
       };
       gl_account_mappings: {
         Row: {
+          org_id: string | null;
           mapping_key: "deposit" | "revenue" | "refund" | "patient_pay";
           account_name: string;
           updated_by_email: string | null;
@@ -2024,6 +2047,7 @@ export interface Database {
       };
       medicare_same_or_similar_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_code: string;
@@ -2043,6 +2067,7 @@ export interface Database {
       };
       capped_rental_cycles: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_code: string;
@@ -2068,6 +2093,7 @@ export interface Database {
       };
       dwo_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_family:
@@ -2092,6 +2118,7 @@ export interface Database {
       };
       adherence_predictions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           model_version: string;
@@ -2112,6 +2139,7 @@ export interface Database {
       };
       voice_reorder_sessions: {
         Row: {
+          org_id: string | null;
           id: string;
           twilio_call_sid: string;
           from_e164: string;
@@ -2172,6 +2200,7 @@ export interface Database {
       };
       webhook_subscriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           target_url: string;
@@ -2195,6 +2224,7 @@ export interface Database {
       };
       webhook_deliveries: {
         Row: {
+          org_id: string | null;
           id: string;
           subscription_id: string;
           event_type: string;
@@ -2218,6 +2248,7 @@ export interface Database {
       };
       patient_billing_statements: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           line_items_json: Json;
@@ -2242,6 +2273,7 @@ export interface Database {
       };
       claim_appeal_letters: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           denial_analysis_id: string | null;
@@ -2262,6 +2294,7 @@ export interface Database {
       };
       dispense_readiness_reviews: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_code: string;
@@ -2356,6 +2389,7 @@ export interface Database {
       };
       patient_payment_plans: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           total_amount_cents: number;
@@ -2378,6 +2412,7 @@ export interface Database {
       };
       patient_payment_plan_installments: {
         Row: {
+          org_id: string | null;
           id: string;
           plan_id: string;
           seq: number;
@@ -2398,6 +2433,7 @@ export interface Database {
       };
       patient_payments: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           stripe_payment_intent_id: string | null;
@@ -2428,6 +2464,7 @@ export interface Database {
       };
       patient_autopay_authorizations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           shop_customer_id: string | null;
@@ -2459,6 +2496,7 @@ export interface Database {
       };
       prescription_request_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           provider_id: string | null;
@@ -2502,6 +2540,7 @@ export interface Database {
       };
       documentation_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           kind:
@@ -2526,6 +2565,7 @@ export interface Database {
       };
       patient_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           title: string;
@@ -2570,6 +2610,7 @@ export interface Database {
       };
       manual_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           document_type:
             | "cmn"
@@ -2605,6 +2646,7 @@ export interface Database {
       };
       manual_document_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           title: string;
           recipient_name: string | null;
@@ -2630,6 +2672,7 @@ export interface Database {
       };
       signature_tracking: {
         Row: {
+          org_id: string | null;
           id: string;
           tracking_code: string;
           document_kind: "prescription_request" | "manual_document";
@@ -2663,6 +2706,7 @@ export interface Database {
       // bill hold. One row per document a claim needs back signed.
       claim_paperwork_requirements: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string | null;
           patient_id: string;
@@ -2724,6 +2768,7 @@ export interface Database {
       };
       patient_packet_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           packet_id: string;
           document_key: string;
@@ -2816,6 +2861,7 @@ export interface Database {
       };
       patient_packet_signatures: {
         Row: {
+          org_id: string | null;
           id: string;
           packet_id: string;
           signer_name: string;
@@ -2872,6 +2918,7 @@ export interface Database {
       };
       good_faith_estimates: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string | null;
           recipient_name: string;
@@ -3075,6 +3122,7 @@ export interface Database {
       };
       clearinghouse_credentials: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -3114,6 +3162,7 @@ export interface Database {
       };
       clearinghouse_inbound_files: {
         Row: {
+          org_id: string | null;
           id: string;
           clearinghouse_id: string;
           remote_path: string;
@@ -3192,6 +3241,7 @@ export interface Database {
       };
       payer_modifier_rules: {
         Row: {
+          org_id: string | null;
           id: string;
           payer_profile_id: string;
           hcpcs_code: string;
@@ -3251,6 +3301,7 @@ export interface Database {
       };
       claim_denial_analyses: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           era_file_id: string | null;
@@ -3360,6 +3411,7 @@ export interface Database {
       };
       inbound_faxes: {
         Row: {
+          org_id: string | null;
           id: string;
           twilio_fax_sid: string;
           from_e164: string | null;
@@ -3393,6 +3445,7 @@ export interface Database {
       // structured AI extraction and the human accept/dismiss lifecycle.
       referral_reviews: {
         Row: {
+          org_id: string | null;
           id: string;
           source: "fax" | "upload";
           inbound_fax_id: string | null;
@@ -3431,6 +3484,7 @@ export interface Database {
       };
       voice_calls: {
         Row: {
+          org_id: string | null;
           id: string;
           call_sid: string;
           conversation_id: string | null;
@@ -3449,6 +3503,7 @@ export interface Database {
       };
       equipment_assets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string | null;
@@ -3485,6 +3540,7 @@ export interface Database {
       };
       equipment_recalls: {
         Row: {
+          org_id: string | null;
           id: string;
           recall_reference: string;
           title: string;
@@ -3542,6 +3598,7 @@ export interface Database {
       };
       recall_remediation_actions: {
         Row: {
+          org_id: string | null;
           id: string;
           recall_id: string;
           asset_id: string;
@@ -3645,6 +3702,7 @@ export interface Database {
       };
       bulk_campaigns: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           description: string | null;
@@ -3682,6 +3740,7 @@ export interface Database {
       };
       bulk_campaign_recipients: {
         Row: {
+          org_id: string | null;
           id: string;
           campaign_id: string;
           recipient_kind: "patient" | "shop_customer";
@@ -3792,6 +3851,7 @@ export interface Database {
       };
       patient_maintenance_log: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           task_key: string;
@@ -3809,6 +3869,7 @@ export interface Database {
       };
       patient_maintenance_nudges: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           sent_at: string;
@@ -3826,6 +3887,7 @@ export interface Database {
       };
       office_closures: {
         Row: {
+          org_id: string | null;
           id: string;
           label: string;
           starts_at: string;
@@ -3845,6 +3907,7 @@ export interface Database {
       };
       company_calendar_events: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           event_type:
@@ -3877,6 +3940,7 @@ export interface Database {
       };
       csr_shifts: {
         Row: {
+          org_id: string | null;
           id: string;
           staff_user_id: string;
           starts_at: string;
@@ -3909,6 +3973,7 @@ export interface Database {
       };
       report_presets: {
         Row: {
+          org_id: string | null;
           id: string;
           user_id: string;
           name: string;
@@ -3932,6 +3997,7 @@ export interface Database {
       };
       shop_order_loss_claims: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           opened_by_user_id: string | null;
@@ -3959,6 +4025,7 @@ export interface Database {
       };
       patient_identity_verifications: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           method:
@@ -3981,6 +4048,7 @@ export interface Database {
       };
       patient_fit_overrides: {
         Row: {
+          org_id: string | null;
           patient_id: string;
           recommended_mask_sku: string;
           recommended_mask_size: string | null;
@@ -3999,6 +4067,7 @@ export interface Database {
       };
       patient_referrals: {
         Row: {
+          org_id: string | null;
           id: string;
           referrer_patient_id: string;
           code: string;
@@ -4021,6 +4090,7 @@ export interface Database {
       };
       patient_form_acknowledgements: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           form_kind:
@@ -4047,6 +4117,7 @@ export interface Database {
       };
       office_recurring_closures: {
         Row: {
+          org_id: string | null;
           id: string;
           label: string;
           day_of_week: number;
@@ -4068,6 +4139,7 @@ export interface Database {
       };
       office_hours: {
         Row: {
+          org_id: string | null;
           id: string;
           day_of_week: number;
           open_time_utc: string;
@@ -4138,6 +4210,7 @@ export interface Database {
       };
       conversation_coaching_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           conversation_id: string;
           target_user_id: string;
@@ -4176,6 +4249,7 @@ export interface Database {
       };
       patient_latest_message: {
         Row: {
+          org_id: string | null;
           patient_id: string;
           last_message_at: string;
           last_message_direction: string;
@@ -4207,6 +4281,7 @@ export interface Database {
       };
       shop_subscriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           stripe_subscription_id: string;
@@ -4233,6 +4308,7 @@ export interface Database {
       // channel + (optional) acquisition cost for LTV/CAC cohort math.
       customer_acquisition: {
         Row: {
+          org_id: string | null;
           customer_id: string;
           channel:
             | "organic"
@@ -4341,6 +4417,7 @@ export interface Database {
       };
       shop_abandoned_carts: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           email: string | null;
@@ -4439,6 +4516,7 @@ export interface Database {
       };
       shop_order_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           body: string;
@@ -4456,6 +4534,7 @@ export interface Database {
       };
       shop_order_nps_responses: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           score: number;
@@ -4475,6 +4554,7 @@ export interface Database {
       // Migration 0201 (RT #22a): post-delivery mask-fit micro-survey.
       mask_fit_outcomes: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           mask_id: string | null;
@@ -4498,6 +4578,7 @@ export interface Database {
       // Migration 0202 (Biller #29): structured CMN / DIF documents.
       cmn_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           claim_id: string | null;
@@ -4522,6 +4603,7 @@ export interface Database {
       // Migration 0204 (RT #23): proactive clinical outreach log.
       clinical_outreach_log: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           intervention_encounter_id: string | null;
@@ -4573,6 +4655,7 @@ export interface Database {
       };
       shop_customer_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           body: string;
@@ -4613,6 +4696,7 @@ export interface Database {
       };
       inventory_reconciliation_lines: {
         Row: {
+          org_id: string | null;
           id: string;
           reconciliation_id: string;
           product_id: string;
@@ -4633,6 +4717,7 @@ export interface Database {
       };
       low_stock_alert_state: {
         Row: {
+          org_id: string | null;
           product_id: string;
           last_observed_count: number | null;
           last_threshold: number | null;
@@ -4651,6 +4736,7 @@ export interface Database {
       };
       shop_product_compatibility: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           machine_manufacturer: string;
@@ -4693,6 +4779,7 @@ export interface Database {
       // shop_orders at read time.
       csr_order_requests: {
         Row: {
+          org_id: string | null;
           id: string;
           order_reference: string;
           status: "sent" | "viewed" | "signed" | "canceled";
@@ -4731,6 +4818,7 @@ export interface Database {
       };
       shop_return_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           return_id: string;
           body: string;

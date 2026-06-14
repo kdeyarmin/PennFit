@@ -107,7 +107,7 @@ interface OverrideView {
 }
 
 const OVERRIDE_COLUMNS =
-  "id, patient_id, alert_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at";
+  "id, patient_id, alert_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at, org_id";
 
 function serialize(row: OverrideRow): OverrideView {
   return {
