@@ -86,11 +86,21 @@ function StaffingBody({ data }: { data: LiveStaffingSnapshot }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-muted-foreground">
-              <th className="px-3 py-1.5 font-medium">Agent</th>
-              <th className="px-3 py-1.5 font-medium">Role</th>
-              <th className="px-3 py-1.5 font-medium">Availability</th>
-              <th className="px-3 py-1.5 font-medium">Shift</th>
-              <th className="px-3 py-1.5 font-medium text-right">Open</th>
+              <th scope="col" className="px-3 py-1.5 font-medium">
+                Agent
+              </th>
+              <th scope="col" className="px-3 py-1.5 font-medium">
+                Role
+              </th>
+              <th scope="col" className="px-3 py-1.5 font-medium">
+                Availability
+              </th>
+              <th scope="col" className="px-3 py-1.5 font-medium">
+                Shift
+              </th>
+              <th scope="col" className="px-3 py-1.5 font-medium text-right">
+                Open
+              </th>
             </tr>
           </thead>
           <tbody>

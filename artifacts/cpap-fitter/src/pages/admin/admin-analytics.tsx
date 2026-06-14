@@ -464,12 +464,22 @@ function StuckEpisodesTable({ episodes }: { episodes: StuckEpisode[] }) {
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Age</th>
-          <th className="py-2 font-semibold">Patient</th>
-          <th className="py-2 font-semibold">Payer</th>
-          <th className="py-2 font-semibold">Created</th>
-          <th className="py-2 font-semibold">Expires</th>
-          <th className="py-2 font-semibold"></th>
+          <th scope="col" className="py-2 font-semibold">
+            Age
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Patient
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Payer
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Created
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Expires
+          </th>
+          <th scope="col" className="py-2 font-semibold"></th>
         </tr>
       </thead>
       <tbody>
@@ -714,10 +724,18 @@ function CohortTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Group</th>
-          <th className="py-2 font-semibold text-right">N</th>
-          <th className="py-2 font-semibold text-right">Qual.</th>
-          <th className="py-2 font-semibold text-right">Rate</th>
+          <th scope="col" className="py-2 font-semibold">
+            Group
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            N
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Qual.
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Rate
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -825,10 +843,18 @@ function ProductivityBody({ data }: { data: CsrProductivityResponse }) {
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            <th className="py-2 font-semibold">Operator</th>
-            <th className="py-2 font-semibold text-right">Total</th>
-            <th className="py-2 font-semibold">Top action</th>
-            <th className="py-2 font-semibold">Last active</th>
+            <th scope="col" className="py-2 font-semibold">
+              Operator
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Total
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Top action
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Last active
+            </th>
           </tr>
         </thead>
         <tbody>

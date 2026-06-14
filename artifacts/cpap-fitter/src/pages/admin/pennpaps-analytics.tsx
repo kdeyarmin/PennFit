@@ -164,9 +164,15 @@ export function AdminAnalytics() {
               <table className="w-full text-sm">
                 <thead className="text-xs text-muted-foreground uppercase tracking-wide">
                   <tr>
-                    <th className="text-left py-2 px-3">Mask</th>
-                    <th className="text-left py-2 px-3">Manufacturer</th>
-                    <th className="text-right py-2 px-3">Orders</th>
+                    <th scope="col" className="text-left py-2 px-3">
+                      Mask
+                    </th>
+                    <th scope="col" className="text-left py-2 px-3">
+                      Manufacturer
+                    </th>
+                    <th scope="col" className="text-right py-2 px-3">
+                      Orders
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

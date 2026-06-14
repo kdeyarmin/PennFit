@@ -538,7 +538,7 @@ function PatientTable({
  * Header that toggles a column's sort. Shows an arrow when this
  * column is the active sort key. Single-button design keeps the
  * table header keyboard-navigable without nesting interactive
- * elements (a clickable `<th>` content + a separate sort icon button
+ * elements (a clickable `<th scope="col">` content + a separate sort icon button
  * would be two tab stops per column, which gets noisy fast on an
  * eight-column table).
  */
@@ -560,7 +560,7 @@ function SortableTh({
   const isActive = activeKey === sortKey;
   const Icon = dir === "asc" ? ArrowUp : ArrowDown;
   return (
-    <th className={`px-3 py-2 text-${align} font-medium`}>
+    <th scope="col" className={`px-3 py-2 text-${align} font-medium`}>
       <button
         type="button"
         onClick={() => onClick(sortKey)}
@@ -657,7 +657,11 @@ function Th({
   children: React.ReactNode;
   align?: "left" | "right";
 }) {
-  return <th className={`px-3 py-2 text-${align} font-medium`}>{children}</th>;
+  return (
+    <th scope="col" className={`px-3 py-2 text-${align} font-medium`}>
+      {children}
+    </th>
+  );
 }
 
 function Td({

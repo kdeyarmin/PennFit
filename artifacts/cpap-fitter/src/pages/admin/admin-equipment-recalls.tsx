@@ -287,10 +287,18 @@ function ScanResultModal({
                 className="text-left border-b"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <th className="py-2 font-semibold">Patient</th>
-                <th className="py-2 font-semibold">Serial</th>
-                <th className="py-2 font-semibold">Model</th>
-                <th className="py-2 font-semibold">Status</th>
+                <th scope="col" className="py-2 font-semibold">
+                  Patient
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Serial
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Model
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Status
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -702,11 +710,19 @@ function RecallRosterModal({
                 className="text-left border-b"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <th className="py-2 font-semibold">Asset</th>
-                <th className="py-2 font-semibold">Notification</th>
-                <th className="py-2 font-semibold">Channel</th>
-                <th className="py-2 font-semibold">Remediation</th>
-                <th className="py-2 font-semibold"></th>
+                <th scope="col" className="py-2 font-semibold">
+                  Asset
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Notification
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Channel
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Remediation
+                </th>
+                <th scope="col" className="py-2 font-semibold"></th>
               </tr>
             </thead>
             <tbody>

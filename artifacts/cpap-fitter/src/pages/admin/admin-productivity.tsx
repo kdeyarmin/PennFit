@@ -98,32 +98,34 @@ export function AdminProductivityPage() {
                 className="text-left border-b"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <th className="py-2 font-semibold">Agent</th>
-                <th className="py-2 font-semibold text-right">
+                <th scope="col" className="py-2 font-semibold">
+                  Agent
+                </th>
+                <th scope="col" className="py-2 font-semibold text-right">
                   Open
                   <div className="text-[10px] font-normal text-muted-foreground">
                     queue (now)
                   </div>
                 </th>
-                <th className="py-2 font-semibold text-right">
+                <th scope="col" className="py-2 font-semibold text-right">
                   Closed
                   <div className="text-[10px] font-normal text-muted-foreground">
                     conversations*
                   </div>
                 </th>
-                <th className="py-2 font-semibold text-right">
+                <th scope="col" className="py-2 font-semibold text-right">
                   Returns
                   <div className="text-[10px] font-normal text-muted-foreground">
                     approved / rejected
                   </div>
                 </th>
-                <th className="py-2 font-semibold text-right">
+                <th scope="col" className="py-2 font-semibold text-right">
                   Compliance
                   <div className="text-[10px] font-normal text-muted-foreground">
                     alerts resolved
                   </div>
                 </th>
-                <th className="py-2 font-semibold text-right">
+                <th scope="col" className="py-2 font-semibold text-right">
                   Follow-ups
                   <div className="text-[10px] font-normal text-muted-foreground">
                     completed

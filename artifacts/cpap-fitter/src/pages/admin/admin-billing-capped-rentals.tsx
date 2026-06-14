@@ -274,13 +274,27 @@ export function AdminBillingCappedRentalsPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">HCPCS</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Month</th>
-                  <th className="p-3">Modifier</th>
-                  <th className="p-3">Start</th>
-                  <th className="p-3">Next advance</th>
-                  <th className="p-3 text-right">Patient</th>
+                  <th scope="col" className="p-3">
+                    HCPCS
+                  </th>
+                  <th scope="col" className="p-3">
+                    Status
+                  </th>
+                  <th scope="col" className="p-3">
+                    Month
+                  </th>
+                  <th scope="col" className="p-3">
+                    Modifier
+                  </th>
+                  <th scope="col" className="p-3">
+                    Start
+                  </th>
+                  <th scope="col" className="p-3">
+                    Next advance
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Patient
+                  </th>
                 </tr>
               </thead>
               <tbody>

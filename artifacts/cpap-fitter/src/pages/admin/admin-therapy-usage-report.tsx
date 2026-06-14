@@ -749,6 +749,7 @@ function Th({
 }) {
   return (
     <th
+      scope="col"
       className="py-2 text-[11px] font-semibold uppercase"
       style={{
         letterSpacing: "0.06em",

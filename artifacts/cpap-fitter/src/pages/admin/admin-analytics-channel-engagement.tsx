@@ -223,14 +223,30 @@ function MessagingTable({ rows }: { rows: MessagingChannelStats[] }) {
           <table className="w-full text-sm min-w-[720px]">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
               <tr>
-                <th className="text-left px-3 py-2">Channel</th>
-                <th className="text-right px-3 py-2">Conversations</th>
-                <th className="text-right px-3 py-2">Sent</th>
-                <th className="text-right px-3 py-2">Replies</th>
-                <th className="text-right px-3 py-2">Reply rate</th>
-                <th className="text-right px-3 py-2">Delivered</th>
-                <th className="text-right px-3 py-2">Failed</th>
-                <th className="text-right px-3 py-2">Delivery rate</th>
+                <th scope="col" className="text-left px-3 py-2">
+                  Channel
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Conversations
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Sent
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Replies
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Reply rate
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Delivered
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Failed
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Delivery rate
+                </th>
               </tr>
             </thead>
             <tbody>

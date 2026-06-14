@@ -489,11 +489,21 @@ function AccountsTab() {
                   className="text-left"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="px-4 py-2 font-medium">Provider</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">2FA</th>
-                  <th className="px-4 py-2 font-medium">Last sign-in</th>
-                  <th className="px-4 py-2 font-medium text-right">Actions</th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Provider
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    2FA
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Last sign-in
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium text-right">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -724,11 +734,21 @@ function DocumentsTab() {
                   className="text-left"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="px-4 py-2 font-medium">Document</th>
-                  <th className="px-4 py-2 font-medium">Provider</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">Lifecycle</th>
-                  <th className="px-4 py-2 font-medium text-right">Actions</th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Document
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Provider
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Lifecycle
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium text-right">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>

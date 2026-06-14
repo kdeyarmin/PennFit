@@ -185,11 +185,21 @@ function BySourceTable({ rows }: { rows: RevenueSourceBucket[] }) {
       <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">Source</th>
-            <th className="text-right px-3 py-2">Orders</th>
-            <th className="text-right px-3 py-2">Units</th>
-            <th className="text-right px-3 py-2">Paid orders</th>
-            <th className="text-right px-3 py-2">Cash revenue</th>
+            <th scope="col" className="text-left px-3 py-2">
+              Source
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Orders
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Units
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Paid orders
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Cash revenue
+            </th>
           </tr>
         </thead>
         <tbody>

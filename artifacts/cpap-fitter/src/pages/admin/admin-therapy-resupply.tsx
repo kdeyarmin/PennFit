@@ -231,11 +231,21 @@ function OpportunitiesTable({
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            <th className="py-2 font-semibold">Patient</th>
-            <th className="py-2 font-semibold">Item</th>
-            <th className="py-2 font-semibold">Source</th>
-            <th className="py-2 font-semibold">Last replaced</th>
-            <th className="py-2 font-semibold text-right">Status</th>
+            <th scope="col" className="py-2 font-semibold">
+              Patient
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Item
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Source
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Last replaced
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Status
+            </th>
           </tr>
         </thead>
         <tbody>

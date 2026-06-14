@@ -359,12 +359,22 @@ function FaxTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Received</th>
-          <th className="py-2 font-semibold">From</th>
-          <th className="py-2 font-semibold">Pages</th>
-          <th className="py-2 font-semibold">Category</th>
-          <th className="py-2 font-semibold">Status</th>
-          <th className="py-2 font-semibold"></th>
+          <th scope="col" className="py-2 font-semibold">
+            Received
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            From
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Pages
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Category
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
+          <th scope="col" className="py-2 font-semibold"></th>
         </tr>
       </thead>
       <tbody>

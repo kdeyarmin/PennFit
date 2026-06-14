@@ -134,12 +134,24 @@ export function AdminBillingConfigFeeSchedulesPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">Payer</th>
-                  <th className="p-3">HCPCS</th>
-                  <th className="p-3">Modifier</th>
-                  <th className="p-3 text-right">Allowed</th>
-                  <th className="p-3">Effective</th>
-                  <th className="p-3">Source</th>
+                  <th scope="col" className="p-3">
+                    Payer
+                  </th>
+                  <th scope="col" className="p-3">
+                    HCPCS
+                  </th>
+                  <th scope="col" className="p-3">
+                    Modifier
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Allowed
+                  </th>
+                  <th scope="col" className="p-3">
+                    Effective
+                  </th>
+                  <th scope="col" className="p-3">
+                    Source
+                  </th>
                 </tr>
               </thead>
               <tbody>

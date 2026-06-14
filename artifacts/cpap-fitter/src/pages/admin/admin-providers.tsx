@@ -146,12 +146,22 @@ function ProvidersTable({ rows }: { rows: ProviderListItem[] }) {
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            <th className="py-2 font-semibold">NPI</th>
-            <th className="py-2 font-semibold">Name</th>
-            <th className="py-2 font-semibold">Taxonomy</th>
-            <th className="py-2 font-semibold">Fax</th>
-            <th className="py-2 font-semibold">Source</th>
-            <th className="py-2 font-semibold" />
+            <th scope="col" className="py-2 font-semibold">
+              NPI
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Name
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Taxonomy
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Fax
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Source
+            </th>
+            <th scope="col" className="py-2 font-semibold" />
           </tr>
         </thead>
         <tbody>
@@ -255,11 +265,21 @@ function CaseloadTable({ rows }: { rows: ProviderCaseloadEntry[] }) {
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Patient</th>
-          <th className="py-2 font-semibold">Email</th>
-          <th className="py-2 font-semibold">Phone</th>
-          <th className="py-2 font-semibold">Rx status</th>
-          <th className="py-2 font-semibold">Valid until</th>
+          <th scope="col" className="py-2 font-semibold">
+            Patient
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Email
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Phone
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Rx status
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Valid until
+          </th>
         </tr>
       </thead>
       <tbody>

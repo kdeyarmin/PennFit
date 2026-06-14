@@ -240,12 +240,24 @@ export function AdminShopAbandonedCartsPage() {
         <table className="w-full text-sm min-w-[720px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
-              <th className="text-left px-3 py-2 font-semibold">Status</th>
-              <th className="text-left px-3 py-2 font-semibold">Customer</th>
-              <th className="text-right px-3 py-2 font-semibold">Items</th>
-              <th className="text-right px-3 py-2 font-semibold">Subtotal</th>
-              <th className="text-left px-3 py-2 font-semibold">Updated</th>
-              <th className="text-left px-3 py-2 font-semibold">Nudge</th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Status
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Customer
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Items
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Subtotal
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Updated
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Nudge
+              </th>
             </tr>
           </thead>
           <tbody>
