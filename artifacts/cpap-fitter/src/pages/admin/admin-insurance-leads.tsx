@@ -220,7 +220,7 @@ export function AdminInsuranceLeadsPage() {
                 </td>
               </tr>
             )}
-            {!isPending && rows.length === 0 && (
+            {!isPending && !isError && rows.length === 0 && (
               <tr>
                 <td
                   colSpan={5}

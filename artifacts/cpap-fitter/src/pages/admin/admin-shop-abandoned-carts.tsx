@@ -272,7 +272,7 @@ export function AdminShopAbandonedCartsPage() {
                 </td>
               </tr>
             )}
-            {!isPending && rows.length === 0 && (
+            {!isPending && !isError && rows.length === 0 && (
               <tr>
                 <td
                   colSpan={6}
