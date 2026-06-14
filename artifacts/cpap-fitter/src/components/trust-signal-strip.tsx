@@ -1,16 +1,19 @@
-// Trust-signal strip — five compact badges of social proof and
+// Trust-signal strip — compact badges of social proof and
 // reassurance, rendered just under the home-page hero. The ★ rating
 // + review count comes live from /shop/reviews/site-aggregate; the
 // other badges are static brand promises that already appear (in
-// long form) on /insurance, /comfort-guarantee, and the footer.
+// long form) on /consent (on-device privacy), /insurance,
+// /comfort-guarantee, and the footer. The privacy badge surfaces the
+// mask-fitter's on-device guarantee — images never leave the browser —
+// as a headline marketing signal, not just consent-gate fine print.
 //
-// The strip self-hides if the live aggregate request fails or the
-// shop has zero approved reviews — better to show four trust badges
-// than four trust badges plus a dishonest "0.0★ from 0 reviews"
-// chip.
+// The strip self-hides the rating chip if the live aggregate request
+// fails or the shop has zero approved reviews — better to show the
+// static trust badges alone than to add a dishonest "0.0★ from 0
+// reviews" chip.
 
 import React, { useEffect, useState } from "react";
-import { ShieldCheck, RefreshCw, PackageCheck, Star } from "lucide-react";
+import { ShieldCheck, RefreshCw, PackageCheck, Star, Lock } from "lucide-react";
 import { getShopReviewsSiteAggregate } from "@/lib/shop-api";
 
 interface Aggregate {
@@ -45,6 +48,11 @@ export function TrustSignalStrip() {
     label: React.ReactNode;
     testid: string;
   }> = [
+    {
+      Icon: Lock,
+      label: "Private by design — images never leave your device",
+      testid: "trust-privacy",
+    },
     {
       Icon: ShieldCheck,
       label: "Medicare & most major plans",
