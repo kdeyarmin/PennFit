@@ -71,6 +71,7 @@ import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery
 import { registerPatientPacketReminderJob } from "./jobs/patient-packet-reminders.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
 import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
+import { registerAssetRecoveryAutoPopulateJob } from "./jobs/asset-recovery-auto-populate.js";
 import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
 import { registerQuarterlyTherapySummaryJob } from "./jobs/quarterly-therapy-summary.js";
 import { registerLifecycleTouchpointsJob } from "./jobs/lifecycle-touchpoints.js";
@@ -822,6 +823,14 @@ async function doStartWorker(): Promise<void> {
     "registerLapsedCustomerWinbackJob",
     registrationFailures,
     () => registerLapsedCustomerWinbackJob(boss),
+  );
+  // Nightly: open asset-recovery cases from discontinuation signals
+  // (usage_dropping smart triggers). Flag-gated (asset_recovery.auto_populate,
+  // seeded OFF) — no-ops until an operator opts in.
+  await safeRegister(
+    "registerAssetRecoveryAutoPopulateJob",
+    registrationFailures,
+    () => registerAssetRecoveryAutoPopulateJob(boss),
   );
 
   // Daily deductible-reset push — short-circuits unless current month
