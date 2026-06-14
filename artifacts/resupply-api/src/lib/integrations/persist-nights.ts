@@ -6,9 +6,9 @@
 // changed (a partner re-scored a night after the fact, etc.).
 
 import type { TherapyNight } from "@workspace/resupply-integrations";
-import { type getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type getOrgScopedClient } from "@workspace/resupply-db";
 
-type Supabase = ReturnType<typeof getSupabaseServiceRoleClient>;
+type Supabase = ReturnType<typeof getOrgScopedClient>;
 
 export interface PersistResult {
   inserted: number;
@@ -81,7 +81,6 @@ export async function persistTherapyNights(
       ).values(),
     ];
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .upsert(dedupedChunk, {
         onConflict: "patient_id,night_date,source",

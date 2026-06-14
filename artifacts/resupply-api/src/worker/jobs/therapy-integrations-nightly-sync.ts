@@ -21,7 +21,8 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
@@ -161,7 +162,18 @@ export interface NightlySyncResult {
 }
 
 export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  // Single-tenant bridge: this nightly sweep has no per-tenant payload,
+  // so scope to the one seed org. Becomes a per-org loop when a 2nd
+  // tenant lands.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: THERAPY_NIGHTLY_SYNC_JOB },
+      "therapy nightly-sync: could not resolve seed org — skipping",
+    );
+    return { scanned: 0, refreshed: 0, failed: 0, nightsPersisted: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const adapters = await getIntegrationAdaptersWithDbOverrides();
   const result: NightlySyncResult = {
     scanned: 0,
@@ -171,7 +183,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
   };
 
   const { data: links, error } = await supabase
-    .schema("resupply")
     .from("patient_therapy_links")
     .select("id, patient_id, source, partner_patient_id, status")
     .eq("status", "active")
@@ -214,7 +225,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
         // above was added to fix. Throw into the per-link catch so it
         // is logged and counted as failed.
         const { error: errSnapErr } = await supabase
-          .schema("resupply")
           .from("patient_integration_snapshots")
           .upsert(
             {
@@ -237,7 +247,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
           );
         if (errSnapErr) throw errSnapErr;
         const { error: errStampErr } = await supabase
-          .schema("resupply")
           .from("patient_therapy_links")
           .update({
             last_synced_at: fetchedAtIso,
@@ -276,7 +285,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
       // Same as the error branch above: a dropped write here both
       // over-reports `refreshed` and (for the stamp) starves rotation.
       const { error: okSnapErr } = await supabase
-        .schema("resupply")
         .from("patient_integration_snapshots")
         .upsert(
           {
@@ -292,7 +300,6 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
         );
       if (okSnapErr) throw okSnapErr;
       const { error: okStampErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_links")
         .update({
           last_synced_at: fetchedAtIso,

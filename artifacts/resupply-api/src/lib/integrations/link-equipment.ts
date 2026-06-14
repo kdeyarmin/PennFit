@@ -28,9 +28,9 @@
 //     we should silently change.
 
 import type { DeviceSettings } from "@workspace/resupply-integrations";
-import { type getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type getOrgScopedClient } from "@workspace/resupply-db";
 
-type Supabase = ReturnType<typeof getSupabaseServiceRoleClient>;
+type Supabase = ReturnType<typeof getOrgScopedClient>;
 type EquipmentDeviceClass =
   | "cpap"
   | "auto_cpap"
@@ -106,7 +106,6 @@ export async function linkEquipmentFromSnapshot(
 
   // Check for an existing row by the unique-index key.
   const { data: existing, error: lookupErr } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .select("id, patient_id")
     .eq("manufacturer", inferredManufacturer)
@@ -129,7 +128,6 @@ export async function linkEquipmentFromSnapshot(
   }
 
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .insert({
       patient_id: patientId,
@@ -155,7 +153,6 @@ export async function linkEquipmentFromSnapshot(
   if (error) {
     if ((error as { code?: string }).code === "23505") {
       const { data: raced, error: racedLookupErr } = await supabase
-        .schema("resupply")
         .from("equipment_assets")
         .select("id, patient_id")
         .eq("manufacturer", inferredManufacturer)

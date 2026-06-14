@@ -25,10 +25,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Json,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
 import {
   INTEGRATION_SOURCES,
   integrationSnapshotSchema,
@@ -114,10 +111,14 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -131,7 +132,6 @@ router.get(
 
     const [linksRes, snapshotsRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patient_therapy_links")
         .select(
           "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error",
@@ -140,7 +140,6 @@ router.get(
         .order("status", { ascending: true })
         .order("source", { ascending: true }),
       supabase
-        .schema("resupply")
         .from("patient_integration_snapshots")
         .select("id, source, payload, fetch_status, fetch_error, fetched_at")
         .eq("patient_id", patientId),
@@ -222,13 +221,17 @@ router.post(
     }
     const { source } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Look up the active link for this (patient, source). Every
     // therapy source requires an active partner link before a
     // refresh can pull a snapshot.
     const { data: link, error: linkErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_links")
       .select("partner_patient_id")
       .eq("patient_id", patientId)
@@ -298,7 +301,6 @@ router.post(
     let priorSettings: typeof payload.settings = null;
     if (fetchStatus === "ok") {
       const { data: prior } = await supabase
-        .schema("resupply")
         .from("patient_integration_snapshots")
         .select("payload")
         .eq("patient_id", patientId)
@@ -316,7 +318,6 @@ router.post(
     // PostgREST's `Json` type rejects it without a cast.
     const fetchedAtIso = new Date().toISOString();
     const { data: row, error: upsertErr } = await supabase
-      .schema("resupply")
       .from("patient_integration_snapshots")
       .upsert(
         {
