@@ -20,5 +20,14 @@
 #
 # Remove the entry once the edit has shipped — an allowlisted file stays
 # editable without a tripwire until the line is deleted.
-#
-# (No active entries.)
+
+# 2026-06-14 prefix-collision renumber: the multi-tenant org_id backfill
+# files 0337_org_id_patient_clinical.sql and 0338_org_id_completion.sql
+# collided on main with 0337_smart_trigger_snooze.sql /
+# 0338_clinical_signal_daily_metrics.sql (post-merge tree-wide check). The
+# org_id files were renamed to 0340_/0341_ (identical content, never
+# applied to prod yet). The immutability check sees the old paths as
+# deletions; allowlist them so this renumber PR passes. Safe to delete
+# these two lines after this PR merges.
+0337_org_id_patient_clinical.sql
+0338_org_id_completion.sql
