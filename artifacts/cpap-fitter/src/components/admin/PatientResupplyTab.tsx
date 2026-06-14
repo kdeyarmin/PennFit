@@ -28,6 +28,7 @@ import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { Sparkline } from "@/components/admin/Sparkline";
+import type { SmartTriggerKind } from "@/lib/admin/smart-triggers-api";
 
 const BASE = "/resupply-api";
 
@@ -53,19 +54,6 @@ interface TherapyNight {
   leakRateLMin: number | null;
   pressureP95Cmh2o: number | null;
 }
-
-type SmartTriggerKind =
-  // Patient-facing nudges (auto-dispatchable):
-  | "leak_rising"
-  | "usage_dropping"
-  | "cushion_wear"
-  | "humidifier_drop"
-  // Clinical signals — RT-owned, never auto-messaged:
-  | "ahi_elevated"
-  | "non_adherent_30d"
-  | "pressure_at_max"
-  | "ahi_rising"
-  | "usage_erratic";
 
 interface SmartTrigger {
   id: string;

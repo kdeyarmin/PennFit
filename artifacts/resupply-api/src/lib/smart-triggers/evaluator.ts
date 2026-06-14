@@ -112,7 +112,10 @@ export async function runSmartTriggerEvaluator(
     deviceMaxByPatient = await fetchDeviceMaxPressureMap(supabase);
   } catch (err) {
     logger.warn(
-      { err: err instanceof Error ? err.message : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "smart-trigger-evaluator: device-max prefetch failed — pressure rule skipped this run",
     );
   }

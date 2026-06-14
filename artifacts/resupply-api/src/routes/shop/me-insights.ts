@@ -29,6 +29,7 @@ import { z } from "zod";
 
 import {
   getSupabaseServiceRoleClient,
+  SMART_TRIGGER_KINDS,
   type SmartTriggerKind,
 } from "@workspace/resupply-db";
 
@@ -116,6 +117,12 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
   }
 
   const supabase = getSupabaseServiceRoleClient();
+  // Restrict to the patient-facing kinds (the ones COPY can render).
+  // The trigger table also holds clinician-owned CLINICAL kinds
+  // (pressure_at_max, ahi_elevated, ahi_rising, non_adherent_30d,
+  // usage_erratic) which must NEVER surface to the customer — and which
+  // COPY has no entry for, so projecting one would 500. Filtering at the
+  // query also keeps clinical rows from consuming the RESPONSE_LIMIT.
   const { data: events, error } = await supabase
     .schema("resupply")
     .from("patient_smart_trigger_events")
@@ -123,6 +130,7 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
       "id, kind, detected_at, window_start_date, window_end_date, sent_at",
     )
     .eq("patient_id", patientId)
+    .in("kind", SMART_TRIGGER_KINDS as readonly string[])
     .is("dismissed_at", null)
     .order("detected_at", { ascending: false })
     .limit(RESPONSE_LIMIT);
