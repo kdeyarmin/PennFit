@@ -317,6 +317,11 @@ vi.mock("@workspace/resupply-db", async () => {
             typeof actual.getOrgScopedClient
           >[1]),
       ),
+    // Worker sweeps resolve their tenant via resolveSeedOrgId() (the
+    // single-tenant bridge) before any query. Stub it to a fixed test
+    // org so the sweep runs against the staged mock responses instead of
+    // short-circuiting on a (mock-unstaged) organizations lookup.
+    resolveSeedOrgId: async () => "00000000-0000-4000-8000-000000000000",
     // Best-effort projection upserts — the route tests don't
     // exercise projection refresh assertions, so we no-op the
     // helper rather than route through the mock builder. Tests
