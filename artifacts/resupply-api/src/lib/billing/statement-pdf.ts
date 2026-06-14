@@ -235,7 +235,8 @@ function drawStatement(doc: PDFKit.PDFDocument, input: StatementInput): void {
     // Itemized sub-line: deductible / coinsurance / copay, shown only
     // when the payer supplied a breakdown for this claim.
     const parts: string[] = [];
-    if (item.deductibleCents) parts.push(`Deductible ${money(item.deductibleCents)}`);
+    if (item.deductibleCents)
+      parts.push(`Deductible ${money(item.deductibleCents)}`);
     if (item.coinsuranceCents)
       parts.push(`Coinsurance ${money(item.coinsuranceCents)}`);
     if (item.copayCents) parts.push(`Copay ${money(item.copayCents)}`);

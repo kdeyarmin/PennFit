@@ -34,14 +34,14 @@ rates. The AI mask-fitting tech comes from **SleepGlad**, which VGM acquired.
 
 ### The six published offerings
 
-| # | Offering | What it is |
-|---|----------|------------|
-| 1 | **AI Mask Fitting** | Patient gets a link, scans their face with any camera. AI recommends mask + size "in seconds." Claimed **~2 min, 97% accuracy, ~15 min clinician time saved** (SleepGlad tech). |
-| 2 | **Machine Dropship** | Licensed pros (RTs) set pressure; machine + supplies ship directly to the patient's home. |
-| 3 | **Compliance & Adherence** | Human "Sleep Coaches" do setup guidance + usage monitoring. **7 points of contact in the first 90 days**; bi-directional call/text/email. |
-| 4 | **Resupply Fulfillment** | Inventory, pick/pack/ship of consumables to keep resupply revenue flowing. |
-| 5 | **Asset Recovery** | Retrieve unused machines from patients who quit therapy, for redeployment. |
-| 6 | **Return Management** | Process returns and restock the provider's inventory. |
+| #   | Offering                   | What it is                                                                                                                                                                      |
+| --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **AI Mask Fitting**        | Patient gets a link, scans their face with any camera. AI recommends mask + size "in seconds." Claimed **~2 min, 97% accuracy, ~15 min clinician time saved** (SleepGlad tech). |
+| 2   | **Machine Dropship**       | Licensed pros (RTs) set pressure; machine + supplies ship directly to the patient's home.                                                                                       |
+| 3   | **Compliance & Adherence** | Human "Sleep Coaches" do setup guidance + usage monitoring. **7 points of contact in the first 90 days**; bi-directional call/text/email.                                       |
+| 4   | **Resupply Fulfillment**   | Inventory, pick/pack/ship of consumables to keep resupply revenue flowing.                                                                                                      |
+| 5   | **Asset Recovery**         | Retrieve unused machines from patients who quit therapy, for redeployment.                                                                                                      |
+| 6   | **Return Management**      | Process returns and restock the provider's inventory.                                                                                                                           |
 
 That is essentially the entire public surface. There is no published patient
 portal, no self-service storefront, no claims/RCM product, no analytics suite —
@@ -52,14 +52,14 @@ software.
 
 ## 2. Head-to-head: the six offerings
 
-| Capability | Total Sleep Services | PennFit |
-|---|---|---|
-| **AI mask fitting** | ✅ Face-scan link, ~2 min, claimed 97% accuracy (SleepGlad). Run by VGM. | ✅ **On-device** MediaPipe facial measurement — **images never leave the browser**, only numeric measurements transmitted (`pages/measure.tsx`, `/shop/me/mask-fit-response`). Shareable fitter-invite links + lead capture + RT mask-fit worklist. Privacy posture is a genuine differentiator. |
-| **Machine dropship + pressure setting** | ✅ RT sets pressure, ships to home. | 🟡 PennFit ships supplies/cash-pay orders + has dispense-readiness, carrier labels, fulfillment→claim mapping, equipment registry. **Clinical pressure-setting by an RT is a human/operational step, not a software feature** — PennFit gives the workflow, the provider supplies the RT. |
-| **Compliance & adherence** | ✅ Human Sleep Coaches, 7 touches / 90 days. | ✅ **Automated + AI**: smart-trigger dispatcher (high AHI, low usage, no-data), clinical-outreach campaigns, interventions log, RT outcomes, day 3/7/30/60/90 check-in calls, **AI Sleep Coach chatbot**, plus voice agent. Scales without headcount. |
-| **Resupply fulfillment** | ✅ VGM runs pick/pack/ship + inventory. | ✅ Full resupply **engine**: Medicare-LCD cadence reminders (SMS/email/push), magic-link YES/EDIT/STOP, inbound-SMS & IVR reorder, eligibility-gated entitlement checks, funnel analytics, auto-enroll lever. PennFit automates the _decisioning_; warehouse pick/pack is the provider's (or 3PL's). |
-| **Asset recovery** | ✅ Physically retrieves unused machines. | ❌ Not a discrete feature. PennFit detects discontinuation (low-usage smart triggers, lapsed-customer win-back) but does not orchestrate physical machine retrieval/RMA-for-redeployment. **Gap worth noting.** |
-| **Return management** | ✅ VGM processes returns + restocks. | ✅ Full RMA: patient return portal, admin RMA lifecycle (approve→ship-back→receive→reconcile), loss-claim tracking, inventory reconciliation. |
+| Capability                              | Total Sleep Services                                                     | PennFit                                                                                                                                                                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AI mask fitting**                     | ✅ Face-scan link, ~2 min, claimed 97% accuracy (SleepGlad). Run by VGM. | ✅ **On-device** MediaPipe facial measurement — **images never leave the browser**, only numeric measurements transmitted (`pages/measure.tsx`, `/shop/me/mask-fit-response`). Shareable fitter-invite links + lead capture + RT mask-fit worklist. Privacy posture is a genuine differentiator.     |
+| **Machine dropship + pressure setting** | ✅ RT sets pressure, ships to home.                                      | 🟡 PennFit ships supplies/cash-pay orders + has dispense-readiness, carrier labels, fulfillment→claim mapping, equipment registry. **Clinical pressure-setting by an RT is a human/operational step, not a software feature** — PennFit gives the workflow, the provider supplies the RT.            |
+| **Compliance & adherence**              | ✅ Human Sleep Coaches, 7 touches / 90 days.                             | ✅ **Automated + AI**: smart-trigger dispatcher (high AHI, low usage, no-data), clinical-outreach campaigns, interventions log, RT outcomes, day 3/7/30/60/90 check-in calls, **AI Sleep Coach chatbot**, plus voice agent. Scales without headcount.                                                |
+| **Resupply fulfillment**                | ✅ VGM runs pick/pack/ship + inventory.                                  | ✅ Full resupply **engine**: Medicare-LCD cadence reminders (SMS/email/push), magic-link YES/EDIT/STOP, inbound-SMS & IVR reorder, eligibility-gated entitlement checks, funnel analytics, auto-enroll lever. PennFit automates the _decisioning_; warehouse pick/pack is the provider's (or 3PL's). |
+| **Asset recovery**                      | ✅ Physically retrieves unused machines.                                 | ❌ Not a discrete feature. PennFit detects discontinuation (low-usage smart triggers, lapsed-customer win-back) but does not orchestrate physical machine retrieval/RMA-for-redeployment. **Gap worth noting.**                                                                                      |
+| **Return management**                   | ✅ VGM processes returns + restocks.                                     | ✅ Full RMA: patient return portal, admin RMA lifecycle (approve→ship-back→receive→reconcile), loss-claim tracking, inventory reconciliation.                                                                                                                                                        |
 
 ---
 
