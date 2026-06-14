@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { respondInvalidBody } from "../../lib/http-validation";
@@ -56,9 +56,16 @@ router.post(
       respondInvalidBody(res, parsed.error);
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data, error } = await supabase
-      .schema("resupply")
+    // Multi-tenant Phase 0 enforcement: fail-closed tenant context.
+    // requireAdmin attaches req.orgId; refuse rather than widen to all
+    // tenants if it's somehow absent.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data, error } = await db
       .from("patient_therapy_nights")
       .upsert(
         {
