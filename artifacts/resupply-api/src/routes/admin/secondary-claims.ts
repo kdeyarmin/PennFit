@@ -124,7 +124,9 @@ router.post(
         });
         return;
       case "query_failed":
-        res.status(500).json({ error: "query_failed", message: result.message });
+        res
+          .status(500)
+          .json({ error: "query_failed", message: result.message });
         return;
       case "create_failed":
         res.status(500).json({ error: "secondary_create_failed" });
