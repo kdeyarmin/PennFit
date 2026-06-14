@@ -36,7 +36,12 @@ export const logger = pino({
     // DSN leak. Redact at the log layer too so the failure mode is
     // a missing field, not a leaked secret.
     "err.message",
+    // `err.detail` (singular) is node-postgres' field; supabase-js /
+    // PostgREST errors use `err.details` (plural). Both can echo the
+    // offending row's column values on a constraint violation (patient
+    // name / DOB / email / address), so redact both spellings.
     "err.detail",
+    "err.details",
     "err.hint",
     "err.where",
     "err.hostname",
@@ -54,6 +59,8 @@ export const logger = pino({
     // shape repeats on the cause. Redact both fields there too.
     "err.cause.message",
     "err.cause.stack",
+    "err.cause.detail",
+    "err.cause.details",
   ],
   ...(isProduction
     ? {}
