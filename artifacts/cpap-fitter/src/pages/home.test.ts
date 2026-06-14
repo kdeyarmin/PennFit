@@ -41,8 +41,10 @@ describe("home — hero-eyebrow element", () => {
     expect(markMatches.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("shows the 'Penn Home Medical Supply · CPAP Care' label", () => {
-    expect(SRC).toContain("Penn Home Medical Supply");
+  it("shows the '<legal name> · CPAP Care' label (legal name is per-tenant)", () => {
+    // The legal name is now resolved from the live storefront branding
+    // (per-tenant) rather than hardcoded; "CPAP Care" stays literal.
+    expect(SRC).toContain("{branding.legalName}");
     expect(SRC).toContain("CPAP Care");
   });
 
@@ -96,19 +98,21 @@ describe("home — hero body copy text colours", () => {
     expect(SRC).toContain("text-muted-foreground");
   });
 
-  it("'PennPaps.com' bold span uses text-foreground (was text-white)", () => {
-    // Check that the span wrapping PennPaps.com uses text-foreground.
-    const pennPapsMatch = SRC.match(
-      /className="font-semibold text-foreground"[^>]*>\s*PennPaps\.com/,
+  it("storefront-name bold span uses text-foreground (was text-white)", () => {
+    // The bold span now wraps the per-tenant storefront name binding
+    // instead of the literal "PennPaps.com"; the colour class is the
+    // invariant under test.
+    const storefrontMatch = SRC.match(
+      /className="font-semibold text-foreground"[^>]*>\s*\{branding\.storefrontName\}/,
     );
-    expect(pennPapsMatch).not.toBeNull();
+    expect(storefrontMatch).not.toBeNull();
   });
 
-  it("'Penn Home Medical Supply' bold span uses text-foreground", () => {
-    const phmsMatch = SRC.match(
-      /className="font-semibold text-foreground"[^>]*>\s*Penn Home Medical Supply/,
+  it("legal-name bold span uses text-foreground", () => {
+    const legalMatch = SRC.match(
+      /className="font-semibold text-foreground"[^>]*>\s*\{branding\.legalName\}/,
     );
-    expect(phmsMatch).not.toBeNull();
+    expect(legalMatch).not.toBeNull();
   });
 
   it("does NOT use text-white/80 on any paragraph copy", () => {

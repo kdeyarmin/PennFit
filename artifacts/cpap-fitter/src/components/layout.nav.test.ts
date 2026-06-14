@@ -251,8 +251,11 @@ describe("layout.tsx — footer bottom bar", () => {
     expect(SRC).toContain('data-testid="footer-staff-signin"');
   });
 
-  it("includes copyright text referencing Penn Home Medical Supply", () => {
-    expect(SRC).toContain("Penn Home Medical Supply");
+  it("includes copyright text referencing the (per-tenant) legal name", () => {
+    // The company name in the footer copyright is now resolved from the
+    // live storefront branding rather than hardcoded.
+    expect(SRC).toContain("{branding.legalName}");
+    expect(SRC).toContain("Licensed DME");
   });
 });
 
