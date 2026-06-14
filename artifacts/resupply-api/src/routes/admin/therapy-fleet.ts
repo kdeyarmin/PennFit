@@ -194,7 +194,7 @@ interface DailyMetricRow {
   resupply_items_due: number | string;
   setups_in_window: number | string;
   setups_at_risk: number | string;
-  // Added in migration 0338; null on historical rows captured before it.
+  // Added in migration 0341; null on historical rows captured before it.
   clinical_signals_open: number | string | null;
   clinical_signals_high: number | string | null;
   clinical_signals_medium: number | string | null;
