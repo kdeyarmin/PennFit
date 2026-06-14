@@ -120,7 +120,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const summary = await runClinicalOutreachBatch({
+      orgId,
       cap: parsed.data.cap ?? 50,
     });
     req.log?.info(

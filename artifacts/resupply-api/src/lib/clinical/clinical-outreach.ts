@@ -19,7 +19,7 @@
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CommunicationPreferences,
   type Json,
 } from "@workspace/resupply-db";
@@ -32,7 +32,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 import { isInDndWindow, type DndOptions } from "../comm-prefs";
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export interface OutreachMessagingConfig {
   sendgridApiKey: string | null;
@@ -237,7 +237,6 @@ export async function sendOneOutreach(
   const now = deps.now ?? new Date();
 
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, phone_e164, address")
     .eq("id", target.patientId)
@@ -252,7 +251,6 @@ export async function sendOneOutreach(
   let prefs: CommunicationPreferences | null = null;
   if (email) {
     const { data: cust } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
       .eq("email_lower", email.toLowerCase())
@@ -282,7 +280,6 @@ export async function sendOneOutreach(
   }
 
   const { error: outreachLogErr } = await supabase
-    .schema("resupply")
     .from("clinical_outreach_log")
     .insert({
       patient_id: target.patientId,
@@ -382,6 +379,12 @@ async function deliver(
 }
 
 export interface OutreachBatchOpts {
+  /**
+   * Tenant to sweep. Callers resolve it: the admin "Run now" route from
+   * `req.orgId`, the cron from `resolveSeedOrgId()` (single-tenant
+   * bridge). Every read/write is scoped to it via `getOrgScopedClient`.
+   */
+  orgId: string;
   cap?: number;
   minHoursBetweenOutreach?: number;
 }
@@ -399,10 +402,10 @@ export interface OutreachBatchResult {
  * Fail-soft per patient.
  */
 export async function runClinicalOutreachBatch(
-  opts: OutreachBatchOpts = {},
+  opts: OutreachBatchOpts,
   deps: OutreachDeps = {},
 ): Promise<OutreachBatchResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(opts.orgId);
   const cap = opts.cap ?? 50;
   const minHours = opts.minHoursBetweenOutreach ?? 24 * 14; // fortnightly
   const result: OutreachBatchResult = {
@@ -414,7 +417,6 @@ export async function runClinicalOutreachBatch(
   };
 
   const { data, error } = await supabase
-    .schema("resupply")
     .from("clinical_encounters")
     .select("id, patient_id, assessment_category, created_at")
     .eq("encounter_type", "adherence_intervention")
@@ -434,7 +436,6 @@ export async function runClinicalOutreachBatch(
   const patientIds = [...new Set(rows.map((r) => r.patient_id))];
   const lastOutreach = new Map<string, string>();
   const { data: logs } = await supabase
-    .schema("resupply")
     .from("clinical_outreach_log")
     .select("patient_id, created_at")
     .in("patient_id", patientIds)
