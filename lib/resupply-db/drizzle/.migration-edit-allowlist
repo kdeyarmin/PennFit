@@ -31,3 +31,13 @@
 # these two lines after this PR merges.
 0337_org_id_patient_clinical.sql
 0338_org_id_completion.sql
+
+# 2026-06-14 prefix-collision renumber: 0344_tenant_storefront_branding.sql
+# (#847) and 0344_patient_dedup_rpcs_org_scoped.sql (#858) both took prefix
+# 0344 and merged in a race (post-merge tree-wide check). The
+# most-recently-merged file (the patient-dedup RPCs) is renamed to 0345_
+# with IDENTICAL content — migrate.mjs dedups by content sha256, so the
+# already-applied hash is unchanged and it is NOT re-applied to production.
+# The immutability check sees the old 0344 path as a deletion; allowlist it
+# so this renumber PR passes. Safe to delete this line after this PR merges.
+0344_patient_dedup_rpcs_org_scoped.sql
