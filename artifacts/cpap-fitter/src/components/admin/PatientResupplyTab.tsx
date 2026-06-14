@@ -54,9 +54,22 @@ interface TherapyNight {
   pressureP95Cmh2o: number | null;
 }
 
+type SmartTriggerKind =
+  // Patient-facing nudges (auto-dispatchable):
+  | "leak_rising"
+  | "usage_dropping"
+  | "cushion_wear"
+  | "humidifier_drop"
+  // Clinical signals — RT-owned, never auto-messaged:
+  | "ahi_elevated"
+  | "non_adherent_30d"
+  | "pressure_at_max"
+  | "ahi_rising"
+  | "usage_erratic";
+
 interface SmartTrigger {
   id: string;
-  kind: "leak_rising" | "usage_dropping" | "cushion_wear" | "humidifier_drop";
+  kind: SmartTriggerKind;
   detectedAt: string;
   windowStartDate: string;
   windowEndDate: string;
@@ -86,11 +99,42 @@ interface ResupplySummaryResponse {
   generatedAt: string;
 }
 
-const TRIGGER_LABEL: Record<SmartTrigger["kind"], string> = {
+const TRIGGER_LABEL: Record<SmartTriggerKind, string> = {
   leak_rising: "Leak rising",
   usage_dropping: "Usage dropping",
   cushion_wear: "Cushion wear",
   humidifier_drop: "Humidifier drop",
+  ahi_elevated: "AHI elevated",
+  non_adherent_30d: "Non-adherent (30d)",
+  pressure_at_max: "Pressure at device max",
+  ahi_rising: "AHI rising",
+  usage_erratic: "Erratic usage",
+};
+
+// Clinical signals are RT-owned — the dispatcher never auto-messages
+// them to the patient. The UI badges them so a CSR knows these need a
+// clinician's eyes, not a "reply YES to ship" nudge.
+const CLINICAL_KINDS: ReadonlySet<SmartTriggerKind> = new Set([
+  "ahi_elevated",
+  "non_adherent_30d",
+  "pressure_at_max",
+  "ahi_rising",
+  "usage_erratic",
+]);
+
+// One-line "what it means / what to do" hint per kind, shown under the
+// label so the worklist is self-explanatory.
+const TRIGGER_HINT: Record<SmartTriggerKind, string> = {
+  leak_rising: "Mask seal trending worse — likely a worn cushion.",
+  usage_dropping: "Therapy hours sliding — common drop-off point.",
+  cushion_wear: "Leak and AHI both up — cushion at end of life.",
+  humidifier_drop: "Usage dipped with stable pressure — offer fresh tubing.",
+  ahi_elevated: "Residual events high this week — review fit/pressure.",
+  non_adherent_30d: "Below the Medicare 70% bar — coverage at risk.",
+  pressure_at_max:
+    "APAP pegged at max with events still breaking through — pressure/Rx review.",
+  ahi_rising: "AHI worsening trend — intervene before it crosses the alarm.",
+  usage_erratic: "Binge-and-skip pattern — consistency coaching.",
 };
 
 const ALERT_TYPE_LABEL: Record<ComplianceAlert["alertType"], string> = {
@@ -169,37 +213,61 @@ export function PatientResupplyTab({ patientId }: { patientId: string }) {
               className="divide-y -mt-1 -mb-1"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              {data.smartTriggers.map((t) => (
-                <li
-                  key={t.id}
-                  className="py-2 text-sm flex items-center justify-between gap-3"
-                >
-                  <div>
+              {data.smartTriggers.map((t) => {
+                const isClinical = CLINICAL_KINDS.has(t.kind);
+                return (
+                  <li
+                    key={t.id}
+                    className="py-2 text-sm flex items-start justify-between gap-3"
+                  >
+                    <div>
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className="font-medium"
+                          style={{ color: "hsl(var(--ink-1))" }}
+                        >
+                          {TRIGGER_LABEL[t.kind]}
+                        </span>
+                        {isClinical && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: "rgba(8,47,107,0.10)",
+                              color: "#1e3a8a",
+                            }}
+                          >
+                            Clinical · RT
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className="block text-[11px]"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        {TRIGGER_HINT[t.kind]}
+                      </span>
+                      <span
+                        className="block text-[11px]"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        window {t.windowStartDate} → {t.windowEndDate}
+                      </span>
+                    </div>
                     <span
-                      className="font-medium"
-                      style={{ color: "hsl(var(--ink-1))" }}
-                    >
-                      {TRIGGER_LABEL[t.kind]}
-                    </span>
-                    <span
-                      className="ml-2 text-[11px]"
+                      className="text-[11px] whitespace-nowrap"
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
-                      window {t.windowStartDate} → {t.windowEndDate}
+                      {isClinical ? (
+                        <>review</>
+                      ) : t.sentAt ? (
+                        <>sent {new Date(t.sentAt).toLocaleDateString()}</>
+                      ) : (
+                        <>queued</>
+                      )}
                     </span>
-                  </div>
-                  <span
-                    className="text-[11px]"
-                    style={{ color: "hsl(var(--ink-3))" }}
-                  >
-                    {t.sentAt ? (
-                      <>sent {new Date(t.sentAt).toLocaleDateString()}</>
-                    ) : (
-                      <>queued</>
-                    )}
-                  </span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>

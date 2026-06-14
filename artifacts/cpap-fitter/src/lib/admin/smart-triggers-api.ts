@@ -10,10 +10,17 @@ import { ApiError } from "@workspace/api-client-react/admin";
 import { csrfHeader } from "../csrf";
 
 export type SmartTriggerKind =
+  // Patient-facing nudges (auto-dispatchable):
   | "leak_rising"
   | "usage_dropping"
   | "cushion_wear"
-  | "humidifier_drop";
+  | "humidifier_drop"
+  // Clinical signals — RT-owned, never auto-messaged to the patient:
+  | "ahi_elevated"
+  | "non_adherent_30d"
+  | "pressure_at_max"
+  | "ahi_rising"
+  | "usage_erratic";
 
 export interface SmartTriggerEventRow {
   id: string;

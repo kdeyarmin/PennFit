@@ -20,6 +20,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
+import { fetchDeviceMaxPressureMap } from "./snapshot-context";
 
 /** Defensive per-run patient cap. The daily cron evaluates EVERY active
  *  patient (the recent-night roster is paged in full below), so this is
@@ -101,6 +102,21 @@ export async function runSmartTriggerEvaluator(
     .slice(0, MAX_PATIENTS_PER_RUN)
     .map((patientId) => ({ patientId }));
 
+  // One paged scan of the cached vendor snapshots → patient_id → device
+  // max pressure, so the per-patient loop below feeds the
+  // pressure-pegging rule without a round-trip each. Best-effort: a
+  // read failure leaves the map empty and every non-pressure rule still
+  // runs.
+  let deviceMaxByPatient = new Map<string, number>();
+  try {
+    deviceMaxByPatient = await fetchDeviceMaxPressureMap(supabase);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : err },
+      "smart-trigger-evaluator: device-max prefetch failed — pressure rule skipped this run",
+    );
+  }
+
   let scanned = 0;
   let proposed = 0;
   let inserted = 0;
@@ -133,6 +149,7 @@ export async function runSmartTriggerEvaluator(
           pressureP95Cmh2o:
             n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
         })),
+        { deviceMaxPressureCmh2o: deviceMaxByPatient.get(c.patientId) ?? null },
       );
 
       for (const p of proposals) {
