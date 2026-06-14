@@ -46,6 +46,7 @@ export function AdminDeliveryFailuresPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div
           role="tablist"
+          aria-label="Delivery failure type"
           className="inline-flex gap-1 p-1 rounded-lg bg-slate-100"
         >
           {(["messages", "audit"] as Tab[]).map((t) => {
