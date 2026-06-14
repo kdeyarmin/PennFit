@@ -41,12 +41,16 @@ import {
   getFleetWorklist,
   fleetWorklistCsvUrl,
   setWorklistAction,
+  getClinicalInsights,
+  clinicalInsightsCsvUrl,
   type FleetAlert,
   type FleetTrendPoint,
   type WorklistAction,
   type WorklistActionStatus,
   type WorklistEntry,
   type WorklistReason,
+  type ClinicalInsightEntry,
+  type ClinicalTriggerKind,
 } from "@/lib/admin/therapy-fleet-api";
 import { appDateIsoOffset } from "@/lib/utils";
 
@@ -58,6 +62,48 @@ const ALERT_LABELS: Record<string, string> = {
   usage_decline: "Usage decline",
   setup_at_risk: "Setup at risk",
 };
+
+// Clinical smart-trigger signals (RT-owned) — label + badge tone + the
+// "so what". Kept in lockstep with the clinical-insights report route and
+// lib/smart-triggers/index.ts.
+const CLINICAL_KIND_META: Record<
+  ClinicalTriggerKind,
+  { label: string; variant: "danger" | "warning"; blurb: string }
+> = {
+  pressure_at_max: {
+    label: "Pressure at max",
+    variant: "danger",
+    blurb:
+      "APAP pegged at the prescribed ceiling with events still breaking through — pressure/Rx review",
+  },
+  ahi_elevated: {
+    label: "AHI elevated",
+    variant: "danger",
+    blurb: "Residual events high this week — review fit/pressure",
+  },
+  non_adherent_30d: {
+    label: "Non-adherent (30d)",
+    variant: "danger",
+    blurb: "Below the Medicare 70% bar — coverage at risk",
+  },
+  ahi_rising: {
+    label: "AHI rising",
+    variant: "warning",
+    blurb: "AHI worsening trend — intervene before it crosses the alarm",
+  },
+  usage_erratic: {
+    label: "Erratic usage",
+    variant: "warning",
+    blurb: "Binge-and-skip pattern — consistency coaching",
+  },
+};
+const CLINICAL_KIND_ORDER: ClinicalTriggerKind[] = [
+  "pressure_at_max",
+  "ahi_elevated",
+  "non_adherent_30d",
+  "ahi_rising",
+  "usage_erratic",
+];
 
 const WINDOW_OPTIONS = [7, 30, 60, 90] as const;
 
@@ -149,6 +195,16 @@ export function AdminTherapyFleetPage() {
   const alertsQ = useQuery({
     queryKey: ["admin", "therapy-fleet", "alerts"],
     queryFn: getFleetAlerts,
+    refetchOnWindowFocus: false,
+  });
+
+  const [clinicalKind, setClinicalKind] = useState<ClinicalTriggerKind | null>(
+    null,
+  );
+  const clinicalQ = useQuery({
+    queryKey: ["admin", "therapy-fleet", "clinical-insights", clinicalKind],
+    queryFn: () =>
+      getClinicalInsights({ kind: clinicalKind ?? undefined, limit: 500 }),
     refetchOnWindowFocus: false,
   });
   const resolveMutation = useMutation({
@@ -441,6 +497,127 @@ export function AdminTherapyFleetPage() {
           />
         )}
       </Card>
+
+      {/* ── Clinical insights report ───────────────────────────────── */}
+      <Card
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Stethoscope className="h-4 w-4" /> Clinical insights
+          </span>
+        }
+        subtitle="RT-owned signals from device data — never auto-messaged. Work these or hand to the prescriber."
+        action={
+          <a
+            href={clinicalInsightsCsvUrl({ kind: clinicalKind ?? undefined })}
+            className="inline-flex items-center gap-1.5 text-sm hover:underline"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </a>
+        }
+      >
+        <div className="flex flex-wrap gap-2 mb-4">
+          <ReasonChip
+            active={clinicalKind === null}
+            onClick={() => setClinicalKind(null)}
+            label={
+              clinicalQ.data ? `All (${clinicalQ.data.summary.total})` : "All"
+            }
+          />
+          {CLINICAL_KIND_ORDER.map((k) => (
+            <ReasonChip
+              key={k}
+              active={clinicalKind === k}
+              onClick={() => setClinicalKind(k)}
+              label={
+                clinicalQ.data
+                  ? `${CLINICAL_KIND_META[k].label} (${clinicalQ.data.summary.byKind[k] ?? 0})`
+                  : CLINICAL_KIND_META[k].label
+              }
+              title={CLINICAL_KIND_META[k].blurb}
+            />
+          ))}
+        </div>
+
+        {clinicalQ.isPending ? (
+          <Spinner />
+        ) : clinicalQ.isError ? (
+          <ErrorPanel
+            error={clinicalQ.error}
+            onRetry={() => void clinicalQ.refetch()}
+          />
+        ) : clinicalQ.data.entries.length === 0 ? (
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
+            No active clinical signals for this filter. 🎉
+          </p>
+        ) : (
+          <ClinicalInsightsTable entries={clinicalQ.data.entries} />
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function ClinicalInsightsTable({
+  entries,
+}: {
+  entries: ClinicalInsightEntry[];
+}) {
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
+            <th className="font-medium py-1.5 px-1">Signal</th>
+            <th className="font-medium py-1.5 px-1">Patient</th>
+            <th className="font-medium py-1.5 px-1">Window</th>
+            <th className="font-medium py-1.5 px-1">Detected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => {
+            const meta = CLINICAL_KIND_META[e.kind];
+            return (
+              <tr
+                key={e.id}
+                className="border-b align-top"
+                style={{ borderColor: "hsl(var(--line-2))" }}
+              >
+                <td className="py-1.5 px-1">
+                  <Badge variant={meta.variant}>{meta.label}</Badge>
+                  <span
+                    className="block text-[11px] mt-0.5"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {meta.blurb}
+                  </span>
+                </td>
+                <td className="py-1.5 px-1">
+                  <Link
+                    href={`/admin/patients/${e.patientId}`}
+                    className="font-medium hover:underline"
+                    style={{ color: "hsl(var(--penn-navy))" }}
+                  >
+                    {e.patientName || e.patientId.slice(0, 8)}
+                  </Link>
+                </td>
+                <td
+                  className="py-1.5 px-1 whitespace-nowrap text-[12px]"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {e.windowStartDate} → {e.windowEndDate}
+                </td>
+                <td
+                  className="py-1.5 px-1 whitespace-nowrap text-[12px]"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {new Date(e.detectedAt).toLocaleDateString()}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

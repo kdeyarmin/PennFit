@@ -8,9 +8,9 @@ import { readDeviceMaxPressure } from "./snapshot-context";
 
 describe("readDeviceMaxPressure", () => {
   it("reads a numeric pressureMaxCmh2o from settings", () => {
-    expect(
-      readDeviceMaxPressure({ settings: { pressureMaxCmh2o: 20 } }),
-    ).toBe(20);
+    expect(readDeviceMaxPressure({ settings: { pressureMaxCmh2o: 20 } })).toBe(
+      20,
+    );
   });
 
   it("coerces a stringified numeric (PostgREST numeric serialisation)", () => {
