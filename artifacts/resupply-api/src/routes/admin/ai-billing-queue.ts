@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -70,7 +70,7 @@ router.get(
   "/admin/billing/ai-queue",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
+  async (req, res) => {
     // Control Center feature gate. When AI billing suggestions are
     // turned off we return an empty queue so the admin UI stays
     // functional (manual workflow keeps going); the flag display in
@@ -93,7 +93,13 @@ router.get(
       res.json(disabledResponse);
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Throw on ANY of the four errors so a partial Supabase failure
     // surfaces as a 500 rather than silently rendering "queue empty"
@@ -101,8 +107,7 @@ router.get(
     // only and ignored `error`, which masked transient table-
     // permission / network-blip errors as missing rows.
     const results = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("insurance_claims")
         .select(
           "id, patient_id, payer_name, total_billed_cents, latest_scrub_at, latest_scrub_result_id",
@@ -111,8 +116,7 @@ router.get(
         .eq("latest_scrub_verdict", "blocking")
         .order("latest_scrub_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("insurance_claims")
         .select(
           "id, patient_id, payer_name, total_billed_cents, latest_scrub_at, latest_scrub_result_id",
@@ -121,8 +125,7 @@ router.get(
         .eq("latest_scrub_verdict", "fixable")
         .order("latest_scrub_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("insurance_claims")
         .select(
           "id, patient_id, payer_name, total_billed_cents, decision_at, denial_reason",
@@ -131,8 +134,7 @@ router.get(
         .is("latest_denial_analysis_id", null)
         .order("decision_at", { ascending: false })
         .limit(50),
-      supabase
-        .schema("resupply")
+      db
         .from("claim_denial_analyses")
         .select(
           "id, claim_id, recommendation, confidence, root_cause_summary, created_at, insurance_claims!inner(patient_id)",
@@ -145,12 +147,40 @@ router.get(
     for (const r of results) {
       if (r.error) throw r.error;
     }
-    const [
-      { data: blocking },
-      { data: fixable },
-      { data: deniedNoAnalysis },
-      { data: autoReady },
-    ] = results;
+    // The org-scoped facade returns loosely-typed builder results, so
+    // pin each result set to the shape its `.select(...)` requested.
+    const blocking = (results[0].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      payer_name: string | null;
+      total_billed_cents: number | null;
+      latest_scrub_at: string | null;
+      latest_scrub_result_id: string | null;
+    }>;
+    const fixable = (results[1].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      payer_name: string | null;
+      total_billed_cents: number | null;
+      latest_scrub_at: string | null;
+      latest_scrub_result_id: string | null;
+    }>;
+    const deniedNoAnalysis = (results[2].data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      payer_name: string | null;
+      total_billed_cents: number | null;
+      decision_at: string | null;
+      denial_reason: string | null;
+    }>;
+    const autoReady = (results[3].data ?? []) as Array<{
+      id: string;
+      claim_id: string;
+      recommendation: string | null;
+      confidence: number | null;
+      root_cause_summary: string | null;
+      created_at: string;
+    }>;
 
     const enabledResponse = aiBillingQueueResponseSchema.parse({
       scrubBlockingClaims: (blocking ?? []).map((c) => ({
