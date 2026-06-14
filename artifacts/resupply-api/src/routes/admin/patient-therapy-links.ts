@@ -147,7 +147,7 @@ router.get(
       .schema("resupply")
       .from("patient_therapy_links")
       .select(
-        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at, org_id",
       )
       .eq("patient_id", patientId)
       // Active first, then by source for stable display.
@@ -213,7 +213,7 @@ router.post(
         status: "active",
       })
       .select(
-        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at, org_id",
       )
       .limit(1)
       .maybeSingle();
@@ -318,7 +318,7 @@ router.patch(
       .eq("id", linkId)
       .eq("patient_id", patientId)
       .select(
-        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at, org_id",
       )
       .limit(1)
       .maybeSingle();
@@ -400,7 +400,7 @@ router.delete(
       .eq("id", linkId)
       .eq("patient_id", patientId)
       .select(
-        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at, org_id",
       )
       .limit(1)
       .maybeSingle();

@@ -35,6 +35,15 @@ export {
 } from "./supabase-client";
 export type { Database, Json, TemplateLine } from "./supabase-types";
 export {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  SEED_ORG_SLUG,
+  ORG_COLUMN,
+  __resetSeedOrgIdForTests,
+  type OrgScopedClient,
+  type ResupplyTable,
+} from "./org-scoped-client";
+export {
   PREVIEW_MAX_CHARS,
   buildPreview,
   upsertPatientLatestMessageSb,

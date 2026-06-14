@@ -181,7 +181,7 @@ router.get(
       .schema("resupply")
       .from("message_templates")
       .select(
-        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by, org_id",
       )
       .order("template_key", { ascending: true })
       .order("channel", { ascending: true })
@@ -218,7 +218,7 @@ router.get(
       .schema("resupply")
       .from("message_templates")
       .select(
-        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by, org_id",
       )
       .eq("id", idCheck.data)
       .limit(1)
@@ -259,7 +259,7 @@ router.patch(
       .schema("resupply")
       .from("message_templates")
       .select(
-        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by, org_id",
       )
       .eq("id", idCheck.data)
       .limit(1)
@@ -336,7 +336,7 @@ router.patch(
       .update(updateValues)
       .eq("id", idCheck.data)
       .select(
-        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by, org_id",
       )
       .limit(1)
       .maybeSingle();

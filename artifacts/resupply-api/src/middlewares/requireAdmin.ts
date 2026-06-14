@@ -34,7 +34,10 @@ import {
   roleHasPermission,
 } from "@workspace/resupply-auth";
 import type { AdminRole } from "@workspace/resupply-db";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
@@ -67,6 +70,16 @@ declare global {
        * NOT an access gate (unassigned staff see everything).
        */
       adminLocationId?: string | null;
+      /**
+       * Tenant (organization) the request operates within — multi-tenant
+       * Phase 0. Attached by `requireAdmin` / `requireSignedIn`. While the
+       * platform is single-tenant this always resolves to the seed org;
+       * once `admin_users` / `shop_customers` carry their own `org_id`
+       * (later backfill batches) it is read per-user. NOT yet an access
+       * gate (nothing filters on it until the scoped-wrapper cutover).
+       * Declared once here; `requireSignedIn` sets it without redeclaring.
+       */
+      orgId?: string;
     }
   }
 }
@@ -86,6 +99,10 @@ interface ResolvedAdmin {
   /** Home branch from admin_users.location_id; null when unassigned
    *  or the lookup fails (treated as org-wide / no restriction). */
   locationId: string | null;
+  /** Tenant from admin_users.org_id (multi-tenant Phase 0). Null for
+   *  legacy rows not yet backfilled; the middleware falls back to the
+   *  seed org so single-tenant behavior is unchanged. */
+  orgId: string | null;
 }
 
 /**
@@ -139,12 +156,13 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     //     privilege escalation.
     let granularRole: AdminRole = user.role;
     let locationId: string | null = null;
+    let orgId: string | null = null;
     try {
       const supabase = getSupabaseServiceRoleClient();
       const { data, error } = await supabase
         .schema("resupply")
         .from("admin_users")
-        .select("role, location_id")
+        .select("role, location_id, org_id")
         .eq("auth_user_id", user.id)
         .limit(1)
         .maybeSingle();
@@ -162,6 +180,7 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
         granularRole = data.role as AdminRole;
       }
       locationId = data?.location_id ?? null;
+      orgId = data?.org_id ?? null;
     } catch (err) {
       logger.warn(
         {
@@ -179,6 +198,7 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
       role: user.role,
       granularRole,
       locationId,
+      orgId,
     };
   } catch (err) {
     logger.warn(
@@ -227,6 +247,23 @@ export async function requireAdmin(
   req.adminRole = admin.role;
   req.adminGranularRole = admin.granularRole;
   req.adminLocationId = admin.locationId;
+  // Multi-tenant Phase 0: attach the tenant context. Prefer the
+  // per-user admin_users.org_id (backfilled in migration 0330); fall
+  // back to the seed org for legacy rows not yet backfilled so
+  // single-tenant behavior is unchanged. Resolved best-effort and
+  // logged — NOT fail-closed — because nothing enforces org_id yet, so
+  // a resolution hiccup must not take down the entire admin surface.
+  // Enforcement (fail-closed) arrives with the scoped-wrapper cutover
+  // (Phase 0 workstream C).
+  const orgId = admin.orgId ?? (await resolveSeedOrgId());
+  if (orgId) {
+    req.orgId = orgId;
+  } else {
+    logger.warn(
+      { event: "resupply_admin_org_resolve_failed", adminUserId: admin.userId },
+      "requireAdmin: could not resolve tenant org_id (attached none)",
+    );
+  }
   next();
 }
 

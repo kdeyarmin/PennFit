@@ -252,6 +252,7 @@ export interface Database {
       };
       patient_checkin_attempts: {
         Row: {
+          org_id: string | null;
           id: string;
           journey_id: string;
           patient_id: string;
@@ -360,6 +361,7 @@ export interface Database {
       // /admin/system/config.
       app_config: {
         Row: {
+          org_id: string | null;
           key: string;
           value: string;
           updated_by_user_id: string | null;
@@ -406,6 +408,7 @@ export interface Database {
       };
       admin_users: {
         Row: {
+          org_id: string | null;
           id: string;
           email_lower: string;
           role:
@@ -538,6 +541,7 @@ export interface Database {
       };
       conversations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           episode_id: string | null;
@@ -567,6 +571,7 @@ export interface Database {
       };
       episodes: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string;
@@ -583,6 +588,7 @@ export interface Database {
       };
       fulfillments: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           episode_id: string;
@@ -642,6 +648,7 @@ export interface Database {
       };
       patients: {
         Row: {
+          org_id: string | null;
           id: string;
           /** PacWare account number. Nullable since migration 0303 —
            * admin intake may create a patient before PacWare knows
@@ -790,6 +797,7 @@ export interface Database {
       };
       patient_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           object_key: string;
@@ -839,6 +847,7 @@ export interface Database {
       };
       insurance_leads: {
         Row: {
+          org_id: string | null;
           id: string;
           full_name: string;
           email: string;
@@ -870,6 +879,7 @@ export interface Database {
       };
       fitter_leads: {
         Row: {
+          org_id: string | null;
           id: string;
           email: string;
           marketing_opt_in: boolean;
@@ -1067,6 +1077,7 @@ export interface Database {
       };
       message_attachments: {
         Row: {
+          org_id: string | null;
           id: string;
           message_id: string;
           object_key: string;
@@ -1164,6 +1175,7 @@ export interface Database {
       };
       alert_definitions: {
         Row: {
+          org_id: string | null;
           id: string;
           key: string;
           name: string;
@@ -1188,6 +1200,7 @@ export interface Database {
       };
       alert_messages: {
         Row: {
+          org_id: string | null;
           id: string;
           alert_key: string;
           channel: "email" | "sms" | "voice";
@@ -1234,6 +1247,7 @@ export interface Database {
       };
       message_templates: {
         Row: {
+          org_id: string | null;
           id: string;
           template_key: string;
           channel: string;
@@ -1278,6 +1292,7 @@ export interface Database {
       };
       patient_therapy_links: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source: string;
@@ -1300,6 +1315,7 @@ export interface Database {
       };
       patient_therapy_nights: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           night_date: string;
@@ -1322,6 +1338,7 @@ export interface Database {
       };
       patient_onboarding_journeys: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           started_at: string;
@@ -1418,6 +1435,7 @@ export interface Database {
       };
       prescriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           provider_id: string | null;
@@ -1543,6 +1561,7 @@ export interface Database {
       };
       prior_authorizations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           insurance_coverage_id: string | null;
@@ -1579,6 +1598,7 @@ export interface Database {
       };
       insurance_claims: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           insurance_coverage_id: string | null;
@@ -1686,6 +1706,7 @@ export interface Database {
       };
       insurance_claim_line_items: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           hcpcs_code: string;
@@ -1750,6 +1771,7 @@ export interface Database {
       };
       payer_profiles: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -1856,6 +1878,7 @@ export interface Database {
       };
       payer_fee_schedules: {
         Row: {
+          org_id: string | null;
           id: string;
           payer_profile_id: string;
           hcpcs_code: string;
@@ -1878,6 +1901,7 @@ export interface Database {
       };
       eligibility_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           insurance_coverage_id: string;
           patient_id: string;
@@ -1965,6 +1989,19 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
+        Relationships: [];
+      };
+      organizations: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          status: "active" | "suspended" | "archived";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Relationships: [];
       };
       gl_account_mappings: {
@@ -2099,6 +2136,7 @@ export interface Database {
       };
       davinci_pas_submissions: {
         Row: {
+          org_id: string | null;
           id: string;
           prior_authorization_id: string;
           payer_pas_endpoint: string;
@@ -2989,6 +3027,7 @@ export interface Database {
           authorized_signer_title: string | null;
           authorized_signer_signature_object_key: string | null;
           notes: string | null;
+          org_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3102,6 +3141,7 @@ export interface Database {
       };
       era_files: {
         Row: {
+          org_id: string | null;
           id: string;
           file_name: string;
           file_sha256: string;
@@ -3178,6 +3218,7 @@ export interface Database {
       };
       claim_scrub_results: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           verdict: "ready" | "fixable" | "blocking" | "errored";
@@ -3251,6 +3292,7 @@ export interface Database {
       };
       claim_templates: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -3272,6 +3314,7 @@ export interface Database {
       };
       office_ally_submissions: {
         Row: {
+          org_id: string | null;
           id: string;
           file_name: string;
           isa_control_number: string;
@@ -3846,6 +3889,7 @@ export interface Database {
       };
       feature_flags: {
         Row: {
+          org_id: string | null;
           key: string;
           enabled: boolean;
           description: string;
@@ -4107,6 +4151,7 @@ export interface Database {
       };
       messages: {
         Row: {
+          org_id: string | null;
           id: string;
           conversation_id: string;
           direction: string;
@@ -4209,6 +4254,7 @@ export interface Database {
       };
       shop_customers: {
         Row: {
+          org_id: string | null;
           customer_id: string;
           stripe_customer_id: string | null;
           display_name: string | null;
@@ -4254,6 +4300,7 @@ export interface Database {
       };
       shop_order_items: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           stripe_session_id: string;
@@ -4309,6 +4356,7 @@ export interface Database {
       };
       shop_orders: {
         Row: {
+          org_id: string | null;
           id: string;
           stripe_session_id: string;
           stripe_payment_intent_id: string | null;
@@ -4534,6 +4582,7 @@ export interface Database {
       };
       inventory_reconciliations: {
         Row: {
+          org_id: string | null;
           id: string;
           period_label: string;
           status: "draft" | "submitted";
@@ -4612,6 +4661,7 @@ export interface Database {
       };
       csr_macros: {
         Row: {
+          org_id: string | null;
           id: string;
           key: string;
           label: string;
