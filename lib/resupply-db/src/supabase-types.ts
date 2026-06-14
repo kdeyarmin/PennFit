@@ -567,6 +567,7 @@ export interface Database {
       };
       episodes: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string;
@@ -583,6 +584,7 @@ export interface Database {
       };
       fulfillments: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           episode_id: string;
@@ -642,6 +644,7 @@ export interface Database {
       };
       patients: {
         Row: {
+          org_id: string | null;
           id: string;
           /** PacWare account number. Nullable since migration 0303 —
            * admin intake may create a patient before PacWare knows
@@ -790,6 +793,7 @@ export interface Database {
       };
       patient_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           object_key: string;
@@ -1278,6 +1282,7 @@ export interface Database {
       };
       patient_therapy_links: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source: string;
@@ -1300,6 +1305,7 @@ export interface Database {
       };
       patient_therapy_nights: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           night_date: string;
@@ -1322,6 +1328,7 @@ export interface Database {
       };
       patient_onboarding_journeys: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           started_at: string;
@@ -1418,6 +1425,7 @@ export interface Database {
       };
       prescriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           provider_id: string | null;
