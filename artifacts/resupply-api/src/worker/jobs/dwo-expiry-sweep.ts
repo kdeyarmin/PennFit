@@ -9,7 +9,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -59,12 +59,21 @@ interface SweepStats {
 }
 
 async function runDwoExpirySweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = {
     scanned: 0,
     alertsCreated: 0,
     byWindow: { 60: 0, 30: 0, 7: 0 },
   };
+  // Single-tenant bridge: sweep the one seed org. Per-org loop later.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: JOB },
+      "dwo.expiry-sweep: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
@@ -88,7 +97,6 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       let cursor = "";
       for (;;) {
         let q = supabase
-          .schema("resupply")
           .from("dwo_documents")
           .select("id, patient_id, hcpcs_family, form_type, expires_on")
           .eq("expires_on", targetIso)
@@ -115,7 +123,6 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
     for (const row of dwos) {
       stats.scanned += 1;
       const { data: existing } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .select("id")
         .eq("patient_id", row.patient_id)
@@ -128,7 +135,6 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       const severity: "warning" | "critical" =
         window <= 7 ? "critical" : "warning";
       const { error: insertErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
           patient_id: row.patient_id,

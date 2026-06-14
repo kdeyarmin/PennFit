@@ -32,7 +32,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -111,19 +111,27 @@ export function planSlaEscalations(
 
 /** Exported for test injection. One sweep cycle; returns counts. */
 export async function runSlaEscalationSweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = {
     scanned: 0,
     escalated: 0,
     warning: 0,
     critical: 0,
   };
+  // Single-tenant bridge: sweep the one seed org. Per-org loop later.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: SWEEP_JOB },
+      "conversations.sla-escalation-sweep: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   let lastId: string | null = null;
 
   while (stats.escalated < MAX_PER_TICK) {
     const nowIso = new Date().toISOString();
     const pageQuery = supabase
-      .schema("resupply")
       .from("conversations")
       .select(
         "id, patient_id, customer_id, status, priority, sla_due_at, escalated_at",
@@ -144,7 +152,6 @@ export async function runSlaEscalationSweep(): Promise<SweepStats> {
     const plans = planSlaEscalations(rows, Date.now());
     for (const plan of plans) {
       const { data: updated, error: updErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({
           escalated_at: new Date().toISOString(),
