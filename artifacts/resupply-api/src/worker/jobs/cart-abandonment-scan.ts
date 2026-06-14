@@ -36,6 +36,8 @@
 
 import type PgBoss from "pg-boss";
 
+import { resolveSeedOrgId } from "@workspace/resupply-db";
+
 import { logger } from "../../lib/logger";
 import { runCartAbandonmentDispatch } from "../../lib/cart-abandonment/run-dispatch";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -70,7 +72,17 @@ export async function registerCartAbandonmentJob(boss: PgBoss): Promise<void> {
   await createQueueWithDlq(boss, CART_ABANDONMENT_JOB, CRON_SCAN_QUEUE_OPTS);
   await boss.work(CART_ABANDONMENT_JOB, async () => {
     try {
-      const stats = await runCartAbandonmentDispatch({ log: logger });
+      // Single-tenant bridge: no per-tenant job payload yet, so sweep the
+      // one seed org. Becomes a per-org loop when a 2nd tenant lands.
+      const orgId = await resolveSeedOrgId();
+      if (!orgId) {
+        logger.warn(
+          { event: "cart-abandonment.scan.skipped_no_org" },
+          "cart-abandonment.scan: could not resolve seed org — skipping",
+        );
+        return;
+      }
+      const stats = await runCartAbandonmentDispatch({ orgId, log: logger });
       logger.info(
         { event: "cart-abandonment.scan.completed", ...stats },
         "cart-abandonment.scan: completed",
