@@ -27,7 +27,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { claimAllowedCents, lineAllowedCents } from "./era-reconciler";
+import {
+  claimAllowedCents,
+  lineAllowedCents,
+  patientRespBreakdown,
+} from "./era-reconciler";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(__dirname, "era-reconciler.ts"), "utf8");
@@ -86,6 +90,65 @@ describe("era-reconciler — lineAllowedCents (P0 allowed-amount fix)", () => {
     expect(
       lineAllowedCents({ paidCents: 0, adjustments: [adj("PR", "1", 5000)] }),
     ).toBe(5000);
+  });
+});
+
+describe("era-reconciler — patientRespBreakdown (PR itemization)", () => {
+  const line = (adjustments: ReturnType<typeof adj>[]) => ({
+    hcpcsCode: null,
+    modifiers: [],
+    billedCents: 0,
+    paidCents: 0,
+    unitsBilled: null,
+    unitsPaid: null,
+    serviceDate: null,
+    adjustments,
+  });
+
+  it("buckets claim-level PR CARCs 1/2/3 into deductible/coinsurance/copay", () => {
+    expect(
+      patientRespBreakdown({
+        adjustments: [
+          adj("PR", "1", 5000),
+          adj("PR", "2", 1600),
+          adj("PR", "3", 1000),
+          adj("CO", "45", 2000), // writeoff — ignored
+        ],
+        serviceLines: [],
+      }),
+    ).toEqual({
+      deductibleCents: 5000,
+      coinsuranceCents: 1600,
+      copayCents: 1000,
+    });
+  });
+
+  it("sums across claim-level and line-level CAS of the same component", () => {
+    expect(
+      patientRespBreakdown({
+        adjustments: [adj("PR", "2", 1000)],
+        serviceLines: [
+          line([adj("PR", "2", 500), adj("PR", "1", 2500)]),
+          line([adj("PR", "3", 250)]),
+        ],
+      }),
+    ).toEqual({
+      deductibleCents: 2500,
+      coinsuranceCents: 1500,
+      copayCents: 250,
+    });
+  });
+
+  it("ignores non-PR groups and unmapped PR reason codes", () => {
+    expect(
+      patientRespBreakdown({
+        adjustments: [
+          adj("PI", "1", 9999), // not PR group
+          adj("PR", "66", 9999), // PR but unmapped CARC
+        ],
+        serviceLines: [],
+      }),
+    ).toEqual({ deductibleCents: 0, coinsuranceCents: 0, copayCents: 0 });
   });
 });
 

@@ -131,6 +131,11 @@ interface PersistedLineItem {
   billed_cents: number;
   paid_cents: number;
   patient_responsibility_cents: number;
+  // Optional itemization (migration 0327); absent on statements
+  // snapshotted before the breakdown shipped.
+  deductible_cents?: number;
+  coinsurance_cents?: number;
+  copay_cents?: number;
 }
 
 router.get("/me/billing-statements/:id/pdf", async (req, res) => {
@@ -221,6 +226,9 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
         billedCents: item.billed_cents,
         paidCents: item.paid_cents,
         patientResponsibilityCents: item.patient_responsibility_cents,
+        deductibleCents: item.deductible_cents,
+        coinsuranceCents: item.coinsurance_cents,
+        copayCents: item.copay_cents,
       };
     },
   );
