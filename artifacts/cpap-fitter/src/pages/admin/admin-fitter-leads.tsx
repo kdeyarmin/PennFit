@@ -32,6 +32,7 @@ import {
   unsubscribeFitterLead,
 } from "@/lib/admin/fitter-leads-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 const STAGE_STYLE: Record<
   FitterLeadJourneyStage,
@@ -236,24 +237,22 @@ export function AdminFitterLeadsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-fitter-leads-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Fitter prospects
-        </h1>
-        <p className="text-sm text-slate-600 max-w-2xl">
-          Patients who started or finished the at-home mask fitter on{" "}
-          <span className="font-mono text-xs">/consent → /results</span>.
-          Completing the fitter enrolls a lead into a{" "}
-          <strong>6-touch pre-purchase nurture</strong> over 60 days. Placing an
-          order flips them into the{" "}
-          <strong>4-touch post-purchase re-order nurture</strong> (cushion at
-          30d, filter at 60d, headgear at 90d, full refresh at 180d) so
-          first-time buyers turn into recurring supply orders.
-        </p>
-      </header>
+      <PageHeader
+        title="Fitter prospects"
+        descriptionClassName="max-w-2xl"
+        description={
+          <>
+            Patients who started or finished the at-home mask fitter on{" "}
+            <span className="font-mono text-xs">/consent → /results</span>.
+            Completing the fitter enrolls a lead into a{" "}
+            <strong>6-touch pre-purchase nurture</strong> over 60 days. Placing
+            an order flips them into the{" "}
+            <strong>4-touch post-purchase re-order nurture</strong> (cushion at
+            30d, filter at 60d, headgear at 90d, full refresh at 180d) so
+            first-time buyers turn into recurring supply orders.
+          </>
+        }
+      />
 
       {/* Headline KPIs — conversion rate + hot-leads CSR queue. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

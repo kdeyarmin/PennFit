@@ -19,6 +19,7 @@ import {
   updateInsuranceLead,
 } from "@/lib/admin/insurance-leads-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 const STATUS_STYLE: Record<
   InsuranceLeadStatus,
@@ -99,21 +100,19 @@ export function AdminInsuranceLeadsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-insurance-leads-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Insurance verification leads
-        </h1>
-        <p className="text-sm text-slate-600 max-w-2xl">
-          Patients who submitted the verify-my-coverage form on{" "}
-          <span className="font-mono text-xs">/insurance</span>. Mark each one
-          as you work it so the queue stays a true to-do list. Email
-          notifications still go out when SendGrid is configured; this view is
-          the durable record.
-        </p>
-      </header>
+      <PageHeader
+        title="Insurance verification leads"
+        descriptionClassName="max-w-2xl"
+        description={
+          <>
+            Patients who submitted the verify-my-coverage form on{" "}
+            <span className="font-mono text-xs">/insurance</span>. Mark each one
+            as you work it so the queue stays a true to-do list. Email
+            notifications still go out when SendGrid is configured; this view is
+            the durable record.
+          </>
+        }
+      />
 
       <div
         className="grid grid-cols-2 sm:grid-cols-4 gap-3"
