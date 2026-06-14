@@ -13,6 +13,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { humanizeStatus } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchOutboundMessages,
   type OutboundChannelFilter,
@@ -76,19 +77,10 @@ export function AdminOutboundMessagesPage() {
       className="space-y-6 max-w-6xl"
       data-testid="admin-outbound-messages-page"
     >
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Outbound messages
-        </h1>
-        <p className="text-sm text-slate-600">
-          Every outbound SMS and email with its delivery result. Statuses are
-          stamped by the Twilio and SendGrid delivery webhooks; a message stays
-          “pending” until the vendor reports back. Refreshes once per minute.
-        </p>
-      </header>
+      <PageHeader
+        title="Outbound messages"
+        description="Every outbound SMS and email with its delivery result. Statuses are stamped by the Twilio and SendGrid delivery webhooks; a message stays “pending” until the vendor reports back. Refreshes once per minute."
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div

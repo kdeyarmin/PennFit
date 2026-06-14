@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { humanizeAction, humanizeStatus } from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchDeliveryFailures,
   type AuditFailureEvent,
@@ -37,19 +38,10 @@ export function AdminDeliveryFailuresPage() {
       className="space-y-6 max-w-6xl"
       data-testid="admin-delivery-failures-page"
     >
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Delivery failures
-        </h1>
-        <p className="text-sm text-slate-600">
-          Recent message-send failures across SMS, email, and voice — including
-          recall-notification texts — plus delivery-failure-shaped audit events.
-          Refreshes once per minute.
-        </p>
-      </header>
+      <PageHeader
+        title="Delivery failures"
+        description="Recent message-send failures across SMS, email, and voice — including recall-notification texts — plus delivery-failure-shaped audit events. Refreshes once per minute."
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div
