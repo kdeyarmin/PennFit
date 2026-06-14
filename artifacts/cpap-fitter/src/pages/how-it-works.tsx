@@ -144,8 +144,9 @@ export function HowItWorks() {
           Virtual Mask Fitter
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          A short guide to everything PennPaps does — the on-device mask fitter,
-          the supply shop, customer accounts, and how resupply works.
+          How the on-device Virtual Mask Fitter works: a 3-minute face scan
+          matches you to the right CPAP mask — plus how to get the most accurate
+          fit.
         </p>
       </header>
 
