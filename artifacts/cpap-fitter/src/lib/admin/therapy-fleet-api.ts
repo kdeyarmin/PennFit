@@ -97,6 +97,11 @@ export interface FleetTrendPoint {
   resupplyItemsDue: number;
   setupsInWindow: number;
   setupsAtRisk: number;
+  // Open clinical smart-trigger signals (migration 0332). 0 on
+  // historical points captured before the column existed.
+  clinicalSignalsOpen: number;
+  clinicalSignalsHigh: number;
+  clinicalSignalsMedium: number;
 }
 
 export const getFleetOverview = (windowDays: number) =>

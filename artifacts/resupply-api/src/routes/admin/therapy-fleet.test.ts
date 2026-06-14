@@ -524,6 +524,9 @@ describe("GET /admin/therapy-fleet/trend", () => {
           resupply_items_due: "40",
           setups_in_window: "30",
           setups_at_risk: "5",
+          clinical_signals_open: "18",
+          clinical_signals_high: "11",
+          clinical_signals_medium: "7",
         },
         {
           metric_date: "2026-05-30",
@@ -535,6 +538,8 @@ describe("GET /admin/therapy-fleet/trend", () => {
           resupply_items_due: "38",
           setups_in_window: "31",
           setups_at_risk: "4",
+          // clinical_signals_* intentionally omitted — a historical row
+          // captured before migration 0332 reads as 0, not null.
         },
       ],
     });
@@ -554,8 +559,13 @@ describe("GET /admin/therapy-fleet/trend", () => {
       resupplyItemsDue: 40,
       setupsInWindow: 30,
       setupsAtRisk: 5,
+      clinicalSignalsOpen: 18,
+      clinicalSignalsHigh: 11,
+      clinicalSignalsMedium: 7,
     });
     expect(res.body.points[1].compliant).toBe(74);
+    // Historical row without the 0332 columns coerces to 0.
+    expect(res.body.points[1].clinicalSignalsOpen).toBe(0);
   });
 });
 

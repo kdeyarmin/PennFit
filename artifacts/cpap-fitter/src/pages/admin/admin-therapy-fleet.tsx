@@ -408,7 +408,7 @@ export function AdminTherapyFleetPage() {
           title="Fleet trend"
           subtitle="Daily snapshot — is the work moving the numbers?"
         >
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <TrendStat
               label="Compliance rate"
               points={trendQ.data.points}
@@ -434,6 +434,13 @@ export function AdminTherapyFleetPage() {
               value={(p) => p.setupsAtRisk}
               fmt={(v) => String(Math.round(v))}
               color="hsl(38 95% 45%)"
+            />
+            <TrendStat
+              label="Clinical signals open"
+              points={trendQ.data.points}
+              value={(p) => p.clinicalSignalsOpen}
+              fmt={(v) => String(Math.round(v))}
+              color="hsl(265 60% 55%)"
             />
           </div>
         </Card>
