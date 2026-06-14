@@ -40,6 +40,9 @@ function stageAllSummaries() {
   stageSupabaseRpcResponse("therapy_setup_adherence_summary", {
     data: [{ patients_in_window: "30", at_risk: "5" }],
   });
+  stageSupabaseRpcResponse("therapy_clinical_signal_counts", {
+    data: [{ total: "18", high: "11", medium: "7" }],
+  });
 }
 
 describe("runTherapyFleetSnapshot", () => {
@@ -65,6 +68,9 @@ describe("runTherapyFleetSnapshot", () => {
       resupply_items_due: 40,
       setups_in_window: 30,
       setups_at_risk: 5,
+      clinical_signals_open: 18,
+      clinical_signals_high: 11,
+      clinical_signals_medium: 7,
     });
     expect((upserts[0] as { metric_date: string }).metric_date).toMatch(
       /^\d{4}-\d{2}-\d{2}$/,
@@ -75,6 +81,7 @@ describe("runTherapyFleetSnapshot", () => {
     stageSupabaseRpcResponse("therapy_fleet_overview", { data: [] });
     stageSupabaseRpcResponse("therapy_resupply_summary", { data: [] });
     stageSupabaseRpcResponse("therapy_setup_adherence_summary", { data: [] });
+    stageSupabaseRpcResponse("therapy_clinical_signal_counts", { data: [] });
     const result = await runTherapyFleetSnapshot();
     expect(result.patientsWithData).toBe(0);
     const upserts = getSupabaseWritePayloads(
@@ -85,6 +92,9 @@ describe("runTherapyFleetSnapshot", () => {
       patients_with_data: 0,
       resupply_items_due: 0,
       setups_in_window: 0,
+      clinical_signals_open: 0,
+      clinical_signals_high: 0,
+      clinical_signals_medium: 0,
     });
   });
 
@@ -94,6 +104,7 @@ describe("runTherapyFleetSnapshot", () => {
     });
     stageSupabaseRpcResponse("therapy_resupply_summary", { data: [] });
     stageSupabaseRpcResponse("therapy_setup_adherence_summary", { data: [] });
+    stageSupabaseRpcResponse("therapy_clinical_signal_counts", { data: [] });
     await expect(runTherapyFleetSnapshot()).rejects.toBeDefined();
     expect(
       getSupabaseWritePayloads("therapy_fleet_daily_metrics", "upsert"),
