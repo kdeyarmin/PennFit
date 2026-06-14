@@ -13,7 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -59,12 +59,16 @@ router.post(
     const { id: patientId } = idParsed.data;
     const { body } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify patient exists. We could rely on the FK to fire a 23503
     // here, but a pre-check yields a cleaner 404 vs. 500 mapping.
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -76,7 +80,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_notes")
       .insert({
         patient_id: patientId,
