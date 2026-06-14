@@ -447,7 +447,7 @@ function StuckEpisodesPanel() {
         <ErrorPanel error={error} onRetry={() => void refetch()} />
       ) : data.episodes.length === 0 ? (
         <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
-          Nothing stuck in this stage. 🎉
+          Nothing stuck in this stage.
         </p>
       ) : (
         <StuckEpisodesTable episodes={data.episodes} />

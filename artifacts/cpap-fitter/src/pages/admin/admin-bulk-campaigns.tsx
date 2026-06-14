@@ -163,9 +163,18 @@ function CampaignsTable({
         {rows.map((r) => (
           <tr
             key={r.id}
-            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))]"
+            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))] focus-visible:outline-none focus-visible:bg-[hsl(var(--bg-2))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--penn-navy))]"
             style={{ borderColor: "hsl(var(--line-2))" }}
+            tabIndex={0}
+            role="button"
+            aria-label={`Open campaign ${r.name}`}
             onClick={() => onSelect(r.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(r.id);
+              }
+            }}
           >
             <td className="py-1.5">
               <div className="font-medium">{r.name}</div>

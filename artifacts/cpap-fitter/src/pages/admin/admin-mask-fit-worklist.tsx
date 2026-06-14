@@ -55,7 +55,7 @@ export function AdminMaskFitWorklistPage() {
       ) : query.data.count === 0 ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No open mask-fit reports. 🎉
+            No open mask-fit reports.
           </p>
         </Card>
       ) : (

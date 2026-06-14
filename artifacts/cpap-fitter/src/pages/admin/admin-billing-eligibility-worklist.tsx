@@ -189,7 +189,7 @@ function WorklistTable({ items }: { items: VerificationWorkItem[] }) {
     return (
       <Card>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          No coverages need re-verification. 🎉
+          No coverages need re-verification.
         </p>
       </Card>
     );

@@ -135,7 +135,7 @@ function DuplicateGroupsCard({
     return (
       <Card title="Duplicate groups">
         <p className="text-sm text-muted-foreground py-2">
-          No likely duplicates found. 🎉
+          No likely duplicates found.
         </p>
       </Card>
     );
