@@ -26,6 +26,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   DollarSign,
+  Gavel,
   ListFilter,
   Send,
   ShieldAlert,
@@ -400,13 +401,22 @@ export function AdminBillingHubPage() {
           title="Denial rate trend"
           subtitle="Decisions reaching paid / denied / appealed in each window"
           action={
-            <Link
-              href="/admin/billing/denials"
-              className="text-xs font-semibold"
-              style={{ color: "hsl(var(--penn-navy))" }}
-            >
-              By payer →
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/admin/billing/denials-worklist"
+                className="text-xs font-semibold"
+                style={{ color: "hsl(var(--penn-navy))" }}
+              >
+                Work the queue →
+              </Link>
+              <Link
+                href="/admin/billing/denials"
+                className="text-xs font-semibold"
+                style={{ color: "hsl(var(--penn-navy))" }}
+              >
+                By payer →
+              </Link>
+            </div>
           }
         >
           {isPending ? (
@@ -571,6 +581,16 @@ export function AdminBillingHubPage() {
             >
               <TrendingDown className="h-3.5 w-3.5" />
               Denial rate by payer →
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/admin/billing/denials-worklist"
+              className="underline inline-flex items-center gap-1.5"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              <Gavel className="h-3.5 w-3.5" />
+              Denials worklist →
             </Link>
           </li>
           <li>
