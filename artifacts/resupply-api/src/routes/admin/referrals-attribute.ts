@@ -4,7 +4,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { attributePendingReferrals } from "../../lib/referrals/attribution";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -30,8 +30,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const result = await attributePendingReferrals(supabase, {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const result = await attributePendingReferrals(getOrgScopedClient(orgId), {
       lookbackDays: parsed.data.lookbackDays,
     });
     res.json(result);
