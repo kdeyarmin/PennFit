@@ -12,7 +12,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   runClinicalOutreachBatch,
@@ -28,12 +28,11 @@ const router: IRouter = Router();
 const DEFAULT_MIN_HOURS = 24 * 14;
 
 async function loadEligible(
+  db: ReturnType<typeof getOrgScopedClient>,
   minHours: number,
   cap: number,
 ): Promise<OutreachTarget[]> {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
+  const { data, error } = await db
     .from("clinical_encounters")
     .select("id, patient_id, assessment_category, created_at")
     .eq("encounter_type", "adherence_intervention")
@@ -50,8 +49,7 @@ async function loadEligible(
 
   const patientIds = [...new Set(rows.map((r) => r.patient_id))];
   const lastOutreach = new Map<string, string>();
-  const { data: logs } = await supabase
-    .schema("resupply")
+  const { data: logs } = await db
     .from("clinical_outreach_log")
     .select("patient_id, created_at")
     .in("patient_id", patientIds)
@@ -80,9 +78,15 @@ router.get(
   "/admin/clinical/outreach/eligible",
   adminReadRateLimiter,
   requirePermission("clinical.read"),
-  async (_req, res) => {
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     try {
-      const targets = await loadEligible(DEFAULT_MIN_HOURS, 500);
+      const targets = await loadEligible(db, DEFAULT_MIN_HOURS, 500);
       res.json({
         eligible: targets.map((t) => ({
           patientId: t.patientId,
