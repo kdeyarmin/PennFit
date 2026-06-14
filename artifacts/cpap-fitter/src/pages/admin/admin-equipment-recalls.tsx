@@ -30,6 +30,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { AdminModal } from "@/components/admin/AdminModal";
 import {
   createEquipmentRecall,
   listEquipmentRecalls,
@@ -263,80 +264,66 @@ function ScanResultModal({
   onClose: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+    <AdminModal
+      title="Recall scan result"
+      onClose={onClose}
+      className="max-w-3xl"
     >
-      <div
-        className="w-full max-w-3xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
-          <h2
-            className="text-lg font-semibold"
-            style={{ color: "hsl(var(--ink-1))" }}
-          >
-            Recall scan result
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Scanned {result.candidatesScanned} candidate devices ·{" "}
-            <strong>{result.affectedCount} affected</strong>.
-          </p>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Scanned {result.candidatesScanned} candidate devices ·{" "}
+          <strong>{result.affectedCount} affected</strong>.
+        </p>
 
-          {result.affectedCount === 0 ? (
-            <div className="rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-              No dispensed devices match this recall&apos;s criteria. Nothing to
-              action.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr
-                  className="text-left border-b"
-                  style={{ borderColor: "hsl(var(--line-1))" }}
-                >
-                  <th className="py-2 font-semibold">Patient</th>
-                  <th className="py-2 font-semibold">Serial</th>
-                  <th className="py-2 font-semibold">Model</th>
-                  <th className="py-2 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.affected.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-b"
-                    style={{ borderColor: "hsl(var(--line-2))" }}
-                  >
-                    <td className="py-2">
-                      <Link
-                        href={`/admin/patients/${a.patientId}`}
-                        className="text-[hsl(var(--penn-navy))] hover:underline"
-                      >
-                        View patient →
-                      </Link>
-                    </td>
-                    <td className="py-2 font-mono text-xs">{a.serialNumber}</td>
-                    <td className="py-2">{a.model}</td>
-                    <td className="py-2 text-xs">{a.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <div className="flex justify-end pt-3 border-t border-border/40">
-            <Button intent="secondary" onClick={onClose}>
-              Close
-            </Button>
+        {result.affectedCount === 0 ? (
+          <div className="rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            No dispensed devices match this recall&apos;s criteria. Nothing to
+            action.
           </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr
+                className="text-left border-b"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                <th className="py-2 font-semibold">Patient</th>
+                <th className="py-2 font-semibold">Serial</th>
+                <th className="py-2 font-semibold">Model</th>
+                <th className="py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.affected.map((a) => (
+                <tr
+                  key={a.id}
+                  className="border-b"
+                  style={{ borderColor: "hsl(var(--line-2))" }}
+                >
+                  <td className="py-2">
+                    <Link
+                      href={`/admin/patients/${a.patientId}`}
+                      className="text-[hsl(var(--penn-navy))] hover:underline"
+                    >
+                      View patient →
+                    </Link>
+                  </td>
+                  <td className="py-2 font-mono text-xs">{a.serialNumber}</td>
+                  <td className="py-2">{a.model}</td>
+                  <td className="py-2 text-xs">{a.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <div className="flex justify-end pt-3 border-t border-border/40">
+          <Button intent="secondary" onClick={onClose}>
+            Close
+          </Button>
         </div>
       </div>
-    </div>
+    </AdminModal>
   );
 }
 
