@@ -31,6 +31,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { usePromptDialog } from "@/hooks/use-prompt-dialog";
 import {
   createRtFilterDefault,
   distinctSources,
@@ -60,6 +61,7 @@ export function AdminRtOverviewPage() {
   const [sortDir, setSortDir] = useState<RtSortDir>("desc");
   const [filter, setFilter] = useState<RtFilter>(() => createRtFilterDefault());
   const queryClient = useQueryClient();
+  const [prompt, PromptDialogEl] = usePromptDialog();
 
   const query = useQuery<RtOverviewResponse>({
     queryKey: ["rt-overview", days],
@@ -82,19 +84,26 @@ export function AdminRtOverviewPage() {
    * The prompt() flow is intentionally minimal — closing the loop on
    * the board is the win; a fancier modal can land later.
    */
+  // Kept `() => void` (not async) so it stays assignable to the
+  // `onDismiss: (…) => void` child prop without tripping
+  // no-misused-promises; the async work runs in a void-ed IIFE.
   const handleDismiss = (alert: RtOverviewAlert, patientName: string) => {
-    const reason = window.prompt(
-      `Dismiss "${alert.label}" for ${patientName}?\n\n` +
-        `Optional reason (logged for audit; leave blank to skip):`,
-      "",
-    );
-    // prompt() returns null when the user cancels; treat that as
-    // a cancel, not as an empty-reason dismiss.
-    if (reason === null) return;
-    dismissMutation.mutate({
-      id: alert.id,
-      reason: reason.trim() || null,
-    });
+    void (async () => {
+      const reason = await prompt({
+        title: `Dismiss "${alert.label}"?`,
+        description: `For ${patientName}. Optionally note why — it's logged for audit. Leave blank to skip.`,
+        placeholder:
+          "e.g. called pt, mask refit booked; duplicate of earlier event",
+        submitLabel: "Dismiss",
+      });
+      // prompt() resolves null on cancel; treat that as a cancel, not
+      // as an empty-reason dismiss.
+      if (reason === null) return;
+      dismissMutation.mutate({
+        id: alert.id,
+        reason: reason.trim() || null,
+      });
+    })();
   };
 
   /**
@@ -272,6 +281,7 @@ export function AdminRtOverviewPage() {
           </p>
         )}
       </Card>
+      {PromptDialogEl}
     </div>
   );
 }
