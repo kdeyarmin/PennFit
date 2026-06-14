@@ -39,6 +39,11 @@ export interface StatementInput {
     billedCents: number;
     paidCents: number;
     patientResponsibilityCents: number;
+    // Optional itemization of the "You Owe" amount (migration 0327).
+    // Rendered as a sub-line when any component is non-zero.
+    deductibleCents?: number;
+    coinsuranceCents?: number;
+    copayCents?: number;
   }>;
   /** Optional "pay by" date for the statement. */
   payByDate?: string | null;
@@ -226,7 +231,21 @@ function drawStatement(doc: PDFKit.PDFDocument, input: StatementInput): void {
     doc.text(money(item.billedCents), colBilled, y);
     doc.text(money(item.paidCents), colPaid, y);
     doc.text(money(item.patientResponsibilityCents), colOwed, y);
-    y += 18;
+    y += 14;
+    // Itemized sub-line: deductible / coinsurance / copay, shown only
+    // when the payer supplied a breakdown for this claim.
+    const parts: string[] = [];
+    if (item.deductibleCents) parts.push(`Deductible ${money(item.deductibleCents)}`);
+    if (item.coinsuranceCents)
+      parts.push(`Coinsurance ${money(item.coinsuranceCents)}`);
+    if (item.copayCents) parts.push(`Copay ${money(item.copayCents)}`);
+    if (parts.length > 0) {
+      doc.fontSize(7).fillColor("#666");
+      doc.text(parts.join("  ·  "), colPayer, y, { width: 360 });
+      doc.fillColor("#000");
+      y += 12;
+    }
+    y += 4;
   }
   y += 8;
   doc.moveTo(colDate, y).lineTo(540, y).stroke();
