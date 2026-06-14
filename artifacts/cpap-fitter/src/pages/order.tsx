@@ -44,6 +44,9 @@ import {
   isPlausibleDob,
   todayLocalDateString,
 } from "@/lib/dob-validation";
+// Shared with the consent page so the phone field formats identically
+// the moment a digit is typed in either place.
+import { formatUsPhone } from "@/lib/format-phone";
 
 const US_STATES = [
   "AL",
@@ -152,40 +155,6 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
-
-/**
- * Format a US phone string as the user types. Strips non-digits,
- * truncates to 10 digits (US local), and reformats as
- *   ""               → ""
- *   "5"              → "(5"
- *   "555"            → "(555)"
- *   "5551"           → "(555) 1"
- *   "5551234"        → "(555) 123-4"
- *   "5551234567"     → "(555) 123-4567"
- *
- * The Zod schema accepts any non-empty 7-30 char string, so the
- * formatted output is always within bounds and is the natural
- * shape the contact-center / EHR systems expect downstream. We
- * keep a leading "+1" or "1" un-touched (return the digit string
- * with no parens) so international or unusual formats aren't
- * mangled — only obvious 10-digit US phones get reformatted.
- */
-function formatUsPhone(input: string): string {
-  if (!input) return "";
-  // Skip reformat for international-looking inputs.
-  if (input.trim().startsWith("+")) return input;
-  const digits = input.replace(/\D/g, "");
-  if (digits.length === 0) return "";
-  // Treat 11-digit numbers starting with 1 as US country-code-prefixed.
-  // Drop the leading 1 for display since the rest is local.
-  const local =
-    digits.length === 11 && digits.startsWith("1")
-      ? digits.slice(1)
-      : digits.slice(0, 10);
-  if (local.length < 4) return `(${local}`;
-  if (local.length < 7) return `(${local.slice(0, 3)}) ${local.slice(3)}`;
-  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6, 10)}`;
-}
 
 export function Order() {
   useDocumentTitle("Confirm your order");

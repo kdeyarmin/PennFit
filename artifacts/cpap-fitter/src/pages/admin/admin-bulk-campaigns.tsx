@@ -75,10 +75,15 @@ export function AdminBulkCampaignsPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.campaigns.length === 0 ? (
-          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No campaigns yet. Click <strong>New campaign</strong> to compose
-            one.
-          </p>
+          <div className="py-6 text-center space-y-3">
+            <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+              No campaigns yet. Compose your first audience + template.
+            </p>
+            <Button onClick={() => setShowNew(true)}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              New campaign
+            </Button>
+          </div>
         ) : (
           <CampaignsTable rows={data.campaigns} onSelect={setOpenId} />
         )}

@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Button } from "./Button";
 
 // List-page pagination strip. All list endpoints return
@@ -30,6 +32,18 @@ export function Pagination({
   const canPrev = currentPage > 1 && !isLoading;
   const canNext = currentPage < totalPages && !isLoading;
 
+  // "Go to page" jump — only worth the clutter once Prev/Next would
+  // mean a lot of clicks, so it appears only past a handful of pages.
+  const [jump, setJump] = useState("");
+  const showJump = totalPages > 5;
+  const goToPage = (raw: string) => {
+    const page = Number.parseInt(raw, 10);
+    if (Number.isNaN(page)) return;
+    const clamped = Math.min(totalPages, Math.max(1, page));
+    setJump("");
+    if (clamped !== currentPage) onChange((clamped - 1) * safeLimit);
+  };
+
   return (
     <div
       className="flex items-center justify-between px-5 py-3 border-t text-xs"
@@ -47,6 +61,33 @@ export function Pagination({
         <span>
           Page {currentPage} of {totalPages}
         </span>
+        {showJump && (
+          <>
+            <label htmlFor="pagination-jump" className="sr-only">
+              Go to page
+            </label>
+            <input
+              id="pagination-jump"
+              type="number"
+              min={1}
+              max={totalPages}
+              inputMode="numeric"
+              value={jump}
+              disabled={isLoading}
+              onChange={(e) => setJump(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  goToPage(jump);
+                }
+              }}
+              placeholder="Go to"
+              aria-label={`Go to page (1 to ${totalPages})`}
+              className="w-16 rounded-md border px-2 py-1 text-xs"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            />
+          </>
+        )}
         <Button
           intent="secondary"
           size="sm"

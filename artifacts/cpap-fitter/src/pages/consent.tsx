@@ -25,6 +25,7 @@ import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { submitFitterLead } from "@/lib/shop-api";
+import { formatUsPhone } from "@/lib/format-phone";
 
 // Lightweight RFC-5322-ish check. The order form's zod schema runs a
 // stricter validation at submit time; this one just guards the
@@ -324,8 +325,21 @@ export function Consent() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               aria-invalid={email.length > 0 && !emailValid}
-              aria-describedby="fitter-email-help"
+              aria-describedby={
+                email.length > 0 && !emailValid
+                  ? "fitter-email-error fitter-email-help"
+                  : "fitter-email-help"
+              }
             />
+            {email.length > 0 && !emailValid && (
+              <p
+                id="fitter-email-error"
+                role="alert"
+                className="text-sm font-medium text-destructive"
+              >
+                Enter a valid email address (e.g. you@example.com).
+              </p>
+            )}
             <p id="fitter-email-help" className="text-sm text-muted-foreground">
               We need an email on file so we can send you the mask
               recommendation and any follow-up about your order.
@@ -384,10 +398,23 @@ export function Consent() {
                 autoComplete="tel"
                 placeholder="(555) 123-4567"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(formatUsPhone(e.target.value))}
                 aria-invalid={phoneFilled && !phoneValid}
-                aria-describedby="fitter-phone-help"
+                aria-describedby={
+                  phoneFilled && !phoneValid
+                    ? "fitter-phone-error fitter-phone-help"
+                    : "fitter-phone-help"
+                }
               />
+              {phoneFilled && !phoneValid && (
+                <p
+                  id="fitter-phone-error"
+                  role="alert"
+                  className="text-sm font-medium text-destructive"
+                >
+                  Enter a 10-digit US phone number, or clear the field to skip.
+                </p>
+              )}
               <p
                 id="fitter-phone-help"
                 className="text-sm text-muted-foreground"

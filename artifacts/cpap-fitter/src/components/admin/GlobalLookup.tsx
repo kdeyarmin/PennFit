@@ -8,11 +8,39 @@
 // option, Enter opens it, Escape closes the dropdown — with
 // `aria-activedescendant` + `aria-selected` so screen readers track
 // the highlight. Clicking a hit still works.
+//
+// Because it's the most-used control, it's also reachable from anywhere
+// without the mouse: ⌘K / Ctrl+K focuses it from any admin page, and a
+// bare `/` does too unless you're already typing in a field. A small
+// keycap hint advertises the shortcut while the box is empty/unfocused.
 
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 import { humanizeStatus } from "@/components/admin/Badge";
+
+// Platform-appropriate label for the focus shortcut. Macs show the ⌘
+// glyph; everything else shows "Ctrl". Guarded for SSR/test environments
+// where `navigator` may be undefined or report an empty platform.
+const SHORTCUT_LABEL =
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "")
+    ? "⌘K"
+    : "Ctrl K";
+
+// True when a keystroke is landing in an editable surface, so a bare `/`
+// can be typed normally there instead of stealing focus to the lookup.
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  const tag = el.tagName.toUpperCase();
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    el.isContentEditable === true
+  );
+}
 
 interface Hit {
   kind: string;
@@ -43,8 +71,12 @@ export function GlobalLookup() {
   // Index of the keyboard-highlighted option, or -1 when none is active
   // (e.g. before the first ArrowDown). Click/hover does not change it.
   const [active, setActive] = useState(-1);
+  // Tracks input focus purely to toggle the ⌘K keycap hint (we hide it
+  // once the operator is in the box so it never overlaps typed text).
+  const [focused, setFocused] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounced fetch.
   useEffect(() => {
@@ -90,6 +122,30 @@ export function GlobalLookup() {
     );
     el?.scrollIntoView?.({ block: "nearest" });
   }, [active]);
+
+  // App-wide focus shortcut: ⌘K / Ctrl+K from anywhere, or a bare `/`
+  // when the operator isn't already typing in a field. Focuses and
+  // selects the input so a fresh query overwrites whatever was there.
+  useEffect(() => {
+    function onGlobalKey(e: KeyboardEvent) {
+      const isCmdK =
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        (e.key === "k" || e.key === "K");
+      const isSlash =
+        e.key === "/" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !isEditableTarget(e.target);
+      if (!isCmdK && !isSlash) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+    document.addEventListener("keydown", onGlobalKey);
+    return () => document.removeEventListener("keydown", onGlobalKey);
+  }, []);
 
   // Click-outside closes the dropdown.
   useEffect(() => {
@@ -140,20 +196,24 @@ export function GlobalLookup() {
   return (
     <div ref={wrapRef} className="relative w-72" data-testid="global-lookup">
       <input
+        ref={inputRef}
         type="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={onKeyDown}
         onFocus={() => {
+          setFocused(true);
           if (hits && hits.length > 0) setOpen(true);
         }}
+        onBlur={() => setFocused(false)}
         placeholder="Lookup phone / email / id…"
-        className="w-full rounded-md border px-3 py-1.5 text-sm"
+        className="w-full rounded-md border py-1.5 pl-3 pr-14 text-sm"
         style={{
           borderColor: "hsl(var(--penn-gold))",
           backgroundColor: "hsl(var(--surface-2))",
         }}
         aria-label="Global lookup"
+        aria-keyshortcuts="Meta+K Control+K /"
         role="combobox"
         aria-expanded={open && hits !== null}
         aria-controls={LISTBOX_ID}
@@ -162,6 +222,18 @@ export function GlobalLookup() {
           open && active >= 0 ? optionId(active) : undefined
         }
       />
+      {!focused && q.length === 0 && (
+        <kbd
+          aria-hidden="true"
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-500"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+          }}
+        >
+          {SHORTCUT_LABEL}
+        </kbd>
+      )}
       {open && hits !== null && (
         <div
           className="absolute right-0 mt-1 w-full max-w-md rounded-md border bg-white shadow-lg z-50"
