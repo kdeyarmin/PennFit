@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -176,10 +177,11 @@ router.get(
   },
 );
 
+// Delegate to the shared safe-csv-cell helper so patient-derived
+// fields get formula-injection neutralisation, not just RFC 4180
+// quoting.
 function csvCell(v: string | number | null): string {
-  if (v === null) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return safeCsvCell(v);
 }
 
 router.get(
