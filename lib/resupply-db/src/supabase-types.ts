@@ -1261,6 +1261,38 @@ export interface Database {
         >;
         Relationships: [];
       };
+      video_visits: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string | null;
+          purpose: string;
+          notes: string | null;
+          status: string;
+          scheduled_at: string | null;
+          created_by_admin_user_id: string | null;
+          created_by_email: string | null;
+          link_version: number;
+          invite_channel: string | null;
+          invite_delivered: boolean | null;
+          staff_joined_at: string | null;
+          patient_joined_at: string | null;
+          started_at: string | null;
+          ended_at: string | null;
+          created_at: string;
+          updated_at: string;
+          guest_name: string | null;
+          guest_email: string | null;
+          guest_phone_e164: string | null;
+          reminder_sent_at: string | null;
+          invite_twilio_message_sid: string | null;
+          invite_delivery_status: string | null;
+          invite_delivery_error_code: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
+        Relationships: [];
+      };
       message_templates: {
         Row: {
           org_id: string | null;
