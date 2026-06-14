@@ -1436,12 +1436,18 @@ function ClearinghousesSection() {
         </p>
         {pollMutation.data && (
           <p className="text-xs ml-auto" style={{ color: "#15803d" }}>
-            Last poll: {JSON.stringify(pollMutation.data.stats)}
+            Last poll: {pollMutation.data.stats.listed ?? 0} listed ·{" "}
+            {pollMutation.data.stats.downloaded ?? 0} downloaded ·{" "}
+            {pollMutation.data.stats.parsed ?? 0} parsed ·{" "}
+            {pollMutation.data.stats.dispatched ?? 0} dispatched
           </p>
         )}
         {pollMutation.error && (
           <p className="text-xs ml-auto" style={{ color: "#be123c" }}>
-            Poll failed: {String(pollMutation.error)}
+            Poll failed:{" "}
+            {pollMutation.error instanceof Error
+              ? pollMutation.error.message
+              : "Please try again."}
           </p>
         )}
       </div>
