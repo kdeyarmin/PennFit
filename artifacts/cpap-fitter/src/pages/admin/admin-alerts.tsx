@@ -15,6 +15,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { PageHeader } from "@/components/admin/PageHeader";
+
 import {
   type AlertChannel,
   type AlertDefinition,
@@ -41,23 +43,20 @@ const CHANNEL_LABEL: Record<string, string> = {
 export function AdminAlertsPage() {
   return (
     <div className="space-y-6" data-testid="admin-alerts-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Alert library
-        </h1>
-        <p className="text-sm text-slate-600">
-          Curated alerts you can send to a patient over email, SMS, or an
-          automated phone call. Edit the message for each channel below — copy
-          supports merge tokens like{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-            {"{{first_name}}"}
-          </code>
-          . Edits take effect immediately.
-        </p>
-      </header>
+      <PageHeader
+        title="Alert library"
+        description={
+          <>
+            Curated alerts you can send to a patient over email, SMS, or an
+            automated phone call. Edit the message for each channel below — copy
+            supports merge tokens like{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+              {"{{first_name}}"}
+            </code>
+            . Edits take effect immediately.
+          </>
+        }
+      />
       <AlertList />
     </div>
   );

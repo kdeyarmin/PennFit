@@ -12,6 +12,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   type CsrMacro,
   type MacroChannel,
@@ -35,22 +36,19 @@ const MERGE_TOKENS = [
 export function AdminMacrosPage() {
   return (
     <div className="space-y-6" data-testid="admin-macros-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Canned replies
-        </h1>
-        <p className="text-sm text-slate-600">
-          Edit the picker that powers the in-thread reply composer. Bodies
-          support merge tokens like{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-            {"{{patient.firstName}}"}
-          </code>
-          ; tokens are substituted client-side at insert time.
-        </p>
-      </header>
+      <PageHeader
+        title="Canned replies"
+        description={
+          <>
+            Edit the picker that powers the in-thread reply composer. Bodies
+            support merge tokens like{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+              {"{{patient.firstName}}"}
+            </code>
+            ; tokens are substituted client-side at insert time.
+          </>
+        }
+      />
       <NewMacroCard />
       <MacroList />
     </div>
