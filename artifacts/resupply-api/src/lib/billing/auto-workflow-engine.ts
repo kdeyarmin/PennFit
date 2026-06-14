@@ -367,7 +367,7 @@ export async function runSecondaryClaimPass(
   // `filterSecondaryEligible` re-checks balance/sequence and drops any
   // primary that already spawned a secondary, so this is the same set the
   // manual worklist surfaces.
-  const { data: candidates } = await supabase
+  const { data: candidates, error: candErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select(SECONDARY_CLAIM_SELECT)
@@ -376,19 +376,37 @@ export async function runSecondaryClaimPass(
     .not("secondary_coverage_id", "is", null)
     .order("patient_responsibility_cents", { ascending: false })
     .limit(MAX_PER_PASS);
+  if (candErr) {
+    stats.errors += 1;
+    logger.warn(
+      { err: candErr.message },
+      "auto-workflow.secondary: candidate query failed",
+    );
+    return;
+  }
   const rows = (candidates ?? []) as unknown as EligibleCandidate[];
   if (rows.length === 0) return;
 
   // Which of these already have a secondary? One query, then filter in
-  // memory — mirrors the GET worklist's dedupe.
+  // memory — mirrors the GET worklist's dedupe. A failed lookup must NOT
+  // proceed with an empty `existing` set: that would attempt a duplicate
+  // create for every candidate (caught only by the unique constraint).
   const ids = rows.map((c) => c.id);
   const existing = new Set<string>();
-  const { data: secRows } = await supabase
+  const { data: secRows, error: secErr } = await supabase
     .schema("resupply")
     .from("insurance_claims")
     .select("primary_claim_id")
     .eq("payer_sequence", "secondary")
     .in("primary_claim_id", ids);
+  if (secErr) {
+    stats.errors += 1;
+    logger.warn(
+      { err: secErr.message },
+      "auto-workflow.secondary: existing-secondary lookup failed",
+    );
+    return;
+  }
   for (const r of (secRows ?? []) as Array<{
     primary_claim_id?: string | null;
   }>) {

@@ -168,4 +168,28 @@ describe("runSecondaryClaimPass", () => {
     expect(generateMock).not.toHaveBeenCalled();
     expect(stats.secondaryClaimsDrafted).toBe(0);
   });
+
+  it("records an error and bails when the candidate query fails", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      error: { message: "boom" },
+    });
+    const stats = freshStats();
+    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    expect(stats.errors).toBe(1);
+    expect(generateMock).not.toHaveBeenCalled();
+  });
+
+  it("records an error and bails when the existing-secondary lookup fails (no duplicate-create attempt)", async () => {
+    stageSupabaseResponse("insurance_claims", "select", {
+      data: [eligiblePrimary("c1")],
+    });
+    stageSupabaseResponse("insurance_claims", "select", {
+      error: { message: "boom" },
+    });
+    const stats = freshStats();
+    await runSecondaryClaimPass(getSupabaseServiceRoleClient(), stats);
+    expect(stats.errors).toBe(1);
+    // Must NOT proceed to draft (which would risk duplicate creates).
+    expect(generateMock).not.toHaveBeenCalled();
+  });
 });
