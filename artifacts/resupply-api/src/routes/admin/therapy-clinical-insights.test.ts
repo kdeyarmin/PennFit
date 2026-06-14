@@ -19,6 +19,8 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  stageSupabaseRpcResponse,
+  getSupabaseRpcArgs,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -107,6 +109,20 @@ describe("GET /admin/therapy-fleet/clinical-insights", () => {
         { id: P2, legal_first_name: "Grace", legal_last_name: "Hopper" },
       ],
     });
+    stageSupabaseRpcResponse("therapy_clinical_metrics", {
+      data: [
+        {
+          patient_id: P1,
+          nights_in_window: "12",
+          last_night_date: "2026-06-13",
+          avg_ahi: "3.40",
+          avg_leak_l_min: "18.0",
+          avg_pressure_p95: "19.8",
+          avg_usage_minutes: "352",
+          device_max_pressure: "20.0",
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/admin/therapy-fleet/clinical-insights",
@@ -122,6 +138,55 @@ describe("GET /admin/therapy-fleet/clinical-insights", () => {
     expect(res.body.entries[0].kind).toBe("pressure_at_max");
     expect(res.body.entries[0].patientName).toBe("Ada Lovelace");
     expect(res.body.entries[2].kind).toBe("usage_erratic");
+    // Supporting metrics attach from the RPC, keyed by patient. P1's
+    // pressure entry shows P95 19.8 against the device max of 20.
+    expect(res.body.entries[0].metrics).toMatchObject({
+      nightsInWindow: 12,
+      avgPressureP95: 19.8,
+      deviceMaxPressure: 20,
+      avgAhi: 3.4,
+    });
+    // P2 had no metrics row → null, not an error.
+    const p2Entry = res.body.entries.find(
+      (e: { patientId: string }) => e.patientId === P2,
+    );
+    expect(p2Entry.metrics).toBeNull();
+    // The RPC was called with the (deduped) patient-id set + window.
+    const rpcArgs = getSupabaseRpcArgs("therapy_clinical_metrics")[0] as {
+      p_patient_ids: string[];
+      p_window_days: number;
+    };
+    expect(rpcArgs.p_window_days).toBe(14);
+    expect([...rpcArgs.p_patient_ids].sort()).toEqual([P1, P2].sort());
+  });
+
+  it("serves entries with null metrics when the metrics RPC errors", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [
+        {
+          id: "e-pressure",
+          patient_id: P1,
+          kind: "pressure_at_max",
+          detected_at: "2026-06-10T00:00:00Z",
+          window_start_date: "2026-06-04",
+          window_end_date: "2026-06-10",
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: P1, legal_first_name: "Ada", legal_last_name: "Lovelace" }],
+    });
+    stageSupabaseRpcResponse("therapy_clinical_metrics", {
+      error: { message: "function not found" },
+    });
+
+    const res = await request(makeApp()).get(
+      "/admin/therapy-fleet/clinical-insights",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.entries).toHaveLength(1);
+    expect(res.body.entries[0].metrics).toBeNull();
   });
 });
 
@@ -143,6 +208,20 @@ describe("GET /admin/therapy-fleet/clinical-insights.csv", () => {
     stageSupabaseResponse("patients", "select", {
       data: [{ id: P1, legal_first_name: "Ada", legal_last_name: "Lovelace" }],
     });
+    stageSupabaseRpcResponse("therapy_clinical_metrics", {
+      data: [
+        {
+          patient_id: P1,
+          nights_in_window: "10",
+          last_night_date: "2026-06-12",
+          avg_ahi: "4.20",
+          avg_leak_l_min: "15.0",
+          avg_pressure_p95: "12.0",
+          avg_usage_minutes: "300",
+          device_max_pressure: "20.0",
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/admin/therapy-fleet/clinical-insights.csv",
@@ -152,10 +231,15 @@ describe("GET /admin/therapy-fleet/clinical-insights.csv", () => {
     const lines = res.text.trim().split("\n");
     expect(lines[0]).toBe(
       "patient_id,patient_name,signal,severity,detected_at," +
-        "window_start_date,window_end_date",
+        "window_start_date,window_end_date,nights_in_window,last_night_date," +
+        "avg_ahi,avg_leak_l_min,avg_pressure_p95,device_max_pressure," +
+        "avg_usage_minutes",
     );
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("ahi_rising");
     expect(lines[1]).toContain("Ada Lovelace");
+    // Metrics columns populated from the RPC.
+    expect(lines[1]).toContain("4.2");
+    expect(lines[1]).toContain("20");
   });
 });

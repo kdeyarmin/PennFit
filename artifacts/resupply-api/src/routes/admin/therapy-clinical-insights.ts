@@ -10,8 +10,9 @@
 // the dispatcher never auto-messages because they need a clinician
 // (pressure pegging, AHI elevated/rising, non-adherence, erratic use).
 // This report is that queue: every active clinical signal across the
-// base, summarised by type and listed with patient names, plus a CSV
-// export for working offline / sharing with the prescriber.
+// base, summarised by type and listed with patient names + the recent
+// therapy numbers that triggered it, plus a CSV export for working
+// offline / sharing with the prescriber.
 //
 //   GET /admin/therapy-fleet/clinical-insights      — summary + list
 //   GET /admin/therapy-fleet/clinical-insights.csv  — same, as CSV
@@ -21,19 +22,38 @@
 // is irrelevant). A CSR dismisses a row from the patient page once it's
 // been actioned, which drops it from this report.
 //
-// PHI / log posture: returns patient names + a clinical signal type
-// (which is itself sensitive) → gates on patients.read and never logs
-// the rows. The detection *values* (AHI, pressure) are not carried here
-// — only the signal type and the window it was detected over.
+// Each entry also carries supporting metrics (recent avg AHI / leak /
+// P95 pressure / usage + the device's prescribed max pressure) from the
+// therapy_clinical_metrics RPC (migration 0326), so an RT can triage the
+// whole queue without opening each patient — e.g. read pressure_at_max
+// as "P95 19.8 of max 20". Best-effort: if the RPC is unavailable the
+// entries serve with null metrics rather than failing the report.
+//
+// PHI / log posture: returns patient names + the clinical signal type +
+// summary therapy numerics (same admin-gated posture as the therapy-
+// fleet worklist, which returns avg AHI/leak per patient) → gates on
+// patients.read and never logs the rows.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+// PostgREST serialises bigint/numeric columns as strings to preserve
+// precision; coerce defensively (null stays null).
+function num(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+}
+function int(v: unknown): number {
+  return Math.trunc(num(v) ?? 0);
+}
 
 // The clinical (RT-owned) smart-trigger kinds, in triage-severity order.
 // Kept in lockstep with lib/smart-triggers/index.ts PATIENT_DISPATCH_KINDS
@@ -64,6 +84,10 @@ const KIND_RANK: Record<ClinicalTriggerKind, number> = Object.fromEntries(
   CLINICAL_TRIGGER_KINDS.map((k, i) => [k, i]),
 ) as Record<ClinicalTriggerKind, number>;
 
+// Window the supporting metrics are averaged over. Short enough that the
+// numbers reflect the patient's *current* therapy, not a stale month.
+const METRICS_WINDOW_DAYS = 14;
+
 const reportQuery = z
   .object({
     kind: z.enum(CLINICAL_TRIGGER_KINDS).optional(),
@@ -80,6 +104,21 @@ interface TriggerEventRow {
   window_end_date: string;
 }
 
+// Recent therapy numbers attached to each entry so an RT can triage the
+// signal from the queue. Averages over METRICS_WINDOW_DAYS; deviceMax is
+// the prescribed ceiling from the latest vendor snapshot (lets
+// pressure_at_max read as "P95 19.8 of max 20"). All admin-gated, never
+// logged.
+interface ClinicalMetrics {
+  nightsInWindow: number;
+  lastNightDate: string | null;
+  avgAhi: number | null;
+  avgLeakLMin: number | null;
+  avgPressureP95: number | null;
+  avgUsageMinutes: number | null;
+  deviceMaxPressure: number | null;
+}
+
 interface ClinicalInsightEntry {
   id: string;
   patientId: string;
@@ -89,6 +128,7 @@ interface ClinicalInsightEntry {
   detectedAt: string;
   windowStartDate: string;
   windowEndDate: string;
+  metrics: ClinicalMetrics | null;
 }
 
 interface ClinicalInsightReport {
@@ -169,15 +209,27 @@ async function buildClinicalInsightReport(
 
   const limited = valid.slice(0, limit);
 
-  // Attach display names in one batched read (mirror therapy-fleet.ts).
+  // Resolve display names AND recent therapy metrics for the (already
+  // limited) entry set. Both keyed by patient id, both one batched read.
   const nameById = new Map<string, string>();
+  const metricsById = new Map<string, ClinicalMetrics>();
   if (limited.length > 0) {
     const ids = Array.from(new Set(limited.map((r) => r.patient_id)));
-    const { data: patientRows, error: pErr } = await supabase
-      .schema("resupply")
-      .from("patients")
-      .select("id, legal_first_name, legal_last_name")
-      .in("id", ids);
+
+    const [{ data: patientRows, error: pErr }, metricsRes] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name")
+        .in("id", ids),
+      // therapy_clinical_metrics (migration 0326). Best-effort: if the
+      // RPC isn't applied yet / errors, entries just carry null metrics
+      // rather than failing the whole report.
+      supabase.schema("resupply").rpc("therapy_clinical_metrics", {
+        p_patient_ids: ids,
+        p_window_days: METRICS_WINDOW_DAYS,
+      }),
+    ]);
     if (pErr) throw pErr;
     for (const p of (patientRows ?? []) as Array<{
       id: string;
@@ -189,6 +241,34 @@ async function buildClinicalInsightReport(
         .join(" ")
         .trim();
       nameById.set(p.id, name || "");
+    }
+
+    if (!metricsRes.error) {
+      for (const m of (metricsRes.data ?? []) as Array<{
+        patient_id: string;
+        nights_in_window: number | string | null;
+        last_night_date: string | null;
+        avg_ahi: number | string | null;
+        avg_leak_l_min: number | string | null;
+        avg_pressure_p95: number | string | null;
+        avg_usage_minutes: number | string | null;
+        device_max_pressure: number | string | null;
+      }>) {
+        metricsById.set(m.patient_id, {
+          nightsInWindow: int(m.nights_in_window),
+          lastNightDate: m.last_night_date,
+          avgAhi: num(m.avg_ahi),
+          avgLeakLMin: num(m.avg_leak_l_min),
+          avgPressureP95: num(m.avg_pressure_p95),
+          avgUsageMinutes: num(m.avg_usage_minutes),
+          deviceMaxPressure: num(m.device_max_pressure),
+        });
+      }
+    } else {
+      logger.warn(
+        { err: metricsRes.error.message },
+        "clinical-insights: therapy_clinical_metrics RPC failed — entries served without metrics",
+      );
     }
   }
 
@@ -203,6 +283,7 @@ async function buildClinicalInsightReport(
       detectedAt: r.detected_at,
       windowStartDate: r.window_start_date,
       windowEndDate: r.window_end_date,
+      metrics: metricsById.get(r.patient_id) ?? null,
     };
   });
 
@@ -257,9 +338,12 @@ router.get(
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.write(
       "patient_id,patient_name,signal,severity,detected_at," +
-        "window_start_date,window_end_date\n",
+        "window_start_date,window_end_date,nights_in_window,last_night_date," +
+        "avg_ahi,avg_leak_l_min,avg_pressure_p95,device_max_pressure," +
+        "avg_usage_minutes\n",
     );
     for (const e of report.entries) {
+      const m = e.metrics;
       res.write(
         [
           csvCell(e.patientId),
@@ -269,6 +353,13 @@ router.get(
           csvCell(e.detectedAt),
           csvCell(e.windowStartDate),
           csvCell(e.windowEndDate),
+          csvCell(m?.nightsInWindow ?? null),
+          csvCell(m?.lastNightDate ?? null),
+          csvCell(m?.avgAhi ?? null),
+          csvCell(m?.avgLeakLMin ?? null),
+          csvCell(m?.avgPressureP95 ?? null),
+          csvCell(m?.deviceMaxPressure ?? null),
+          csvCell(m?.avgUsageMinutes ?? null),
         ].join(",") + "\n",
       );
     }

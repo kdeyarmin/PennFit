@@ -11,7 +11,7 @@
 //     reason(s) and a weighted priority. Filterable by reason and
 //     exportable to CSV for a calling list.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -570,7 +570,7 @@ function ClinicalInsightsTable({
           <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
             <th className="font-medium py-1.5 px-1">Signal</th>
             <th className="font-medium py-1.5 px-1">Patient</th>
-            <th className="font-medium py-1.5 px-1">Window</th>
+            <th className="font-medium py-1.5 px-1">Recent therapy (14d)</th>
             <th className="font-medium py-1.5 px-1">Detected</th>
           </tr>
         </thead>
@@ -601,11 +601,8 @@ function ClinicalInsightsTable({
                     {e.patientName || e.patientId.slice(0, 8)}
                   </Link>
                 </td>
-                <td
-                  className="py-1.5 px-1 whitespace-nowrap text-[12px]"
-                  style={{ color: "hsl(var(--ink-3))" }}
-                >
-                  {e.windowStartDate} → {e.windowEndDate}
+                <td className="py-1.5 px-1">
+                  <MetricsCell kind={e.kind} metrics={e.metrics} />
                 </td>
                 <td
                   className="py-1.5 px-1 whitespace-nowrap text-[12px]"
@@ -618,6 +615,88 @@ function ClinicalInsightsTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// The recent therapy numbers that triggered a clinical signal, rendered
+// compactly. The metric most relevant to each kind is bolded so an RT can
+// scan the queue: pressure for pressure_at_max, AHI for the AHI signals,
+// usage for usage_erratic.
+function MetricsCell({
+  kind,
+  metrics,
+}: {
+  kind: ClinicalTriggerKind;
+  metrics: ClinicalInsightEntry["metrics"];
+}) {
+  if (!metrics || metrics.nightsInWindow === 0) {
+    return (
+      <span className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+        no recent nights
+      </span>
+    );
+  }
+  const m = metrics;
+  const pressureKind = kind === "pressure_at_max";
+  const ahiKind = kind === "ahi_elevated" || kind === "ahi_rising";
+  const usageKind = kind === "usage_erratic" || kind === "non_adherent_30d";
+  const parts: Array<{ key: string; node: ReactNode; strong: boolean }> = [];
+  if (m.avgAhi !== null) {
+    parts.push({
+      key: "ahi",
+      node: <>AHI {m.avgAhi.toFixed(1)}</>,
+      strong: ahiKind,
+    });
+  }
+  if (m.avgLeakLMin !== null) {
+    parts.push({
+      key: "leak",
+      node: <>leak {m.avgLeakLMin.toFixed(0)}</>,
+      strong: false,
+    });
+  }
+  if (m.avgPressureP95 !== null) {
+    parts.push({
+      key: "press",
+      node: (
+        <>
+          P95 {m.avgPressureP95.toFixed(1)}
+          {m.deviceMaxPressure !== null && (
+            <> / max {m.deviceMaxPressure.toFixed(1)}</>
+          )}
+        </>
+      ),
+      strong: pressureKind,
+    });
+  }
+  if (m.avgUsageMinutes !== null) {
+    parts.push({
+      key: "use",
+      node: <>{(m.avgUsageMinutes / 60).toFixed(1)}h/night</>,
+      strong: usageKind,
+    });
+  }
+  return (
+    <div className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+      <span className="flex flex-wrap gap-x-2 gap-y-0.5">
+        {parts.map((p) => (
+          <span
+            key={p.key}
+            style={
+              p.strong
+                ? { color: "hsl(var(--ink-1))", fontWeight: 600 }
+                : undefined
+            }
+          >
+            {p.node}
+          </span>
+        ))}
+      </span>
+      <span className="block text-[11px] mt-0.5">
+        {m.nightsInWindow} night{m.nightsInWindow === 1 ? "" : "s"}
+        {m.lastNightDate ? ` · last ${m.lastNightDate}` : ""}
+      </span>
     </div>
   );
 }

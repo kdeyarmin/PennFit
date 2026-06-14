@@ -185,6 +185,16 @@ export type ClinicalTriggerKind =
   | "ahi_rising"
   | "usage_erratic";
 
+export interface ClinicalMetrics {
+  nightsInWindow: number;
+  lastNightDate: string | null;
+  avgAhi: number | null;
+  avgLeakLMin: number | null;
+  avgPressureP95: number | null;
+  avgUsageMinutes: number | null;
+  deviceMaxPressure: number | null;
+}
+
 export interface ClinicalInsightEntry {
   id: string;
   patientId: string;
@@ -194,6 +204,7 @@ export interface ClinicalInsightEntry {
   detectedAt: string;
   windowStartDate: string;
   windowEndDate: string;
+  metrics: ClinicalMetrics | null;
 }
 
 export interface ClinicalInsightReport {
