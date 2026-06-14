@@ -37,6 +37,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
@@ -1083,11 +1084,11 @@ function AddLineForm({
     >
       <p className="text-xs font-medium">Add line item</p>
       <div className="grid grid-cols-2 gap-2">
-        <Input
+        <HcpcsCodeAutocomplete
           placeholder="HCPCS (e.g. E0601)"
           aria-label="HCPCS code"
           value={hcpcsCode}
-          onChange={(e) => setHcpcsCode(e.target.value.toUpperCase())}
+          onValueChange={(v) => setHcpcsCode(v.toUpperCase())}
           maxLength={12}
         />
         <Input

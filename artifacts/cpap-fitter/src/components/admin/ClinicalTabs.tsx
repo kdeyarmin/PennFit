@@ -16,6 +16,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
 import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceCoverage,
@@ -820,7 +821,7 @@ function AddPriorAuthorizationModal({
   return (
     <ModalShell title="Record prior authorization" onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
-        <LabeledInput
+        <LabeledHcpcsInput
           label="HCPCS code"
           value={hcpcsCode}
           onChange={setHcpcsCode}
@@ -944,6 +945,36 @@ function LabeledPayerInput({
         onValueChange={onChange}
         placeholder={placeholder}
         aria-label={label}
+      />
+    </div>
+  );
+}
+
+function LabeledHcpcsInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <Label>
+        {label}
+        {required && " *"}
+      </Label>
+      <HcpcsCodeAutocomplete
+        value={value}
+        onValueChange={onChange}
+        placeholder={placeholder}
+        aria-label={label}
+        maxLength={12}
       />
     </div>
   );

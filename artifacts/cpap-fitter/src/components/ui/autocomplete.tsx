@@ -32,6 +32,12 @@ export interface AutocompleteProps extends Omit<
   onSelectOption?: (option: AutocompleteOption) => void;
   /** Minimum characters typed before suggestions appear (default 1). */
   minChars?: number;
+  /**
+   * Filter `options` client-side against the typed text (default true). Set
+   * false when options are already filtered upstream (e.g. a server search),
+   * so they render as-is.
+   */
+  filterOptions?: boolean;
 }
 
 /**
@@ -48,6 +54,7 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
       maxSuggestions = 8,
       onSelectOption,
       minChars = 1,
+      filterOptions = true,
       onKeyDown,
       onFocus,
       onBlur,
@@ -64,6 +71,8 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
       const query = value.trim().toLowerCase();
       if (query.length < minChars) return [];
       const normalized = options.map(normalize);
+      // Options already filtered upstream (e.g. a server search): show as-is.
+      if (!filterOptions) return normalized.slice(0, maxSuggestions);
       const scored = normalized
         .map((opt) => {
           const hay = `${opt.label ?? opt.value} ${opt.description ?? ""}`
@@ -81,7 +90,7 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
         .filter(({ opt }) => (opt.label ?? opt.value).toLowerCase() !== query);
       scored.sort((a, b) => a.score - b.score);
       return scored.slice(0, maxSuggestions).map(({ opt }) => opt);
-    }, [value, options, maxSuggestions, minChars]);
+    }, [value, options, maxSuggestions, minChars, filterOptions]);
 
     const showList = open && matches.length > 0;
 

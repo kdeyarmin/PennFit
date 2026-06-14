@@ -78,6 +78,51 @@ describe("Autocomplete", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
+  it("matches on an option's description, not just its label", async () => {
+    function DescHarness() {
+      const [value, setValue] = useState("");
+      return (
+        <Autocomplete
+          aria-label="HCPCS"
+          value={value}
+          onValueChange={setValue}
+          options={[
+            { value: "A7037", label: "A7037", description: "Tubing" },
+            { value: "A7035", label: "A7035", description: "Headgear" },
+          ]}
+        />
+      );
+    }
+    render(<DescHarness />);
+    const input = screen.getByLabelText("HCPCS");
+    fireEvent.change(input, { target: { value: "tub" } });
+    await screen.findByRole("option", { name: /A7037/ });
+    expect(screen.queryByRole("option", { name: /A7035/ })).toBeNull();
+  });
+
+  it("renders server-filtered options as-is when filterOptions is false", async () => {
+    function ServerHarness() {
+      const [value, setValue] = useState("");
+      // Options that do NOT contain the typed text — as a server search
+      // (matching on a hidden field like NPI) might return.
+      return (
+        <Autocomplete
+          aria-label="Provider"
+          value={value}
+          onValueChange={setValue}
+          filterOptions={false}
+          options={[{ value: "Dr. Anna Singh", label: "Dr. Anna Singh" }]}
+        />
+      );
+    }
+    render(<ServerHarness />);
+    const input = screen.getByLabelText("Provider");
+    fireEvent.change(input, { target: { value: "1234" } });
+    expect(
+      await screen.findByRole("option", { name: /Dr\. Anna Singh/ }),
+    ).toBeTruthy();
+  });
+
   it("hides the list once the value exactly matches a single option", async () => {
     render(<Harness />);
     const input = screen.getByLabelText("Payer");
