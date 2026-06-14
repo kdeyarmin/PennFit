@@ -36,10 +36,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Json,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 import { timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
@@ -134,7 +131,12 @@ router.post(
     }
     const body = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Build the insert payload. PHI columns are plaintext text/jsonb
     // post-migration 0025, so values pass through directly. `status`
@@ -146,7 +148,6 @@ router.post(
     // migration 0161) applies. Unrecognized states never guess.
     const derivedTimezone = timezoneForUsState(body.address?.state);
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .insert({
         pacware_id: body.pacwareId ?? null,
