@@ -39,6 +39,7 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import {
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
   type AdminRole,
   type AdminStatus,
@@ -196,12 +197,19 @@ const patchBody = z
  * always allowed (clearing / not setting the assignment).
  */
 async function checkLocationOr422(
-  supabase: ResupplySupabaseClient,
+  orgId: string | null | undefined,
   locationId: string | null | undefined,
   res: import("express").Response,
 ): Promise<boolean> {
   if (!locationId) return true;
-  const check = await assertAssignableLocation(supabase, locationId);
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return false;
+  }
+  const check = await assertAssignableLocation(
+    getOrgScopedClient(orgId),
+    locationId,
+  );
   if (!check.ok) {
     res.status(422).json({
       error: "invalid_location",
@@ -286,7 +294,7 @@ router.post(
     const supabase = getSupabaseServiceRoleClient();
     const deps = getAuthDeps();
 
-    if (!(await checkLocationOr422(supabase, locationId, res))) return;
+    if (!(await checkLocationOr422(req.orgId, locationId, res))) return;
 
     // Reuse logic — three legitimate cases:
     //   * pending  → invite expired or was lost; resend.
@@ -750,7 +758,7 @@ router.patch(
         }
       }
     }
-    if (!(await checkLocationOr422(supabase, parsed.data.locationId, res)))
+    if (!(await checkLocationOr422(req.orgId, parsed.data.locationId, res)))
       return;
     const updateValues: Database["resupply"]["Tables"]["admin_users"]["Update"] =
       {
