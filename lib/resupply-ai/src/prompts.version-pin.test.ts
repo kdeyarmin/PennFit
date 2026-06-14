@@ -90,6 +90,13 @@ const PROMPT_VERSION_HASHES: Readonly<Record<string, string>> = {
   // Patient-only clause, so the shop variant hash is unchanged.
   "2026-06-10.v9":
     "4a391e87b41122ef5cd4a9361457c4385835ebf51f7690206c4413c0dc8ed1fe",
+  // v10 adds a patient-flow resupply-conversion clause: after reading
+  // back what's due, gently move toward placing the order, handle common
+  // hesitations ("still have some", cost/coverage) with care, and mention
+  // auto-ship + hand off to set it up. Patient-only clause, so the shop
+  // variant hash is unchanged.
+  "2026-06-14.v10":
+    "05fc068dde89418e69165756635271358cf39a1e63c0c91719a44c63c4167310",
 };
 
 function renderCanonicalPrompt(): string {
