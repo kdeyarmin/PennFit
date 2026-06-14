@@ -716,10 +716,20 @@ jobs:
         run: bash scripts/ci/start-test-postgrest.sh
 
       # Create an active admin with a known password (no email needed).
+      # The sign-in path refuses any user whose email_verified_at is
+      # NULL (see lib/resupply-auth/src/http/sign-in.ts), and the seed
+      # script intentionally doesn't touch email verification, so mark
+      # the seeded e2e admin verified directly — otherwise the
+      # authenticated Playwright project can never get past
+      # /admin/sign-in.
       - name: Seed e2e admin
         run: |
           pnpm --filter @workspace/scripts auth:set-admin-password \
             --email="$E2E_ADMIN_EMAIL" --role=admin
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "UPDATE resupply_auth.users
+                   SET email_verified_at = COALESCE(email_verified_at, now())
+                 WHERE email_lower = lower('$E2E_ADMIN_EMAIL');"
 
       # auth:set-admin-password sets status=active + the password but does
       # NOT mark the email verified, and the in-house sign-in refuses

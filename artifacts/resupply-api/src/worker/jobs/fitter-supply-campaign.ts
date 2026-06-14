@@ -383,10 +383,10 @@ function renderSubscriptionUpsell(
   const subscribeUrl = `${shopUrl}/subscribe`;
   return {
     html: `<div style="margin-top:18px;padding:14px 16px;background:#fef6e0;border-left:3px solid ${BRAND_GOLD};border-radius:4px;font-size:14px;line-height:1.5;">
-      <strong>Never run out:</strong> set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.
+      <strong>Never run out:</strong> set up auto-ship and a fresh set arrives right on schedule — same price as a one-time order. Skip or cancel any month — no commitment.
       <div style="margin-top:8px;"><a href="${wrappedSubscribeUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set up auto-ship</a></div>
     </div>`,
-    text: `\n\nNever run out: set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
+    text: `\n\nNever run out: set up auto-ship and a fresh set arrives right on schedule — same price as a one-time order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
   };
 }
 
