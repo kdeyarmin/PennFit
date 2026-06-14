@@ -747,16 +747,33 @@ jobs:
       - name: Build deploy artifacts (API + embedded SPA)
         run: pnpm -r --workspace-concurrency=1 --if-present run build && node scripts/embed-spa.mjs
 
-      - name: Start API (co-serves the SPA) and wait for health
+      - name: Start API (co-serves the SPA) and wait for ready
         run: |
           node --enable-source-maps artifacts/resupply-api/dist/index.mjs &
+          # Liveness first (no dependencies).
+          live=""
           for i in $(seq 1 40); do
             if curl -fsS http://127.0.0.1:3000/resupply-api/healthz > /dev/null 2>&1; then
-              echo "API healthy after ${i}s"; exit 0
+              echo "API live after ${i}s"; live=1; break
             fi
             sleep 1
           done
-          echo "API did not become healthy on :3000 within 40s"; exit 1
+          if [ -z "$live" ]; then
+            echo "API did not become live on :3000 within 40s"; exit 1
+          fi
+          # Then readiness: /readyz exercises the PostgREST/DB path + the
+          # pg-boss queue, so waiting on it warms the cold start that the
+          # FIRST real sign-in would otherwise race (healthz is liveness
+          # only and never touches the DB). Best-effort — if it never goes
+          # ready we still run the suite; admin-auth.setup.ts asserts the
+          # sign-in response and will report which dependency was unhappy.
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:3000/resupply-api/readyz > /dev/null 2>&1; then
+              echo "API ready (DB + queue) after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::warning::API /readyz not ready within 45s; proceeding (the admin sign-in test will surface any dependency failure)"
 
       - name: Install Playwright browsers (chromium only)
         run: pnpm exec playwright install --with-deps chromium
