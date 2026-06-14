@@ -1556,6 +1556,7 @@ export interface Database {
       };
       prior_authorizations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           insurance_coverage_id: string | null;
@@ -1592,6 +1593,7 @@ export interface Database {
       };
       insurance_claims: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           insurance_coverage_id: string | null;
@@ -1691,6 +1693,7 @@ export interface Database {
       };
       insurance_claim_line_items: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           hcpcs_code: string;
@@ -1883,6 +1886,7 @@ export interface Database {
       };
       eligibility_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           insurance_coverage_id: string;
           patient_id: string;
@@ -2117,6 +2121,7 @@ export interface Database {
       };
       davinci_pas_submissions: {
         Row: {
+          org_id: string | null;
           id: string;
           prior_authorization_id: string;
           payer_pas_endpoint: string;
@@ -3121,6 +3126,7 @@ export interface Database {
       };
       era_files: {
         Row: {
+          org_id: string | null;
           id: string;
           file_name: string;
           file_sha256: string;
@@ -3270,6 +3276,7 @@ export interface Database {
       };
       claim_templates: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -3291,6 +3298,7 @@ export interface Database {
       };
       office_ally_submissions: {
         Row: {
+          org_id: string | null;
           id: string;
           file_name: string;
           isa_control_number: string;
