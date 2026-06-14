@@ -56,6 +56,7 @@ export function AdminProductQuestionsPage() {
       />
       <div
         role="tablist"
+        aria-label="Question status filter"
         className="inline-flex items-center gap-1 p-1 rounded-lg bg-slate-100"
       >
         {TABS.map((t) => {

@@ -253,6 +253,7 @@ export function ConversationsPage() {
         <div className="space-y-4">
           <div
             role="tablist"
+            aria-label="Conversation view"
             className="inline-flex flex-wrap gap-1 p-1 rounded-lg bg-slate-100"
           >
             {(Object.keys(VIEW_LABELS) as InboxView[]).map((v) => {
