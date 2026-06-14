@@ -147,9 +147,9 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                The resupply API can't confirm admin access right now because
-                it isn't fully configured, so it's refusing every sign-in until
-                an administrator finishes the setup. This is a deploy-side fix —
+                The resupply API can't confirm admin access right now because it
+                isn't fully configured, so it's refusing every sign-in until an
+                administrator finishes the setup. This is a deploy-side fix —
                 signing out and back in won't change the result.
               </p>
               <p
@@ -168,7 +168,7 @@ export function NotAuthorizedPage({
               >
                 The dashboard couldn't confirm your admin access just now — the
                 server may be restarting, or your connection may have dropped
-                briefly. This is almost always a few- seconds blip, not a
+                briefly. This is almost always a few-seconds blip, not a
                 permissions change.
               </p>
               <p

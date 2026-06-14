@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
+import { useCompanyContact } from "@/lib/contact";
 import {
   FacialMeasurementsCard,
   type FacialMeasurementsLike,
@@ -42,6 +43,7 @@ interface OrderConfirmation {
 export function OrderSuccess() {
   useDocumentTitle("Order confirmed");
   const [, setLocation] = useLocation();
+  const contact = useCompanyContact();
   const { reset } = useFitterStore();
   // Lazily initialize from sessionStorage so there's no flash of
   // empty content. GuardedOrderSuccess already verified the key exists
@@ -210,18 +212,36 @@ export function OrderSuccess() {
             Questions about your order?
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <div className="flex items-center gap-2.5 text-muted-foreground">
+            <a
+              href={`tel:${contact.phoneE164}`}
+              className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
+              data-testid="order-success-phone"
+            >
               <div className="h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center shrink-0">
                 <Phone className="w-3.5 h-3.5" />
               </div>
-              <span>Call PennPaps</span>
-            </div>
-            <div className="flex items-center gap-2.5 text-muted-foreground">
+              <span className="flex flex-col leading-tight">
+                <span className="font-medium text-foreground">
+                  {contact.phoneDisplay}
+                </span>
+                <span className="text-xs">Call PennPaps</span>
+              </span>
+            </a>
+            <a
+              href={`mailto:${contact.email}`}
+              className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
+              data-testid="order-success-email"
+            >
               <div className="h-8 w-8 rounded-lg icon-halo-gold flex items-center justify-center shrink-0">
                 <Mail className="w-3.5 h-3.5" />
               </div>
-              <span>Email PennPaps</span>
-            </div>
+              <span className="flex flex-col leading-tight">
+                <span className="font-medium text-foreground break-all">
+                  {contact.email}
+                </span>
+                <span className="text-xs">Email PennPaps</span>
+              </span>
+            </a>
           </div>
           <p className="text-xs text-muted-foreground mt-3">
             Mention reference{" "}
@@ -236,9 +256,9 @@ export function OrderSuccess() {
       <div className="flex items-start gap-3 text-xs text-muted-foreground p-4 rounded-xl callout-navy mb-8">
         <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
         <p>
-          Your order details have been securely transmitted to Penn Home Medical
-          Supply. We do not store your insurance, contact, or address
-          information on this website.
+          Your order details have been securely transmitted to and stored by
+          Penn Home Medical Supply for fulfillment. They are not retained on
+          this website.
         </p>
       </div>
 

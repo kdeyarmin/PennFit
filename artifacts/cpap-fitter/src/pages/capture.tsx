@@ -268,6 +268,18 @@ export function Capture() {
               Skip for now — browse the shop
             </Button>
           </Link>
+          {/* Camera-blocked patients (older users, locked-down devices) are
+              exactly the cohort who need the insurance / in-person path the
+              body copy promises — so give them a direct link to it. */}
+          <Link href="/insurance">
+            <Button
+              variant="outline"
+              className="rounded-full glass-panel border-0 px-6"
+              data-testid="capture-camera-fallback-insurance"
+            >
+              Use insurance instead
+            </Button>
+          </Link>
         </div>
 
         <p className="text-xs text-center text-muted-foreground/85 max-w-md mx-auto leading-relaxed">
@@ -285,35 +297,34 @@ export function Capture() {
       <div className="text-center mb-3 md:mb-8 max-w-xl">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-xs font-medium mb-4">
           <ScanFace className="w-3.5 h-3.5" />
-          <span className="font-semibold tracking-wide">
-            Step 1 of 3 · Capture
-          </span>
+          <span className="font-semibold tracking-wide">Capture</span>
         </div>
-        <div className="mt-2 text-xs text-muted-foreground">
-          Camera status:{" "}
-          <span
-            className={
-              videoReady
-                ? "text-emerald-700 font-medium"
-                : "text-amber-700 font-medium"
-            }
-          >
-            {videoReady ? "ready" : "warming up"}
-          </span>
-        </div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          Vision runtime:{" "}
-          <span
-            className={
-              visionHealth === "ready"
-                ? "text-emerald-700 font-medium"
-                : visionHealth === "checking"
-                  ? "text-amber-700 font-medium"
-                  : "text-rose-700 font-medium"
-            }
-          >
-            {visionHealth}
-          </span>
+        {/*
+         * Patient-friendly, single status line. The raw "Camera status:
+         * ready/warming up" + "Vision runtime: checking/ready/error"
+         * readout leaked developer jargon onto the highest-anxiety
+         * screen of the funnel ("Vision runtime: error" with no
+         * explanation). We collapse it to one plain-language line and
+         * announce it politely to assistive tech.
+         */}
+        <div
+          className="mt-2 text-xs"
+          role="status"
+          aria-live="polite"
+          data-testid="capture-status"
+        >
+          {videoReady && visionHealth === "ready" ? (
+            <span className="text-emerald-700 font-medium">Camera ready</span>
+          ) : visionHealth === "degraded" ? (
+            <span className="text-amber-700 font-medium">
+              Still preparing the face scanner — this can take a moment on a
+              slower connection.
+            </span>
+          ) : (
+            <span className="text-amber-700 font-medium">
+              Getting your camera ready…
+            </span>
+          )}
         </div>
         <div className="inline-flex items-center justify-center gap-3 mb-3">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
