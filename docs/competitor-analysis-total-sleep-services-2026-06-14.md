@@ -110,7 +110,9 @@ because they are a **staffed service**, not software:
    pick/pack. PennFit makes those people far more productive but does not replace
    them.
 2. **Asset recovery as a service.** Physical retrieval + redeployment of unused
-   machines is a real offering at VGM and a feature gap in PennFit.
+   machines is a real offering at VGM and was a feature gap in PennFit.
+   _(Update: PennFit now has an in-app asset-recovery workflow — see §6 — though
+   VGM still does the physical pickup/warehousing.)_
 3. **Physical fulfillment / warehousing.** VGM runs the pick/pack/ship and
    restock. PennFit orchestrates fulfillment but is not a 3PL.
 4. **Turnkey onboarding + VGM brand/scale trust.** "One welcome form," a named
@@ -136,24 +138,51 @@ and an AI workforce that a fulfillment bureau will never hand you.**
 
 Recommended moves:
 
+> **Status (updated 2026-06-14):** moves 1–4 below have since shipped — see
+> [§6. Update](#6-update--shipped-since-this-analysis). Move 5 remains a
+> business decision.
+
 1. **Close the asset-recovery gap.** Add a lightweight machine-recovery /
    redeployment workflow (trigger off low-usage/lapsed signals → generate return
    label → track receipt → mark for redeploy). It's the one published competitor
    offering with no PennFit analog, and the detection half already exists.
+   **✅ Shipped** (worklist + auto-populate worker + return-label action).
 2. **Publish your own outcome benchmarks.** Wire up the acquisition-funnel
    dashboard (data is already collected) and surface compliance %, mask-fit
    conversion, and resupply-funnel numbers so sales can counter VGM's "2 min /
    97% / 7 touches" with PennFit's own figures.
+   **✅ Already shipped** — the acquisition-funnel dashboard exists in `main`.
 3. **Lean on privacy in the mask-fitter messaging.** "Images never leave the
    device" is a defensible, HIPAA-friendly contrast to a server-side face scan.
+   **✅ Shipped** (home-page "private by design" trust badge).
 4. **Flip the dormant revenue levers (with consent handled).** Auto-reminder
    enrollment, cart-abandonment recovery, claim auto-submit, and email
    auto-reply are built and seeded OFF — they're the "boost resupply revenue /
    reduce operational cost" story VGM sells, available as switches.
+   **✅ Shipped** (levers enabled via migration; consent/legal sign-off was
+   obtained).
 5. **Optionally productize a "done-for-you" tier.** If buyers genuinely want the
    BPO model, PennFit-the-platform + a staffing/3PL partner could offer the same
    outsourced experience while still owning the software layer — neutralizing
-   VGM's biggest advantage.
+   VGM's biggest advantage. **Open** — business/partnership decision, not built.
+
+---
+
+## 6. Update — shipped since this analysis
+
+The recommendations above were acted on the same day. What changed in `main`:
+
+| Rec                   | Outcome             | Notes                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #1 Asset recovery     | **Shipped**         | `/admin/asset-recovery` worklist (table + gated API + UI), a nightly **auto-populate** worker that opens cases from `usage_dropping` smart-trigger signals (flag-gated OFF), and a **return-label** action via the carrier adapter (graceful 503 until a vendor is wired). Closes the one competitor offering with no prior PennFit analog — so the §2 "Asset recovery ❌" / §4(2) "gap" lines are now historical. |
+| #2 Outcome benchmarks | **Already present** | The acquisition-funnel dashboard was already built in `main` (the original "data collected, no reader" note was stale).                                                                                                                                                                                                                                                                                            |
+| #3 Privacy messaging  | **Shipped**         | "Private by design — images never leave your device" trust badge on the home page.                                                                                                                                                                                                                                                                                                                                 |
+| #4 Dormant levers     | **Shipped**         | Auto-reminder enrollment, claim auto-submit, and email auto-reply enabled by migration (cart-abandonment was already ON); plus patient-responsibility itemization is now captured end-to-end and surfaced on the admin claim view, and secondary/COB auto-drafting was enabled. Carries the TCPA/CAN-SPAM/clearinghouse implications flagged at merge.                                                             |
+| #5 Done-for-you tier  | **Open**            | Business/partnership decision; not a code change.                                                                                                                                                                                                                                                                                                                                                                  |
+
+Caveat: asset-recovery currently uses the **seed org** for the auto-populate
+worker's writes — correct while the platform is single-tenant; per-patient org
+resolution is the forward step as the multi-tenant cutover finishes.
 
 ---
 
