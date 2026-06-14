@@ -3603,6 +3603,45 @@ export interface Database {
         >;
         Relationships: [];
       };
+      asset_recovery_cases: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string | null;
+          patient_label: string | null;
+          device_label: string | null;
+          device_serial: string | null;
+          status:
+            | "identified"
+            | "outreach"
+            | "label_sent"
+            | "in_transit"
+            | "received"
+            | "redeployed"
+            | "closed_unrecovered";
+          reason:
+            | "discontinued"
+            | "non_compliant"
+            | "deceased"
+            | "upgraded"
+            | "insurance_change"
+            | "other";
+          tracking_number: string | null;
+          return_label_url: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["asset_recovery_cases"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["asset_recovery_cases"]["Row"]
+        >;
+        Relationships: [];
+      };
       equipment_recalls: {
         Row: {
           org_id: string | null;
