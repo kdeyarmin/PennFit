@@ -599,6 +599,28 @@ function ClaimDrawerContent({
             {formatMoneyCents(claim.patientResponsibilityCents)}
           </span>
         </div>
+        {(claim.deductibleCents > 0 ||
+          claim.coinsuranceCents > 0 ||
+          claim.copayCents > 0) && (
+          <p
+            className="text-xs text-slate-500"
+            data-testid="claim-resp-breakdown"
+          >
+            {[
+              claim.deductibleCents > 0
+                ? `Deductible ${formatMoneyCents(claim.deductibleCents)}`
+                : null,
+              claim.coinsuranceCents > 0
+                ? `Coinsurance ${formatMoneyCents(claim.coinsuranceCents)}`
+                : null,
+              claim.copayCents > 0
+                ? `Copay ${formatMoneyCents(claim.copayCents)}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
         {claim.denialReason && (
           <p className="text-xs text-rose-700">
             Denial reason: {claim.denialReason}
