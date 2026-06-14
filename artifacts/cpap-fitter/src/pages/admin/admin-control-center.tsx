@@ -15,6 +15,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { humanizeAction } from "@/components/admin/Badge";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
   isHighRiskFlag,
   listFeatureFlagActivity,
@@ -222,17 +224,15 @@ function FlagsList() {
   }, [query.data]);
 
   if (query.isPending) {
-    return <div className="text-sm text-slate-500">Loading…</div>;
+    return <Spinner />;
   }
   if (query.isError) {
     return (
-      <div
-        className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"
-        role="alert"
-      >
-        Couldn&apos;t load feature flags:{" "}
-        {query.error instanceof Error ? query.error.message : "unknown"}
-      </div>
+      <ErrorPanel
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        title="Couldn't load feature flags"
+      />
     );
   }
   if (grouped.length === 0) {
