@@ -99,8 +99,9 @@ export function AdminAssetRecoveryPage() {
       ) : query.data.cases.length === 0 ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No recovery cases{filter ? ` with status “${STATUS_LABEL.get(filter)}”` : ""}.
-            Open one above when a device needs to come back.
+            No recovery cases
+            {filter ? ` with status “${STATUS_LABEL.get(filter)}”` : ""}. Open
+            one above when a device needs to come back.
           </p>
         </Card>
       ) : (
@@ -191,9 +192,7 @@ function CreateCaseForm() {
           <span style={{ color: "hsl(var(--ink-3))" }}>Reason</span>
           <select
             value={reason}
-            onChange={(e) =>
-              setReason(e.target.value as AssetRecoveryReason)
-            }
+            onChange={(e) => setReason(e.target.value as AssetRecoveryReason)}
             className="rounded border px-2 py-1"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
