@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -43,10 +43,15 @@ router.post(
       return;
     }
     const conversationId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    const convo = await supabase
-      .schema("resupply")
+    const convo = await db
       .from("conversations")
       .select("id, channel, status")
       .eq("id", conversationId)
@@ -64,8 +69,7 @@ router.post(
     const channel = String((convo.data as { channel?: unknown }).channel ?? "");
 
     // Most recent window of messages, oldest→newest for the transcript.
-    const msgs = await supabase
-      .schema("resupply")
+    const msgs = await db
       .from("messages")
       .select("direction, sender_role, body, created_at")
       .eq("conversation_id", conversationId)
