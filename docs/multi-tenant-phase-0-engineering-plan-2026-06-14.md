@@ -24,7 +24,7 @@ route-by-route. The single load-bearing invariant:
 > chokepoint, with an RLS backstop and a CI check that fails the build if a
 > route bypasses the chokepoint.**
 
-We get isolation right by making the *wrong thing hard to write*, not by
+We get isolation right by making the _wrong thing hard to write_, not by
 auditing ~100 routes by hand.
 
 ---
@@ -49,6 +49,7 @@ auditing ~100 routes by hand.
 ## Workstream A — Data model: `organizations` + `org_id`
 
 ### A1. Create the `organizations` table
+
 - **New migration** `lib/resupply-db/drizzle/0XXX_organizations.sql`
   (next free prefix — confirm with `scripts/check-resupply-migration-prefix.sh`).
 - Evolve the existing singleton rather than inventing a parallel concept:
@@ -64,6 +65,7 @@ auditing ~100 routes by hand.
 - Seed org #1 from the current singleton row in the same migration.
 
 ### A2. Add `org_id` to tenant-scoped tables (domain batches)
+
 One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 `UPDATE … SET org_id = <org#1>` → `ALTER … SET NOT NULL` + FK +
 `CREATE INDEX … (org_id)`. Suggested batch order (low-risk first):
@@ -89,6 +91,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 > plans.
 
 ### A3. Index & uniqueness review
+
 - Composite-tenant the uniqueness constraints that are currently global
   (e.g. `patients.pacware_id`, message_template keys) → `(org_id, <key>)`,
   so two tenants can both have a "PacWare 123" without colliding.
@@ -98,6 +101,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 ## Workstream B — Tenant context in the request
 
 ### B1. Resolve `org_id` in auth middleware
+
 - **File:** `artifacts/resupply-api/src/middlewares/requireAdmin.ts`.
 - The `admin_users` lookup already runs here and already selects
   `role, location_id` (`requireAdmin.ts:144-150`). **Add `org_id` to that
@@ -111,6 +115,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
   "see everything."
 
 ### B2. Resolve `org_id` for patient/customer + system contexts
+
 - **File:** `artifacts/resupply-api/src/middlewares/requireSignedIn.ts` —
   derive `org_id` from the resolved `shop_customers` row (customers belong to
   an org).
@@ -126,6 +131,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 ## Workstream C — The scoped query wrapper (the chokepoint)
 
 ### C1. Build `getOrgScopedClient(orgId)`
+
 - **New file:** `lib/resupply-db/src/org-scoped-client.ts`.
 - Wraps `getSupabaseServiceRoleClient()` and returns a thin facade whose
   `.from(table)` automatically:
@@ -139,6 +145,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
   the two layers agree on the active tenant.
 
 ### C2. Route all data access through it
+
 - Replace direct `getSupabaseServiceRoleClient()` calls in route/worker code
   with `req`-derived `getOrgScopedClient(req.orgId)`.
 - This is mechanical but broad. Do it **per domain batch, paired with the A2
@@ -152,6 +159,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 ## Workstream D — RLS backstop
 
 ### D1. Per-tenant policies
+
 - **New migration** adding policies to tenant-scoped tables:
   `USING (org_id = current_setting('app.current_org_id', true)::uuid)`.
 - The wrapper (C1) issues `SET LOCAL app.current_org_id = …` per request/txn.
@@ -164,6 +172,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 ## Workstream E — CI isolation guard (make the invariant enforceable)
 
 ### E1. New check script
+
 - **New file:** `scripts/check-tenant-isolation.sh`, in the spirit of the
   existing `scripts/check-resupply-architecture.sh` /
   `check-admin-route-gates.sh`.
@@ -175,6 +184,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
   pre-commit hook.
 
 ### E2. Cross-tenant leakage test
+
 - **New test** (Vitest) seeding two orgs and asserting that a request scoped
   to org A cannot read/update/delete any org B row across a representative
   table from each domain batch. This is the regression net for the scariest
@@ -184,12 +194,12 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 
 ## Suggested PR slicing
 
-| PR | Contents | Risk |
-| --- | --- | --- |
-| 0.1 | `organizations` table + seed org #1 + `getOrgScopedClient` skeleton (allowlist = everything, no-op) + CI guard in **warn** mode | Low |
-| 0.2 | `req.orgId` resolution in `requireAdmin` / `requireSignedIn` (attached, not yet enforced) | Low |
-| 0.3–0.7 | Per-domain batches: A2 migration + C2 wrapper cutover + remove tables from the allowlist + RLS policy for that domain | Medium (the bulk) |
-| 0.8 | CI guard → **fail** mode; cross-tenant leakage test; worker payload `org_id` audit complete | Gate |
+| PR      | Contents                                                                                                                        | Risk              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 0.1     | `organizations` table + seed org #1 + `getOrgScopedClient` skeleton (allowlist = everything, no-op) + CI guard in **warn** mode | Low               |
+| 0.2     | `req.orgId` resolution in `requireAdmin` / `requireSignedIn` (attached, not yet enforced)                                       | Low               |
+| 0.3–0.7 | Per-domain batches: A2 migration + C2 wrapper cutover + remove tables from the allowlist + RLS policy for that domain           | Medium (the bulk) |
+| 0.8     | CI guard → **fail** mode; cross-tenant leakage test; worker payload `org_id` audit complete                                     | Gate              |
 
 Each row is independently deployable and reversible. The system stays
 single-tenant-correct (org #1 only) throughout — multi-tenant onboarding

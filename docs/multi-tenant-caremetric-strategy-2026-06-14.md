@@ -44,7 +44,7 @@ PennFit was built single-tenant but with the door left open. Concretely:
   org concept already exists; it just needs to go from one row to many.
 - **A `locations` table already exists** (migration 0235) with nullable
   `location_id` on `patients` and `admin_users`, and `req.adminLocationId`
-  already flows through the auth middleware. The scoping *pattern* is
+  already flows through the auth middleware. The scoping _pattern_ is
   half-built.
 - **Row-Level Security is already enabled** on every `resupply` /
   `resupply_auth` table (migration 0170), with `anon`/`authenticated` grants
@@ -57,7 +57,7 @@ PennFit was built single-tenant but with the door left open. Concretely:
 The honest gaps (each is tracked as a phase in §5):
 
 1. No `org_id` exists yet — ~80–100 tables need a tenant anchor.
-2. Auth scopes by *role* (what you can do), not by *tenant* (whose data you see).
+2. Auth scopes by _role_ (what you can do), not by _tenant_ (whose data you see).
 3. Feature flags and `app_config` are global single rows.
 4. Branding, email From address, and Stripe credentials are single-valued.
 5. One public domain per deploy; no host→tenant routing.
@@ -81,11 +81,11 @@ All tenants live in one Supabase project. Every tenant-scoped row carries an
 
 **Why pooled over schema-per-tenant or DB-per-tenant:**
 
-| Model | Isolation | Ops cost | Verdict |
-| --- | --- | --- | --- |
-| **Pooled + RLS (chosen)** | Logical (app + RLS) | Low — one DB, one deploy, one migration run | Best fit: matches existing single-deploy/service-role design; fastest onboarding |
-| Schema-per-tenant | Stronger | Medium — migrations fan out across N schemas | Unneeded complexity at current scale |
-| DB/project-per-tenant | Physical | High — N credential sets, N migration runs | Reserve as a future premium "dedicated instance" tier for a security-demanding whale |
+| Model                     | Isolation           | Ops cost                                     | Verdict                                                                              |
+| ------------------------- | ------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **Pooled + RLS (chosen)** | Logical (app + RLS) | Low — one DB, one deploy, one migration run  | Best fit: matches existing single-deploy/service-role design; fastest onboarding     |
+| Schema-per-tenant         | Stronger            | Medium — migrations fan out across N schemas | Unneeded complexity at current scale                                                 |
+| DB/project-per-tenant     | Physical            | High — N credential sets, N migration runs   | Reserve as a future premium "dedicated instance" tier for a security-demanding whale |
 
 Pooled is the standard healthcare-SaaS pattern and the least-rework path from
 where the code is today. A dedicated-instance tier can be layered on later for
@@ -110,8 +110,8 @@ What "loosely coupled" means concretely:
   schema, no shared write path.
 - **Optional light data exchange via the integration layer you already
   have.** PennFit already ingests SMART-on-FHIR bundles and tracks EHR
-  partners in `ehr_fhir_tenants`. CareMetric EMR can be wired as *one of
-  those FHIR partners* to push demographics/clinical context into resupply —
+  partners in `ehr_fhir_tenants`. CareMetric EMR can be wired as _one of
+  those FHIR partners_ to push demographics/clinical context into resupply —
   reusing existing machinery rather than building a merge.
 - **Shared sign-in is a later, optional nicety**, not a prerequisite. If/when
   desired, add SSO so a CareMetric customer logs in once. Until then, two
@@ -128,6 +128,7 @@ Each phase is independently shippable. Phase 0 carries the engineering risk;
 everything after is comparatively mechanical.
 
 ### Phase 0 — Tenancy foundation (the unavoidable core)
+
 - Evolve `dme_organization` into an `organizations` table; drop the singleton
   constraint; backfill existing data as org #1 (Penn Home Medical Supply).
 - Add nullable `org_id` to tenant-scoped tables in **domain batches**
@@ -143,6 +144,7 @@ everything after is comparatively mechanical.
   scoped wrapper.
 
 ### Phase 1 — Per-tenant config & branding
+
 - Move feature flags and `app_config` to an `(org_id, key)` shape so each DME
   toggles features independently.
 - Make branding org-scoped (it already lives in `dme_organization` — just
@@ -151,16 +153,18 @@ everything after is comparatively mechanical.
   (the `.admin-root` scoping already isolates it cleanly).
 
 ### Phase 2 — Per-tenant external identity
+
 - **Stripe → Stripe Connect:** each DME connects their own Stripe account;
   optional application fee gives you a clean revenue share.
 - **Email:** per-tenant From address via SendGrid subusers / authenticated
   sending domains. (This intentionally relaxes the current "one From address"
-  rule to "one From address *per tenant*.")
+  rule to "one From address _per tenant_.")
 - **Telecom:** per-tenant Twilio numbers / subaccounts for SMS + voice.
 - **Clearinghouse:** add `org_id` to `clearinghouse_credentials` (already
   multi-row) so each DME bills under its own Office Ally/Availity creds + NPI.
 
 ### Phase 3 — Routing & onboarding
+
 - **Host→tenant routing:** subdomains (`acme.caremetric.ai`) and/or custom
   domains per tenant via Cloudflare; resolve `org_id` from the `Host` header.
 - **Tenant provisioning flow:** create org → seed config/flags → bootstrap
@@ -169,6 +173,7 @@ everything after is comparatively mechanical.
   tenants, billing, and usage.
 
 ### Phase 4 — CareMetric cross-linking (loosely coupled)
+
 - Deep links between EMR and Resupply.
 - Wire CareMetric EMR as a FHIR partner via the existing integration layer.
 - Optional shared SSO when justified.
@@ -190,9 +195,9 @@ everything after is comparatively mechanical.
 
 - **You become a Business Associate to every tenant.** PennFit deliberately
   retired its in-app HIPAA machinery ("handled out of band by the business
-  owner") — that assumption breaks the moment you host *other* companies'
+  owner") — that assumption breaks the moment you host _other_ companies'
   PHI. You will need a **BAA with each tenant** and, realistically, **SOC 2**
-  to close deals. This is a business/legal workstream that gates *signing*
+  to close deals. This is a business/legal workstream that gates _signing_
   tenants regardless of code readiness.
 - **Cross-tenant PHI leakage is the single scariest failure mode.** Mitigated
   by: mandatory scoped-query wrapper + RLS backstop + automated isolation
