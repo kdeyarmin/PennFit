@@ -152,7 +152,7 @@ describe("GET /admin/therapy-fleet/clinical-insights", () => {
       (e: { patientId: string }) => e.patientId === P2,
     );
     expect(p2Entry.metrics).toBeNull();
-    // Active = not dismissed AND not under a live snooze (mig 0331): the
+    // Active = not dismissed AND not under a live snooze (mig 0337): the
     // events read filters on dismissed_at IS NULL plus an `.or` excluding
     // unexpired snoozes.
     const filters = getSupabaseFilterCalls(

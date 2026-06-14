@@ -156,7 +156,7 @@ async function buildClinicalInsightReport(
 
   const rows: TriggerEventRow[] = [];
   // Active = not dismissed AND not under a live snooze. A snooze whose
-  // snoozed_until has elapsed re-surfaces automatically (mig 0331).
+  // snoozed_until has elapsed re-surfaces automatically (mig 0337).
   const nowIso = new Date().toISOString();
   for (let from = 0; from < HARD_CAP; from += PAGE_SIZE) {
     let q = supabase
