@@ -721,6 +721,17 @@ jobs:
           pnpm --filter @workspace/scripts auth:set-admin-password \
             --email="$E2E_ADMIN_EMAIL" --role=admin
 
+      # auth:set-admin-password sets status=active + the password but does
+      # NOT mark the email verified, and the in-house sign-in refuses
+      # unverified accounts (lib/resupply-auth/src/http/sign-in.ts →
+      # email_unverified). Stamp email_verified_at directly so the
+      # Playwright sign-in can complete. resupply_auth.users keys on
+      # email_lower (app-normalized, lowercase).
+      - name: Mark e2e admin email verified
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "UPDATE resupply_auth.users SET email_verified_at = now() WHERE email_lower = lower('$E2E_ADMIN_EMAIL');"
+
       # Mirror the Railway buildCommand so the API entrypoint
       # (dist/index.mjs) and the co-served SPA (dist/public) both exist.
       - name: Build deploy artifacts (API + embedded SPA)
