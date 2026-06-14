@@ -103,6 +103,7 @@ export function AdminTherapyResupplyPage() {
           <select
             value={dueWithinDays}
             onChange={(e) => setDueWithinDays(Number(e.target.value))}
+            aria-label="Show supplies due within"
             className="rounded-md border px-2 py-1.5 text-sm"
             style={{
               borderColor: "hsl(var(--line-1))",

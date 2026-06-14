@@ -544,6 +544,7 @@ function SyncCard() {
           <select
             className="text-sm rounded-md border px-2 py-1.5 bg-white"
             style={{ borderColor: "hsl(var(--line-1))" }}
+            aria-label="Resupply status filter"
             value={resupplyStatus}
             onChange={(e) =>
               setResupplyStatus(

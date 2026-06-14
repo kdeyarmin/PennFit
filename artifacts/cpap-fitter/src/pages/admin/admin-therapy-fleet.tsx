@@ -270,10 +270,15 @@ export function AdminTherapyFleetPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          <label
+            htmlFor="fleet-window"
+            className="text-xs"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
             Window
           </label>
           <select
+            id="fleet-window"
             value={windowDays}
             onChange={(e) => setWindowDays(Number(e.target.value))}
             className="rounded-md border px-2 py-1.5 text-sm"
@@ -481,7 +486,7 @@ export function AdminTherapyFleetPage() {
           />
         ) : worklistQ.data.entries.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No patients match this filter — the fleet is in good shape. 🎉
+            No patients match this filter — the fleet is in good shape.
           </p>
         ) : (
           <WorklistTable
@@ -548,7 +553,7 @@ export function AdminTherapyFleetPage() {
           />
         ) : clinicalQ.data.entries.length === 0 ? (
           <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No active clinical signals for this filter. 🎉
+            No active clinical signals for this filter.
           </p>
         ) : (
           <ClinicalInsightsTable entries={clinicalQ.data.entries} />

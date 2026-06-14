@@ -159,7 +159,7 @@ function WorklistTable({ items }: { items: DenialWorkItem[] }) {
     return (
       <Card>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          No open denials. 🎉
+          No open denials.
         </p>
       </Card>
     );
