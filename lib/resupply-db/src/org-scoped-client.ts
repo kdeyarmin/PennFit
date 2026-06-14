@@ -57,3 +57,43 @@ export function getOrgScopedClient(orgId: string): ResupplySupabaseClient {
   // this returns a scoping facade instead of the raw client.
   return getSupabaseServiceRoleClient();
 }
+
+let cachedSeedOrgId: string | null = null;
+
+/**
+ * Resolve the id of the seed tenant (`SEED_ORG_SLUG`) — the original
+ * operating company that all current data belongs to.
+ *
+ * This is a TENANT-DIRECTORY read (it resolves *which* org), not a
+ * tenant-scoped one, so it legitimately goes through the service-role
+ * client and lives here in the db package rather than behind
+ * `getOrgScopedClient`.
+ *
+ * Phase 0 usage (PR 0.2): the auth middleware calls this to attach
+ * `req.orgId`. While the platform is single-tenant every caller resolves
+ * to this one org; once `admin_users` / `shop_customers` carry their own
+ * `org_id` (later backfill batches) the middleware reads the per-user
+ * column instead and this becomes the fallback for unscoped/system paths.
+ *
+ * Returns null (rather than throwing) on a lookup miss/error so callers
+ * can decide their own posture; the result is cached on success.
+ */
+export async function resolveSeedOrgId(): Promise<string | null> {
+  if (cachedSeedOrgId) return cachedSeedOrgId;
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("organizations")
+    .select("id")
+    .eq("slug", SEED_ORG_SLUG)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data?.id) return null;
+  cachedSeedOrgId = data.id;
+  return cachedSeedOrgId;
+}
+
+/** Reset the cached seed-org id. Tests only. */
+export function __resetSeedOrgIdForTests(): void {
+  cachedSeedOrgId = null;
+}

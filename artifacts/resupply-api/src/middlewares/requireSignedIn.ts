@@ -36,6 +36,7 @@ import {
   isExpired,
   readCookie,
 } from "@workspace/resupply-auth";
+import { resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 
@@ -147,6 +148,9 @@ export async function requireSignedIn(
     return;
   }
   attach(req, r);
+  // Multi-tenant Phase 0 (PR 0.2): attach tenant context, best-effort.
+  // Single-tenant today → the seed org; later reads shop_customers.org_id.
+  req.orgId = (await resolveSeedOrgId()) ?? undefined;
   next();
 }
 
@@ -166,6 +170,9 @@ export async function attachSignedIn(
   const r = await resolveCustomer(req);
   if (r) {
     attach(req, r);
+    // Phase 0 (PR 0.2): attach tenant context for the signed-in branch
+    // only; a guest request carries no org. Best-effort.
+    req.orgId = (await resolveSeedOrgId()) ?? undefined;
   }
   next();
 }

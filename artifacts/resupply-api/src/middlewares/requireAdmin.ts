@@ -34,7 +34,10 @@ import {
   roleHasPermission,
 } from "@workspace/resupply-auth";
 import type { AdminRole } from "@workspace/resupply-db";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
@@ -67,6 +70,16 @@ declare global {
        * NOT an access gate (unassigned staff see everything).
        */
       adminLocationId?: string | null;
+      /**
+       * Tenant (organization) the request operates within — multi-tenant
+       * Phase 0. Attached by `requireAdmin` / `requireSignedIn`. While the
+       * platform is single-tenant this always resolves to the seed org;
+       * once `admin_users` / `shop_customers` carry their own `org_id`
+       * (later backfill batches) it is read per-user. NOT yet an access
+       * gate (nothing filters on it until the scoped-wrapper cutover).
+       * Declared once here; `requireSignedIn` sets it without redeclaring.
+       */
+      orgId?: string;
     }
   }
 }
@@ -227,6 +240,21 @@ export async function requireAdmin(
   req.adminRole = admin.role;
   req.adminGranularRole = admin.granularRole;
   req.adminLocationId = admin.locationId;
+  // Multi-tenant Phase 0 (PR 0.2): attach the tenant context. Resolved
+  // best-effort and logged — NOT fail-closed — because nothing enforces
+  // org_id yet, so an organizations-table hiccup must not take down the
+  // entire admin surface. Enforcement arrives with the scoped-wrapper
+  // cutover (Phase 0 workstream C); resolution switches to the per-user
+  // admin_users.org_id once that column is backfilled.
+  const orgId = await resolveSeedOrgId();
+  if (orgId) {
+    req.orgId = orgId;
+  } else {
+    logger.warn(
+      { event: "resupply_admin_org_resolve_failed", adminUserId: admin.userId },
+      "requireAdmin: could not resolve tenant org_id (attached none)",
+    );
+  }
   next();
 }
 

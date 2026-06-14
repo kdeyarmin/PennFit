@@ -1959,6 +1959,19 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
         Relationships: [];
       };
+      organizations: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          status: "active" | "suspended" | "archived";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Relationships: [];
+      };
       gl_account_mappings: {
         Row: {
           mapping_key: "deposit" | "revenue" | "refund" | "patient_pay";
@@ -2981,6 +2994,7 @@ export interface Database {
           authorized_signer_title: string | null;
           authorized_signer_signature_object_key: string | null;
           notes: string | null;
+          org_id: string | null;
           created_at: string;
           updated_at: string;
         };
