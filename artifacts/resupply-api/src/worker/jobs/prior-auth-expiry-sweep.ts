@@ -55,7 +55,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -115,7 +115,17 @@ function addDays(base: Date, days: number): Date {
 export async function runPriorAuthExpirySweep(
   today: Date = new Date(),
 ): Promise<ExpirySweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
+  // seed org. Becomes a per-org loop when a 2nd tenant lands.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: SWEEP_JOB },
+      "prior-auth.expiry-sweep: could not resolve seed org — skipping",
+    );
+    return { expired: 0, headsUpQueued: 0, windows: { 30: 0, 14: 0, 7: 0 } };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const todayIso = isoDate(today);
 
   const stats: ExpirySweepStats = {
@@ -147,7 +157,6 @@ export async function runPriorAuthExpirySweep(
     let cursor = "";
     for (;;) {
       let q = supabase
-        .schema("resupply")
         .from("prior_authorizations")
         .select(
           "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
@@ -177,7 +186,6 @@ export async function runPriorAuthExpirySweep(
     // partial unique index, so the duplicate INSERT would throw a
     // 23505) and over-report the expired count.
     const { data: claimed, error: updErr } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .update({ status: "expired" })
       .eq("id", row.id)
@@ -200,7 +208,6 @@ export async function runPriorAuthExpirySweep(
     // CSR alert — critical: patient may need a dispense block until
     // the renewal lands.
     const { error: alertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: row.patient_id,
@@ -273,7 +280,6 @@ export async function runPriorAuthExpirySweep(
       let cursor = "";
       for (;;) {
         let q = supabase
-          .schema("resupply")
           .from("prior_authorizations")
           .select(
             "id, patient_id, hcpcs_code, payer_name, approved_through, auth_number",
@@ -305,7 +311,6 @@ export async function runPriorAuthExpirySweep(
       // already exists in 'open' state. metric_snapshot is jsonb so we
       // use ->> to compare a specific field.
       const { data: existing, error: existingErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .select("id")
         .eq("patient_id", row.patient_id)
@@ -329,7 +334,6 @@ export async function runPriorAuthExpirySweep(
         win <= 7 ? "critical" : "warning";
 
       const { error: headsUpErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .insert({
           patient_id: row.patient_id,

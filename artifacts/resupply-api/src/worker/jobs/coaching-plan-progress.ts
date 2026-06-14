@@ -30,7 +30,8 @@ import type PgBoss from "pg-boss";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 type CoachingPlanUpdate =
@@ -54,15 +55,25 @@ export interface ProgressSweepStats {
 }
 
 export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: ProgressSweepStats = {
     scanned: 0,
     updated: 0,
     movedToImproving: 0,
   };
 
+  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
+  // seed org. Becomes a per-org loop when a 2nd tenant lands.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: PROGRESS_JOB },
+      "coaching-plan.progress: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
   const { data: plans, error } = await supabase
-    .schema("resupply")
     .from("patient_coaching_plans")
     .select(
       "id, patient_id, status, target_compliance_pct, latest_compliance_pct, latest_outreach_at, updated_at",
@@ -80,7 +91,6 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
   for (const plan of planList) {
     stats.scanned += 1;
     const { data: nights, error: nightsErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("usage_minutes, night_date, source")
       // Order by usage_minutes desc so the dedup loop below keeps
@@ -150,7 +160,6 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .update(update)
       .eq("id", plan.id);
