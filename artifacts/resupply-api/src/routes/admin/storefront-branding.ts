@@ -103,6 +103,12 @@ function requireOrgId(req: { orgId?: string }, res: Response): string | null {
 router.get(
   "/admin/storefront-branding",
   requirePermission("admin.tools.manage"),
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 240,
+    name: "admin_storefront_branding_read",
+    keyFn: (req) => req.adminUserId ?? "unknown",
+  }),
   async (req, res) => {
     const orgId = requireOrgId(req, res);
     if (!orgId) return;
@@ -318,6 +324,12 @@ router.post(
 router.delete(
   "/admin/storefront-branding/logo",
   requirePermission("admin.tools.manage"),
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 60,
+    name: "admin_storefront_logo_delete",
+    keyFn: (req) => req.adminUserId ?? "unknown",
+  }),
   async (req, res) => {
     const orgId = requireOrgId(req, res);
     if (!orgId) return;
@@ -480,6 +492,12 @@ router.post(
 router.delete(
   "/admin/storefront-branding/domain",
   requirePermission("admin.tools.manage"),
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 30,
+    name: "admin_storefront_domain_delete",
+    keyFn: (req) => req.adminUserId ?? "unknown",
+  }),
   async (req, res) => {
     const orgId = requireOrgId(req, res);
     if (!orgId) return;
