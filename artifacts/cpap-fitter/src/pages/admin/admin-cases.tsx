@@ -6,11 +6,12 @@
 // Renders the F4 /admin/cases CRUD. cases.read to view, cases.manage to
 // mutate (both in the CSR tier). Nav gated on cases.read.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderKanban, Plus, Link2 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
+import { CopyableId } from "@/components/admin/CopyableId";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import { Spinner } from "@/components/admin/Spinner";
@@ -71,6 +72,19 @@ export function AdminCasesPage() {
     staleTime: 30_000,
   });
 
+  // Which case rows are expanded. Held here (not per-row) so an
+  // Expand-all / Collapse-all control can drive every row at once.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const cases = query.data?.cases ?? [];
+  const allExpanded = cases.length > 0 && expandedIds.size === cases.length;
+  const toggleRow = (id: string) =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   return (
     <div className="p-6 space-y-6 max-w-4xl" data-testid="admin-cases-page">
       <header>
@@ -87,28 +101,48 @@ export function AdminCasesPage() {
 
       <NewCaseCard />
 
-      <div
-        role="tablist"
-        aria-label="Filter cases by status"
-        className="inline-flex gap-1 p-1 rounded-lg bg-slate-100"
-      >
-        {(["open", "in_progress", "resolved", "closed", "all"] as const).map(
-          (s) => (
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div
+          role="tablist"
+          aria-label="Filter cases by status"
+          className="inline-flex gap-1 p-1 rounded-lg bg-slate-100"
+        >
+          {(["open", "in_progress", "resolved", "closed", "all"] as const).map(
+            (s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={s === filter}
+                onClick={() => setFilter(s)}
+                className={`px-3 py-1.5 text-xs rounded-md font-medium capitalize transition-colors ${
+                  s === filter
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {s.replace(/_/g, " ")}
+              </button>
+            ),
+          )}
+        </div>
+        {cases.length > 0 && (
+          <div className="flex items-center gap-3 text-xs text-slate-500">
+            <span>
+              {cases.length} {cases.length === 1 ? "case" : "cases"}
+            </span>
             <button
-              key={s}
               type="button"
-              role="tab"
-              aria-selected={s === filter}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 text-xs rounded-md font-medium capitalize transition-colors ${
-                s === filter
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
+              onClick={() =>
+                setExpandedIds(
+                  allExpanded ? new Set() : new Set(cases.map((c) => c.id)),
+                )
+              }
+              className="font-medium text-slate-600 hover:text-slate-900 hover:underline"
             >
-              {s.replace(/_/g, " ")}
+              {allExpanded ? "Collapse all" : "Expand all"}
             </button>
-          ),
+          </div>
         )}
       </div>
 
@@ -125,7 +159,12 @@ export function AdminCasesPage() {
       ) : (
         <div className="space-y-2">
           {query.data.cases.map((c) => (
-            <CaseRowItem key={c.id} caseRow={c} />
+            <CaseRowItem
+              key={c.id}
+              caseRow={c}
+              expanded={expandedIds.has(c.id)}
+              onToggle={() => toggleRow(c.id)}
+            />
           ))}
         </div>
       )}
@@ -137,12 +176,15 @@ function NewCaseCard() {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<CasePriority>("normal");
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const create = useMutation({
     mutationFn: () => createCase({ title: title.trim(), priority }),
     onSuccess: () => {
       setTitle("");
       setPriority("normal");
+      // Keep the keyboard in the form for back-to-back case entry.
+      titleInputRef.current?.focus();
       void qc.invalidateQueries({ queryKey: CASES_KEY });
     },
   });
@@ -155,6 +197,7 @@ function NewCaseCard() {
             Title
           </span>
           <Input
+            ref={titleInputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Lost order #12345 — refund + reship"
@@ -196,13 +239,20 @@ function NewCaseCard() {
   );
 }
 
-function CaseRowItem({ caseRow }: { caseRow: CaseRow }) {
-  const [expanded, setExpanded] = useState(false);
+function CaseRowItem({
+  caseRow,
+  expanded,
+  onToggle,
+}: {
+  caseRow: CaseRow;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <Card>
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
         className="w-full flex items-center justify-between gap-3 text-left"
         aria-expanded={expanded}
       >
@@ -311,7 +361,7 @@ function CaseDetail({
                     <span className="uppercase tracking-wider text-slate-500">
                       {l.linkKind.replace(/_/g, " ")}
                     </span>
-                    <span className="font-mono">{l.refId}</span>
+                    <CopyableId value={l.refId} />
                     {l.note && (
                       <span className="text-slate-400">· {l.note}</span>
                     )}

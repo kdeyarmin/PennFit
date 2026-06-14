@@ -3,11 +3,12 @@
 // a SKU backordered, any subsequent resupply confirmation through
 // that SKU will substitute via shop_sku_substitutes (priority asc).
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertOctagon, ArrowRight, Plus, Trash2 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
+import { CopyableId } from "@/components/admin/CopyableId";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
@@ -57,12 +58,15 @@ function BackordersPanel() {
   });
   const [sku, setSku] = useState("");
   const [notes, setNotes] = useState("");
+  const skuInputRef = useRef<HTMLInputElement>(null);
   const mark = useMutation({
     mutationFn: () =>
       markBackorder({ sku: sku.trim(), notes: notes.trim() || undefined }),
     onSuccess: () => {
       setSku("");
       setNotes("");
+      // Backorders are usually marked in bursts — tee up the next SKU.
+      skuInputRef.current?.focus();
       void qc.invalidateQueries({ queryKey });
     },
   });
@@ -72,14 +76,18 @@ function BackordersPanel() {
   });
 
   const skuValid = /^[A-Za-z0-9_-]{1,64}$/.test(sku.trim());
+  const activeCount = data?.backorders.length ?? 0;
   return (
-    <Card title="Active backorders">
+    <Card
+      title={data ? `Active backorders (${activeCount})` : "Active backorders"}
+    >
       <div className="flex flex-wrap gap-2 items-end mb-3">
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             SKU
           </label>
           <Input
+            ref={skuInputRef}
             value={sku}
             onChange={(e) => setSku(e.target.value)}
             placeholder="AF20-S"
@@ -161,7 +169,9 @@ function BackorderRow({
   const isActive = row.clearedAt == null;
   return (
     <tr className="border-b" style={{ borderColor: "hsl(var(--line-2))" }}>
-      <td className="py-1.5 font-mono text-xs">{row.sku}</td>
+      <td className="py-1.5 text-xs">
+        <CopyableId value={row.sku} title={`Copy SKU ${row.sku}`} />
+      </td>
       <td className="py-1.5">
         <span
           className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${

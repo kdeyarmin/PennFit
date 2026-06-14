@@ -5,7 +5,7 @@
 // plan prompts for a resolution note. Closed plans are hidden
 // behind a toggle so the day-to-day view stays tight.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HeartPulse, Plus } from "lucide-react";
 
@@ -87,6 +87,7 @@ function NewPlanCard() {
   const qc = useQueryClient();
   const [patientId, setPatientId] = useState("");
   const [target, setTarget] = useState("70");
+  const patientInputRef = useRef<HTMLInputElement>(null);
   const create = useMutation({
     mutationFn: () =>
       createCoachingPlan({
@@ -96,14 +97,19 @@ function NewPlanCard() {
     onSuccess: () => {
       setPatientId("");
       setTarget("70");
+      // Ready the next entry — these are often opened in batches.
+      patientInputRef.current?.focus();
       void qc.invalidateQueries({ queryKey: ["admin", "coaching", "plans"] });
     },
   });
 
+  const trimmedId = patientId.trim();
   const isUuid =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      patientId.trim(),
+      trimmedId,
     );
+  // Only flag once they've typed something — an empty box isn't "wrong".
+  const showUuidError = trimmedId.length > 0 && !isUuid;
   return (
     <Card title="Open a new plan">
       <div className="flex flex-wrap gap-2 items-end">
@@ -112,12 +118,24 @@ function NewPlanCard() {
             Patient ID (UUID)
           </label>
           <Input
+            ref={patientInputRef}
             value={patientId}
             onChange={(e) => setPatientId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
             aria-label="Patient ID (UUID)"
+            aria-invalid={showUuidError}
+            aria-describedby={showUuidError ? "coaching-uuid-error" : undefined}
             style={{ fontFamily: "monospace" }}
           />
+          {showUuidError && (
+            <p
+              id="coaching-uuid-error"
+              role="alert"
+              className="mt-1 text-[11px] text-rose-700"
+            >
+              Not a valid UUID — expected 8-4-4-4-12 hex digits.
+            </p>
+          )}
         </div>
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
@@ -163,8 +181,9 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
   };
 
   const plans = useMemo(() => data?.plans ?? [], [data]);
+  const baseTitle = showClosed ? "All plans" : "Open plans";
   return (
-    <Card title={showClosed ? "All plans" : "Open plans"}>
+    <Card title={data ? `${baseTitle} (${plans.length})` : baseTitle}>
       {isPending ? (
         <Spinner />
       ) : isError ? (

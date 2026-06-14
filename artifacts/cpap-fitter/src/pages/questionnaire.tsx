@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { track } from "@/lib/track";
@@ -179,6 +179,42 @@ export function Questionnaire() {
     }
   };
 
+  // Keyboard navigation for power users: press 1–N to pick the matching
+  // option (and advance), ← / Backspace to go to the previous question.
+  // Boolean questions map to Yes / No / I'm not sure in that order.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Don't hijack typing in a field or a modified chord.
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "ArrowLeft" || e.key === "Backspace") {
+        if (currentIndex > 0) {
+          e.preventDefault();
+          handleBack();
+        }
+        return;
+      }
+
+      const n = Number.parseInt(e.key, 10);
+      if (Number.isNaN(n) || n < 1) return;
+      const choices: (boolean | string | null)[] =
+        currentQ.type === "boolean"
+          ? [true, false, null]
+          : (currentQ.options ?? []).map((o) => o.value);
+      if (n <= choices.length) {
+        e.preventDefault();
+        handleAnswer(choices[n - 1]!);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // Re-subscribed each question so the closure sees the live index /
+    // question; handleAnswer / handleBack are recreated per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex]);
+
   return (
     <div className="container max-w-2xl mx-auto px-4 py-12 animate-shimmer-in">
       <div className="mb-8 space-y-3">
@@ -349,6 +385,11 @@ export function Questionnaire() {
           </CardContent>
         </Card>
       </div>
+
+      <p className="mt-4 hidden text-center text-xs text-muted-foreground sm:block">
+        Tip: press a number key (1, 2, 3…) to choose an answer
+        {currentIndex > 0 ? ", or ← to go back" : ""}.
+      </p>
     </div>
   );
 }

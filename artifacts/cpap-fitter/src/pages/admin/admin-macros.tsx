@@ -85,7 +85,11 @@ function MacroList() {
 
   return (
     <div className="space-y-6">
-      <Section title="Active" rows={active} emptyText="No active macros." />
+      <Section
+        title="Active"
+        rows={active}
+        emptyText="No active macros yet — use “+ New macro” above to create one."
+      />
       {inactive.length > 0 && (
         <Section title="Disabled" rows={inactive} emptyText="" subtle />
       )}
