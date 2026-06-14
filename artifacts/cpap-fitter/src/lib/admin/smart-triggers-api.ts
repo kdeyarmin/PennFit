@@ -90,3 +90,33 @@ export async function dismissSmartTrigger(
     throw new ApiError(res, text || null, { method: "POST", url: res.url });
   }
 }
+
+/**
+ * Snooze a trigger event for `days` days — it drops out of the active
+ * Clinical Insights queue until the snooze elapses, then re-surfaces.
+ * The lighter-touch sibling of dismiss in the same triage workflow.
+ */
+export async function snoozeSmartTrigger(
+  id: string,
+  days: number,
+): Promise<void> {
+  const res = await fetch(
+    `/resupply-api/admin/smart-triggers/${encodeURIComponent(id)}/snooze`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...csrfHeader() },
+      body: JSON.stringify({ days }),
+    },
+  );
+  if (!res.ok) {
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (body.error === "already_dismissed") {
+        throw new AlreadyDismissedError();
+      }
+    }
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res, text || null, { method: "POST", url: res.url });
+  }
+}

@@ -73,6 +73,15 @@ const dismissBody = z
     reason: z.string().trim().max(500).optional().nullable(),
   })
   .strict();
+// Snooze hides an event from the active queue for a bounded number of
+// days, after which it re-surfaces. 1..90 keeps it in the
+// "I'll revisit soon" range — anything the RT wants gone longer than a
+// quarter should be a dismiss, not a snooze.
+const snoozeBody = z
+  .object({
+    days: z.coerce.number().int().min(1).max(90),
+  })
+  .strict();
 
 // Per-run caps live in lib/smart-triggers/{evaluator,dispatcher}.ts
 // now that those handlers are shared between the route and the
@@ -235,6 +244,89 @@ router.post(
     });
 
     res.json({ id, dismissedAt: nowIso });
+  },
+);
+
+router.post(
+  "/admin/smart-triggers/:id/snooze",
+  // Same CSR tier + rate bucket as dismiss — snooze is the lighter-touch
+  // sibling of dismiss in the same triage workflow.
+  requirePermission("conversations.manage"),
+  adminSmartTriggerDismissLimiter,
+  async (req, res) => {
+    const idParsed = triggerIdParam.safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const id = idParsed.data;
+
+    const bodyParsed = snoozeBody.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .select("id, patient_id, kind, dismissed_at")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!row) {
+      res.status(404).json({ error: "trigger_not_found" });
+      return;
+    }
+    // Dismiss is terminal — a dismissed event can't be snoozed (it's
+    // already out of every queue permanently).
+    if (row.dismissed_at !== null) {
+      res.status(409).json({ error: "already_dismissed" });
+      return;
+    }
+
+    const now = new Date();
+    const snoozedUntil = new Date(
+      now.getTime() + bodyParsed.data.days * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .update({
+        snoozed_until: snoozedUntil,
+        snoozed_by_email: req.adminEmail ?? null,
+        updated_at: now.toISOString(),
+      })
+      .eq("id", id);
+    if (updateErr) throw updateErr;
+
+    await logAudit({
+      action: "patient.smart_trigger.snoozed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_smart_trigger_events",
+      targetId: id,
+      metadata: {
+        patient_id: row.patient_id,
+        kind: row.kind,
+        days: bodyParsed.data.days,
+        snoozed_until: snoozedUntil,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.smart_trigger.snoozed audit write failed");
+    });
+
+    res.json({ id, snoozedUntil });
   },
 );
 
