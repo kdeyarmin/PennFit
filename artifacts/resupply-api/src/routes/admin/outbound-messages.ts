@@ -32,7 +32,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -101,7 +101,13 @@ router.get(
     const offset = parsed.data.offset ?? 0;
     const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // PostgREST's string-literal type parser can't follow the nested
     // embed, so the row shape is supplied explicitly.
@@ -127,10 +133,9 @@ router.get(
     // The channel lives on the conversation, so every query joins
     // through `conversations!inner` — that also drops voice/chat
     // threads, keeping this an SMS + email log.
-    let query = supabase
-      .schema("resupply")
+    let query = db
       .from("messages")
-      .select<string, OutboundRow>(
+      .select(
         "id, conversation_id, sender_role, delivery_status, delivery_error, sent_at, delivered_at, created_at, " +
           "conversations!inner(channel, patient_id, patients(legal_first_name, legal_last_name))",
         { count: "exact" },
@@ -166,10 +171,9 @@ router.get(
     // channel + window) for the summary strip. Sequential head-only
     // counts — bounded, four cheap round-trips.
     const buildCountQuery = () => {
-      const base = supabase
-        .schema("resupply")
+      const base = db
         .from("messages")
-        .select<string, never>("id, conversations!inner(channel)", {
+        .select("id, conversations!inner(channel)", {
           count: "exact",
           head: true,
         })
@@ -204,7 +208,7 @@ router.get(
       ),
     };
 
-    const items = (rows ?? []).map((r) => {
+    const items = ((rows ?? []) as OutboundRow[]).map((r) => {
       const conv = r.conversations;
       const fullName = conv?.patients
         ? [conv.patients.legal_first_name, conv.patients.legal_last_name]
