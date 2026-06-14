@@ -14,14 +14,11 @@
 // Audit envelopes record link id + patient id + source only — not
 // the partner id or device serial. Logger never sees them either.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Database,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -114,6 +111,21 @@ function matchesConstraint(err: PgConstraintError, name: string): boolean {
   return false;
 }
 
+/**
+ * Resolve the tenant context fail-closed (multi-tenant Phase 0
+ * enforcement). `requireAdmin` attaches `req.orgId`; if it is somehow
+ * absent we refuse the request rather than widen to every tenant.
+ * Returns null after sending a 500.
+ */
+function resolveOrg(req: Request, res: Response): string | null {
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return null;
+  }
+  return orgId;
+}
+
 function toResponse(row: TherapyLinkRow): LinkResponse {
   return {
     id: row.id,
@@ -142,9 +154,10 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: rows, error } = await supabase
-      .schema("resupply")
+    const orgId = resolveOrg(req, res);
+    if (!orgId) return;
+    const db = getOrgScopedClient(orgId);
+    const { data: rows, error } = await db
       .from("patient_therapy_links")
       .select(
         "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at, org_id",
@@ -187,10 +200,11 @@ router.post(
     }
     const { source, partnerPatientId, deviceSerial } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = resolveOrg(req, res);
+    if (!orgId) return;
+    const db = getOrgScopedClient(orgId);
 
-    const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
+    const { data: existsRow, error: existsErr } = await db
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -202,8 +216,7 @@ router.post(
       return;
     }
 
-    const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
+    const { data: inserted, error: insertErr } = await db
       .from("patient_therapy_links")
       .insert({
         patient_id: patientId,
@@ -301,7 +314,9 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = resolveOrg(req, res);
+    if (!orgId) return;
+    const db = getOrgScopedClient(orgId);
 
     const patch: TherapyLinkUpdate = {};
     if (bodyParsed.data.status !== undefined) {
@@ -311,8 +326,7 @@ router.patch(
       patch.device_serial = bodyParsed.data.deviceSerial;
     }
 
-    const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
+    const { data: updated, error: updateErr } = await db
       .from("patient_therapy_links")
       .update(patch)
       .eq("id", linkId)
@@ -391,10 +405,11 @@ router.delete(
     const patientId = idCheck.data;
     const linkId = linkCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = resolveOrg(req, res);
+    if (!orgId) return;
+    const db = getOrgScopedClient(orgId);
 
-    const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
+    const { data: updated, error: updateErr } = await db
       .from("patient_therapy_links")
       .update({ status: "revoked" })
       .eq("id", linkId)
