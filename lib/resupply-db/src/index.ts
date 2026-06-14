@@ -34,6 +34,7 @@ export {
   type SupabaseClientOptions,
 } from "./supabase-client";
 export type { Database, Json, TemplateLine } from "./supabase-types";
+export { getOrgScopedClient, SEED_ORG_SLUG } from "./org-scoped-client";
 export {
   PREVIEW_MAX_CHARS,
   buildPreview,
