@@ -538,6 +538,7 @@ export interface Database {
       };
       conversations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           episode_id: string | null;
@@ -1071,6 +1072,7 @@ export interface Database {
       };
       message_attachments: {
         Row: {
+          org_id: string | null;
           id: string;
           message_id: string;
           object_key: string;
@@ -1168,6 +1170,7 @@ export interface Database {
       };
       alert_definitions: {
         Row: {
+          org_id: string | null;
           id: string;
           key: string;
           name: string;
@@ -1192,6 +1195,7 @@ export interface Database {
       };
       alert_messages: {
         Row: {
+          org_id: string | null;
           id: string;
           alert_key: string;
           channel: "email" | "sms" | "voice";
@@ -1238,6 +1242,7 @@ export interface Database {
       };
       message_templates: {
         Row: {
+          org_id: string | null;
           id: string;
           template_key: string;
           channel: string;
@@ -4121,6 +4126,7 @@ export interface Database {
       };
       messages: {
         Row: {
+          org_id: string | null;
           id: string;
           conversation_id: string;
           direction: string;
@@ -4626,6 +4632,7 @@ export interface Database {
       };
       csr_macros: {
         Row: {
+          org_id: string | null;
           id: string;
           key: string;
           label: string;
