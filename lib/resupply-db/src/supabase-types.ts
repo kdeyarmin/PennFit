@@ -4229,6 +4229,7 @@ export interface Database {
       };
       shop_customers: {
         Row: {
+          org_id: string | null;
           customer_id: string;
           stripe_customer_id: string | null;
           display_name: string | null;
@@ -4274,6 +4275,7 @@ export interface Database {
       };
       shop_order_items: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           stripe_session_id: string;
@@ -4329,6 +4331,7 @@ export interface Database {
       };
       shop_orders: {
         Row: {
+          org_id: string | null;
           id: string;
           stripe_session_id: string;
           stripe_payment_intent_id: string | null;
@@ -4554,6 +4557,7 @@ export interface Database {
       };
       inventory_reconciliations: {
         Row: {
+          org_id: string | null;
           id: string;
           period_label: string;
           status: "draft" | "submitted";
