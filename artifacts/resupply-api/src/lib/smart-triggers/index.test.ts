@@ -6,11 +6,14 @@ import { describe, it, expect } from "vitest";
 
 import {
   evaluateAhiElevated,
+  evaluateAhiRising,
   evaluateAll,
   evaluateCushionWear,
   evaluateLeakRising,
   evaluateNonAdherent30d,
+  evaluatePressureAtMax,
   evaluateUsageDropping,
+  evaluateUsageErratic,
   type NightDatum,
 } from "./index";
 
@@ -104,7 +107,128 @@ describe("evaluateCushionWear", () => {
   });
 });
 
+describe("evaluatePressureAtMax", () => {
+  it("returns null when the device max is unknown", () => {
+    const nights = makeNights("2026-05-01", 7, () => ({
+      pressureP95Cmh2o: 20,
+      ahi: 8,
+    }));
+    expect(evaluatePressureAtMax(nights)).toBeNull();
+    expect(evaluatePressureAtMax(nights, {})).toBeNull();
+    expect(
+      evaluatePressureAtMax(nights, { deviceMaxPressureCmh2o: null }),
+    ).toBeNull();
+  });
+
+  it("returns null when pressure sits at max but AHI is controlled", () => {
+    // Pegged at 20 every night, but events are well controlled — that's
+    // a fine APAP that simply runs near its cap. Must NOT fire.
+    const nights = makeNights("2026-05-01", 7, () => ({
+      pressureP95Cmh2o: 20,
+      ahi: 2,
+    }));
+    expect(
+      evaluatePressureAtMax(nights, { deviceMaxPressureCmh2o: 20 }),
+    ).toBeNull();
+  });
+
+  it("returns null when AHI is high but pressure is well below max", () => {
+    const nights = makeNights("2026-05-01", 7, () => ({
+      pressureP95Cmh2o: 12,
+      ahi: 9,
+    }));
+    expect(
+      evaluatePressureAtMax(nights, { deviceMaxPressureCmh2o: 20 }),
+    ).toBeNull();
+  });
+
+  it("fires when pressure is pegged at max AND residual AHI is elevated", () => {
+    const nights = makeNights("2026-05-01", 7, () => ({
+      pressureP95Cmh2o: 19.5, // within 1.0 of the 20 cmH2O ceiling
+      ahi: 8,
+    }));
+    const r = evaluatePressureAtMax(nights, { deviceMaxPressureCmh2o: 20 });
+    expect(r?.kind).toBe("pressure_at_max");
+    expect(r?.windowEndDate).toBe("2026-05-07");
+  });
+
+  it("returns null without enough recent nights of pressure data", () => {
+    const nights = makeNights("2026-05-01", 4, () => ({
+      pressureP95Cmh2o: 20,
+      ahi: 8,
+    }));
+    expect(
+      evaluatePressureAtMax(nights, { deviceMaxPressureCmh2o: 20 }),
+    ).toBeNull();
+  });
+});
+
+describe("evaluateAhiRising", () => {
+  it("fires on a worsening trend below the absolute alarm", () => {
+    const nights = makeNights("2026-05-01", 14, (i) => ({
+      ahi: i < 7 ? 2 : 4, // 2x rise, back half (4) under the ahi=5 alarm
+    }));
+    const r = evaluateAhiRising(nights);
+    expect(r?.kind).toBe("ahi_rising");
+  });
+
+  it("does not fire when the back half is already over the absolute alarm", () => {
+    // ahi_elevated owns this case — ahi_rising must defer.
+    const nights = makeNights("2026-05-01", 14, (i) => ({
+      ahi: i < 7 ? 3 : 6,
+    }));
+    expect(evaluateAhiRising(nights)).toBeNull();
+  });
+
+  it("does not fire on jitter near zero", () => {
+    const nights = makeNights("2026-05-01", 14, (i) => ({
+      ahi: i < 7 ? 0.5 : 1.5,
+    }));
+    expect(evaluateAhiRising(nights)).toBeNull();
+  });
+});
+
+describe("evaluateUsageErratic", () => {
+  it("fires on binge-and-skip volatility", () => {
+    // Alternating skipped (0 min) and full (480 min) nights — high CV,
+    // clear mix of skip + full nights.
+    const nights = makeNights("2026-05-01", 14, (i) => ({
+      usageMinutes: i % 2 === 0 ? 0 : 480,
+    }));
+    const r = evaluateUsageErratic(nights);
+    expect(r?.kind).toBe("usage_erratic");
+  });
+
+  it("does not fire on a steady borderline user", () => {
+    const nights = makeNights("2026-05-01", 14, () => ({
+      usageMinutes: 210, // consistent, low variance
+    }));
+    expect(evaluateUsageErratic(nights)).toBeNull();
+  });
+
+  it("does not fire without both skip and full nights", () => {
+    // Variance present but no near-zero "skip" nights.
+    const nights = makeNights("2026-05-01", 14, (i) => ({
+      usageMinutes: i % 2 === 0 ? 250 : 480,
+    }));
+    expect(evaluateUsageErratic(nights)).toBeNull();
+  });
+});
+
 describe("evaluateAll", () => {
+  it("includes pressure_at_max only when the device context is supplied", () => {
+    const nights = makeNights("2026-05-01", 7, () => ({
+      pressureP95Cmh2o: 20,
+      ahi: 8,
+    }));
+    expect(evaluateAll(nights).map((p) => p.kind)).not.toContain(
+      "pressure_at_max",
+    );
+    expect(
+      evaluateAll(nights, { deviceMaxPressureCmh2o: 20 }).map((p) => p.kind),
+    ).toContain("pressure_at_max");
+  });
+
   it("returns the multi-rule fan-out — leak_rising AND cushion_wear together", () => {
     const nights = makeNights("2026-05-01", 14, (i) => ({
       leakRateLMin: i < 7 ? 4 : 6,

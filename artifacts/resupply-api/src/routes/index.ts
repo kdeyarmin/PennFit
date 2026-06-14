@@ -97,6 +97,7 @@ import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js"
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
+import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
 import therapyResupplyRouter from "./admin/therapy-resupply.js";
 import therapyComplianceRouter from "./admin/therapy-compliance.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
@@ -922,6 +923,10 @@ router.use(integrationsErrorsRouter);
 // compliance cohorts + prioritized clinical/compliance outreach
 // worklist (with CSV export) over the patient_therapy_nights rollup.
 router.use(therapyFleetRouter);
+// /admin/therapy-fleet/clinical-insights[.csv] — cross-panel report of
+// the RT-owned clinical smart-trigger signals (pressure pegging, AHI
+// elevated/rising, non-adherence, erratic use) with a CSV export.
+router.use(therapyClinicalInsightsRouter);
 // /admin/therapy-resupply/* — resupply opportunities from device data:
 // vendor supply rosters whose nextEligibleDate has arrived, surfaced as
 // a fleet "due/overdue" queue (with CSV export) to drive resupply orders.

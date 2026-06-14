@@ -43,6 +43,9 @@ export function subjectForKind(kind: TriggerKind): string {
       return "Time to refresh your tubing?";
     case "ahi_elevated":
     case "non_adherent_30d":
+    case "pressure_at_max":
+    case "ahi_rising":
+    case "usage_erratic":
       return notPatientFacing(kind);
   }
 }
@@ -60,6 +63,9 @@ export function textBody(greeting: string, kind: TriggerKind): string {
       return `${safeGreeting},\n\nWith warmer weather your tubing may be due for a refresh — older tubing collects condensation and reduces airflow, which can make therapy feel less comfortable in the summer.\n\nReply YES and we'll ship a fresh hose.\n\n— Penn Home Medical Supply\n`;
     case "ahi_elevated":
     case "non_adherent_30d":
+    case "pressure_at_max":
+    case "ahi_rising":
+    case "usage_erratic":
       return notPatientFacing(kind);
   }
 }
@@ -109,6 +115,9 @@ export function pushBody(kind: TriggerKind): string {
       return "Your CPAP care may need attention. Tap to view your insight.";
     case "ahi_elevated":
     case "non_adherent_30d":
+    case "pressure_at_max":
+    case "ahi_rising":
+    case "usage_erratic":
       return notPatientFacing(kind);
   }
 }
@@ -142,6 +151,9 @@ export function smsBody(firstName: string, kind: TriggerKind): string {
       return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - Penn Home`;
     case "ahi_elevated":
     case "non_adherent_30d":
+    case "pressure_at_max":
+    case "ahi_rising":
+    case "usage_erratic":
       return notPatientFacing(kind);
   }
 }
