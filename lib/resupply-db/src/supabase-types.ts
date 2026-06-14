@@ -1294,6 +1294,35 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
         Relationships: [];
       };
+      clinical_encounters: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          author_user_id: string | null;
+          author_email: string;
+          encounter_type: string;
+          reason: string | null;
+          assessment: string | null;
+          intervention: string | null;
+          plan: string | null;
+          follow_up_at: string | null;
+          note: string | null;
+          linked_alert_id: string | null;
+          linked_episode_id: string | null;
+          created_at: string;
+          updated_at: string;
+          assessment_category: string | null;
+          outcome_status: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinical_encounters"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinical_encounters"]["Row"]
+        >;
+        Relationships: [];
+      };
       message_templates: {
         Row: {
           org_id: string | null;

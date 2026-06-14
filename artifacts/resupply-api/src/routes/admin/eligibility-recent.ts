@@ -20,7 +20,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -59,10 +59,15 @@ router.get(
     }
     const { status, days = 30, limit = 100 } = parsed.data;
     const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    let query = supabase
-      .schema("resupply")
+    let query = db
       .from("eligibility_checks")
       .select(
         // Aggregate / queue view — deliberately omit `requested_by_email`.
@@ -79,19 +84,39 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
 
+    const rows = (data ?? []) as Array<{
+      id: string;
+      patient_id: string | null;
+      insurance_coverage_id: string | null;
+      payer_profile_id: string | null;
+      service_hcpcs: string | null;
+      status: string;
+      is_active: boolean | null;
+      in_network: boolean | null;
+      deductible_cents: number | null;
+      deductible_met_cents: number | null;
+      oop_max_cents: number | null;
+      oop_met_cents: number | null;
+      copay_cents: number | null;
+      coinsurance_pct: number | null;
+      requires_prior_auth: boolean | null;
+      error_message: string | null;
+      requested_at: string;
+      responded_at: string | null;
+    }>;
+
     // Resolve payer profile names for the rows we got back. One
     // round-trip with `in`; saves the per-row join.
     const profileIds = Array.from(
       new Set(
-        (data ?? [])
+        rows
           .map((r) => r.payer_profile_id)
           .filter((v): v is string => Boolean(v)),
       ),
     );
     const payerMap = new Map<string, string>();
     if (profileIds.length > 0) {
-      const { data: profiles, error: profilesError } = await supabase
-        .schema("resupply")
+      const { data: profiles, error: profilesError } = await db
         .from("payer_profiles")
         .select("id, display_name")
         .in("id", profileIds);
@@ -99,7 +124,11 @@ router.get(
       // names — a 500 here is preferable to rows rendered as "—"
       // with no clue why.
       if (profilesError) throw profilesError;
-      for (const p of profiles ?? []) payerMap.set(p.id, p.display_name);
+      for (const p of (profiles ?? []) as Array<{
+        id: string;
+        display_name: string;
+      }>)
+        payerMap.set(p.id, p.display_name);
     }
 
     // Roll up counts by status for the summary tiles.
@@ -113,7 +142,7 @@ router.get(
     let activeCount = 0;
     let inactiveCount = 0;
     let priorAuthFlagged = 0;
-    for (const r of data ?? []) {
+    for (const r of rows) {
       const s = r.status as (typeof STATUS_VALUES)[number];
       if (s in byStatus) byStatus[s]++;
       if (r.is_active === true) activeCount++;
@@ -122,7 +151,7 @@ router.get(
     }
 
     res.json({
-      checks: (data ?? []).map((r) => ({
+      checks: rows.map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         insuranceCoverageId: r.insurance_coverage_id,
@@ -146,7 +175,7 @@ router.get(
         respondedAt: r.responded_at,
       })),
       counts: {
-        total: data?.length ?? 0,
+        total: rows.length,
         byStatus,
         activeCoverage: activeCount,
         inactiveCoverage: inactiveCount,
