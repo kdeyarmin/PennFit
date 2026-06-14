@@ -11,6 +11,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
+import { fetchDeviceMaxPressure } from "./snapshot-context";
 
 export interface PatientEvalActor {
   adminEmail: string | null;
@@ -50,6 +51,14 @@ export async function evaluatePatientSmartTriggers(
   if (nightsErr) throw nightsErr;
   const nights = nightRows ?? [];
 
+  // Device max pressure (for the pressure-pegging rule) comes from the
+  // latest vendor snapshot's DeviceSettings. Best-effort: a patient with
+  // no snapshot still evaluates every non-pressure rule.
+  const deviceMaxPressureCmh2o = await fetchDeviceMaxPressure(
+    supabase,
+    patientId,
+  );
+
   const proposals = evaluateAll(
     nights.map((n) => ({
       date: n.night_date,
@@ -60,6 +69,7 @@ export async function evaluatePatientSmartTriggers(
       pressureP95Cmh2o:
         n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
     })),
+    { deviceMaxPressureCmh2o },
   );
 
   let proposed = 0;

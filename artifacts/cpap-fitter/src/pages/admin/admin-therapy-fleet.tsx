@@ -11,7 +11,7 @@
 //     reason(s) and a weighted priority. Filterable by reason and
 //     exportable to CSV for a calling list.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -41,12 +41,16 @@ import {
   getFleetWorklist,
   fleetWorklistCsvUrl,
   setWorklistAction,
+  getClinicalInsights,
+  clinicalInsightsCsvUrl,
   type FleetAlert,
   type FleetTrendPoint,
   type WorklistAction,
   type WorklistActionStatus,
   type WorklistEntry,
   type WorklistReason,
+  type ClinicalInsightEntry,
+  type ClinicalTriggerKind,
 } from "@/lib/admin/therapy-fleet-api";
 import { appDateIsoOffset } from "@/lib/utils";
 
@@ -58,6 +62,48 @@ const ALERT_LABELS: Record<string, string> = {
   usage_decline: "Usage decline",
   setup_at_risk: "Setup at risk",
 };
+
+// Clinical smart-trigger signals (RT-owned) — label + badge tone + the
+// "so what". Kept in lockstep with the clinical-insights report route and
+// lib/smart-triggers/index.ts.
+const CLINICAL_KIND_META: Record<
+  ClinicalTriggerKind,
+  { label: string; variant: "danger" | "warning"; blurb: string }
+> = {
+  pressure_at_max: {
+    label: "Pressure at max",
+    variant: "danger",
+    blurb:
+      "APAP pegged at the prescribed ceiling with events still breaking through — pressure/Rx review",
+  },
+  ahi_elevated: {
+    label: "AHI elevated",
+    variant: "danger",
+    blurb: "Residual events high this week — review fit/pressure",
+  },
+  non_adherent_30d: {
+    label: "Non-adherent (30d)",
+    variant: "danger",
+    blurb: "Below the Medicare 70% bar — coverage at risk",
+  },
+  ahi_rising: {
+    label: "AHI rising",
+    variant: "warning",
+    blurb: "AHI worsening trend — intervene before it crosses the alarm",
+  },
+  usage_erratic: {
+    label: "Erratic usage",
+    variant: "warning",
+    blurb: "Binge-and-skip pattern — consistency coaching",
+  },
+};
+const CLINICAL_KIND_ORDER: ClinicalTriggerKind[] = [
+  "pressure_at_max",
+  "ahi_elevated",
+  "non_adherent_30d",
+  "ahi_rising",
+  "usage_erratic",
+];
 
 const WINDOW_OPTIONS = [7, 30, 60, 90] as const;
 
@@ -149,6 +195,16 @@ export function AdminTherapyFleetPage() {
   const alertsQ = useQuery({
     queryKey: ["admin", "therapy-fleet", "alerts"],
     queryFn: getFleetAlerts,
+    refetchOnWindowFocus: false,
+  });
+
+  const [clinicalKind, setClinicalKind] = useState<ClinicalTriggerKind | null>(
+    null,
+  );
+  const clinicalQ = useQuery({
+    queryKey: ["admin", "therapy-fleet", "clinical-insights", clinicalKind],
+    queryFn: () =>
+      getClinicalInsights({ kind: clinicalKind ?? undefined, limit: 500 }),
     refetchOnWindowFocus: false,
   });
   const resolveMutation = useMutation({
@@ -441,6 +497,206 @@ export function AdminTherapyFleetPage() {
           />
         )}
       </Card>
+
+      {/* ── Clinical insights report ───────────────────────────────── */}
+      <Card
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Stethoscope className="h-4 w-4" /> Clinical insights
+          </span>
+        }
+        subtitle="RT-owned signals from device data — never auto-messaged. Work these or hand to the prescriber."
+        action={
+          <a
+            href={clinicalInsightsCsvUrl({ kind: clinicalKind ?? undefined })}
+            className="inline-flex items-center gap-1.5 text-sm hover:underline"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </a>
+        }
+      >
+        <div className="flex flex-wrap gap-2 mb-4">
+          <ReasonChip
+            active={clinicalKind === null}
+            onClick={() => setClinicalKind(null)}
+            label={
+              clinicalQ.data ? `All (${clinicalQ.data.summary.total})` : "All"
+            }
+          />
+          {CLINICAL_KIND_ORDER.map((k) => (
+            <ReasonChip
+              key={k}
+              active={clinicalKind === k}
+              onClick={() => setClinicalKind(k)}
+              label={
+                clinicalQ.data
+                  ? `${CLINICAL_KIND_META[k].label} (${clinicalQ.data.summary.byKind[k] ?? 0})`
+                  : CLINICAL_KIND_META[k].label
+              }
+              title={CLINICAL_KIND_META[k].blurb}
+            />
+          ))}
+        </div>
+
+        {clinicalQ.isPending ? (
+          <Spinner />
+        ) : clinicalQ.isError ? (
+          <ErrorPanel
+            error={clinicalQ.error}
+            onRetry={() => void clinicalQ.refetch()}
+          />
+        ) : clinicalQ.data.entries.length === 0 ? (
+          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
+            No active clinical signals for this filter. 🎉
+          </p>
+        ) : (
+          <ClinicalInsightsTable entries={clinicalQ.data.entries} />
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function ClinicalInsightsTable({
+  entries,
+}: {
+  entries: ClinicalInsightEntry[];
+}) {
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
+            <th className="font-medium py-1.5 px-1">Signal</th>
+            <th className="font-medium py-1.5 px-1">Patient</th>
+            <th className="font-medium py-1.5 px-1">Recent therapy (14d)</th>
+            <th className="font-medium py-1.5 px-1">Detected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => {
+            const meta = CLINICAL_KIND_META[e.kind];
+            return (
+              <tr
+                key={e.id}
+                className="border-b align-top"
+                style={{ borderColor: "hsl(var(--line-2))" }}
+              >
+                <td className="py-1.5 px-1">
+                  <Badge variant={meta.variant}>{meta.label}</Badge>
+                  <span
+                    className="block text-[11px] mt-0.5"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {meta.blurb}
+                  </span>
+                </td>
+                <td className="py-1.5 px-1">
+                  <Link
+                    href={`/admin/patients/${e.patientId}`}
+                    className="font-medium hover:underline"
+                    style={{ color: "hsl(var(--penn-navy))" }}
+                  >
+                    {e.patientName || e.patientId.slice(0, 8)}
+                  </Link>
+                </td>
+                <td className="py-1.5 px-1">
+                  <MetricsCell kind={e.kind} metrics={e.metrics} />
+                </td>
+                <td
+                  className="py-1.5 px-1 whitespace-nowrap text-[12px]"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {new Date(e.detectedAt).toLocaleDateString()}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// The recent therapy numbers that triggered a clinical signal, rendered
+// compactly. The metric most relevant to each kind is bolded so an RT can
+// scan the queue: pressure for pressure_at_max, AHI for the AHI signals,
+// usage for usage_erratic.
+function MetricsCell({
+  kind,
+  metrics,
+}: {
+  kind: ClinicalTriggerKind;
+  metrics: ClinicalInsightEntry["metrics"];
+}) {
+  if (!metrics || metrics.nightsInWindow === 0) {
+    return (
+      <span className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+        no recent nights
+      </span>
+    );
+  }
+  const m = metrics;
+  const pressureKind = kind === "pressure_at_max";
+  const ahiKind = kind === "ahi_elevated" || kind === "ahi_rising";
+  const usageKind = kind === "usage_erratic" || kind === "non_adherent_30d";
+  const parts: Array<{ key: string; node: ReactNode; strong: boolean }> = [];
+  if (m.avgAhi !== null) {
+    parts.push({
+      key: "ahi",
+      node: <>AHI {m.avgAhi.toFixed(1)}</>,
+      strong: ahiKind,
+    });
+  }
+  if (m.avgLeakLMin !== null) {
+    parts.push({
+      key: "leak",
+      node: <>leak {m.avgLeakLMin.toFixed(0)}</>,
+      strong: false,
+    });
+  }
+  if (m.avgPressureP95 !== null) {
+    parts.push({
+      key: "press",
+      node: (
+        <>
+          P95 {m.avgPressureP95.toFixed(1)}
+          {m.deviceMaxPressure !== null && (
+            <> / max {m.deviceMaxPressure.toFixed(1)}</>
+          )}
+        </>
+      ),
+      strong: pressureKind,
+    });
+  }
+  if (m.avgUsageMinutes !== null) {
+    parts.push({
+      key: "use",
+      node: <>{(m.avgUsageMinutes / 60).toFixed(1)}h/night</>,
+      strong: usageKind,
+    });
+  }
+  return (
+    <div className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+      <span className="flex flex-wrap gap-x-2 gap-y-0.5">
+        {parts.map((p) => (
+          <span
+            key={p.key}
+            style={
+              p.strong
+                ? { color: "hsl(var(--ink-1))", fontWeight: 600 }
+                : undefined
+            }
+          >
+            {p.node}
+          </span>
+        ))}
+      </span>
+      <span className="block text-[11px] mt-0.5">
+        {m.nightsInWindow} night{m.nightsInWindow === 1 ? "" : "s"}
+        {m.lastNightDate ? ` · last ${m.lastNightDate}` : ""}
+      </span>
     </div>
   );
 }
