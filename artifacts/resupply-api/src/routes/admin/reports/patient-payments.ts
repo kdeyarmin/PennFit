@@ -35,6 +35,7 @@ import {
   renderIifWithAccounts,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
 } from "./shared";
 
 export interface PatientPaymentRow {
@@ -71,7 +72,7 @@ export async function fetchPatientPayments(
 }
 
 export function writePatientPaymentsCsv(
-  res: import("express").Response,
+  res: CsvSink,
   rows: PatientPaymentRow[],
 ): void {
   const headers = [
@@ -237,10 +238,7 @@ export const patientPaymentsReport: ReportModule = {
 
   async buildEmailCsv(from, to) {
     const { res, collect } = bufferedRes();
-    writePatientPaymentsCsv(
-      res as unknown as import("express").Response,
-      await fetchPatientPayments(from, to),
-    );
+    writePatientPaymentsCsv(res, await fetchPatientPayments(from, to));
     return collect();
   },
 

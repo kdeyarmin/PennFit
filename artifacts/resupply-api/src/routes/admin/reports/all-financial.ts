@@ -44,6 +44,7 @@ import {
   renderIifWithAccounts,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
 } from "./shared";
 
 export type CombinedFinancialRow = QuickbooksRowInput & {
@@ -91,7 +92,7 @@ export async function fetchCombinedFinancial(
 }
 
 export function writeCombinedFinancialCsv(
-  res: import("express").Response,
+  res: CsvSink,
   rows: CombinedFinancialRow[],
 ): void {
   const headers = [
@@ -240,10 +241,7 @@ export const allFinancialReport: ReportModule = {
 
   async buildEmailCsv(from, to) {
     const { res, collect } = bufferedRes();
-    writeCombinedFinancialCsv(
-      res as unknown as import("express").Response,
-      await fetchCombinedFinancial(from, to),
-    );
+    writeCombinedFinancialCsv(res, await fetchCombinedFinancial(from, to));
     return collect();
   },
 

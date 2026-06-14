@@ -24,6 +24,7 @@ import {
   renderIifWithAccounts,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
 } from "./shared";
 
 export interface ReturnRow {
@@ -59,10 +60,7 @@ export async function fetchReturns(from: Date, to: Date): Promise<ReturnRow[]> {
   return (data ?? []) as ReturnRow[];
 }
 
-export function writeReturnsCsv(
-  res: import("express").Response,
-  rows: ReturnRow[],
-): void {
+export function writeReturnsCsv(res: CsvSink, rows: ReturnRow[]): void {
   const headers = [
     "return_id",
     "order_id",
@@ -237,10 +235,7 @@ export const returnsReport: ReportModule = {
 
   async buildEmailCsv(from, to) {
     const { res, collect } = bufferedRes();
-    writeReturnsCsv(
-      res as unknown as import("express").Response,
-      await fetchReturns(from, to),
-    );
+    writeReturnsCsv(res, await fetchReturns(from, to));
     return collect();
   },
 

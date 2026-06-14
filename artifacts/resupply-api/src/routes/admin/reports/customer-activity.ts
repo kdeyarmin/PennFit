@@ -24,6 +24,7 @@ import {
   rangeSlug,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
 } from "./shared";
 
 export interface CustomerActivityByDay {
@@ -138,7 +139,7 @@ export async function fetchCustomerActivity(
 }
 
 export function writeCustomerActivityCsv(
-  res: import("express").Response,
+  res: CsvSink,
   rows: CustomerActivityByDay[],
 ): void {
   const headers = [
@@ -246,10 +247,7 @@ export const customerActivityReport: ReportModule = {
 
   async buildEmailCsv(from, to) {
     const { res, collect } = bufferedRes();
-    writeCustomerActivityCsv(
-      res as unknown as import("express").Response,
-      await fetchCustomerActivity(from, to),
-    );
+    writeCustomerActivityCsv(res, await fetchCustomerActivity(from, to));
     return collect();
   },
 

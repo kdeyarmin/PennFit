@@ -155,13 +155,21 @@ export async function renderIifWithAccounts(
 // surfaces as a build error instead of a silent broken email.
 // ─────────────────────────────────────────────────────────────────
 
-export interface BufferedRes {
+// The minimal write surface the CSV writers actually use. Both
+// express's `Response` and the `bufferedRes()` shim below satisfy it
+// structurally. Typing every `writeXxxCsv(res, …)` to this — rather
+// than to the full `Response` — is what makes the shim safe: an
+// accidental `res.setHeader()` / `res.status()` inside a writer is a
+// *compile* error here, exactly as the shim comment promises (the old
+// `res as unknown as Response` casts at the email callsites silently
+// defeated that guarantee).
+export interface CsvSink {
   write(chunk: string): boolean;
   end(): void;
 }
 
 export function bufferedRes(): {
-  res: BufferedRes;
+  res: CsvSink;
   collect: () => Buffer;
 } {
   const chunks: Buffer[] = [];
