@@ -150,13 +150,27 @@ function CampaignsTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Name</th>
-          <th className="py-2 font-semibold">Audience</th>
-          <th className="py-2 font-semibold">Category</th>
-          <th className="py-2 font-semibold text-right">Total</th>
-          <th className="py-2 font-semibold text-right">Pending</th>
-          <th className="py-2 font-semibold text-right">Suppressed</th>
-          <th className="py-2 font-semibold">Status</th>
+          <th scope="col" className="py-2 font-semibold">
+            Name
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Audience
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Category
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Total
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Pending
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Suppressed
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -609,11 +623,21 @@ function CampaignDetailBody({
                 className="text-left border-b"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <th className="py-1.5">Kind</th>
-                <th className="py-1.5">Recipient</th>
-                <th className="py-1.5">Email</th>
-                <th className="py-1.5">Status</th>
-                <th className="py-1.5">Reason</th>
+                <th scope="col" className="py-1.5">
+                  Kind
+                </th>
+                <th scope="col" className="py-1.5">
+                  Recipient
+                </th>
+                <th scope="col" className="py-1.5">
+                  Email
+                </th>
+                <th scope="col" className="py-1.5">
+                  Status
+                </th>
+                <th scope="col" className="py-1.5">
+                  Reason
+                </th>
               </tr>
             </thead>
             <tbody>

@@ -489,11 +489,19 @@ export function AdminReferralReviewsPage() {
                   className="text-left text-xs uppercase tracking-wide"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="py-2 pr-3">Received</th>
-                  <th className="py-2 pr-3">Source</th>
-                  <th className="py-2 pr-3">Patient (extracted)</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2" />
+                  <th scope="col" className="py-2 pr-3">
+                    Received
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Source
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Patient (extracted)
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Status
+                  </th>
+                  <th scope="col" className="py-2" />
                 </tr>
               </thead>
               <tbody>

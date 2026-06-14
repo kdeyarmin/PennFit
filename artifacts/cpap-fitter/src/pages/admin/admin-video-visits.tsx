@@ -251,13 +251,27 @@ export function AdminVideoVisitsPage() {
                   className="text-left text-xs uppercase tracking-wide"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="py-2 pr-4">Patient</th>
-                  <th className="py-2 pr-4">Purpose</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Scheduled</th>
-                  <th className="py-2 pr-4">Invite</th>
-                  <th className="py-2 pr-4">Created</th>
-                  <th className="py-2">Actions</th>
+                  <th scope="col" className="py-2 pr-4">
+                    Patient
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Purpose
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Status
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Scheduled
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Invite
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Created
+                  </th>
+                  <th scope="col" className="py-2">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>

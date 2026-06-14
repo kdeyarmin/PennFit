@@ -101,14 +101,30 @@ function PayerStatsCard() {
                 className="text-left text-[11px] uppercase tracking-wider"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                <th className="p-2">Payer</th>
-                <th className="p-2 text-right">Batches</th>
-                <th className="p-2 text-right">Claims</th>
-                <th className="p-2 text-right">Accepted</th>
-                <th className="p-2 text-right">Rejected</th>
-                <th className="p-2 text-right">Failed</th>
-                <th className="p-2 text-right">Pending</th>
-                <th className="p-2 text-right">Acceptance</th>
+                <th scope="col" className="p-2">
+                  Payer
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Batches
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Claims
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Accepted
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Rejected
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Failed
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Pending
+                </th>
+                <th scope="col" className="p-2 text-right">
+                  Acceptance
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -656,15 +672,29 @@ function SubmissionsSection() {
                 className="text-left text-[11px] uppercase tracking-wider"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                <th className="p-2 w-6" />
-                <th className="p-2">Submitted</th>
-                <th className="p-2">File</th>
-                <th className="p-2">Claims</th>
-                <th className="p-2">Status</th>
-                <th className="p-2">ISA / GS</th>
-                <th className="p-2">999 ack</th>
-                <th className="p-2">277CA ack</th>
-                <th className="p-2" />
+                <th scope="col" className="p-2 w-6" />
+                <th scope="col" className="p-2">
+                  Submitted
+                </th>
+                <th scope="col" className="p-2">
+                  File
+                </th>
+                <th scope="col" className="p-2">
+                  Claims
+                </th>
+                <th scope="col" className="p-2">
+                  Status
+                </th>
+                <th scope="col" className="p-2">
+                  ISA / GS
+                </th>
+                <th scope="col" className="p-2">
+                  999 ack
+                </th>
+                <th scope="col" className="p-2">
+                  277CA ack
+                </th>
+                <th scope="col" className="p-2" />
               </tr>
             </thead>
             <tbody>
@@ -1053,11 +1083,21 @@ function InboundFilesSection() {
                 className="text-left text-[11px] uppercase tracking-wider"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                <th className="p-2">Downloaded</th>
-                <th className="p-2">File</th>
-                <th className="p-2">Kind</th>
-                <th className="p-2">Dispatch</th>
-                <th className="p-2">Summary</th>
+                <th scope="col" className="p-2">
+                  Downloaded
+                </th>
+                <th scope="col" className="p-2">
+                  File
+                </th>
+                <th scope="col" className="p-2">
+                  Kind
+                </th>
+                <th scope="col" className="p-2">
+                  Dispatch
+                </th>
+                <th scope="col" className="p-2">
+                  Summary
+                </th>
               </tr>
             </thead>
             <tbody>

@@ -1618,12 +1618,24 @@ function ImportCsvModal({
                   <table className="w-full text-xs">
                     <thead style={{ backgroundColor: "#f3f4f6" }}>
                       <tr>
-                        <th className="text-left px-2 py-1">#</th>
-                        <th className="text-left px-2 py-1">Pacware</th>
-                        <th className="text-left px-2 py-1">Name</th>
-                        <th className="text-left px-2 py-1">DOB</th>
-                        <th className="text-left px-2 py-1">Phone</th>
-                        <th className="text-left px-2 py-1">Email</th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          #
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Pacware
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Name
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          DOB
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Phone
+                        </th>
+                        <th scope="col" className="text-left px-2 py-1">
+                          Email
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

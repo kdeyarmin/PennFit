@@ -345,9 +345,15 @@ function PreviewPanel({
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-                <th className="px-2 py-1">Row</th>
-                <th className="px-2 py-1">Field</th>
-                <th className="px-2 py-1">Problem</th>
+                <th scope="col" className="px-2 py-1">
+                  Row
+                </th>
+                <th scope="col" className="px-2 py-1">
+                  Field
+                </th>
+                <th scope="col" className="px-2 py-1">
+                  Problem
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -698,7 +704,11 @@ function VerifyModal({
                       style={{ color: "hsl(var(--ink-3))" }}
                     >
                       {columns.map((c) => (
-                        <th key={c} className="px-2 py-1 whitespace-nowrap">
+                        <th
+                          scope="col"
+                          key={c}
+                          className="px-2 py-1 whitespace-nowrap"
+                        >
                           {c}
                         </th>
                       ))}
@@ -798,9 +808,15 @@ function ReportSpec({ report }: { report: PacwareReport }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-            <th className="py-1 pr-3">Column</th>
-            <th className="py-1 pr-3">Required</th>
-            <th className="py-1">Description</th>
+            <th scope="col" className="py-1 pr-3">
+              Column
+            </th>
+            <th scope="col" className="py-1 pr-3">
+              Required
+            </th>
+            <th scope="col" className="py-1">
+              Description
+            </th>
           </tr>
         </thead>
         <tbody>

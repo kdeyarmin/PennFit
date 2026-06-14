@@ -201,13 +201,27 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
               className="text-left border-b"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              <th className="py-2 font-semibold">Patient</th>
-              <th className="py-2 font-semibold">Status</th>
-              <th className="py-2 font-semibold">Target</th>
-              <th className="py-2 font-semibold">Latest</th>
-              <th className="py-2 font-semibold">Outreach</th>
-              <th className="py-2 font-semibold">Opened</th>
-              <th className="py-2 font-semibold">Next moves</th>
+              <th scope="col" className="py-2 font-semibold">
+                Patient
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Status
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Target
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Latest
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Outreach
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Opened
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Next moves
+              </th>
             </tr>
           </thead>
           <tbody>

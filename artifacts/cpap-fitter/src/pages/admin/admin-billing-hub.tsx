@@ -428,10 +428,18 @@ export function AdminBillingHubPage() {
                   className="text-left text-[11px] uppercase tracking-wider"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="py-1.5">Window</th>
-                  <th className="py-1.5 text-right">Decisions</th>
-                  <th className="py-1.5 text-right">Denials</th>
-                  <th className="py-1.5 text-right">Rate</th>
+                  <th scope="col" className="py-1.5">
+                    Window
+                  </th>
+                  <th scope="col" className="py-1.5 text-right">
+                    Decisions
+                  </th>
+                  <th scope="col" className="py-1.5 text-right">
+                    Denials
+                  </th>
+                  <th scope="col" className="py-1.5 text-right">
+                    Rate
+                  </th>
                 </tr>
               </thead>
               <tbody>

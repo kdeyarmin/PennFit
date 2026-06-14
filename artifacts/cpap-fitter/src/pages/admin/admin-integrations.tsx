@@ -130,11 +130,21 @@ function AdapterTable({ adapters }: { adapters: IntegrationAdapterStatus[] }) {
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Vendor</th>
-          <th className="py-2 font-semibold">Availability</th>
-          <th className="py-2 font-semibold">Last 7d</th>
-          <th className="py-2 font-semibold">Top errors</th>
-          <th className="py-2 font-semibold">Last refresh</th>
+          <th scope="col" className="py-2 font-semibold">
+            Vendor
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Availability
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Last 7d
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Top errors
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Last refresh
+          </th>
         </tr>
       </thead>
       <tbody>

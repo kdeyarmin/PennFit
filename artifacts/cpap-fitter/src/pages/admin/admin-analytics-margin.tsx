@@ -186,12 +186,24 @@ function ByProductTable({ rows }: { rows: ProductMargin[] }) {
       <table className="w-full text-sm min-w-[760px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">Product</th>
-            <th className="text-right px-3 py-2">Revenue</th>
-            <th className="text-right px-3 py-2">Cost</th>
-            <th className="text-right px-3 py-2">Margin</th>
-            <th className="text-right px-3 py-2">Margin %</th>
-            <th className="text-right px-3 py-2">Cost coverage</th>
+            <th scope="col" className="text-left px-3 py-2">
+              Product
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Revenue
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Cost
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Margin
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Margin %
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Cost coverage
+            </th>
           </tr>
         </thead>
         <tbody>

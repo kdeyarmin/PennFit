@@ -202,17 +202,37 @@ export function AdminBillingConfigPayersPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">Name</th>
-                  <th className="p-3">Region</th>
-                  <th className="p-3">LOB</th>
-                  <th className="p-3">Office Ally ID</th>
-                  <th className="p-3">Claim format</th>
-                  <th className="p-3">PA req?</th>
-                  <th className="p-3">Timely filing</th>
-                  <th className="p-3">EDI</th>
-                  <th className="p-3">Verified</th>
-                  <th className="p-3">Active</th>
-                  <th className="p-3" />
+                  <th scope="col" className="p-3">
+                    Name
+                  </th>
+                  <th scope="col" className="p-3">
+                    Region
+                  </th>
+                  <th scope="col" className="p-3">
+                    LOB
+                  </th>
+                  <th scope="col" className="p-3">
+                    Office Ally ID
+                  </th>
+                  <th scope="col" className="p-3">
+                    Claim format
+                  </th>
+                  <th scope="col" className="p-3">
+                    PA req?
+                  </th>
+                  <th scope="col" className="p-3">
+                    Timely filing
+                  </th>
+                  <th scope="col" className="p-3">
+                    EDI
+                  </th>
+                  <th scope="col" className="p-3">
+                    Verified
+                  </th>
+                  <th scope="col" className="p-3">
+                    Active
+                  </th>
+                  <th scope="col" className="p-3" />
                 </tr>
               </thead>
               <tbody>

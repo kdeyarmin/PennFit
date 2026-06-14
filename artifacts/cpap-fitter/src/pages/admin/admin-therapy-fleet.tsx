@@ -617,11 +617,21 @@ function ClinicalInsightsTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left" style={{ color: "hsl(var(--ink-3))" }}>
-            <th className="font-medium py-1.5 px-1">Signal</th>
-            <th className="font-medium py-1.5 px-1">Patient</th>
-            <th className="font-medium py-1.5 px-1">Recent therapy (14d)</th>
-            <th className="font-medium py-1.5 px-1">Detected</th>
-            <th className="font-medium py-1.5 px-1 text-right">Triage</th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Signal
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Patient
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Recent therapy (14d)
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1">
+              Detected
+            </th>
+            <th scope="col" className="font-medium py-1.5 px-1 text-right">
+              Triage
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -1033,15 +1043,33 @@ function WorklistTable({
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
-            <th className="py-2 font-semibold">Patient</th>
-            <th className="py-2 font-semibold">Priority</th>
-            <th className="py-2 font-semibold">Reasons</th>
-            <th className="py-2 font-semibold text-right">Nights ≥4h</th>
-            <th className="py-2 font-semibold text-right">Avg usage</th>
-            <th className="py-2 font-semibold text-right">Avg AHI</th>
-            <th className="py-2 font-semibold text-right">Avg leak</th>
-            <th className="py-2 font-semibold text-right">Last night</th>
-            <th className="py-2 font-semibold text-right">Triage</th>
+            <th scope="col" className="py-2 font-semibold">
+              Patient
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Priority
+            </th>
+            <th scope="col" className="py-2 font-semibold">
+              Reasons
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Nights ≥4h
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Avg usage
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Avg AHI
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Avg leak
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Last night
+            </th>
+            <th scope="col" className="py-2 font-semibold text-right">
+              Triage
+            </th>
           </tr>
         </thead>
         <tbody>

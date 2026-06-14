@@ -346,16 +346,30 @@ export function AdminFitterLeadsPage() {
         <table className="w-full text-xs min-w-[720px]">
           <thead style={{ backgroundColor: "#f8fafc", color: "#475569" }}>
             <tr>
-              <th className="text-left px-3 py-2 font-semibold">Touch</th>
-              <th className="text-right px-3 py-2 font-semibold">
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Touch
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
                 Email sends
               </th>
-              <th className="text-right px-3 py-2 font-semibold">Opens</th>
-              <th className="text-right px-3 py-2 font-semibold">Open %</th>
-              <th className="text-right px-3 py-2 font-semibold">Clicks</th>
-              <th className="text-right px-3 py-2 font-semibold">Click %</th>
-              <th className="text-right px-3 py-2 font-semibold">SMS sends</th>
-              <th className="text-right px-3 py-2 font-semibold">Failures</th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Opens
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Open %
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Clicks
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Click %
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                SMS sends
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Failures
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -599,20 +613,36 @@ export function AdminFitterLeadsPage() {
         <table className="w-full text-sm min-w-[960px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
-              <th className="text-left px-3 py-2 font-semibold">Patient</th>
-              <th className="text-left px-3 py-2 font-semibold">Source</th>
-              <th className="text-left px-3 py-2 font-semibold">
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Patient
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Source
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
                 Recommended mask
               </th>
-              <th className="text-left px-3 py-2 font-semibold">Stage</th>
-              <th className="text-left px-3 py-2 font-semibold">Touches</th>
-              <th className="text-left px-3 py-2 font-semibold">Engaged</th>
-              <th className="text-left px-3 py-2 font-semibold">
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Stage
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Touches
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Engaged
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
                 Last engaged
               </th>
-              <th className="text-left px-3 py-2 font-semibold">Next touch</th>
-              <th className="text-left px-3 py-2 font-semibold">Started</th>
-              <th className="text-right px-3 py-2 font-semibold">Actions</th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Next touch
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Started
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -142,11 +142,21 @@ function FunnelCard({
           <table className="w-full text-sm min-w-[560px]">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
               <tr>
-                <th className="text-left px-3 py-2">Stage</th>
-                <th className="text-right px-3 py-2">Sessions</th>
-                <th className="text-right px-3 py-2">From previous</th>
-                <th className="text-right px-3 py-2">From top</th>
-                <th className="px-3 py-2 w-1/4">Reach</th>
+                <th scope="col" className="text-left px-3 py-2">
+                  Stage
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Sessions
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  From previous
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  From top
+                </th>
+                <th scope="col" className="px-3 py-2 w-1/4">
+                  Reach
+                </th>
               </tr>
             </thead>
             <tbody>

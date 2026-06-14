@@ -192,11 +192,21 @@ export function AdminInsuranceLeadsPage() {
         <table className="w-full text-sm min-w-[720px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
-              <th className="text-left px-3 py-2 font-semibold">Patient</th>
-              <th className="text-left px-3 py-2 font-semibold">Insurance</th>
-              <th className="text-left px-3 py-2 font-semibold">Submitted</th>
-              <th className="text-left px-3 py-2 font-semibold">Status</th>
-              <th className="text-left px-3 py-2 font-semibold">CSR note</th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Patient
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Insurance
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Submitted
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Status
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                CSR note
+              </th>
             </tr>
           </thead>
           <tbody>
