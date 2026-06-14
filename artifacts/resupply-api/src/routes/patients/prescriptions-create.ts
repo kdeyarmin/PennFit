@@ -22,10 +22,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Json,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -143,10 +140,14 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient, error: patientError } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -169,7 +170,6 @@ router.post(
         : null;
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .insert({
         patient_id: patientId,
