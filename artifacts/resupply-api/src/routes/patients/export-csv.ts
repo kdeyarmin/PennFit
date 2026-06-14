@@ -32,7 +32,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   escapePostgRESTContainsPattern,
 } from "@workspace/resupply-db";
 
@@ -105,7 +105,12 @@ router.get(
     }
 
     const { status, search, locationId } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Mirror GET /patients' behavior:
     //   * status: simple .eq
@@ -114,7 +119,6 @@ router.get(
     //     with `.ilike` clauses. Zod-capped at 64 chars so the value
     //     can't smuggle metacharacters.
     let query = supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, status, created_at, updated_at",
