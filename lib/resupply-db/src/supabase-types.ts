@@ -2086,6 +2086,14 @@ export interface Database {
           status: "active" | "suspended" | "archived";
           created_at: string;
           updated_at: string;
+          storefront_name: string | null;
+          tagline: string | null;
+          logo_url: string | null;
+          logo_object_path: string | null;
+          custom_domain: string | null;
+          custom_domain_status: "none" | "pending" | "verified";
+          custom_domain_token: string | null;
+          custom_domain_verified_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;

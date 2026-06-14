@@ -31,6 +31,7 @@ import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import counterOrdersRouter from "./admin/counter-orders.js";
 import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import storefrontBrandingAdminRouter from "./admin/storefront-branding.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import alertsRouter from "./admin/alerts.js";
@@ -651,6 +652,9 @@ router.use(dispenseReadinessRouter);
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
 router.use(shopProductsAdminRouter);
+// /admin/storefront-branding/* — a tenant configures their own
+// storefront name / tagline / logo and binds + verifies a custom domain.
+router.use(storefrontBrandingAdminRouter);
 // /admin/shop/orders/* — fulfillment tooling on shop_orders rows
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.

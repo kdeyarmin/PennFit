@@ -593,6 +593,11 @@ const AdminBillingConfigOrganizationPage = lazyWithRetry(() =>
     default: m.AdminBillingConfigOrganizationPage,
   })),
 );
+const AdminStorefrontBrandingPage = lazyWithRetry(() =>
+  import("@/pages/admin/storefront-branding").then((m) => ({
+    default: m.AdminStorefrontBrandingPage,
+  })),
+);
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-config-clearinghouse").then((m) => ({
     default: m.AdminBillingConfigClearinghousePage,
@@ -841,6 +846,10 @@ function AdminConsole() {
             <Route
               path="/admin/company-information"
               component={AdminBillingConfigOrganizationPage}
+            />
+            <Route
+              path="/admin/storefront-branding"
+              component={AdminStorefrontBrandingPage}
             />
             <Route
               path="/admin/billing/config/clearinghouse"
