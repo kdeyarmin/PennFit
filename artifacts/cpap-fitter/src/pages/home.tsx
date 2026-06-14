@@ -18,6 +18,7 @@ import {
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import { openPennBot } from "@/lib/chat-events";
+import { useStorefrontBranding } from "@/lib/branding";
 
 /**
  * Renders the PennPaps landing page with hero, trust signals, featured paths, and resource tiles.
@@ -33,6 +34,7 @@ export function Home() {
   // gets stamped at https://pennpaps.com/.
   useDocumentTitle("");
   const [, navigate] = useLocation();
+  const branding = useStorefrontBranding();
   return (
     <>
       <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-8 md:py-14">
@@ -48,7 +50,7 @@ export function Home() {
               <span className="hero-eyebrow-rule" />
               <span className="hero-eyebrow-mark" />
               <span>
-                Penn Home Medical Supply &middot;{" "}
+                {branding.legalName} &middot;{" "}
                 <span className="whitespace-nowrap">CPAP Care</span>
               </span>
               <span className="hero-eyebrow-mark" />
@@ -63,11 +65,11 @@ export function Home() {
 
             <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-9 md:mb-11 max-w-2xl mx-auto">
               <span className="font-semibold text-foreground">
-                PennPaps.com
+                {branding.storefrontName}
               </span>{" "}
               is the online CPAP storefront from{" "}
               <span className="font-semibold text-foreground">
-                Penn Home Medical Supply
+                {branding.legalName}
               </span>{" "}
               — your local DME team. Get clinically matched to the right mask,
               order cushions, filters, and tubing direct, and let us keep your

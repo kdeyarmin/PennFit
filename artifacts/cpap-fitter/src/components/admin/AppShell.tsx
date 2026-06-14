@@ -1157,6 +1157,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             hint: "Company name, addresses, and contact info used on documents, the storefront, and messages",
           },
           {
+            href: "/admin/storefront-branding",
+            label: "Storefront branding",
+            icon: Store,
+            matchPrefix: "/admin/storefront-branding",
+            hint: "Your storefront name, tagline, and logo — plus wiring up your own custom domain",
+          },
+          {
             href: "/admin/closures",
             label: "Closures",
             icon: CalendarOff,

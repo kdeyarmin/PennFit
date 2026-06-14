@@ -164,10 +164,15 @@ describe("app.ts CORS origin callback — rejects with false, never an Error", (
   // emits `<script type="module" crossorigin>`, which always sends
   // Origin). Disallowed origins must resolve to `false` so the response
   // simply omits CORS headers and the browser enforces the block.
-  it("resolves disallowed origins via cb(null, ...includes(origin)) — no Error construction", () => {
-    // The callback body must delegate the verdict to the allowlist
-    // membership check rather than branching into an Error.
-    expect(CODE).toMatch(/cb\(null,\s*allowedOrigins\.includes\(origin\)\)/);
+  it("resolves the verdict via cb(null, <boolean>) — no Error construction", () => {
+    // The callback must delegate the verdict to the static allowlist
+    // membership check first, then to the dynamic verified-custom-domain
+    // check — never branch into an Error.
+    expect(CODE).toContain("allowedOrigins.includes(origin)");
+    // Verified tenant custom domains join the allowlist at runtime.
+    expect(CODE).toMatch(
+      /cb\(null,\s*isVerifiedCustomDomainOrigin\(origin\)\)/,
+    );
   });
 
   it("never passes a new Error to the cors callback", () => {

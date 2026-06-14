@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
+import { useStorefrontBranding } from "@/lib/branding";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
@@ -233,6 +234,7 @@ function YourOrdersNavLink() {
  */
 export function Layout({ children }: { children: React.ReactNode }) {
   const contact = useCompanyContact();
+  const branding = useStorefrontBranding();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -266,25 +268,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex items-center gap-3 transition-opacity hover:opacity-80"
             >
               <img
-                src={pennLogo}
-                alt="PennPaps"
-                // Intrinsic dimensions of the source asset (386×228) so the
+                src={branding.logoUrl ?? pennLogo}
+                alt={branding.storefrontName}
+                // Intrinsic dimensions of the bundled asset (386×228) so the
                 // browser reserves the right aspect ratio and the sticky
-                // header doesn't shift on first paint (CLS). CSS still drives
-                // the rendered size via h-12/h-14 + w-auto.
-                width={386}
-                height={228}
+                // header doesn't shift on first paint (CLS). Only applied to
+                // the default logo — a tenant's uploaded logo has its own
+                // aspect ratio, so we let the browser size it naturally. CSS
+                // still drives the rendered height via h-12/h-14 + w-auto.
+                width={branding.logoUrl ? undefined : 386}
+                height={branding.logoUrl ? undefined : 228}
                 className="h-12 md:h-14 w-auto"
               />
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
                 <span className="font-semibold tracking-tight text-base text-primary">
-                  PennPaps
-                  <span className="text-muted-foreground/70 font-normal">
-                    .com
-                  </span>
+                  {branding.storefrontName}
                 </span>
                 <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                  by Penn Home Medical Supply
+                  by {branding.legalName}
                 </span>
               </div>
             </Link>
@@ -491,18 +492,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {/* Brand block */}
               <div className="col-span-2 md:col-span-3 flex items-center gap-3">
                 <img
-                  src={pennLogo}
-                  alt="Penn Home Medical Supply"
-                  width={386}
-                  height={228}
+                  src={branding.logoUrl ?? pennLogo}
+                  alt={branding.legalName}
+                  width={branding.logoUrl ? undefined : 386}
+                  height={branding.logoUrl ? undefined : 228}
                   className="h-9 w-auto rounded-md"
                 />
                 <div className="leading-tight">
                   <div className="font-semibold tracking-tight text-foreground text-sm">
-                    Penn Home Medical Supply
+                    {branding.legalName}
                   </div>
                   <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                    PennPaps.com — Fit · Shop · Resupply
+                    {branding.storefrontName} — Fit · Shop · Resupply
                   </div>
                 </div>
               </div>
@@ -695,8 +696,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Bottom bar: copyright + staff sign-in (combined to save vertical space) */}
             <div className="mt-5 pt-4 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
               <div>
-                © {new Date().getFullYear()} Penn Home Medical Supply. Licensed
-                DME provider.
+                © {new Date().getFullYear()} {branding.legalName}. Licensed DME
+                provider.
               </div>
               <Link
                 href="/admin/sign-in"
