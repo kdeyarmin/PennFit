@@ -140,7 +140,7 @@ export const messageTemplateLookup: TemplateLookup = async (
             .schema("resupply")
             .from("shop_customer_message_template_overrides")
             .select(
-              "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at",
+              "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at, org_id",
             )
             .eq("customer_id", customerId)
             .eq("template_key", templateKey)

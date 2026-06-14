@@ -141,7 +141,7 @@ function serialize(row: OverrideRow): OverrideView {
 }
 
 const OVERRIDE_COLUMNS =
-  "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at";
+  "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at, org_id";
 
 /** Mirror the global path's pre-flight check: any `{{var}}` in
  *  the new content that isn't in the linked global's allowedVariables

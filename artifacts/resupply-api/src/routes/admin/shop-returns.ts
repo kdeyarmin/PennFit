@@ -112,7 +112,7 @@ const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
 
 const RETURN_COLUMNS =
-  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, refund_failure_count, refund_last_failure_at, refund_last_failure_reason, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, refund_failure_count, refund_last_failure_at, refund_last_failure_reason, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at, org_id";
 
 /**
  * Stripe-error tracking on the /refund endpoint.
