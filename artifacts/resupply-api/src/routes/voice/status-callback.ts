@@ -50,8 +50,7 @@ const signatureMiddleware = requireTwilioSignature({
     // Decoupled from full voice config so the URL Twilio signed can
     // be reconstructed even without OPENAI_API_KEY.
     const base = readVoicePublicBaseUrlOrNull() ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });

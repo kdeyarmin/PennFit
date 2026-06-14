@@ -57,8 +57,7 @@ async function resolvePatientForCustomer(
 }
 
 router.get("/me/claims", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -96,8 +95,7 @@ router.get("/me/claims", async (req, res) => {
 });
 
 router.get("/me/claims/:claimId", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -186,8 +184,7 @@ router.get("/me/claims/:claimId", async (req, res) => {
 });
 
 router.get("/me/billing-balance", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;

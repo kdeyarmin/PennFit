@@ -74,7 +74,7 @@ const assistantLimiter = expressRateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => {
-    const userId = (req as unknown as { adminUserId?: string }).adminUserId;
+    const userId = req.adminUserId;
     if (typeof userId === "string" && userId.length > 0) {
       return `admin-assistant:${userId}`;
     }

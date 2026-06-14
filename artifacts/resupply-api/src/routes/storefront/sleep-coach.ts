@@ -32,8 +32,7 @@ const sleepCoachLimiter = expressRateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => {
-    const customerId = (req as unknown as { shopCustomerId?: string })
-      .shopCustomerId;
+    const customerId = req.shopCustomerId;
     if (typeof customerId === "string" && customerId.length > 0) {
       return `sleep-coach:${customerId}`;
     }
@@ -66,8 +65,7 @@ router.post("/me/sleep-coach", sleepCoachLimiter, async (req, res) => {
   // routes/storefront/index.ts) sets req.shopCustomerId from the
   // pf_session cookie; if the request isn't signed in it's absent, so
   // we bail with 401.
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;

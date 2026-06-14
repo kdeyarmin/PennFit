@@ -48,11 +48,7 @@ const setupBody = z
 const autopayBody = z.object({ enabled: z.boolean() }).strict();
 
 function customerKeyFn(req: import("express").Request): string {
-  return (
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ??
-    req.ip ??
-    "unknown"
-  );
+  return req.shopCustomerId ?? req.ip ?? "unknown";
 }
 
 async function resolvePatientForCustomer(
@@ -297,8 +293,7 @@ router.delete(
     standardHeaders: "draft-7",
     legacyHeaders: false,
     keyGenerator: (req) => {
-      const customerId = (req as unknown as { shopCustomerId?: string })
-        .shopCustomerId;
+      const customerId = req.shopCustomerId;
       if (typeof customerId === "string" && customerId.length > 0) {
         return `me_autopay_remove:${customerId}`;
       }

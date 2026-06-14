@@ -84,8 +84,7 @@ router.get("/me/insurance-estimate", async (req, res) => {
   // `req` here — the field is a middleware-set property, not HTTP
   // input, and a 400 response would break the silent-fallback the
   // page relies on for unauthenticated visitors.
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;

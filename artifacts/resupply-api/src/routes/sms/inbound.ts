@@ -148,8 +148,7 @@ const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
   buildPublicUrl: (req) => {
     const base = readSmsConfigOrNull()?.publicBaseUrl ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });

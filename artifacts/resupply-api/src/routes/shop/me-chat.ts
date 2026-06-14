@@ -98,8 +98,7 @@ const meChatLimiter = expressRateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request) => {
-    const customerId = (req as unknown as { userCustomerId?: string })
-      .userCustomerId;
+    const customerId = req.userCustomerId;
     if (typeof customerId === "string" && customerId.length > 0) {
       return `me-chat:${customerId}`;
     }

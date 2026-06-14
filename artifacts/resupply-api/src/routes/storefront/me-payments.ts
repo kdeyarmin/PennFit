@@ -87,8 +87,7 @@ async function resolvePatientForCustomer(
 }
 
 router.post("/me/payments/intent", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -147,8 +146,7 @@ router.post("/me/payments/intent", async (req, res) => {
 });
 
 router.post("/me/payments/checkout-session", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -276,8 +274,7 @@ router.post("/me/payments/checkout-session", async (req, res) => {
 });
 
 router.get("/me/payments", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
