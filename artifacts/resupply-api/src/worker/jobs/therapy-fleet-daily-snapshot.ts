@@ -62,7 +62,7 @@ export async function registerTherapyFleetSnapshotJob(
 export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
   const supabase = getSupabaseServiceRoleClient();
 
-  const [overview, resupply, setup] = await Promise.all([
+  const [overview, resupply, setup, clinical] = await Promise.all([
     supabase.schema("resupply").rpc("therapy_fleet_overview", {
       p_window_days: 30,
     }),
@@ -70,10 +70,12 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
       p_due_within_days: 0,
     }),
     supabase.schema("resupply").rpc("therapy_setup_adherence_summary"),
+    supabase.schema("resupply").rpc("therapy_clinical_signal_counts"),
   ]);
   if (overview.error) throw overview.error;
   if (resupply.error) throw resupply.error;
   if (setup.error) throw setup.error;
+  if (clinical.error) throw clinical.error;
 
   const ov = (
     Array.isArray(overview.data) ? overview.data[0] : overview.data
@@ -85,6 +87,9 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
     string,
     unknown
   > | null;
+  const cl = (
+    Array.isArray(clinical.data) ? clinical.data[0] : clinical.data
+  ) as Record<string, unknown> | null;
 
   const metricDate = new Date().toISOString().slice(0, 10);
   const row = {
@@ -97,6 +102,9 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
     resupply_items_due: int(rs?.items_due),
     setups_in_window: int(su?.patients_in_window),
     setups_at_risk: int(su?.at_risk),
+    clinical_signals_open: int(cl?.total),
+    clinical_signals_high: int(cl?.high),
+    clinical_signals_medium: int(cl?.medium),
     updated_at: new Date().toISOString(),
   };
 

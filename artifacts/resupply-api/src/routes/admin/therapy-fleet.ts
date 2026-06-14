@@ -194,6 +194,10 @@ interface DailyMetricRow {
   resupply_items_due: number | string;
   setups_in_window: number | string;
   setups_at_risk: number | string;
+  // Added in migration 0338; null on historical rows captured before it.
+  clinical_signals_open: number | string | null;
+  clinical_signals_high: number | string | null;
+  clinical_signals_medium: number | string | null;
 }
 
 // GET /admin/therapy-fleet/trend — daily fleet-metrics history captured
@@ -218,7 +222,7 @@ router.get(
       .schema("resupply")
       .from("therapy_fleet_daily_metrics")
       .select(
-        "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk",
+        "metric_date, patients_with_data, compliant, at_risk, non_compliant, high_leak, resupply_items_due, setups_in_window, setups_at_risk, clinical_signals_open, clinical_signals_high, clinical_signals_medium",
       )
       .gte("metric_date", cutoff)
       .order("metric_date", { ascending: true })
@@ -235,6 +239,9 @@ router.get(
       resupplyItemsDue: int(r.resupply_items_due),
       setupsInWindow: int(r.setups_in_window),
       setupsAtRisk: int(r.setups_at_risk),
+      clinicalSignalsOpen: int(r.clinical_signals_open),
+      clinicalSignalsHigh: int(r.clinical_signals_high),
+      clinicalSignalsMedium: int(r.clinical_signals_medium),
     }));
     res.json({ days, count: points.length, points });
   },

@@ -155,6 +155,9 @@ async function buildClinicalInsightReport(
   const supabase = getSupabaseServiceRoleClient();
 
   const rows: TriggerEventRow[] = [];
+  // Active = not dismissed AND not under a live snooze. A snooze whose
+  // snoozed_until has elapsed re-surfaces automatically (mig 0337).
+  const nowIso = new Date().toISOString();
   for (let from = 0; from < HARD_CAP; from += PAGE_SIZE) {
     let q = supabase
       .schema("resupply")
@@ -163,6 +166,7 @@ async function buildClinicalInsightReport(
         "id, patient_id, kind, detected_at, window_start_date, window_end_date",
       )
       .is("dismissed_at", null)
+      .or(`snoozed_until.is.null,snoozed_until.lt.${nowIso}`)
       .order("detected_at", { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
     q = kind

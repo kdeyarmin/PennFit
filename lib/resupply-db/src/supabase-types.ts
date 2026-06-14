@@ -1069,6 +1069,7 @@ export interface Database {
       };
       shop_back_in_stock_notifications: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           email: string;
@@ -1258,6 +1259,67 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["alert_message_overrides"]["Row"]
+        >;
+        Relationships: [];
+      };
+      video_visits: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string | null;
+          purpose: string;
+          notes: string | null;
+          status: string;
+          scheduled_at: string | null;
+          created_by_admin_user_id: string | null;
+          created_by_email: string | null;
+          link_version: number;
+          invite_channel: string | null;
+          invite_delivered: boolean | null;
+          staff_joined_at: string | null;
+          patient_joined_at: string | null;
+          started_at: string | null;
+          ended_at: string | null;
+          created_at: string;
+          updated_at: string;
+          guest_name: string | null;
+          guest_email: string | null;
+          guest_phone_e164: string | null;
+          reminder_sent_at: string | null;
+          invite_twilio_message_sid: string | null;
+          invite_delivery_status: string | null;
+          invite_delivery_error_code: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
+        Relationships: [];
+      };
+      clinical_encounters: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          author_user_id: string | null;
+          author_email: string;
+          encounter_type: string;
+          reason: string | null;
+          assessment: string | null;
+          intervention: string | null;
+          plan: string | null;
+          follow_up_at: string | null;
+          note: string | null;
+          linked_alert_id: string | null;
+          linked_episode_id: string | null;
+          created_at: string;
+          updated_at: string;
+          assessment_category: string | null;
+          outcome_status: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinical_encounters"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinical_encounters"]["Row"]
         >;
         Relationships: [];
       };
@@ -2799,6 +2861,7 @@ export interface Database {
       // documents for the send panel (e.g. Medicare vs commercial).
       patient_packet_presets: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           description: string | null;
@@ -2821,6 +2884,7 @@ export interface Database {
       // prior revision.
       patient_packet_template_revisions: {
         Row: {
+          org_id: string | null;
           id: string;
           document_key: string;
           action: "saved" | "reverted";
@@ -2843,6 +2907,7 @@ export interface Database {
       // row reverts to the code default.
       patient_packet_template_overrides: {
         Row: {
+          org_id: string | null;
           document_key: string;
           title: string;
           sections: Json;

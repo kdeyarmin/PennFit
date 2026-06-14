@@ -20,7 +20,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   timelyFilingStatus,
   type TimelyFilingStatus,
@@ -145,9 +145,14 @@ router.get(
     const parsed = querySchema.safeParse(req.query);
     const statusFilter = parsed.success ? parsed.data.status : undefined;
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: claims, error } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: claims, error } = await db
       .from("insurance_claims")
       .select(
         "id, patient_id, payer_name, status, date_of_service, total_billed_cents, payer_profile_id",
@@ -173,8 +178,7 @@ router.get(
     ];
     const windowByPayer = new Map<string, number | null>();
     if (payerIds.length > 0) {
-      const { data: payers, error: payerErr } = await supabase
-        .schema("resupply")
+      const { data: payers, error: payerErr } = await db
         .from("payer_profiles")
         .select("id, timely_filing_days")
         .in("id", payerIds);
