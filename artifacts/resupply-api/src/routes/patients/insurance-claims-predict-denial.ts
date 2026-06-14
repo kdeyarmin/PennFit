@@ -9,7 +9,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logAudit } from "@workspace/resupply-audit";
 
@@ -39,9 +39,13 @@ router.post(
     // persisting. scoreAndPersist() looks up AND mutates by claim id
     // only, so a mismatched :id / :claimId would otherwise score and
     // write onto another patient's claim (IDOR write).
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: owned, error: ownErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id")
       .eq("id", parsed.data.claimId)

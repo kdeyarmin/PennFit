@@ -8,7 +8,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logAudit } from "@workspace/resupply-audit";
 
@@ -40,9 +40,13 @@ router.post(
     // Scope the claim to the patient in the path. explainDenialToPatient()
     // looks the claim up by id only, so a mismatched :id / :claimId would
     // otherwise generate an explanation for another patient's claim (IDOR).
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: owned, error: ownErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id")
       .eq("id", parsed.data.claimId)
