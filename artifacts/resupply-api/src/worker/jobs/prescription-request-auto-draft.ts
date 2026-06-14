@@ -40,7 +40,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { buildPrescriptionRequestPacketFromRx } from "../../lib/prescription-request-builder";
 import { logger } from "../../lib/logger";
@@ -84,7 +84,16 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Single-tenant bridge: sweep the one seed org. Per-org loop later.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: JOB },
+      "prescription-request.auto-draft: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const today = new Date();
   const horizon = new Date(today.getTime() + LOOKAHEAD_DAYS * 86_400_000);
   const cooldownStart = new Date(today.getTime() - COOLDOWN_DAYS * 86_400_000);
@@ -94,7 +103,6 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
   // Candidate prescriptions — partial pre-filter; provider/hcpcs
   // gate is enforced again per-row by the builder.
   const { data: candidates, error } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select("id, patient_id, provider_id, hcpcs_code, valid_until")
     .eq("status", "active")
@@ -113,21 +121,27 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
   stats.scanned = candidates.length;
 
   // Resolve existing-packet cooldown in one query rather than N+1.
-  const rxIds = candidates.map((r) => r.id);
+  const typedCandidates = candidates as Array<{
+    id: string;
+    patient_id: string;
+    provider_id: string | null;
+    hcpcs_code: string | null;
+    valid_until: string | null;
+  }>;
+  const rxIds = typedCandidates.map((r) => r.id);
   const { data: recent } = await supabase
-    .schema("resupply")
     .from("prescription_request_packets")
     .select("source_prescription_id")
     .in("source_prescription_id", rxIds)
     .in("status", ["draft", "sent_fax", "delivered", "signed"])
     .gte("created_at", cooldownStart.toISOString());
   const skipSet = new Set(
-    (recent ?? [])
+    ((recent ?? []) as Array<{ source_prescription_id: string | null }>)
       .map((p) => p.source_prescription_id)
       .filter((id): id is string => typeof id === "string"),
   );
 
-  for (const rx of candidates) {
+  for (const rx of typedCandidates) {
     if (!rx.provider_id) {
       stats.skipped_no_provider += 1;
       continue;
@@ -161,7 +175,6 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
     }
 
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .insert(built.insert)
       .select("id")
