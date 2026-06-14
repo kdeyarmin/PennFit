@@ -628,6 +628,132 @@ jobs:
           test -f artifacts/cpap-fitter/dist/public/index.html && echo "cpap-fitter SPA OK"
           test -f artifacts/resupply-api/dist/public/index.html && echo "embedded SPA (resupply-api/dist/public) OK"
 
+  e2e-admin:
+    name: E2E (admin · backend-backed)
+    runs-on: ubuntu-latest
+
+    # Backend-backed admin e2e: stands up the FULL runtime stack —
+    # Postgres + standalone PostgREST (the service-role data path) + the
+    # built Express API co-serving the built SPA — seeds an admin, then
+    # runs the authenticated Playwright `admin` project against it. This
+    # is the coverage the storefront-only smoke/a11y jobs can't reach
+    # (anything behind requireAdmin / a real Supabase write).
+    #
+    # Reuses the same building blocks as the `integration` job (Postgres
+    # service + platform roles + migrate.mjs + start-test-postgrest.sh).
+    #
+    # continue-on-error while the harness proves itself in CI (mirrors the
+    # integration + a11y soft-gate). Flip to required once green across a
+    # few runs.
+    continue-on-error: true
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resupply_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d resupply_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/resupply_ci
+      # API service-boot contract. The runtime data path is PostgREST;
+      # SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are exported into
+      # $GITHUB_ENV by start-test-postgrest.sh (available to later steps).
+      PORT: "3000"
+      BASE_PATH: "/"
+      RESUPPLY_LINK_HMAC_KEY: pennfit-ci-link-hmac-key-0123456789-0123456789
+      RESUPPLY_ALLOWED_ORIGINS: http://127.0.0.1:3000
+      SUPABASE_STORAGE_BUCKET_PRIVATE: private
+      # Admin e2e: the password is shared between the seed step
+      # (ADMIN_PASSWORD, read by auth:set-admin-password) and the
+      # Playwright sign-in (E2E_ADMIN_PASSWORD). CI-only throwaway creds.
+      E2E_ADMIN: "1"
+      E2E_ADMIN_EMAIL: e2e-admin@example.com
+      E2E_ADMIN_PASSWORD: e2e-Admin-Pass-123!
+      ADMIN_PASSWORD: e2e-Admin-Pass-123!
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Migrations 0169+ GRANT/REVOKE against the Supabase platform roles;
+      # create them before the replay (see the migrations/integration jobs).
+      - name: Create Supabase platform roles
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE anon NOLOGIN;" \
+            -c "CREATE ROLE authenticated NOLOGIN;" \
+            -c "CREATE ROLE service_role NOLOGIN;"
+
+      - name: Apply migrations
+        run: node lib/resupply-db/scripts/migrate.mjs
+
+      # Grants service_role, downloads + starts PostgREST and the /rest/v1
+      # proxy (background, persist across steps), and exports SUPABASE_URL
+      # + SUPABASE_SERVICE_ROLE_KEY to $GITHUB_ENV.
+      - name: Start standalone PostgREST
+        run: bash scripts/ci/start-test-postgrest.sh
+
+      # Create an active admin with a known password (no email needed).
+      - name: Seed e2e admin
+        run: |
+          pnpm --filter @workspace/scripts auth:set-admin-password \
+            --email="$E2E_ADMIN_EMAIL" --role=admin
+
+      # Mirror the Railway buildCommand so the API entrypoint
+      # (dist/index.mjs) and the co-served SPA (dist/public) both exist.
+      - name: Build deploy artifacts (API + embedded SPA)
+        run: pnpm -r --workspace-concurrency=1 --if-present run build && node scripts/embed-spa.mjs
+
+      - name: Start API (co-serves the SPA) and wait for health
+        run: |
+          node --enable-source-maps artifacts/resupply-api/dist/index.mjs &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3000/resupply-api/healthz > /dev/null 2>&1; then
+              echo "API healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy on :3000 within 40s"; exit 1
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run admin e2e (authenticated)
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3000
+          CI: "true"
+        run: pnpm exec playwright test --config e2e/playwright.config.ts --project=admin
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-admin-report
+          path: playwright-report/
+          retention-days: 14
+
   audit:
     name: Dependency audit (high)
     runs-on: ubuntu-latest
