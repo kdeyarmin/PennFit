@@ -36,6 +36,15 @@ import type { NextFunction, Request, Response } from "express";
 import { type Permission, roleHasPermission } from "@workspace/resupply-auth";
 import type { AdminRole } from "@workspace/resupply-db";
 
+/**
+ * Stable test tenant id. The real auth middleware attaches `req.orgId`
+ * (from `admin_users.org_id` / the seed org); route handlers that have
+ * been cut over to `getOrgScopedClient` fail closed without it. The
+ * mocks attach this by default so existing route tests keep passing;
+ * a test can pass `orgId: null` to simulate the missing-context path.
+ */
+export const MOCK_ORG_ID = "00000000-0000-4000-8000-000000000001";
+
 export interface MockAdminCtx {
   userId: string;
   email: string;
@@ -53,6 +62,13 @@ export interface MockAdminCtx {
    * for the common "unassigned" case.
    */
   locationId?: string | null;
+  /**
+   * Optional tenant (multi-tenant Phase 0). Defaults to `MOCK_ORG_ID`
+   * so cut-over routes resolve tenant context. Pass `null` explicitly
+   * to simulate missing context (the mock then attaches no `req.orgId`,
+   * letting a test assert the fail-closed `tenant_context_missing` 500).
+   */
+  orgId?: string | null;
 }
 
 export interface MockAdminRef {
@@ -63,6 +79,11 @@ export interface MockSignedInProfile {
   customerId: string;
   email?: string | null;
   displayName?: string | null;
+  /**
+   * Optional tenant (multi-tenant Phase 0). Defaults to `MOCK_ORG_ID`;
+   * pass `null` to simulate missing context for fail-closed tests.
+   */
+  orgId?: string | null;
 }
 
 /**
@@ -94,6 +115,11 @@ export function makeRequireAdminMock(ref: MockAdminRef): {
     req.adminRole = ctx.role;
     req.adminGranularRole = ctx.granularRole ?? ctx.role;
     req.adminLocationId = ctx.locationId ?? null;
+    // Multi-tenant Phase 0: attach tenant context unless explicitly
+    // nulled (to exercise a route's fail-closed missing-context path).
+    if (ctx.orgId !== null) {
+      req.orgId = ctx.orgId ?? MOCK_ORG_ID;
+    }
   };
   return {
     requireAdmin: (req, res, next) => {
@@ -152,11 +178,15 @@ export function makeRequireSignedInMock(ref: MockSignedInRef): {
   const attach = (req: Request, value: string | MockSignedInProfile): void => {
     if (typeof value === "string") {
       req.userCustomerId = value;
+      req.orgId = MOCK_ORG_ID;
       return;
     }
     req.userCustomerId = value.customerId;
     req.shopCustomerEmail = value.email ?? null;
     req.shopCustomerDisplayName = value.displayName ?? null;
+    if (value.orgId !== null) {
+      req.orgId = value.orgId ?? MOCK_ORG_ID;
+    }
   };
   return {
     requireSignedIn: (req, res, next) => {

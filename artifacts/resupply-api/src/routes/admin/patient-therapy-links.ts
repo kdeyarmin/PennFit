@@ -119,7 +119,10 @@ function matchesConstraint(err: PgConstraintError, name: string): boolean {
  */
 function resolveOrg(req: Request, res: Response): string | null {
   const orgId = req.orgId;
-  if (!orgId) {
+  // Align with getOrgScopedClient's contract, which rejects empty /
+  // whitespace orgIds by throwing — treat those as missing here so the
+  // caller gets the controlled 500 instead of an unhandled exception.
+  if (!orgId || !orgId.trim()) {
     res.status(500).json({ error: "tenant_context_missing" });
     return null;
   }
