@@ -33,7 +33,8 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -232,7 +233,7 @@ function rowToApi(r: {
  * @throws If a Supabase query or update fails, the underlying error is thrown
  */
 async function recomputeTotals(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   claimId: string,
 ): Promise<void> {
   // NOTE: PostgREST doesn't expose SELECT FOR UPDATE, so concurrent
@@ -244,12 +245,15 @@ async function recomputeTotals(
   // added complexity without closing the race (the line-items SELECT
   // is still unlocked) and broke existing tests.
   const { data: lines, error } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("billed_cents, quantity, allowed_cents, paid_cents")
     .eq("claim_id", claimId);
   if (error) throw error;
-  const totals = (lines ?? []).reduce(
+  const totals = (
+    (lines ?? []) as Array<
+      Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+    >
+  ).reduce(
     (acc, l) => ({
       // billed_cents is the PER-UNIT charge; the extended line charge
       // (and HCFA Box 24F / 837P SV102) is billed_cents * quantity.
@@ -261,7 +265,6 @@ async function recomputeTotals(
     { billed: 0, allowed: 0, paid: 0 },
   );
   const { error: totalsErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({
       total_billed_cents: totals.billed,
@@ -287,9 +290,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
@@ -312,9 +319,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, insurance_coverage_id, payer_name, claim_number, date_of_service, fulfillment_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, submitted_at, decision_at, paid_at, denial_reason, notes, created_at, updated_at",
@@ -330,13 +341,11 @@ router.get(
     }
     const [{ data: lines }, { data: events }] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .select("*")
         .eq("claim_id", claim.id)
         .order("created_at", { ascending: true }),
       supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .select("*")
         .eq("claim_id", claim.id)
@@ -345,7 +354,11 @@ router.get(
 
     res.json({
       claim: rowToApi(claim),
-      lineItems: (lines ?? []).map((l) => ({
+      lineItems: (
+        (lines ?? []) as Array<
+          Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+        >
+      ).map((l) => ({
         id: l.id,
         hcpcsCode: l.hcpcs_code,
         modifier: l.modifier,
@@ -360,7 +373,11 @@ router.get(
         createdAt: l.created_at,
         updatedAt: l.updated_at,
       })),
-      events: (events ?? []).map((e) => ({
+      events: (
+        (events ?? []) as Array<
+          Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
+        >
+      ).map((e) => ({
         id: e.id,
         eventType: e.event_type,
         amountCents: e.amount_cents,
@@ -397,10 +414,14 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", idParsed.data.id)
@@ -419,7 +440,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .insert({
         patient_id: idParsed.data.id,
@@ -479,10 +499,14 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: current, error: currentErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("id", idParsed.data.claimId)
@@ -539,7 +563,6 @@ router.patch(
     // misrepresents the chain, and a money-bearing row ends up in
     // the wrong terminal state.
     const { data: updated, error: updErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update(update)
       .eq("id", idParsed.data.claimId)
@@ -575,7 +598,6 @@ router.patch(
                     ? "closed"
                     : "note";
       const { error: eventErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .insert({
           claim_id: idParsed.data.claimId,
@@ -648,10 +670,14 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: claim, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("id", idParsed.data.claimId)
@@ -671,7 +697,6 @@ router.post(
     }
 
     const { data: line, error } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .insert({
         claim_id: idParsed.data.claimId,
@@ -734,7 +759,12 @@ router.patch(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify ownership: the line must belong to a claim that
     // belongs to the URL's :id patient. Without the patient_id
@@ -742,7 +772,6 @@ router.patch(
     // Patient B's line while the audit row blames Patient A,
     // breaking the §164.312(b) tamper-evident audit invariant.
     const { data: existing, error: existingErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("id, claim_id, insurance_claims!inner(patient_id)")
       .eq("id", idParsed.data.lineId)
@@ -777,7 +806,6 @@ router.patch(
     if (b.narrative !== undefined) update.narrative = b.narrative;
 
     const { error } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .update(update)
       .eq("id", idParsed.data.lineId);
@@ -829,10 +857,14 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: claim, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id")
       .eq("id", idParsed.data.claimId)
@@ -852,7 +884,6 @@ router.post(
     }
 
     const { data: event, error } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: idParsed.data.claimId,
@@ -906,7 +937,6 @@ router.post(
       void (async () => {
         try {
           const { data: claimFull } = await supabase
-            .schema("resupply")
             .from("insurance_claims")
             .select(
               "payer_name, claim_number, date_of_service, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, denial_reason",
@@ -916,7 +946,6 @@ router.post(
             .maybeSingle();
           if (!claimFull) return;
           const { data: patient } = await supabase
-            .schema("resupply")
             .from("patients")
             .select("email, legal_first_name")
             .eq("id", idParsed.data.id)
