@@ -864,7 +864,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Tools",
         icon: SlidersHorizontal,
-        hint: "ERA posting, manual claim entry, and billing configuration",
+        hint: "Clearinghouse submissions, ERA posting, manual claim entry, and billing configuration",
         tabs: [
           {
             href: "/admin/billing/era",
@@ -872,6 +872,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Wallet,
             matchPrefix: "/admin/billing/era",
             hint: "Upload an 835 to auto-post payer adjudications",
+          },
+          {
+            href: "/admin/billing/office-ally",
+            label: "Office Ally",
+            icon: Send,
+            matchPrefix: "/admin/billing/office-ally",
+            requiredPermission: "admin.tools.manage",
+            hint: "Office Ally clearinghouse — 837P submissions, acknowledgements, and transmission status",
           },
           {
             href: "/admin/billing/manual-claim",
