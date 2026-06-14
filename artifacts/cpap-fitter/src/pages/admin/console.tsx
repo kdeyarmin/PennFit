@@ -178,6 +178,11 @@ const AdminEquipmentRecallsPage = lazyWithRetry(() =>
     default: m.AdminEquipmentRecallsPage,
   })),
 );
+const AdminAssetRecoveryPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-asset-recovery").then((m) => ({
+    default: m.AdminAssetRecoveryPage,
+  })),
+);
 const AdminAnalyticsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics").then((m) => ({
     default: m.AdminAnalyticsPage,
@@ -1005,6 +1010,10 @@ function AdminConsole() {
             <Route
               path="/admin/equipment-recalls"
               component={AdminEquipmentRecallsPage}
+            />
+            <Route
+              path="/admin/asset-recovery"
+              component={AdminAssetRecoveryPage}
             />
             <Route
               path="/admin/analytics/margin"
