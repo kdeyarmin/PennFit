@@ -1,13 +1,16 @@
 // /admin/billing/config — billing configuration console.
 //
-// Landing card-grid for the five payer-config surfaces that drive
-// the scrubber + claim-builder + denial analyzer. None of these had
-// admin UI before; everything was reachable only via direct API.
+// Landing card-grid for the seven config surfaces that drive the
+// scrubber + claim-builder + fee-schedule lookups + denial analyzer.
+// None of these had admin UI before; everything was reachable only via
+// direct API.
 //
-// This page is read-only and intentionally lightweight — each card
-// links to a sub-page that lists the rows. Mutation surfaces (create
-// / edit) are still backend-only and will land in follow-ups once
-// the UX of inline editing is settled.
+// Editing has since landed for several: organization identity,
+// clearinghouse connection, payer profiles, and fee schedules are
+// create/edit-able from their sub-pages. Modifier rules, denial codes,
+// and claim templates are still read-only here (managed by engineering)
+// — their sub-pages list current state so we can spot rules that fired
+// in denials worth investigating.
 
 import { Link } from "wouter";
 import {
@@ -94,8 +97,8 @@ export function AdminBillingConfigHubPage() {
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           The configuration that drives the scrubber, claim-builder,
-          fee-schedule lookups, and denial analyzer. Read-only here — edits
-          still go through engineering.
+          fee-schedule lookups, and denial analyzer. Some sections are editable
+          here; others are still read-only.
         </p>
       </header>
 
@@ -130,7 +133,7 @@ export function AdminBillingConfigHubPage() {
         ))}
       </div>
 
-      <Card title="What edits are gated">
+      <Card title="What's editable here">
         <ul
           className="text-sm space-y-1.5"
           style={{ color: "hsl(var(--ink-2))" }}
@@ -138,9 +141,18 @@ export function AdminBillingConfigHubPage() {
           <li className="flex items-start gap-2">
             <BookOpen className="h-3.5 w-3.5 mt-0.5 shrink-0" />
             <span>
-              Mutations on these tables (create / edit / soft-delete) still go
-              through admin-only API routes. The SPA shows the current state and
-              lets us spot rules that fired in denials we want to investigate.
+              <strong>Editable in-app:</strong> organization identity,
+              clearinghouse connection, payer profiles, and fee schedules —
+              create / edit from each sub-page.
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <BookOpen className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              <strong>Read-only (managed by engineering):</strong> modifier
+              rules, denial codes, and claim templates. Their sub-pages show
+              current state so you can spot rules that fired in denials worth
+              investigating.
             </span>
           </li>
         </ul>
