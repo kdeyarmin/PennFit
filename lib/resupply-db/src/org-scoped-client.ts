@@ -181,17 +181,27 @@ let cachedSeedOrgId: string | null = null;
  */
 export async function resolveSeedOrgId(): Promise<string | null> {
   if (cachedSeedOrgId) return cachedSeedOrgId;
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
-    .from("organizations")
-    .select("id")
-    .eq("slug", SEED_ORG_SLUG)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data?.id) return null;
-  cachedSeedOrgId = data.id;
-  return cachedSeedOrgId;
+  // Best-effort, never throws (per the contract above): the auth
+  // middleware resolves req.orgId through here on EVERY request, and
+  // that path is deliberately not fail-closed while org_id is
+  // unenforced — so a thrown query error (not just a PostgREST `error`
+  // field) must degrade to "no org", not 500 the whole admin/customer
+  // surface. Catch both shapes.
+  try {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("slug", SEED_ORG_SLUG)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.id) return null;
+    cachedSeedOrgId = data.id;
+    return cachedSeedOrgId;
+  } catch {
+    return null;
+  }
 }
 
 /** Reset the cached seed-org id. Tests only. */
