@@ -123,6 +123,29 @@ describe("Autocomplete", () => {
     ).toBeTruthy();
   });
 
+  it("clamps a chosen suggestion to the field's maxLength", async () => {
+    function MaxLenHarness() {
+      const [value, setValue] = useState("");
+      return (
+        <Autocomplete
+          aria-label="Payer"
+          value={value}
+          onValueChange={setValue}
+          maxLength={5}
+          options={["Highmark"]}
+        />
+      );
+    }
+    render(<MaxLenHarness />);
+    const input = screen.getByLabelText("Payer") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "high" } });
+    fireEvent.mouseDown(
+      await screen.findByRole("option", { name: /Highmark/ }),
+    );
+    // "Highmark" (8 chars) is clamped to the maxLength of 5.
+    expect(input.value).toBe("Highm");
+  });
+
   it("hides the list once the value exactly matches a single option", async () => {
     render(<Harness />);
     const input = screen.getByLabelText("Payer");

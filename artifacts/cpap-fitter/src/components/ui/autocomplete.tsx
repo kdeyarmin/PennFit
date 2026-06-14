@@ -66,6 +66,18 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
     const [open, setOpen] = React.useState(false);
     const [highlight, setHighlight] = React.useState(0);
     const listId = React.useId();
+    const optionId = (i: number) => `${listId}-opt-${i}`;
+    // Tracks the blur-close timer so a quick refocus (or unmount) can cancel
+    // it before it fires — otherwise a stale timer closes the list or sets
+    // state on an unmounted component.
+    const blurTimer = React.useRef<number | null>(null);
+    const clearBlurTimer = () => {
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
+    };
+    React.useEffect(() => clearBlurTimer, []);
 
     const matches = React.useMemo(() => {
       const query = value.trim().toLowerCase();
@@ -99,8 +111,16 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
     }, [value]);
 
     const choose = (opt: AutocompleteOption) => {
-      onValueChange(opt.value);
+      // Honor the field's maxLength: the value is written programmatically,
+      // which bypasses the input's own truncation, so a catalog entry longer
+      // than the field allows could otherwise fail server-side validation.
+      const max =
+        typeof inputProps.maxLength === "number"
+          ? inputProps.maxLength
+          : undefined;
+      onValueChange(max != null ? opt.value.slice(0, max) : opt.value);
       onSelectOption?.(opt);
+      clearBlurTimer();
       setOpen(false);
     };
 
@@ -139,6 +159,7 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
           role="combobox"
           aria-expanded={showList}
           aria-controls={showList ? listId : undefined}
+          aria-activedescendant={showList ? optionId(highlight) : undefined}
           aria-autocomplete="list"
           autoComplete="off"
           className={className}
@@ -149,12 +170,14 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
           onKeyDown={handleKeyDown}
           onFocus={(e) => {
             onFocus?.(e);
+            clearBlurTimer();
             setOpen(true);
           }}
           onBlur={(e) => {
             onBlur?.(e);
             // Delay so an option's click lands before the list unmounts.
-            window.setTimeout(() => setOpen(false), 120);
+            clearBlurTimer();
+            blurTimer.current = window.setTimeout(() => setOpen(false), 120);
           }}
           {...inputProps}
         />
@@ -167,6 +190,7 @@ const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
             {matches.map((opt, i) => (
               <li
                 key={`${opt.value}-${i}`}
+                id={optionId(i)}
                 role="option"
                 aria-selected={i === highlight}
                 // onMouseDown (not onClick) so it fires before input blur.

@@ -19,7 +19,8 @@ export interface PayerNameAutocompleteProps extends Omit<
  * Payer-name text input backed by the active payer-profile catalog. Typing
  * "high" surfaces "Highmark"; choosing it fills the field. Free text is still
  * accepted for payers not yet in the catalog. The query shares its cache key
- * with the other active-payer consumers so the list loads once per session.
+ * with the other active-payer consumers and uses a 5-minute staleTime, so the
+ * catalog is typically fetched once and reused across these fields.
  */
 export function PayerNameAutocomplete({
   value,
