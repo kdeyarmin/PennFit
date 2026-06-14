@@ -35,6 +35,7 @@ import {
 import { timezoneForUsState } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
+import { redactDbErr } from "../../lib/redact-db-err";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -201,7 +202,11 @@ router.post(
           continue;
         }
         logger.warn(
-          { err: insertErr, row_index: i, pacware_id: row.pacwareId },
+          {
+            err: redactDbErr(insertErr),
+            row_index: i,
+            pacware_id: row.pacwareId,
+          },
           "patients/import-csv: row insert failed",
         );
         errors.push({

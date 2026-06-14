@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { safeCsvCell } from "./safe-csv-cell";
+
 //
 // Two emitter functions, sharing one input shape:
 
@@ -80,13 +82,13 @@ function escIif(value: string): string {
   return value.replace(/[\t\r\n]+/g, " ").trim();
 }
 
+// Delegate to the shared safe-csv-cell helper. Today every cell here
+// is system-controlled (Stripe ids, hashes, ISO dates, numbers), but
+// routing through the canonical encoder adds the formula-injection
+// guard so a future row carrying customer free text into `memo` can't
+// smuggle a `=`/`+`/`-`/`@` formula into the .qbo.csv download.
 function escCsv(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const s = String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
+  return safeCsvCell(value);
 }
 
 // ─────────────────────────────────────────────────────────────────
