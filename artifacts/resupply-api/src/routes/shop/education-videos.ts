@@ -5,7 +5,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   groupActiveVideosByTopic,
@@ -17,8 +17,18 @@ const router: IRouter = Router();
 
 router.get("/shop/education-videos", async (_req, res) => {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // education_videos is a GLOBAL reference table (no org_id): the
+    // learn library is shared across tenants. Resolve the seed org only
+    // to obtain a client, then read via .raw() (the facade .from() would
+    // wrongly append an org_id filter the column does not have).
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.json({ groups: [] });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("education_videos")
       .select(
