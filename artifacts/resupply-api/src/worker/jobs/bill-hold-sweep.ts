@@ -20,11 +20,12 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -51,25 +52,16 @@ export interface BillHoldSweepStats {
   remindersBumped: number;
 }
 
-export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
-  const stats: BillHoldSweepStats = {
-    skipped: false,
-    draftClaimsScanned: 0,
-    claimsSeeded: 0,
-    requirementsCreated: 0,
-    remindersBumped: 0,
-  };
-
-  if (!(await isFeatureEnabled("billing.bill_hold"))) {
-    stats.skipped = true;
-    return stats;
-  }
-
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    stats.skipped = true;
-    return stats;
-  }
+/**
+ * Run the bill-hold sweep for a SINGLE tenant, accumulating into the
+ * shared `stats`. Extracted so the cron can fan out across every active
+ * tenant. `insurance_claims` / `claim_paperwork_requirements` are
+ * tenant-scoped.
+ */
+async function billHoldSweepForOrg(
+  orgId: string,
+  stats: BillHoldSweepStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   // ── 1. Backfill: seed defaults onto draft claims with no requirements ──
@@ -167,7 +159,30 @@ export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
       }
     }
   }
+}
 
+/**
+ * Run the bill-hold sweep for EVERY active tenant. The feature flag is a
+ * global kill-switch (checked once); the per-tenant work fans out via
+ * `forEachActiveOrg`. Single-tenant behavior unchanged.
+ */
+export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
+  const stats: BillHoldSweepStats = {
+    skipped: false,
+    draftClaimsScanned: 0,
+    claimsSeeded: 0,
+    requirementsCreated: 0,
+    remindersBumped: 0,
+  };
+
+  if (!(await isFeatureEnabled("billing.bill_hold"))) {
+    stats.skipped = true;
+    return stats;
+  }
+
+  await forEachActiveOrg((orgId) => billHoldSweepForOrg(orgId, stats), {
+    jobName: BILL_HOLD_SWEEP_JOB,
+  });
   return stats;
 }
 
