@@ -14,7 +14,7 @@ export async function resolveCompanyProfile(
   supabase: SupabaseClient,
 ): Promise<CompanyProfile> {
   try {
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({});
     const org = identity.organization;
     const bp = identity.billingProvider;
     const legalName = org?.legal_name ?? bp.organizationName;

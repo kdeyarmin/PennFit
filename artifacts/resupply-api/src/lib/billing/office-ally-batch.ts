@@ -196,9 +196,7 @@ async function findEligibilityBlocksForSubmit(input: {
   const refreshEnabled = await isFeatureEnabled(
     "billing.eligibility_precheck_refresh",
   );
-  const clearinghouse = refreshEnabled
-    ? await resolveClearinghouse({ supabase: input.supabase })
-    : null;
+  const clearinghouse = refreshEnabled ? await resolveClearinghouse({}) : null;
   const realtimeAvailable = !!clearinghouse?.realtimeConfig;
   let freshChecks = 0;
   const freshnessMs =
@@ -436,7 +434,7 @@ export async function executeOfficeAllyBatchSubmit(
       "billing.eligibility_precheck_refresh",
     );
     const realtimeAvailable = refreshEnabled
-      ? !!(await resolveClearinghouse({ supabase })).realtimeConfig
+      ? !!(await resolveClearinghouse({})).realtimeConfig
       : false;
 
     // Dedup coverages — verify each at most once even if several claims in
@@ -593,7 +591,7 @@ export async function executeOfficeAllyBatchSubmit(
     ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>
   >;
   try {
-    identity = await resolveBillingIdentity({ supabase });
+    identity = await resolveBillingIdentity({});
     const adapter = createOfficeAllyAdapter({
       submitterOverride: identity.submitter,
       billingProviderOverride: identity.billingProvider,
@@ -818,7 +816,7 @@ export async function buildEdiPayloadForSubmission(
     details.push(d);
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({});
   const built = build837P({
     submitter: identity.submitter,
     receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },
