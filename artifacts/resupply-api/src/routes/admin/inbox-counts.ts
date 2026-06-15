@@ -35,7 +35,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -46,8 +46,13 @@ router.get(
   "/admin/inbox-counts",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
 
     // Read the auto-sync toggle first so we only run the (potentially
@@ -56,7 +61,6 @@ router.get(
     // 500ing them all.
     let pacwareAutoSync = false;
     const { data: autoSyncRow, error: autoSyncErr } = await supabase
-      .schema("resupply")
       .from("app_config")
       .select("value")
       .eq("key", "pacware.auto_sync")
@@ -78,12 +82,10 @@ router.get(
     // table-permission / network-blip errors as zero counts.
     const results = await Promise.all([
       supabase
-        .schema("resupply")
         .from("conversations")
         .select("*", { count: "exact", head: true })
         .eq("status", "awaiting_admin"),
       supabase
-        .schema("resupply")
         .from("shop_returns")
         .select("*", { count: "exact", head: true })
         // Admin-blocking states only (see module doc): `requested` (await
@@ -92,29 +94,24 @@ router.get(
         // ship the item back, so it must not inflate the CSR badge.
         .in("status", ["requested", "shipped_back", "received"]),
       supabase
-        .schema("resupply")
         .from("shop_reviews")
         .select("*", { count: "exact", head: true })
         .eq("status", "pending"),
       supabase
-        .schema("resupply")
         .from("patient_documents")
         .select("*", { count: "exact", head: true })
         .is("reviewed_at", null),
       supabase
-        .schema("resupply")
         .from("shop_customer_followups")
         .select("*", { count: "exact", head: true })
         .is("completed_at", null)
         .lt("due_at", nowIso),
       supabase
-        .schema("resupply")
         .from("patient_followups")
         .select("*", { count: "exact", head: true })
         .is("completed_at", null)
         .lt("due_at", nowIso),
       supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .select("*", { count: "exact", head: true })
         .eq("status", "new"),
@@ -138,7 +135,6 @@ router.get(
     let pacwareConfirmed = 0;
     if (pacwareAutoSync) {
       const { count, error: episodesErr } = await supabase
-        .schema("resupply")
         .from("episodes")
         .select("id, prescriptions!inner(id), patients!inner(id)", {
           count: "exact",
