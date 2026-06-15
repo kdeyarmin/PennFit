@@ -91,54 +91,47 @@ import { replyInConversation } from "./reply";
 // object with both `select` (read) and `update` (write) branches.
 // ---------------------------------------------------------------------------
 
+// Fully chainable table-dispatching stub. `replyInConversation` now
+// wraps this with the REAL getOrgScopedClient(orgId, supabase), which
+// injects an extra `.eq("org_id", …)` into every chain and tags inserts
+// with org_id — so the stub must tolerate arbitrary `.eq/.lt/.in/.order/
+// .limit/.select` chaining and resolve the terminal by (table, op).
 function makeSupabase() {
+  const terminalFor = (table: string, op: string): (() => unknown) => {
+    if (table === "conversations" && op === "select") return convReadMock;
+    if (table === "conversations" && op === "update") return convUpdateMock;
+    if (table === "patients" && op === "select") return patientReadMock;
+    if (table === "messages" && op === "insert") return msgInsertMock;
+    return async () => ({ data: null, error: null });
+  };
+  // The first verb (select/insert/update/delete) locks the op; a later
+  // `.select(...)` (PostgREST RETURNING) does NOT reclassify.
+  const makeChain = (table: string, op: string) => {
+    const term = () => terminalFor(table, op)() as Promise<unknown>;
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      lt: () => chain,
+      in: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      maybeSingle: () => term(),
+      single: () => term(),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject?: (e: unknown) => unknown,
+      ) => term().then(resolve, reject),
+    };
+    return chain;
+  };
   return {
     schema: (_schema: string) => ({
-      from: (table: string) => {
-        if (table === "conversations") {
-          return {
-            // Read path
-            select: () => ({
-              eq: () => ({ limit: () => ({ maybeSingle: convReadMock }) }),
-            }),
-            // Write path — .update({}).eq(field, val) is awaited directly.
-            // We wrap convUpdateMock in a PromiseLike so `await` works even
-            // without an explicit terminal method.
-            update: () => ({
-              eq: convUpdateMock,
-            }),
-          };
-        }
-        if (table === "patients") {
-          return {
-            select: () => ({
-              eq: () => ({ limit: () => ({ maybeSingle: patientReadMock }) }),
-            }),
-          };
-        }
-        if (table === "messages") {
-          return {
-            insert: () => ({
-              select: () => ({
-                limit: () => ({ maybeSingle: msgInsertMock }),
-              }),
-            }),
-          };
-        }
-        // Fallback for unexpected tables — return no-op
-        return {
-          select: () => ({
-            eq: () => ({
-              limit: () => ({
-                maybeSingle: async () => ({ data: null, error: null }),
-              }),
-            }),
-          }),
-          update: () => ({
-            eq: async () => ({ error: null }),
-          }),
-        };
-      },
+      from: (table: string) => ({
+        select: () => makeChain(table, "select"),
+        insert: () => makeChain(table, "insert"),
+        update: () => makeChain(table, "update"),
+        delete: () => makeChain(table, "delete"),
+      }),
     }),
   } as never;
 }
@@ -182,6 +175,7 @@ function makeInput(
 ) {
   return {
     supabase: makeSupabase(),
+    orgId: "11111111-1111-4111-8111-111111111111",
     smsCfg: SMS_CFG,
     emailCfg: EMAIL_CFG,
     conversationId: CONVERSATION_ID,

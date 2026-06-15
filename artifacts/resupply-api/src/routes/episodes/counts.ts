@@ -14,7 +14,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -66,14 +66,20 @@ router.get(
     }
     const { q } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
 
     // Resolve the q-filter into a candidate episode-id set up front.
     // Empty array short-circuits to an all-zeroes response.
     let qEpisodeIds: string[] | null = null;
     if (q) {
-      qEpisodeIds = await resolveEpisodesSearch(supabase, q);
+      qEpisodeIds = await resolveEpisodesSearch(db, q);
       if (qEpisodeIds.length === 0) {
         res.status(200).json({
           overdue: 0,
@@ -104,8 +110,7 @@ router.get(
     ] as const;
 
     const countQuery = (status: Status) => {
-      let q = supabase
-        .schema("resupply")
+      let q = db
         .from("episodes")
         .select("*", { count: "exact", head: true })
         .eq("status", status);
@@ -113,8 +118,7 @@ router.get(
       return q;
     };
     const overdueQuery = () => {
-      let q = supabase
-        .schema("resupply")
+      let q = db
         .from("episodes")
         .select("*", { count: "exact", head: true })
         .in("status", ["outreach_pending", "awaiting_response"])

@@ -8,7 +8,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -28,9 +28,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: delivery } = await supabase
-      .schema("resupply")
       .from("webhook_deliveries")
       .select("id, status, subscription_id")
       .eq("id", parsed.data.id)
@@ -48,7 +52,6 @@ router.post(
       return;
     }
     const { error: retryErr } = await supabase
-      .schema("resupply")
       .from("webhook_deliveries")
       .update({
         status: "queued",

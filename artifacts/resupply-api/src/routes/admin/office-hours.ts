@@ -65,9 +65,7 @@ router.get(
     if (error) throw error;
     res.json({
       windows: (
-        (data ?? []) as Array<
-          Database["resupply"]["Tables"]["office_hours"]["Row"]
-        >
+        (data ?? []) as Database["resupply"]["Tables"]["office_hours"]["Row"][]
       ).map((r) => ({
         id: r.id,
         dayOfWeek: r.day_of_week,

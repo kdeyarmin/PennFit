@@ -158,30 +158,64 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 
 ## Workstream D — RLS backstop
 
-### D1. Per-tenant policies
+### D1. Per-tenant policies — DONE
 
-- **New migration** adding policies to tenant-scoped tables:
-  `USING (org_id = current_setting('app.current_org_id', true)::uuid)`.
-- The wrapper (C1) issues `SET LOCAL app.current_org_id = …` per request/txn.
-- Because `service_role` bypasses RLS, these **do not change runtime
-  behavior** today — they are the backstop for the day any access moves to a
-  non-bypassing role, and the evidence artifact for BAA/SOC 2.
+- **Migration `0344_org_isolation_rls_policies.sql`** adds a permissive
+  `org_isolation` policy to every tenant-scoped table:
+  `USING / WITH CHECK (org_id = current_setting('app.current_org_id', true)::uuid)`.
+  It is a **catalog-driven `DO` loop** over `resupply` base tables that
+  carry an `org_id` column (the same self-maintaining approach as 0170's
+  RLS-enable loop), so it is correct by construction and idempotent
+  (`DROP POLICY IF EXISTS` before `CREATE`).
+- Because `service_role` (and `postgres`) bypass RLS, this **does not
+  change runtime behavior** today — it is the backstop for the day any
+  access moves to a non-bypassing role, and the BAA/SOC 2 evidence
+  artifact. With the GUC unset, `current_setting(..., true)` is NULL so a
+  non-bypass role still sees nothing (the post-0170 "RLS enabled" posture
+  is preserved). Verified on a throwaway Postgres: bypass role sees all;
+  non-bypass role sees only its tenant when the GUC is set and nothing
+  when it is unset; `WITH CHECK` rejects cross-tenant writes.
+
+### D2. GUC wiring (follow-up, not blocking)
+
+- The wrapper (C1) will issue `SET LOCAL app.current_org_id = …` per
+  request/txn so the policies bind to the active tenant. This is deferred
+  until a non-bypassing role exists, since `service_role` ignores RLS —
+  the app-layer wrapper remains the real isolation guarantee until then.
+  (PostgREST has no per-statement `SET LOCAL`; this will ride a request
+  header → `app.current_org_id` mapping or an RPC, tracked separately.)
 
 ---
 
 ## Workstream E — CI isolation guard (make the invariant enforceable)
 
-### E1. New check script
+### E1. New check script — DONE (ratchet mode)
 
-- **New file:** `scripts/check-tenant-isolation.sh`, in the spirit of the
+- **File:** `scripts/check-tenant-isolation.sh`, in the spirit of the
   existing `scripts/check-resupply-architecture.sh` /
   `check-admin-route-gates.sh`.
 - Fails the build when application code (outside `lib/resupply-db` and the
   reviewed allowlist) calls `getSupabaseServiceRoleClient()` directly instead
   of `getOrgScopedClient()` — the same pattern Rule 7 uses to forbid raw `pg`
   outside `lib/resupply-db`.
-- Wire into the same CI stage as the other `check-*` scripts and the
-  pre-commit hook.
+- **Ratchet, not big-bang.** Because ~390 files are still on the raw client
+  mid-cutover, the guard runs against a committed baseline
+  (`scripts/tenant-isolation-baseline.txt`). It **hard-fails on a new**
+  offending file not in the baseline (the load-bearing protection), and
+  emits a **non-fatal notice for a stale** baseline entry (a file already
+  cut over or deleted). Stale is deliberately non-fatal: the cutover lands
+  on `main` continuously and independently of any open PR, so a hard
+  stale-fail would redden every in-flight PR the moment an unrelated
+  cutover merged — and a stale entry never weakens isolation. The baseline
+  only shrinks via `--update` (cutover PRs prune it). When it is empty the
+  machinery is retired and the guard becomes a plain "no direct callsites"
+  check — the PR 0.8 gate.
+- **Wired in:** the CHECKS list in `scripts/run-resupply-checks.mjs` (so it
+  runs under `pnpm verify`) and a dedicated `Tenant isolation guard` step in
+  `.github/workflows/ci.yml` (self-test + check), alongside the other
+  `check-*` self-tests. A fixture-driven `--self-test`
+  (`check-tenant-isolation.sh.test`) proves the ratchet catches new/stale
+  violations so the gate can't decay into a vacuous pass.
 
 ### E2. Cross-tenant leakage test
 
