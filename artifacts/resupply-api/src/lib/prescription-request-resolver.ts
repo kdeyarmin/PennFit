@@ -16,7 +16,11 @@ import type {
 import { getDocumentSupplierName } from "./company-info";
 import { getTrackingCodeForDocument } from "./signature-tracking/service";
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -39,6 +43,12 @@ export async function resolvePrescriptionRequestInputs(
     .limit(1)
     .maybeSingle();
   if (!packet) return { kind: "not_found" };
+
+  // signature-tracking reads go through the org-scoped chokepoint. This
+  // resolver runs from both an admin route and a public token route, so
+  // it scopes to the seed org (single-tenant bridge) for the code lookup.
+  const sigOrgId = await resolveSeedOrgId();
+  const sigClient = sigOrgId ? getOrgScopedClient(sigOrgId) : null;
 
   const [
     { data: patient },
@@ -78,7 +88,9 @@ export async function resolvePrescriptionRequestInputs(
       .maybeSingle(),
     // Signature-tracking code (for the top-right barcode). Null when the
     // packet predates the tracking feature or has no row yet.
-    getTrackingCodeForDocument(supabase, "prescription_request", packet.id),
+    sigClient
+      ? getTrackingCodeForDocument(sigClient, "prescription_request", packet.id)
+      : Promise.resolve(null),
   ]);
 
   if (!patient || !provider) {

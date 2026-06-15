@@ -16,5 +16,5 @@ export async function renderManualDocumentForFax(
 ): Promise<Buffer | null> {
   const row = await loadManualDocumentRow(supabase, manualDocumentId);
   if (!row) return null;
-  return renderManualDocumentRowToPdf(supabase, row);
+  return renderManualDocumentRowToPdf(row);
 }
