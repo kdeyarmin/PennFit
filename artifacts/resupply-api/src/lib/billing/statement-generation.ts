@@ -9,14 +9,13 @@
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "./identity-resolver";
 import { renderStatementPdf } from "./statement-pdf";
 import { persistStatementPdfCopy } from "./statement-storage";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 const CLAIM_PAGE = 1000;
 const MAX_CLAIM_PAGES = 10;
@@ -50,7 +49,9 @@ export interface GeneratePatientBillingStatementInput {
   deliveryMethod?: "email" | "sms" | "mail" | "in_person";
   generatedByEmail: string;
   adminUserId?: string | null;
-  supabase?: SupabaseClient;
+  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
+   *  (single-tenant bridge). */
+  orgId?: string;
 }
 
 export interface GeneratedPatientBillingStatement {
@@ -65,10 +66,13 @@ export interface GeneratedPatientBillingStatement {
 export async function generatePatientBillingStatement(
   input: GeneratePatientBillingStatementInput,
 ): Promise<GeneratedPatientBillingStatement> {
-  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error("statement-generation: no tenant resolved");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select(
       "legal_first_name, legal_last_name, address, email, statement_delivery_method",
@@ -99,7 +103,6 @@ export async function generatePatientBillingStatement(
   let exhausted = false;
   for (let page = 0; page < MAX_CLAIM_PAGES; page++) {
     const { data: batch, error: claimsErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents",
@@ -132,7 +135,7 @@ export async function generatePatientBillingStatement(
     );
   }
 
-  const identity = await resolveBillingIdentity({});
+  const identity = await resolveBillingIdentity({ orgId });
   if (identity.source === "stub") {
     throw new StatementGenerationError(
       "no_dme_organization",
@@ -214,7 +217,6 @@ export async function generatePatientBillingStatement(
     };
 
   const { data: row, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .insert(insertRow)
     .select("id")
@@ -232,11 +234,7 @@ export async function generatePatientBillingStatement(
     input.generatedByEmail === "system:auto_workflow" &&
     !persisted.objectKey
   ) {
-    await supabase
-      .schema("resupply")
-      .from("patient_billing_statements")
-      .delete()
-      .eq("id", row.id);
+    await supabase.from("patient_billing_statements").delete().eq("id", row.id);
     throw new Error(
       "auto-workflow statement PDF could not be persisted; refusing to arm statement cooldown",
     );
