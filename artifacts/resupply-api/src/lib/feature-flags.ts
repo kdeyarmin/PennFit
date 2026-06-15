@@ -90,6 +90,7 @@ export const FEATURE_FLAG_KEYS = [
   "fax.referral_review",
   "frontdesk.counter_orders",
   "asset_recovery.auto_populate",
+  "domains.tls_automation",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

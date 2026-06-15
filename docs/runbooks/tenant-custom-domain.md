@@ -51,10 +51,30 @@ verify a custom domain.
 4. **Verify** — click _Verify domain_. The app resolves the TXT record;
    a match flips the domain to `verified`.
 
-## Operator-side step (TLS / edge — the app can't do this)
+## TLS / edge binding — automated or manual
 
-Proving DNS ownership (above) does **not** provision TLS. After a tenant
-verifies, the operator must bind the host on the edge so HTTPS terminates:
+Proving DNS ownership (above) does **not** by itself provision TLS. There
+are two modes:
+
+### Automated (Cloudflare for SaaS — ADR 021)
+
+When `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` are set **and** the
+`domains.tls_automation` feature flag is ON, verifying a domain registers
+it as a Cloudflare **custom hostname**; Cloudflare issues + **auto-renews**
+the cert and routes the host to the origin — **no per-domain operator
+step**. The tenant CNAMEs to the Cloudflare for SaaS **fallback hostname**
+(set `PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET` to it), publishes the one TLS
+validation TXT the page shows, and the branding page reflects the
+certificate state (`Issuing… → HTTPS live`). One-time platform setup:
+enable Cloudflare for SaaS on the zone, set the fallback origin, mint the
+scoped token, flip the flag on. The flow is **fail-soft** — a Cloudflare
+error never fails the tenant's verify; TLS shows `failed` and a re-verify
+retries.
+
+### Manual (default — flag off / Cloudflare unconfigured)
+
+After a tenant verifies, the operator binds the host on the edge so HTTPS
+terminates:
 
 - **Railway:** add the custom domain under the service's **Settings →
   Domains** (Railway issues the cert and gives the CNAME target). The

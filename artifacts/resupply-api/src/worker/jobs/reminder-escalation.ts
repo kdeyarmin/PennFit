@@ -36,7 +36,11 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
@@ -152,7 +156,9 @@ export async function runReminderEscalationScan(
     return result;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return result;
+  const supabase = getOrgScopedClient(orgId);
   const horizonIso = new Date(
     now.getTime() - (ESCALATION_MAX_DAYS + 2) * DAY_MS,
   ).toISOString();
@@ -167,7 +173,6 @@ export async function runReminderEscalationScan(
   const episodes: EscalationEpisodeRow[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("id, patient_id")
       .in("status", IN_PROGRESS_STATUSES)
@@ -193,7 +198,6 @@ export async function runReminderEscalationScan(
     const idChunk = episodeIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("conversations")
         .select("id, episode_id, channel, created_at")
         .in("episode_id", idChunk)
@@ -259,13 +263,12 @@ export async function runReminderEscalationScan(
 }
 
 async function raiseUnresponsiveAlert(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   patientId: string,
   episodeId: string,
 ): Promise<void> {
   try {
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .select("id")
       .eq("patient_id", patientId)
@@ -275,7 +278,6 @@ async function raiseUnresponsiveAlert(
       .maybeSingle();
     if (existing) return;
     const { error: alertInsertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,

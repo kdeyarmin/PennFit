@@ -25,6 +25,8 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { isFeatureEnabled } from "../../lib/feature-flags";
+import { logger } from "../../lib/logger";
 import {
   invalidateBrandingCache,
   refreshVerifiedCustomDomains,
@@ -35,13 +37,20 @@ import {
   normalizeCustomDomain,
   verifyDomainTxt,
 } from "../../lib/tenant-domain";
+import {
+  type CloudflareValidation,
+  createCustomHostname,
+  deleteCustomHostname,
+  getCustomHostname,
+  isCloudflareConfigured,
+} from "../../lib/cloudflare-hostname";
 
 const router: IRouter = Router();
 
 const ORG_BRANDING_COLUMNS =
   "id, name, storefront_name, tagline, logo_url, logo_object_path, " +
   "custom_domain, custom_domain_status, custom_domain_token, " +
-  "custom_domain_verified_at";
+  "custom_domain_verified_at, custom_domain_tls, custom_domain_cf_hostname_id";
 
 type OrgBrandingRow = {
   id: string;
@@ -54,10 +63,20 @@ type OrgBrandingRow = {
   custom_domain_status: "none" | "pending" | "verified";
   custom_domain_token: string | null;
   custom_domain_verified_at: string | null;
+  custom_domain_tls: "none" | "pending" | "active" | "failed";
+  custom_domain_cf_hostname_id: string | null;
 };
 
+/** Extra TLS state attached to a view, resolved from Cloudflare. */
+interface TlsExtra {
+  /** Whether the Cloudflare TLS automation is enabled + configured. */
+  automation?: boolean;
+  /** The validation record the tenant must publish while TLS is pending. */
+  validation?: CloudflareValidation | null;
+}
+
 /** Shape the admin page consumes (camelCase + DNS instructions). */
-function viewOf(row: OrgBrandingRow) {
+function viewOf(row: OrgBrandingRow, tls: TlsExtra = {}) {
   const domain = (row.custom_domain ?? "").trim();
   const token = (row.custom_domain_token ?? "").trim();
   const instructions =
@@ -72,8 +91,24 @@ function viewOf(row: OrgBrandingRow) {
       status: row.custom_domain_status,
       verifiedAt: row.custom_domain_verified_at,
       instructions,
+      tls: {
+        // Whether automated TLS provisioning is available for this install.
+        automation: tls.automation ?? false,
+        // none | pending | active | failed
+        status: row.custom_domain_tls,
+        // The DNS record to publish while a cert is being issued.
+        validation: tls.validation ?? null,
+      },
     },
   };
+}
+
+/** TLS automation is active only when the flag AND the CF env are both on. */
+async function tlsAutomationOn(): Promise<boolean> {
+  return (
+    isCloudflareConfigured() &&
+    (await isFeatureEnabled("domains.tls_automation"))
+  );
 }
 
 async function loadOrgRow(orgId: string): Promise<OrgBrandingRow | null> {
@@ -87,6 +122,85 @@ async function loadOrgRow(orgId: string): Promise<OrgBrandingRow | null> {
     .maybeSingle();
   if (error) throw error;
   return (data as unknown as OrgBrandingRow | null) ?? null;
+}
+
+/**
+ * Reflect the live Cloudflare TLS status onto the row + view. Best-effort
+ * and fail-soft: when automation is off, there's no CF hostname yet, or
+ * TLS is already `active`, it's a no-op; a Cloudflare error degrades to the
+ * stored status. Persists a status change so the next read is cheap.
+ */
+async function resolveTls(
+  row: OrgBrandingRow,
+  orgId: string,
+): Promise<{ row: OrgBrandingRow; tls: TlsExtra }> {
+  const automation = await tlsAutomationOn();
+  if (
+    !automation ||
+    !row.custom_domain_cf_hostname_id ||
+    row.custom_domain_tls === "active"
+  ) {
+    return { row, tls: { automation } };
+  }
+  try {
+    const cf = await getCustomHostname(row.custom_domain_cf_hostname_id);
+    if (cf.tls !== row.custom_domain_tls) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data } = await supabase
+        .schema("resupply")
+        .from("organizations")
+        .update({
+          custom_domain_tls: cf.tls,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orgId)
+        .select(ORG_BRANDING_COLUMNS)
+        .maybeSingle();
+      if (data) {
+        return {
+          row: data as unknown as OrgBrandingRow,
+          tls: { automation, validation: cf.validation },
+        };
+      }
+    }
+    return { row, tls: { automation, validation: cf.validation } };
+  } catch (err) {
+    logger.warn(
+      {
+        event: "cloudflare_hostname_refresh_failed",
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "cloudflare custom-hostname status refresh failed; using stored status",
+    );
+    return { row, tls: { automation } };
+  }
+}
+
+/**
+ * Best-effort release of a prior Cloudflare custom hostname when a domain
+ * is unbound or rebound to a different host. Fail-soft: a Cloudflare error
+ * is logged, never fatal (same posture as the best-effort logo cleanup).
+ */
+async function releaseCfHostname(
+  prior: OrgBrandingRow | null,
+  newDomain: string | null,
+): Promise<void> {
+  const cfId = (prior?.custom_domain_cf_hostname_id ?? "").trim();
+  if (!cfId) return;
+  // Keep it if the host is unchanged (rebind to the same domain).
+  if (newDomain && prior?.custom_domain === newDomain) return;
+  if (!isCloudflareConfigured()) return;
+  try {
+    await deleteCustomHostname(cfId);
+  } catch (err) {
+    logger.warn(
+      {
+        event: "cloudflare_hostname_delete_failed",
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "cloudflare custom-hostname delete failed; may need manual cleanup",
+    );
+  }
 }
 
 /** Resolve the caller's tenant, 500ing if (impossibly) absent. */
@@ -117,7 +231,8 @@ router.get(
       res.status(404).json({ error: "organization_not_found" });
       return;
     }
-    res.json(viewOf(row));
+    const { row: r2, tls } = await resolveTls(row, orgId);
+    res.json(viewOf(r2, tls));
   },
 );
 
@@ -390,6 +505,10 @@ router.post(
       return;
     }
 
+    // Capture the prior CF hostname so we can release it if the domain
+    // changes (don't leak custom hostnames / certs on rebind).
+    const prior = await loadOrgRow(orgId);
+
     const supabase = getSupabaseServiceRoleClient();
     // Reject a domain already claimed by ANOTHER tenant (the partial
     // UNIQUE index would also reject it, but a clean 409 is friendlier).
@@ -416,6 +535,9 @@ router.post(
         custom_domain_status: "pending",
         custom_domain_token: token,
         custom_domain_verified_at: null,
+        // Rebind resets the (independent) TLS lifecycle.
+        custom_domain_tls: "none",
+        custom_domain_cf_hostname_id: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", orgId)
@@ -426,10 +548,12 @@ router.post(
       res.status(404).json({ error: "organization_not_found" });
       return;
     }
+    // Release the prior Cloudflare custom hostname when the domain changed.
+    await releaseCfHostname(prior, domain);
     // The previous domain (if any verified one) is no longer routable.
     invalidateBrandingCache();
     await refreshVerifiedCustomDomains();
-    res.json(viewOf(data as unknown as OrgBrandingRow));
+    res.json(viewOf(data as unknown as OrgBrandingRow, { automation: false }));
   },
 );
 
@@ -481,10 +605,53 @@ router.post(
     if (error) throw error;
     invalidateBrandingCache();
     await refreshVerifiedCustomDomains();
-    res.json({
-      verified: true,
-      ...viewOf((data as unknown as OrgBrandingRow) ?? row),
-    });
+
+    let current = (data as unknown as OrgBrandingRow) ?? row;
+    const tls: TlsExtra = { automation: await tlsAutomationOn() };
+
+    // Automated TLS: register the host as a Cloudflare custom hostname so
+    // the cert is issued + auto-renewed. Fail-soft — ownership is proven,
+    // so a Cloudflare error never fails the verify; we record `failed` and
+    // the tenant/operator can retry (re-verify or the manual path).
+    if (tls.automation) {
+      try {
+        const cf = await createCustomHostname(domain);
+        tls.validation = cf.validation;
+        const { data: d2 } = await supabase
+          .schema("resupply")
+          .from("organizations")
+          .update({
+            custom_domain_cf_hostname_id: cf.id,
+            custom_domain_tls: cf.tls,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", orgId)
+          .select(ORG_BRANDING_COLUMNS)
+          .maybeSingle();
+        if (d2) current = d2 as unknown as OrgBrandingRow;
+      } catch (err) {
+        logger.warn(
+          {
+            event: "cloudflare_hostname_provision_failed",
+            err: err instanceof Error ? err : new Error(String(err)),
+          },
+          "cloudflare custom-hostname provision failed; domain verified, TLS deferred",
+        );
+        const { data: d3 } = await supabase
+          .schema("resupply")
+          .from("organizations")
+          .update({
+            custom_domain_tls: "failed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", orgId)
+          .select(ORG_BRANDING_COLUMNS)
+          .maybeSingle();
+        if (d3) current = d3 as unknown as OrgBrandingRow;
+      }
+    }
+
+    res.json({ verified: true, ...viewOf(current, tls) });
   },
 );
 
@@ -501,6 +668,7 @@ router.delete(
   async (req, res) => {
     const orgId = requireOrgId(req, res);
     if (!orgId) return;
+    const prior = await loadOrgRow(orgId);
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
       .schema("resupply")
@@ -510,6 +678,8 @@ router.delete(
         custom_domain_status: "none",
         custom_domain_token: null,
         custom_domain_verified_at: null,
+        custom_domain_tls: "none",
+        custom_domain_cf_hostname_id: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", orgId)
@@ -520,9 +690,11 @@ router.delete(
       res.status(404).json({ error: "organization_not_found" });
       return;
     }
+    // Release the Cloudflare custom hostname (best-effort).
+    await releaseCfHostname(prior, null);
     invalidateBrandingCache();
     await refreshVerifiedCustomDomains();
-    res.json(viewOf(data as unknown as OrgBrandingRow));
+    res.json(viewOf(data as unknown as OrgBrandingRow, { automation: false }));
   },
 );
 
