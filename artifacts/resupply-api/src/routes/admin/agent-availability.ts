@@ -69,13 +69,9 @@ router.get(
     }
     res.json({
       agents: (
-<<<<<<< HEAD
-        (data ?? []) as Database["resupply"]["Tables"]["admin_users"]["Row"][]
-=======
         (data ?? []) as Array<
           Database["resupply"]["Tables"]["admin_users"]["Row"]
         >
->>>>>>> origin/main
       ).map((a) => ({
         adminUserId: a.id,
         email: a.email_lower,
