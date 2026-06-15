@@ -123,6 +123,97 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Outreach playbooks (migration 0263; org_id added 0342). uuid ids.
+      outreach_playbooks: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_key: string;
+          name: string;
+          situation: string;
+          description: string | null;
+          category: string;
+          is_active: boolean;
+          is_seeded: boolean;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbooks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbooks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_steps: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_id: string;
+          step_index: number;
+          day_offset: number;
+          channel: string;
+          subject: string | null;
+          body: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_steps"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_steps"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_runs: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_id: string;
+          patient_id: string;
+          status: string;
+          next_step_index: number;
+          next_step_at: string | null;
+          started_by_user_id: string | null;
+          started_by_email: string | null;
+          started_at: string;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_step_log: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          run_id: string;
+          step_index: number;
+          channel: string;
+          status: string;
+          detail: string | null;
+          call_script: string | null;
+          call_outcome: string | null;
+          completed_by_email: string | null;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_step_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_step_log"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Cases workspace (migration 0189; org_id added 0342). `id` is a
       // text uuid, not a native uuid column.
       cases: {
