@@ -126,7 +126,6 @@ artifacts/resupply-api/src/routes/admin/conversation-routing.ts
 artifacts/resupply-api/src/routes/admin/conversation-triage.ts
 artifacts/resupply-api/src/routes/admin/counter-orders.ts
 artifacts/resupply-api/src/routes/admin/csr-compliance-alerts.ts
-artifacts/resupply-api/src/routes/admin/csr-macros.ts
 artifacts/resupply-api/src/routes/admin/csr-order-requests.ts
 artifacts/resupply-api/src/routes/admin/csr-shifts.ts
 artifacts/resupply-api/src/routes/admin/customer-followups.ts
@@ -180,7 +179,6 @@ artifacts/resupply-api/src/routes/admin/patient-packets.ts
 artifacts/resupply-api/src/routes/admin/patient-portal-invite.ts
 artifacts/resupply-api/src/routes/admin/payer-fee-schedules-import.ts
 artifacts/resupply-api/src/routes/admin/payer-fee-schedules.ts
-artifacts/resupply-api/src/routes/admin/payer-modifier-rules.ts
 artifacts/resupply-api/src/routes/admin/payer-profiles.ts
 artifacts/resupply-api/src/routes/admin/payer-profitability.ts
 artifacts/resupply-api/src/routes/admin/payment-plans.ts
