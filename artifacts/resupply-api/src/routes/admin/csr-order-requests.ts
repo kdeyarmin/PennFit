@@ -189,7 +189,7 @@ router.get(
 
     const rows = (data ?? []) as OrderRequestRow[];
     const payments = await lookupPaymentStates(
-      supabase.raw(),
+      supabase,
       rows.flatMap((r) => (r.stripe_session_id ? [r.stripe_session_id] : [])),
     );
 
@@ -270,7 +270,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const snapshot = await snapshotOrderDocuments(supabase.raw(), [
+    const snapshot = await snapshotOrderDocuments(supabase, [
       ...new Set(b.documentKeys),
     ]);
     if (!snapshot.ok) {
@@ -315,7 +315,7 @@ router.post(
       ttlDays * 24 * 60 * 60,
     );
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
-      supabase: supabase.raw(),
+      supabase: supabase,
       customerName: b.customerName,
       email,
       phone: phoneE164,
@@ -389,10 +389,7 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const payment = await lookupPaymentState(
-      supabase.raw(),
-      row.stripe_session_id,
-    );
+    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
     res.json({
       request: projectRequest(row, payment),
       // A copyable link for the CURRENT version — only while open.
@@ -434,10 +431,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const payment = await lookupPaymentState(
-      supabase.raw(),
-      row.stripe_session_id,
-    );
+    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
     if (payment.status === "paid" || payment.status === "refunded") {
       res.status(409).json({ error: "already_paid" });
       return;
@@ -463,7 +457,7 @@ router.post(
 
     const signingLink = buildCsrOrderSigningLink(row.id, newVersion);
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
-      supabase: supabase.raw(),
+      supabase: supabase,
       customerName: row.customer_name,
       email: row.customer_email,
       phone: row.customer_phone,
@@ -519,10 +513,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const payment = await lookupPaymentState(
-      supabase.raw(),
-      row.stripe_session_id,
-    );
+    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
     if (payment.status === "paid" || payment.status === "refunded") {
       // A paid order is refunded through the shop-order refund flow,
       // not canceled here.

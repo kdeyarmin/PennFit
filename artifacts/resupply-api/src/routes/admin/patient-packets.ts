@@ -216,7 +216,7 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const overrides = await loadTemplateOverrides(supabase.raw());
+    const overrides = await loadTemplateOverrides(supabase);
     res.json({
       templates: PACKET_TEMPLATES.map((t) => {
         const effective = effectiveTemplateContent(t.key, overrides)!;
@@ -615,8 +615,8 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
     const [company, overrides] = await Promise.all([
-      resolveCompanyProfile(supabase.raw()),
-      loadTemplateOverrides(supabase.raw()),
+      resolveCompanyProfile(supabase),
+      loadTemplateOverrides(supabase),
     ]);
     const effective = effectiveTemplateContent(key, overrides)!;
     const sections = renderPacketDocumentSections({
@@ -755,7 +755,7 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
     const result = await createAndSendPatientPacket({
-      supabase: supabase.raw(),
+      supabase: supabase,
       patientId: idParsed.data.id,
       documentKeys: b.documentKeys,
       title: b.title,
@@ -849,7 +849,7 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
     const result = await createAndSendPatientPacketToContact({
-      supabase: supabase.raw(),
+      supabase: supabase,
       email: b.email,
       phone: b.phone,
       recipientName: b.recipientName,
@@ -1052,11 +1052,7 @@ router.patch(
         });
         return;
       }
-      await reconcilePacketDocuments(
-        supabase.raw(),
-        packet.id,
-        docs.uniqueKeys,
-      );
+      await reconcilePacketDocuments(supabase, packet.id, docs.uniqueKeys);
       documentCount = docs.uniqueKeys.length;
     }
 
@@ -1081,7 +1077,7 @@ router.patch(
         return;
       }
       await applyPacketDocumentOverrides(
-        supabase.raw(),
+        supabase,
         packet.id,
         b.documentOverrides,
       );
@@ -1206,7 +1202,7 @@ router.post(
     const link = signingUrl(getAuthDeps().publicBaseUrl, token);
 
     const { emailSent, smsSent } = await deliverPacketLink({
-      supabase: supabase.raw(),
+      supabase: supabase,
       recipientName: packet.recipient_name,
       link,
       email: packet.recipient_email,
@@ -1489,10 +1485,7 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     // Shared loader (signed-pdf.ts) — the same bytes the auto-file hook
     // writes to the chart, so the two can never drift.
-    const built = await buildSignedPacketPdf(
-      supabase.raw(),
-      parsed.data.packetId,
-    );
+    const built = await buildSignedPacketPdf(supabase, parsed.data.packetId);
     if (!built) {
       res.status(404).json({ error: "not_found" });
       return;
