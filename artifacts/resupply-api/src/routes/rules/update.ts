@@ -8,10 +8,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -129,10 +126,15 @@ router.patch(
     // and BOTH end up non-null, enforce min <= max. We only have the
     // partial picture from the request body, so we resolve against the
     // existing row.
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     if ("minTenureDays" in body || "maxTenureDays" in body) {
-      const { data: existing } = await supabase
-        .schema("resupply")
+      const { data: existing } = await db
         .from("frequency_rules")
         .select("min_tenure_days, max_tenure_days")
         .eq("id", idParsed.data.id)
@@ -171,8 +173,7 @@ router.patch(
 
     updates.updated_at = new Date().toISOString();
 
-    let updateBuilder = supabase
-      .schema("resupply")
+    let updateBuilder = db
       .from("frequency_rules")
       .update(updates)
       .eq("id", idParsed.data.id);
@@ -187,8 +188,7 @@ router.patch(
         // Distinguish "concurrent update overwrote our base value"
         // from "row doesn't exist" so the UI can prompt a refresh
         // instead of a generic "not found" toast.
-        const { data: stillExists } = await supabase
-          .schema("resupply")
+        const { data: stillExists } = await db
           .from("frequency_rules")
           .select("id")
           .eq("id", idParsed.data.id)

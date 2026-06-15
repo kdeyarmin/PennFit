@@ -28,7 +28,7 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -58,7 +58,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // PostgREST has no JOIN, so we enforce the three-way predicate
     // {conversation X has message Y has attachment Z} in two
@@ -66,8 +72,9 @@ router.get(
     // then fetch the message and assert conversation_id matches.
     // A mismatch in any dimension → 404, indistinguishable from
     // "doesn't exist" so we don't leak structure to enumeration.
-    const { data: attachment, error: attachmentError } = await supabase
-      .schema("resupply")
+    // org-scoping adds a fourth implicit dimension: an attachment or
+    // message belonging to another tenant resolves to null → 404.
+    const { data: attachment, error: attachmentError } = await db
       .from("message_attachments")
       .select("object_key, filename, content_type, message_id")
       .eq("id", ids.data.attachmentId)
@@ -85,8 +92,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const { data: message, error: messageError } = await supabase
-      .schema("resupply")
+    const { data: message, error: messageError } = await db
       .from("messages")
       .select("conversation_id")
       .eq("id", ids.data.messageId)

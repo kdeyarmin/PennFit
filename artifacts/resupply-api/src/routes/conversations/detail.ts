@@ -12,11 +12,24 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+// The org-scoped client's `.select()` is dynamically typed (any), so we
+// annotate the array shapes we map over.
+type MessageRow = Database["resupply"]["Tables"]["messages"]["Row"];
+type AttachmentRow = Pick<
+  Database["resupply"]["Tables"]["message_attachments"]["Row"],
+  | "id"
+  | "message_id"
+  | "filename"
+  | "content_type"
+  | "size_bytes"
+  | "created_at"
+>;
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -34,15 +47,20 @@ router.get(
     }
     const { id } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Header + messages are independent reads (both keyed on the same
     // conversation id). Run them concurrently; on a 404 we waste one
     // bounded message scan, which is far cheaper than an extra
     // round-trip on every successful read.
     const [headerRes, messagesRes] = await Promise.all([
-      supabase
-        .schema("resupply")
+      db
         .from("conversations")
         .select(
           "id, patient_id, customer_id, episode_id, channel, status, last_message_at, created_at, assigned_admin_user_id, assigned_at, priority, sla_due_at, escalated_at, escalated_to, escalation_reason",
@@ -50,8 +68,7 @@ router.get(
         .eq("id", id)
         .limit(1)
         .maybeSingle(),
-      supabase
-        .schema("resupply")
+      db
         .from("messages")
         .select(
           "id, direction, sender_role, body, delivery_status, sent_at, delivered_at, created_at",
@@ -69,7 +86,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const messageRows = messagesRes.data ?? [];
+    const messageRows: MessageRow[] = messagesRes.data ?? [];
 
     // Bulk-fetch the joined identity rows + message attachments in
     // parallel. The original SQL path LEFT JOINed patients +
@@ -78,8 +95,7 @@ router.get(
     const messageIds = messageRows.map((m) => m.id);
     const [patientRes, customerRes, attachmentsRes] = await Promise.all([
       header.patient_id
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("patients")
             .select("legal_first_name, legal_last_name")
             .eq("id", header.patient_id)
@@ -87,8 +103,7 @@ router.get(
             .maybeSingle()
         : Promise.resolve({ data: null, error: null } as const),
       header.customer_id
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("shop_customers")
             .select("display_name, email_lower")
             .eq("customer_id", header.customer_id)
@@ -96,8 +111,7 @@ router.get(
             .maybeSingle()
         : Promise.resolve({ data: null, error: null } as const),
       messageIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("message_attachments")
             .select(
               "id, message_id, filename, content_type, size_bytes, created_at",
@@ -121,7 +135,7 @@ router.get(
         createdAt: string;
       }>
     >();
-    for (const a of attachmentsRes.data ?? []) {
+    for (const a of (attachmentsRes.data ?? []) as AttachmentRow[]) {
       const arr = attachmentsByMessage.get(a.message_id) ?? [];
       arr.push({
         id: a.id,

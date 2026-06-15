@@ -50,9 +50,7 @@ router.get(
     if (error) throw error;
 
     const rows: VoiceCallRow[] = (
-      (data ?? []) as Array<
-        Database["resupply"]["Tables"]["voice_calls"]["Row"]
-      >
+      (data ?? []) as Database["resupply"]["Tables"]["voice_calls"]["Row"][]
     ).map((r) => ({
       status: r.status,
       direction: r.direction,

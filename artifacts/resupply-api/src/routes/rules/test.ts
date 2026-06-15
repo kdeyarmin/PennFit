@@ -19,7 +19,7 @@ import {
   type OutreachPrescription,
   type OutreachRule,
 } from "@workspace/resupply-domain";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -98,16 +98,24 @@ router.post(
       cadenceDays: parsed.data.prescription.cadenceDays,
     };
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: ruleRows, error } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: ruleRows, error } = await db
       .from("frequency_rules")
       .select("*")
       .order("priority", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) throw error;
 
-    const rules: OutreachRule[] = (ruleRows ?? []).map((r) => ({
+    const rules: OutreachRule[] = (
+      (ruleRows ??
+        []) as Database["resupply"]["Tables"]["frequency_rules"]["Row"][]
+    ).map((r) => ({
       id: r.id,
       priority: r.priority,
       createdAt: new Date(r.created_at),

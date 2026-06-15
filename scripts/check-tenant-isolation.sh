@@ -16,42 +16,55 @@
 #   outside lib/resupply-db): the same "one sanctioned door" pattern,
 #   one layer up.
 #
-# MODE — WARN (PR 0.1)
-#   During the migration, app code still legitimately calls
-#   `getSupabaseServiceRoleClient()` directly because no table carries an
-#   enforced `org_id` yet (the per-domain backfills land in later PRs).
-#   So this check currently only REPORTS offending callsites and ALWAYS
-#   exits 0. It flips to FAIL mode in the Phase 0 gate PR (0.8), once the
-#   wrapper is the real scoping facade and every domain has been cut over.
-#   Until then it is a visibility tool + a guard against regressions in
-#   its own wiring.
+# MODE — RATCHET (against a shrinking baseline)
+#   ~250 API files still call `getSupabaseServiceRoleClient()` directly
+#   because the per-domain `org_id` cutover (workstream C) is mid-flight,
+#   so a flat "zero direct callsites" rule would be a red build for weeks.
+#   Instead this guard works against a committed BASELINE of the files
+#   known to still use the raw client
+#   (scripts/tenant-isolation-baseline.txt):
+#     * HARD FAIL on a NEW offending file not in the baseline — new
+#       request/worker code must use getOrgScopedClient from the start.
+#       This is the load-bearing protection.
+#     * NON-FATAL NOTICE on a STALE baseline entry (a file already cut
+#       over or deleted). It is only reported, with the `--update` hint,
+#       and does NOT fail the build. Rationale: the cutover lands on
+#       `main` continuously and independently of any open PR; a hard
+#       stale-fail would turn every in-flight PR red the moment an
+#       unrelated cutover merged. A stale entry never weakens isolation
+#       (the file is already fixed), so pruning it is hygiene, not a gate.
+#   The baseline only ever shrinks (via --update). When it reaches empty,
+#   drop the baseline machinery and this becomes a plain "no direct
+#   callsites" check — the Phase 0 workstream-E gate (plan PR 0.8).
 #
 # Usage:
-#   bash scripts/check-tenant-isolation.sh            # scan, warn-only
-#   FAIL_ON_VIOLATION=1 bash scripts/check-tenant-isolation.sh
-#                                                     # opt-in fail (CI 0.8)
+#   bash scripts/check-tenant-isolation.sh            # ratchet check (CI)
+#   bash scripts/check-tenant-isolation.sh --update   # regenerate baseline
+#                                                     # (removal-only diff)
 #   bash scripts/check-tenant-isolation.sh --self-test
+#
+# After migrating (or adding) a file in a cutover PR, run --update and
+# commit the baseline diff alongside the code change.
 #
 # Bypass (genuine emergencies): SKIP_HOOKS=1 / --no-verify, documented
 # in the commit body.
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 if [[ "${1:-}" == "--self-test" ]]; then
-  # The .test sibling lands with the FAIL-mode flip (PR 0.8); until then
-  # there is nothing to self-test beyond "the scan runs", so no-op.
-  echo "check-tenant-isolation: --self-test is a no-op in warn mode (PR 0.1)."
-  exit 0
+  exec bash "$0.test"
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT="${TENANT_CHECK_ROOT:-$REPO_ROOT}"
 cd "$ROOT"
 
+BASELINE_FILE="${TENANT_BASELINE_FILE:-$ROOT/scripts/tenant-isolation-baseline.txt}"
+
 # Hard dependency on ripgrep. If `rg` is absent, every query matches
 # nothing and the check would silently pass while enforcing nothing —
-# the exact failure mode the architecture checker documents. Fail loudly
-# instead (even in warn mode the missing-tool signal is worth surfacing).
+# the exact failure mode the architecture checker documents. Fail loudly.
 if ! command -v rg >/dev/null 2>&1; then
   echo "check-tenant-isolation: ripgrep (rg) not found on PATH." >&2
   echo "  The guard cannot run without it; install ripgrep." >&2
@@ -61,42 +74,98 @@ fi
 # Application code that must use the chokepoint. lib/resupply-db is the
 # home of BOTH the service-role client and the wrapper, so it is exempt;
 # the migrator and a small reviewed set of global-table callers are too.
-# Globs are expressed as ripgrep --glob excludes.
+# Tests/specs/test-helpers construct clients directly and are exempt.
 EXCLUDES=(
   --glob '!**/node_modules/**'
   --glob '!**/dist/**'
-  --glob '!lib/resupply-db/**'        # owns the client + the wrapper
-  --glob '!**/*.test.ts'              # tests construct clients directly
-  --glob '!scripts/**'                # operator utilities, not request paths
+  --glob '!lib/resupply-db/**' # owns the client + the wrapper
+  --glob '!**/*.test.ts'       # tests construct clients directly
+  --glob '!**/*.test.tsx'
+  --glob '!**/*.spec.ts'
+  --glob '!**/test-helpers/**' # shared test fixtures
+  --glob '!scripts/**'         # operator utilities, not request paths
 )
 
-PATTERN='getSupabaseServiceRoleClient'
+# Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`
+# lines don't count as offenders.
+PATTERN='getSupabaseServiceRoleClient\('
+SCAN_DIRS=(artifacts/ lib/)
 
-echo "check-tenant-isolation: scanning for direct ${PATTERN}() calls in application code…"
+# Current set of offending files (one path per line, sorted, repo-relative).
+# `rg -l` exits 1 on zero matches; tolerate under set -e.
+current_offenders="$(
+  rg -l "${EXCLUDES[@]}" "$PATTERN" "${SCAN_DIRS[@]}" 2>/dev/null | sort -u || true
+)"
 
-# `|| true` so a zero-match scan (rg exit 1) doesn't trip `set -e`.
-MATCHES="$(rg --line-number --no-heading "${EXCLUDES[@]}" "$PATTERN" \
-  artifacts/ lib/ 2>/dev/null || true)"
+write_baseline() {
+  {
+    cat <<'HEADER'
+# Tenant-isolation baseline — API files that still call
+# getSupabaseServiceRoleClient() directly instead of getOrgScopedClient().
+#
+# Managed by scripts/check-tenant-isolation.sh (workstream E1). This is
+# Phase 0 cutover DEBT and may ONLY shrink: as each file moves to the
+# scoped wrapper, run `bash scripts/check-tenant-isolation.sh --update`
+# and commit the (removal-only) diff. New files must NOT be added here —
+# they have to use getOrgScopedClient from the start. When this list is
+# empty, retire the baseline and make the guard a plain "no direct
+# callsites" check (Phase 0 gate, plan PR 0.8).
+#
+# Do not hand-edit to ADD entries; regenerate with --update.
+HEADER
+    [[ -n "$current_offenders" ]] && printf '%s\n' "$current_offenders"
+  } >"$BASELINE_FILE"
+}
 
-if [[ -z "$MATCHES" ]]; then
-  echo "check-tenant-isolation: no direct calls found. ✅"
+if [[ "${1:-}" == "--update" ]]; then
+  write_baseline
+  count="$(printf '%s' "$current_offenders" | grep -c . || true)"
+  echo "check-tenant-isolation: baseline rewritten — $count file(s) on the raw client." >&2
   exit 0
 fi
 
-COUNT="$(printf '%s\n' "$MATCHES" | grep -c . || true)"
-echo
-echo "check-tenant-isolation: found ${COUNT} direct ${PATTERN}() callsite(s)"
-echo "in application code. These must migrate to getOrgScopedClient(orgId)"
-echo "as their domain is backfilled with org_id (Phase 0 workstream C):"
-echo
-printf '%s\n' "$MATCHES"
-echo
-
-if [[ "${FAIL_ON_VIOLATION:-}" == "1" ]]; then
-  echo "check-tenant-isolation: FAIL mode — the above are violations." >&2
-  exit 1
+if [[ ! -f "$BASELINE_FILE" ]]; then
+  echo "check-tenant-isolation: baseline file missing ($BASELINE_FILE)." >&2
+  echo "  Generate it once with: bash scripts/check-tenant-isolation.sh --update" >&2
+  exit 2
 fi
 
-echo "check-tenant-isolation: WARN mode (PR 0.1) — reporting only, exit 0."
-echo "Set FAIL_ON_VIOLATION=1 to enforce (flips on in the Phase 0 gate PR)."
-exit 0
+# Baseline entries minus comments/blank lines.
+baseline_entries="$(grep -vE '^[[:space:]]*(#|$)' "$BASELINE_FILE" | sort -u || true)"
+
+# Set differences. Feed both sides through grep -E . so an empty input is a
+# truly empty stream (comm misbehaves on a lone trailing blank line).
+new_violations="$(comm -23 \
+  <(printf '%s\n' "$current_offenders" | grep -E . || true) \
+  <(printf '%s\n' "$baseline_entries" | grep -E . || true) || true)"
+stale_baseline="$(comm -13 \
+  <(printf '%s\n' "$current_offenders" | grep -E . || true) \
+  <(printf '%s\n' "$baseline_entries" | grep -E . || true) || true)"
+
+status=0
+
+if [[ -n "$new_violations" ]]; then
+  status=1
+  echo "TENANT ISOLATION VIOLATION: new direct getSupabaseServiceRoleClient() call(s)." >&2
+  echo "These request/worker paths must reach the DB through getOrgScopedClient(req.orgId)" >&2
+  echo "(lib/resupply-db/src/org-scoped-client.ts), not the raw service-role client:" >&2
+  printf '  %s\n' $new_violations >&2
+  echo >&2
+fi
+
+if [[ -n "$stale_baseline" ]]; then
+  # Non-fatal: a stale entry means the file was already cut over (or
+  # deleted) — isolation is not weakened, so don't break the build over
+  # it (see header). Report it so a future --update can prune the list.
+  echo "check-tenant-isolation: NOTE — baseline entr(y/ies) already cut over;" >&2
+  echo "prune with: bash scripts/check-tenant-isolation.sh --update" >&2
+  printf '  %s\n' $stale_baseline >&2
+  echo >&2
+fi
+
+remaining="$(printf '%s\n' "$baseline_entries" | grep -c . || true)"
+if [[ "$status" -eq 0 ]]; then
+  echo "check-tenant-isolation: OK — $remaining file(s) remain on the cutover baseline."
+fi
+
+exit "$status"

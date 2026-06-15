@@ -383,9 +383,8 @@ router.get(
     if (error) throw error;
     res.json({
       events: (
-        (data ?? []) as Array<
-          Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]
-        >
+        (data ??
+          []) as Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"][]
       ).map((r) => ({
         id: r.id,
         kind: r.kind,
