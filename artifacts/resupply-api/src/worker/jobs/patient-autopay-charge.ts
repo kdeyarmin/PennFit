@@ -26,7 +26,8 @@ import type Stripe from "stripe";
 
 import {
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import {
@@ -147,7 +148,9 @@ export async function runPatientAutopayCharge(
     }
     charger = buildStripeOffSessionCharger(getStripeClient(config));
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Keyset-page the enabled authorizations: PostgREST caps each
@@ -158,7 +161,6 @@ export async function runPatientAutopayCharge(
   let lastId: string | null = null;
   for (;;) {
     let query = supabase
-      .schema("resupply")
       .from("patient_autopay_authorizations")
       .select(
         "id, patient_id, stripe_customer_id, stripe_payment_method_id, autopay_enabled, charge_attempts, last_charge_attempt_at",
@@ -189,7 +191,7 @@ export async function runPatientAutopayCharge(
 
   for (const auth of due) {
     try {
-      await chargeOneAuthorization(auth, charger, stats);
+      await chargeOneAuthorization(orgId, auth, charger, stats);
     } catch (err) {
       // One bad patient must not abort the whole tick.
       stats.failed += 1;
@@ -203,23 +205,28 @@ export async function runPatientAutopayCharge(
 }
 
 async function chargeOneAuthorization(
+  orgId: string,
   auth: ChargeableAuthorization,
   charger: OffSessionCharger,
   stats: PatientAutopayRunStats,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
 
   // Compute the open balance + per-claim allocation.
   const { data: claims, error: claimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_responsibility_cents")
     .eq("patient_id", auth.patientId)
     .gt("patient_responsibility_cents", 0)
     .in("status", [...OPEN_BALANCE_STATUSES]);
   if (claimErr) throw claimErr;
-  const allocations: Allocation[] = (claims ?? []).map((c) => ({
+  const allocations: Allocation[] = (
+    (claims ?? []) as Array<{
+      id: string;
+      patient_responsibility_cents: number;
+    }>
+  ).map((c) => ({
     claimId: c.id,
     amountAppliedCents: c.patient_responsibility_cents,
   }));
@@ -248,7 +255,6 @@ async function chargeOneAuthorization(
     Date.now() - 7 * 24 * 60 * 60 * 1000,
   ).toISOString();
   const { data: unsettled, error: unsettledErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .select("id")
     .eq("patient_id", auth.patientId)
@@ -281,7 +287,6 @@ async function chargeOneAuthorization(
   // re-check also drops a patient who turned autopay off between the
   // scan and the charge.
   let claim = supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({ last_charge_attempt_at: now, updated_at: now })
     .eq("id", auth.id)
@@ -304,7 +309,6 @@ async function chargeOneAuthorization(
   // Reserve the patient_payments row first so the PI metadata can
   // reference it (the webhook settles via patient_payment_id).
   const { data: payRow, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .insert({
       patient_id: auth.patientId,
@@ -334,7 +338,6 @@ async function chargeOneAuthorization(
 
   if (result.outcome === "succeeded") {
     const { error: piStampErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update({ stripe_payment_intent_id: result.paymentIntentId })
       .eq("id", payRow.id);
@@ -348,7 +351,6 @@ async function chargeOneAuthorization(
     // redelivery completes it too if this is interrupted).
     await markPaymentStatus({ paymentId: payRow.id, status: "succeeded" });
     const { error: authResetErr } = await supabase
-      .schema("resupply")
       .from("patient_autopay_authorizations")
       .update({
         charge_attempts: 0,
@@ -372,7 +374,6 @@ async function chargeOneAuthorization(
   const reason =
     result.outcome === "requires_action" ? "requires_action" : result.reason;
   const { error: payFailErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .update({
       status: failureStatus,
@@ -388,7 +389,6 @@ async function chargeOneAuthorization(
     );
   }
   const { error: authFailErr } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({
       charge_attempts: attempts,
