@@ -1,4 +1,4 @@
--- 0346_org_custom_domain_tls — per-tenant custom-domain TLS provisioning
+-- 0347_org_custom_domain_tls — per-tenant custom-domain TLS provisioning
 -- state for the Cloudflare-for-SaaS automation (ADR 021).
 --
 -- The custom-domain feature (0344_tenant_storefront_branding) tracks
