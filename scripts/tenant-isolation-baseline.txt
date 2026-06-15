@@ -241,7 +241,6 @@ artifacts/resupply-api/src/routes/admin/webhook-delivery-retry.ts
 artifacts/resupply-api/src/routes/admin/webhook-subscriptions.ts
 artifacts/resupply-api/src/routes/admin/webhook-test-send.ts
 artifacts/resupply-api/src/routes/admin/work-items.ts
-artifacts/resupply-api/src/routes/conversations/assignment.ts
 artifacts/resupply-api/src/routes/conversations/reply.ts
 artifacts/resupply-api/src/routes/dashboard/summary.ts
 artifacts/resupply-api/src/routes/email/click.ts
@@ -257,9 +256,7 @@ artifacts/resupply-api/src/routes/provider-portal.ts
 artifacts/resupply-api/src/routes/provider/mfa.ts
 artifacts/resupply-api/src/routes/provider/portal.ts
 artifacts/resupply-api/src/routes/rx-request-document.ts
-artifacts/resupply-api/src/routes/shop/checkout.ts
 artifacts/resupply-api/src/routes/shop/fitter-complete.ts
-artifacts/resupply-api/src/routes/shop/fitter-invite.ts
 artifacts/resupply-api/src/routes/shop/me-chat.ts
 artifacts/resupply-api/src/routes/shop/me-messages.ts
 artifacts/resupply-api/src/routes/shop/my-subscriptions.ts
