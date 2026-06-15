@@ -6,7 +6,7 @@
 //
 // Why this exists:
 //   HIPAA Privacy Rule §164.530(j)(2) sets a 6-year minimum
-//   retention for documents covered by the standard. PennFit
+//   retention for documents covered by the standard. CareMetric Breathe
 //   never destroyed patient documents automatically; the table
 //   grew until manually pruned. Surveyors flag the absence of a
 //   documented retention process as a Tier-2 deficiency.

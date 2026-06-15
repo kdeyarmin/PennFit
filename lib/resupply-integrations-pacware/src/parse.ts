@@ -149,7 +149,7 @@ function parseWithSchema<T>(
     for (let c = 0; c < colFields.length; c++) {
       const field = colFields[c];
       if (!field) continue;
-      // Reverse the export-side spreadsheet-safety guard so a PennFit
+      // Reverse the export-side spreadsheet-safety guard so a CareMetric Breathe
       // export re-imports losslessly (e.g. "'+14155551212" -> "+1...").
       const value = stripCsvFormulaGuard((cells[c] ?? "").trim());
       // Only set non-empty values so `.optional()` fields stay absent

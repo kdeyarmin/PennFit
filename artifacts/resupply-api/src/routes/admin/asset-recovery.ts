@@ -7,7 +7,7 @@
 //   PATCH /admin/asset-recovery/:id        — advance status / edit fields
 //   POST  /admin/asset-recovery/:id/label  — mint a return shipping label
 //
-// PennFit DETECTS likely discontinuation (low-usage smart triggers +
+// CareMetric Breathe DETECTS likely discontinuation (low-usage smart triggers +
 // lapsed-customer win-back); the nightly `asset-recovery.auto-populate`
 // worker opens cases from those signals (flag-gated). This route is the
 // human worklist that moves a device from "identified" to "received" /

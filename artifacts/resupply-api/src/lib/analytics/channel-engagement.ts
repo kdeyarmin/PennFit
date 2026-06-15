@@ -6,7 +6,7 @@
 // so the math is unit-testable without Postgres.
 //
 // One question, one view: "how is the automated outreach system doing
-// across every channel it talks to patients through?" PennFit reaches
+// across every channel it talks to patients through?" CareMetric Breathe reaches
 // patients/customers over four channels, and until now each had to be
 // read from a different surface:
 //

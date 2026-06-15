@@ -4,7 +4,7 @@
  *
  * The staff-facing cousin of /api/chat and /shop/me/chat. It answers
  * "how does the app work / where is the page that does X" for the
- * people who operate the PennFit admin console, and can forward a
+ * people who operate the CareMetric Breathe admin console, and can forward a
  * structured feature suggestion to the super-admin(s) by email (the
  * `suggest_feature` tool — see ./../../lib/admin-assistant/*).
  *

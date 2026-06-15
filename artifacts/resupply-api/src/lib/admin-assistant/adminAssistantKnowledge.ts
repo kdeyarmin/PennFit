@@ -5,7 +5,7 @@
  * This is the staff-facing cousin of the storefront chatbots. Where
  * `/api/chat` answers prospective patients and `/shop/me/chat` answers
  * a signed-in patient about their own orders, PennPilot answers the
- * people who *operate* PennFit — admins and agents working inside the
+ * people who *operate* CareMetric Breathe — admins and agents working inside the
  * /admin console. It runs behind `requireAdmin` at
  * `/resupply-api/admin/assistant/chat`.
  *
