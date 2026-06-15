@@ -13,10 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Json,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -39,9 +36,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: sub } = await supabase
-      .schema("resupply")
       .from("webhook_subscriptions")
       .select("id, name, is_active, target_url")
       .eq("id", parsed.data.id)
@@ -77,7 +78,6 @@ router.post(
       },
     };
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("webhook_deliveries")
       .insert({
         subscription_id: sub.id,

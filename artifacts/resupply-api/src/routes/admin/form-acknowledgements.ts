@@ -15,7 +15,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { INTAKE_FORMS } from "../../lib/intake-forms/catalog";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -32,12 +32,16 @@ router.get(
   // is the catalog's compliance-tier read perm (admin / supervisor /
   // compliance_officer / agent).
   requirePermission("audit.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // 1. Count active patients (denominator).
     const { count: activePatientCount, error: cntErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("*", { count: "exact", head: true })
       .eq("status", "active");
@@ -50,7 +54,6 @@ router.get(
     //    patient population in the thousands and ≤5 forms, this is
     //    a few-thousand row fetch.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_form_acknowledgements")
       .select(
         "patient_id, form_kind, form_version, signed_at, patients!inner(id, status)",
@@ -108,9 +111,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_form_acknowledgements")
       .select(
         "id, form_kind, form_version, signed_at, signed_from_ip, source, notes",
@@ -119,7 +126,11 @@ router.get(
       .order("signed_at", { ascending: false });
     if (error) throw error;
     res.json({
-      acknowledgements: (data ?? []).map((r) => ({
+      acknowledgements: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_form_acknowledgements"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         formKind: r.form_kind,
         formVersion: r.form_version,
