@@ -15,8 +15,8 @@
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  getSupabaseServiceRoleClient,
   getOrgScopedClient,
+  type OrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
@@ -51,31 +51,13 @@ import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+// Org-scoped chokepoint client. Helpers below auto-scope their reads/
+// writes to the tenant; global tables (providers, control_number_counters)
+// are reached via `.raw()`.
+type SupabaseClient = OrgScopedClient;
 type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
-
-/**
- * Resolve the seed tenant and return the unscoped (`.raw()`) service-role
- * client via the org-scoped chokepoint. This module's queries read
- * tenant tables through `.schema("resupply").from(...)` on a RAW client
- * (and pass that raw client to shared helpers like `reserveIsa13Value` /
- * `buildOneDetail` / `seedDefaultRequirementsForClaim`, which are
- * raw-typed), so the file-local worker pattern routes only the no-arg
- * client construction through the chokepoint. Fails closed: a missing
- * seed org throws rather than silently widening to all tenants.
- */
-async function resolveSeedScopedRawClient(): Promise<{
-  supabase: SupabaseClient;
-  orgId: string;
-}> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "office-ally-batch: tenant context missing (seed org unresolved)",
-    );
-  }
-  return { supabase: getOrgScopedClient(orgId).raw(), orgId };
-}
+type LineItemRow =
+  Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
 
 /**
  * Cap on fresh real-time 270s the eligibility precheck will fire in a
@@ -97,6 +79,9 @@ export interface BatchSubmitInput {
   adminUserId: string | null;
   ip?: string | null;
   userAgent?: string | null;
+  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
+   *  (single-tenant bridge) for worker / non-request callers. */
+  orgId?: string;
 }
 
 export type BatchSubmitResult =
@@ -139,7 +124,6 @@ async function releaseClaimsToDraft(
   claimIds: string[],
 ): Promise<void> {
   const { error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({ status: "draft", updated_at: new Date().toISOString() })
     .in("id", claimIds)
@@ -159,7 +143,6 @@ async function findUninitializedBillHoldClaims(
   const uninitialized = new Set(claimIds);
   if (claimIds.length === 0) return uninitialized;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("claim_id")
     .in("claim_id", claimIds);
@@ -289,15 +272,19 @@ async function findEligibilityBlocksForSubmit(input: {
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
 ): Promise<BatchSubmitResult> {
-  const { supabase, orgId } = await resolveSeedScopedRawClient();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    return { ok: false, kind: "no_claims_matched", detail: {} };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
-  const { data: claims, error } = await supabase
-    .schema("resupply")
+  const { data: claimsData, error } = await supabase
     .from("insurance_claims")
     .select("*")
     .in("id", input.claimIds);
   if (error) throw error;
-  if (!claims || claims.length === 0) {
+  const claims = (claimsData ?? []) as ClaimRow[];
+  if (claims.length === 0) {
     return { ok: false, kind: "no_claims_matched", detail: {} };
   }
   if (claims.length !== input.claimIds.length) {
@@ -338,6 +325,8 @@ export async function executeOfficeAllyBatchSubmit(
   // out the door. Feature-flagged so it can be turned off whole-cloth, and
   // inert for any claim that has no requirements tracked against it.
   if (await isFeatureEnabled("billing.bill_hold")) {
+    // bill-hold reads/writes go through the same org-scoped chokepoint.
+    const billHold = supabase;
     const uninitialized = await findUninitializedBillHoldClaims(
       supabase,
       claims.map((c) => c.id),
@@ -349,7 +338,7 @@ export async function executeOfficeAllyBatchSubmit(
     for (const claimId of uninitialized) {
       try {
         await seedDefaultRequirementsForClaim(claimId, {
-          supabase,
+          supabase: billHold.raw(),
           createdByEmail: input.adminEmail ?? "system:office-ally-submit",
         });
       } catch (err) {
@@ -376,7 +365,7 @@ export async function executeOfficeAllyBatchSubmit(
     }
     const outstanding = await countOutstandingByClaim(
       claims.map((c) => c.id),
-      supabase,
+      billHold.raw(),
     );
     const heldClaimIds = claims
       .filter((c) => (outstanding.get(c.id) ?? 0) > 0)
@@ -390,7 +379,6 @@ export async function executeOfficeAllyBatchSubmit(
   }
 
   const { data: payer } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select(
       "id, payer_legal_name, office_ally_payer_id, paper_only, claim_format, is_active, edi_enrollment_status",
@@ -546,14 +534,15 @@ export async function executeOfficeAllyBatchSubmit(
   const claimedAtIso = new Date().toISOString();
   const batchClaimIds = claims.map((c) => c.id);
   const { data: claimedRows, error: batchClaimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({ status: "submitting", updated_at: claimedAtIso })
     .in("id", batchClaimIds)
     .eq("status", "draft")
     .select("id");
   if (batchClaimErr) throw batchClaimErr;
-  const claimedIds = (claimedRows ?? []).map((r) => r.id as string);
+  const claimedIds = ((claimedRows ?? []) as Array<{ id: string }>).map(
+    (r) => r.id,
+  );
   if (claimedIds.length !== claims.length) {
     if (claimedIds.length > 0) {
       await releaseClaimsToDraft(supabase, claimedIds);
@@ -573,13 +562,15 @@ export async function executeOfficeAllyBatchSubmit(
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
   // only as the pre-migration fallback; see lib/billing/isa13-counter.
-  const reservedIsa = await reserveIsa13Value(supabase);
+  // control_number_counters is a global (non-tenant) table — the ISA13
+  // sequence is shared across the platform, so it is reserved via the
+  // unscoped service client.
+  const reservedIsa = await reserveIsa13Value(supabase.raw());
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());
   } else {
     const { data: priorHigh, error: priorHighErr } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("isa_control_number")
       .order("isa_control_number", { ascending: false })
@@ -632,7 +623,6 @@ export async function executeOfficeAllyBatchSubmit(
       : "uploaded"
     : "transport_failed";
   const { data: subRow, error: subErr } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .insert({
       file_name: fileName,
@@ -677,7 +667,6 @@ export async function executeOfficeAllyBatchSubmit(
     const nowIso = new Date().toISOString();
     for (const claim of claims) {
       const { error: claimUpdateErr } = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .update({
           status: "submitted",
@@ -698,7 +687,6 @@ export async function executeOfficeAllyBatchSubmit(
         );
       }
       const { error: claimEventErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .insert({
           claim_id: claim.id,
@@ -789,30 +777,31 @@ export async function executeOfficeAllyBatchSubmit(
 // download is for audit + support tickets, not a new transmission.
 export async function buildEdiPayloadForSubmission(
   submissionId: string,
+  orgIdInput?: string,
 ): Promise<{ payload: string; usageIndicator: "P" | "T" } | null> {
-  const { supabase, orgId } = await resolveSeedScopedRawClient();
+  const orgId = orgIdInput ?? (await resolveSeedOrgId());
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
   const { data: sub } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .select("id, isa_control_number, gs_control_number, attempted_claim_ids")
     .eq("id", submissionId)
     .limit(1)
     .maybeSingle();
   if (!sub) return null;
-  const claimIds = sub.attempted_claim_ids ?? [];
+  const claimIds = (sub.attempted_claim_ids ?? []) as string[];
   if (claimIds.length === 0) return null;
 
-  const { data: claims } = await supabase
-    .schema("resupply")
+  const { data: claimsData } = await supabase
     .from("insurance_claims")
     .select("*")
     .in("id", claimIds);
-  if (!claims || claims.length === 0) return null;
+  const claims = (claimsData ?? []) as ClaimRow[];
+  if (claims.length === 0) return null;
 
   const payerProfileIds = [...new Set(claims.map((c) => c.payer_profile_id))];
   if (payerProfileIds.length !== 1 || !payerProfileIds[0]) return null;
   const { data: payer } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("payer_legal_name, office_ally_payer_id")
     .eq("id", payerProfileIds[0])
@@ -866,27 +855,23 @@ export async function buildOneDetail(
     { data: secondaryCoverage },
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select("member_id, policyholder_relationship")
       .eq("id", claim.insurance_coverage_id)
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("patients")
       .select("legal_first_name, legal_last_name, date_of_birth, address")
       .eq("id", claim.patient_id)
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("hcpcs_code, modifier, billed_cents, quantity, narrative")
       .eq("claim_id", claim.id)
       .order("created_at", { ascending: true }),
     supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select("diagnosis_icd10")
       .eq("patient_id", claim.patient_id)
@@ -896,6 +881,7 @@ export async function buildOneDetail(
       .maybeSingle(),
     claim.rendering_provider_id
       ? supabase
+          .raw()
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi")
@@ -905,6 +891,7 @@ export async function buildOneDetail(
       : Promise.resolve({ data: null }),
     claim.referring_provider_id
       ? supabase
+          .raw()
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi, practice_address")
@@ -914,7 +901,6 @@ export async function buildOneDetail(
       : Promise.resolve({ data: null }),
     claim.secondary_coverage_id
       ? supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("member_id, payer_name, policyholder_relationship")
           .eq("id", claim.secondary_coverage_id)
@@ -1028,7 +1014,7 @@ export async function buildOneDetail(
       organizationName: payerLegalName,
       payerId,
     },
-    serviceLines: lines.map((l) => ({
+    serviceLines: (lines as LineItemRow[]).map((l) => ({
       hcpcsCode: l.hcpcs_code,
       modifiers: ((l.modifier ?? "") as string)
         .split(",")
@@ -1104,7 +1090,6 @@ async function loadPrimaryCobDisclosure(
 ): Promise<OtherSubscriberDetail | null> {
   if (!claim.primary_claim_id) return null;
   const { data: primaryClaim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("payer_name, insurance_coverage_id, payer_profile_id")
     .eq("id", claim.primary_claim_id)
@@ -1116,7 +1101,6 @@ async function loadPrimaryCobDisclosure(
   let relationship: string | null = null;
   if (primaryClaim.insurance_coverage_id) {
     const { data: cov } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select("member_id, policyholder_relationship")
       .eq("id", primaryClaim.insurance_coverage_id)
@@ -1134,7 +1118,6 @@ async function loadPrimaryCobDisclosure(
   let otherPayerId = "";
   if (primaryClaim.payer_profile_id) {
     const { data: prof } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("office_ally_payer_id, edi_5010_payer_id")
       .eq("id", primaryClaim.payer_profile_id)

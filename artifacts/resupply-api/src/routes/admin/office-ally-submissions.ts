@@ -51,6 +51,8 @@ const bulkResubmitBody = z
 type SubmissionRowFull =
   Database["resupply"]["Tables"]["office_ally_submissions"]["Row"];
 type SubmissionStatus = SubmissionRowFull["status"];
+type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
+type PayerProfileRow = Database["resupply"]["Tables"]["payer_profiles"]["Row"];
 
 const STATUS_VALUES = [
   "queued",
@@ -194,6 +196,11 @@ router.post(
     preset: "bulk",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = bulkResubmitBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -203,11 +210,6 @@ router.post(
           message: i.message,
         })),
       });
-      return;
-    }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -272,6 +274,7 @@ router.post(
         continue;
       }
       const result = await executeOfficeAllyBatchSubmit({
+        orgId,
         claimIds,
         parentSubmissionId: original.id,
         adminEmail: req.adminEmail ?? null,
@@ -662,17 +665,15 @@ router.get(
       .limit(100);
     if (error) throw error;
     res.json({
-      payers: (data ?? []).map(
-        (p: Database["resupply"]["Tables"]["payer_profiles"]["Row"]) => ({
-          id: p.id,
-          slug: p.slug,
-          displayName: p.display_name,
-          lineOfBusiness: p.line_of_business,
-          ediEnrollmentStatus: p.edi_enrollment_status,
-          officeAllyPayerId: p.office_ally_payer_id,
-          requirementsLastVerifiedAt: p.requirements_last_verified_at,
-        }),
-      ),
+      payers: ((data ?? []) as PayerProfileRow[]).map((p) => ({
+        id: p.id,
+        slug: p.slug,
+        displayName: p.display_name,
+        lineOfBusiness: p.line_of_business,
+        ediEnrollmentStatus: p.edi_enrollment_status,
+        officeAllyPayerId: p.office_ally_payer_id,
+        requirementsLastVerifiedAt: p.requirements_last_verified_at,
+      })),
     });
   },
 );
@@ -758,14 +759,14 @@ router.get(
   "/admin/office-ally-submissions/:id",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const parsed = idParam.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -810,13 +811,12 @@ router.get(
               .in("id", fallbackClaimIds)
           ).data ?? [])
         : [];
-    const claims =
-      linkedClaims && linkedClaims.length > 0 ? linkedClaims : fallbackClaims;
+    const claims = (
+      linkedClaims && linkedClaims.length > 0 ? linkedClaims : fallbackClaims
+    ) as ClaimRow[];
 
     // Patient name lookup (single-statement batch via .in()).
-    const patientIds = [
-      ...new Set(claims.map((c: { patient_id: string }) => c.patient_id)),
-    ];
+    const patientIds = [...new Set(claims.map((c) => c.patient_id))];
     const patientNames = new Map<string, string>();
     if (patientIds.length > 0) {
       const { data: patients } = await supabase
@@ -856,7 +856,7 @@ router.get(
     // event per claim so the detail page can render the per-claim
     // reject reason inline instead of forcing the op to scroll to
     // the events tab.
-    const claimIds = claims.map((c: { id: string }) => c.id);
+    const claimIds = claims.map((c) => c.id);
     const ackEvents = new Map<
       string,
       {
@@ -896,40 +896,30 @@ router.get(
 
     res.json({
       submission: rowToApi(submission),
-      claims: claims.map(
-        (c: {
-          id: string;
-          patient_id: string;
-          payer_name: string | null;
-          claim_number: string | null;
-          date_of_service: string | null;
-          status: string;
-          total_billed_cents: number | null;
-        }) => {
-          const ack = ackEvents.get(c.id) ?? null;
-          return {
-            id: c.id,
-            patientId: c.patient_id,
-            patientName: patientNames.get(c.patient_id) ?? null,
-            payerName: c.payer_name,
-            claimNumber: c.claim_number,
-            dateOfService: c.date_of_service,
-            status: c.status,
-            totalBilledCents: c.total_billed_cents,
-            // Per-claim 277CA outcome + reason. Null when no 277CA has
-            // been received yet for this claim. `reason` strips the
-            // "277CA accepted: " / "277CA rejected: " prefix so the UI
-            // can render it raw.
-            ack277ca: ack
-              ? {
-                  outcome: ack.outcome,
-                  reason: ack.note.replace(/^277CA (accepted|rejected): /, ""),
-                  receivedAt: ack.occurredAt,
-                }
-              : null,
-          };
-        },
-      ),
+      claims: claims.map((c) => {
+        const ack = ackEvents.get(c.id) ?? null;
+        return {
+          id: c.id,
+          patientId: c.patient_id,
+          patientName: patientNames.get(c.patient_id) ?? null,
+          payerName: c.payer_name,
+          claimNumber: c.claim_number,
+          dateOfService: c.date_of_service,
+          status: c.status,
+          totalBilledCents: c.total_billed_cents,
+          // Per-claim 277CA outcome + reason. Null when no 277CA has
+          // been received yet for this claim. `reason` strips the
+          // "277CA accepted: " / "277CA rejected: " prefix so the UI
+          // can render it raw.
+          ack277ca: ack
+            ? {
+                outcome: ack.outcome,
+                reason: ack.note.replace(/^277CA (accepted|rejected): /, ""),
+                receivedAt: ack.occurredAt,
+              }
+            : null,
+        };
+      }),
       lineage: {
         parent: parentRes.data ? rowToApi(parentRes.data) : null,
         children: (childrenRes.data ?? []).map(rowToApi),
@@ -955,12 +945,17 @@ router.get(
     preset: "sensitive",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const built = await buildEdiPayloadForSubmission(parsed.data.id);
+    const built = await buildEdiPayloadForSubmission(parsed.data.id, orgId);
     if (!built) {
       res.status(404).json({ error: "submission_unrecoverable" });
       return;
@@ -1008,14 +1003,14 @@ router.post(
     preset: "bulk",
   }),
   async (req, res) => {
-    const parsed = idParam.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const parsed = idParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -1048,6 +1043,7 @@ router.post(
       return;
     }
     const result = await executeOfficeAllyBatchSubmit({
+      orgId,
       claimIds,
       parentSubmissionId: original.id,
       adminEmail: req.adminEmail ?? null,
@@ -1085,6 +1081,11 @@ router.patch(
     preset: "sensitive",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -1118,11 +1119,6 @@ router.patch(
     if (b.rejectionReason !== undefined)
       update.rejection_reason = b.rejectionReason;
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
       .from("office_ally_submissions")

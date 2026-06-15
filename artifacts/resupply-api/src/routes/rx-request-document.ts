@@ -51,15 +51,16 @@ router.get("/rx-request/document/:token", rxDocLimiter, async (req, res) => {
     return;
   }
 
+  // Public token route (no request tenant); scope the packet render to
+  // the seed org (single-tenant bridge).
   const orgId = await resolveSeedOrgId();
   if (!orgId) {
-    // No tenant context — treat like a missing packet (signed-link 404).
     res.status(404).json({ error: "not_found" });
     return;
   }
   const supabase = getOrgScopedClient(orgId);
   const resolved = await resolvePrescriptionRequestInputs(
-    supabase.raw(),
+    supabase,
     verified.packetId,
   );
   if (resolved.kind === "not_found") {

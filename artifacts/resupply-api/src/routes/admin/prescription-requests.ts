@@ -71,6 +71,7 @@ import {
   type Database,
   type Json,
   getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   createTelnyxFaxClient,
@@ -109,6 +110,15 @@ type PacketUpdate =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Update"];
 
 const router: IRouter = Router();
+
+// signature-tracking writes go through the org-scoped chokepoint. The
+// rest of this route's queries are converted separately; this resolves
+// the request tenant for the tracking calls only and fails closed.
+function reqOrgClient(req: import("express").Request): OrgScopedClient {
+  const orgId = req.orgId;
+  if (!orgId) throw new Error("tenant_context_missing");
+  return getOrgScopedClient(orgId);
+}
 const idParam = z.object({ id: z.string().uuid() });
 const patientParam = z.object({ id: z.string().uuid() });
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -180,6 +190,11 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = patientParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "patient_not_found" });
@@ -194,11 +209,6 @@ router.post(
           message: i.message,
         })),
       });
-      return;
-    }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -268,7 +278,7 @@ router.post(
     // fail the packet create (the PDF just renders without a barcode).
     let trackingCode: string | null = null;
     try {
-      const reg = await registerSignatureTracking(supabase, {
+      const reg = await registerSignatureTracking(reqOrgClient(req), {
         kind: "prescription_request",
         documentId: inserted.id,
         title: "Prescription request",
@@ -313,14 +323,14 @@ router.get(
   "/admin/patients/:id/prescription-requests",
   requirePermission("patients.read"),
   async (req, res) => {
-    const params = patientParam.safeParse(req.params);
-    if (!params.success) {
-      res.status(404).json({ error: "patient_not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const params = patientParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "patient_not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -372,6 +382,11 @@ router.get(
   "/admin/prescription-requests/needs-signature",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = needsSignatureQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({
@@ -383,14 +398,9 @@ router.get(
       });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const aggregation = await aggregatePacketsNeedingSignature(
-      supabase.raw(),
+      supabase,
       targetFromQuery(parsed.data),
       { limit: parsed.data.limit },
     );
@@ -402,6 +412,11 @@ router.get(
   "/admin/prescription-requests/needs-signature/pdf",
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = needsSignatureQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({
@@ -414,14 +429,9 @@ router.get(
       return;
     }
     const target = targetFromQuery(parsed.data);
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const aggregation = await aggregatePacketsNeedingSignature(
-      supabase.raw(),
+      supabase,
       target,
       {
         limit: parsed.data.limit,
@@ -440,10 +450,7 @@ router.get(
     const resolved = await Promise.all(
       aggregation.packets.map(async (packet) => ({
         packet,
-        outcome: await resolvePrescriptionRequestInputs(
-          supabase.raw(),
-          packet.id,
-        ),
+        outcome: await resolvePrescriptionRequestInputs(supabase, packet.id),
       })),
     );
 
@@ -525,14 +532,14 @@ router.get(
   "/admin/prescription-requests/:id",
   requirePermission("patients.read"),
   async (req, res) => {
-    const params = idParam.safeParse(req.params);
-    if (!params.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -555,19 +562,19 @@ router.get(
   "/admin/prescription-requests/:id/pdf",
   requirePermission("patients.read"),
   async (req, res) => {
-    const params = idParam.safeParse(req.params);
-    if (!params.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const resolved = await resolvePrescriptionRequestInputs(
-      supabase.raw(),
+      supabase,
       params.data.id,
     );
     if (resolved.kind === "not_found") {
@@ -625,7 +632,7 @@ router.get(
  * (re-render the same packet, re-fax to the return number).
  */
 async function dispatchPacketFax(
-  supabase: ReturnType<typeof getOrgScopedClient>,
+  supabase: OrgScopedClient,
   packet: { id: string; return_fax_e164: string | null },
   req: Request,
   res: Response,
@@ -638,10 +645,7 @@ async function dispatchPacketFax(
 
   // Verify inputs render before dispatch so we don't fire a Telnyx
   // bill on a packet that the public fetch would 422 on.
-  const resolved = await resolvePrescriptionRequestInputs(
-    supabase.raw(),
-    packet.id,
-  );
+  const resolved = await resolvePrescriptionRequestInputs(supabase, packet.id);
   if (resolved.kind !== "ok") {
     res.status(422).json({
       error: "invalid_inputs",
@@ -718,7 +722,7 @@ async function dispatchPacketFax(
       );
     }
     await recordTrackingSent(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       packet.id,
       "fax",
@@ -780,14 +784,14 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
-    const params = idParam.safeParse(req.params);
-    if (!params.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -823,14 +827,14 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
-    const params = idParam.safeParse(req.params);
-    if (!params.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -870,6 +874,11 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
@@ -889,11 +898,6 @@ router.post(
       .safeParse(req.body ?? {});
     if (!body.success) {
       res.status(400).json({ error: "invalid_body" });
-      return;
-    }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -933,7 +937,7 @@ router.post(
       .eq("id", params.data.id);
     if (updErr) throw updErr;
     await markTrackingReturned(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       params.data.id,
     ).catch((err) => {
@@ -963,14 +967,14 @@ router.post(
     preset: "mutation",
   }),
   async (req, res) => {
-    const params = idParam.safeParse(req.params);
-    if (!params.success) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -1000,7 +1004,7 @@ router.post(
       .eq("id", params.data.id);
     if (error) throw error;
     await markTrackingCanceled(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       params.data.id,
     ).catch((err) => {
