@@ -49,6 +49,28 @@ These are the items that make the difference between "isolation-ready" and
 "actually serves tenant #2." They are ordered by how badly they block a
 real second customer.
 
+### G0. Confirm `org_id` coverage is complete — **correctness audit**
+
+Of ~213 tables, **37 carry `org_id`**; the rest are *intended* to be global
+reference data (products, HCPCS/payer catalogs), FK-inherited children, or
+retired/no-op stubs. The chokepoint only auto-scopes tables it filters by
+`org_id` — a **tenant-scoped** table that lacks the column and is queried
+directly via `.from()` would silently read across tenants. The `NOT NULL`
+guard (`0351`) and CI isolation guard only cover tables that already have
+`org_id`, so they cannot catch a *missing-column* gap.
+
+**Work (verification, mostly):**
+1. Enumerate every table without `org_id` and classify each:
+   (a) legitimately global reference, (b) FK-inherited *and* never queried
+   directly without joining its org-scoped parent, or (c) a genuine gap.
+2. Add `org_id` to any (c) tables. Candidates the inventory flagged to
+   check first: `locations`, `control_number_counters` (EDI sequences must
+   not collide across tenants), `outreach_playbooks`, `webhook_subscriptions`,
+   `education_videos`, `provider_portal_accounts`, `gl_account_mappings`.
+3. **Do not** add `org_id` to the retired HIPAA/DMEPOS/ACHC compliance
+   tables or `audit_log` — that machinery was retired (migration 0156) and
+   is a no-op stub per the hard rules; scoping it would be wasted work.
+
 ### G1. Public storefront + customer portal data is pinned to the seed org — **blocker**
 
 `requireSignedIn` and every `routes/storefront/*` handler resolve the
@@ -243,6 +265,7 @@ Respect the **hard rule**: re-point only the **raw** `--background` /
 
 | Order | Item | Why first |
 | ----- | ---- | --------- |
+| 0 | **G0** `org_id` coverage audit | Cheap, and it confirms the isolation guarantee has no missing-column holes before tenant #2. |
 | 1 | **G1** storefront/customer host→org + **G2** worker fan-out | Without these a 2nd tenant cannot transact or be served at all. Highest blast radius. |
 | 2 | **G3** per-tenant `app_config` | Unblocks per-tenant credentials that G5–G8 depend on. |
 | 3 | **G4** platform super-admin console + impersonation | Operate/support tenants without SQL. |
