@@ -11,7 +11,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { applyCompanyIdentityToText } from "../../lib/company-info";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -32,12 +32,12 @@ const FORM_KINDS: FormKind[] = [
 ];
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -56,14 +56,18 @@ router.get(
       res.json({ patientLinked: false, forms: [] });
       return;
     }
-    const patientId = await resolveSinglePatientByEmail(email);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const patientId = await resolveSinglePatientByEmail(orgId, email);
     if (!patientId) {
       res.json({ patientLinked: false, forms: [] });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_form_acknowledgements")
       .select("form_kind, form_version, signed_at, source")
       .eq("patient_id", patientId)
@@ -125,15 +129,19 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const patientId = await resolveSinglePatientByEmail(email);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const patientId = await resolveSinglePatientByEmail(orgId, email);
     if (!patientId) {
       res.status(404).json({ error: "patient_not_linked" });
       return;
     }
     const version = getFormCurrentVersion(parsed.data.formKind);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_form_acknowledgements")
       .insert({
         patient_id: patientId,
