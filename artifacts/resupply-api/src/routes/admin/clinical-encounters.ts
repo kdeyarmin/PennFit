@@ -19,7 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -79,9 +79,13 @@ router.post(
     }
     const patientId = parsed.data.patientId;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("clinical_encounters")
       .select(
         "id, encounter_type, reason, assessment, intervention, plan, follow_up_at, note, linked_alert_id, linked_episode_id, author_email, created_at",
@@ -145,9 +149,13 @@ router.post(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("clinical_encounters")
       .insert({
         patient_id: patientId,

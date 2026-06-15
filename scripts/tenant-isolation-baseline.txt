@@ -93,7 +93,6 @@ artifacts/resupply-api/src/middlewares/requireProvider.ts
 artifacts/resupply-api/src/routes/admin/account-setup.ts
 artifacts/resupply-api/src/routes/admin/acquisition-funnel.ts
 artifacts/resupply-api/src/routes/admin/adherence-predictions.ts
-artifacts/resupply-api/src/routes/admin/agent-availability.ts
 artifacts/resupply-api/src/routes/admin/alert-message-overrides.ts
 artifacts/resupply-api/src/routes/admin/alerts.ts
 artifacts/resupply-api/src/routes/admin/analytics-channel-engagement.ts
@@ -117,7 +116,6 @@ artifacts/resupply-api/src/routes/admin/claim-paperwork.ts
 artifacts/resupply-api/src/routes/admin/claim-templates.ts
 artifacts/resupply-api/src/routes/admin/clearinghouse-credentials.ts
 artifacts/resupply-api/src/routes/admin/click-to-dial.ts
-artifacts/resupply-api/src/routes/admin/clinical-encounters.ts
 artifacts/resupply-api/src/routes/admin/cmn-documents.ts
 artifacts/resupply-api/src/routes/admin/coaching-plans.ts
 artifacts/resupply-api/src/routes/admin/company-calendar.ts
@@ -159,7 +157,6 @@ artifacts/resupply-api/src/routes/admin/manual-document-packets.ts
 artifacts/resupply-api/src/routes/admin/manual-documents.ts
 artifacts/resupply-api/src/routes/admin/mask-fit-worklist.ts
 artifacts/resupply-api/src/routes/admin/message-template-overrides.ts
-artifacts/resupply-api/src/routes/admin/message-templates.ts
 artifacts/resupply-api/src/routes/admin/metric-alerts.ts
 artifacts/resupply-api/src/routes/admin/metric-thresholds.ts
 artifacts/resupply-api/src/routes/admin/mfa.ts
@@ -214,7 +211,6 @@ artifacts/resupply-api/src/routes/admin/shop-review-requests.ts
 artifacts/resupply-api/src/routes/admin/shop-reviews.ts
 artifacts/resupply-api/src/routes/admin/shop-subscriptions-metrics.ts
 artifacts/resupply-api/src/routes/admin/signature-tracking.ts
-artifacts/resupply-api/src/routes/admin/smart-triggers.ts
 artifacts/resupply-api/src/routes/admin/staffing-live.ts
 artifacts/resupply-api/src/routes/admin/storefront-branding.ts
 artifacts/resupply-api/src/routes/admin/swo.ts
