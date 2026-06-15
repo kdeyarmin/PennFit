@@ -59,7 +59,7 @@ BEGIN
       AND t.relname = 'feature_flags'
       AND c.contype = 'p'
       AND (
-        SELECT array_agg(a.attname ORDER BY a.attname)
+        SELECT array_agg(a.attname::text ORDER BY a.attname::text)
         FROM pg_attribute a
         WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
       ) = ARRAY['key', 'org_id']
