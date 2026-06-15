@@ -28,7 +28,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -441,22 +441,26 @@ router.post(
     // initial insert; later lifecycle transitions own the row. Mirrors
     // the quick-checkout mirror-upsert. (`status` is the source of truth
     // here; we deliberately do not re-touch `updated_at` on conflict.)
-    const supabase = getSupabaseServiceRoleClient();
-    const { error: upsertErr } = await supabase
-      .schema("resupply")
-      .from("shop_orders")
-      .upsert(
-        {
-          stripe_session_id: session.id,
-          status: "pending",
-          cart_hash: cartHash,
-          fulfillment_method: fulfillmentMethod,
-          ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
-          ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "stripe_session_id", ignoreDuplicates: true },
-      );
+    // attachSignedIn allows guest checkout, so req.orgId may be unset;
+    // fall back to the seed tenant (single-tenant bridge) for guests.
+    const orgId = req.orgId ?? (await resolveSeedOrgId());
+    if (!orgId) {
+      res.status(503).json({ error: "tenant_unavailable" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { error: upsertErr } = await supabase.from("shop_orders").upsert(
+      {
+        stripe_session_id: session.id,
+        status: "pending",
+        cart_hash: cartHash,
+        fulfillment_method: fulfillmentMethod,
+        ...(pickupLocationId ? { pickup_location_id: pickupLocationId } : {}),
+        ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "stripe_session_id", ignoreDuplicates: true },
+    );
     if (upsertErr) {
       req.log?.error(
         { err: upsertErr, sessionId: session.id },
