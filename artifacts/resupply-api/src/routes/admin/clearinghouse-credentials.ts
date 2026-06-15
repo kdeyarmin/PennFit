@@ -134,7 +134,7 @@ router.get(
       .select("*")
       .order("display_name", { ascending: true });
     if (error) throw error;
-    res.json({ clearinghouses: (data ?? []).map((r: Row) => rowToApi(r)) });
+    res.json({ clearinghouses: ((data ?? []) as Row[]).map(rowToApi) });
   },
 );
 
@@ -431,8 +431,13 @@ router.post(
   requireAdminOnly,
   adminRateLimit({ name: "office_ally.poll_now", preset: "bulk" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     // Resolve to make sure we have a target; bail clearly if not.
-    const resolved = await resolveClearinghouse();
+    const resolved = await resolveClearinghouse({ orgId });
     if (!resolved.config) {
       res.status(409).json({
         error: "no_clearinghouse_configured",
@@ -491,30 +496,28 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({
-      files: (data ?? []).map(
-        (
-          r: Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"],
-        ) => ({
-          id: r.id,
-          clearinghouseId: r.clearinghouse_id,
-          remotePath: r.remote_path,
-          fileName: r.file_name,
-          fileSha256: r.file_sha256,
-          fileSizeBytes: r.file_size_bytes,
-          fileKind: r.file_kind,
-          parseSummary: r.parse_summary_json,
-          dispatchStatus: r.dispatch_status,
-          appliedToEraFileId: r.applied_to_era_file_id,
-          appliedToSubmissionId: r.applied_to_submission_id,
-          errorMessage: r.error_message,
-          downloadedAt: r.downloaded_at,
-          dispatchedAt: r.dispatched_at,
-        }),
-      ),
+      files: ((data ?? []) as InboundFileRow[]).map((r) => ({
+        id: r.id,
+        clearinghouseId: r.clearinghouse_id,
+        remotePath: r.remote_path,
+        fileName: r.file_name,
+        fileSha256: r.file_sha256,
+        fileSizeBytes: r.file_size_bytes,
+        fileKind: r.file_kind,
+        parseSummary: r.parse_summary_json,
+        dispatchStatus: r.dispatch_status,
+        appliedToEraFileId: r.applied_to_era_file_id,
+        appliedToSubmissionId: r.applied_to_submission_id,
+        errorMessage: r.error_message,
+        downloadedAt: r.downloaded_at,
+        dispatchedAt: r.dispatched_at,
+      })),
     });
   },
 );
 
+type InboundFileRow =
+  Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"];
 type FileKind =
   Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"]["file_kind"];
 type DispatchStatus =

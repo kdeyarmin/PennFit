@@ -328,7 +328,7 @@ router.post(
       earlyRouted.intent !== "start"
     ) {
       try {
-        const activeClosure = await findActiveClosure(orgId, supabase);
+        const activeClosure = await findActiveClosure(supabase);
         if (activeClosure) {
           await safeAudit({
             action: "messaging.inbound.received",

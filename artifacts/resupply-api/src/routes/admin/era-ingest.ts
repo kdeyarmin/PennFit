@@ -116,7 +116,7 @@ router.post(
     // payer — update the catalog".
     const resolvedPayer = await resolvePayerProfileForEra(
       { payerId: parsedEra.payerId, payerName: parsedEra.payerName },
-      { supabase: supabase.raw() },
+      { orgId },
     );
     if (!resolvedPayer) {
       logger.info(
@@ -173,6 +173,7 @@ router.post(
       actorEmail: `system:era_ingest:${req.adminEmail ?? "unknown"}`,
       fileName,
       checkOrEftNumber: parsedEra.checkOrEftNumber,
+      orgId: req.orgId,
     });
 
     // Update with the parser+reconciler counts and promote status.
@@ -251,27 +252,26 @@ router.get("/admin/billing/era-files", requireAdminOnly, async (req, res) => {
     .order("ingested_at", { ascending: false })
     .limit(200);
   if (error) throw error;
+  type EraFileRow = Database["resupply"]["Tables"]["era_files"]["Row"];
   res.json({
-    eraFiles: (data ?? []).map(
-      (r: Database["resupply"]["Tables"]["era_files"]["Row"]) => ({
-        id: r.id,
-        fileName: r.file_name,
-        fileSha256: r.file_sha256,
-        fileSizeBytes: r.file_size_bytes,
-        payerCheckNumber: r.payer_check_number,
-        payerPaidDate: r.payer_paid_date,
-        totalPaidCents: r.total_paid_cents,
-        claimsPaidCount: r.claims_paid_count,
-        claimsDeniedCount: r.claims_denied_count,
-        linesProcessedCount: r.lines_processed_count,
-        matchedSubmissionId: r.matched_submission_id,
-        payerProfileId: r.payer_profile_id,
-        status: r.status,
-        rejectionReason: r.rejection_reason,
-        ingestedByEmail: r.ingested_by_email,
-        ingestedAt: r.ingested_at,
-      }),
-    ),
+    eraFiles: ((data ?? []) as EraFileRow[]).map((r) => ({
+      id: r.id,
+      fileName: r.file_name,
+      fileSha256: r.file_sha256,
+      fileSizeBytes: r.file_size_bytes,
+      payerCheckNumber: r.payer_check_number,
+      payerPaidDate: r.payer_paid_date,
+      totalPaidCents: r.total_paid_cents,
+      claimsPaidCount: r.claims_paid_count,
+      claimsDeniedCount: r.claims_denied_count,
+      linesProcessedCount: r.lines_processed_count,
+      matchedSubmissionId: r.matched_submission_id,
+      payerProfileId: r.payer_profile_id,
+      status: r.status,
+      rejectionReason: r.rejection_reason,
+      ingestedByEmail: r.ingested_by_email,
+      ingestedAt: r.ingested_at,
+    })),
   });
 });
 

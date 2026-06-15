@@ -18,7 +18,6 @@ export interface ActiveClosure {
  *  a recorded "Christmas Day" closure overrides a generic "every
  *  Sunday" rule if both happen to overlap. */
 export async function findActiveClosure(
-  orgId: string,
   supabase: OrgScopedClient,
   asOf: Date = new Date(),
 ): Promise<ActiveClosure | null> {

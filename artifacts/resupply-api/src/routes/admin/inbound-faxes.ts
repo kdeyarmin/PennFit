@@ -42,6 +42,10 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 type InboundFaxUpdate =
   Database["resupply"]["Tables"]["inbound_faxes"]["Update"];
+type InboundFaxRow = Database["resupply"]["Tables"]["inbound_faxes"]["Row"];
+type ReferralReviewRow =
+  Database["resupply"]["Tables"]["referral_reviews"]["Row"];
+type PatientRow = Database["resupply"]["Tables"]["patients"]["Row"];
 type InboundFaxStatus = NonNullable<
   Database["resupply"]["Tables"]["inbound_faxes"]["Row"]["status"]
 >;
@@ -130,20 +134,18 @@ router.get(
     }
     const { data, error } = await query;
     if (error) throw error;
+    const rows = (data ?? []) as InboundFaxRow[];
 
     // Linked referral reviews (one batched lookup) so the triage UI can
     // badge faxes the Referral Reviewer has picked up.
     const reviewByFaxId = new Map<string, { id: string; status: string }>();
-    const faxIds = (data ?? []).map(
-      (r: Database["resupply"]["Tables"]["inbound_faxes"]["Row"]) => r.id,
-    );
+    const faxIds = rows.map((r) => r.id);
     if (faxIds.length > 0) {
       const { data: reviews } = await supabase
         .from("referral_reviews")
         .select("id, status, inbound_fax_id")
         .in("inbound_fax_id", faxIds);
-      for (const rev of (reviews ??
-        []) as Database["resupply"]["Tables"]["referral_reviews"]["Row"][]) {
+      for (const rev of (reviews ?? []) as ReferralReviewRow[]) {
         if (rev.inbound_fax_id) {
           reviewByFaxId.set(rev.inbound_fax_id, {
             id: rev.id,
@@ -154,44 +156,34 @@ router.get(
     }
 
     res.json({
-      faxes: (data ?? []).map(
-        (
-          r: Database["resupply"]["Tables"]["inbound_faxes"]["Row"] & {
-            tracking_code_detected?: unknown;
-            auto_file_status?: unknown;
-            auto_filed_at?: unknown;
-            signature_tracking_id?: unknown;
-            chart_document_id?: unknown;
-          },
-        ) => ({
-          id: r.id,
-          twilioFaxSid: r.twilio_fax_sid,
-          fromE164: r.from_e164,
-          toE164: r.to_e164,
-          receivedAt: r.received_at,
-          numPages: r.num_pages,
-          hasMedia: r.media_object_key !== null,
-          mediaContentType: r.media_content_type,
-          mediaSizeBytes: r.media_size_bytes,
-          status: r.status,
-          attachedPatientId: r.attached_patient_id,
-          attachedProviderId: r.attached_provider_id,
-          attachedPrescriptionId: r.attached_prescription_id,
-          attachedDocumentType: r.attached_document_type,
-          notes: r.notes,
-          createdAt: r.created_at,
-          triagedAt: r.triaged_at,
-          // Barcode auto-file outcome (migration 0258). Null when the
-          // `fax.auto_file_signed` flag is off or no scan ran.
-          trackingCodeDetected: r.tracking_code_detected,
-          autoFileStatus: r.auto_file_status,
-          autoFiledAt: r.auto_filed_at,
-          signatureTrackingId: r.signature_tracking_id,
-          chartDocumentId: r.chart_document_id,
-          referralReviewId: reviewByFaxId.get(r.id)?.id ?? null,
-          referralReviewStatus: reviewByFaxId.get(r.id)?.status ?? null,
-        }),
-      ),
+      faxes: rows.map((r) => ({
+        id: r.id,
+        twilioFaxSid: r.twilio_fax_sid,
+        fromE164: r.from_e164,
+        toE164: r.to_e164,
+        receivedAt: r.received_at,
+        numPages: r.num_pages,
+        hasMedia: r.media_object_key !== null,
+        mediaContentType: r.media_content_type,
+        mediaSizeBytes: r.media_size_bytes,
+        status: r.status,
+        attachedPatientId: r.attached_patient_id,
+        attachedProviderId: r.attached_provider_id,
+        attachedPrescriptionId: r.attached_prescription_id,
+        attachedDocumentType: r.attached_document_type,
+        notes: r.notes,
+        createdAt: r.created_at,
+        triagedAt: r.triaged_at,
+        // Barcode auto-file outcome (migration 0258). Null when the
+        // `fax.auto_file_signed` flag is off or no scan ran.
+        trackingCodeDetected: r.tracking_code_detected,
+        autoFileStatus: r.auto_file_status,
+        autoFiledAt: r.auto_filed_at,
+        signatureTrackingId: r.signature_tracking_id,
+        chartDocumentId: r.chart_document_id,
+        referralReviewId: reviewByFaxId.get(r.id)?.id ?? null,
+        referralReviewStatus: reviewByFaxId.get(r.id)?.status ?? null,
+      })),
     });
   },
 );
@@ -712,9 +704,7 @@ router.get(
       .select("id, legal_first_name, legal_last_name, email, phone_e164")
       .eq("phone_e164", fax.from_e164)
       .limit(10);
-    const candidates = (
-      (exact.data ?? []) as Database["resupply"]["Tables"]["patients"]["Row"][]
-    ).slice();
+    const candidates = ((exact.data ?? []) as PatientRow[]).slice();
     if (candidates.length === 0) {
       const tail = fax.from_e164.slice(-7);
       if (tail.length === 7) {
@@ -723,23 +713,18 @@ router.get(
           .select("id, legal_first_name, legal_last_name, email, phone_e164")
           .ilike("phone_e164", `%${tail}%`)
           .limit(10);
-        candidates.push(
-          ...((fuzzy.data ??
-            []) as Database["resupply"]["Tables"]["patients"]["Row"][]),
-        );
+        candidates.push(...((fuzzy.data ?? []) as PatientRow[]));
       }
     }
     res.json({
       faxFromE164: fax.from_e164,
-      candidates: candidates.map(
-        (p: Database["resupply"]["Tables"]["patients"]["Row"]) => ({
-          id: p.id,
-          legalFirstName: p.legal_first_name,
-          legalLastName: p.legal_last_name,
-          email: p.email,
-          phoneE164: p.phone_e164,
-        }),
-      ),
+      candidates: candidates.map((p) => ({
+        id: p.id,
+        legalFirstName: p.legal_first_name,
+        legalLastName: p.legal_last_name,
+        email: p.email,
+        phoneE164: p.phone_e164,
+      })),
     });
   },
 );

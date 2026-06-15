@@ -72,9 +72,9 @@ function handleWindowTooLarge(err: unknown, res: Response): boolean {
 }
 
 async function loadOutreachAttribution(
-  orgId: string,
   cutoff: string,
   windowDays: number,
+  orgId: string,
 ) {
   const supabase = getOrgScopedClient(orgId);
 
@@ -128,9 +128,14 @@ async function loadOutreachAttribution(
         at: r.created_at as string,
       }));
 
-  const fulfillments: FulfillmentEvent[] = (fulRes.data ?? [])
-    .filter((r: Record<string, unknown>) => r.patient_id && r.created_at)
-    .map((r: Record<string, unknown>) => ({
+  const fulfillments: FulfillmentEvent[] = (
+    (fulRes.data ?? []) as Array<{
+      patient_id: string | null;
+      created_at: string | null;
+    }>
+  )
+    .filter((r) => r.patient_id && r.created_at)
+    .map((r) => ({
       patientId: r.patient_id as string,
       at: r.created_at as string,
     }));
@@ -147,22 +152,22 @@ router.get(
   "/admin/analytics/outreach-attribution",
   requirePermission("reports.read"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
     const { days, attributionWindowDays } = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const result = await loadOutreachAttribution(
-        orgId,
         isoDaysAgo(days),
         attributionWindowDays,
+        orgId,
       );
       res.json({ windowDays: days, ...result });
     } catch (err) {
@@ -176,23 +181,23 @@ router.get(
   "/admin/analytics/outreach-attribution.csv",
   requirePermission("reports.read"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
     const { days, attributionWindowDays } = parsed.data;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     let result: Awaited<ReturnType<typeof loadOutreachAttribution>>;
     try {
       result = await loadOutreachAttribution(
-        orgId,
         isoDaysAgo(days),
         attributionWindowDays,
+        orgId,
       );
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;

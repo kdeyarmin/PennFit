@@ -35,7 +35,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type Database,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
@@ -141,7 +145,7 @@ function disallowedTokens(
 
 /** Fetch the parent alert's allowed_variables (empty if no such alert). */
 async function allowedVariablesForAlert(
-  supabase: ReturnType<typeof getOrgScopedClient>,
+  supabase: OrgScopedClient,
   alertKey: string,
 ): Promise<{ exists: boolean; allowed: string[] }> {
   const { data, error } = await supabase
@@ -178,7 +182,9 @@ router.post(
       .order("channel", { ascending: true })
       .limit(200);
     if (error) throw error;
-    res.json({ overrides: (rows ?? []).map(serialize) });
+    res.json({
+      overrides: ((rows ?? []) as OverrideRow[]).map(serialize),
+    });
   },
 );
 

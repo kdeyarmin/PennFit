@@ -87,6 +87,9 @@ export interface ReconcileEraOptions {
   fileName: string;
   /** Payer-supplied check / EFT number. */
   checkOrEftNumber: string | null;
+  /** Tenant whose claims this remittance posts against. Defaults to the
+   *  seed org (single-tenant bridge) when omitted. */
+  orgId?: string;
 }
 
 const TERMINAL_STATUSES: readonly ClaimRow["status"][] = ["closed"];
@@ -104,6 +107,13 @@ export async function reconcileEra(
   parsed: Parsed835,
   opts: ReconcileEraOptions,
 ): Promise<ReconciliationSummary> {
+  // ERA posts against tenant-scoped claims; route every read/write through
+  // the org-scoped chokepoint, defaulting to the seed org.
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error("era-reconciler: no org resolved for remittance posting");
+  }
+  const supabase = getOrgScopedClient(orgId);
   const summary: ReconciliationSummary = {
     matchedClaims: 0,
     unmatchedClaims: 0,
@@ -112,13 +122,6 @@ export async function reconcileEra(
     deniedClaims: 0,
     outcomes: [],
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    // No tenant context resolved — nothing to reconcile. Return the
-    // empty (zero) summary the caller already handles.
-    return summary;
-  }
-  const supabase = getOrgScopedClient(orgId);
 
   for (const eraClaim of parsed.claims) {
     const outcome = await applyClaim(supabase, eraClaim, opts);

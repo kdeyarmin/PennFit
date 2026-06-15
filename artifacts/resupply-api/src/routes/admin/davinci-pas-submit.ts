@@ -171,8 +171,7 @@ router.post(
       });
       return;
     }
-    // `providers` is a GLOBAL reference table (no org_id column), so it
-    // stays on the unscoped service-role client via `.raw()`.
+    // providers is a global (non-tenant-scoped) table.
     const { data: provider } = await supabase
       .raw()
       .schema("resupply")

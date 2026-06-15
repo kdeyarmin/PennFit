@@ -54,7 +54,7 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
-async function loadRevenueBySource(orgId: string, cutoff: string) {
+async function loadRevenueBySource(cutoff: string, orgId: string) {
   const supabase = getOrgScopedClient(orgId);
 
   const [shopRes, fulRes, clinicalRes] = await Promise.all([
@@ -71,8 +71,8 @@ async function loadRevenueBySource(orgId: string, cutoff: string) {
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     // Head-only count — public.orders holds PHI; we never pull its rows.
-    // public.orders is a non-tenant (cross-schema) table, so it stays on
-    // the raw client rather than the org-scoped `.from()` facade.
+    // public.orders is the clinical-intake form table, not a tenant-
+    // scoped resupply table, so it stays on the unscoped service client.
     supabase
       .raw()
       .schema("public")
@@ -119,14 +119,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
     try {
-      const result = await loadRevenueBySource(orgId, isoDaysAgo(days));
+      const result = await loadRevenueBySource(isoDaysAgo(days), orgId);
       res.json({ windowDays: days, ...result });
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
@@ -144,15 +144,15 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
     let result: Awaited<ReturnType<typeof loadRevenueBySource>>;
     try {
-      result = await loadRevenueBySource(orgId, isoDaysAgo(days));
+      result = await loadRevenueBySource(isoDaysAgo(days), orgId);
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
       throw err;

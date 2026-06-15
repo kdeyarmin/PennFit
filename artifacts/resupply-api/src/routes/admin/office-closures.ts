@@ -66,7 +66,7 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const active = await findActiveClosure(orgId, supabase);
+    const active = await findActiveClosure(supabase);
     res.json({ active });
   },
 );
@@ -96,7 +96,7 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      closures: (data ?? []).map((r: ClosureRow) => ({
+      closures: ((data ?? []) as ClosureRow[]).map((r) => ({
         id: r.id,
         label: r.label,
         startsAt: r.starts_at,
@@ -169,11 +169,6 @@ router.patch(
   requirePermission("admin.tools.manage"),
   adminRateLimit({ name: "office_closures.update", preset: "mutation" }),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
@@ -192,6 +187,11 @@ router.patch(
     if (parsed.data.endsAt != null) update.ends_at = parsed.data.endsAt;
     if (parsed.data.autoReplyMessage != null)
       update.auto_reply_message = parsed.data.autoReplyMessage;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
       .from("office_closures")
@@ -207,14 +207,14 @@ router.post(
   requirePermission("admin.tools.manage"),
   adminRateLimit({ name: "office_closures.end_now", preset: "mutation" }),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -265,7 +265,7 @@ router.get(
     if (error) throw error;
     const ics = buildClosuresIcal({
       practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
-      closures: (data ?? []).map((r: ClosureRow) => ({
+      closures: ((data ?? []) as ClosureRow[]).map((r) => ({
         id: r.id,
         label: r.label,
         startsAt: r.starts_at,
@@ -318,7 +318,7 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      rules: (data ?? []).map((r: RecurringClosureRow) => ({
+      rules: ((data ?? []) as RecurringClosureRow[]).map((r) => ({
         id: r.id,
         label: r.label,
         dayOfWeek: r.day_of_week,
@@ -399,11 +399,6 @@ router.patch(
     preset: "mutation",
   }),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
@@ -428,6 +423,11 @@ router.patch(
     if (parsed.data.active != null) update.active = parsed.data.active ? 1 : 0;
     if (parsed.data.autoReplyMessage != null)
       update.auto_reply_message = parsed.data.autoReplyMessage;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
       .from("office_recurring_closures")

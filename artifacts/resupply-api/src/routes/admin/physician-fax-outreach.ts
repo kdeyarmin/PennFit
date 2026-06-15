@@ -34,7 +34,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type Database,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 import {
   createTelnyxFaxClient,
   TelnyxApiError,
@@ -128,9 +132,9 @@ interface DispatchResult {
  * (create + dispatch) and the POST /:id/retry (re-dispatch) handlers.
  */
 async function dispatchFax(
+  supabase: OrgScopedClient,
   outreachId: string,
   to: string,
-  orgId: string,
 ): Promise<DispatchResult> {
   if (!isFaxConfigured()) {
     return { status: "pending", provider: "not_configured" };
@@ -138,7 +142,6 @@ async function dispatchFax(
 
   // isFaxConfigured() already verified getFaxPublicBaseUrl() is non-null.
   const baseUrl = getFaxPublicBaseUrl()!;
-  const supabase = getOrgScopedClient(orgId);
 
   const faxClient = createTelnyxFaxClient();
   const token = signFaxDocumentToken(outreachId);
@@ -295,7 +298,7 @@ router.post(
       throw new Error("physician_fax_outreach insert returned no rows");
     const id = inserted.id;
 
-    const dispatch = await dispatchFax(id, data.physicianFaxE164, orgId);
+    const dispatch = await dispatchFax(supabase, id, data.physicianFaxE164);
 
     await logAudit({
       action: "physician_fax_outreach.created",
@@ -410,7 +413,11 @@ router.post(
       return;
     }
 
-    const dispatch = await dispatchFax(row.id, row.physician_fax_e164, orgId);
+    const dispatch = await dispatchFax(
+      supabase,
+      row.id,
+      row.physician_fax_e164,
+    );
 
     await logAudit({
       action: "physician_fax_outreach.retried",
@@ -472,8 +479,10 @@ router.get(
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) throw error;
+    type OutreachRow =
+      Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"];
     res.json({
-      outreach: (rows ?? []).map((r: Record<string, unknown>) => ({
+      outreach: ((rows ?? []) as OutreachRow[]).map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         prescriptionId: r.prescription_id,

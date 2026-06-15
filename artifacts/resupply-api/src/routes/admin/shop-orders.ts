@@ -574,15 +574,14 @@ router.post(
   // `returns.manage` (admin / supervisor / csr / fulfillment / agent).
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const supabase = getOrgScopedClient(orgId);
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const parsed = trackingBodySchema.safeParse(req.body);
@@ -653,6 +652,7 @@ router.post(
       return;
     }
 
+    const supabase = getOrgScopedClient(orgId);
     // Atomicity note: the original SQL path used a
     //   `CASE WHEN tracking_carrier IS DISTINCT FROM $new
     //         OR tracking_number IS DISTINCT FROM $new
@@ -739,15 +739,14 @@ router.post(
   // Mark delivered — same operational tier as tracking entry.
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const supabase = getOrgScopedClient(orgId);
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const existing = await loadOrder(orgId, orderId);
@@ -765,6 +764,7 @@ router.post(
       return;
     }
 
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
       .from("shop_orders")
@@ -833,14 +833,14 @@ router.post(
   "/admin/shop/orders/:orderId/ready-for-pickup",
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const existing = await loadOrder(orgId, orderId);
@@ -939,14 +939,14 @@ router.post(
   "/admin/shop/orders/:orderId/picked-up",
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const existing = await loadOrder(orgId, orderId);
@@ -1173,14 +1173,14 @@ router.patch(
   // matrix so the same CSRs who handle returns can fix bad addresses.
   requirePermission("returns.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const parsed = addressBodySchema.safeParse(req.body);
@@ -1260,14 +1260,14 @@ router.post(
   requirePermission("returns.approve"),
   adminOrderRefundLimiter,
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const parsed = refundBodySchema.safeParse(req.body);

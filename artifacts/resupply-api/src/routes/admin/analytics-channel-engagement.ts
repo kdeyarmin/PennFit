@@ -59,7 +59,7 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
-async function loadChannelEngagement(orgId: string, cutoff: string) {
+async function loadChannelEngagement(cutoff: string, orgId: string) {
   const supabase = getOrgScopedClient(orgId);
 
   const [convRes, msgRes, voiceRes, orderRes] = await Promise.all([
@@ -113,34 +113,28 @@ async function loadChannelEngagement(orgId: string, cutoff: string) {
     throw new EngagementWindowTooLargeError(READ_CAP);
   }
 
-  const conversations: ConversationRow[] = (convRes.data ?? []).map(
-    (r: Record<string, unknown>) => ({
-      id: r.id as string,
-      channel: r.channel as string | null,
-    }),
-  );
-  const messages: MessageRow[] = (msgRes.data ?? []).map(
-    (r: Record<string, unknown>) => ({
-      conversationId: r.conversation_id as string | null,
-      direction: r.direction as string | null,
-      deliveryStatus: r.delivery_status as string | null,
-    }),
-  );
-  const voiceCalls: VoiceCallRow[] = (voiceRes.data ?? []).map(
-    (r: Record<string, unknown>) => ({
-      status: r.status as string | null,
-      direction: r.direction as string | null,
-      durationSeconds: r.duration_seconds as number | null,
-      initiatedAt: r.initiated_at as string | null,
-      answeredAt: r.answered_at as string | null,
-    }),
-  );
-  const orders: OrderRow[] = (orderRes.data ?? []).map(
-    (r: Record<string, unknown>) => ({
-      status: r.status as string | null,
-      amountTotalCents: r.amount_total_cents as number | null,
-    }),
-  );
+  const asRows = (d: unknown): Array<Record<string, unknown>> =>
+    (d ?? []) as Array<Record<string, unknown>>;
+  const conversations: ConversationRow[] = asRows(convRes.data).map((r) => ({
+    id: r.id as string,
+    channel: r.channel as string | null,
+  }));
+  const messages: MessageRow[] = asRows(msgRes.data).map((r) => ({
+    conversationId: r.conversation_id as string | null,
+    direction: r.direction as string | null,
+    deliveryStatus: r.delivery_status as string | null,
+  }));
+  const voiceCalls: VoiceCallRow[] = asRows(voiceRes.data).map((r) => ({
+    status: r.status as string | null,
+    direction: r.direction as string | null,
+    durationSeconds: r.duration_seconds as number | null,
+    initiatedAt: r.initiated_at as string | null,
+    answeredAt: r.answered_at as string | null,
+  }));
+  const orders: OrderRow[] = asRows(orderRes.data).map((r) => ({
+    status: r.status as string | null,
+    amountTotalCents: r.amount_total_cents as number | null,
+  }));
 
   return aggregateChannelEngagement({
     conversations,
@@ -167,19 +161,19 @@ router.get(
   "/admin/analytics/channel-engagement",
   requirePermission("reports.read"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const parsed = windowSchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
-      const result = await loadChannelEngagement(orgId, isoDaysAgo(days));
+      const result = await loadChannelEngagement(isoDaysAgo(days), orgId);
       res.json({ windowDays: days, ...result });
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
@@ -192,20 +186,20 @@ router.get(
   "/admin/analytics/channel-engagement.csv",
   requirePermission("reports.read"),
   async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const parsed = windowSchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     let result: Awaited<ReturnType<typeof loadChannelEngagement>>;
     try {
-      result = await loadChannelEngagement(orgId, isoDaysAgo(days));
+      result = await loadChannelEngagement(isoDaysAgo(days), orgId);
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
       throw err;

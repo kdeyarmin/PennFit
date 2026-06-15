@@ -22,13 +22,13 @@
 import {
   type Database,
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 type PayerRow = Database["resupply"]["Tables"]["payer_profiles"]["Row"];
 
 export interface EraPayerHints {
@@ -47,19 +47,11 @@ export interface ResolvedEraPayer {
 
 export async function resolvePayerProfileForEra(
   hints: EraPayerHints,
-  opts: { supabase?: SupabaseClient } = {},
+  opts: { orgId?: string } = {},
 ): Promise<ResolvedEraPayer | null> {
-  let supabase = opts.supabase;
-  if (!supabase) {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      // No tenant context → behave like a no-match (the caller already
-      // treats null as non-fatal: ingest proceeds with payer_profile_id
-      // = null and flags it for catalog backfill).
-      return null;
-    }
-    supabase = getOrgScopedClient(orgId).raw();
-  }
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
 
   const id = (hints.payerId ?? "").trim();
   const name = (hints.payerName ?? "").trim();
@@ -87,7 +79,6 @@ export async function resolvePayerProfileForEra(
 
   if (name) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("id")
       .ilike("display_name", name)
@@ -118,7 +109,6 @@ async function lookup(
   value: string,
 ): Promise<Pick<PayerRow, "id"> | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("id")
     .eq(column, value)
