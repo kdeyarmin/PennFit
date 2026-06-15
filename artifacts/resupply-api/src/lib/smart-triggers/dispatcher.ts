@@ -27,7 +27,11 @@
 //      tick can retry the row.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailApiError,
@@ -149,7 +153,21 @@ export async function runSmartTriggerSendDue(
     return { status: "not_configured", channel };
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — no events to sweep. Return the same
+    // "ok, did nothing" shape a zero-candidate run produces.
+    return {
+      status: "ok",
+      channel,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      remaining: 0,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -183,7 +201,6 @@ export async function runSmartTriggerSendDue(
   // non_adherent_30d) sit in the table for the RT board but the
   // dispatcher leaves them alone so a clinician decides the next step.
   const { data: eventCandidates, error: candidatesErr } = await supabase
-    .schema("resupply")
     .from("patient_smart_trigger_events")
     .select("id, patient_id, kind")
     .in("kind", PATIENT_DISPATCH_KINDS as readonly string[])
@@ -209,23 +226,34 @@ export async function runSmartTriggerSendDue(
   // Step 2 — bulk-fetch the patient contact records and filter
   // JS-side. Patient list is bounded by event count so the
   // round-trip is cheap.
-  const patientIds = Array.from(new Set(events.map((e) => e.patient_id)));
+  const patientIds = Array.from(
+    new Set<string>(
+      events.map((e: Record<string, unknown>) => e.patient_id as string),
+    ),
+  );
   const { data: patientRows, error: patientsErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select(
       "id, legal_first_name, email, phone_e164, status, timezone, address",
     )
     .in("id", patientIds);
   if (patientsErr) throw patientsErr;
-  const patientMap = new Map(
-    (patientRows ?? []).map((p) => [
-      p.id,
+  interface PatientContact {
+    firstName: string | null;
+    email: string | null;
+    phoneE164: string | null;
+    status: string | null;
+    timezone: string | null;
+    zip: string | null;
+  }
+  const patientMap = new Map<string, PatientContact>(
+    ((patientRows ?? []) as Record<string, unknown>[]).map((p) => [
+      p.id as string,
       {
-        firstName: p.legal_first_name,
-        email: p.email,
-        phoneE164: p.phone_e164,
-        status: p.status,
+        firstName: (p.legal_first_name as string | null) ?? null,
+        email: (p.email as string | null) ?? null,
+        phoneE164: (p.phone_e164 as string | null) ?? null,
+        status: (p.status as string | null) ?? null,
         timezone: (p.timezone as string | null) ?? null,
         zip: ((p.address as { zip?: string } | null)?.zip ?? null) as
           | string
@@ -243,14 +271,13 @@ export async function runSmartTriggerSendDue(
   // these and smart-trigger must too. Without this gating a
   // patient with DND 22:00-06:00 still gets nudged at 4am
   // (HIPAA + TCPA exposure).
-  const patientEmails = (patientRows ?? [])
+  const patientEmails = ((patientRows ?? []) as Record<string, unknown>[])
     .map((p) => p.email)
     .filter((e): e is string => typeof e === "string" && e.length > 0)
     .map((e) => e.toLowerCase());
   const prefsByEmail = new Map<string, CommunicationPreferences>();
   if (patientEmails.length > 0) {
     const { data: custRows, error: custErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", patientEmails);
@@ -273,34 +300,38 @@ export async function runSmartTriggerSendDue(
   // contact channel populated AND has not opted out / is outside
   // their DND window. Then truncate to the per-run cap.
   const eligible = events
-    .filter((e) => {
-      const p = patientMap.get(e.patient_id);
-      if (!p || p.status !== "active") return false;
-      const contact = channel === "email" ? p.email : p.phoneE164;
-      if (contact === null || contact === "") return false;
-      // Hard TCPA window for SMS — the DND check below only protects
-      // patients who configured a DND window (default null), and a
-      // DME-only patient with no shop_customers row used to default
-      // to "allowed" at ANY hour. The event is not claimed, so the
-      // next in-window run picks it up.
-      if (
-        channel === "sms" &&
-        isOutsideSmsSendWindow(nowForGating, {
-          timezone: p.timezone,
-          shippingZip: p.zip,
-        })
-      ) {
-        return false;
-      }
-      // Comm-prefs gating. See smartTriggerChannelAllowed for the
-      // policy: DND always blocks, explicit opt-out is honoured,
-      // and DME-only patients without a shop_customers row default
-      // to allowed (they couldn't have opted out yet).
-      const prefs = p.email
-        ? (prefsByEmail.get(p.email.toLowerCase()) ?? null)
-        : null;
-      return smartTriggerChannelAllowed(prefs, channel, nowForGating);
-    })
+    .filter(
+      (
+        e: Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"],
+      ) => {
+        const p = patientMap.get(e.patient_id);
+        if (!p || p.status !== "active") return false;
+        const contact = channel === "email" ? p.email : p.phoneE164;
+        if (contact === null || contact === "") return false;
+        // Hard TCPA window for SMS — the DND check below only protects
+        // patients who configured a DND window (default null), and a
+        // DME-only patient with no shop_customers row used to default
+        // to "allowed" at ANY hour. The event is not claimed, so the
+        // next in-window run picks it up.
+        if (
+          channel === "sms" &&
+          isOutsideSmsSendWindow(nowForGating, {
+            timezone: p.timezone,
+            shippingZip: p.zip,
+          })
+        ) {
+          return false;
+        }
+        // Comm-prefs gating. See smartTriggerChannelAllowed for the
+        // policy: DND always blocks, explicit opt-out is honoured,
+        // and DME-only patients without a shop_customers row default
+        // to allowed (they couldn't have opted out yet).
+        const prefs = p.email
+          ? (prefsByEmail.get(p.email.toLowerCase()) ?? null)
+          : null;
+        return smartTriggerChannelAllowed(prefs, channel, nowForGating);
+      },
+    )
     .slice(0, PER_RUN_SEND_CAP);
   if (eligible.length === 0) {
     return {
@@ -318,20 +349,27 @@ export async function runSmartTriggerSendDue(
   // this idempotent under parallel dispatchers; the loser sees
   // zero rows match and does no work.
   const nowIso = new Date().toISOString();
-  const eligibleIds = eligible.map((e) => e.id);
+  const eligibleIds = eligible.map(
+    (
+      e: Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"],
+    ) => e.id,
+  );
   const { data: claimedRows, error: claimErr } = await supabase
-    .schema("resupply")
     .from("patient_smart_trigger_events")
     .update({ sent_at: nowIso, updated_at: nowIso })
     .in("id", eligibleIds)
     .is("sent_at", null)
     .select("id, patient_id, kind");
   if (claimErr) throw claimErr;
-  const claimed = (claimedRows ?? []).map((r) => ({
-    eventId: r.id,
-    patientId: r.patient_id,
-    kind: r.kind,
-  }));
+  const claimed = (claimedRows ?? []).map(
+    (
+      r: Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"],
+    ) => ({
+      eventId: r.id,
+      patientId: r.patient_id,
+      kind: r.kind,
+    }),
+  );
 
   let attempted = 0;
   let sent = 0;
@@ -339,7 +377,6 @@ export async function runSmartTriggerSendDue(
 
   const unclaim = async (eventId: string): Promise<void> => {
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .update({ sent_at: null, updated_at: new Date().toISOString() })
       .eq("id", eventId);

@@ -21,7 +21,9 @@
 
 import {
   type Database,
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -47,7 +49,17 @@ export async function resolvePayerProfileForEra(
   hints: EraPayerHints,
   opts: { supabase?: SupabaseClient } = {},
 ): Promise<ResolvedEraPayer | null> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  let supabase = opts.supabase;
+  if (!supabase) {
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // No tenant context → behave like a no-match (the caller already
+      // treats null as non-fatal: ingest proceeds with payer_profile_id
+      // = null and flags it for catalog backfill).
+      return null;
+    }
+    supabase = getOrgScopedClient(orgId).raw();
+  }
 
   const id = (hints.payerId ?? "").trim();
   const name = (hints.payerName ?? "").trim();

@@ -29,7 +29,7 @@
 //     propagates without polling, but we don't hammer Supabase on
 //     every webhook.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -135,8 +135,20 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
   if (cached && cached.expiresAt > now) return cached.value;
 
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // No seed tenant resolvable — same posture as "no Supabase
+      // configured": dev/non-prod treats every feature as enabled,
+      // production falls through to the fail-closed branch below.
+      throw new Error("SUPABASE_URL must be set");
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // feature_flags is a GLOBAL catalog table (rows carry a nullable
+    // org_id and the runtime lookup is by `key` only), so it goes
+    // through the unscoped `.raw()` escape hatch — not the per-tenant
+    // `.from()` facade.
     const lookup = supabase
+      .raw()
       .schema("resupply")
       .from("feature_flags")
       .select("enabled")

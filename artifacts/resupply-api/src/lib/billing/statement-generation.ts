@@ -9,14 +9,16 @@
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "./identity-resolver";
 import { renderStatementPdf } from "./statement-pdf";
 import { persistStatementPdfCopy } from "./statement-storage";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 const CLAIM_PAGE = 1000;
 const MAX_CLAIM_PAGES = 10;
@@ -62,13 +64,31 @@ export interface GeneratedPatientBillingStatement {
   chartDocumentId: string | null;
 }
 
+/**
+ * Resolve the seed tenant and return the org-scoped client. The injected
+ * `supabase?` param is already an `OrgScopedClient` (the converted callers
+ * pass one); the file-local worker pattern routes only the no-arg default
+ * through the chokepoint. Fails closed: a missing seed org throws rather
+ * than silently widening to all tenants.
+ */
+async function resolveSeedScopedClient(): Promise<SupabaseClient> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new StatementGenerationError(
+      "no_dme_organization",
+      "tenant context missing (seed org unresolved)",
+      500,
+    );
+  }
+  return getOrgScopedClient(orgId);
+}
+
 export async function generatePatientBillingStatement(
   input: GeneratePatientBillingStatementInput,
 ): Promise<GeneratedPatientBillingStatement> {
-  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = input.supabase ?? (await resolveSeedScopedClient());
 
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select(
       "legal_first_name, legal_last_name, address, email, statement_delivery_method",
@@ -99,7 +119,6 @@ export async function generatePatientBillingStatement(
   let exhausted = false;
   for (let page = 0; page < MAX_CLAIM_PAGES; page++) {
     const { data: batch, error: claimsErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents",
@@ -132,7 +151,7 @@ export async function generatePatientBillingStatement(
     );
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
   if (identity.source === "stub") {
     throw new StatementGenerationError(
       "no_dme_organization",
@@ -214,7 +233,6 @@ export async function generatePatientBillingStatement(
     };
 
   const { data: row, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .insert(insertRow)
     .select("id")
@@ -232,11 +250,7 @@ export async function generatePatientBillingStatement(
     input.generatedByEmail === "system:auto_workflow" &&
     !persisted.objectKey
   ) {
-    await supabase
-      .schema("resupply")
-      .from("patient_billing_statements")
-      .delete()
-      .eq("id", row.id);
+    await supabase.from("patient_billing_statements").delete().eq("id", row.id);
     throw new Error(
       "auto-workflow statement PDF could not be persisted; refusing to arm statement cooldown",
     );

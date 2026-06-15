@@ -21,7 +21,8 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
@@ -218,11 +219,16 @@ export async function recordAutopayAuthorization(
   const wantsAutopay = session.metadata?.enable_autopay === "1";
   const shopCustomerId = session.metadata?.shop_customer_id ?? null;
   const initiatorEmail = session.metadata?.initiator_email ?? null;
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "patient-autopay: tenant context missing (seed org unresolved)",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
 
   const { data: existing } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .select("id, autopay_enabled")
     .eq("patient_id", patientId)
@@ -235,7 +241,6 @@ export async function recordAutopayAuthorization(
     // fresh attempt budget. Only flip autopay ON (never off) here.
     const enableNow = wantsAutopay && !existing.autopay_enabled;
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_autopay_authorizations")
       .update({
         stripe_customer_id: stripeCustomerId,
@@ -259,7 +264,6 @@ export async function recordAutopayAuthorization(
   }
 
   const { error } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .insert({
       patient_id: patientId,
@@ -292,16 +296,17 @@ export async function recordAutopayAuthorization(
 export async function getActiveAutopayAuthorization(
   patientId: string,
 ): Promise<AutopayRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
   const { data } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .select("*")
     .eq("patient_id", patientId)
     .is("revoked_at", null)
     .limit(1)
     .maybeSingle();
-  return data ?? null;
+  return (data ?? null) as AutopayRow | null;
 }
 
 export type SetAutopayResult =
@@ -316,10 +321,11 @@ export async function setAutopayEnabled(
 ): Promise<SetAutopayResult> {
   const row = await getActiveAutopayAuthorization(patientId);
   if (!row) return { error: "no_card_on_file" };
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { error: "no_card_on_file" };
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({
       autopay_enabled: enabled,
@@ -362,10 +368,11 @@ export async function revokeAutopayAuthorization(
       );
     }
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { error: "no_card_on_file" };
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({
       revoked_at: now,
@@ -388,10 +395,11 @@ export async function clearAutopayByPaymentMethod(
   paymentMethodId: string,
   log?: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
   const { error, data } = await supabase
-    .schema("resupply")
     .from("patient_autopay_authorizations")
     .update({
       revoked_at: now,

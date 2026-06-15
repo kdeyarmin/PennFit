@@ -24,11 +24,13 @@
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   ONBOARDING_DAYS,
+  resolveSeedOrgId,
   type CheckinAttemptChannel,
   type Database,
   type OnboardingDayLabel,
+  type OrgScopedClient,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
@@ -153,12 +155,26 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
 
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. An injected
+  // client (test seam) is bound to the scoped facade so the body
+  // uniformly uses `.from()`. A missing org degrades to the same zeroed
+  // envelope the feature-gate-off branch returns ("nothing to do").
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      completedJourneys: 0,
+      remaining: 0,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId, opts.supabase);
 
   // PostgREST has no JOIN. Fetch active journeys + every patient we
   // need in two passes and stitch in JS.
   const { data: journeyRows, error: journeyErr } = await supabase
-    .schema("resupply")
     .from("patient_onboarding_journeys")
     .select(
       "id, patient_id, started_at, day1_sent_at, day3_sent_at, day7_sent_at, day30_sent_at, day60_sent_at, day90_sent_at",
@@ -179,7 +195,9 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   }
 
   // .in() the patient_ids in chunks (URL-length safety).
-  const patientIds = Array.from(new Set(journeys.map((j) => j.patient_id)));
+  const patientIds = Array.from(
+    new Set(journeys.map((j: { patient_id: string }) => j.patient_id)),
+  );
   const patientById = new Map<
     string,
     {
@@ -194,14 +212,21 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   for (let i = 0; i < patientIds.length; i += 200) {
     const batch = patientIds.slice(i, i + 200);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, email, phone_e164, channel_preference, timezone, address",
       )
       .in("id", batch);
     if (error) throw error;
-    for (const p of data ?? []) {
+    for (const p of (data ?? []) as Array<{
+      id: string;
+      legal_first_name: string | null;
+      email: string | null;
+      phone_e164: string | null;
+      channel_preference: string | null;
+      timezone: unknown;
+      address: unknown;
+    }>) {
       patientById.set(p.id, {
         legal_first_name: p.legal_first_name,
         email: p.email,
@@ -216,7 +241,17 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   }
 
   const rows: JourneyRow[] = [];
-  for (const j of journeys) {
+  for (const j of journeys as Array<{
+    id: string;
+    patient_id: string;
+    started_at: string;
+    day1_sent_at: string | null;
+    day3_sent_at: string | null;
+    day7_sent_at: string | null;
+    day30_sent_at: string | null;
+    day60_sent_at: string | null;
+    day90_sent_at: string | null;
+  }>) {
     const p = patientById.get(j.patient_id);
     if (!p) continue;
     const channelPref = p.channel_preference;
@@ -311,7 +346,6 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
       // Conditional stamp: only writes if the column is still null,
       // so a concurrent dispatcher run can't re-stamp.
       const { error: updateErr } = await supabase
-        .schema("resupply")
         .from("patient_onboarding_journeys")
         .update(update)
         .eq("id", row.journeyId)
@@ -358,7 +392,7 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
 // ───────────────────────────────────────────────────────────────────
 
 interface AttemptInput {
-  supabase: ResupplySupabaseClient;
+  supabase: OrgScopedClient;
   clients: BuiltClients;
   row: JourneyRow;
   day: OnboardingDayLabel;
@@ -431,7 +465,6 @@ async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
           : "vendor_error";
   try {
     const { error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_checkin_attempts")
       .insert({
         journey_id: row.journeyId,

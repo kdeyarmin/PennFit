@@ -12,7 +12,9 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -60,10 +62,13 @@ export interface SubmitClaimStatusCheckResult {
 export async function submitClaimStatusCheck(
   input: SubmitClaimStatusCheckInput,
 ): Promise<SubmitClaimStatusCheckResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: claim, error: claimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_name, payer_profile_id, claim_number, date_of_service, total_billed_cents, insurance_coverage_id",
@@ -78,7 +83,6 @@ export async function submitClaimStatusCheck(
   }
 
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("legal_first_name, legal_last_name")
     .eq("id", claim.patient_id)
@@ -100,7 +104,6 @@ export async function submitClaimStatusCheck(
   const memberId = claim.insurance_coverage_id
     ? ((
         await supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("member_id")
           .eq("id", claim.insurance_coverage_id)
@@ -109,8 +112,10 @@ export async function submitClaimStatusCheck(
       ).data?.member_id ?? "")
     : "";
 
-  const identity = await resolveBillingIdentity({ supabase });
-  const clearinghouse = await resolveClearinghouse({ supabase });
+  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+  const clearinghouse = await resolveClearinghouse({
+    supabase: supabase.raw(),
+  });
 
   // ISA13s must be strictly monotonic across all outbound EDI files.
   // Both office_ally_submissions (837P / 270) and claim_status_checks
@@ -118,14 +123,12 @@ export async function submitClaimStatusCheck(
   // so concurrent or same-second 276 uploads never reuse a number.
   const [{ data: priorHighSub }, { data: priorHighCsc }] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("isa_control_number")
       .order("isa_control_number", { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("claim_status_checks")
       .select("isa_control_number")
       .order("isa_control_number", { ascending: false })
@@ -188,7 +191,6 @@ export async function submitClaimStatusCheck(
     requested_by_email: input.requestedByEmail,
   };
   const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
     .from("claim_status_checks")
     .insert(row)
     .select("id")
@@ -210,7 +212,7 @@ export async function submitClaimStatusCheck(
 }
 
 async function resolvePayerProfile(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   payerProfileId: string | null,
   payerName: string | null,
 ): Promise<{
@@ -221,7 +223,6 @@ async function resolvePayerProfile(
 } | null> {
   if (payerProfileId) {
     const { data } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("id, payer_legal_name, office_ally_payer_id, paper_only")
       .eq("id", payerProfileId)
@@ -230,7 +231,6 @@ async function resolvePayerProfile(
     if (data) return data;
   }
   const { data } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("id, payer_legal_name, office_ally_payer_id, paper_only")
     .ilike(

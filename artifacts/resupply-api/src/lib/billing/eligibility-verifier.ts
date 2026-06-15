@@ -26,7 +26,9 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -53,7 +55,7 @@ import {
   resolveClearinghouse,
 } from "./identity-resolver";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface VerifyEligibilityInput {
   insuranceCoverageId: string;
@@ -113,10 +115,13 @@ export interface VerifyEligibilityResult {
 export async function verifyEligibility(
   input: VerifyEligibilityInput,
 ): Promise<VerifyEligibilityResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: coverage, error: covErr } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select(
       "id, patient_id, payer_name, member_id, policyholder_name, policyholder_relationship",
@@ -132,7 +137,6 @@ export async function verifyEligibility(
     throw new CoverageNotForPatientError();
   }
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("legal_first_name, legal_last_name, date_of_birth")
     .eq("id", coverage.patient_id)
@@ -142,7 +146,6 @@ export async function verifyEligibility(
     throw new Error("patient not found");
   }
   const { data: payerProfile } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("id, payer_legal_name, office_ally_payer_id, paper_only")
     .ilike(
@@ -156,8 +159,10 @@ export async function verifyEligibility(
     throw new Error("payer does not accept electronic 270/271");
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
-  const clearinghouse = await resolveClearinghouse({ supabase });
+  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+  const clearinghouse = await resolveClearinghouse({
+    supabase: supabase.raw(),
+  });
 
   // Allocate monotonic control numbers vs. the office_ally_submissions
   // ISA13 history. Eligibility and claim ISA13s share the same pool.
@@ -165,13 +170,12 @@ export async function verifyEligibility(
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
   // only as the pre-migration fallback; see lib/billing/isa13-counter.
-  const reservedIsa = await reserveIsa13Value(supabase);
+  const reservedIsa = await reserveIsa13Value(supabase.raw());
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());
   } else {
     const { data: priorHigh, error: priorHighErr } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("isa_control_number")
       .order("isa_control_number", { ascending: false })
@@ -247,7 +251,6 @@ export async function verifyEligibility(
           ...parsed271ToCheckColumns(parsed),
         };
       const { data: rtInserted, error: rtErr } = await supabase
-        .schema("resupply")
         .from("eligibility_checks")
         .insert(realtimeRow)
         .select("id")
@@ -303,7 +306,6 @@ export async function verifyEligibility(
     requested_by_email: input.requestedByEmail,
   };
   const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .insert(row)
     .select("id")
@@ -336,10 +338,13 @@ export async function getCachedEligibility(
   insuranceCoverageId: string,
   freshnessMs = 24 * 3600 * 1000,
 ): Promise<Database["resupply"]["Tables"]["eligibility_checks"]["Row"] | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return null;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const cutoff = new Date(Date.now() - freshnessMs).toISOString();
   const { data } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .select("*")
     .eq("insurance_coverage_id", insuranceCoverageId)
@@ -348,7 +353,11 @@ export async function getCachedEligibility(
     .order("responded_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return data ?? null;
+  return (
+    (data as
+      | Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
+      | null) ?? null
+  );
 }
 
 // Suppress no-unused-vars for the SupabaseClient alias.

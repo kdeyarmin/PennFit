@@ -20,8 +20,10 @@
 import { timingSafeEqual, randomUUID } from "node:crypto";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
+  type OrgScopedClient,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
@@ -170,10 +172,30 @@ export function createVoiceToolDispatcher(
 class Impl implements VoiceToolDispatcher {
   private verified = false;
   private verifyAttempts = 0;
-  private readonly supabase: ResupplySupabaseClient;
+  /** Injected raw client (test seam); undefined in production. */
+  private readonly injectedClient?: ResupplySupabaseClient;
+  /** Memoized org-scoped facade, resolved on first DB use. */
+  private scoped: OrgScopedClient | null = null;
 
   constructor(private readonly deps: VoiceToolDispatcherDeps) {
-    this.supabase = deps.supabase ?? getSupabaseServiceRoleClient();
+    this.injectedClient = deps.supabase;
+  }
+
+  /**
+   * Resolve (once) the tenant-scoped client. The constructor is sync and
+   * `resolveSeedOrgId()` is async, so we resolve the seed org lazily at
+   * first DB use (file-local worker pattern — single-tenant equivalent).
+   * A test-injected client is wrapped with the same org-scoped facade so
+   * the query bodies are identical on both paths.
+   */
+  private async db(): Promise<OrgScopedClient> {
+    if (this.scoped) return this.scoped;
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new Error("tenant context missing");
+    this.scoped = this.injectedClient
+      ? getOrgScopedClient(orgId, this.injectedClient)
+      : getOrgScopedClient(orgId);
+    return this.scoped;
   }
 
   isIdentityVerified(): boolean {
@@ -292,8 +314,8 @@ class Impl implements VoiceToolDispatcher {
     //
     // The plaintext DOB is compared in Node with `timingSafeEqual`
     // so we don't leak match duration via the SQL planner.
-    const { data: row, error } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { data: row, error } = await supabase
       .from("patients")
       .select("date_of_birth, legal_first_name")
       .eq("id", this.requirePatientId())
@@ -351,8 +373,8 @@ class Impl implements VoiceToolDispatcher {
     // deliberately low-sensitivity shop chart. Read it FIRST so a customer
     // with no saved card doesn't burn an attempt (the prompt then hands
     // off). Compared in Node with timingSafeEqual.
-    const { data: row, error } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { data: row, error } = await supabase
       .from("shop_customers")
       .select("default_payment_method_last4, display_name")
       .eq("customer_id", this.requireShopCustomerId())
@@ -402,8 +424,8 @@ class Impl implements VoiceToolDispatcher {
   private async lookupInventory(
     call: DispatchToolCall<"lookup_resupply_inventory">,
   ): Promise<DispatchToolResult<"lookup_resupply_inventory">> {
-    const { data: rows, error } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { data: rows, error } = await supabase
       .from("prescriptions")
       .select("item_sku, cadence_days, hcpcs_code")
       .eq("patient_id", this.requirePatientId())
@@ -411,8 +433,8 @@ class Impl implements VoiceToolDispatcher {
     if (error) throw error;
 
     const items = (rows ?? [])
-      .filter((r) => r.item_sku)
-      .map((r) => ({
+      .filter((r: Record<string, unknown>) => r.item_sku)
+      .map((r: Record<string, unknown>) => ({
         sku: r.item_sku,
         // The Pacware product catalogue (which holds the marketing name
         // for each SKU) lives outside this DB, but the prescription
@@ -420,7 +442,8 @@ class Impl implements VoiceToolDispatcher {
         // product name back to the patient instead of a bare SKU
         // number. Fall back to the SKU when the code isn't one we
         // recognise.
-        description: describeHcpcsPlain(r.hcpcs_code) ?? r.item_sku,
+        description:
+          describeHcpcsPlain(r.hcpcs_code as string | null) ?? r.item_sku,
         quantity: 1,
         due_reason: `every ${r.cadence_days} days`,
       }));
@@ -445,30 +468,27 @@ class Impl implements VoiceToolDispatcher {
       return this.getShopCustomerChart(call);
     }
     const patientId = this.requirePatientId();
+    const supabase = await this.db();
     const [patientRes, rxRes, fulfillmentRes, followupRes] = await Promise.all([
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("patients")
         .select("legal_first_name")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle(),
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("prescriptions")
         .select("item_sku, cadence_days, hcpcs_code")
         .eq("patient_id", patientId)
         .eq("status", "active"),
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("fulfillments")
         .select("created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("patient_followups")
         .select("id")
         .eq("patient_id", patientId)
@@ -481,13 +501,14 @@ class Impl implements VoiceToolDispatcher {
     if (followupRes.error) throw followupRes.error;
 
     const suppliesDue = (rxRes.data ?? [])
-      .filter((r) => r.item_sku)
-      .map((r) => ({
+      .filter((r: Record<string, unknown>) => r.item_sku)
+      .map((r: Record<string, unknown>) => ({
         sku: r.item_sku,
         // Same as lookup_resupply_inventory: derive a plain-English
         // product name from the authorising HCPCS code, falling back
         // to the raw SKU when the code isn't one we recognise.
-        description: describeHcpcsPlain(r.hcpcs_code) ?? r.item_sku,
+        description:
+          describeHcpcsPlain(r.hcpcs_code as string | null) ?? r.item_sku,
         quantity: 1,
         due_reason: `every ${r.cadence_days} days`,
       }));
@@ -518,31 +539,28 @@ class Impl implements VoiceToolDispatcher {
     // customers have no clinical prescriptions). Dates + booleans only —
     // never order contents, addresses, payment details, or email.
     const customerId = this.requireShopCustomerId();
+    const supabase = await this.db();
     const [customerRes, orderRes, subRes, followupRes] = await Promise.all([
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("shop_customers")
         .select("display_name")
         .eq("customer_id", customerId)
         .limit(1)
         .maybeSingle(),
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("shop_orders")
         .select("paid_at, created_at")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("shop_subscriptions")
         .select("status")
         .eq("customer_id", customerId)
         .in("status", ["active", "trialing"])
         .limit(1),
-      this.supabase
-        .schema("resupply")
+      supabase
         .from("shop_customer_followups")
         .select("id")
         .eq("customer_id", customerId)
@@ -578,8 +596,8 @@ class Impl implements VoiceToolDispatcher {
   private async getShippingAddress(
     call: DispatchToolCall<"get_shipping_address">,
   ): Promise<DispatchToolResult<"get_shipping_address">> {
-    const { data: row, error } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { data: row, error } = await supabase
       .from("patients")
       .select("address")
       .eq("id", this.requirePatientId())
@@ -631,8 +649,8 @@ class Impl implements VoiceToolDispatcher {
       postalCode: a.postal_code,
       country: "US",
     };
-    const { error } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { error } = await supabase
       .from("patients")
       .update({ address: newAddress as unknown as Json })
       .eq("id", this.requirePatientId());
@@ -667,18 +685,18 @@ class Impl implements VoiceToolDispatcher {
     // "ordered". Fulfillment is driven by the episode's prescription
     // (not this echo) — we just never claim an ineligible SKU was
     // accepted.
-    const { data: rxRows, error: rxErr } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { data: rxRows, error: rxErr } = await supabase
       .from("prescriptions")
       .select("item_sku")
       .eq("patient_id", this.requirePatientId())
       .eq("status", "active");
     if (rxErr) throw rxErr;
     const normalizeSku = (sku: string): string => sku.trim().toUpperCase();
-    const eligibleSkus = new Set(
+    const eligibleSkus = new Set<string>(
       (rxRows ?? [])
-        .map((r) => r.item_sku)
-        .filter((s): s is string => Boolean(s))
+        .map((r: Record<string, unknown>) => r.item_sku)
+        .filter((s: unknown): s is string => Boolean(s))
         .map(normalizeSku),
     );
     const acceptedSkus = Array.from(
@@ -795,8 +813,8 @@ class Impl implements VoiceToolDispatcher {
     // — the human admin will close it once they've handled the
     // escalation.
     const nowIso = new Date().toISOString();
-    const { error } = await this.supabase
-      .schema("resupply")
+    const supabase = await this.db();
+    const { error } = await supabase
       .from("conversations")
       .update({ status: "awaiting_admin", updated_at: nowIso })
       .eq("id", this.deps.conversationId);

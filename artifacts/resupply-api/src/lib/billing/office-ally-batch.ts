@@ -16,6 +16,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -51,6 +53,26 @@ import { publishEvent } from "../webhooks/publisher";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
+
+/**
+ * Resolve the seed tenant and return the unscoped (`.raw()`) service-role
+ * client via the org-scoped chokepoint. This module's queries read
+ * tenant tables through `.schema("resupply").from(...)` on a RAW client
+ * (and pass that raw client to shared helpers like `reserveIsa13Value` /
+ * `buildOneDetail` / `seedDefaultRequirementsForClaim`, which are
+ * raw-typed), so the file-local worker pattern routes only the no-arg
+ * client construction through the chokepoint. Fails closed: a missing
+ * seed org throws rather than silently widening to all tenants.
+ */
+async function resolveSeedScopedRawClient(): Promise<SupabaseClient> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "office-ally-batch: tenant context missing (seed org unresolved)",
+    );
+  }
+  return getOrgScopedClient(orgId).raw();
+}
 
 /**
  * Cap on fresh real-time 270s the eligibility precheck will fire in a
@@ -263,7 +285,7 @@ async function findEligibilityBlocksForSubmit(input: {
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
 ): Promise<BatchSubmitResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = await resolveSeedScopedRawClient();
 
   const { data: claims, error } = await supabase
     .schema("resupply")
@@ -763,7 +785,7 @@ export async function executeOfficeAllyBatchSubmit(
 export async function buildEdiPayloadForSubmission(
   submissionId: string,
 ): Promise<{ payload: string; usageIndicator: "P" | "T" } | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = await resolveSeedScopedRawClient();
   const { data: sub } = await supabase
     .schema("resupply")
     .from("office_ally_submissions")

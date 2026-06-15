@@ -15,6 +15,8 @@
 import {
   type Database,
   getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   readOfficeAllyRealtimeConfigOrNull,
@@ -61,7 +63,7 @@ export async function resolveBillingIdentity(
     clearinghouseSlug?: string;
   } = {},
 ): Promise<ResolvedBillingIdentity> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase ?? (await resolveSeedScopedRawClient());
   const env = opts.env ?? process.env;
   const clearinghouseSlug = opts.clearinghouseSlug ?? "office_ally";
 
@@ -123,7 +125,7 @@ export async function resolveClearinghouse(
     slug?: string;
   } = {},
 ): Promise<ResolvedClearinghouse> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase ?? (await resolveSeedScopedRawClient());
   const env = opts.env ?? process.env;
   const slug = opts.slug ?? "office_ally";
   const row = await loadClearinghouse(supabase, slug);
@@ -230,6 +232,27 @@ function buildRealtimeConfig(
   }
   // No DB row at all → env-only path (dev/preview).
   return readOfficeAllyRealtimeConfigOrNull(env);
+}
+
+// ── Tenant resolution ───────────────────────────────────────────────
+
+/**
+ * Resolve the seed tenant and return the unscoped (`.raw()`) service-role
+ * client bound through the org-scoped chokepoint. The loaders below read
+ * tenant tables via `.schema("resupply").from(...)` on a RAW client, and
+ * every caller that already cut over passes `supabase.raw()` here, so the
+ * injected-client signature stays raw-typed; only the no-arg DEFAULT is
+ * routed through `getOrgScopedClient`. Fails closed: a missing seed org
+ * throws rather than silently widening to all tenants.
+ */
+async function resolveSeedScopedRawClient(): Promise<SupabaseClient> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "identity-resolver: tenant context missing (seed org unresolved)",
+    );
+  }
+  return getOrgScopedClient(orgId).raw();
 }
 
 // ── Loaders ─────────────────────────────────────────────────────────

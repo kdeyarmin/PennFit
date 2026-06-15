@@ -29,7 +29,7 @@
 
 import type { Logger } from "pino";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
@@ -139,11 +139,18 @@ export async function ingestInboundFax(
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<IngestInboundFaxOutcome> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
+      "fax_inbound_tenant_context_missing",
+    );
+    return { kind: "errored" };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Step 1: insert (or learn it already exists).
   const insertRes = await supabase
-    .schema("resupply")
     .from("inbound_faxes")
     .insert({
       twilio_fax_sid: input.telnyxFaxId,
@@ -164,7 +171,6 @@ export async function ingestInboundFax(
       // the existing row id and exit; we trust the prior attempt's
       // media-download outcome rather than re-running it.
       const existing = await supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .select("id")
         .eq("twilio_fax_sid", input.telnyxFaxId)
@@ -224,7 +230,7 @@ export async function ingestInboundFax(
   // run after a barcode match could release an UNRELATED requirement's hold
   // with the same fax. Best-effort + never throws.
   if (!barcodeFiled) {
-    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase.raw());
   }
 
   // Step 5: referral review (opt-in). When `fax.referral_review` is on and
@@ -493,9 +499,18 @@ async function tryPersistMedia(
     return MEDIA_NOT_PERSISTED;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
+      "fax_inbound_tenant_context_missing",
+    );
+    // The uploaded bytes are now an orphan the storage sweep reaps;
+    // signal not-persisted exactly like a patch failure below.
+    return MEDIA_NOT_PERSISTED;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { error: patchErr } = await supabase
-    .schema("resupply")
     .from("inbound_faxes")
     .update({
       media_object_key: objectKey,

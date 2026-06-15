@@ -7,7 +7,11 @@
 // so the existing batch runner stays untouched.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
@@ -38,9 +42,14 @@ export async function evaluatePatientSmartTriggers(
   patientId: string,
   actor: PatientEvalActor,
 ): Promise<PatientEvalResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — nothing to evaluate. Return the same
+    // all-zero counters an empty-night-roster run produces.
+    return { proposed: 0, inserted: 0, skippedExisting: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: nightRows, error: nightsErr } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select(
       "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
@@ -55,20 +64,22 @@ export async function evaluatePatientSmartTriggers(
   // latest vendor snapshot's DeviceSettings. Best-effort: a patient with
   // no snapshot still evaluates every non-pressure rule.
   const deviceMaxPressureCmh2o = await fetchDeviceMaxPressure(
-    supabase,
+    supabase.raw(),
     patientId,
   );
 
   const proposals = evaluateAll(
-    nights.map((n) => ({
-      date: n.night_date,
-      usageMinutes: n.usage_minutes,
-      ahi: n.ahi !== null ? Number(n.ahi) : null,
-      leakRateLMin:
-        n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
-      pressureP95Cmh2o:
-        n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
-    })),
+    nights.map(
+      (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) => ({
+        date: n.night_date,
+        usageMinutes: n.usage_minutes,
+        ahi: n.ahi !== null ? Number(n.ahi) : null,
+        leakRateLMin:
+          n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
+        pressureP95Cmh2o:
+          n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
+      }),
+    ),
     { deviceMaxPressureCmh2o },
   );
 
@@ -78,7 +89,6 @@ export async function evaluatePatientSmartTriggers(
   for (const p of proposals) {
     proposed += 1;
     const { data: insertedRow, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .insert({
         patient_id: patientId,

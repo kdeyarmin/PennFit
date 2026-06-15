@@ -34,7 +34,9 @@ import type { WebSocket } from "ws";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
@@ -1180,9 +1182,10 @@ async function writeDeepgramAuditTranscript(
   const fullTranscript = deepgramTurns.join(" ");
   let transcriptMessageId: string | null = null;
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new Error("tenant context missing");
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("messages")
       .insert({
         conversation_id: conversationId,
@@ -1357,28 +1360,27 @@ async function persistSummaryMessage(
     lines.push("Human follow-up recommended.");
   }
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("messages")
-      .insert({
-        conversation_id: input.conversationId,
-        direction: "outbound",
-        sender_role: "system",
-        body: lines.join("\n"),
-        sent_at: new Date().toISOString(),
-        vendor_metadata: {
-          kind: "voice_post_call_summary",
-          twilio_call_sid: input.twilioCallSid,
-          prompt_version: PROMPT_VERSION,
-          outcome: summary.outcome,
-          sentiment: summary.sentiment,
-          concerns: summary.concerns,
-          follow_ups: summary.followUps,
-          recommends_handoff: summary.recommendsHandoff,
-          complete: summary.complete,
-        },
-      });
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new Error("tenant context missing");
+    const supabase = getOrgScopedClient(orgId);
+    const { error } = await supabase.from("messages").insert({
+      conversation_id: input.conversationId,
+      direction: "outbound",
+      sender_role: "system",
+      body: lines.join("\n"),
+      sent_at: new Date().toISOString(),
+      vendor_metadata: {
+        kind: "voice_post_call_summary",
+        twilio_call_sid: input.twilioCallSid,
+        prompt_version: PROMPT_VERSION,
+        outcome: summary.outcome,
+        sentiment: summary.sentiment,
+        concerns: summary.concerns,
+        follow_ups: summary.followUps,
+        recommends_handoff: summary.recommendsHandoff,
+        complete: summary.complete,
+      },
+    });
     if (error) throw error;
   } catch (err) {
     logger.warn(

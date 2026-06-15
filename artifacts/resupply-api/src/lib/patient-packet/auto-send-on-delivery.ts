@@ -17,7 +17,7 @@
 // Entirely best-effort — the caller invokes this fire-and-forget and a
 // failure here never affects the delivery transition.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logAudit } from "@workspace/resupply-audit";
 
@@ -33,10 +33,11 @@ export async function autoSendPatientPacketOnDelivery(opts: {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: order, error: orderErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, customer_id")
     .eq("id", orderId)
@@ -46,7 +47,6 @@ export async function autoSendPatientPacketOnDelivery(opts: {
   if (!order?.customer_id) return;
 
   const { data: customer, error: custErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("auth_user_id")
     .eq("customer_id", order.customer_id)
@@ -56,7 +56,6 @@ export async function autoSendPatientPacketOnDelivery(opts: {
   if (!customer?.auth_user_id) return;
 
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, email")
     .eq("portal_auth_user_id", customer.auth_user_id)
@@ -67,7 +66,6 @@ export async function autoSendPatientPacketOnDelivery(opts: {
 
   // One-time: skip if the patient already has any non-voided packet.
   const { data: existing, error: existingErr } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .select("id")
     .eq("patient_id", patient.id)
@@ -78,7 +76,7 @@ export async function autoSendPatientPacketOnDelivery(opts: {
   if (existing) return;
 
   const result = await createAndSendPatientPacket({
-    supabase,
+    supabase: supabase.raw(),
     patientId: patient.id,
     createdByEmail: "system:order-delivered",
     // Seed the Proof of Delivery with what we know at delivery time; the

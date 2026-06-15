@@ -23,7 +23,8 @@
 import type Stripe from "stripe";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
@@ -95,9 +96,16 @@ export async function authorizePaymentPlanAutopay(
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    log?.info?.(
+      { planId },
+      "stripe webhook: payment-plan autopay authorize skipped — tenant context missing",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { error } = await supabase
-    .schema("resupply")
     .from("patient_payment_plans")
     .update({
       autopay_status: "authorized",
@@ -121,7 +129,17 @@ export async function markPaid(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<PaidOrderRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — same non-throwing null outcome the
+    // function uses when the upsert returns no row.
+    log?.info?.(
+      { sessionId: session.id },
+      "shop order markPaid skipped — tenant context missing",
+    );
+    return null;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const paymentIntentId =
     typeof session.payment_intent === "string"
       ? session.payment_intent
@@ -198,7 +216,6 @@ export async function markPaid(
     stripe_session_id: session.id,
   };
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .upsert(upsertRow, { onConflict: "stripe_session_id" })
     .select("id, customer_id, paid_at");
@@ -345,17 +362,26 @@ export async function upsertOrderItemsFromSession(
   const costBySku = await fetchUnitCostsBySku(rowSkus, log);
   stampUnitCostSnapshots(rows, rowSkus, costBySku, paidAtIso);
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — the parent order is already paid; skip
+    // the items mirror and return the email items built above (the
+    // badge fills in on a later Stripe re-delivery, same as a failed
+    // mirror today).
+    log?.info?.(
+      { sessionId: session.id },
+      "shop_order_items upsert skipped — tenant context missing",
+    );
+    return emailItems;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // ON CONFLICT DO NOTHING for the (stripe_session_id, product_id,
   // price_id) UNIQUE — supabase-js exposes this as upsert with
   // ignoreDuplicates: true.
-  const { error } = await supabase
-    .schema("resupply")
-    .from("shop_order_items")
-    .upsert(rows, {
-      onConflict: "stripe_session_id,product_id,price_id",
-      ignoreDuplicates: true,
-    });
+  const { error } = await supabase.from("shop_order_items").upsert(rows, {
+    onConflict: "stripe_session_id,product_id,price_id",
+    ignoreDuplicates: true,
+  });
   if (error) throw error;
 
   log?.info?.(
@@ -396,7 +422,15 @@ export async function syncCustomerAfterCheckout(
       : (session.customer?.id ?? null);
   if (!customerId || !stripeCustomerId) return;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    log?.info?.(
+      { customerId },
+      "shop customer sync skipped — tenant context missing",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
   const shippingAddress = extractShippingAddressFromSession(session);
@@ -409,7 +443,6 @@ export async function syncCustomerAfterCheckout(
   // Read existing row to decide whether to backfill the shipping address
   // and phone (only when empty — never overwrite a deliberate edit).
   const { data: existing, error: selectErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("shipping_address_json, stripe_customer_id, phone_e164")
     .eq("customer_id", customerId)
@@ -443,7 +476,6 @@ export async function syncCustomerAfterCheckout(
       updated_at: nowIso,
     };
     const { error: insertErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .upsert(insertRow, { onConflict: "customer_id" });
     if (insertErr) throw insertErr;
@@ -469,7 +501,6 @@ export async function syncCustomerAfterCheckout(
       updates.phone_e164 = phoneE164;
     }
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .update(updates)
       .eq("customer_id", customerId);
@@ -514,10 +545,17 @@ export async function markCartRecovered(
 ): Promise<void> {
   const customerId = readCustomerIdFromMetadata(session.metadata);
   if (!customerId) return;
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    log?.info?.(
+      { customerId },
+      "abandoned cart recovery skipped — tenant context missing",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   const { data: updated, error } = await supabase
-    .schema("resupply")
     .from("shop_abandoned_carts")
     .update({
       recovered_at: nowIso,
@@ -547,7 +585,15 @@ export async function markStatus(
       }
     | undefined,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    log?.warn?.(
+      { sessionId, attemptedStatus: status },
+      "shop order status update skipped — tenant context missing",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // Filter on current status. A late-arriving `checkout.session.expired`
   // (Stripe redelivery, out-of-order webhook) MUST NOT demote a row
   // that was already paid or refunded — that would hide the order
@@ -555,7 +601,6 @@ export async function markStatus(
   // refund pipeline. Allowed transitions only: pending → expired |
   // failed.
   const { data: updated, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("stripe_session_id", sessionId)

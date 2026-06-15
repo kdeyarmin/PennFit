@@ -40,7 +40,9 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import type {
   Adjustment,
@@ -102,7 +104,6 @@ export async function reconcileEra(
   parsed: Parsed835,
   opts: ReconcileEraOptions,
 ): Promise<ReconciliationSummary> {
-  const supabase = getSupabaseServiceRoleClient();
   const summary: ReconciliationSummary = {
     matchedClaims: 0,
     unmatchedClaims: 0,
@@ -111,6 +112,13 @@ export async function reconcileEra(
     deniedClaims: 0,
     outcomes: [],
   };
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // No tenant context resolved — nothing to reconcile. Return the
+    // empty (zero) summary the caller already handles.
+    return summary;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   for (const eraClaim of parsed.claims) {
     const outcome = await applyClaim(supabase, eraClaim, opts);
@@ -132,7 +140,7 @@ export async function reconcileEra(
   return summary;
 }
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 async function applyClaim(
   supabase: SupabaseClient,
@@ -144,7 +152,6 @@ async function applyClaim(
   //    into CLM01, so we look it up by full id match — the payer
   //    echoes it back unchanged.
   const { data: claim, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, denial_reason, decision_at",
@@ -178,7 +185,6 @@ async function applyClaim(
   // a 'partial' file only applies the claims that were missed.
   if (opts.checkOrEftNumber) {
     const { data: priorEvent, error: priorErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .select("id")
       .eq("claim_id", claim.id)
@@ -217,7 +223,6 @@ async function applyClaim(
   let linesUpdated = 0;
   if (eraClaim.serviceLines.length > 0) {
     const { data: localLines } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("id, hcpcs_code, modifier, allowed_cents, paid_cents, status")
       .eq("claim_id", claim.id);
@@ -234,7 +239,6 @@ async function applyClaim(
             ? "denied"
             : localLine.status;
       const { error: lineErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .update({
           allowed_cents: nextAllowed,
@@ -281,7 +285,6 @@ async function applyClaim(
 
   const nowIso = new Date().toISOString();
   const { error: claimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({
       total_allowed_cents: newTotalAllowed,
@@ -323,7 +326,6 @@ async function applyClaim(
   const eventType: Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]["event_type"] =
     eraClaim.isDenied ? "denied" : newPatientResp <= 0 ? "paid" : "partial_pay";
   const { error: eventErr } = await supabase
-    .schema("resupply")
     .from("insurance_claim_events")
     .insert({
       claim_id: claim.id,

@@ -32,7 +32,11 @@
 import type { Logger } from "pino";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { satisfyRequirement } from "../billing/bill-hold";
 import { tryDecodeTrackingBarcode } from "../inbound-fax/barcode-decode";
@@ -46,7 +50,7 @@ import {
   type SignatureDocumentKind,
 } from "../signature-tracking/service";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** Outcome enum — mirrors the inbound_faxes.auto_file_status CHECK
  *  constraint (migration 0258). */
@@ -115,7 +119,6 @@ async function recordOutcome(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const { error } = await supabase
-    .schema("resupply")
     .from("inbound_faxes")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", faxId);
@@ -185,8 +188,28 @@ export async function autoFileSignedFax(
   input: AutoFileSignedFaxInput,
   deps: AutoFileSignedFaxDeps = {},
 ): Promise<AutoFileOutcome> {
-  const supabase = deps.supabase ?? getSupabaseServiceRoleClient();
   const log = deps.logger ?? defaultLogger;
+  let supabase = deps.supabase;
+  if (!supabase) {
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // No seed tenant resolvable — we can't touch the DB to record an
+      // outcome, so degrade to `offline` (the same status the scan path
+      // returns when the AI vision provider is unavailable). The fax
+      // stays in the triage queue exactly as a no-op would leave it.
+      log.warn(
+        { fax_id_first8: input.faxId.slice(0, 8) },
+        "fax_auto_file_tenant_context_missing",
+      );
+      return {
+        status: "offline",
+        trackingCode: null,
+        signatureTrackingId: null,
+        chartDocumentId: null,
+      };
+    }
+    supabase = getOrgScopedClient(orgId);
+  }
   const decode = deps.decode ?? tryDecodeTrackingBarcode;
   const scan = deps.scan ?? scanFaxForTrackingCode;
 
@@ -214,7 +237,7 @@ export async function autoFileSignedFax(
     //    it shows up for triage instead of looking like a clean no-match.
     let tracking: Awaited<ReturnType<typeof lookupTrackingByCode>>;
     try {
-      tracking = await lookupTrackingByCode(supabase, code);
+      tracking = await lookupTrackingByCode(supabase.raw(), code);
     } catch (err) {
       log.warn(
         { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -232,7 +255,7 @@ export async function autoFileSignedFax(
       // We can mark the signature returned (it genuinely came back) but
       // there's no patient to file it under — leave it for manual triage.
       try {
-        await markReturnedAndCascade(supabase, tracking);
+        await markReturnedAndCascade(supabase.raw(), tracking);
       } catch (err) {
         log.warn(
           { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -275,7 +298,6 @@ export async function autoFileSignedFax(
       documentType,
     }).toISOString();
     const { data: insertedDoc, error: docErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .insert({
         patient_id: tracking.patientId,
@@ -314,7 +336,7 @@ export async function autoFileSignedFax(
     //    document with the signature still outstanding (recoverable by a
     //    CSR), never a released hold with an unsigned packet.
     try {
-      await markReturnedAndCascade(supabase, tracking);
+      await markReturnedAndCascade(supabase.raw(), tracking);
     } catch (err) {
       log.warn(
         { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -411,7 +433,6 @@ async function satisfyMatchingRequirements(
         ? "source_packet_id"
         : "source_manual_document_id";
     const { data, error } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id")
       .eq(sourceCol, documentId)
@@ -421,7 +442,7 @@ async function satisfyMatchingRequirements(
     let satisfied = 0;
     for (const r of reqs) {
       await satisfyRequirement(r.id, {
-        supabase,
+        supabase: supabase.raw(),
         via: "inbound_fax",
         actorEmail: "system:fax-barcode",
         inboundFaxId: faxId,

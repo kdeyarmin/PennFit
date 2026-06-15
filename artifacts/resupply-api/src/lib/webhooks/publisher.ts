@@ -18,12 +18,13 @@
 
 import {
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export interface PublishEventInput {
   /** Event-type slug. Convention: `<resource>.<action>` (claim.paid,
@@ -35,10 +36,22 @@ export interface PublishEventInput {
 }
 
 export async function publishEvent(input: PublishEventInput): Promise<void> {
-  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
+  let supabase = input.supabase;
+  if (!supabase) {
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // publishEvent never throws — a missing tenant degrades like the
+      // subscription-read failure below: log + drop the event.
+      logger.warn(
+        { eventType: input.eventType },
+        "webhook.publish: tenant context missing (event dropped)",
+      );
+      return;
+    }
+    supabase = getOrgScopedClient(orgId);
+  }
   try {
     const { data: subs, error: subsErr } = await supabase
-      .schema("resupply")
       .from("webhook_subscriptions")
       .select("id, event_types")
       .eq("is_active", true);
@@ -53,15 +66,15 @@ export async function publishEvent(input: PublishEventInput): Promise<void> {
       );
       return;
     }
-    const matching = (subs ?? []).filter((s) =>
+    const matching = (subs ?? []).filter((s: Record<string, unknown>) =>
       ((s.event_types ?? []) as string[]).some(
         (t: string) => t === "*" || t === input.eventType,
       ),
     );
     if (matching.length === 0) return;
 
-    const rows = matching.map((s) => ({
-      subscription_id: s.id,
+    const rows = matching.map((s: Record<string, unknown>) => ({
+      subscription_id: s.id as string,
       event_type: input.eventType,
       event_payload: {
         type: input.eventType,
@@ -69,10 +82,7 @@ export async function publishEvent(input: PublishEventInput): Promise<void> {
         data: input.payload,
       } as unknown as Json,
     }));
-    const { error } = await supabase
-      .schema("resupply")
-      .from("webhook_deliveries")
-      .insert(rows);
+    const { error } = await supabase.from("webhook_deliveries").insert(rows);
     if (error) {
       logger.warn(
         { err: error.message, eventType: input.eventType, count: rows.length },

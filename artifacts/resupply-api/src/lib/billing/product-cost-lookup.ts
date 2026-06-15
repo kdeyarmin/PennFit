@@ -12,7 +12,7 @@
 // null — surfaced honestly downstream by computeMargin rather than as a
 // 100%-margin lie.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 export interface UnitCostSnapshot {
   unitCostCents: number;
@@ -39,8 +39,11 @@ export async function fetchUnitCostsBySku(
   if (distinct.length === 0) return out;
 
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return out;
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("product_costs")
       .select("sku, unit_cost_cents, cost_source")
