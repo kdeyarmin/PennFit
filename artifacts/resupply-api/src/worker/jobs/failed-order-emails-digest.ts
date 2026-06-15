@@ -50,7 +50,8 @@ import type PgBoss from "pg-boss";
 
 import { escapeHtml } from "@workspace/resupply-messaging";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
 import {
@@ -178,13 +179,21 @@ export async function runFailedEmailDigest(
     return { failedCount: 0, sent: false, skippedReason: "no_recipient" };
   }
 
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { failedCount: 0, sent: false, skippedReason: "no_failures" };
+  }
+
   const now = opts.now ?? new Date();
   const cutoffIso = new Date(now.getTime() - DIGEST_LOOKBACK_MS).toISOString();
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // We deliberately select only the two PHI-safe columns. The
   // patient_* columns and the `payload` jsonb stay in the database.
+  // public.orders is cross-schema (not a tenant resupply table), so it
+  // goes through the unscoped escape hatch.
   const { count, error: countError } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select("id", { count: "exact", head: true })
@@ -198,6 +207,7 @@ export async function runFailedEmailDigest(
   }
 
   const { data: rows, error } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select("order_reference, created_at")

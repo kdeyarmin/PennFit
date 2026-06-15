@@ -40,7 +40,7 @@ import type PgBoss from "pg-boss";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   resolveSeedOrgId,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
@@ -176,11 +176,15 @@ async function recordStep(opts: {
   callScript?: string | null;
 }): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return;
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_step_log")
       .insert({
+        org_id: orgId,
         run_id: opts.runId,
         step_index: opts.stepIndex,
         channel: opts.channel,
@@ -227,13 +231,17 @@ export async function runOutreachPlaybookSweep(
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = now.toISOString();
 
   const { data: runs, error: runsErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("outreach_playbook_runs")
     .select("id, playbook_id, patient_id, next_step_index, started_at")
+    .eq("org_id", orgId)
     .eq("status", "active")
     .lte("next_step_at", nowIso)
     .order("next_step_at", { ascending: true })
@@ -245,9 +253,11 @@ export async function runOutreachPlaybookSweep(
   // Steps for every playbook in the batch, one query.
   const playbookIds = [...new Set(runRows.map((r) => r.playbook_id))];
   const { data: steps, error: stepsErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("outreach_playbook_steps")
     .select("playbook_id, step_index, day_offset, channel, subject, body")
+    .eq("org_id", orgId)
     .in("playbook_id", playbookIds)
     .order("step_index", { ascending: true });
   if (stepsErr) throw stepsErr;
@@ -271,6 +281,7 @@ export async function runOutreachPlaybookSweep(
     // Pointer past the (possibly edited) cadence — the run is done.
     if (!step) {
       const { error } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .update({
@@ -279,6 +290,7 @@ export async function runOutreachPlaybookSweep(
           next_step_at: null,
           updated_at: nowIso,
         })
+        .eq("org_id", orgId)
         .eq("id", run.id)
         .eq("status", "active")
         .eq("next_step_index", run.next_step_index);
@@ -296,7 +308,6 @@ export async function runOutreachPlaybookSweep(
 
     // Patient gate: must still exist and be active.
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, status, legal_first_name, communication_preferences, timezone, address",
@@ -320,6 +331,7 @@ export async function runOutreachPlaybookSweep(
     } | null;
     if (!patientRow || patientRow.status !== "active") {
       const { error } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .update({
@@ -327,6 +339,7 @@ export async function runOutreachPlaybookSweep(
           cancelled_at: nowIso,
           updated_at: nowIso,
         })
+        .eq("org_id", orgId)
         .eq("id", run.id)
         .eq("status", "active");
       if (error) {
@@ -368,6 +381,7 @@ export async function runOutreachPlaybookSweep(
           })))
     ) {
       const { error } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .update({
@@ -376,6 +390,7 @@ export async function runOutreachPlaybookSweep(
           ).toISOString(),
           updated_at: nowIso,
         })
+        .eq("org_id", orgId)
         .eq("id", run.id)
         .eq("status", "active")
         .eq("next_step_index", run.next_step_index);
@@ -407,9 +422,11 @@ export async function runOutreachPlaybookSweep(
       claim.completed_at = nowIso;
     }
     const { data: claimed, error: claimErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_runs")
       .update(claim)
+      .eq("org_id", orgId)
       .eq("id", run.id)
       .eq("status", "active")
       .eq("next_step_index", run.next_step_index)
@@ -470,9 +487,7 @@ export async function runOutreachPlaybookSweep(
           continue;
         }
         const outcome = await sendReminderSms({
-          supabase,
-          // System job: resolve the seed tenant (Phase 0 bridge).
-          orgId: (await resolveSeedOrgId()) ?? undefined,
+          supabase: supabase.raw(),
           cfg: cfg.sms,
           patientId: run.patient_id,
           body: rendered,
@@ -527,9 +542,7 @@ export async function runOutreachPlaybookSweep(
         practiceName: cfg.practiceName,
       });
       const outcome = await sendReminderEmail({
-        supabase,
-        // System job: resolve the seed tenant (Phase 0 bridge).
-        orgId: (await resolveSeedOrgId()) ?? undefined,
+        supabase: supabase.raw(),
         cfg: cfg.email,
         patientId: run.patient_id,
         content: { subject, bodyText: rendered },

@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -50,7 +50,12 @@ router.get(
   // operational inventory data.
   requirePermission("inventory.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Per-product aggregation (pending / notified / delivered counts +
     // oldest-pending + last-notified), top 200 by pending desc then
@@ -60,6 +65,7 @@ router.get(
     // returns ≤200 grouped rows instead of streaming up to 10k
     // notification rows into Node for a JS reduce + sort.
     const { data: aggRows, error: notifErr } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("shop_back_in_stock_queue");
     if (notifErr) throw notifErr;

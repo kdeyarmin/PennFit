@@ -36,13 +36,17 @@
 //   collapses to a verdict='errored' persisted row with the error
 //   message. The route never throws back to the CSR.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { preflightClaim } from "./claim-preflight";
 import { aiPatchSchema, parseAiPatches, type AiPatch } from "./ai-patch";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export const SCRUB_PROMPT_VERSION = "scrub-1.0";
 export const DEFAULT_SCRUB_MODEL = "gpt-4o-mini";
@@ -166,7 +170,11 @@ export async function scrubClaim(input: ScrubInput): Promise<ScrubOutput> {
     };
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return errored("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
   let claimContext;
   try {
     claimContext = await assembleClaimContext(supabase, input.claimId);
@@ -263,7 +271,6 @@ async function assembleClaimContext(
   claimId: string,
 ): Promise<Record<string, unknown> | null> {
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_name, payer_profile_id, date_of_service, status, total_billed_cents, insurance_coverage_id, fulfillment_id, notes",
@@ -282,7 +289,6 @@ async function assembleClaimContext(
     { data: pas },
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("patients")
       .select("legal_first_name, legal_last_name, date_of_birth")
       .eq("id", claim.patient_id)
@@ -290,7 +296,6 @@ async function assembleClaimContext(
       .maybeSingle(),
     claim.insurance_coverage_id
       ? supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("member_id, plan_name, in_network, capped_rental_status")
           .eq("id", claim.insurance_coverage_id)
@@ -298,13 +303,11 @@ async function assembleClaimContext(
           .maybeSingle()
       : Promise.resolve({ data: null }),
     supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("id, hcpcs_code, modifier, description, quantity, billed_cents")
       .eq("claim_id", claim.id),
     claim.payer_profile_id
       ? supabase
-          .schema("resupply")
           .from("payer_profiles")
           .select(
             // Phase 13 additions: timely-filing window + required
@@ -317,7 +320,6 @@ async function assembleClaimContext(
           .maybeSingle()
       : Promise.resolve({ data: null }),
     supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select("diagnosis_icd10, study_date")
       .eq("patient_id", claim.patient_id)
@@ -326,7 +328,6 @@ async function assembleClaimContext(
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .select("auth_number, status, hcpcs_code, approved_through")
       .eq("patient_id", claim.patient_id)
@@ -357,19 +358,25 @@ async function assembleClaimContext(
         }
       : null,
     payerProfile: payer ?? null,
-    lines: (lines ?? []).map((l) => ({
-      hcpcsCode: l.hcpcs_code,
-      modifier: l.modifier,
-      description: l.description,
-      quantity: l.quantity,
-      billedCents: l.billed_cents,
-    })),
+    lines: (lines ?? []).map(
+      (l: Record<string, unknown>) =>
+        ({
+          hcpcsCode: l.hcpcs_code,
+          modifier: l.modifier,
+          description: l.description,
+          quantity: l.quantity,
+          billedCents: l.billed_cents,
+        }) as Record<string, unknown>,
+    ),
     diagnoses: sleep?.diagnosis_icd10 ? [sleep.diagnosis_icd10] : [],
-    priorAuthorizations: (pas ?? []).map((p) => ({
-      authNumber: p.auth_number,
-      hcpcs: p.hcpcs_code,
-      approvedThrough: p.approved_through,
-    })),
+    priorAuthorizations: (pas ?? []).map(
+      (p: Record<string, unknown>) =>
+        ({
+          authNumber: p.auth_number,
+          hcpcs: p.hcpcs_code,
+          approvedThrough: p.approved_through,
+        }) as Record<string, unknown>,
+    ),
     preflight: {
       readyToSubmit: preflight.readyToSubmit,
       errorCount: preflight.errorCount,

@@ -40,7 +40,9 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { sendLifecycleTouchpointEmail } from "../../lib/order-emails/send-lifecycle-touchpoint-email";
@@ -123,7 +125,7 @@ type OptInStatus = { optedIn: boolean; hadShopCustomer: boolean };
  * semantics — a `_`/`%` in an email can't cross-match another row.
  */
 async function loadOptInStatuses(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   emails: readonly string[],
 ): Promise<Map<string, OptInStatus>> {
   const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -132,7 +134,6 @@ async function loadOptInStatuses(
   for (let i = 0; i < lowered.length; i += CHUNK) {
     const chunk = lowered.slice(i, i + CHUNK);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", chunk);
@@ -171,7 +172,6 @@ async function loadOptInStatuses(
 export async function runLifecycleTouchpoints(
   now: Date = new Date(),
 ): Promise<TouchpointStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: TouchpointStats = {
     birthdayCandidates: 0,
     birthdaySent: 0,
@@ -182,6 +182,11 @@ export async function runLifecycleTouchpoints(
     skippedOptedOut: 0,
     skippedNoShopCustomer: 0,
   };
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const mmdd = todayMmDd(now);
   const currentYear = now.getUTCFullYear();
 
@@ -201,7 +206,6 @@ export async function runLifecycleTouchpoints(
   // across cron ticks. Without an explicit order the planner picks
   // an arbitrary set; rows past the limit never get a chance.
   const { data: bdayRows, error: bdayErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select(
       "id, email, legal_first_name, date_of_birth, birthday_email_year_sent, sleep_anniversary_year_sent",
@@ -236,7 +240,6 @@ export async function runLifecycleTouchpoints(
       continue;
     }
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .update({ birthday_email_year_sent: currentYear })
       .eq("id", row.id)
@@ -265,7 +268,6 @@ export async function runLifecycleTouchpoints(
         // sticks and the patient silently won't see a birthday
         // email until next year.
         const { error: rollbackErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .update({ birthday_email_year_sent: row.birthday_email_year_sent })
           .eq("id", row.id);
@@ -285,7 +287,6 @@ export async function runLifecycleTouchpoints(
       stats.birthdaySent += 1;
     } catch (err) {
       const { error: rollbackErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .update({ birthday_email_year_sent: row.birthday_email_year_sent })
         .eq("id", row.id);
@@ -325,6 +326,7 @@ export async function runLifecycleTouchpoints(
   // non-matching rows ahead of it. The opt-in gate for the match set is
   // then resolved in one batched read, same as the birthday pass.
   const { data: annData, error: annErr } = await supabase
+    .raw()
     .schema("resupply")
     .rpc("patients_with_therapy_anniversary", {
       p_mmdd: mmdd,
@@ -365,7 +367,6 @@ export async function runLifecycleTouchpoints(
       continue;
     }
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .update({ sleep_anniversary_year_sent: currentYear })
       .eq("id", row.patient_id)
@@ -391,7 +392,6 @@ export async function runLifecycleTouchpoints(
       });
       if (!r.delivered) {
         const { error: rollbackErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .update({
             sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,
@@ -413,7 +413,6 @@ export async function runLifecycleTouchpoints(
       stats.anniversarySent += 1;
     } catch (err) {
       const { error: rollbackErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .update({
           sleep_anniversary_year_sent: row.sleep_anniversary_year_sent,

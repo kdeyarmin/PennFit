@@ -8,7 +8,7 @@
 // pg-boss job can retry them while a deterministic model outcome is
 // recorded once and surfaced to the reviewer.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
@@ -35,9 +35,14 @@ export async function runReviewExtraction(
   reviewId: string,
   opts: { force?: boolean; storage?: ObjectStorageService } = {},
 ): Promise<RunReviewExtractionOutcome> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — treat as "row not resolvable" (the same
+    // non-throwing outcome we return when the review id has no match).
+    return { kind: "not_found" };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: review, error } = await supabase
-    .schema("resupply")
     .from("referral_reviews")
     .select("id, status, media_object_key, media_content_type")
     .eq("id", reviewId)
@@ -79,7 +84,6 @@ export async function runReviewExtraction(
 
   const nowIso = new Date().toISOString();
   const { error: upErr } = await supabase
-    .schema("resupply")
     .from("referral_reviews")
     .update({
       status: result.status,

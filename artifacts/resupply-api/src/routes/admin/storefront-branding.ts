@@ -21,7 +21,7 @@ import express, { Router, type IRouter, type Response } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -112,7 +112,7 @@ async function tlsAutomationOn(): Promise<boolean> {
 }
 
 async function loadOrgRow(orgId: string): Promise<OrgBrandingRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId).raw();
   const { data, error } = await supabase
     .schema("resupply")
     .from("organizations")
@@ -145,7 +145,7 @@ async function resolveTls(
   try {
     const cf = await getCustomHostname(row.custom_domain_cf_hostname_id);
     if (cf.tls !== row.custom_domain_tls) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = getOrgScopedClient(orgId).raw();
       const { data } = await supabase
         .schema("resupply")
         .from("organizations")
@@ -267,7 +267,7 @@ router.put(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("organizations")
@@ -378,7 +378,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId).raw();
     const objectPath = `tenant-logos/${orgId}/${randomUUID()}.${extension}`;
     const { error: uploadError } = await supabase.storage
       .from(bucket)
@@ -448,7 +448,7 @@ router.delete(
   async (req, res) => {
     const orgId = requireOrgId(req, res);
     if (!orgId) return;
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId).raw();
     const prior = await loadOrgRow(orgId);
     const { data, error } = await supabase
       .schema("resupply")
@@ -509,7 +509,7 @@ router.post(
     // changes (don't leak custom hostnames / certs on rebind).
     const prior = await loadOrgRow(orgId);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId).raw();
     // Reject a domain already claimed by ANOTHER tenant (the partial
     // UNIQUE index would also reject it, but a clean 409 is friendlier).
     const { data: claimant, error: claimErr } = await supabase
@@ -590,7 +590,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("organizations")
@@ -669,7 +669,7 @@ router.delete(
     const orgId = requireOrgId(req, res);
     if (!orgId) return;
     const prior = await loadOrgRow(orgId);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("organizations")

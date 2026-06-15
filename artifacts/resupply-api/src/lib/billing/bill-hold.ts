@@ -19,9 +19,31 @@
 // caller already holds.
 
 import { logAudit } from "@workspace/resupply-audit";
-import type { OrgScopedClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type ResupplySupabaseClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
+
+// The injected-client contract here is the UNSCOPED service-role client:
+// callers (e.g. claim-preflight) pass `supabase.raw()`, and these helpers
+// filter by claim_id / patient_id directly. When NO client is injected,
+// the default is resolved through the org-scoped chokepoint and unwrapped
+// to its raw client so the type + query bodies stay behavior-identical.
+type SupabaseClient = ResupplySupabaseClient;
+
+/**
+ * Resolve the default unscoped client for the helpers below when the caller
+ * did not inject one. Routes the no-arg default through the seed-org
+ * chokepoint and returns null when no tenant is resolvable.
+ */
+async function resolveDefaultClient(): Promise<SupabaseClient | null> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  return getOrgScopedClient(orgId).raw();
+}
 
 export type RequirementType =
   | "prescription"
@@ -156,9 +178,12 @@ export function pickFaxMatch(
 /** List every paperwork requirement tracked against a claim. */
 export async function listClaimRequirements(
   claimId: string,
-  supabase: OrgScopedClient,
+  injected?: SupabaseClient,
 ): Promise<PaperworkRequirementRow[]> {
+  const supabase = injected ?? (await resolveDefaultClient());
+  if (!supabase) return [];
   const { data, error } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select(REQUIREMENT_COLUMNS)
     .eq("claim_id", claimId)
@@ -170,9 +195,12 @@ export async function listClaimRequirements(
 /** List every paperwork requirement tracked against a patient. */
 export async function listPatientRequirements(
   patientId: string,
-  supabase: OrgScopedClient,
+  injected?: SupabaseClient,
 ): Promise<PaperworkRequirementRow[]> {
+  const supabase = injected ?? (await resolveDefaultClient());
+  if (!supabase) return [];
   const { data, error } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select(REQUIREMENT_COLUMNS)
     .eq("patient_id", patientId)
@@ -189,11 +217,14 @@ export async function listPatientRequirements(
  */
 export async function countOutstandingByClaim(
   claimIds: string[],
-  supabase: OrgScopedClient,
+  injected?: SupabaseClient,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (claimIds.length === 0) return counts;
+  const supabase = injected ?? (await resolveDefaultClient());
+  if (!supabase) return counts;
   const { data, error } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("claim_id")
     .in("claim_id", claimIds)
@@ -208,7 +239,7 @@ export async function countOutstandingByClaim(
 }
 
 export interface RecomputeOpts {
-  supabase: OrgScopedClient;
+  supabase?: SupabaseClient;
   /** Stamped on the release columns when the hold lifts. */
   actorEmail?: string | null;
   /** When the hold transitions (set or lift), append a claim event. */
@@ -231,11 +262,15 @@ export interface RecomputeResult {
  */
 export async function recomputeBillHold(
   claimId: string,
-  opts: RecomputeOpts,
+  opts: RecomputeOpts = {},
 ): Promise<RecomputeResult> {
-  const supabase = opts.supabase;
+  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  if (!supabase) {
+    return { claimId, held: false, changed: false, outstandingCount: 0 };
+  }
 
   const { data: rows, error } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("status, required, label")
     .eq("claim_id", claimId);
@@ -250,6 +285,7 @@ export async function recomputeBillHold(
   ).length;
 
   const { data: claim, error: claimErr } = await supabase
+    .schema("resupply")
     .from("insurance_claims")
     .select("id, bill_hold, status")
     .eq("id", claimId)
@@ -268,6 +304,7 @@ export async function recomputeBillHold(
     if (held) {
       const labels = outstandingLabels(reqRows);
       const { error: reasonErr } = await supabase
+        .schema("resupply")
         .from("insurance_claims")
         .update({
           bill_hold_reason: holdReason(labels),
@@ -287,6 +324,7 @@ export async function recomputeBillHold(
   const nowIso = new Date().toISOString();
   const labels = outstandingLabels(reqRows);
   const { error: flipErr } = await supabase
+    .schema("resupply")
     .from("insurance_claims")
     .update({
       bill_hold: held,
@@ -307,6 +345,7 @@ export async function recomputeBillHold(
 
   if (opts.writeEvent) {
     const { error: eventErr } = await supabase
+      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claimId,
@@ -333,7 +372,7 @@ function holdReason(labels: string[]): string {
 }
 
 export interface SatisfyOpts {
-  supabase: OrgScopedClient;
+  supabase?: SupabaseClient;
   via: SatisfiedVia;
   actorEmail?: string | null;
   inboundFaxId?: string | null;
@@ -354,9 +393,13 @@ export async function satisfyRequirement(
   requirement: PaperworkRequirementRow;
   recompute: RecomputeResult | null;
 }> {
-  const supabase = opts.supabase;
+  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  if (!supabase) {
+    throw new Error("satisfyRequirement: tenant context missing");
+  }
 
   const { data: existing, error: readErr } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select(REQUIREMENT_COLUMNS)
     .eq("id", requirementId)
@@ -373,6 +416,7 @@ export async function satisfyRequirement(
 
   const nowIso = new Date().toISOString();
   const { data: updated, error: updErr } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .update({
       status: "satisfied",
@@ -411,11 +455,13 @@ export async function satisfyRequirement(
  */
 export async function seedDefaultRequirementsForClaim(
   claimId: string,
-  opts: { supabase: OrgScopedClient; createdByEmail?: string | null },
+  opts: { supabase?: SupabaseClient; createdByEmail?: string | null } = {},
 ): Promise<{ created: number; held: boolean }> {
-  const supabase = opts.supabase;
+  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  if (!supabase) return { created: 0, held: false };
 
   const { data: claim, error: claimErr } = await supabase
+    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id")
     .eq("id", claimId)
@@ -425,6 +471,7 @@ export async function seedDefaultRequirementsForClaim(
   if (!claim) return { created: 0, held: false };
 
   const { data: existing, error: existErr } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("id")
     .eq("claim_id", claimId)
@@ -453,6 +500,7 @@ export async function seedDefaultRequirementsForClaim(
     };
   });
   const { error: insErr } = await supabase
+    .schema("resupply")
     .from("claim_paperwork_requirements")
     .insert(inserts);
   if (insErr) throw insErr;
@@ -473,7 +521,7 @@ export async function seedDefaultRequirementsForClaim(
  * outstanding — it's generated at delivery and faxed/signed back.
  */
 async function resolveOnFile(
-  supabase: OrgScopedClient,
+  supabase: SupabaseClient,
   patientId: string,
 ): Promise<
   Partial<
@@ -485,13 +533,12 @@ async function resolveOnFile(
   > = {};
 
   const { data: acks } = await supabase
+    .schema("resupply")
     .from("patient_form_acknowledgements")
     .select("form_kind")
     .eq("patient_id", patientId);
   if (
-    ((acks ?? []) as Array<{ form_kind: string }>).some(
-      (a) => a.form_kind === "aob",
-    )
+    (acks ?? []).some((a) => (a as { form_kind: string }).form_kind === "aob")
   ) {
     out.aob = { via: "esign", documentId: null };
   }
@@ -499,6 +546,7 @@ async function resolveOnFile(
   // A signed, unexpired DWO/SWO covers the prescription requirement.
   const today = new Date().toISOString().slice(0, 10);
   const { data: dwos } = await supabase
+    .schema("resupply")
     .from("dwo_documents")
     .select("id, expires_on")
     .eq("patient_id", patientId)
@@ -525,14 +573,18 @@ async function resolveOnFile(
 export async function autoMatchInboundFaxToPaperwork(
   faxId: string,
   fromE164: string | null,
-  supabase: OrgScopedClient,
+  injected?: SupabaseClient,
 ): Promise<{ matched: boolean; requirementId: string | null }> {
   try {
     if (!fromE164) return { matched: false, requirementId: null };
     const normalized = fromE164.trim();
     if (!normalized) return { matched: false, requirementId: null };
 
+    const supabase = injected ?? (await resolveDefaultClient());
+    if (!supabase) return { matched: false, requirementId: null };
+
     const { data, error } = await supabase
+      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(REQUIREMENT_COLUMNS)
       .eq("expected_return_fax_e164", normalized)

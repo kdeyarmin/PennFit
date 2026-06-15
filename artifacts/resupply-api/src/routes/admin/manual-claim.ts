@@ -179,7 +179,7 @@ router.post(
     if (await isFeatureEnabled("billing.bill_hold")) {
       try {
         await seedDefaultRequirementsForClaim(newId, {
-          supabase,
+          supabase: supabase.raw(),
           createdByEmail: req.adminEmail ?? null,
         });
       } catch (err) {

@@ -9,7 +9,7 @@
 // once we have ~5k closed observation windows; the public interface
 // is stable so the swap is a one-place change.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
@@ -93,14 +93,18 @@ const CEILING = 0.97;
 export async function scorePatientAdherence(
   patientId: string,
 ): Promise<AdherenceScore | null> {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data: nights } = await supabase
-    .schema("resupply")
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // degrades to null (the same "no score" result a missing patient yields).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
+  const { data: nightsData } = await supabase
     .from("patient_therapy_nights")
     .select("usage_minutes, leak_rate_l_min, night_date")
     .eq("patient_id", patientId)
     .order("night_date", { ascending: true })
     .limit(200);
+  const nights = nightsData as PredictorNightRow[] | null;
   if (!nights || nights.length === 0) {
     return {
       probabilityCompliant: 0.5,
@@ -219,9 +223,13 @@ export async function scoreAndPersistAdherence(
 ): Promise<AdherenceScore | null> {
   const score = await scorePatientAdherence(patientId);
   if (!score) return null;
-  const supabase = getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // means we can't persist; return the score unpersisted (the persist
+  // step is already best-effort / non-fatal below).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return score;
+  const supabase = getOrgScopedClient(orgId);
   const { error: persistErr } = await supabase
-    .schema("resupply")
     .from("adherence_predictions")
     .insert({
       patient_id: patientId,

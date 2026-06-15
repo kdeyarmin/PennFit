@@ -27,7 +27,11 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   lookupPaymentState,
@@ -91,7 +95,7 @@ const ORDER_COLUMNS =
 // Verify a token against a freshly-loaded order row. Returns the order
 // when the link is valid + open, or an error code to surface.
 async function resolveOpenOrder(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   token: string,
 ): Promise<
   | { ok: true; order: ResolvedOrderRow }
@@ -101,7 +105,6 @@ async function resolveOpenOrder(
   if (!verified.valid) return { ok: false, code: "invalid" };
 
   const { data: order, error } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .select(ORDER_COLUMNS)
     .eq("id", verified.orderRequestId)
@@ -131,7 +134,12 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
     res.status(400).json({ error: "missing_token" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolveOpenOrder(supabase, token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
@@ -139,13 +147,15 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
   }
   const order = resolved.order;
 
-  const company = await resolveCompanyProfile(supabase);
-  const payment = await lookupPaymentState(supabase, order.stripe_session_id);
+  const company = await resolveCompanyProfile(supabase.raw());
+  const payment = await lookupPaymentState(
+    supabase.raw(),
+    order.stripe_session_id,
+  );
 
   // First view? Stamp it (best-effort; never blocks the read).
   if (order.status === "sent") {
     const { error: viewStampErr } = await supabase
-      .schema("resupply")
       .from("csr_order_requests")
       .update({
         status: "viewed",
@@ -233,7 +243,12 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
   }
   const b = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolveOpenOrder(supabase, b.token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
@@ -264,7 +279,6 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
   // still unsigned. The link stays valid (same version) so the
   // customer can continue straight to payment.
   const { data: updated, error: updErr } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .update({
       status: "signed",
@@ -318,7 +332,12 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolveOpenOrder(supabase, parsed.data.token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
@@ -332,7 +351,10 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     return;
   }
 
-  const payment = await lookupPaymentState(supabase, order.stripe_session_id);
+  const payment = await lookupPaymentState(
+    supabase.raw(),
+    order.stripe_session_id,
+  );
   if (payment.status === "paid" || payment.status === "refunded") {
     res.status(409).json({ error: "already_paid" });
     return;
@@ -425,19 +447,16 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
   // or-IGNORE on conflict for the same reason as /shop/checkout: a
   // webhook that already advanced the row must never be reverted.
   const nowIso = new Date().toISOString();
-  const { error: mirrorErr } = await supabase
-    .schema("resupply")
-    .from("shop_orders")
-    .upsert(
-      {
-        stripe_session_id: session.id,
-        status: "pending",
-        fulfillment_method: "ship",
-        customer_email: order.customer_email,
-        updated_at: nowIso,
-      },
-      { onConflict: "stripe_session_id", ignoreDuplicates: true },
-    );
+  const { error: mirrorErr } = await supabase.from("shop_orders").upsert(
+    {
+      stripe_session_id: session.id,
+      status: "pending",
+      fulfillment_method: "ship",
+      customer_email: order.customer_email,
+      updated_at: nowIso,
+    },
+    { onConflict: "stripe_session_id", ignoreDuplicates: true },
+  );
   if (mirrorErr) {
     req.log?.error(
       { err: mirrorErr, sessionId: session.id, orderRequestId: order.id },
@@ -450,7 +469,6 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
   // Point the request at the latest session (payment state derivation
   // joins on this).
   const { error: linkErr } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .update({ stripe_session_id: session.id, updated_at: nowIso })
     .eq("id", order.id);

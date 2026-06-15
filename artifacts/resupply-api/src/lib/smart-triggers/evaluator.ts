@@ -16,7 +16,11 @@
 // when called from the pg-boss worker.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
@@ -51,7 +55,13 @@ export interface EvaluatorResult {
 export async function runSmartTriggerEvaluator(
   actor: EvaluatorActor,
 ): Promise<EvaluatorResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — no roster to scan. Return the same
+    // all-zero counters an empty-candidate run produces.
+    return { scanned: 0, proposed: 0, inserted: 0, skippedExisting: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Recent therapy-night roster — patients with at least one night
   // in the last 60 days are candidates. PostgREST has no
@@ -70,7 +80,6 @@ export async function runSmartTriggerEvaluator(
   const candidateSet = new Set<string>();
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data: page, error: candidatesErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("patient_id")
       .gte("night_date", cutoffIso)
@@ -109,7 +118,7 @@ export async function runSmartTriggerEvaluator(
   // runs.
   let deviceMaxByPatient = new Map<string, number>();
   try {
-    deviceMaxByPatient = await fetchDeviceMaxPressureMap(supabase);
+    deviceMaxByPatient = await fetchDeviceMaxPressureMap(supabase.raw());
   } catch (err) {
     logger.warn(
       {
@@ -129,7 +138,6 @@ export async function runSmartTriggerEvaluator(
     scanned++;
     try {
       const { data: nightRows, error: nightsErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select(
           "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
@@ -141,17 +149,23 @@ export async function runSmartTriggerEvaluator(
       const nights = nightRows ?? [];
 
       const proposals = evaluateAll(
-        nights.map((n) => ({
-          date: n.night_date,
-          usageMinutes: n.usage_minutes,
-          // PostgREST returns numeric columns as strings (preserves
-          // precision). Convert to Number for the evaluator.
-          ahi: n.ahi !== null ? Number(n.ahi) : null,
-          leakRateLMin:
-            n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
-          pressureP95Cmh2o:
-            n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
-        })),
+        nights.map(
+          (
+            n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"],
+          ) => ({
+            date: n.night_date,
+            usageMinutes: n.usage_minutes,
+            // PostgREST returns numeric columns as strings (preserves
+            // precision). Convert to Number for the evaluator.
+            ahi: n.ahi !== null ? Number(n.ahi) : null,
+            leakRateLMin:
+              n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
+            pressureP95Cmh2o:
+              n.pressure_p95_cmh2o !== null
+                ? Number(n.pressure_p95_cmh2o)
+                : null,
+          }),
+        ),
         { deviceMaxPressureCmh2o: deviceMaxByPatient.get(c.patientId) ?? null },
       );
 
@@ -163,7 +177,6 @@ export async function runSmartTriggerEvaluator(
         // so we INSERT and treat 23505 as the "skipped existing"
         // path.
         const { data: insertedRow, error: insertErr } = await supabase
-          .schema("resupply")
           .from("patient_smart_trigger_events")
           .insert({
             patient_id: c.patientId,

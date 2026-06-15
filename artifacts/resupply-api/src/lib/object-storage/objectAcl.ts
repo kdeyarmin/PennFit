@@ -6,7 +6,8 @@
 // unchanged so callers don't need to move.
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
 } from "@workspace/resupply-db";
 
@@ -99,13 +100,20 @@ export async function setObjectAclPolicy(
   obj: StoredObject,
   aclPolicy: ObjectAclPolicy,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Reject if an owner is already set and it differs from the incoming
   // owner. This prevents a customer from supplying a previously-issued
   // objectPath that belongs to another customer and hijacking its
   // ownership.
+  // `object_storage_acls` is a GLOBAL (non-org-scoped) table — use the
+  // unscoped client via `.raw()`.
   const { data: existing, error: readErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("object_storage_acls")
     .select("owner_id")
@@ -122,6 +130,7 @@ export async function setObjectAclPolicy(
   }
 
   const { error: writeErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("object_storage_acls")
     .upsert(
@@ -145,8 +154,13 @@ export async function setObjectAclPolicy(
 export async function getObjectAclPolicy(
   obj: StoredObject,
 ): Promise<ObjectAclPolicy | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
+  // `object_storage_acls` is a GLOBAL (non-org-scoped) table — use the
+  // unscoped client via `.raw()`.
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("object_storage_acls")
     .select("policy")

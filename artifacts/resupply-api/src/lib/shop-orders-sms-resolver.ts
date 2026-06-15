@@ -26,7 +26,8 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { shouldSendSms } from "./comm-prefs";
@@ -65,14 +66,19 @@ export interface SmsRecipient {
 export async function resolveSmsRecipientForShopOrder(
   args: ResolveSmsRecipientArgs,
 ): Promise<SmsRecipient | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — no recipient resolvable. Same
+    // "no SMS — skip silently" null return this function already uses.
+    return null;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // 1. Pull the shop_customer's email + comm-prefs.
   let email: string | null = null;
   let prefs: CommunicationPreferences = DEFAULT_COMMUNICATION_PREFERENCES;
   if (args.customerId) {
     const { data: cust } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .eq("customer_id", args.customerId)
@@ -99,7 +105,6 @@ export async function resolveSmsRecipientForShopOrder(
   // `%` doesn't cross-match other patients' phone numbers.
   const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("phone_e164, legal_first_name, timezone, address")
     .ilike("email", escapedEmail)

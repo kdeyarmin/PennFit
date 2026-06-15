@@ -49,10 +49,27 @@ function mockSupabase(seed: SeedTables) {
   };
 }
 
-vi.mock("@workspace/resupply-db", () => ({
-  getSupabaseServiceRoleClient: () =>
-    (globalThis as Record<string, unknown>).__supabaseStub__,
-}));
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  const stub = () => (globalThis as Record<string, unknown>).__supabaseStub__;
+  return {
+    ...actual,
+    getSupabaseServiceRoleClient: () => stub(),
+    getOrgScopedClient: (
+      orgId: string,
+      client?: Parameters<typeof actual.getOrgScopedClient>[1],
+    ) =>
+      actual.getOrgScopedClient(
+        orgId,
+        client ??
+          (stub() as unknown as Parameters<
+            typeof actual.getOrgScopedClient
+          >[1]),
+      ),
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
+  };
+});
 
 import { buildPrescriptionRequestPacketFromRx } from "./prescription-request-builder";
 

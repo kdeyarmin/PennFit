@@ -15,7 +15,16 @@ const publishEvent = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock("../../lib/webhooks/publisher", () => ({ publishEvent }));
 
 import { dispatch277 } from "./office-ally-inbound-poll";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
+
+// The dispatch helpers now take the org-scoped client; wrap the mock
+// service-role client through the facade's test seam.
+const TEST_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const orgClient = () =>
+  getOrgScopedClient(TEST_ORG_ID, getSupabaseServiceRoleClient());
 
 // trace = `<etin>-<isaCtl>-<stCtl>-<nonce>`; isaCtl is the 2nd segment.
 const CONTENT =
@@ -39,7 +48,7 @@ describe("dispatch277", () => {
     });
     stageSupabaseResponse("claim_status_checks", "update", { data: null });
 
-    await dispatch277(getSupabaseServiceRoleClient(), "inbound_1", CONTENT);
+    await dispatch277(orgClient(), "inbound_1", CONTENT);
 
     const update = supabaseMock.writePayloads(
       "claim_status_checks",
@@ -55,7 +64,7 @@ describe("dispatch277", () => {
 
   it("no-ops when no matching check exists", async () => {
     stageSupabaseResponse("claim_status_checks", "select", { data: null });
-    await dispatch277(getSupabaseServiceRoleClient(), "inbound_2", CONTENT);
+    await dispatch277(orgClient(), "inbound_2", CONTENT);
     expect(
       supabaseMock.writePayloads("claim_status_checks", "update"),
     ).toHaveLength(0);

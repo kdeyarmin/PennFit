@@ -57,28 +57,22 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  // Public token route (no request tenant); scope manual-document and
-  // physician-fax reads to the seed org (single-tenant bridge).
-  const seedOrgId = await resolveSeedOrgId();
-  if (!seedOrgId) {
+  // Public signed-link route: there is no req.orgId. Resolve the seed
+  // org (single-tenant posture) and degrade to the route's existing
+  // 404 when it can't be resolved — never 500 a signed-link fetch.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId || !orgId.trim()) {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const supabase = getOrgScopedClient(seedOrgId);
+  const supabase = getOrgScopedClient(orgId);
 
   // Appeal-letter faxes render the stored appeal PDF (claim_appeal_letters
   // row) instead of the physician cover letter. Same signed-URL posture;
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
-    // Public token route (no request tenant); scope the appeal render to
-    // the seed org (single-tenant bridge).
-    const appealOrgId = await resolveSeedOrgId();
-    if (!appealOrgId) {
-      res.status(404).json({ error: "appeal_letter_not_found" });
-      return;
-    }
     const result = await renderAppealPdfForLetterId(
-      appealOrgId,
+      orgId,
       verified.outreachId,
     );
     if (!result.ok) {
@@ -100,7 +94,10 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // routes/admin/manual-documents.ts). Same signed-URL posture; no PHI
   // in the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document") {
-    const pdf = await renderManualDocumentForFax(supabase, verified.outreachId);
+    const pdf = await renderManualDocumentForFax(
+      supabase,
+      verified.outreachId,
+    );
     if (!pdf) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -142,14 +139,9 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     }
     const patientId = verified.outreachId.slice(0, sep);
     const paId = verified.outreachId.slice(sep + 1);
-    // Public token route (no request tenant); the PA render scopes to the
-    // seed org (single-tenant bridge).
-    const paOrgId = await resolveSeedOrgId();
-    if (!paOrgId) {
-      res.status(404).json({ error: "prior_auth_not_found" });
-      return;
-    }
-    const result = await buildPaRequestPdf(paOrgId, patientId, paId);
+    // buildPaRequestPdf builds its own org-scoped client; pass the tenant
+    // id resolved at the top of the handler.
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;

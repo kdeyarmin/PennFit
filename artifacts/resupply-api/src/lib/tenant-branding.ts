@@ -18,7 +18,7 @@
 //   * Cached for a short TTL so the unauthenticated, per-page branding
 //     fetch adds no meaningful DB load.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 import { normalizeCustomDomain } from "./tenant-domain";
@@ -104,9 +104,15 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 async function loadSeedBranding(): Promise<StorefrontBranding> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) throw new Error("tenant context missing");
+  // The `organizations` directory is the GLOBAL tenant table (keyed by
+  // id = the tenant); reach it via `.raw()` so the org-scoped facade
+  // doesn't wrongly append an org_id filter.
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await withTimeout(
     supabase
+      .raw()
       .schema("resupply")
       .from("organizations")
       .select("name, storefront_name, tagline, logo_url")
@@ -122,9 +128,13 @@ async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
   const normalized = normalizeCustomDomain(host);
   if (!normalized) return loadSeedBranding();
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) throw new Error("tenant context missing");
+  // GLOBAL `organizations` directory — reach via `.raw()` (see loadSeedBranding).
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await withTimeout(
     supabase
+      .raw()
       .schema("resupply")
       .from("organizations")
       .select("name, storefront_name, tagline, logo_url")
@@ -184,9 +194,13 @@ let verifiedRefreshInFlight: Promise<void> | null = null;
 
 async function reloadVerifiedDomains(): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) throw new Error("tenant context missing");
+    // GLOBAL `organizations` directory — reach via `.raw()` (see loadSeedBranding).
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await withTimeout(
       supabase
+        .raw()
         .schema("resupply")
         .from("organizations")
         .select("custom_domain")

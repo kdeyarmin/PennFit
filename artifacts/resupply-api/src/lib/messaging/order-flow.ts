@@ -43,9 +43,10 @@
 //   the status.
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { resolveFulfillmentSku } from "../backorder/resolve-fulfillment-sku";
@@ -117,11 +118,12 @@ export interface PlaceOrderInput {
 export async function placeResupplyOrderForConversation(
   input: PlaceOrderInput,
 ): Promise<PlaceOrderResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { status: "conversation_not_found" };
+  const supabase = getOrgScopedClient(orgId);
 
   // 1. Resolve the conversation → episode + patient.
   const { data: conv, error: convErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("id, patient_id, episode_id")
     .eq("id", input.conversationId)
@@ -144,7 +146,6 @@ export async function placeResupplyOrderForConversation(
   // BEFORE the conditional UPDATE — saves a write round-trip in the
   // hot path where the patient just hit refresh on their email click.
   const { data: episode, error: episodeErr } = await supabase
-    .schema("resupply")
     .from("episodes")
     .select("id, patient_id, prescription_id, status")
     .eq("id", convEpisodeId)
@@ -166,7 +167,6 @@ export async function placeResupplyOrderForConversation(
   // pinned a specific script at creation time.
   if (!episode.prescription_id) return { status: "no_active_prescription" };
   const { data: rx, error: rxErr } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select("id, item_sku")
     .eq("id", episode.prescription_id)
@@ -186,7 +186,7 @@ export async function placeResupplyOrderForConversation(
   // (stays pending) for the CSR to work.
   if (await isFeatureEnabled("resupply.entitlement_enforcement")) {
     try {
-      const entitlement = await resolveSkuEntitlement(supabase, {
+      const entitlement = await resolveSkuEntitlement(supabase.raw(), {
         patientId: episode.patient_id,
         itemSku: rx.item_sku,
       });
@@ -299,7 +299,6 @@ export async function placeResupplyOrderForConversation(
   // rows and we resolve via the post-claim re-read below.
   const nowIso = new Date().toISOString();
   const { data: claimed, error: claimErr } = await supabase
-    .schema("resupply")
     .from("episodes")
     .update({ status: "confirmed", updated_at: nowIso })
     .eq("id", episode.id)
@@ -339,20 +338,19 @@ export async function placeResupplyOrderForConversation(
 }
 
 async function ensureFulfillments(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   args: { patientId: string; episodeId: string; itemSku: string },
 ): Promise<string[]> {
   // If a prior crash left fulfillments behind, surface their ids
   // rather than insert duplicates.
   const { data: existing, error: existingErr } = await supabase
-    .schema("resupply")
     .from("fulfillments")
     .select("id")
     .eq("episode_id", args.episodeId)
     .limit(50);
   if (existingErr) throw existingErr;
   if ((existing ?? []).length > 0) {
-    return (existing ?? []).map((r) => r.id);
+    return (existing ?? []).map((r: { id: string }) => r.id);
   }
 
   // Backorder substitution. resolveFulfillmentSku reads
@@ -366,7 +364,7 @@ async function ensureFulfillments(
   let shipSku = args.itemSku;
   let substitutedFromSku: string | null = null;
   try {
-    const resolved = await resolveFulfillmentSku(supabase, args.itemSku);
+    const resolved = await resolveFulfillmentSku(supabase.raw(), args.itemSku);
     shipSku = resolved.sku;
     substitutedFromSku = resolved.substituted
       ? (resolved.substitutedFromSku ?? null)
@@ -402,7 +400,6 @@ async function ensureFulfillments(
   }
 
   const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
     .from("fulfillments")
     .insert({
       patient_id: args.patientId,
@@ -413,7 +410,7 @@ async function ensureFulfillments(
     })
     .select("id");
   if (insertErr) throw insertErr;
-  return (inserted ?? []).map((r) => r.id);
+  return (inserted ?? []).map((r: { id: string }) => r.id);
 }
 
 /**
@@ -427,13 +424,12 @@ async function ensureFulfillments(
  * avoid a 23505 on the insert.
  */
 async function raiseTooSoonAlert(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
   entitlement: SkuEntitlement,
 ): Promise<void> {
   try {
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .select("id")
       .eq("patient_id", patientId)
@@ -443,7 +439,6 @@ async function raiseTooSoonAlert(
       .maybeSingle();
     if (existing) return;
     const { error: insertAlertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,
@@ -492,11 +487,10 @@ async function raiseTooSoonAlert(
  * error propagates to the caller's fail-open catch.
  */
 async function consultCoverageEligibility(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
 ): Promise<CoverageBlock | null> {
   const { data: coverage, error: covErr } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select("id, payer_name")
     .eq("patient_id", patientId)
@@ -521,13 +515,12 @@ async function consultCoverageEligibility(
  * index so a repeat confirm doesn't 23505.
  */
 async function raiseCoverageAlert(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
   block: CoverageBlock,
 ): Promise<void> {
   try {
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .select("id")
       .eq("patient_id", patientId)
@@ -541,7 +534,6 @@ async function raiseCoverageAlert(
         ? `Reorder held — ${block.payerName} coverage is inactive on the last eligibility check. Verify coverage before shipping.`
         : `Reorder held — ${block.payerName} requires prior authorization on the last eligibility check. Confirm PA before shipping.`;
     const { error: insertAlertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,
@@ -593,14 +585,13 @@ const USAGE_MIN_COMPLIANT_RATIO = 0.5;
  * fail-open catch.
  */
 async function consultRecentTherapyUsage(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
 ): Promise<UsageReviewBlock | null> {
   const since = new Date();
   since.setUTCDate(since.getUTCDate() - USAGE_WINDOW_DAYS);
   const sinceDate = since.toISOString().slice(0, 10);
   const { data: nights, error: nightsErr } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("night_date, usage_minutes")
     .eq("patient_id", patientId)
@@ -617,7 +608,10 @@ async function consultRecentTherapyUsage(
   // Counting raw rows would let duplicates inflate a sparse window
   // past the minimum-sample bar or skew the compliant ratio.
   const byNight = new Map<string, number>();
-  for (const n of nights ?? []) {
+  for (const n of (nights ?? []) as Array<{
+    night_date: string;
+    usage_minutes: number | null;
+  }>) {
     const minutes = n.usage_minutes ?? 0;
     const prev = byNight.get(n.night_date);
     if (prev === undefined || minutes > prev) {
@@ -647,13 +641,12 @@ async function consultRecentTherapyUsage(
  * only — no per-night therapy detail.
  */
 async function raiseUsageReviewAlert(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
   usage: UsageReviewBlock,
 ): Promise<void> {
   try {
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .select("id")
       .eq("patient_id", patientId)
@@ -663,7 +656,6 @@ async function raiseUsageReviewAlert(
       .maybeSingle();
     if (existing) return;
     const { error: insertAlertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,
@@ -714,10 +706,11 @@ async function raiseUsageReviewAlert(
  * later uses a different Messaging Service.
  */
 export async function pausePatient(patientId: string): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   const { data: patient, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .update({ status: "paused", updated_at: nowIso })
     .eq("id", patientId)
@@ -731,7 +724,6 @@ export async function pausePatient(patientId: string): Promise<void> {
   // shop account have no row to update — no-op.
   const emailLower = patient.email.toLowerCase();
   const { data: cust, error: custErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, communication_preferences")
     .eq("email_lower", emailLower)
@@ -753,7 +745,6 @@ export async function pausePatient(patientId: string): Promise<void> {
     smsTransactional: false,
   };
   const { error: prefsUpdateErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update({
       communication_preferences: nextPrefs as unknown as Json,
@@ -775,10 +766,11 @@ export async function pausePatient(patientId: string): Promise<void> {
  * opt-in confirmation reply.
  */
 export async function reactivatePatient(patientId: string): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   const { data: patient, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .update({ status: "active", updated_at: nowIso })
     .eq("id", patientId)
@@ -789,7 +781,6 @@ export async function reactivatePatient(patientId: string): Promise<void> {
   if (!patient?.email) return;
   const emailLower = patient.email.toLowerCase();
   const { data: cust, error: custErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, communication_preferences")
     .eq("email_lower", emailLower)
@@ -807,7 +798,6 @@ export async function reactivatePatient(patientId: string): Promise<void> {
     smsTransactional: true,
   };
   const { error: prefsUpdateErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update({
       communication_preferences: nextPrefs as unknown as Json,

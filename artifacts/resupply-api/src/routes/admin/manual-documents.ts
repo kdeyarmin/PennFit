@@ -35,11 +35,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getOrgScopedClient,
-  type Json,
-  type OrgScopedClient,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
 import { createSendgridClient } from "@workspace/resupply-email";
 import {
   createTelnyxFaxClient,
@@ -86,14 +82,6 @@ import {
 } from "./physician-fax-outreach.js";
 
 const router: IRouter = Router();
-
-// signature-tracking writes go through the org-scoped chokepoint (the
-// rest of this route is converted separately); fails closed if no tenant.
-function reqOrgClient(req: import("express").Request): OrgScopedClient {
-  const orgId = req.orgId;
-  if (!orgId) throw new Error("tenant_context_missing");
-  return getOrgScopedClient(orgId);
-}
 const objectStorage = new ObjectStorageService();
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -322,7 +310,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -376,7 +364,7 @@ router.get(
       created_at: string;
     }>;
     const activePrescriptions = prescriptions.filter(
-      (p) => p.status === "active",
+      (p: { status: string | null }) => p.status === "active",
     );
     const relevantPrescriptions =
       activePrescriptions.length > 0 ? activePrescriptions : prescriptions;
@@ -384,7 +372,9 @@ router.get(
     // when no prescription names one, fall back to the sleep study's
     // interpreting provider so a chart with only a study still prefills.
     const providerId =
-      relevantPrescriptions.find((p) => p.provider_id)?.provider_id ??
+      relevantPrescriptions.find(
+        (p: { provider_id: string | null }) => p.provider_id,
+      )?.provider_id ??
       studyRes.data?.interpreting_provider_id ??
       null;
 
@@ -398,6 +388,8 @@ router.get(
       practice_address: unknown;
     } | null = null;
     if (providerId) {
+      // providers is a global shared directory (keyed by NPI, no
+      // org_id) — use raw().
       const { data, error: provErr } = await supabase
         .raw()
         .schema("resupply")
@@ -417,8 +409,9 @@ router.get(
     const patientAddress = formatJsonAddress(patient.address);
     const itemLines = [
       ...new Set(
-        relevantPrescriptions.map((p) =>
-          p.hcpcs_code ? `${p.item_sku} (HCPCS ${p.hcpcs_code})` : p.item_sku,
+        relevantPrescriptions.map(
+          (p: { hcpcs_code: string | null; item_sku: string }) =>
+            p.hcpcs_code ? `${p.item_sku} (HCPCS ${p.hcpcs_code})` : p.item_sku,
         ),
       ),
     ].join("\n");
@@ -506,7 +499,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -545,7 +538,7 @@ router.post(
   adminRateLimit({ name: "manual_documents.create", preset: "sensitive" }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -591,7 +584,7 @@ router.post(
     let trackingCode: string | null = null;
     if (getManualDocumentTypeDef(type).requiresSignature) {
       try {
-        const reg = await registerSignatureTracking(reqOrgClient(req), {
+        const reg = await registerSignatureTracking(supabase, {
           kind: "manual_document",
           documentId: inserted.id,
           title: b.title,
@@ -632,7 +625,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -664,7 +657,7 @@ router.patch(
   adminRateLimit({ name: "manual_documents.update", preset: "sensitive" }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -748,7 +741,7 @@ router.delete(
   adminRateLimit({ name: "manual_documents.delete", preset: "destroy" }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -765,7 +758,7 @@ router.delete(
     if (error) throw error;
 
     await markTrackingCanceled(
-      reqOrgClient(req),
+      supabase,
       "manual_document",
       parsed.data.id,
     ).catch((err) =>
@@ -796,7 +789,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -850,7 +843,7 @@ router.post(
   adminRateLimit({ name: "manual_documents.send_email", preset: "sensitive" }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -934,7 +927,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      reqOrgClient(req),
+      supabase,
       "manual_document",
       row.id,
       "email",
@@ -966,7 +959,7 @@ router.post(
   adminRateLimit({ name: "manual_documents.send_fax", preset: "sensitive" }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -1046,7 +1039,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      reqOrgClient(req),
+      supabase,
       "manual_document",
       row.id,
       "fax",
@@ -1078,7 +1071,7 @@ router.post(
   adminRateLimit({ name: "manual_documents.attach", preset: "sensitive" }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }

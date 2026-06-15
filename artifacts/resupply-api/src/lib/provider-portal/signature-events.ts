@@ -16,7 +16,7 @@
 
 import { createHash } from "node:crypto";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 /** The genesis previous-hash for the first event in a chain. */
 export const GENESIS_HASH = "0".repeat(64);
@@ -168,15 +168,21 @@ export interface AppendedEvent {
  * index keeps the chain honest if it ever happens.
  */
 export async function appendSignatureEvent(
+  orgId: string,
   input: AppendEventInput,
 ): Promise<AppendedEvent> {
-  const supabase = getSupabaseServiceRoleClient();
+  // provider_signature_events is a BLOCKED TENANT table (has org_id but
+  // is not in the typed union) — route through the raw client and scope
+  // org_id MANUALLY on every read/write.
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: tail, error: tailErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_events")
     .select("seq, event_hash")
     .eq("request_id", input.requestId)
+    .eq("org_id", orgId)
     .order("seq", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -200,10 +206,12 @@ export async function appendSignatureEvent(
   const eventHash = computeEventHash(prevHash, core);
 
   const { data: inserted, error: insErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_events")
     .insert({
       request_id: input.requestId,
+      org_id: orgId,
       seq,
       event_type: input.eventType,
       actor_kind: input.actorKind,

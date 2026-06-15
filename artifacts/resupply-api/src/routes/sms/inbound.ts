@@ -47,11 +47,11 @@ import { Router, type IRouter } from "express";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
   resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
+  type Database,
   type Json,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   parseInboundSmsParams,
@@ -267,13 +267,19 @@ router.post(
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Webhook: no req.orgId. Resolve the seed tenant once for the main DB
+    // work below; on miss ACK 200 (empty TwiML) so Twilio stops retrying.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(200).type("text/xml").send("<Response/>");
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Direct phone lookup. We pull up to 2 rows so we can detect
     // ambiguous matches — multiple patients sharing one phone (a
     // family plan) can't be safely auto-routed; we audit and bail.
     const { data: lookupRows, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("phone_e164", normalizedFrom)
@@ -322,12 +328,7 @@ router.post(
       earlyRouted.intent !== "start"
     ) {
       try {
-        // Public webhook (no request tenant): scope the closure lookup to
-        // the seed org (single-tenant bridge).
-        const closureOrgId = await resolveSeedOrgId();
-        const activeClosure = closureOrgId
-          ? await findActiveClosure(getOrgScopedClient(closureOrgId))
-          : null;
+        const activeClosure = await findActiveClosure(supabase);
         if (activeClosure) {
           await safeAudit({
             action: "messaging.inbound.received",
@@ -441,7 +442,6 @@ router.post(
     // pre-check lets us return a clean 200 (no error) to Twilio rather
     // than a 500 on a duplicate-key violation.
     const { data: existingSid, error: sidErr } = await supabase
-      .schema("resupply")
       .from("messages")
       .select("id")
       .eq("direction", "inbound")
@@ -474,7 +474,6 @@ router.post(
     // safe.
     let conversationId: string | null;
     const { data: openConv, error: openConvErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("id")
       .eq("patient_id", patientId)
@@ -488,7 +487,6 @@ router.post(
       conversationId = openConv.id;
     } else {
       const { data: recentEp, error: epErr } = await supabase
-        .schema("resupply")
         .from("episodes")
         .select("id")
         .eq("patient_id", patientId)
@@ -526,7 +524,6 @@ router.post(
       }
       const inboundIso = new Date().toISOString();
       const { data: insertedConv, error: insertConvErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .insert({
           patient_id: patientId,
@@ -551,7 +548,6 @@ router.post(
     const inboundAt = new Date();
     const inboundIso = inboundAt.toISOString();
     const { data: insertedMsg, error: insertMsgErr } = await supabase
-      .schema("resupply")
       .from("messages")
       .insert({
         conversation_id: conversationId,
@@ -570,7 +566,6 @@ router.post(
     if (insertMsgErr) throw insertMsgErr;
     const inboundMessageId = insertedMsg?.id ?? null;
     const { error: stampConvErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({ last_message_at: inboundIso, updated_at: inboundIso })
       .eq("id", conversationId);
@@ -640,14 +635,12 @@ router.post(
 
     // Refresh latest-message projection (best-effort).
     await tryUpsertPatientLatestMessageSb(
-      supabase,
+      supabase.raw(),
       {
         conversationId,
         body: parsed.Body,
         direction: "inbound",
         messageAt: inboundAt,
-        // Inbound webhook (no auth tenant context): seed-org bridge.
-        orgId: (await resolveSeedOrgId()) ?? undefined,
       },
       req.log,
     );
@@ -683,7 +676,6 @@ router.post(
       if (adapter) {
         // Pull the last 6 messages as context.
         const { data: recent, error: recentErr } = await supabase
-          .schema("resupply")
           .from("messages")
           .select("direction, sender_role, body, created_at")
           .eq("conversation_id", conversationId)
@@ -693,8 +685,11 @@ router.post(
         const thread = (recent ?? [])
           .slice()
           .reverse()
-          .filter((m) => m.body !== null)
-          .map((m) => ({
+          .filter(
+            (m: Database["resupply"]["Tables"]["messages"]["Row"]) =>
+              m.body !== null,
+          )
+          .map((m: Database["resupply"]["Tables"]["messages"]["Row"]) => ({
             role:
               m.direction === "inbound"
                 ? ("patient" as const)
@@ -812,18 +807,15 @@ router.post(
     // row by hand.
     const replyAt = new Date();
     const replyIso = replyAt.toISOString();
-    const { error: replyInsertErr } = await supabase
-      .schema("resupply")
-      .from("messages")
-      .insert({
-        conversation_id: conversationId,
-        direction: "outbound",
-        sender_role: "agent",
-        body: twimlBody,
-        delivery_status: "queued",
-        vendor_metadata: { twiml_inline: true } as unknown as Json,
-        sent_at: replyIso,
-      });
+    const { error: replyInsertErr } = await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_role: "agent",
+      body: twimlBody,
+      delivery_status: "queued",
+      vendor_metadata: { twiml_inline: true } as unknown as Json,
+      sent_at: replyIso,
+    });
     if (replyInsertErr) {
       // Capture PostgREST `code` so ops can discriminate the failure
       // mode without re-running the request. serializeErr alone returns
@@ -852,14 +844,12 @@ router.post(
 
     // Refresh latest-message projection (best-effort).
     await tryUpsertPatientLatestMessageSb(
-      supabase,
+      supabase.raw(),
       {
         conversationId,
         body: twimlBody,
         direction: "outbound",
         messageAt: replyAt,
-        // Inbound webhook (no auth tenant context): seed-org bridge.
-        orgId: (await resolveSeedOrgId()) ?? undefined,
       },
       req.log,
     );
@@ -872,7 +862,7 @@ router.post(
 );
 
 interface DispatchInput {
-  supabase: ResupplySupabaseClient;
+  supabase: OrgScopedClient;
   intent: Intent;
   conversationId: string;
   patientId: string;
@@ -892,7 +882,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       });
       if (result.status === "ok") {
         const { error: closeErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "closed", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -930,7 +919,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // the conversation to awaiting_admin so it lands in the CSR
         // queue alongside address-edit handoffs.
         const { error: notEligErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "awaiting_admin", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -961,7 +949,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // would be wrong. order-flow already raised a CSR alert; flip
         // the conversation to awaiting_admin so it lands in the queue.
         const { error: covErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "awaiting_admin", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -992,7 +979,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         // already raised a CSR alert; flip the conversation to
         // awaiting_admin so it lands in the queue.
         const { error: usageErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({ status: "awaiting_admin", updated_at: nowIso })
           .eq("id", input.conversationId);
@@ -1021,7 +1007,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     }
     case "decline": {
       const { error: declineErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1033,7 +1018,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     }
     case "edit_address": {
       const { error: editErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "awaiting_admin", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1062,7 +1046,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       // Carrier-mandated. No conditions, no exceptions.
       await pausePatient(input.patientId);
       const { error: stopErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1091,7 +1074,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       // conversation (a keyword reply, not a dialog turn).
       await reactivatePatient(input.patientId);
       const { error: startErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: nowIso })
         .eq("id", input.conversationId);
@@ -1123,7 +1105,6 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     }
     case "unknown": {
       const { error: unkErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "awaiting_admin", updated_at: nowIso })
         .eq("id", input.conversationId);

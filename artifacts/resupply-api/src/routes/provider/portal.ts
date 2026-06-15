@@ -15,7 +15,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { appendSignatureEvent } from "../../lib/provider-portal/signature-events";
@@ -70,10 +70,17 @@ router.get(
   ...requireProvider,
   async (req, res) => {
     const account = req.providerAccount!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
-    // Best-effort last-login stamp.
+    // Best-effort last-login stamp. provider_portal_accounts is a
+    // BLOCKED GLOBAL table (no org_id) — raw client, no org filter.
     const { error: loginStampErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .update({ last_login_at: new Date().toISOString() })
@@ -85,7 +92,9 @@ router.get(
       );
     }
 
+    // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
     const { data: provider, error: pErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, npi, legal_name, practice_name")
@@ -94,11 +103,15 @@ router.get(
       .maybeSingle();
     if (pErr) throw pErr;
 
+    // provider_signature_requests is a BLOCKED TENANT table (has org_id,
+    // not in the typed union) — raw client + MANUAL org_id filter.
     const { count: pendingCount } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select("id", { count: "exact", head: true })
       .eq("provider_id", account.providerId)
+      .eq("org_id", orgId)
       .eq("status", "pending");
 
     res.json({
@@ -132,14 +145,23 @@ router.get(
       .enum(["pending", "signed", "declined", "all"])
       .catch("pending")
       .parse(req.query.status);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select(
         "id, subject_type, subject_id, title, patient_name_snapshot, detail, status, created_at, expires_at, signed_at",
       )
       .eq("provider_id", account.providerId)
+      .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .limit(200);
     if (statusFilter !== "all") query = query.eq("status", statusFilter);
@@ -167,16 +189,21 @@ const idParam = z.object({ id: z.string().uuid() });
 
 /** Load a request that belongs to the signed-in provider, or null. */
 async function loadOwnRequest(
+  orgId: string,
   providerId: string,
   id: string,
 ): Promise<Record<string, unknown> | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  // provider_signature_requests is a BLOCKED TENANT table — raw client
+  // + MANUAL org_id filter.
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_requests")
     .select("*")
     .eq("id", id)
     .eq("provider_id", providerId)
+    .eq("org_id", orgId)
     .limit(1)
     .maybeSingle();
   if (error) throw error;
@@ -195,14 +222,19 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const row = await loadOwnRequest(account.providerId, params.data.id);
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await loadOwnRequest(orgId, account.providerId, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
     }
     // Record a view (best-effort; never block the read).
     if (row.status === "pending") {
-      await appendSignatureEvent({
+      await appendSignatureEvent(orgId, {
         requestId: params.data.id,
         eventType: "viewed",
         actorKind: "provider",
@@ -267,6 +299,7 @@ interface SignCapture {
  * loser sees `not_pending`.
  */
 async function executeSignature(opts: {
+  orgId: string;
   accountId: string;
   accountEmail: string;
   requestId: string;
@@ -276,11 +309,14 @@ async function executeSignature(opts: {
   userAgent: string | null;
   viaBatch: boolean;
 }): Promise<{ ok: true; signedAt: string } | { ok: false }> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(opts.orgId);
   const nowIso = new Date().toISOString();
   const statement = esignStatement(opts.capture.signerName, opts.npi);
 
+  // provider_signature_requests is a BLOCKED TENANT table — raw client +
+  // MANUAL org_id filter on the status-guarded update.
   const { data: updated, error: updErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_signature_requests")
     .update({
@@ -300,6 +336,7 @@ async function executeSignature(opts: {
       updated_at: nowIso,
     })
     .eq("id", opts.requestId)
+    .eq("org_id", opts.orgId)
     .eq("status", "pending")
     .select("id")
     .limit(1)
@@ -307,7 +344,7 @@ async function executeSignature(opts: {
   if (updErr) throw updErr;
   if (!updated) return { ok: false };
 
-  await appendSignatureEvent({
+  await appendSignatureEvent(opts.orgId, {
     requestId: opts.requestId,
     eventType: "signed",
     actorKind: "provider",
@@ -330,9 +367,15 @@ async function executeSignature(opts: {
   return { ok: true, signedAt: nowIso };
 }
 
-async function loadProviderNpi(providerId: string): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadProviderNpi(
+  orgId: string,
+  providerId: string,
+): Promise<string | null> {
+  // providers is a tenant table (in the typed union) — facade scopes.
+  const supabase = getOrgScopedClient(orgId);
   const { data: provider } = await supabase
+    // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
+    .raw()
     .schema("resupply")
     .from("providers")
     .select("npi")
@@ -363,7 +406,12 @@ router.post(
       });
       return;
     }
-    const row = await loadOwnRequest(account.providerId, params.data.id);
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await loadOwnRequest(orgId, account.providerId, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -383,10 +431,11 @@ router.post(
     }
 
     const result = await executeSignature({
+      orgId,
       accountId: account.id,
       accountEmail: account.emailLower,
       requestId: params.data.id,
-      npi: await loadProviderNpi(account.providerId),
+      npi: await loadProviderNpi(orgId, account.providerId),
       capture: {
         signerName: parsed.data.signerName,
         signerTitle: parsed.data.signerTitle ?? null,
@@ -444,22 +493,39 @@ router.post(
     }
     const ids = [...new Set(parsed.data.ids)];
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter.
     const { data: rows, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .select("id, status, expires_at")
       .eq("provider_id", account.providerId)
+      .eq("org_id", orgId)
       .in("id", ids);
     if (error) throw error;
-    const byId = new Map((rows ?? []).map((r) => [r.id as string, r]));
+    const byId = new Map(
+      (
+        (rows ?? []) as Array<{
+          id: string;
+          status: string;
+          expires_at: string | null;
+        }>
+      ).map((r) => [r.id, r]),
+    );
 
     const capture: SignCapture = {
       signerName: parsed.data.signerName,
       signerTitle: parsed.data.signerTitle ?? null,
       signatureImage: parsed.data.signatureImage ?? null,
     };
-    const npi = await loadProviderNpi(account.providerId);
+    const npi = await loadProviderNpi(orgId, account.providerId);
     const ip = req.ip ?? null;
     const userAgent = req.get("user-agent") ?? null;
 
@@ -480,6 +546,7 @@ router.post(
         continue;
       }
       const result = await executeSignature({
+        orgId,
         accountId: account.id,
         accountEmail: account.emailLower,
         requestId: id,
@@ -518,7 +585,12 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const row = await loadOwnRequest(account.providerId, params.data.id);
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await loadOwnRequest(orgId, account.providerId, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -527,9 +599,12 @@ router.post(
       res.status(409).json({ error: "not_pending" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
+    // provider_signature_requests is a BLOCKED TENANT table — raw client
+    // + MANUAL org_id filter on the status-guarded update.
     const { data: updated, error: updErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("provider_signature_requests")
       .update({
@@ -539,6 +614,7 @@ router.post(
         updated_at: nowIso,
       })
       .eq("id", params.data.id)
+      .eq("org_id", orgId)
       .eq("status", "pending")
       .select("id")
       .limit(1)
@@ -549,7 +625,7 @@ router.post(
       return;
     }
 
-    await appendSignatureEvent({
+    await appendSignatureEvent(orgId, {
       requestId: params.data.id,
       eventType: "declined",
       actorKind: "provider",

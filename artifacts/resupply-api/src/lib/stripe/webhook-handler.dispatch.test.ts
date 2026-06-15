@@ -72,11 +72,29 @@ function makeBuilder(table: string) {
   };
   return b;
 }
-vi.mock("@workspace/resupply-db", () => ({
-  getSupabaseServiceRoleClient: () => ({
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  const makeMockClient = () => ({
     schema: () => ({ from: (t: string) => makeBuilder(t) }),
-  }),
-}));
+  });
+  return {
+    ...actual,
+    getSupabaseServiceRoleClient: () => makeMockClient(),
+    getOrgScopedClient: (
+      orgId: string,
+      client?: Parameters<typeof actual.getOrgScopedClient>[1],
+    ) =>
+      actual.getOrgScopedClient(
+        orgId,
+        client ??
+          (makeMockClient() as unknown as Parameters<
+            typeof actual.getOrgScopedClient
+          >[1]),
+      ),
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
+  };
+});
 
 // ── Stripe config + client mock ───────────────────────────────────────────────
 const constructEventMock = vi.fn();

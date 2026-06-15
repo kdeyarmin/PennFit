@@ -12,7 +12,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -38,11 +38,18 @@ router.get(
   "/admin/metric-alerts",
   requirePermission("metrics.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     const parsed = listQuery.safeParse(req.query);
     const status = parsed.success ? parsed.data.status : undefined;
 
-    const supabase = getSupabaseServiceRoleClient();
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .select(
@@ -106,8 +113,15 @@ router.patch(
     }
     const { status } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     const { data: updatedData, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .update({ status, updated_at: new Date().toISOString() })

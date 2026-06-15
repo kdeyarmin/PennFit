@@ -69,14 +69,6 @@ import {
 
 const router: IRouter = Router();
 
-// signature-tracking writes go through the org-scoped chokepoint; the rest
-// of this route is converted separately. Fails closed if no tenant.
-function reqOrgClient(req: import("express").Request): OrgScopedClient {
-  const orgId = req.orgId;
-  if (!orgId) throw new Error("tenant_context_missing");
-  return getOrgScopedClient(orgId);
-}
-
 const E164 = /^\+[1-9]\d{6,14}$/;
 const MAX_PACKET_DOCUMENTS = 25;
 
@@ -161,9 +153,7 @@ async function findMissingDocumentIds(
     .select("id")
     .in("id", ids);
   if (error) throw error;
-  const found = new Set(
-    ((data ?? []) as Array<{ id: string }>).map((r) => r.id),
-  );
+  const found = new Set((data ?? []).map((r: { id: string }) => r.id));
   return ids.filter((id) => !found.has(id));
 }
 
@@ -175,7 +165,6 @@ async function findMissingDocumentIds(
  */
 async function stampMemberDocumentsSent(
   supabase: OrgScopedClient,
-  sigClient: OrgScopedClient,
   documents: ManualDocumentRow[],
   channel: "email" | "fax",
   nowIso: string,
@@ -212,7 +201,7 @@ async function stampMemberDocumentsSent(
       continue;
     }
     await recordTrackingSent(
-      sigClient,
+      supabase,
       "manual_document",
       docRow.id,
       channel,
@@ -237,7 +226,10 @@ async function loadPacketForRender(
     res.status(404).json({ error: "not_found" });
     return null;
   }
-  const { documents, missingIds } = await loadPacketDocuments(supabase, packet);
+  const { documents, missingIds } = await loadPacketDocuments(
+    supabase,
+    packet,
+  );
   if (missingIds.length > 0 || documents.length === 0) {
     res.status(409).json({
       error: "packet_documents_missing",
@@ -255,7 +247,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -289,7 +281,7 @@ router.post(
   }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -358,7 +350,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -379,7 +371,7 @@ router.get(
     );
     res.json({
       packet,
-      documents: documents.map((d) => ({
+      documents: documents.map((d: ManualDocumentRow) => ({
         id: d.id,
         document_type: d.document_type,
         title: d.title,
@@ -400,7 +392,7 @@ router.patch(
   }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -491,7 +483,7 @@ router.delete(
   }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -531,7 +523,7 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -592,7 +584,7 @@ router.post(
   }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -676,13 +668,7 @@ router.post(
         "manual_document_packet.send_email status stamp failed",
       );
     }
-    await stampMemberDocumentsSent(
-      supabase,
-      reqOrgClient(req),
-      documents,
-      "email",
-      nowIso,
-    );
+    await stampMemberDocumentsSent(supabase, documents, "email", nowIso);
 
     await logAudit({
       action: "manual_document_packet.emailed",
@@ -711,7 +697,7 @@ router.post(
   }),
   async (req, res) => {
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -783,13 +769,7 @@ router.post(
         "manual_document_packet.send_fax status stamp failed",
       );
     }
-    await stampMemberDocumentsSent(
-      supabase,
-      reqOrgClient(req),
-      documents,
-      "fax",
-      nowIso,
-    );
+    await stampMemberDocumentsSent(supabase, documents, "fax", nowIso);
 
     await logAudit({
       action: "manual_document_packet.faxed",
