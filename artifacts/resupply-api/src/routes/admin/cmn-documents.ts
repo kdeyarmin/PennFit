@@ -342,7 +342,7 @@ router.get(
       return;
     }
 
-    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+    const identity = await resolveBillingIdentity({ orgId });
     const supplierName =
       identity.source !== "stub"
         ? identity.billingProvider.organizationName

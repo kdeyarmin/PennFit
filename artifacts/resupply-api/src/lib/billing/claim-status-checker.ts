@@ -109,8 +109,8 @@ export async function submitClaimStatusCheck(
       ).data?.member_id ?? "")
     : "";
 
-  const identity = await resolveBillingIdentity({ supabase });
-  const clearinghouse = await resolveClearinghouse({ supabase });
+  const identity = await resolveBillingIdentity({});
+  const clearinghouse = await resolveClearinghouse({});
 
   // ISA13s must be strictly monotonic across all outbound EDI files.
   // Both office_ally_submissions (837P / 270) and claim_status_checks

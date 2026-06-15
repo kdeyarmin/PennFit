@@ -132,7 +132,7 @@ export async function generatePatientBillingStatement(
     );
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({});
   if (identity.source === "stub") {
     throw new StatementGenerationError(
       "no_dme_organization",

@@ -131,7 +131,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     aiAnalysesQueued: 0,
   };
 
-  const clearinghouse = await resolveClearinghouse({ supabase });
+  const clearinghouse = await resolveClearinghouse({});
   if (!clearinghouse.config || !clearinghouse.row) {
     logger.info(
       { source: clearinghouse.source },

@@ -220,7 +220,7 @@ export async function buildPaRequestPdf(
   }
 
   // 4. Servicing supplier (us).
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({});
   const supplierName =
     identity.source !== "stub"
       ? identity.billingProvider.organizationName

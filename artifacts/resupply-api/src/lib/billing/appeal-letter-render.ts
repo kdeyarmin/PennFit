@@ -83,7 +83,7 @@ export async function renderAppealPdfForLetterId(
     ]);
   if (!patient) return { ok: false, reason: "patient_not_found" };
 
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({});
   if (identity.source === "stub") {
     return { ok: false, reason: "no_dme_organization" };
   }
