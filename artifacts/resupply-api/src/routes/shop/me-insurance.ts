@@ -11,19 +11,19 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -39,14 +39,23 @@ router.get("/shop/me/insurance", requireSignedIn, async (req, res) => {
     res.json({ coverage: null, patientLinked: false });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.json({ coverage: null, patientLinked: false });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select(
       "id, rank, payer_name, plan_name, member_id, group_number, effective_date, termination_date, verified_at, updated_at",
@@ -102,16 +111,25 @@ router.post("/shop/me/insurance", requireSignedIn, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.status(404).json({ error: "patient_not_linked" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // Upsert by (patient_id, rank=primary). Drop verified_at on every
   // patient-side mutation so the CSR queue sees it as unverified.
   const { data: existing, error: lookupErr } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select("id")
     .eq("patient_id", patientId)
@@ -121,7 +139,6 @@ router.post("/shop/me/insurance", requireSignedIn, async (req, res) => {
   if (lookupErr) throw lookupErr;
   if (existing) {
     const { error } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .update({
         payer_name: parsed.data.payerName,
@@ -139,7 +156,6 @@ router.post("/shop/me/insurance", requireSignedIn, async (req, res) => {
     return;
   }
   const { data, error } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .insert({
       patient_id: patientId,

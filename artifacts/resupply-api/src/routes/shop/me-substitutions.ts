@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -28,12 +28,12 @@ const router: IRouter = Router();
 const WINDOW_DAYS = 180;
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -49,7 +49,15 @@ router.get("/shop/me/substitutions", requireSignedIn, async (req, res) => {
     res.json({ patientLinked: false, substitutions: [] });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(
+    orgIdForLookup,
+    customerEmail,
+  );
   if (!patientId) {
     res.json({ patientLinked: false, substitutions: [] });
     return;
@@ -58,9 +66,13 @@ router.get("/shop/me/substitutions", requireSignedIn, async (req, res) => {
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - WINDOW_DAYS);
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("fulfillments")
     .select(
       "id, item_sku, substituted_from_sku, status, shipped_at, delivered_at, created_at",
@@ -82,7 +94,11 @@ router.get("/shop/me/substitutions", requireSignedIn, async (req, res) => {
 
   res.json({
     patientLinked: true,
-    substitutions: (data ?? []).map((r) => ({
+    substitutions: (
+      (data ?? []) as Array<
+        Database["resupply"]["Tables"]["fulfillments"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       shippedSku: r.item_sku,
       requestedSku: r.substituted_from_sku,

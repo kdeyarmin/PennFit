@@ -15,19 +15,19 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -60,12 +60,22 @@ router.post("/shop/me/sleep-study", requireSignedIn, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(email);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(orgIdForLookup, email);
   if (!patientId) {
     res.status(404).json({ error: "patient_not_linked" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // If the patient attached a document, verify it belongs to them.
   // Without this check a signed-in customer could pin any UUID
@@ -73,7 +83,6 @@ router.post("/shop/me/sleep-study", requireSignedIn, async (req, res) => {
   // row, where LCD-gating / dispense-readiness reviewers read it.
   if (parsed.data.documentId) {
     const { data: doc, error: docErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, patient_id")
       .eq("id", parsed.data.documentId)
@@ -90,7 +99,6 @@ router.post("/shop/me/sleep-study", requireSignedIn, async (req, res) => {
   }
 
   const { data, error } = await supabase
-    .schema("resupply")
     .from("sleep_studies")
     .insert({
       patient_id: patientId,
