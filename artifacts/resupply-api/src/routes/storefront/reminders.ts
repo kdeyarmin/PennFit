@@ -444,10 +444,12 @@ router.patch(
 // Auth: token in query OR signed-in session. See resolveManageLookup.
 // CSRF: same posture as PATCH /reminders/manage above.
 router.post(
-  "/reminders/manage/unsubscribe",
-  attachSignedIn,
-  requireCsrfWhenSession,
-  async (req, res) => {
+  (req, res, next) => {
+    const tokenOk = GetReminderSubscriptionQueryParams.safeParse(req.query).success;
+    if (tokenOk) return next();
+    if (!req.shopCustomerId) return next();
+    return requireCsrfWhenSession(req, res, next);
+  },
     const lookup = resolveManageLookup(req);
     if (!lookup.ok) {
       res.status(lookup.status).json({ error: lookup.message });
