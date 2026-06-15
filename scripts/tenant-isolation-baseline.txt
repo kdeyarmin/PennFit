@@ -147,7 +147,6 @@ artifacts/resupply-api/src/routes/admin/fitter-invites.ts
 artifacts/resupply-api/src/routes/admin/fitter-leads.ts
 artifacts/resupply-api/src/routes/admin/form-acknowledgements.ts
 artifacts/resupply-api/src/routes/admin/fulfillment-to-claim.ts
-artifacts/resupply-api/src/routes/admin/gl-account-mappings.ts
 artifacts/resupply-api/src/routes/admin/good-faith-estimates.ts
 artifacts/resupply-api/src/routes/admin/inbound-faxes.ts
 artifacts/resupply-api/src/routes/admin/inbox-counts.ts
@@ -173,7 +172,6 @@ artifacts/resupply-api/src/routes/admin/office-hours.ts
 artifacts/resupply-api/src/routes/admin/order-notes.ts
 artifacts/resupply-api/src/routes/admin/outreach-playbooks.ts
 artifacts/resupply-api/src/routes/admin/pacware.ts
-artifacts/resupply-api/src/routes/admin/patient-address-history.ts
 artifacts/resupply-api/src/routes/admin/patient-documents-retention.ts
 artifacts/resupply-api/src/routes/admin/patient-fit-overrides.ts
 artifacts/resupply-api/src/routes/admin/patient-identity-verifications.ts
@@ -197,7 +195,6 @@ artifacts/resupply-api/src/routes/admin/product-questions.ts
 artifacts/resupply-api/src/routes/admin/provider-esign.ts
 artifacts/resupply-api/src/routes/admin/providers.ts
 artifacts/resupply-api/src/routes/admin/referral-reviews.ts
-artifacts/resupply-api/src/routes/admin/report-presets.ts
 artifacts/resupply-api/src/routes/admin/reports/customer-activity.ts
 artifacts/resupply-api/src/routes/admin/reports/insurance-claims.ts
 artifacts/resupply-api/src/routes/admin/reports/orders.ts
@@ -281,7 +278,6 @@ artifacts/resupply-api/src/routes/voice/click-to-dial-twiml.ts
 artifacts/resupply-api/src/routes/voice/inbound-reorder.ts
 artifacts/resupply-api/src/routes/voice/place-call.ts
 artifacts/resupply-api/src/routes/voice/status-callback.ts
-artifacts/resupply-api/src/worker/jobs/asset-recovery-auto-populate.ts
 artifacts/resupply-api/src/worker/jobs/bill-hold-sweep.ts
 artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts
 artifacts/resupply-api/src/worker/jobs/conversation-orphan-assignee-sweep.ts
@@ -314,7 +310,6 @@ artifacts/resupply-api/src/worker/jobs/reminders.ts
 artifacts/resupply-api/src/worker/jobs/shop-order-delivery-followup.ts
 artifacts/resupply-api/src/worker/jobs/therapy-fleet-alerts-scan.ts
 artifacts/resupply-api/src/worker/jobs/therapy-fleet-daily-snapshot.ts
-artifacts/resupply-api/src/worker/jobs/therapy-milestones.ts
 artifacts/resupply-api/src/worker/jobs/therapy-setup-deadline-outreach.ts
 artifacts/resupply-api/src/worker/jobs/webhook-dispatcher.ts
 artifacts/resupply-api/src/worker/lib/integration-health.ts

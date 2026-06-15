@@ -7,13 +7,16 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+type PatientAddressHistoryRow =
+  Database["resupply"]["Tables"]["patient_address_history"]["Row"];
 
 const patientIdParam = z.object({ id: z.string().uuid() });
 
@@ -40,9 +43,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_address_history")
       .select(
         "id, line1, line2, city, state, postal_code, country, reason, changed_by_user_id, created_at",
@@ -52,7 +59,7 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      history: (data ?? []).map((r) => ({
+      history: ((data ?? []) as PatientAddressHistoryRow[]).map((r) => ({
         id: r.id,
         line1: r.line1,
         line2: r.line2,
@@ -101,9 +108,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_address_history")
       .insert({
         patient_id: params.data.id,
