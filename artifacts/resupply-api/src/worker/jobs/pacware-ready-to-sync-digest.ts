@@ -31,7 +31,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -67,7 +67,8 @@ export interface PacwareDigestResult {
     | "auto_sync_off"
     | "nothing_ready"
     | "no_recipient"
-    | "sendgrid_not_configured";
+    | "sendgrid_not_configured"
+    | "tenant_unavailable";
 }
 
 function composeDigestEmail(opts: { recipient: string; readyCount: number }): {
@@ -107,12 +108,15 @@ export async function runPacwareReadyToSyncDigest(): Promise<PacwareDigestResult
     return { readyCount: 0, sent: false, skippedReason: "no_recipient" };
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { readyCount: 0, sent: false, skippedReason: "tenant_unavailable" };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Operator opt-in. Fail-soft to "off" on any read error — a config
   // hiccup must not start emailing an operator who never opted in.
   const { data: cfg, error: cfgErr } = await supabase
-    .schema("resupply")
     .from("app_config")
     .select("value")
     .eq("key", AUTO_SYNC_KEY)
@@ -126,7 +130,6 @@ export async function runPacwareReadyToSyncDigest(): Promise<PacwareDigestResult
   // (routes/admin/pacware.ts getPendingCounts): confirmed episodes
   // with a prescription + patient attached.
   const { count, error: countErr } = await supabase
-    .schema("resupply")
     .from("episodes")
     .select("id, prescriptions!inner(id), patients!inner(id)", {
       count: "exact",
