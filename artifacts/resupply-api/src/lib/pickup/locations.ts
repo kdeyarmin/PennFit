@@ -10,7 +10,7 @@
 // validator (a chosen pickup location must be an active row), and the
 // admin order projection (display the pickup address).
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 export interface PickupLocation {
   id: string;
@@ -56,9 +56,10 @@ function rowToPickupLocation(row: {
  * storefront presents these as in-store pickup choices.
  */
 export async function listActivePickupLocations(): Promise<PickupLocation[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("locations")
     .select(LOCATION_COLUMNS)
     .eq("is_active", true)
@@ -77,9 +78,10 @@ export async function listActivePickupLocations(): Promise<PickupLocation[]> {
 export async function getActivePickupLocationById(
   id: string,
 ): Promise<PickupLocation | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("locations")
     .select(LOCATION_COLUMNS)
     .eq("id", id)
@@ -102,9 +104,10 @@ export async function getPickupLocationsByIds(
 ): Promise<Map<string, PickupLocation>> {
   const unique = Array.from(new Set(ids.filter((v) => v.length > 0)));
   if (unique.length === 0) return new Map();
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return new Map();
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("locations")
     .select(LOCATION_COLUMNS)
     .in("id", unique);

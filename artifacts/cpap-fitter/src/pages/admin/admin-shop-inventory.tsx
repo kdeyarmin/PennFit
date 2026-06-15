@@ -936,6 +936,7 @@ export function AdminShopInventoryPage() {
               <thead>
                 <tr style={{ background: "#f9fafb", textAlign: "left" }}>
                   <th
+                    scope="col"
                     style={{
                       padding: "10px 12px",
                       fontSize: 12,
@@ -958,6 +959,7 @@ export function AdminShopInventoryPage() {
                     />
                   </th>
                   <th
+                    scope="col"
                     style={{
                       padding: "10px 12px",
                       fontSize: 12,
@@ -968,6 +970,7 @@ export function AdminShopInventoryPage() {
                     Product
                   </th>
                   <th
+                    scope="col"
                     style={{
                       padding: "10px 12px",
                       fontSize: 12,
@@ -978,6 +981,7 @@ export function AdminShopInventoryPage() {
                     Price
                   </th>
                   <th
+                    scope="col"
                     style={{
                       padding: "10px 12px",
                       fontSize: 12,
@@ -988,6 +992,7 @@ export function AdminShopInventoryPage() {
                     Stock
                   </th>
                   <th
+                    scope="col"
                     style={{
                       padding: "10px 12px",
                       fontSize: 12,
@@ -998,6 +1003,7 @@ export function AdminShopInventoryPage() {
                     Edit stock
                   </th>
                   <th
+                    scope="col"
                     style={{
                       padding: "10px 12px",
                       fontSize: 12,

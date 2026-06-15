@@ -14,7 +14,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -49,10 +49,21 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // RPC: reach the function via `.raw()` (the org-scoped facade only
+    // wraps `.from()` table access) and pass the tenant explicitly. The
+    // RPC (migration 0344) scopes both patients to p_org_id, so a
+    // cross-tenant id pair surfaces as P0002 rather than merging.
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("merge_patient_records", {
+        p_org_id: orgId,
         p_primary: primaryPatientId,
         p_duplicate: duplicatePatientId,
       });

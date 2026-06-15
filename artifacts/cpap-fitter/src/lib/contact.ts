@@ -24,6 +24,15 @@ export const SUPPORT_EMAIL = "support@pennpaps.com";
  *  in the footer + floating launcher. */
 export const SUPPORT_HOURS = "Mon–Fri 9a–5p ET";
 
+/**
+ * CareMetric platform defaults for the two in-app AI assistants. The
+ * platform is CareMetric Breathe; PennPaps (Penn Home Medical Supply) is
+ * one tenant operating on it. A tenant owner can rename the assistants
+ * from System Configuration; the live values arrive with /api/company-info.
+ */
+export const DEFAULT_STOREFRONT_ASSISTANT_NAME = "CareMetric Assistant";
+export const DEFAULT_ADMIN_ASSISTANT_NAME = "CareMetric Copilot";
+
 export interface CompanyContact {
   name: string;
   phoneE164: string;
@@ -32,6 +41,10 @@ export interface CompanyContact {
   /** Legal/privacy contact mailbox (the privacy policy + terms pages). */
   generalEmail: string;
   hours: string;
+  /** Tenant-configurable name of the storefront chat assistant. */
+  assistantStorefrontName: string;
+  /** Tenant-configurable name of the admin-console assistant. */
+  assistantAdminName: string;
 }
 
 export const DEFAULT_COMPANY_CONTACT: CompanyContact = {
@@ -41,6 +54,8 @@ export const DEFAULT_COMPANY_CONTACT: CompanyContact = {
   email: SUPPORT_EMAIL,
   generalEmail: "info@pennpaps.com",
   hours: SUPPORT_HOURS,
+  assistantStorefrontName: DEFAULT_STOREFRONT_ASSISTANT_NAME,
+  assistantAdminName: DEFAULT_ADMIN_ASSISTANT_NAME,
 };
 
 let current: CompanyContact = DEFAULT_COMPANY_CONTACT;
@@ -72,6 +87,12 @@ function startCompanyContactFetch(): void {
           ? d.generalEmail
           : current.generalEmail,
         hours: nonEmpty(d.supportHours) ? d.supportHours : current.hours,
+        assistantStorefrontName: nonEmpty(d.assistantStorefrontName)
+          ? d.assistantStorefrontName
+          : current.assistantStorefrontName,
+        assistantAdminName: nonEmpty(d.assistantAdminName)
+          ? d.assistantAdminName
+          : current.assistantAdminName,
       };
       const changed = (Object.keys(next) as Array<keyof CompanyContact>).some(
         (k) => next[k] !== current[k],

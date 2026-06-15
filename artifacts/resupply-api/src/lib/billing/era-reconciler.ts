@@ -40,7 +40,9 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import type {
   Adjustment,
@@ -85,6 +87,9 @@ export interface ReconcileEraOptions {
   fileName: string;
   /** Payer-supplied check / EFT number. */
   checkOrEftNumber: string | null;
+  /** Tenant whose claims this remittance posts against. Defaults to the
+   *  seed org (single-tenant bridge) when omitted. */
+  orgId?: string;
 }
 
 const TERMINAL_STATUSES: readonly ClaimRow["status"][] = ["closed"];
@@ -102,7 +107,13 @@ export async function reconcileEra(
   parsed: Parsed835,
   opts: ReconcileEraOptions,
 ): Promise<ReconciliationSummary> {
-  const supabase = getSupabaseServiceRoleClient();
+  // ERA posts against tenant-scoped claims; route every read/write through
+  // the org-scoped chokepoint, defaulting to the seed org.
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error("era-reconciler: no org resolved for remittance posting");
+  }
+  const supabase = getOrgScopedClient(orgId);
   const summary: ReconciliationSummary = {
     matchedClaims: 0,
     unmatchedClaims: 0,
@@ -132,7 +143,7 @@ export async function reconcileEra(
   return summary;
 }
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 async function applyClaim(
   supabase: SupabaseClient,
@@ -144,10 +155,9 @@ async function applyClaim(
   //    into CLM01, so we look it up by full id match — the payer
   //    echoes it back unchanged.
   const { data: claim, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
-      "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, denial_reason, decision_at",
+      "id, patient_id, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, deductible_cents, coinsurance_cents, copay_cents, denial_reason, decision_at",
     )
     .eq("id", eraClaim.patientControlNumber)
     .limit(1)
@@ -178,7 +188,6 @@ async function applyClaim(
   // a 'partial' file only applies the claims that were missed.
   if (opts.checkOrEftNumber) {
     const { data: priorEvent, error: priorErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .select("id")
       .eq("claim_id", claim.id)
@@ -217,7 +226,6 @@ async function applyClaim(
   let linesUpdated = 0;
   if (eraClaim.serviceLines.length > 0) {
     const { data: localLines } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("id, hcpcs_code, modifier, allowed_cents, paid_cents, status")
       .eq("claim_id", claim.id);
@@ -234,7 +242,6 @@ async function applyClaim(
             ? "denied"
             : localLine.status;
       const { error: lineErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .update({
           allowed_cents: nextAllowed,
@@ -260,6 +267,13 @@ async function applyClaim(
   const newTotalPaid = claim.total_paid_cents + eraClaim.paidCents;
   const newPatientResp =
     claim.patient_responsibility_cents + eraClaim.patientResponsibilityCents;
+  // Itemize the patient-responsibility delta from the 835 PR-group CAS
+  // adjustments (CARC 1/2/3) and accumulate onto the running breakdown.
+  // Informational — patient_responsibility_cents stays authoritative.
+  const respDelta = patientRespBreakdown(eraClaim);
+  const newDeductible = claim.deductible_cents + respDelta.deductibleCents;
+  const newCoinsurance = claim.coinsurance_cents + respDelta.coinsuranceCents;
+  const newCopay = claim.copay_cents + respDelta.copayCents;
 
   let newStatus: ClaimRow["status"] = claim.status;
   const denialReason = eraClaim.isDenied ? composeDenialReason(eraClaim) : null;
@@ -274,12 +288,14 @@ async function applyClaim(
 
   const nowIso = new Date().toISOString();
   const { error: claimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({
       total_allowed_cents: newTotalAllowed,
       total_paid_cents: newTotalPaid,
       patient_responsibility_cents: newPatientResp,
+      deductible_cents: newDeductible,
+      coinsurance_cents: newCoinsurance,
+      copay_cents: newCopay,
       status: newStatus,
       // Stamp the decision timestamp the first time the claim lands on
       // a paid/denied decision. The prior `status === "submitted"` gate
@@ -313,7 +329,6 @@ async function applyClaim(
   const eventType: Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]["event_type"] =
     eraClaim.isDenied ? "denied" : newPatientResp <= 0 ? "paid" : "partial_pay";
   const { error: eventErr } = await supabase
-    .schema("resupply")
     .from("insurance_claim_events")
     .insert({
       claim_id: claim.id,
@@ -426,6 +441,45 @@ function sumPositive(adjustments: Adjustment[], ...groups: string[]): number {
   return adjustments
     .filter((a) => groups.includes(a.groupCode))
     .reduce((s, a) => s + Math.max(0, a.amountCents), 0);
+}
+
+/** Itemized patient-responsibility components, in cents. */
+export interface PatientRespBreakdown {
+  deductibleCents: number;
+  coinsuranceCents: number;
+  copayCents: number;
+}
+
+// CARC reason codes inside the PR (patient-responsibility) adjustment
+// group that map to a named cost-share bucket.
+const PR_DEDUCTIBLE_CARC = "1";
+const PR_COINSURANCE_CARC = "2";
+const PR_COPAY_CARC = "3";
+
+/**
+ * Sum the 835 PR-group CAS adjustments into deductible / coinsurance /
+ * copay, across BOTH the claim-level CAS and every service line's CAS
+ * (the payer can itemize at either level). Only the named CARCs
+ * (1/2/3) are bucketed; any other PR reason code stays folded into the
+ * authoritative `patientResponsibilityCents` total and is intentionally
+ * not double-counted here.
+ */
+export function patientRespBreakdown(
+  eraClaim: Pick<Parsed835Claim, "adjustments" | "serviceLines">,
+): PatientRespBreakdown {
+  const all: Adjustment[] = [
+    ...eraClaim.adjustments,
+    ...eraClaim.serviceLines.flatMap((l) => l.adjustments),
+  ];
+  const sumByReason = (reason: string) =>
+    all
+      .filter((a) => a.groupCode === "PR" && a.reasonCode === reason)
+      .reduce((s, a) => s + Math.max(0, a.amountCents), 0);
+  return {
+    deductibleCents: sumByReason(PR_DEDUCTIBLE_CARC),
+    coinsuranceCents: sumByReason(PR_COINSURANCE_CARC),
+    copayCents: sumByReason(PR_COPAY_CARC),
+  };
 }
 
 function hasDenial(adjustments: Adjustment[]): boolean {

@@ -24,8 +24,9 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -85,8 +86,14 @@ router.get(
     }
     const dueWithinDays = parsed.data.dueWithinDays;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("therapy_resupply_summary", { p_due_within_days: dueWithinDays });
     if (error) throw error;
@@ -136,12 +143,14 @@ interface Opportunity {
 }
 
 async function buildOpportunities(
+  orgId: string,
   dueWithinDays: number,
   limit: number,
   category: (typeof SUPPLY_CATEGORIES)[number] | undefined,
 ): Promise<Opportunity[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_resupply_opportunities", {
       p_due_within_days: dueWithinDays,
@@ -178,7 +187,6 @@ async function buildOpportunities(
 
   const ids = Array.from(new Set(rows.map((r) => r.patientId)));
   const { data: patientRows, error: pErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", ids);
@@ -210,8 +218,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { dueWithinDays, limit, category } = parsed.data;
     const opportunities = await buildOpportunities(
+      orgId,
       dueWithinDays,
       limit,
       category,
@@ -224,10 +238,11 @@ router.get(
   },
 );
 
+// Delegate to the shared safe-csv-cell helper so patient-derived
+// fields (name, description) get formula-injection neutralisation,
+// not just RFC 4180 quoting.
 function csvCell(v: string | number | boolean | null): string {
-  if (v === null) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return safeCsvCell(v);
 }
 
 router.get(
@@ -239,8 +254,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { dueWithinDays, limit, category } = parsed.data;
     const opportunities = await buildOpportunities(
+      orgId,
       dueWithinDays,
       limit,
       category,

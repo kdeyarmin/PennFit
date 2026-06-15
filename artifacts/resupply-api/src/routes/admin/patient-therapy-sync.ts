@@ -37,7 +37,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
   integrationSnapshotSchema,
@@ -86,9 +86,13 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select(
         "id, night_date, source, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
@@ -102,7 +106,17 @@ router.get(
       // PostgREST returns numeric columns as strings (preserves
       // precision); the original SQL path also returned strings
       // and the route already coerced via Number(). Same here.
-      nights: (rows ?? []).map((r) => ({
+      nights: (
+        (rows ?? []) as Array<{
+          id: string;
+          night_date: string;
+          source: string;
+          usage_minutes: number | null;
+          ahi: number | string | null;
+          leak_rate_l_min: number | string | null;
+          pressure_p95_cmh2o: number | string | null;
+        }>
+      ).map((r) => ({
         id: r.id,
         nightDate: r.night_date,
         source: r.source,
@@ -161,10 +175,14 @@ router.post(
       Math.max(1, Math.ceil((Date.now() - sinceMs) / (24 * 60 * 60 * 1000))),
     );
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)

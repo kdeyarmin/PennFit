@@ -38,7 +38,7 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
@@ -290,8 +290,18 @@ export function runRecallSendSweep(
 async function runRecallSendSweepInner(
   cfg: MessagingConfig,
 ): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: SweepStats = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
+  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
+  // seed org. Becomes a per-org loop when a 2nd tenant lands.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: SEND_JOB },
+      "recall-notifications.send: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Phase 0 — reclaim orphaned claims. A worker that flipped a row to
   // 'sending' (below) and then crashed before the terminal flip would
@@ -302,7 +312,6 @@ async function runRecallSendSweepInner(
   // from under itself.
   const leaseCutoff = new Date(Date.now() - SENDING_LEASE_MS).toISOString();
   const { error: reclaimErr } = await supabase
-    .schema("resupply")
     .from("recall_notifications")
     .update({ status: "queued", updated_at: new Date().toISOString() })
     .eq("status", "sending")
@@ -317,14 +326,18 @@ async function runRecallSendSweepInner(
   }
 
   const { data: queued, error } = await supabase
-    .schema("resupply")
     .from("recall_notifications")
     .select("id, recall_id, asset_id, patient_id")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
   if (error) throw error;
-  const rows = queued ?? [];
+  const rows = (queued ?? []) as Array<{
+    id: string;
+    recall_id: string;
+    asset_id: string;
+    patient_id: string;
+  }>;
   if (rows.length === 0) return stats;
 
   const recallIds = Array.from(new Set(rows.map((r) => r.recall_id)));
@@ -332,14 +345,12 @@ async function runRecallSendSweepInner(
 
   const [recalls, patients] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .select(
         "id, title, description, severity, recall_reference, reference_url",
       )
       .in("id", recallIds),
     supabase
-      .schema("resupply")
       .from("patients")
       .select("id, email, phone_e164")
       .in("id", patientIds),
@@ -348,10 +359,25 @@ async function runRecallSendSweepInner(
   if (patients.error) throw patients.error;
 
   const recallById = new Map(
-    (recalls.data ?? []).map((r) => [r.id, r] as const),
+    (
+      (recalls.data ?? []) as Array<{
+        id: string;
+        title: string;
+        description: string | null;
+        severity: string;
+        recall_reference: string | null;
+        reference_url: string | null;
+      }>
+    ).map((r) => [r.id, r] as const),
   );
   const patientById = new Map(
-    (patients.data ?? []).map((p) => [p.id, p] as const),
+    (
+      (patients.data ?? []) as Array<{
+        id: string;
+        email: string | null;
+        phone_e164: string | null;
+      }>
+    ).map((p) => [p.id, p] as const),
   );
 
   for (const row of rows) {
@@ -364,7 +390,6 @@ async function runRecallSendSweepInner(
       // sibling worker that already finished this row doesn't get
       // its terminal status overwritten by 'skipped'.
       const { error: skipErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "skipped",
@@ -392,7 +417,6 @@ async function runRecallSendSweepInner(
     // cannot give. Phase 0 above re-queues a claim whose worker died.
     const claimIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .update({ status: "sending", updated_at: claimIso })
       .eq("id", row.id)
@@ -439,7 +463,6 @@ async function runRecallSendSweepInner(
     const nowIso = new Date().toISOString();
     if (outcome.kind === "sent") {
       const { error: sentErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "sent",
@@ -464,7 +487,6 @@ async function runRecallSendSweepInner(
       stats.sent += 1;
     } else if (outcome.kind === "failed") {
       const { error: failedErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "failed",
@@ -483,7 +505,6 @@ async function runRecallSendSweepInner(
       stats.failed += 1;
     } else {
       const { error: skippedErr } = await supabase
-        .schema("resupply")
         .from("recall_notifications")
         .update({
           status: "skipped",

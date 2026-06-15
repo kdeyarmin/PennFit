@@ -18,7 +18,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -62,10 +62,22 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    // RPC: the org-scoped facade only wraps `.from()` table access, so we
+    // reach the function via `.raw()` and pass the tenant explicitly. The
+    // RPC (migration 0344) constrains its patients scan to p_org_id.
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
-      .rpc("patient_duplicate_groups", { p_max_groups: parsed.data.limit });
+      .rpc("patient_duplicate_groups", {
+        p_org_id: orgId,
+        p_max_groups: parsed.data.limit,
+      });
     if (error) {
       res.status(500).json({ error: "duplicate_scan_failed" });
       return;

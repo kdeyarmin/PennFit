@@ -73,7 +73,7 @@ const AUTO_FILE_TEXT: Record<
   },
   no_code: {
     tone: "muted",
-    label: "No PennFit tracking barcode was found on this fax.",
+    label: "No CareMetric Breathe tracking barcode was found on this fax.",
   },
   failed: {
     tone: "warn",
@@ -177,8 +177,8 @@ function BarcodeAutoFilePanel({
         </Button>
       </div>
       <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-        Reads the PennFit tracking barcode and, on a match, files this fax to
-        the patient chart and marks the signature returned.
+        Reads the CareMetric Breathe tracking barcode and, on a match, files
+        this fax to the patient chart and marks the signature returned.
       </p>
       {run.isError && (
         <p className="text-xs text-rose-700">
@@ -359,12 +359,22 @@ function FaxTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Received</th>
-          <th className="py-2 font-semibold">From</th>
-          <th className="py-2 font-semibold">Pages</th>
-          <th className="py-2 font-semibold">Category</th>
-          <th className="py-2 font-semibold">Status</th>
-          <th className="py-2 font-semibold"></th>
+          <th scope="col" className="py-2 font-semibold">
+            Received
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            From
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Pages
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Category
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
+          <th scope="col" className="py-2 font-semibold"></th>
         </tr>
       </thead>
       <tbody>
@@ -378,9 +388,18 @@ function FaxTable({
           return (
             <tr
               key={r.id}
-              className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))]"
+              className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))] focus-visible:outline-none focus-visible:bg-[hsl(var(--bg-2))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--penn-navy))]"
               style={{ borderColor: "hsl(var(--line-2))" }}
+              tabIndex={0}
+              role="button"
+              aria-label="Open fax details"
               onClick={() => onSelect(r.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(r.id);
+                }
+              }}
             >
               <td className="py-2">{received}</td>
               <td className="py-2 font-mono text-xs">{r.fromE164 ?? "—"}</td>

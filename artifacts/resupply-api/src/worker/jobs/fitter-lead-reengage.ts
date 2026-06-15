@@ -50,7 +50,8 @@ import {
 } from "@workspace/resupply-email";
 import {
   escapePostgRESTFilterValue,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -169,7 +170,9 @@ export async function runFitterLeadReengageSweep(
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
   const olderThan = new Date(now - MAX_AGE_MS).toISOString();
@@ -182,7 +185,6 @@ export async function runFitterLeadReengageSweep(
   // additional filter (abandoned-lead volume is low, so an index-
   // covered scan + filter is fine).
   const { data: leads, error } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .select("id, email, created_at")
     .eq("marketing_opt_in", true)
@@ -194,7 +196,13 @@ export async function runFitterLeadReengageSweep(
     .limit(BATCH_SIZE);
   if (error) throw error;
 
-  const candidates = (leads ?? []).filter(
+  const candidates = (
+    (leads ?? []) as Array<{
+      id: string;
+      email: string | null;
+      created_at: string;
+    }>
+  ).filter(
     (l): l is { id: string; email: string; created_at: string } =>
       typeof l.email === "string" && l.email.length > 0,
   );
@@ -228,6 +236,7 @@ export async function runFitterLeadReengageSweep(
       .map((e) => `patient_email.ilike.${escapePostgRESTFilterValue(e)}`)
       .join(",");
     const { data: converted, error: convErr } = await supabase
+      .raw()
       .schema("public")
       .from("orders")
       .select("patient_email")
@@ -261,7 +270,6 @@ export async function runFitterLeadReengageSweep(
     // another worker already claimed this lead, we skip it to avoid
     // duplicate sends.
     const { data: claimResult, error: claimErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update({ nudged_at: new Date().toISOString() })
       .eq("id", lead.id)

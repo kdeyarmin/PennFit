@@ -110,6 +110,11 @@ export function AdminLocationsPage() {
             <EmptyState
               title="No locations yet."
               hint="Add your branches here, then assign patients to a branch from their detail page."
+              action={
+                <Button onClick={() => setCreating(true)}>
+                  + New location
+                </Button>
+              }
             />
           ) : (
             <LocationsTable

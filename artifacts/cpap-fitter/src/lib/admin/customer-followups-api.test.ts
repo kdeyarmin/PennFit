@@ -8,6 +8,7 @@
 //   listAdminCustomerFollowups     — GET  /shop/customers/:id/followups
 //   createAdminCustomerFollowup    — POST /shop/customers/:id/followups
 //   completeAdminCustomerFollowup  — PATCH /shop/customers/:id/followups/:fid/complete
+//   reopenAdminCustomerFollowup    — PATCH /shop/customers/:id/followups/:fid/reopen
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
@@ -18,6 +19,7 @@ import {
   listAdminCustomerFollowups,
   createAdminCustomerFollowup,
   completeAdminCustomerFollowup,
+  reopenAdminCustomerFollowup,
   AdminCustomerFollowupsNotFoundError,
 } from "./customer-followups-api";
 
@@ -265,6 +267,42 @@ describe("completeAdminCustomerFollowup", () => {
   test("URL-encodes both userId and followupId", async () => {
     fetchMock.mockResolvedValue(okResponse({ id: "fu/1", completedAt: null }));
     await completeAdminCustomerFollowup("user/1", "fu/1");
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("user%2F1");
+    expect(url).toContain("fu%2F1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reopenAdminCustomerFollowup
+// ---------------------------------------------------------------------------
+
+describe("reopenAdminCustomerFollowup", () => {
+  test("PATCHes to /admin/shop/customers/:id/followups/:fid/reopen", async () => {
+    fetchMock.mockResolvedValue(okResponse({ id: "fu-1", completedAt: null }));
+    await reopenAdminCustomerFollowup("user-1", "fu-1");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/followups/fu-1/reopen");
+    expect(init.method).toBe("PATCH");
+  });
+
+  test("returns a null completedAt timestamp on success", async () => {
+    fetchMock.mockResolvedValue(okResponse({ id: "fu-1", completedAt: null }));
+    const result = await reopenAdminCustomerFollowup("user-1", "fu-1");
+    expect(result.completedAt).toBeNull();
+  });
+
+  test("throws AdminCustomerFollowupsNotFoundError on 404", async () => {
+    fetchMock.mockResolvedValue(errorResponse(404, "Not Found"));
+    const err = await reopenAdminCustomerFollowup("user-1", "missing").catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(AdminCustomerFollowupsNotFoundError);
+  });
+
+  test("URL-encodes both userId and followupId", async () => {
+    fetchMock.mockResolvedValue(okResponse({ id: "fu/1", completedAt: null }));
+    await reopenAdminCustomerFollowup("user/1", "fu/1");
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("user%2F1");
     expect(url).toContain("fu%2F1");

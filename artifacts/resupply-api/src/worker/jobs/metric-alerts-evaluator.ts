@@ -16,7 +16,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   evaluateThreshold,
   type ThresholdComparison,
@@ -82,8 +82,13 @@ export interface MetricAlertsEvaluatorStats {
 }
 
 export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { evaluated: 0, fired: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: thresholdData, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("metric_thresholds")
     .select("*")
@@ -108,6 +113,7 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
   >();
   if (metricKeys.length > 0) {
     const { data: latestRows, error: latestErr } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("metrics_daily_latest", { p_metric_keys: metricKeys });
     if (latestErr) throw latestErr;
@@ -141,6 +147,7 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
   }
   if (deltaKeys.size > 0 && baselineDates.size > 0) {
     const { data: baseRows, error: baseErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("metrics_daily")
       .select("metric_key, metric_date, metric_value")
@@ -199,6 +206,7 @@ export async function runMetricAlertsEvaluator(): Promise<MetricAlertsEvaluatorS
     });
 
     const { data: insData, error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .upsert(

@@ -294,10 +294,18 @@ function DraftView({
         >
           <thead>
             <tr style={{ background: "#f9fafb", textAlign: "left" }}>
-              <th style={ThStyle}>Product</th>
-              <th style={{ ...ThStyle, textAlign: "right" }}>System count</th>
-              <th style={{ ...ThStyle, textAlign: "right" }}>Counted</th>
-              <th style={{ ...ThStyle, textAlign: "right" }}>Variance</th>
+              <th scope="col" style={ThStyle}>
+                Product
+              </th>
+              <th scope="col" style={{ ...ThStyle, textAlign: "right" }}>
+                System count
+              </th>
+              <th scope="col" style={{ ...ThStyle, textAlign: "right" }}>
+                Counted
+              </th>
+              <th scope="col" style={{ ...ThStyle, textAlign: "right" }}>
+                Variance
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -537,11 +545,21 @@ function SubmittedView({ data }: { data: ReconciliationDetail }) {
         >
           <thead>
             <tr style={{ background: "#f9fafb", textAlign: "left" }}>
-              <th style={ThStyle}>Product</th>
-              <th style={{ ...ThStyle, textAlign: "right" }}>System</th>
-              <th style={{ ...ThStyle, textAlign: "right" }}>Counted</th>
-              <th style={{ ...ThStyle, textAlign: "right" }}>Variance</th>
-              <th style={ThStyle}>Applied</th>
+              <th scope="col" style={ThStyle}>
+                Product
+              </th>
+              <th scope="col" style={{ ...ThStyle, textAlign: "right" }}>
+                System
+              </th>
+              <th scope="col" style={{ ...ThStyle, textAlign: "right" }}>
+                Counted
+              </th>
+              <th scope="col" style={{ ...ThStyle, textAlign: "right" }}>
+                Variance
+              </th>
+              <th scope="col" style={ThStyle}>
+                Applied
+              </th>
             </tr>
           </thead>
           <tbody>

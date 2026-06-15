@@ -25,7 +25,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -229,7 +229,9 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   }
   stats.belowThreshold = below.length;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   const cooldownCutoff = new Date(
     Date.now() - ALERT_COOLDOWN_HOURS * 60 * 60 * 1000,
@@ -240,7 +242,6 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   // the next dip alert again.
   if (recoveredIds.length > 0) {
     const { data: resolved, error: resolveErr } = await supabase
-      .schema("resupply")
       .from("low_stock_alert_state")
       .update({ last_resolved_at: nowIso, updated_at: nowIso })
       .in("product_id", recoveredIds)
@@ -269,7 +270,6 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   // (never alerted, or recovered since last alert, or cooldown expired).
   const belowIds = below.map((b) => b.productId);
   const { data: stateRows, error: stateErr } = await supabase
-    .schema("resupply")
     .from("low_stock_alert_state")
     .select("product_id, last_alerted_at, last_resolved_at")
     .in("product_id", belowIds);
@@ -279,7 +279,13 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
     );
   }
   const stateById = new Map(
-    (stateRows ?? []).map((r) => [
+    (
+      (stateRows ?? []) as Array<{
+        product_id: string;
+        last_alerted_at: string | null;
+        last_resolved_at: string | null;
+      }>
+    ).map((r) => [
       r.product_id,
       {
         lastAlertedAt: r.last_alerted_at,
@@ -334,7 +340,7 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
     );
     // Still upsert state so we don't repeatedly compute the same
     // alertable set without actually delivering anything.
-    await upsertAlertState(alertable, nowIso);
+    await upsertAlertState(orgId, alertable, nowIso);
     return stats;
   }
 
@@ -374,16 +380,17 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   // honours the cooldown for the SKUs we tried to alert on. The
   // worst case is a 24h re-attempt for SKUs whose alerts didn't
   // reach anyone — acceptable vs hammering SendGrid every 6h.
-  await upsertAlertState(alertable, nowIso);
+  await upsertAlertState(orgId, alertable, nowIso);
 
   return stats;
 }
 
 async function upsertAlertState(
+  orgId: string,
   alertable: BelowThresholdSku[],
   nowIso: string,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const rows = alertable.map((sku) => ({
     product_id: sku.productId,
     last_observed_count: sku.stockCount,
@@ -395,7 +402,6 @@ async function upsertAlertState(
     updated_at: nowIso,
   }));
   const { error } = await supabase
-    .schema("resupply")
     .from("low_stock_alert_state")
     .upsert(rows, { onConflict: "product_id" });
   if (error) {

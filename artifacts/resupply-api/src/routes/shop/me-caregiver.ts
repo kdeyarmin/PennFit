@@ -37,7 +37,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -85,9 +85,13 @@ router.get("/shop/me/caregiver", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select(
       "caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
@@ -132,9 +136,13 @@ router.put("/shop/me/caregiver", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: existing } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select(
       "caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
@@ -158,7 +166,6 @@ router.put("/shop/me/caregiver", requireSignedIn, async (req, res) => {
     : (existing?.caregiver_consent_at ?? nowIso);
 
   const { error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update({
       caregiver_name: parsed.data.name,
@@ -207,13 +214,17 @@ router.delete("/shop/me/caregiver", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   // Stamp revoked_at but preserve email/name/consent_at so the
   // audit-trail of "who was the caregiver during the consent period"
   // remains intact.
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update({
       caregiver_revoked_at: nowIso,

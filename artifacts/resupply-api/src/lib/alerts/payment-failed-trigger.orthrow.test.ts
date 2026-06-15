@@ -90,4 +90,25 @@ describe("dispatchPaymentFailedAlertOrThrow", () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it("skips dispatch when a shop customer email matches multiple patients", async () => {
+    stageSupabaseResponse("feature_flags", "select", {
+      data: { enabled: true },
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { email_lower: "shared@example.com" },
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "p_1" }, { id: "p_2" }],
+    });
+
+    await expect(
+      dispatchPaymentFailedAlertOrThrow({
+        stripeCustomerId: "cus_123",
+        amountDueCents: 1000,
+        currency: "usd",
+      }),
+    ).resolves.toBeUndefined();
+    expect(dispatchAlertMock).not.toHaveBeenCalled();
+  });
 });

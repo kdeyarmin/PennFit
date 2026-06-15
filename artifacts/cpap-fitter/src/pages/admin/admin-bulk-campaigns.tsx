@@ -75,10 +75,15 @@ export function AdminBulkCampaignsPage() {
         ) : isError ? (
           <ErrorPanel error={error} onRetry={() => void refetch()} />
         ) : data.campaigns.length === 0 ? (
-          <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
-            No campaigns yet. Click <strong>New campaign</strong> to compose
-            one.
-          </p>
+          <div className="py-6 text-center space-y-3">
+            <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+              No campaigns yet. Compose your first audience + template.
+            </p>
+            <Button onClick={() => setShowNew(true)}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              New campaign
+            </Button>
+          </div>
         ) : (
           <CampaignsTable rows={data.campaigns} onSelect={setOpenId} />
         )}
@@ -145,22 +150,45 @@ function CampaignsTable({
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">Name</th>
-          <th className="py-2 font-semibold">Audience</th>
-          <th className="py-2 font-semibold">Category</th>
-          <th className="py-2 font-semibold text-right">Total</th>
-          <th className="py-2 font-semibold text-right">Pending</th>
-          <th className="py-2 font-semibold text-right">Suppressed</th>
-          <th className="py-2 font-semibold">Status</th>
+          <th scope="col" className="py-2 font-semibold">
+            Name
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Audience
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Category
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Total
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Pending
+          </th>
+          <th scope="col" className="py-2 font-semibold text-right">
+            Suppressed
+          </th>
+          <th scope="col" className="py-2 font-semibold">
+            Status
+          </th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr
             key={r.id}
-            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))]"
+            className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))] focus-visible:outline-none focus-visible:bg-[hsl(var(--bg-2))] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--penn-navy))]"
             style={{ borderColor: "hsl(var(--line-2))" }}
+            tabIndex={0}
+            role="button"
+            aria-label={`Open campaign ${r.name}`}
             onClick={() => onSelect(r.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(r.id);
+              }
+            }}
           >
             <td className="py-1.5">
               <div className="font-medium">{r.name}</div>
@@ -595,11 +623,21 @@ function CampaignDetailBody({
                 className="text-left border-b"
                 style={{ borderColor: "hsl(var(--line-1))" }}
               >
-                <th className="py-1.5">Kind</th>
-                <th className="py-1.5">Recipient</th>
-                <th className="py-1.5">Email</th>
-                <th className="py-1.5">Status</th>
-                <th className="py-1.5">Reason</th>
+                <th scope="col" className="py-1.5">
+                  Kind
+                </th>
+                <th scope="col" className="py-1.5">
+                  Recipient
+                </th>
+                <th scope="col" className="py-1.5">
+                  Email
+                </th>
+                <th scope="col" className="py-1.5">
+                  Status
+                </th>
+                <th scope="col" className="py-1.5">
+                  Reason
+                </th>
               </tr>
             </thead>
             <tbody>

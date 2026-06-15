@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
@@ -48,7 +48,12 @@ router.get(
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // PostgREST has no GROUP BY / aggregate, so we fetch the line
     // items + their parent order statuses and aggregate in JS. The
@@ -65,7 +70,6 @@ router.get(
     // change the surfaced suggestions while cutting the worst-case
     // transfer 5×.
     const { data: items, error: itemsErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .select("order_id, product_id, paid_at, quantity")
       .eq("customer_id", customerId)
@@ -73,17 +77,30 @@ router.get(
       .limit(200);
     if (itemsErr) throw itemsErr;
 
-    const orderIds = Array.from(new Set((items ?? []).map((i) => i.order_id)));
+    const orderIds = Array.from(
+      new Set(
+        (
+          (items ?? []) as Array<
+            Database["resupply"]["Tables"]["shop_order_items"]["Row"]
+          >
+        ).map((i) => i.order_id),
+      ),
+    );
     let paidOrderIds = new Set<string>();
     if (orderIds.length > 0) {
       const { data: orders, error: ordersErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("id, status")
         .in("id", orderIds);
       if (ordersErr) throw ordersErr;
       paidOrderIds = new Set(
-        (orders ?? []).filter((o) => o.status === "paid").map((o) => o.id),
+        (
+          (orders ?? []) as Array<
+            Database["resupply"]["Tables"]["shop_orders"]["Row"]
+          >
+        )
+          .filter((o) => o.status === "paid")
+          .map((o) => o.id),
       );
     }
 

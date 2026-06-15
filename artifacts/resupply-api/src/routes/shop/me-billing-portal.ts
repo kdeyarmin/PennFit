@@ -58,10 +58,7 @@ router.post(
     windowMs: 5 * 60_000,
     max: 5,
     name: "shop_billing_portal",
-    keyFn: (req) =>
-      (req as unknown as { userCustomerId?: string }).userCustomerId ??
-      req.ip ??
-      "unknown",
+    keyFn: (req) => req.userCustomerId ?? req.ip ?? "unknown",
   }),
   async (req, res) => {
     const parsed = body.safeParse(req.body ?? {});

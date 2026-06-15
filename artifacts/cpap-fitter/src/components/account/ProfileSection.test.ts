@@ -187,6 +187,25 @@ describe("ProfileSection — module structure", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Structural checks — parent dirty-state reporting
+// ---------------------------------------------------------------------------
+
+describe("ProfileSection — parent dirty-state reporting", () => {
+  it("accepts an optional onDirtyChange callback", () => {
+    expect(SRC).toContain("onDirtyChange");
+    expect(SRC).toContain("onDirtyChange?: (dirty: boolean) => void");
+  });
+
+  it("reports dirty changes to the parent account tab guard", () => {
+    expect(SRC).toContain("onDirtyChange?.(dirty)");
+  });
+
+  it("clears the parent dirty flag when the section unmounts", () => {
+    expect(SRC).toContain("return () => onDirtyChange?.(false)");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Structural checks — dirty-state visibility
 // ---------------------------------------------------------------------------
 

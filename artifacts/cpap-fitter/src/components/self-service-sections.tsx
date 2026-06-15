@@ -15,6 +15,7 @@ import { FileSignature, Gift, Stethoscope } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ManufacturerAutocomplete } from "@/components/ManufacturerAutocomplete";
 import { Label } from "@/components/ui/label";
 import {
   listFormAcknowledgements,
@@ -270,10 +271,10 @@ export function EquipmentRegistrySection() {
           <Label htmlFor="dev-mfr" className="text-xs">
             Manufacturer
           </Label>
-          <Input
+          <ManufacturerAutocomplete
             id="dev-mfr"
             value={manufacturer}
-            onChange={(e) => setManufacturer(e.target.value)}
+            onValueChange={setManufacturer}
             placeholder="ResMed"
           />
         </div>

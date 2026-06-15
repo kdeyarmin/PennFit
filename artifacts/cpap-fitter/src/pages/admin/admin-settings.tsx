@@ -15,6 +15,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useDemoMode } from "@/demo/DemoModeProvider";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 interface SystemInfo {
   server: {
@@ -92,27 +95,19 @@ export function AdminSettingsPage() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-settings-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Settings
-        </h1>
-        <p className="text-sm text-slate-600">
-          Deployment metadata, vendor configuration, and secret presence.
-          Read-only — env-var values are never surfaced; only "is this set?"
-          booleans plus a few benign-to-display fields.
-        </p>
-      </header>
+      <PageHeader
+        title="Settings"
+        description={`Deployment metadata, vendor configuration, and secret presence. Read-only — env-var values are never surfaced; only "is this set?" booleans plus a few benign-to-display fields.`}
+      />
       <DemoModeCard />
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load system info:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load system info"
+        />
       ) : query.data ? (
         <Body data={query.data} />
       ) : null}

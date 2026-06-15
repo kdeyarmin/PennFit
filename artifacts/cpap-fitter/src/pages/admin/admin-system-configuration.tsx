@@ -543,14 +543,22 @@ function SettingRow({ setting }: { setting: AppConfigSettingView }) {
 }
 
 function RecentActivity() {
-  const { data } = useQuery({
+  const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: activityKey,
     queryFn: () => getSystemConfigActivity(15),
   });
   const rows = data?.activity ?? [];
   return (
     <Card title="Recent activity">
-      {rows.length === 0 ? (
+      {isPending ? (
+        <div className="px-5 py-6">
+          <Spinner />
+        </div>
+      ) : isError ? (
+        <div className="px-5 py-4">
+          <ErrorPanel error={error} onRetry={() => void refetch()} />
+        </div>
+      ) : rows.length === 0 ? (
         <p className="px-5 py-4 text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           No configuration changes recorded yet.
         </p>

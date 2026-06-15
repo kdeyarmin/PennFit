@@ -602,6 +602,22 @@ export function Faq() {
           covering CPAP basics, choosing a mask, ordering, daily care, and
           common troubleshooting.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Looking for step-by-step how-tos?{" "}
+          <Link
+            href="/help"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Help Center
+          </Link>{" "}
+          · Want the in-depth version?{" "}
+          <Link
+            href="/learn"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Learn
+          </Link>
+        </p>
 
         {/*
           Inline FAQ search. Filters across every Q&A's question text

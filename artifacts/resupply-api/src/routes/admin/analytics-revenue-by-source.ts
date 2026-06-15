@@ -3,7 +3,7 @@
 //
 // Closed-loop measurement (roadmap Lever 3): a single view of where order
 // VOLUME and cash REVENUE come from, across the three independent order
-// channels PennFit captures through:
+// channels CareMetric Breathe captures through:
 //   * storefront (cash-pay Stripe)      → resupply.shop_orders (has $)
 //   * resupply fulfillment (insurance)  → resupply.fulfillments (units)
 //   * clinical intake form              → public.orders (count only)
@@ -19,7 +19,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateRevenueBySource,
@@ -54,26 +54,27 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
-async function loadRevenueBySource(cutoff: string) {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadRevenueBySource(cutoff: string, orgId: string) {
+  const supabase = getOrgScopedClient(orgId);
 
   const [shopRes, fulRes, clinicalRes] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("status, amount_total_cents", { count: "exact" })
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     supabase
-      .schema("resupply")
       .from("fulfillments")
       .select("status, quantity", { count: "exact" })
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     // Head-only count — public.orders holds PHI; we never pull its rows.
+    // public.orders is the clinical-intake form table, not a tenant-
+    // scoped resupply table, so it stays on the unscoped service client.
     supabase
+      .raw()
       .schema("public")
       .from("orders")
       .select("id", { count: "exact", head: true })
@@ -119,8 +120,13 @@ router.get(
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
-      const result = await loadRevenueBySource(isoDaysAgo(days));
+      const result = await loadRevenueBySource(isoDaysAgo(days), orgId);
       res.json({ windowDays: days, ...result });
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
@@ -139,9 +145,14 @@ router.get(
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     let result: Awaited<ReturnType<typeof loadRevenueBySource>>;
     try {
-      result = await loadRevenueBySource(isoDaysAgo(days));
+      result = await loadRevenueBySource(isoDaysAgo(days), orgId);
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
       throw err;

@@ -20,6 +20,11 @@ import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { Button } from "@/components/admin/Button";
 import {
+  appDateTimeLocalInputValue,
+  formatAppDateTime,
+  parseAppDateTimeLocalInput,
+} from "@/lib/utils";
+import {
   AdminCustomerFollowupsNotFoundError,
   completeAdminCustomerFollowup,
   createAdminCustomerFollowup,
@@ -296,7 +301,7 @@ function FollowupsList({
                 }}
               >
                 {overdue ? "Overdue · " : "Due "}
-                {new Date(f.dueAt).toLocaleString()} · {f.createdByEmail}
+                {formatAppDateTime(f.dueAt)} · {f.createdByEmail}
               </div>
               <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
                 {f.body}
@@ -319,25 +324,17 @@ function FollowupsList({
   );
 }
 
-// "Tomorrow at 9am, local time" — formatted for <input type="datetime-local">.
+// "Tomorrow at 9am, New York time" - formatted for <input type="datetime-local">.
 // Minutes / seconds zeroed so the timestamp is clean and predictable.
 function defaultDueLocal(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return formatLocal(d);
-}
-
-function formatLocal(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return appDateTimeLocalInputValue({
+    daysFromToday: 1,
+    hour: 9,
+    minute: 0,
+  });
 }
 
 function parseLocal(s: string): Date | null {
-  // <input type="datetime-local"> emits naive local timestamps;
-  // `new Date(s)` treats them as local time, which is what we want
-  // before serializing back to ISO via toISOString().
   if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  return parseAppDateTimeLocalInput(s);
 }

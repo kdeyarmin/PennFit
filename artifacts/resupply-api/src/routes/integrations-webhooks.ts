@@ -32,7 +32,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../lib/logger";
 import { RATE_LIMITS } from "../lib/rate-limits-config";
@@ -175,11 +175,16 @@ router.post(
 
     // Best-effort: nudge the matching link's last_sync_status so the
     // CSR sees "vendor reported new data" and the next sweep refreshes.
-    const supabase = getSupabaseServiceRoleClient();
+    // Public webhook (no req.orgId): resolve the seed org (single-tenant
+    // posture) and degrade — skip the nudge but still audit + 202 — if it
+    // can't be resolved, so a forged/early request never 500s a webhook.
+    // Resolve the tenant lazily — only when there is actually a link to
+    // nudge — so a webhook with no partnerPatientId does NO DB work at all.
     let nudgedLinkId: string | null = null;
-    if (parsed.partnerPatientId) {
+    const orgId = parsed.partnerPatientId ? await resolveSeedOrgId() : null;
+    if (parsed.partnerPatientId && orgId) {
+      const supabase = getOrgScopedClient(orgId);
       const { data: link } = await supabase
-        .schema("resupply")
         .from("patient_therapy_links")
         .select("id")
         .eq("source", config.source)
@@ -189,7 +194,6 @@ router.post(
       if (link) {
         nudgedLinkId = link.id;
         const { error: nudgeErr } = await supabase
-          .schema("resupply")
           .from("patient_therapy_links")
           .update({
             last_sync_status: "vendor_pushed",

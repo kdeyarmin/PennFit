@@ -22,6 +22,7 @@ export async function registerAutoWorkflowJob(boss: PgBoss): Promise<void> {
         stats.scrubsTriggered > 0 ||
         stats.denialAnalysesTriggered > 0 ||
         stats.statementsQueued > 0 ||
+        stats.secondaryClaimsDrafted > 0 ||
         stats.errors > 0
       ) {
         logger.info(

@@ -22,6 +22,7 @@
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
+  getOrgScopedClient,
   tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
@@ -42,6 +43,13 @@ import type { EmailSendConfig, SendActor, SmsSendConfig } from "./types";
 
 export interface ReplyInConversationInput {
   supabase: ResupplySupabaseClient;
+  /**
+   * Tenant the caller is acting in. Every tenant-scoped read/write in
+   * this helper goes through `getOrgScopedClient(orgId, supabase)` so a
+   * reply can only ever touch the caller's tenant. Routes pass
+   * `req.orgId`; the worker resolves it per job.
+   */
+  orgId: string;
   /**
    * Both configs are required because the conversation's channel
    * decides which one we'll use, and the API route can't know which
@@ -100,10 +108,14 @@ export type ReplyInConversationOutcome =
 export async function replyInConversation(
   input: ReplyInConversationInput,
 ): Promise<ReplyInConversationOutcome> {
-  const { supabase, conversationId, body, actor } = input;
+  const { supabase, orgId, conversationId, body, actor } = input;
+  // Tenant isolation chokepoint: scope every read/write to orgId. The
+  // patient_latest_message projection refresh below is now org-aware
+  // too — it takes `orgId` and routes through getOrgScopedClient
+  // internally.
+  const db = getOrgScopedClient(orgId, supabase);
 
-  const { data: conv, error: convErr } = await supabase
-    .schema("resupply")
+  const { data: conv, error: convErr } = await db
     .from("conversations")
     .select("id, patient_id, episode_id, channel, status")
     .eq("id", conversationId)
@@ -141,8 +153,7 @@ export async function replyInConversation(
   const patientId: string = conv.patient_id;
   const episodeId: string | null = conv.episode_id ?? null;
 
-  const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
+  const { data: patient, error: patientErr } = await db
     .from("patients")
     .select("id, status, phone_e164, email")
     .eq("id", patientId)
@@ -381,14 +392,14 @@ export async function replyInConversation(
     );
   }
 
-  // Refresh latest-message projection (best-effort). Use the same
-  // channel-adjusted body persisted to the messages row above, so the
-  // projection source never diverges from messages.body for long SMS.
+  // Refresh latest-message projection (best-effort). Now org-scoped:
+  // the projection routes through getOrgScopedClient(orgId) internally.
   await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body: conv.channel === "sms" ? smsBody : body,
     direction: "outbound",
     messageAt: sentAt,
+    orgId,
   });
 
   await safeAuditFromActor({

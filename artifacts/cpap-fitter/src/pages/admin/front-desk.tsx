@@ -320,6 +320,153 @@ function FindOrCapture({
   );
 }
 
+// ── CSR workflow guardrails ───────────────────────────────────────
+type ChecklistItem = {
+  id: string;
+  label: string;
+  detail: string;
+};
+
+const BASE_PRE_DISPENSE_CHECKS: ChecklistItem[] = [
+  {
+    id: "identity",
+    label: "Verified patient identity",
+    detail:
+      "Match name + DOB before opening the account or creating a new one.",
+  },
+  {
+    id: "prescription",
+    label: "Confirmed active order / prescription",
+    detail:
+      "Supply or equipment is allowed by the current Rx and replacement schedule.",
+  },
+  {
+    id: "eligibility",
+    label: "Checked eligibility, plan, and balance",
+    detail:
+      "Confirm coverage path, copay / deductible, and any open account balance.",
+  },
+  {
+    id: "fit",
+    label: "Reviewed fit, usage, and item selection",
+    detail:
+      "Make sure size, mask style, filters, tubing, and quantities are correct.",
+  },
+];
+
+const INSURANCE_PRE_DISPENSE_CHECKS: ChecklistItem[] = [
+  {
+    id: "aob",
+    label: "AOB / financial responsibility is signed or queued",
+    detail:
+      "Assignment of Benefits and patient responsibility must be on file for billing.",
+  },
+  {
+    id: "abn",
+    label: "ABN needs review",
+    detail:
+      "If coverage is uncertain, collect the required ABN or route to billing before dispense.",
+  },
+];
+
+const HANDOFF_CHECKS: ChecklistItem[] = [
+  {
+    id: "pod",
+    label: "Proof of delivery / delivery ticket signed",
+    detail:
+      "Patient signs for the exact items and quantities leaving the office today.",
+  },
+  {
+    id: "supplier-standards",
+    label: "Supplier standards and rights notice provided",
+    detail:
+      "Give the patient their copy or confirm the current acknowledgement is already on file.",
+  },
+  {
+    id: "payment",
+    label: "Payment or billing path explained",
+    detail:
+      "Cash collected now, or patient understands insurance billing and possible balance.",
+  },
+  {
+    id: "education",
+    label: "Use, cleaning, warranty, and return instructions reviewed",
+    detail:
+      "Cover setup basics, replacement timing, contact path, and next follow-up.",
+  },
+  {
+    id: "chart",
+    label: "Chart follow-up captured",
+    detail:
+      "Scan/upload signed paperwork or open the patient record for any missing items.",
+  },
+];
+
+function isChecklistComplete(
+  items: ChecklistItem[],
+  checked: Record<string, boolean>,
+): boolean {
+  return items.every((item) => checked[item.id]);
+}
+
+function ChecklistPanel({
+  title,
+  eyebrow,
+  description,
+  items,
+  checked,
+  onToggle,
+}: {
+  title: string;
+  eyebrow: string;
+  description: string;
+  items: ChecklistItem[];
+  checked: Record<string, boolean>;
+  onToggle: (id: string, value: boolean) => void;
+}) {
+  const completeCount = items.filter((item) => checked[item.id]).length;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 shadow-inner">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {eyebrow}
+          </p>
+          <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+          <p className="mt-1 text-xs text-slate-600">{description}</p>
+        </div>
+        <Badge variant={completeCount === items.length ? "success" : undefined}>
+          {completeCount}/{items.length}
+        </Badge>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <label
+            key={item.id}
+            className="flex cursor-pointer gap-3 rounded-lg border border-white bg-white/85 p-3 shadow-sm transition hover:border-slate-300"
+          >
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              checked={Boolean(checked[item.id])}
+              onChange={(e) => onToggle(item.id, e.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-medium text-slate-900">
+                {item.label}
+              </span>
+              <span className="block text-xs leading-5 text-slate-600">
+                {item.detail}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Counter order panel ────────────────────────────────────────────
 type Cart = Map<string, { product: FrontDeskProduct; quantity: number }>;
 
@@ -340,6 +487,9 @@ function CounterOrderPanel({
   );
   const [pickupLocationId, setPickupLocationId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [preDispenseChecks, setPreDispenseChecks] = useState<
+    Record<string, boolean>
+  >({});
 
   const catalog = useFrontDeskCatalog();
   const locationsQuery = useQuery({
@@ -379,6 +529,18 @@ function CounterOrderPanel({
     return sum;
   }, [cart]);
 
+  const preDispenseChecklist = useMemo(
+    () =>
+      paymentMethod === "insurance"
+        ? [...BASE_PRE_DISPENSE_CHECKS, ...INSURANCE_PRE_DISPENSE_CHECKS]
+        : BASE_PRE_DISPENSE_CHECKS,
+    [paymentMethod],
+  );
+  const preDispenseComplete = isChecklistComplete(
+    preDispenseChecklist,
+    preDispenseChecks,
+  );
+
   function addToCart(product: FrontDeskProduct) {
     setCart((prev) => {
       const next = new Map(prev);
@@ -412,6 +574,10 @@ function CounterOrderPanel({
     }
     if (fulfillmentMethod === "pickup" && !effectivePickupLocationId) {
       setError("Choose a pickup location.");
+      return;
+    }
+    if (!preDispenseComplete) {
+      setError("Complete the front-desk checklist before placing the order.");
       return;
     }
     try {
@@ -580,6 +746,17 @@ function CounterOrderPanel({
             </p>
           )}
 
+          <ChecklistPanel
+            eyebrow="Before order"
+            title="Ready-to-dispense checks"
+            description="Keeps identity, coverage, prescription, and paperwork checks in one counter flow."
+            items={preDispenseChecklist}
+            checked={preDispenseChecks}
+            onToggle={(id, value) =>
+              setPreDispenseChecks((prev) => ({ ...prev, [id]: value }))
+            }
+          />
+
           {error ? (
             <p className="text-sm text-red-600" role="alert">
               {error}
@@ -591,6 +768,7 @@ function CounterOrderPanel({
             disabled={
               createMut.isPending ||
               cart.size === 0 ||
+              !preDispenseComplete ||
               // Ship lane needs an address the panel can't collect yet.
               fulfillmentMethod === "ship"
             }
@@ -627,6 +805,9 @@ function OrderPlaced({
   const order = result.order;
   const markPickedUp = useMarkCounterOrderPickedUp();
   const [handedOver, setHandedOver] = useState(false);
+  const [handoffChecks, setHandoffChecks] = useState<Record<string, boolean>>(
+    {},
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Fulfillment is independent of payment: the patient walks out with the
@@ -639,9 +820,14 @@ function OrderPlaced({
     order.paymentMethod === "cash"
       ? "Cash — collected"
       : "Insurance — awaiting adjudication";
+  const handoffComplete = isChecklistComplete(HANDOFF_CHECKS, handoffChecks);
 
   async function handOver() {
     setError(null);
+    if (!handoffComplete) {
+      setError("Complete the signed-paperwork and handoff checklist first.");
+      return;
+    }
     try {
       await markPickedUp.mutateAsync({ orderId: order.id });
       setHandedOver(true);
@@ -678,6 +864,24 @@ function OrderPlaced({
           <dd className="text-right">{order.itemCount}</dd>
         </dl>
 
+        {canHandOver ? (
+          <ChecklistPanel
+            eyebrow="Before patient leaves"
+            title="Signature and handoff checklist"
+            description="Confirm the signed delivery ticket, required notices, payment explanation, and patient education before marking pickup complete."
+            items={HANDOFF_CHECKS}
+            checked={handoffChecks}
+            onToggle={(id, value) =>
+              setHandoffChecks((prev) => ({ ...prev, [id]: value }))
+            }
+          />
+        ) : handedOver ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+            Handoff complete — signed paperwork, patient education, and chart
+            follow-up were confirmed.
+          </div>
+        ) : null}
+
         {error ? (
           <p className="text-sm text-red-600" role="alert">
             {error}
@@ -688,7 +892,7 @@ function OrderPlaced({
           {canHandOver ? (
             <Button
               onClick={() => void handOver()}
-              disabled={markPickedUp.isPending}
+              disabled={markPickedUp.isPending || !handoffComplete}
             >
               {markPickedUp.isPending ? "Saving…" : "Mark handed over"}
             </Button>

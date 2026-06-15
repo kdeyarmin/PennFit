@@ -9,7 +9,11 @@
 // 503 on "not_configured" while the cron logs+skips.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -67,7 +71,23 @@ export async function runRxRenewalSendDue(
   channel: "email" | "sms",
   actor: RxRenewalActor,
 ): Promise<RxRenewalOutcome> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — no patients to sweep. Return the same
+    // "ok, did nothing" shape a zero-eligible run produces.
+    return {
+      status: "ok",
+      channel,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      skippedQuietHours: 0,
+      remaining: 0,
+      windowDays: RENEWAL_WINDOW_DAYS,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = new Date();
   const cutoffIso = new Date(
     now.getTime() + RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
@@ -80,7 +100,6 @@ export async function runRxRenewalSendDue(
   // we fetch eligible prescription ids first then bulk-resolve
   // their patients via .in().
   const { data: rxRows, error: rxErr } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select("id, patient_id, valid_until")
     .eq("status", "active")
@@ -94,8 +113,11 @@ export async function runRxRenewalSendDue(
   const patientIds = Array.from(
     new Set(
       (rxRows ?? [])
-        .map((r) => r.patient_id)
-        .filter((v): v is string => v !== null),
+        .map(
+          (r: Database["resupply"]["Tables"]["prescriptions"]["Row"]) =>
+            r.patient_id,
+        )
+        .filter((v: string | null): v is string => v !== null),
     ),
   );
   const patientById = new Map<
@@ -116,7 +138,6 @@ export async function runRxRenewalSendDue(
     // out of the map, so their prescriptions are filtered out below
     // without being claimed (they resume when the patient does).
     const { data: patientRows, error: patientsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, email, phone_e164, timezone, address")
       .eq("status", "active")
@@ -136,8 +157,8 @@ export async function runRxRenewalSendDue(
   }
 
   const rows = (rxRows ?? [])
-    .map((r) => {
-      const patient = patientById.get(r.patient_id);
+    .map((r: Database["resupply"]["Tables"]["prescriptions"]["Row"]) => {
+      const patient = r.patient_id ? patientById.get(r.patient_id) : undefined;
       if (!patient) return null;
       return {
         prescriptionId: r.id,
@@ -150,7 +171,7 @@ export async function runRxRenewalSendDue(
         zip: patient.zip,
       };
     })
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+    .filter(<T>(r: T): r is NonNullable<T> => r !== null);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -227,7 +248,6 @@ export async function runRxRenewalSendDue(
     // can retry.
     const nowIso = now.toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .update({ renewal_requested_at: nowIso, updated_at: nowIso })
       .eq("id", row.prescriptionId)
@@ -370,7 +390,6 @@ export async function runRxRenewalSendDue(
       // Best-effort: if the undo itself fails the row stays marked and won't
       // be retried, which ops can see in the audit log.
       const { error: undoErr } = await supabase
-        .schema("resupply")
         .from("prescriptions")
         .update({ renewal_requested_at: null, updated_at: nowIso })
         .eq("id", row.prescriptionId);

@@ -99,7 +99,7 @@ export function AdminBillingStatementsSendPage() {
       ) : query.data.count === 0 ? (
         <Card>
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-            No statements are waiting to be sent. 🎉
+            No statements are waiting to be sent.
           </p>
         </Card>
       ) : (

@@ -8,7 +8,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runPecosSync } from "../../worker/jobs/pecos-sync";
 import { logger } from "../../lib/logger";
@@ -28,7 +28,12 @@ router.get(
   // patient-facing read tier.
   requirePermission("patients.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const stale = req.query.stale === "true";
     let query = supabase
       .schema("resupply")
@@ -57,7 +62,12 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data } = await supabase
       .schema("resupply")
       .from("providers_pecos_status")

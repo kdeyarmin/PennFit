@@ -27,7 +27,8 @@ import type { Request, Response } from "express";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   parseTelnyxFaxEvent,
@@ -114,7 +115,18 @@ export async function processOutboundFaxEvent(
   const faxId = event.faxId;
   const failureReason = event.failureReason;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public webhook (no req): this runs post-ACK, fire-and-forget. Resolve
+  // the seed org (single-tenant posture) and degrade — drop the event
+  // without throwing — if it can't be resolved. Telnyx already got its 200.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { event: "fax_status_no_org", faxId },
+      "fax status-callback: tenant context unavailable; dropping event",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   const updates: FaxOutreachUpdate = { status: dbStatus, updated_at: nowIso };
@@ -127,7 +139,6 @@ export async function processOutboundFaxEvent(
 
   try {
     let outreachQuery = supabase
-      .schema("resupply")
       .from("physician_fax_outreach")
       .update(updates)
       .eq("vendor_ref", faxId)
@@ -171,7 +182,6 @@ export async function processOutboundFaxEvent(
   if (dbStatus === "delivered" || dbStatus === "failed") {
     try {
       const { error } = await supabase
-        .schema("resupply")
         .from("prescription_request_packets")
         .update(packetUpdates)
         .eq("vendor_ref", faxId)

@@ -12,7 +12,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
   integrationSnapshotSchema,
@@ -31,11 +31,15 @@ router.get(
   // Sync-failure triage queue. Same admin-tools tier as the
   // integrations status dashboard.
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
+  async (req, res) => {
     const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_integration_snapshots")
       .select(
         "id, patient_id, source, partner_patient_id, fetch_status, fetch_error, fetched_at",
@@ -46,7 +50,16 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      errors: (data ?? []).map((r) => ({
+      errors: (
+        (data ?? []) as Array<{
+          id: string;
+          patient_id: string | null;
+          source: string;
+          partner_patient_id: string | null;
+          fetch_error: string | null;
+          fetched_at: string | null;
+        }>
+      ).map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         source: r.source,
@@ -75,10 +88,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adapters = await getIntegrationAdaptersWithDbOverrides();
     const { data: rows, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patient_integration_snapshots")
       .select("id, patient_id, source, partner_patient_id")
       .in("id", parsed.data.snapshotIds);
@@ -101,7 +118,6 @@ router.post(
       const fetchedAtIso = new Date().toISOString();
       if (!result.ok) {
         const { error: markErr } = await supabase
-          .schema("resupply")
           .from("patient_integration_snapshots")
           .update({
             fetch_status: "error",
@@ -121,7 +137,6 @@ router.post(
       const parsedSnap = integrationSnapshotSchema.safeParse(result.snapshot);
       if (!parsedSnap.success) {
         const { error: markErr } = await supabase
-          .schema("resupply")
           .from("patient_integration_snapshots")
           .update({
             fetch_status: "error",
@@ -139,7 +154,6 @@ router.post(
         continue;
       }
       const { error: snapUpdateErr } = await supabase
-        .schema("resupply")
         .from("patient_integration_snapshots")
         .update({
           payload: parsedSnap.data as unknown as Record<string, unknown>,

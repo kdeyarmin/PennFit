@@ -23,8 +23,10 @@ import {
   __resetCompanyInfoForTests,
   applyCompanyIdentityToText,
   applyCompanyInfoToEnv,
+  applyPlatformBranding,
   formatPhoneForDisplay,
   getCompanyInfo,
+  PLATFORM_NAME,
 } from "./company-info";
 
 const ORG_ROW = {
@@ -56,6 +58,50 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.RESUPPLY_PRACTICE_NAME;
   delete process.env.SENDGRID_FROM_NAME;
+  delete process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME;
+  delete process.env.RESUPPLY_ASSISTANT_ADMIN_NAME;
+});
+
+describe("assistant names + platform branding", () => {
+  it("defaults the assistant names to the CareMetric platform names", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    const info = await getCompanyInfo();
+    expect(info.assistantStorefrontName).toBe("CareMetric Assistant");
+    expect(info.assistantAdminName).toBe("CareMetric Copilot");
+  });
+
+  it("honors per-tenant assistant-name env overrides (the overlay path)", async () => {
+    process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME = "PennBot";
+    process.env.RESUPPLY_ASSISTANT_ADMIN_NAME = "PennPilot";
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    const info = await getCompanyInfo();
+    expect(info.assistantStorefrontName).toBe("PennBot");
+    expect(info.assistantAdminName).toBe("PennPilot");
+  });
+
+  it("applyPlatformBranding maps the Penn* placeholders to the defaults", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo(); // warm the sync cache
+    const out = applyPlatformBranding(
+      "PennFit ships PennBot on the storefront and PennPilot in the console.",
+    );
+    expect(out).toBe(
+      `${PLATFORM_NAME} ships CareMetric Assistant on the storefront and CareMetric Copilot in the console.`,
+    );
+  });
+
+  it("applyPlatformBranding is a no-op on assistant names for the Penn tenant", async () => {
+    process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME = "PennBot";
+    process.env.RESUPPLY_ASSISTANT_ADMIN_NAME = "PennPilot";
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo();
+    const out = applyPlatformBranding(
+      "Ask PennBot or PennPilot about PennFit.",
+    );
+    // PennBot / PennPilot are unchanged (the tenant's configured names);
+    // only the platform codename resolves to CareMetric Breathe.
+    expect(out).toBe(`Ask PennBot or PennPilot about ${PLATFORM_NAME}.`);
+  });
 });
 
 describe("formatPhoneForDisplay", () => {

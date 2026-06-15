@@ -89,6 +89,26 @@ afterEach(() => {
 });
 
 describe("AdminDocumentsPage — standard payer documents", () => {
+  it("distinguishes manual PDF packets from patient e-sign packets", async () => {
+    api.listManualDocuments.mockResolvedValue({ documents: [] });
+    api.getManualDocumentCatalog.mockResolvedValue(CATALOG);
+    api.getStandardDocumentCatalog.mockResolvedValue({
+      templates: [],
+      packets: [],
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/manual PDF for email, fax, download/),
+    ).toBeTruthy();
+    const eSignLink = screen.getByRole("link", { name: "Send for e-sign" });
+    expect(eSignLink.getAttribute("href")).toBe("/admin/patient-packets");
+    expect(
+      screen.getByText(/This is not an electronic-signature packet/),
+    ).toBeTruthy();
+  });
+
   it("always lists the standard library and creates a draft on Use", async () => {
     api.listManualDocuments.mockResolvedValue({ documents: [] });
     api.getManualDocumentCatalog.mockResolvedValue(CATALOG);

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
 import companyInfoRouter from "./company-info.js";
+import storefrontBrandingRouter from "./storefront-branding.js";
 import recommendRouter from "./recommend.js";
 import ordersRouter from "./orders.js";
 import trackOrderRouter from "./track-order.js";
@@ -25,6 +26,10 @@ router.use(healthRouter);
 // /api/company-info — public business identity (name, support phone /
 // email / hours) sourced from the admin Company information page.
 router.use(companyInfoRouter);
+// /api/storefront-branding — public, host-resolved per-tenant brand
+// (storefront name, tagline, logo). Drives the storefront's header/hero
+// so a tenant on a verified custom domain sees their own identity.
+router.use(storefrontBrandingRouter);
 router.use(recommendRouter);
 router.use(ordersRouter);
 router.use(trackOrderRouter);

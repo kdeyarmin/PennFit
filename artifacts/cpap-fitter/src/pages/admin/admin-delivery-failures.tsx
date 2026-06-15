@@ -10,6 +10,9 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
 import { humanizeAction, humanizeStatus } from "@/components/admin/Badge";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   fetchDeliveryFailures,
   type AuditFailureEvent,
@@ -35,23 +38,15 @@ export function AdminDeliveryFailuresPage() {
       className="space-y-6 max-w-6xl"
       data-testid="admin-delivery-failures-page"
     >
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Delivery failures
-        </h1>
-        <p className="text-sm text-slate-600">
-          Recent message-send failures across SMS, email, and voice — including
-          recall-notification texts — plus delivery-failure-shaped audit events.
-          Refreshes once per minute.
-        </p>
-      </header>
+      <PageHeader
+        title="Delivery failures"
+        description="Recent message-send failures across SMS, email, and voice — including recall-notification texts — plus delivery-failure-shaped audit events. Refreshes once per minute."
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div
           role="tablist"
+          aria-label="Delivery failure type"
           className="inline-flex gap-1 p-1 rounded-lg bg-slate-100"
         >
           {(["messages", "audit"] as Tab[]).map((t) => {
@@ -93,12 +88,13 @@ export function AdminDeliveryFailuresPage() {
       </div>
 
       {query.isPending ? (
-        <div className="text-sm text-slate-500">Loading…</div>
+        <Spinner />
       ) : query.isError ? (
-        <div className="text-sm text-rose-700" role="alert">
-          Couldn&apos;t load failures:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown"}.
-        </div>
+        <ErrorPanel
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Couldn't load failures"
+        />
       ) : query.data ? (
         tab === "messages" ? (
           <MessageFailuresTable data={query.data} />
@@ -169,12 +165,24 @@ function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
         <table className="w-full text-sm min-w-[720px]">
           <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
             <tr>
-              <th className="text-left px-3 py-2">When</th>
-              <th className="text-left px-3 py-2">Channel</th>
-              <th className="text-left px-3 py-2">Status</th>
-              <th className="text-left px-3 py-2">Patient</th>
-              <th className="text-left px-3 py-2">Error</th>
-              <th className="text-left px-3 py-2">Thread</th>
+              <th scope="col" className="text-left px-3 py-2">
+                When
+              </th>
+              <th scope="col" className="text-left px-3 py-2">
+                Channel
+              </th>
+              <th scope="col" className="text-left px-3 py-2">
+                Status
+              </th>
+              <th scope="col" className="text-left px-3 py-2">
+                Patient
+              </th>
+              <th scope="col" className="text-left px-3 py-2">
+                Error
+              </th>
+              <th scope="col" className="text-left px-3 py-2">
+                Thread
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -316,11 +324,21 @@ function AuditFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
       <table className="w-full text-sm min-w-[720px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-left px-3 py-2">When</th>
-            <th className="text-left px-3 py-2">Action</th>
-            <th className="text-left px-3 py-2">Target</th>
-            <th className="text-left px-3 py-2">Actor</th>
-            <th className="text-left px-3 py-2">Metadata</th>
+            <th scope="col" className="text-left px-3 py-2">
+              When
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Action
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Target
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Actor
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Metadata
+            </th>
           </tr>
         </thead>
         <tbody>

@@ -15,12 +15,26 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  type Database,
+  type OrgScopedClient,
   escapePostgRESTContainsPattern,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+// The org-scoped client's `.from().select()` is dynamically typed
+// (returns any), so we annotate the row shapes we read back.
+type EpisodeRow = Database["resupply"]["Tables"]["episodes"]["Row"];
+type PatientNameRow = Pick<
+  Database["resupply"]["Tables"]["patients"]["Row"],
+  "id" | "legal_first_name" | "legal_last_name"
+>;
+type PrescriptionLiteRow = Pick<
+  Database["resupply"]["Tables"]["prescriptions"]["Row"],
+  "id" | "item_sku" | "cadence_days"
+>;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -71,7 +85,7 @@ const listQuery = z
 // (matched_patient_ids). The result is a deduplicated set of episode
 // IDs the caller can use as a `.in('id', ...)` filter.
 export async function resolveEpisodesSearch(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  db: OrgScopedClient,
   needle: string,
 ): Promise<string[]> {
   // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
@@ -83,20 +97,21 @@ export async function resolveEpisodesSearch(
   const pattern = escapePostgRESTContainsPattern(needle);
   const isUuid = UUID_RE.test(needle);
 
-  const { data: matchedPatients, error: patientErr } = await supabase
-    .schema("resupply")
+  const { data: matchedPatients, error: patientErr } = await db
     .from("patients")
     .select("id")
     .or(`legal_first_name.ilike.${pattern},legal_last_name.ilike.${pattern}`);
   if (patientErr) throw patientErr;
-  const patientIds = (matchedPatients ?? []).map((p) => p.id);
+  const patientIds = ((matchedPatients ?? []) as { id: string }[]).map(
+    (p) => p.id,
+  );
 
   // No matching patients AND no UUID match → empty result. Returning
   // an empty array short-circuits the caller to a `.in('id', [])`
   // (== always false) without firing the second query.
   if (patientIds.length === 0 && !isUuid) return [];
 
-  let resolveQuery = supabase.schema("resupply").from("episodes").select("id");
+  let resolveQuery = db.from("episodes").select("id");
   const orParts: string[] = [];
   if (isUuid) {
     orParts.push(`id.eq.${needle}`);
@@ -108,7 +123,9 @@ export async function resolveEpisodesSearch(
   resolveQuery = resolveQuery.or(orParts.join(","));
   const { data: matchedEpisodes, error: epErr } = await resolveQuery;
   if (epErr) throw epErr;
-  return Array.from(new Set((matchedEpisodes ?? []).map((e) => e.id)));
+  return Array.from(
+    new Set(((matchedEpisodes ?? []) as { id: string }[]).map((e) => e.id)),
+  );
 }
 
 const router: IRouter = Router();
@@ -132,7 +149,13 @@ router.get(
     const { status, limit, offset, q } = parsed.data;
     const isOverdue = status === "overdue";
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
 
     // Resolve the q-filter into a candidate episode-id set up front.
@@ -140,7 +163,7 @@ router.get(
     // response so the COUNT and main query don't fire.
     let qEpisodeIds: string[] | null = null;
     if (q) {
-      qEpisodeIds = await resolveEpisodesSearch(supabase, q);
+      qEpisodeIds = await resolveEpisodesSearch(db, q);
       if (qEpisodeIds.length === 0) {
         res.status(200).json({ items: [], total: 0, limit, offset });
         return;
@@ -148,8 +171,7 @@ router.get(
     }
 
     const buildBaseQuery = () => {
-      let query = supabase
-        .schema("resupply")
+      let query = db
         .from("episodes")
         .select(
           "id, patient_id, prescription_id, status, due_at, expires_at, created_at",
@@ -177,8 +199,9 @@ router.get(
       });
     }
     episodesListQuery = episodesListQuery.range(offset, offset + limit - 1);
-    const { data: rows, count, error } = await episodesListQuery;
+    const { data: rawRows, count, error } = await episodesListQuery;
     if (error) throw error;
+    const rows: EpisodeRow[] = rawRows ?? [];
 
     // Bulk-fetch the joined identity rows. The original SQL path
     // LEFT JOINed patients + prescriptions; PostgREST has no JOIN, so
@@ -186,14 +209,12 @@ router.get(
     // round-trip per side.
     const patientIds = Array.from(
       new Set(
-        (rows ?? [])
-          .map((r) => r.patient_id)
-          .filter((v): v is string => v !== null),
+        rows.map((r) => r.patient_id).filter((v): v is string => v !== null),
       ),
     );
     const prescriptionIds = Array.from(
       new Set(
-        (rows ?? [])
+        rows
           .map((r) => r.prescription_id)
           .filter((v): v is string => v !== null),
       ),
@@ -201,15 +222,13 @@ router.get(
 
     const [patientsRes, prescriptionsRes] = await Promise.all([
       patientIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("patients")
             .select("id, legal_first_name, legal_last_name")
             .in("id", patientIds)
         : Promise.resolve({ data: [], error: null } as const),
       prescriptionIds.length > 0
-        ? supabase
-            .schema("resupply")
+        ? db
             .from("prescriptions")
             .select("id, item_sku, cadence_days")
             .in("id", prescriptionIds)
@@ -218,15 +237,19 @@ router.get(
     if (patientsRes.error) throw patientsRes.error;
     if (prescriptionsRes.error) throw prescriptionsRes.error;
     const patientsById = new Map(
-      (patientsRes.data ?? []).map((p) => [p.id, p] as const),
+      ((patientsRes.data ?? []) as PatientNameRow[]).map(
+        (p) => [p.id, p] as const,
+      ),
     );
     const prescriptionsById = new Map(
-      (prescriptionsRes.data ?? []).map((p) => [p.id, p] as const),
+      ((prescriptionsRes.data ?? []) as PrescriptionLiteRow[]).map(
+        (p) => [p.id, p] as const,
+      ),
     );
 
     const now = Date.now();
     res.status(200).json({
-      items: (rows ?? []).map((r) => {
+      items: rows.map((r) => {
         const pt = patientsById.get(r.patient_id);
         const rx = prescriptionsById.get(r.prescription_id);
         const dueAtMs = new Date(r.due_at).getTime();

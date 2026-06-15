@@ -14,7 +14,10 @@
 
 import {
   type Database,
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   readOfficeAllyRealtimeConfigOrNull,
@@ -56,18 +59,23 @@ export interface ResolvedClearinghouse {
 
 export async function resolveBillingIdentity(
   opts: {
-    supabase?: SupabaseClient;
+    /** Tenant for the org-scoped clearinghouse read. Defaults to the
+     *  seed org (single-tenant bridge). dme_organization is a global
+     *  singleton and is always read via the unscoped client. */
+    orgId?: string;
     env?: NodeJS.ProcessEnv;
     clearinghouseSlug?: string;
   } = {},
 ): Promise<ResolvedBillingIdentity> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
   const env = opts.env ?? process.env;
   const clearinghouseSlug = opts.clearinghouseSlug ?? "office_ally";
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  const scoped = orgId ? getOrgScopedClient(orgId) : null;
 
-  // 1. Try the DB.
-  const org = await loadOrganization(supabase);
-  const ch = await loadClearinghouse(supabase, clearinghouseSlug);
+  // 1. Try the DB. dme_organization is global (no org_id); the
+  //    clearinghouse credentials are tenant-scoped.
+  const org = await loadOrganization(getSupabaseServiceRoleClient());
+  const ch = scoped ? await loadClearinghouse(scoped, clearinghouseSlug) : null;
 
   if (org && ch) {
     return {
@@ -118,15 +126,18 @@ export async function resolveBillingIdentity(
 
 export async function resolveClearinghouse(
   opts: {
-    supabase?: SupabaseClient;
+    /** Tenant for the org-scoped clearinghouse_credentials read.
+     *  Defaults to the seed org (single-tenant bridge). */
+    orgId?: string;
     env?: NodeJS.ProcessEnv;
     slug?: string;
   } = {},
 ): Promise<ResolvedClearinghouse> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
   const env = opts.env ?? process.env;
   const slug = opts.slug ?? "office_ally";
-  const row = await loadClearinghouse(supabase, slug);
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  const scoped = orgId ? getOrgScopedClient(orgId) : null;
+  const row = scoped ? await loadClearinghouse(scoped, slug) : null;
   // Real-time config is independent of the SFTP path — compute it once
   // from (row, env) and surface it in every branch.
   const realtimeConfig = buildRealtimeConfig(row, env);
@@ -241,7 +252,7 @@ async function loadOrganization(
     .schema("resupply")
     .from("dme_organization")
     .select(
-      "id, singleton, legal_name, dba_name, tax_id, organizational_npi, taxonomy_code, medicare_ptan, physical_address_line1, physical_address_line2, physical_city, physical_state, physical_zip, mailing_address_line1, mailing_address_line2, mailing_city, mailing_state, mailing_zip, pay_to_address_line1, pay_to_address_line2, pay_to_city, pay_to_state, pay_to_zip, phone_e164, fax_e164, billing_email, general_email, support_email, support_phone_e164, support_hours_text, website_url, accreditation_body, accreditation_number, accreditation_expires_on, state_license_number, state_license_state, state_license_expires_on, liability_carrier, liability_policy_number, liability_expires_on, surety_bond_carrier, surety_bond_amount_cents, surety_bond_expires_on, authorized_signer_name, authorized_signer_title, authorized_signer_signature_object_key, notes, created_at, updated_at",
+      "id, singleton, legal_name, dba_name, tax_id, organizational_npi, taxonomy_code, medicare_ptan, physical_address_line1, physical_address_line2, physical_city, physical_state, physical_zip, mailing_address_line1, mailing_address_line2, mailing_city, mailing_state, mailing_zip, pay_to_address_line1, pay_to_address_line2, pay_to_city, pay_to_state, pay_to_zip, phone_e164, fax_e164, billing_email, general_email, support_email, support_phone_e164, support_hours_text, website_url, accreditation_body, accreditation_number, accreditation_expires_on, state_license_number, state_license_state, state_license_expires_on, liability_carrier, liability_policy_number, liability_expires_on, surety_bond_carrier, surety_bond_amount_cents, surety_bond_expires_on, authorized_signer_name, authorized_signer_title, authorized_signer_signature_object_key, notes, org_id, created_at, updated_at",
     )
     .eq("singleton", true)
     .limit(1)
@@ -257,14 +268,13 @@ async function loadOrganization(
 }
 
 async function loadClearinghouse(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   slug: string,
 ): Promise<ClearinghouseRow | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("clearinghouse_credentials")
     .select(
-      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, created_at, updated_at",
+      "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, created_at, updated_at, org_id",
     )
     .eq("slug", slug)
     .eq("is_active", true)

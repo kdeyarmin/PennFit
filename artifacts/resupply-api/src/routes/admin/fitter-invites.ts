@@ -25,10 +25,7 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Database,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -226,7 +223,12 @@ router.post(
       return;
     }
     const body = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     let patientId: string | null = null;
     let recipientEmail: string | null = body.email ?? null;
@@ -238,7 +240,6 @@ router.post(
     // by passing them explicitly.
     if (body.patientId) {
       const { data: patient, error: patientErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, email, phone_e164, legal_first_name, legal_last_name")
         .eq("id", body.patientId)
@@ -296,7 +297,6 @@ router.post(
       expires_at: expiresIso,
     };
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .insert(insert)
       .select("id")
@@ -380,9 +380,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let q = supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select(INVITE_SELECT)
       .order("created_at", { ascending: false })
@@ -415,9 +419,13 @@ router.post(
       res.status(404).json({ error: "invite_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: invite, error: inviteErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select("id, status, patient_id, claimed_by_user_id, claimed_by_email")
       .eq("id", idCheck.data)
@@ -451,7 +459,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update({
         claimed_by_user_id: req.adminUserId ?? null,
@@ -493,9 +500,13 @@ router.post(
       res.status(404).json({ error: "invite_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: invite, error: inviteErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select("id, claimed_by_user_id")
       .eq("id", idCheck.data)
@@ -513,7 +524,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update({
         claimed_by_user_id: null,
@@ -584,9 +594,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: invite, error: inviteErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select("id, status, recipient_email, recipient_phone_e164")
       .eq("id", idCheck.data)
@@ -612,7 +626,6 @@ router.post(
     let enrolledInOnboarding = false;
     if (parsed.data.patientId) {
       const { data: patient, error: patientErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id")
         .eq("id", parsed.data.patientId)
@@ -640,7 +653,6 @@ router.post(
         status: "active",
       };
       const { data: created, error: createErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .insert(newPatient)
         .select("id")
@@ -669,7 +681,6 @@ router.post(
       // attach. (No active-journey precheck needed — the patient was
       // just created.)
       const { error: journeyErr } = await supabase
-        .schema("resupply")
         .from("patient_onboarding_journeys")
         .insert({
           patient_id: targetPatientId,
@@ -701,7 +712,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update({
         patient_id: targetPatientId,
@@ -754,9 +764,13 @@ router.post(
       res.status(404).json({ error: "invite_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: invite, error: inviteErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select(
         "id, status, channel, recipient_email, recipient_phone_e164, recipient_name",
@@ -795,7 +809,6 @@ router.post(
       Date.now() + FITTER_INVITE_TTL_MS,
     ).toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update({
         status: invite.status === "completed" ? "completed" : "sent",
@@ -838,9 +851,13 @@ router.delete(
       res.status(404).json({ error: "invite_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: invite, error: inviteErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .select("id, status")
       .eq("id", idCheck.data)
@@ -869,7 +886,6 @@ router.delete(
 
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("fitter_invites")
       .update({ status: "revoked", revoked_at: nowIso, updated_at: nowIso })
       .eq("id", invite.id);

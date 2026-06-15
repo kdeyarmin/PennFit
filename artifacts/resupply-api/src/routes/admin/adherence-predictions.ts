@@ -4,7 +4,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { scoreAndPersistAdherence } from "../../lib/clinical/adherence-predictor";
 import { logger } from "../../lib/logger";
@@ -59,9 +59,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("adherence_predictions")
       .select("*")
       .eq("patient_id", parsed.data.id)
@@ -74,7 +78,7 @@ router.get(
 router.get(
   "/admin/adherence/at-risk",
   requirePermission("patients.read"),
-  async (_req, res) => {
+  async (req, res) => {
     // Latest score per patient where probability < 0.5.
     //
     // The naive approach (filter rows by probability_compliant < 0.5
@@ -88,9 +92,13 @@ router.get(
     // row and surface it only if that latest row is < 0.5". PostgREST
     // doesn't expose DISTINCT ON, so we pull a wider window ordered
     // by scored_at desc and de-dupe by patient_id JS-side.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("adherence_predictions")
       .select("patient_id, probability_compliant, days_of_therapy, scored_at")
       .order("scored_at", { ascending: false })

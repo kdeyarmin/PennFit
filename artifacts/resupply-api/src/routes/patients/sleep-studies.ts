@@ -31,10 +31,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 type SleepStudyUpdate =
   Database["resupply"]["Tables"]["sleep_studies"]["Update"];
@@ -112,9 +109,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select(
         "id, study_date, study_type, ahi, rdi, lowest_spo2_pct, sleep_efficiency_pct, diagnosis_icd10, interpreting_provider_id, facility_name, source, document_id, notes, created_at",
@@ -124,7 +125,11 @@ router.get(
     if (error) throw error;
 
     res.json({
-      studies: (data ?? []).map((r) => ({
+      studies: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["sleep_studies"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         studyDate: r.study_date,
         studyType: r.study_type,
@@ -169,9 +174,13 @@ router.post(
     const body = parsed.data;
     const patientId = idParsed.data.id;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -183,7 +192,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .insert({
         patient_id: patientId,
@@ -265,7 +273,12 @@ router.patch(
     }
 
     const { id: patientId, sid: studyId } = idParsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const updates: SleepStudyUpdate = {};
     if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
@@ -275,7 +288,6 @@ router.patch(
       updates.interpreting_provider_id = parsed.data.interpretingProviderId;
 
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .update(updates)
       .eq("id", studyId)

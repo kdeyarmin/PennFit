@@ -103,6 +103,7 @@ describe("toAutopayStatusView", () => {
   it("maps a row to a card view without leaking the stripe ids", () => {
     const view = toAutopayStatusView({
       id: "a1",
+      org_id: null,
       patient_id: "p1",
       shop_customer_id: "cust-1",
       stripe_customer_id: "cus_secret",

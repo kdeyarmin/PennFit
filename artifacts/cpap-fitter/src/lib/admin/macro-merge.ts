@@ -12,6 +12,8 @@
 // rendered output contains patient-specific text, and that output is
 // the same payload the CSR was about to type by hand.
 
+import { appDateIsoOffset, formatAppDate } from "@/lib/utils";
+
 export interface MacroContext {
   patient?: {
     firstName?: string | null;
@@ -84,18 +86,15 @@ function resolve(token: string, ctx: MacroContext): string | null {
     }
     case "date.today":
       return formatDate(new Date());
-    case "date.tomorrow": {
-      const d = new Date();
-      d.setDate(d.getDate() + 1);
-      return formatDate(d);
-    }
+    case "date.tomorrow":
+      return formatDate(appDateIsoOffset(1));
     default:
       return null;
   }
 }
 
-function formatDate(d: Date): string {
-  return d.toLocaleDateString(undefined, {
+function formatDate(value: Date | string): string {
+  return formatAppDate(value, {
     weekday: "long",
     month: "long",
     day: "numeric",

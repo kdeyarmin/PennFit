@@ -28,7 +28,11 @@
 // member-id fingerprint only. The findings array carries label +
 // detail text that's safe to log (no patient names, no full IDs).
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -37,7 +41,7 @@ const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT_MS = 25_000;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export type FindingSeverity = "ok" | "warning" | "error";
 export type FindingCategory =
@@ -156,7 +160,37 @@ const QUALIFYING_OSA_ICD10 = new Set([
 export async function reviewDispenseReadiness(
   input: ReviewInput,
 ): Promise<ReviewOutput> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    const findings: ReadinessFinding[] = [
+      {
+        key: "tenant_context",
+        severity: "error",
+        category: "patient_identity",
+        label: "Tenant context unavailable",
+        detail:
+          "No organization context resolved; cannot review dispense readiness.",
+        fixHint: null,
+      },
+    ];
+    return {
+      readyToDispense: false,
+      overallVerdict: "errored",
+      findings,
+      ai: {
+        summary: "",
+        actionPlan: [],
+        estimatedDaysToReady: null,
+        confidence: null,
+        latencyMs: null,
+        promptTokens: null,
+        completionTokens: null,
+        errorMessage: "tenant context missing",
+      },
+      counts: countFindings(findings),
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const findings = await runDeterministicChecks(supabase, input);
   const counts = countFindings(findings);
   const ai = await synthesizeWithAi(input, findings);
@@ -180,7 +214,6 @@ async function runDeterministicChecks(
   const findings: ReadinessFinding[] = [];
 
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select(
       "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
@@ -285,7 +318,6 @@ async function runDeterministicChecks(
   const coverage: Coverage | null = await (async () => {
     if (coverageId) {
       const { data } = await supabase
-        .schema("resupply")
         .from("insurance_coverages")
         .select(
           "id, rank, payer_name, member_id, in_network, effective_date, termination_date",
@@ -293,10 +325,9 @@ async function runDeterministicChecks(
         .eq("id", coverageId)
         .limit(1)
         .maybeSingle();
-      return data ?? null;
+      return (data as Coverage | null) ?? null;
     }
     const { data } = await supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select(
         "id, rank, payer_name, member_id, in_network, effective_date, termination_date",
@@ -305,7 +336,7 @@ async function runDeterministicChecks(
       .eq("rank", "primary")
       .limit(1)
       .maybeSingle();
-    return data ?? null;
+    return (data as Coverage | null) ?? null;
   })();
   if (!coverage) {
     findings.push(
@@ -362,7 +393,6 @@ async function runDeterministicChecks(
   let payerProfileId = input.payerProfileId ?? null;
   if (!payerProfileId && coverage) {
     const { data: matched } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("id")
       .ilike("display_name", coverage.payer_name)
@@ -382,7 +412,6 @@ async function runDeterministicChecks(
   let payer: PayerProfile | null = null;
   if (payerProfileId) {
     const { data } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(
         "id, display_name, line_of_business, paper_only, office_ally_payer_id, requires_prior_auth_dme",
@@ -390,7 +419,7 @@ async function runDeterministicChecks(
       .eq("id", payerProfileId)
       .limit(1)
       .maybeSingle();
-    payer = data ?? null;
+    payer = (data as PayerProfile | null) ?? null;
   }
   if (!payer) {
     findings.push(
@@ -437,7 +466,6 @@ async function runDeterministicChecks(
   // ── Clinical: sleep study + qualifying diagnosis ──
   if (SLEEP_RELATED_HCPCS.has(input.hcpcsCode)) {
     const { data: study } = await supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select("id, study_date, study_type, ahi, diagnosis_icd10")
       .eq("patient_id", input.patientId)
@@ -508,7 +536,6 @@ async function runDeterministicChecks(
 
   // ── Prescription ──
   const { data: rx } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select(
       "id, hcpcs_code, item_sku, status, valid_from, valid_until, provider_id",
@@ -553,6 +580,7 @@ async function runDeterministicChecks(
     // Provider NPI + PECOS (for Medicare-like LOBs).
     if (rx.provider_id) {
       const { data: provider } = await supabase
+        .raw()
         .schema("resupply")
         .from("providers")
         .select("npi, legal_name")
@@ -581,6 +609,7 @@ async function runDeterministicChecks(
         );
       } else if (isMedicareLike) {
         const { data: pecos } = await supabase
+          .raw()
           .schema("resupply")
           .from("providers_pecos_status")
           .select("enrollment_status")
@@ -625,7 +654,6 @@ async function runDeterministicChecks(
     payer?.requires_prior_auth_dme && PA_REQUIRED_HCPCS.has(input.hcpcsCode);
   if (requiresPa) {
     const { data: pa } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .select("auth_number, status, approved_through, hcpcs_code")
       .eq("patient_id", input.patientId)
@@ -669,7 +697,6 @@ async function runDeterministicChecks(
   // ── Capped rental status ──
   if (CAPPED_RENTAL_HCPCS.has(input.hcpcsCode)) {
     const { data: cycle } = await supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .select("id, status, current_month, max_months")
       .eq("patient_id", input.patientId)
@@ -716,14 +743,13 @@ async function runDeterministicChecks(
       .toISOString()
       .slice(0, 10);
     const { data: nights } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("usage_minutes")
       .eq("patient_id", input.patientId)
       .gte("night_date", since)
       .limit(60);
     const compliant = (nights ?? []).filter(
-      (n) => (n.usage_minutes ?? 0) >= 240,
+      (n: { usage_minutes: number | null }) => (n.usage_minutes ?? 0) >= 240,
     ).length;
     if (compliant >= 21) {
       findings.push(
@@ -748,7 +774,6 @@ async function runDeterministicChecks(
 
   // ── Patient acknowledgments ──
   const { data: forms } = await supabase
-    .schema("resupply")
     .from("patient_form_acknowledgements")
     .select("form_kind, signed_at")
     .eq("patient_id", input.patientId);
@@ -778,7 +803,6 @@ async function runDeterministicChecks(
 
   // ── Equipment recall check ──
   const { data: assets } = await supabase
-    .schema("resupply")
     .from("equipment_assets")
     .select("id, status, recall_id, serial_number")
     .eq("patient_id", input.patientId)
@@ -801,7 +825,6 @@ async function runDeterministicChecks(
 
   // ── DME organization compliance (license / accreditation / bond) ──
   const { data: org } = await supabase
-    .schema("resupply")
     .from("dme_organization")
     .select(
       "accreditation_expires_on, state_license_expires_on, surety_bond_expires_on",
@@ -850,6 +873,7 @@ async function runDeterministicChecks(
   // a CSR knows the check did not run, rather than reading "no
   // warning" as "no open grievances".
   const { count: openGrievances, error: grievancesErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("patient_grievances")
     .select("id", { count: "exact", head: true })
@@ -877,7 +901,6 @@ async function runDeterministicChecks(
     );
   }
   const { count: openAlerts } = await supabase
-    .schema("resupply")
     .from("csr_compliance_alerts")
     .select("id", { count: "exact", head: true })
     .eq("patient_id", input.patientId)

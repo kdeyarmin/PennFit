@@ -23,7 +23,7 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   MAINTENANCE_CATALOG,
@@ -166,7 +166,17 @@ export async function runMaintenanceNudgeSweep(
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
+  // seed org. Becomes a per-org loop when a 2nd tenant lands.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: NUDGE_JOB },
+      "maintenance-nudge: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Eligible patients: anyone with an email AND at least one
   // therapy_link or therapy_night (i.e. an active CPAP user). We
@@ -182,7 +192,6 @@ export async function runMaintenanceNudgeSweep(
   // below stays as a defense-in-depth read-after-write guard.
   const cutoffPre = new Date(Date.now() - QUIET_PERIOD_MS).toISOString();
   const { data: recentNudges, error: nudgeListErr } = await supabase
-    .schema("resupply")
     .from("patient_maintenance_nudges")
     .select("patient_id")
     .gte("sent_at", cutoffPre);
@@ -222,7 +231,6 @@ export async function runMaintenanceNudgeSweep(
     // first page's `gt` excludes nothing — leaving only the original,
     // proven excludeFilter ternary.
     const baseQuery = supabase
-      .schema("resupply")
       .from("patients")
       .select("id, email")
       .not("email", "is", null)
@@ -237,9 +245,9 @@ export async function runMaintenanceNudgeSweep(
     if (!candidates || candidates.length === 0) break;
     scannedTotal += candidates.length;
     lastPatientId = candidates[candidates.length - 1]!.id;
-    const patients = candidates.filter(
-      (p): p is { id: string; email: string } => p.email != null,
-    );
+    const patients = (
+      candidates as Array<{ id: string; email: string | null }>
+    ).filter((p): p is { id: string; email: string } => p.email != null);
     if (patients.length === 0) continue;
 
     // Batch the per-task last-completion read for THIS page. The prior
@@ -257,7 +265,11 @@ export async function runMaintenanceNudgeSweep(
     const logByPatient = new Map<string, Map<string, string>>();
     for (let i = 0; i < eligibleForLog.length; i += 100) {
       const idChunk = eligibleForLog.slice(i, i + 100);
+      // RPCs aren't tenant-scoped by the facade; the p_patient_ids are
+      // already org-filtered (from the scoped patients query above), so
+      // the result is implicitly org-correct. Reach the RPC via raw().
       const { data: logRows, error: logBatchErr } = await supabase
+        .raw()
         .schema("resupply")
         .rpc("patient_maintenance_latest_by_task", { p_patient_ids: idChunk });
       if (logBatchErr) throw logBatchErr;
@@ -301,7 +313,7 @@ export async function runMaintenanceNudgeSweep(
       // Build the overdue list. We only nudge for tasks the patient
       // has STARTED — pure-new patients see the checklist on /account
       // but don't get an email until they've engaged with at least
-      // one task. Avoids "welcome to PennFit, here are 5 chores." A
+      // one task. Avoids "welcome to CareMetric Breathe, here are 5 chores." A
       // patient with no completion rows is absent from the batch (empty
       // map) → treated as not-yet-engaged, exactly as before.
       const hasEngaged = latest.size > 0;
@@ -361,7 +373,6 @@ export async function runMaintenanceNudgeSweep(
 
       // Log the nudge.
       const { error: insErr } = await supabase
-        .schema("resupply")
         .from("patient_maintenance_nudges")
         .insert({
           patient_id: patient.id,

@@ -36,9 +36,10 @@
 //     Manual requires for direct delivery (items, quantity, address,
 //     date, beneficiary/designee signature; signature date = delivery
 //     date).
-//   * Refill confirmation — the no-sooner-than-14-days contact rule
-//     and the remaining-quantity documentation requirement for
-//     recurring supplies.
+//   * Refill confirmation — current CMS refill documentation: patient
+//     name, date of contact, item requested, affirmative response,
+//     explanation of need, no automatic shipment, and delivery no sooner
+//     than 10 days before the current supply ends.
 //
 // Pure module — no I/O, no DB, no PHI. Mirror of catalog.ts.
 
@@ -128,6 +129,8 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
       agreement_type:
         "Advance Beneficiary Notice of Non-coverage (CMS-R-131 structure)",
       terms: [
+        "CMS FORM NOTE: Original Medicare fee-for-service liability transfer requires the current official CMS-R-131 ABN form (OMB-approved through 03/31/2029) when that form is required. This app-generated document mirrors the option structure for payer packets and non-Medicare use, but is not a substitute for the official CMS form when Medicare requires that form.",
+        "",
         "NOTE: Medicare may not pay for the item(s) listed below. Medicare does not pay for everything, even some care that you or your health care provider have good reason to think you need.",
         "",
         "Item(s) / service(s): ____________________________________________",
@@ -215,23 +218,25 @@ export const STANDARD_DOCUMENT_LIBRARY: readonly StandardDocumentTemplate[] = [
     label: "Resupply Refill Request & Continued Use Confirmation",
     documentType: "agreement",
     description:
-      "Documents the beneficiary-initiated refill contact Medicare requires for recurring supplies — contact no sooner than 14 days before delivery, remaining quantities on hand, and continued use of the device.",
+      "Documents the beneficiary-initiated refill contact Medicare requires for recurring supplies: patient name, contact date, item requested, affirmative response, explanation of need, no automatic shipment, and delivery no sooner than 10 days before the current supply ends.",
     title: "Resupply Refill Request & Continued Use Confirmation",
     fields: {
       agreement_type: "Refill Request & Continued Use Confirmation",
       terms: [
         "Date of contact: ______________   Contact method: [ ] phone  [ ] in person  [ ] secure message/portal",
         "",
-        "1. CONTINUED USE. I confirm that I am still using my PAP device and that I continue to need the supplies requested below.",
+        "1. PATIENT / BENEFICIARY. Name: ____________________________________________",
         "",
-        "2. SUPPLIES REQUESTED AND QUANTITY REMAINING. For each supply requested, the quantity I have remaining is listed; my supplies are nearly exhausted (approximately a 10-day supply or less remains, or will remain by the expected delivery date):",
+        "2. CONTINUED USE. I confirm that I am still using my PAP device and that I continue to need replacement supplies.",
         "",
-        "   Supply item (HCPCS)                    Qty requested    Qty remaining",
-        "   ____________________________________   _____________    _____________",
-        "   ____________________________________   _____________    _____________",
-        "   ____________________________________   _____________    _____________",
+        "3. ITEMS REQUESTED AND NEED FOR REFILL. I affirmatively request the item(s) below and confirm the refill is needed before the items are dispensed:",
         "",
-        "3. TIMING. I understand this refill contact occurred no sooner than 14 calendar days before the expected delivery or shipping date, and that items are not dispensed automatically — this refill was requested by me (or my caregiver/designee).",
+        "   Supply item (HCPCS)                    Qty requested    Need / reason",
+        "   ____________________________________   _____________    ______________________________",
+        "   ____________________________________   _____________    ______________________________",
+        "   ____________________________________   _____________    ______________________________",
+        "",
+        "4. TIMING. I understand these supplies are not shipped automatically. This request was made by me or my caregiver/designee within 30 calendar days from the expected end of my current supply, and the supplier will not deliver the refill sooner than 10 calendar days before the current supply ends.",
       ].join("\n"),
     },
     body: "",

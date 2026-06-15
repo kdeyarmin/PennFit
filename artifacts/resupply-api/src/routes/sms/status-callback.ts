@@ -22,7 +22,8 @@ import { Router, type IRouter } from "express";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   parseSmsStatusCallbackParams,
@@ -49,8 +50,7 @@ const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
   buildPublicUrl: (req) => {
     const base = readSmsConfigOrNull()?.publicBaseUrl ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -94,8 +94,18 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  // Webhook: no req.orgId. Resolve the seed tenant; on miss, ACK 200 so
+  // Twilio stops retrying (the row stamp degrades, same posture as the
+  // per-helper catch blocks below).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(200).type("text/xml").send("<Response/>");
+    return;
+  }
+
   if (recallNotificationId) {
     await updateRecallNotificationDelivery(
+      orgId,
       recallNotificationId,
       messageSid,
       status,
@@ -103,13 +113,19 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     );
   } else if (videoVisitId) {
     await updateVideoVisitInviteDelivery(
+      orgId,
       videoVisitId,
       messageSid,
       status,
       parsed.ErrorCode ?? null,
     );
   } else {
-    await updateMessageDelivery(messageSid, status, parsed.ErrorCode ?? null);
+    await updateMessageDelivery(
+      orgId,
+      messageSid,
+      status,
+      parsed.ErrorCode ?? null,
+    );
   }
 
   if (FAILURE_STATUSES.has(status)) {
@@ -147,12 +163,13 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
  * 5xx, which would amplify any downstream incident.
  */
 async function updateMessageDelivery(
+  orgId: string,
   messageSid: string,
   status: string,
   errorCode: string | null,
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // Update the messages row whose vendor_metadata.twilio_message_sid
     // matches. PostgREST supports the `->>` JSON-text-extract filter
     // natively. The original SQL had a conditional `delivered_at = case
@@ -168,7 +185,6 @@ async function updateMessageDelivery(
       update.delivered_at = new Date().toISOString();
     }
     let updateQuery = supabase
-      .schema("resupply")
       .from("messages")
       .update(update)
       .filter("vendor_metadata->>twilio_message_sid", "eq", messageSid);
@@ -208,15 +224,15 @@ async function updateMessageDelivery(
  * must not race it. Never throws (same retry-amplification rationale).
  */
 async function updateRecallNotificationDelivery(
+  orgId: string,
   recallNotificationId: string,
   messageSid: string,
   status: string,
   errorCode: string | null,
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     let updateQuery = supabase
-      .schema("resupply")
       .from("recall_notifications")
       .update({
         delivery_status: status,
@@ -258,15 +274,15 @@ async function updateRecallNotificationDelivery(
  * retry-amplification rationale as the paths above).
  */
 async function updateVideoVisitInviteDelivery(
+  orgId: string,
   videoVisitId: string,
   messageSid: string,
   status: string,
   errorCode: string | null,
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     let updateQuery = supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         invite_delivery_status: status,

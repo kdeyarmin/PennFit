@@ -5,7 +5,7 @@
 // plan prompts for a resolution note. Closed plans are hidden
 // behind a toggle so the day-to-day view stays tight.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HeartPulse, Plus } from "lucide-react";
 
@@ -14,6 +14,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { usePromptDialog, type PromptFn } from "@/hooks/use-prompt-dialog";
 import {
   createCoachingPlan,
   listCoachingPlans,
@@ -87,6 +88,7 @@ function NewPlanCard() {
   const qc = useQueryClient();
   const [patientId, setPatientId] = useState("");
   const [target, setTarget] = useState("70");
+  const patientInputRef = useRef<HTMLInputElement>(null);
   const create = useMutation({
     mutationFn: () =>
       createCoachingPlan({
@@ -96,14 +98,19 @@ function NewPlanCard() {
     onSuccess: () => {
       setPatientId("");
       setTarget("70");
+      // Ready the next entry — these are often opened in batches.
+      patientInputRef.current?.focus();
       void qc.invalidateQueries({ queryKey: ["admin", "coaching", "plans"] });
     },
   });
 
+  const trimmedId = patientId.trim();
   const isUuid =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      patientId.trim(),
+      trimmedId,
     );
+  // Only flag once they've typed something — an empty box isn't "wrong".
+  const showUuidError = trimmedId.length > 0 && !isUuid;
   return (
     <Card title="Open a new plan">
       <div className="flex flex-wrap gap-2 items-end">
@@ -112,12 +119,24 @@ function NewPlanCard() {
             Patient ID (UUID)
           </label>
           <Input
+            ref={patientInputRef}
             value={patientId}
             onChange={(e) => setPatientId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
             aria-label="Patient ID (UUID)"
+            aria-invalid={showUuidError}
+            aria-describedby={showUuidError ? "coaching-uuid-error" : undefined}
             style={{ fontFamily: "monospace" }}
           />
+          {showUuidError && (
+            <p
+              id="coaching-uuid-error"
+              role="alert"
+              className="mt-1 text-[11px] text-rose-700"
+            >
+              Not a valid UUID — expected 8-4-4-4-12 hex digits.
+            </p>
+          )}
         </div>
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
@@ -161,10 +180,12 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["admin", "coaching", "plans"] });
   };
+  const [prompt, PromptDialogEl] = usePromptDialog();
 
   const plans = useMemo(() => data?.plans ?? [], [data]);
+  const baseTitle = showClosed ? "All plans" : "Open plans";
   return (
-    <Card title={showClosed ? "All plans" : "Open plans"}>
+    <Card title={data ? `${baseTitle} (${plans.length})` : baseTitle}>
       {isPending ? (
         <Spinner />
       ) : isError ? (
@@ -180,22 +201,42 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
               className="text-left border-b"
               style={{ borderColor: "hsl(var(--line-1))" }}
             >
-              <th className="py-2 font-semibold">Patient</th>
-              <th className="py-2 font-semibold">Status</th>
-              <th className="py-2 font-semibold">Target</th>
-              <th className="py-2 font-semibold">Latest</th>
-              <th className="py-2 font-semibold">Outreach</th>
-              <th className="py-2 font-semibold">Opened</th>
-              <th className="py-2 font-semibold">Next moves</th>
+              <th scope="col" className="py-2 font-semibold">
+                Patient
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Status
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Target
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Latest
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Outreach
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Opened
+              </th>
+              <th scope="col" className="py-2 font-semibold">
+                Next moves
+              </th>
             </tr>
           </thead>
           <tbody>
             {plans.map((p) => (
-              <PlanRow key={p.id} plan={p} onChanged={invalidate} />
+              <PlanRow
+                key={p.id}
+                plan={p}
+                onChanged={invalidate}
+                prompt={prompt}
+              />
             ))}
           </tbody>
         </table>
       )}
+      {PromptDialogEl}
     </Card>
   );
 }
@@ -203,29 +244,31 @@ function PlanListCard({ showClosed }: { showClosed: boolean }) {
 function PlanRow({
   plan,
   onChanged,
+  prompt,
 }: {
   plan: CoachingPlan;
   onChanged: () => void;
+  prompt: PromptFn;
 }) {
   const transition = useMutation({
-    mutationFn: async (next: CoachingStatus) => {
+    // The terminal-state resolution note is collected in the click
+    // handler (NOT here) and passed in, so cancelling the prompt is a
+    // clean no-op. Collecting it inside mutationFn meant a cancelled
+    // prompt threw — surfacing a spurious "resolution note required"
+    // error even though the user never confirmed the transition.
+    mutationFn: async ({
+      next,
+      resolutionNote,
+    }: {
+      next: CoachingStatus;
+      resolutionNote?: string | null;
+    }) => {
       const isTerminal = next === "resolved" || next === "abandoned";
-      let resolutionNote: string | null | undefined;
-      let latestOutreachAt: string | null | undefined;
-      if (isTerminal) {
-        const note = window.prompt(
-          `Closing the plan as "${next}". Resolution note (required):`,
-        );
-        if (!note || note.trim().length === 0) {
-          throw new Error("A resolution note is required to close a plan.");
-        }
-        resolutionNote = note;
-      } else if (next === "outreach_made") {
-        latestOutreachAt = new Date().toISOString();
-      }
+      const latestOutreachAt =
+        next === "outreach_made" ? new Date().toISOString() : undefined;
       return patchCoachingPlan(plan.id, {
         status: next,
-        resolutionNote,
+        resolutionNote: isTerminal ? resolutionNote : undefined,
         latestOutreachAt,
       });
     },
@@ -281,11 +324,27 @@ function PlanRow({
                 key={n}
                 type="button"
                 onClick={() => {
-                  try {
-                    transition.mutate(n);
-                  } catch {
-                    // prompt-cancel; swallow
+                  const isTerminal = n === "resolved" || n === "abandoned";
+                  if (!isTerminal) {
+                    transition.mutate({ next: n });
+                    return;
                   }
+                  // Terminal close needs a resolution note — collect it
+                  // in a styled, accessible prompt (void-ed IIFE so the
+                  // onClick stays a sync `() => void`).
+                  void (async () => {
+                    const note = await prompt({
+                      title: `Close plan as "${STATUS_LABEL[n]}"`,
+                      description:
+                        "A resolution note is required to close a plan.",
+                      placeholder: "What happened / how it resolved",
+                      submitLabel: "Close plan",
+                      required: true,
+                    });
+                    // null = cancelled; required:true guarantees non-empty.
+                    if (note === null) return;
+                    transition.mutate({ next: n, resolutionNote: note.trim() });
+                  })();
                 }}
                 disabled={transition.isPending}
                 className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors"

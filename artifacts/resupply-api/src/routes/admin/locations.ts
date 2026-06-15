@@ -13,7 +13,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { pickPrimaryLocation } from "../../lib/locations/pick-primary";
 import { logger } from "../../lib/logger";
@@ -63,30 +67,33 @@ function toColumns(d: z.infer<typeof patchBody>): Record<string, unknown> {
 }
 
 /** Clear is_primary on every currently-primary row (before setting a new one). */
-async function clearExistingPrimary(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
-): Promise<void> {
+async function clearExistingPrimary(supabase: OrgScopedClient): Promise<void> {
   const { error } = await supabase
-    .schema("resupply")
     .from("locations")
     .update({ is_primary: false, updated_at: new Date().toISOString() })
     .eq("is_primary", true);
   if (error) throw error;
 }
 
+type LocationRow = Database["resupply"]["Tables"]["locations"]["Row"];
+
 router.get(
   "/admin/locations",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("locations")
       .select(SELECT)
       .order("name", { ascending: true })
       .limit(500);
     if (error) throw error;
-    const rows = data ?? [];
+    const rows = (data ?? []) as LocationRow[];
     const primary = pickPrimaryLocation(rows);
     res.json({ locations: rows, primaryId: primary?.id ?? null });
   },
@@ -100,17 +107,23 @@ router.get(
 router.get(
   "/admin/locations/rollup",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const [{ data: locs, error: locErr }, { data: roll, error: rollErr }] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("locations")
           .select("id, name, is_active")
           .order("name", { ascending: true })
           .limit(500),
-        supabase.schema("resupply").rpc("location_rollup"),
+        // The rollup RPC is not org-aware; keep it on the unscoped
+        // client until a tenant-scoped RPC exists.
+        supabase.raw().schema("resupply").rpc("location_rollup"),
       ]);
     if (locErr) throw locErr;
     if (rollErr) throw rollErr;
@@ -133,7 +146,7 @@ router.get(
     };
 
     res.json({
-      branches: (locs ?? []).map((l) => ({
+      branches: ((locs ?? []) as LocationRow[]).map((l) => ({
         locationId: l.id,
         name: l.name,
         isActive: l.is_active,
@@ -155,10 +168,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     if (parsed.data.isPrimary) await clearExistingPrimary(supabase);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("locations")
       .insert({
         ...toColumns(parsed.data),
@@ -187,7 +204,12 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     if (parsed.data.isPrimary) await clearExistingPrimary(supabase);
     const update = {
       ...toColumns(parsed.data),
@@ -197,7 +219,6 @@ router.patch(
       updated_at: new Date().toISOString(),
     };
     const { data, error } = await supabase
-      .schema("resupply")
       .from("locations")
       .update(update)
       .eq("id", id.data)

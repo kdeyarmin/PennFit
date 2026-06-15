@@ -30,7 +30,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -86,11 +87,15 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Confirm the claim exists + scoped to the patient.
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("id", idParsed.data.claimId)
@@ -138,7 +143,6 @@ router.post(
         error_message: output.errorMessage,
       };
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("claim_scrub_results")
       .insert(insertRow)
       .select("id")
@@ -147,7 +151,6 @@ router.post(
 
     // Denormalise onto the claim row.
     const { error: denormErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update({
         latest_scrub_verdict: output.verdict,
@@ -214,10 +217,14 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: scrub } = await supabase
-      .schema("resupply")
       .from("claim_scrub_results")
       .select("id, claim_id, suggested_patches_json, review_status, applied_at")
       .eq("id", parsed.data.scrubResultId)
@@ -249,7 +256,6 @@ router.post(
     // is the double-apply guard — a silent failure here would let the
     // same patches be applied twice, so propagate it.
     const { error: scrubUpdateErr } = await supabase
-      .schema("resupply")
       .from("claim_scrub_results")
       .update({
         applied_patches_log: outcomes as unknown as Json,
@@ -263,7 +269,6 @@ router.post(
 
     // Append an event for the claim history (best-effort).
     const { error: eventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: idParsed.data.claimId,
@@ -312,9 +317,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("claim_scrub_results")
       .select(
         "id, verdict, model, prompt_version, confidence, findings_json, suggested_patches_json, review_status, reviewed_by_email, reviewed_at, applied_patches_log, applied_at, latency_ms, prompt_tokens, completion_tokens, error_message, created_at",
@@ -337,9 +346,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("id", idParsed.data.claimId)
@@ -383,7 +396,6 @@ router.post(
         error_message: output.errorMessage,
       };
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("claim_denial_analyses")
       .insert(insertRow)
       .select("id")
@@ -392,7 +404,6 @@ router.post(
 
     // Point the claim row at the latest analysis.
     const { error: pointerErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update({
         latest_denial_analysis_id: row.id,
@@ -462,10 +473,14 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: claim } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, status, payer_name, payer_profile_id, date_of_service, total_billed_cents, insurance_coverage_id",
@@ -487,7 +502,6 @@ router.post(
     }
 
     const { data: analysis } = await supabase
-      .schema("resupply")
       .from("claim_denial_analyses")
       .select(
         "id, recommendation, can_auto_resubmit, suggested_patches_json, applied_at",
@@ -523,7 +537,6 @@ router.post(
       // Best-effort: nothing was applied, so a failed stamp only allows
       // a harmless retry of a no-op.
       const { error: rejectStampErr } = await supabase
-        .schema("resupply")
         .from("claim_denial_analyses")
         .update({
           applied_at: new Date().toISOString(),
@@ -581,7 +594,6 @@ router.post(
     //    same denial be auto-resubmitted again, so propagate it (the
     //    500 tells the operator to verify before retrying).
     const { error: acceptStampErr } = await supabase
-      .schema("resupply")
       .from("claim_denial_analyses")
       .update({
         applied_at: new Date().toISOString(),
@@ -596,7 +608,6 @@ router.post(
     // 5. Close the prior denied claim (denied -> closed is valid).
     //    Also a retry guard (the route requires status=denied).
     const { error: closeErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update({
         status: "closed",
@@ -606,7 +617,6 @@ router.post(
     if (closeErr) throw closeErr;
 
     const { error: closeEventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claim.id,
@@ -652,14 +662,18 @@ router.post(
   },
 );
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
+
+// The org-scoped facade returns loosely-typed (`any`) rows; re-attach the
+// generated Row type at the line-item aggregation sites below.
+type ClaimLineRow =
+  Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
 
 async function cloneAsDraft(
   supabase: SupabaseClient,
   sourceClaimId: string,
 ): Promise<{ ok: true; newClaimId: string } | { ok: false; message: string }> {
   const { data: src } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "patient_id, insurance_coverage_id, secondary_coverage_id, payer_name, date_of_service, fulfillment_id, payer_profile_id, referring_provider_id, rendering_provider_id, notes",
@@ -669,7 +683,6 @@ async function cloneAsDraft(
     .maybeSingle();
   if (!src) return { ok: false, message: "source claim not found" };
   const { data: newRow, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .insert({
       patient_id: src.patient_id,
@@ -693,7 +706,6 @@ async function cloneAsDraft(
 
   // Clone the line items verbatim (post-patch state of the source).
   const { data: srcLines } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("hcpcs_code, modifier, description, quantity, billed_cents")
     .eq("claim_id", sourceClaimId);
@@ -701,10 +713,9 @@ async function cloneAsDraft(
     // A clone without its line items (or with a stale total) must not
     // proceed to submission — fail the clone instead.
     const { error: linesErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .insert(
-        srcLines.map((l) => ({
+        srcLines.map((l: ClaimLineRow) => ({
           claim_id: newRow.id,
           hcpcs_code: l.hcpcs_code,
           modifier: l.modifier,
@@ -719,11 +730,11 @@ async function cloneAsDraft(
     }
     // billed_cents is per-unit → extended line charge is * quantity.
     const total = srcLines.reduce(
-      (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
+      (s: number, l: ClaimLineRow) =>
+        s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       0,
     );
     const { error: totalErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update({
         total_billed_cents: total,
@@ -755,7 +766,6 @@ async function submitDraftToOfficeAlly(
   // already-validated payer + lines. If something's wrong the OA
   // adapter returns ok:false and we propagate.
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_profile_id, date_of_service, total_billed_cents, insurance_coverage_id",
@@ -777,13 +787,11 @@ async function submitDraftToOfficeAlly(
     { data: patient },
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("insurance_claim_line_items")
       .select("hcpcs_code, modifier, billed_cents, quantity")
       .eq("claim_id", claim.id),
     claim.payer_profile_id
       ? supabase
-          .schema("resupply")
           .from("payer_profiles")
           .select("payer_legal_name, office_ally_payer_id")
           .eq("id", claim.payer_profile_id)
@@ -792,7 +800,6 @@ async function submitDraftToOfficeAlly(
       : Promise.resolve({ data: null }),
     claim.insurance_coverage_id
       ? supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("member_id, policyholder_relationship")
           .eq("id", claim.insurance_coverage_id)
@@ -800,7 +807,6 @@ async function submitDraftToOfficeAlly(
           .maybeSingle()
       : Promise.resolve({ data: null }),
     supabase
-      .schema("resupply")
       .from("patients")
       .select("legal_first_name, legal_last_name, date_of_birth, address")
       .eq("id", claim.patient_id)
@@ -829,7 +835,6 @@ async function submitDraftToOfficeAlly(
   }
 
   const { data: priorHigh } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .select("isa_control_number")
     .order("isa_control_number", { ascending: false })
@@ -877,7 +882,7 @@ async function submitDraftToOfficeAlly(
           organizationName: payer.payer_legal_name,
           payerId: payer.office_ally_payer_id,
         },
-        serviceLines: (lines ?? []).map((l) => ({
+        serviceLines: ((lines ?? []) as ClaimLineRow[]).map((l) => ({
           hcpcsCode: l.hcpcs_code,
           modifiers: ((l.modifier ?? "") as string)
             .split(",")
@@ -900,7 +905,6 @@ async function submitDraftToOfficeAlly(
 
   const status = result.upload.ok ? "uploaded" : "transport_failed";
   const { data: subRow } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .insert({
       file_name: `PF-${control.interchangeControlNumber}.txt`,
@@ -923,7 +927,6 @@ async function submitDraftToOfficeAlly(
     // stamps, so log loudly (a claim stuck in draft after a real
     // submission risks a duplicate resubmit) but don't fail the call.
     const { error: claimStampErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update({
         status: "submitted",
@@ -940,7 +943,6 @@ async function submitDraftToOfficeAlly(
       );
     }
     const { error: submitEventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claim.id,

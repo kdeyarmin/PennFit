@@ -53,7 +53,9 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   classifyEdiPayload,
@@ -91,7 +93,7 @@ const JOB = "office-ally.inbound-poll";
 const CRON = "*/15 * * * *";
 const SYSTEM_ACTOR_EMAIL = "system:cron:office-ally-inbound-poll";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface PollStats {
   listed: number;
@@ -115,7 +117,6 @@ export interface PollStats {
  * in clearinghouse_inbound_files so the operator can triage.
  */
 export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: PollStats = {
     listed: 0,
     downloaded: 0,
@@ -131,7 +132,13 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     aiAnalysesQueued: 0,
   };
 
-  const clearinghouse = await resolveClearinghouse({ supabase });
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
+  const clearinghouse = await resolveClearinghouse({ orgId });
   if (!clearinghouse.config || !clearinghouse.row) {
     logger.info(
       { source: clearinghouse.source },
@@ -169,7 +176,6 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
 
   // Stamp last_polled_at regardless of per-file outcomes.
   const { error: polledStampErr } = await supabase
-    .schema("resupply")
     .from("clearinghouse_credentials")
     .update({ last_polled_at: new Date().toISOString() })
     .eq("id", clearinghouse.row.id);
@@ -214,7 +220,6 @@ async function processRemoteFile(
   //    this file for the run (the next poll retries) rather than
   //    proceed to a download/insert on a blind dedupe.
   const { data: existing, error: existingErr } = await supabase
-    .schema("resupply")
     .from("clearinghouse_inbound_files")
     .select("id, dispatch_status")
     .eq("clearinghouse_id", clearinghouseId)
@@ -254,7 +259,6 @@ async function processRemoteFile(
     .update(download.content, "utf8")
     .digest("hex");
   const { data: sameContent, error: sameContentErr } = await supabase
-    .schema("resupply")
     .from("clearinghouse_inbound_files")
     .select("id")
     .eq("clearinghouse_id", clearinghouseId)
@@ -273,7 +277,6 @@ async function processRemoteFile(
     // re-processing. Best-effort: a failed insert only loses the audit
     // breadcrumb, never blocks the skip.
     const { error: dupRowErr } = await supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .insert({
         clearinghouse_id: clearinghouseId,
@@ -298,7 +301,6 @@ async function processRemoteFile(
   // 4. Classify + persist.
   const kind = classifyEdiPayload(download.content);
   const { data: row } = await supabase
-    .schema("resupply")
     .from("clearinghouse_inbound_files")
     .insert({
       clearinghouse_id: clearinghouseId,
@@ -352,7 +354,6 @@ async function processRemoteFile(
       default: {
         stats.dispatchUnknown += 1;
         const { error: unknownSkipErr } = await supabase
-          .schema("resupply")
           .from("clearinghouse_inbound_files")
           .update({
             dispatch_status: "skipped",
@@ -370,7 +371,6 @@ async function processRemoteFile(
       }
     }
     const { error: dispatchedErr } = await supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .update({
         dispatch_status: "dispatched",
@@ -395,7 +395,6 @@ async function processRemoteFile(
       "office-ally.inbound-poll: dispatch failed",
     );
     const { error: dispatchFailErr } = await supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .update({
         dispatch_status: "dispatch_failed",
@@ -430,7 +429,6 @@ export async function dispatch999(
           ? "rejected_999"
           : "uploaded";
     const { data: submission, error: submissionErr } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("id")
       .eq("gs_control_number", parsed.groupControlNumber)
@@ -445,7 +443,6 @@ export async function dispatch999(
     if (submissionErr) throw submissionErr;
     if (submission) {
       const { error: sub999Err } = await supabase
-        .schema("resupply")
         .from("office_ally_submissions")
         .update({
           status: newStatus,
@@ -470,7 +467,6 @@ export async function dispatch999(
         );
       }
       const { error: file999Err } = await supabase
-        .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
           applied_to_submission_id: submission.id,
@@ -504,7 +500,6 @@ export async function dispatch277ca(
   for (const block of parsed.claims) {
     if (!block.traceNumber) continue;
     const { data: claim, error: claimLookupErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, office_ally_submission_id, status")
       .eq("id", block.traceNumber)
@@ -523,7 +518,6 @@ export async function dispatch277ca(
       };
     if (block.payerClaimRef) update.claim_number = block.payerClaimRef;
     const { error: claimUpdateErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .update(update)
       .eq("id", claim.id);
@@ -535,7 +529,6 @@ export async function dispatch277ca(
     }
     // Append an event for the audit trail.
     const { error: eventInsertErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claim.id,
@@ -567,7 +560,6 @@ export async function dispatch277ca(
   // marks the whole submission rejected_277ca.
   for (const [submissionId, hasRejection] of submissionHasRejection) {
     const { error: sub277Err } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .update({
         status: hasRejection ? "rejected_277ca" : "accepted_277ca",
@@ -582,7 +574,6 @@ export async function dispatch277ca(
       );
     }
     const { error: file277Err } = await supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .update({
         applied_to_submission_id: submissionId,
@@ -609,7 +600,6 @@ export async function dispatch835(
   // Persist the era_files row (dedupe is on era_files.file_sha256
   // unique index from 0129).
   const { data: existingEra } = await supabase
-    .schema("resupply")
     .from("era_files")
     .select("id, status")
     .eq("file_sha256", sha256)
@@ -630,7 +620,6 @@ export async function dispatch835(
     return 0;
   }
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("era_files")
     .insert({
       file_name: fileName,
@@ -659,7 +648,6 @@ export async function dispatch835(
 
   const finalStatus = summary.unmatchedClaims === 0 ? "processed" : "partial";
   const { error: eraStatusErr } = await supabase
-    .schema("resupply")
     .from("era_files")
     .update({
       claims_paid_count: summary.paidClaims,
@@ -680,7 +668,6 @@ export async function dispatch835(
   }
 
   const { error: parseSummaryErr } = await supabase
-    .schema("resupply")
     .from("clearinghouse_inbound_files")
     .update({
       applied_to_era_file_id: eraFileId,
@@ -717,7 +704,6 @@ async function runDenialAnalysisQuietly(
   try {
     const output = await analyzeDenial({ claimId, eraFileId });
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("claim_denial_analyses")
       .insert({
         claim_id: claimId,
@@ -746,7 +732,6 @@ async function runDenialAnalysisQuietly(
     if (error) throw error;
     if (row) {
       const { error: analysisLinkErr } = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .update({
           latest_denial_analysis_id: row.id,
@@ -798,7 +783,6 @@ export async function dispatch271(
   const isaCtl = parsed.traceReference.split("-")[1] ?? "";
   if (!isaCtl) return;
   const { data: check } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .select("id, patient_id, insurance_coverage_id")
     .eq("isa_control_number", isaCtl)
@@ -807,7 +791,6 @@ export async function dispatch271(
     .maybeSingle();
   if (!check) return;
   const { error: eligCheckErr } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .update({
       status: "parsed",
@@ -823,7 +806,6 @@ export async function dispatch271(
     );
   }
   const { error: eligSummaryErr } = await supabase
-    .schema("resupply")
     .from("clearinghouse_inbound_files")
     .update({
       parse_summary_json: {
@@ -877,7 +859,6 @@ export async function dispatch277(
     const isaCtl = trace.split("-")[1] ?? "";
     if (!isaCtl) continue;
     const { data: check } = await supabase
-      .schema("resupply")
       .from("claim_status_checks")
       .select("id, claim_id")
       .eq("isa_control_number", isaCtl)
@@ -886,7 +867,6 @@ export async function dispatch277(
       .maybeSingle();
     if (!check) continue;
     const { error: statusCheckErr } = await supabase
-      .schema("resupply")
       .from("claim_status_checks")
       .update({
         status: "parsed",

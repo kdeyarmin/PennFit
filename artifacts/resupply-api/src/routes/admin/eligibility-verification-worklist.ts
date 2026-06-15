@@ -21,7 +21,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -72,13 +72,18 @@ router.get(
     const staleDays = parsed.success ? (parsed.data.staleDays ?? 30) : 30;
     const includeOk = parsed.success ? (parsed.data.includeOk ?? false) : false;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     // Active coverages only: no termination date, or termination in the
     // future. (A coverage that already terminated is dead, not a
     // re-verify candidate.)
     const todayIso = new Date().toISOString().slice(0, 10);
-    const { data, error } = await supabase
-      .schema("resupply")
+    const { data, error } = await db
       .from("insurance_coverages")
       .select(
         "id, patient_id, rank, payer_name, member_id, verified_at, termination_date",
@@ -148,8 +153,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const summary = await runEligibilityReverificationBatch(
       {
+        orgId,
         cap: parsed.data.cap ?? 25,
         minHoursBetweenAttempts: parsed.data.minHoursBetweenAttempts,
         staleDays: parsed.data.staleDays,

@@ -28,7 +28,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -122,9 +122,15 @@ router.get(
         ? Math.min(MAX_LIMIT, rawLimit)
         : DEFAULT_LIMIT;
     const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select(
@@ -179,8 +185,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("*")
@@ -229,13 +241,19 @@ router.post(
     }
     const body = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Dedupe by NPI: if a row already exists with this NPI, return its
     // id with a 200 instead of creating a duplicate. The UNIQUE index
     // would refuse the insert anyway; surfacing the existing row keeps
     // the CSR flow happy (they get to the same provider regardless).
     const { data: existing, error: lookupErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id")
@@ -252,6 +270,7 @@ router.post(
       body.source === "nppes" ? new Date().toISOString() : null;
 
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .insert({
@@ -310,9 +329,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select(
         "id, patient_id, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name, email, phone_e164, status)",
@@ -334,9 +357,10 @@ router.get(
       validFrom: string | null;
       validUntil: string | null;
     }> = [];
-    for (const r of data ?? []) {
-      if (seen.has(r.patient_id)) continue;
-      seen.add(r.patient_id);
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      const patientId = String(r.patient_id ?? "");
+      if (seen.has(patientId)) continue;
+      seen.add(patientId);
       const p = (r as { patients?: unknown }).patients as {
         id: string;
         legal_first_name: string | null;
@@ -346,16 +370,16 @@ router.get(
         status: string | null;
       } | null;
       patients.push({
-        patientId: r.patient_id,
+        patientId,
         legalFirstName: p?.legal_first_name ?? null,
         legalLastName: p?.legal_last_name ?? null,
         email: p?.email ?? null,
         phoneE164: p?.phone_e164 ?? null,
         patientStatus: p?.status ?? null,
-        prescriptionId: r.id,
-        prescriptionStatus: r.status,
-        validFrom: r.valid_from,
-        validUntil: r.valid_until,
+        prescriptionId: String(r.id ?? ""),
+        prescriptionStatus: (r.status as string | null) ?? null,
+        validFrom: (r.valid_from as string | null) ?? null,
+        validUntil: (r.valid_until as string | null) ?? null,
       });
     }
     res.json({ patients });
@@ -383,8 +407,14 @@ router.post(
     // embedded version is below the row's current value, so bumping
     // this column revokes every outstanding token (see the new
     // DELETE handler below).
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: pErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, portal_link_version")
@@ -423,8 +453,14 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: pErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, portal_link_version")
@@ -438,6 +474,7 @@ router.delete(
     }
     const nextVersion = (existing.portal_link_version ?? 0) + 1;
     const { error: updErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .update({

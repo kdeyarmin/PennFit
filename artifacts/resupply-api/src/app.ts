@@ -25,6 +25,10 @@ import { isFeatureEnabled } from "./lib/feature-flags";
 import { logger } from "./lib/logger";
 import { RATE_LIMITS } from "./lib/rate-limits-config";
 import { getRequestId, requestContextMiddleware } from "./lib/request-context";
+import {
+  isVerifiedCustomDomainOrigin,
+  warmVerifiedCustomDomains,
+} from "./lib/tenant-branding";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
 import { errorHandler } from "./middlewares/errorHandler";
 import {
@@ -151,15 +155,26 @@ const allowedOrigins = (() => {
 // still blocks cross-origin reads (that's CORS working as designed), and
 // same-origin requests — which never needed CORS approval — keep working
 // no matter which hostname fronts the process.
+// Verified tenant custom domains join the allowlist dynamically: a
+// tenant binds + DNS-verifies their own host on the storefront-branding
+// admin page, and from then on requests from that Origin are accepted
+// without a redeploy or env change. The check is backed by a cached set
+// refreshed in the background (see lib/tenant-branding), so the callback
+// stays synchronous. Static `allowedOrigins` (the platform + operator
+// env) is still checked first.
 app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      return cb(null, allowedOrigins.includes(origin));
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, isVerifiedCustomDomainOrigin(origin));
     },
     credentials: true,
   }),
 );
+// Warm the verified-domain cache at boot so the very first cross-origin
+// request from a tenant domain isn't a cold miss.
+warmVerifiedCustomDomains();
 
 // Request-ID propagation:
 //   * Honor an inbound `X-Request-Id` (or `X-Correlation-Id`) header

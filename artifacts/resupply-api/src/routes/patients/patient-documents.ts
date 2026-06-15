@@ -27,10 +27,7 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Database,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
@@ -122,10 +119,9 @@ function invalidContentType(res: import("express").Response, ct: string): void {
   });
 }
 
-async function patientExists(id: string): Promise<boolean> {
-  const supabase = getSupabaseServiceRoleClient();
+async function patientExists(orgId: string, id: string): Promise<boolean> {
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .eq("id", id)
@@ -146,12 +142,13 @@ const objectStorage = new ObjectStorageService();
  * means the row was already reviewed (or not found).
  */
 async function markReviewedIfNeeded(
+  orgId: string,
   docId: string,
   patientId: string,
   adminUserId: string | null,
   note?: string,
 ): Promise<{ found: boolean; updated: boolean }> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   const updates: PatientDocumentUpdate = {
@@ -162,7 +159,6 @@ async function markReviewedIfNeeded(
   if (note !== undefined) updates.review_note = note;
 
   const { data: touched, error: updateErr } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .update(updates)
     .eq("id", docId)
@@ -174,7 +170,6 @@ async function markReviewedIfNeeded(
 
   // 0 rows updated — either already reviewed or doesn't exist.
   const { data: existing, error: existsErr } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .select("id")
     .eq("id", docId)
@@ -197,9 +192,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select(
         "id, document_type, filename, content_type, size_bytes, created_at, reviewed_at, reviewed_by_admin_id, review_note",
@@ -209,7 +208,11 @@ router.get(
     if (error) throw error;
 
     res.json({
-      documents: (rows ?? []).map((r) => ({
+      documents: (
+        (rows ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_documents"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         documentType: r.document_type,
         filename: r.filename,
@@ -257,7 +260,11 @@ router.post(
       invalidContentType(res, body.data.contentType);
       return;
     }
-    if (!(await patientExists(param.data.id))) {
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await patientExists(req.orgId, param.data.id))) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
@@ -323,7 +330,11 @@ router.post(
       invalidContentType(res, body.data.contentType);
       return;
     }
-    if (!(await patientExists(param.data.id))) {
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    if (!(await patientExists(req.orgId, param.data.id))) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
@@ -380,14 +391,18 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const retentionUntilAt = computeRetentionUntilAt({
       createdAt: new Date(nowIso),
       documentType: body.data.documentType,
     }).toISOString();
     const { data: insertedRow, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .insert({
         patient_id: param.data.id,
@@ -460,9 +475,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: doc, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, object_key, filename, reviewed_at")
       .eq("id", ids.data.docId)
@@ -493,6 +512,7 @@ router.get(
 
     // Auto-mark reviewed on download. Best-effort: failure never blocks the stream.
     void markReviewedIfNeeded(
+      orgId,
       doc.id,
       ids.data.id,
       req.adminUserId ?? null,
@@ -582,7 +602,12 @@ router.patch(
       return;
     }
 
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { found, updated } = await markReviewedIfNeeded(
+      req.orgId,
       ids.data.docId,
       ids.data.id,
       req.adminUserId ?? null,
@@ -644,9 +669,13 @@ router.delete(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: doc, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, object_key")
       .eq("id", ids.data.docId)
@@ -679,7 +708,6 @@ router.delete(
     }
 
     const { error: deleteErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .delete()
       .eq("id", doc.id);

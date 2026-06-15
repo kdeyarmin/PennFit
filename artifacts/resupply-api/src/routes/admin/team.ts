@@ -39,11 +39,11 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type AdminRole,
   type AdminStatus,
   type Database,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -196,12 +196,19 @@ const patchBody = z
  * always allowed (clearing / not setting the assignment).
  */
 async function checkLocationOr422(
-  supabase: ResupplySupabaseClient,
+  orgId: string | null | undefined,
   locationId: string | null | undefined,
   res: import("express").Response,
 ): Promise<boolean> {
   if (!locationId) return true;
-  const check = await assertAssignableLocation(supabase, locationId);
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return false;
+  }
+  const check = await assertAssignableLocation(
+    getOrgScopedClient(orgId),
+    locationId,
+  );
   if (!check.ok) {
     res.status(422).json({
       error: "invalid_location",
@@ -230,14 +237,18 @@ function effectiveStatus(
   return "pending";
 }
 
-router.get("/admin/team", requireAdminOnly, async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
+router.get("/admin/team", requireAdminOnly, async (req, res) => {
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // The original SQL path LEFT JOINed admin_users → auth.users
   // for each row's `email_verified_at`. PostgREST has no JOIN, so
   // we fetch admin_users first then bulk-fetch the auth rows by
-  // auth_user_id.
+  // auth_user_id. admin_users is a tenant table (union) — facade scopes.
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("admin_users")
     .select(
       "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
@@ -245,14 +256,15 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
     .order("invited_at", { ascending: false });
   if (error) throw error;
 
-  const authIds = (rows ?? [])
+  const typedRows = (rows ?? []) as AdminListRow[];
+  const authIds = typedRows
     .map((r) => r.auth_user_id)
     .filter((v): v is string => v !== null);
   const verifiedByAuthId = await fetchVerifiedAtMap(supabase, authIds);
   const credentialByAuthId = await fetchInviteCredentialMap(supabase, authIds);
 
   res.json({
-    members: (rows ?? []).map((r) =>
+    members: typedRows.map((r) =>
       serialize(
         r,
         verifiedByAuthId.get(r.auth_user_id ?? "") ?? null,
@@ -283,10 +295,15 @@ router.post(
     const useInitialPassword =
       typeof initialPassword === "string" && initialPassword.length >= 12;
     const inviterId = req.adminUserId ?? null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const deps = getAuthDeps();
 
-    if (!(await checkLocationOr422(supabase, locationId, res))) return;
+    if (!(await checkLocationOr422(orgId, locationId, res))) return;
 
     // Reuse logic — three legitimate cases:
     //   * pending  → invite expired or was lost; resend.
@@ -295,7 +312,6 @@ router.post(
     //                the revoke fields.
     //   * active   → reject; admins should use PATCH to change role.
     const { data: prior, error: priorErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select(
         "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
@@ -307,8 +323,9 @@ router.post(
     if (prior?.auth_user_id) {
       // Block if the user has already accepted (auth row's
       // email_verified_at is non-null) — re-inviting an already-active
-      // member is a role change, not an invite.
+      // member is a role change, not an invite. resupply_auth → raw.
       const { data: auth, error: authErr } = await supabase
+        .raw()
         .schema("resupply_auth")
         .from("users")
         .select("email_verified_at")
@@ -329,7 +346,9 @@ router.post(
     // Mint or refresh the auth row + send the invite email. The
     // coarse `auth.users.role` only cares about admin-vs-agent;
     // the granular role lands on admin_users.role below.
-    const invite = await inviteTeamMember(supabase, deps, {
+    // inviteTeamMember operates entirely on resupply_auth — pass the raw
+    // (unscoped) client off the chokepoint.
+    const invite = await inviteTeamMember(supabase.raw(), deps, {
       emailLower: email,
       role: coarseAuthRoleFor(role),
       roleLabel: ROLE_EMAIL_LABEL[role],
@@ -355,7 +374,6 @@ router.post(
     const memberAcceptedAt = useInitialPassword ? nowIso : null;
     if (prior) {
       const { data: updated, error: updateErr } = await supabase
-        .schema("resupply")
         .from("admin_users")
         .update({
           role,
@@ -391,7 +409,6 @@ router.post(
     }
 
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .insert({
         email_lower: email,
@@ -432,9 +449,13 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select(
         "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
@@ -456,7 +477,8 @@ router.post(
     }
 
     const deps = getAuthDeps();
-    const invite = await inviteTeamMember(supabase, deps, {
+    // inviteTeamMember operates entirely on resupply_auth — pass raw.
+    const invite = await inviteTeamMember(supabase.raw(), deps, {
       emailLower: row.email_lower,
       role: coarseAuthRoleFor(row.role as AdminRole),
       roleLabel: ROLE_EMAIL_LABEL[row.role as AdminRole],
@@ -469,7 +491,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .update({
         auth_user_id: invite.authUserId,
@@ -503,9 +524,13 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select(
         "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
@@ -543,7 +568,6 @@ router.post(
     // this revoke would zero them out.
     if (row.role === "admin" && row.status === "active") {
       const { count, error: countErr } = await supabase
-        .schema("resupply")
         .from("admin_users")
         .select("id", { count: "exact", head: true })
         .eq("role", "admin")
@@ -560,12 +584,12 @@ router.post(
     }
 
     if (row.auth_user_id) {
-      await revokeTeamMember(supabase, row.auth_user_id);
+      // revokeTeamMember operates entirely on resupply_auth — pass raw.
+      await revokeTeamMember(supabase.raw(), row.auth_user_id);
     }
 
     const nowIso = new Date().toISOString();
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .update({
         status: "revoked",
@@ -597,9 +621,13 @@ router.delete(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select(
         "id, email_lower, auth_user_id, role, status, display_name, notes, invited_by, invited_at, accepted_at, revoked_at, revoked_by, last_login_at, location_id",
@@ -628,7 +656,9 @@ router.delete(
     // guards and terminates sessions.
     let emailVerifiedAt: string | null = null;
     if (row.auth_user_id) {
+      // resupply_auth is cross-schema global — use .raw().
       const { data: auth, error: authErr } = await supabase
+        .raw()
         .schema("resupply_auth")
         .from("users")
         .select("email_verified_at")
@@ -660,7 +690,8 @@ router.delete(
         supabase,
         row.auth_user_id,
       );
-      const cleanup = await deleteTeamMember(supabase, row.auth_user_id, {
+      // deleteTeamMember operates entirely on resupply_auth — pass raw.
+      const cleanup = await deleteTeamMember(supabase.raw(), row.auth_user_id, {
         preserveAsCustomer: preserve,
       });
       authUserDeleted = cleanup.authUserDeleted;
@@ -668,7 +699,6 @@ router.delete(
     }
 
     const { error: deleteErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .delete()
       .eq("id", id);
@@ -704,14 +734,18 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Refuse to demote yourself out of the admin role — same
     // self-lock-out concern as revoke. With Phase A's wider role
     // catalog, ANY change away from admin is a self-demote, not
     // just admin→agent.
     if (parsed.data.role && parsed.data.role !== "admin") {
       const { data: row, error: lookupErr } = await supabase
-        .schema("resupply")
         .from("admin_users")
         .select("auth_user_id, role")
         .eq("id", id)
@@ -734,7 +768,6 @@ router.patch(
       // and block the demote when this is the last one.
       if (row && row.role === "admin") {
         const { count, error: countErr } = await supabase
-          .schema("resupply")
           .from("admin_users")
           .select("id", { count: "exact", head: true })
           .eq("role", "admin")
@@ -750,8 +783,7 @@ router.patch(
         }
       }
     }
-    if (!(await checkLocationOr422(supabase, parsed.data.locationId, res)))
-      return;
+    if (!(await checkLocationOr422(orgId, parsed.data.locationId, res))) return;
     const updateValues: Database["resupply"]["Tables"]["admin_users"]["Update"] =
       {
         updated_at: new Date().toISOString(),
@@ -763,7 +795,6 @@ router.patch(
     if ("locationId" in parsed.data)
       updateValues.location_id = parsed.data.locationId ?? null;
     const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .update(updateValues)
       .eq("id", id)
@@ -781,8 +812,9 @@ router.patch(
     // sees the coarse bucket. Granular role already landed on
     // admin_users.role above.
     if (parsed.data.role && updated.auth_user_id) {
+      // updateTeamMemberRole operates entirely on resupply_auth — raw.
       await updateTeamMemberRole(
-        supabase,
+        supabase.raw(),
         updated.auth_user_id,
         coarseAuthRoleFor(parsed.data.role),
       );
@@ -873,25 +905,26 @@ function serialize(
  * owners use) instead of deleting it whenever any of these exist.
  */
 async function authUserHasNonStaffOwner(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   authUserId: string,
 ): Promise<boolean> {
   const [customer, patient, provider] = await Promise.all([
+    // shop_customers + patients are tenant tables (union) — facade scopes.
     supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id")
       .eq("auth_user_id", authUserId)
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("portal_auth_user_id", authUserId)
       .limit(1)
       .maybeSingle(),
+    // provider_portal_accounts is a BLOCKED GLOBAL table — raw, no filter.
     supabase
+      .raw()
       .schema("resupply")
       .from("provider_portal_accounts")
       .select("id")
@@ -910,12 +943,14 @@ async function authUserHasNonStaffOwner(
  * Returns a Map keyed on auth user id; missing ids resolve to null.
  */
 async function fetchVerifiedAtMap(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   ids: string[],
 ): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
   if (ids.length === 0) return result;
+  // resupply_auth is cross-schema global — use .raw().
   const { data, error } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("users")
     .select("id, email_verified_at")
@@ -935,12 +970,14 @@ async function fetchVerifiedAtMap(
  * actions, not hot-path reads.
  */
 async function serializeWithAuthLookup(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   row: AdminListRow,
 ): Promise<ReturnType<typeof serialize>> {
   let emailVerifiedAt: string | null = null;
   if (row.auth_user_id) {
+    // resupply_auth is cross-schema global — use .raw().
     const { data: auth, error } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("email_verified_at")
@@ -969,12 +1006,14 @@ async function serializeWithAuthLookup(
  * resolve to absent — the UI will show no notifier badges for them.
  */
 async function fetchInviteCredentialMap(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   ids: string[],
 ): Promise<Map<string, InviteCredentialStamps>> {
   const result = new Map<string, InviteCredentialStamps>();
   if (ids.length === 0) return result;
+  // resupply_auth is cross-schema global — use .raw().
   const { data, error } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("password_credentials")
     .select(

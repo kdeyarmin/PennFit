@@ -11,11 +11,12 @@
 //   * Today (due_at >= now AND due_at <= end of today) — amber.
 //   * Upcoming (everything else, i.e. due tomorrow or later) — muted.
 //
-// "End of today" is computed from the browser's local clock so the
+// "End of today" is computed in the practice's New York timezone so the
 // bucket aligns with calendar days rather than a rolling 24h window.
 //
 // Each row links to the relevant admin context and has a one-click
 // "Done" that reuses the appropriate per-entity PATCH endpoint.
+// Completion shows an Undo toast backed by the matching reopen endpoint.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -25,19 +26,65 @@ import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
 import {
   listAllAdminFollowups,
   type AdminFollowupRow,
 } from "@/lib/admin/followups-list-api";
-import { completeAdminCustomerFollowup } from "@/lib/admin/customer-followups-api";
-import { completeAdminPatientFollowup } from "@/lib/admin/patient-followups-api";
+import {
+  completeAdminCustomerFollowup,
+  reopenAdminCustomerFollowup,
+} from "@/lib/admin/customer-followups-api";
+import {
+  completeAdminPatientFollowup,
+  reopenAdminPatientFollowup,
+} from "@/lib/admin/patient-followups-api";
+import {
+  formatAppDateTime,
+  parseAppDateTimeLocalInput,
+  todayAppDateIso,
+} from "@/lib/utils";
 
 export function AdminFollowupsPage() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const queryKey = ["admin", "followups", "open"] as const;
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey,
     queryFn: listAllAdminFollowups,
+  });
+
+  function invalidateFollowupQueues() {
+    void qc.invalidateQueries({ queryKey });
+    // Phase 16 inbox-counts feeds the nav badge — invalidate so the
+    // overdue count changes immediately rather than waiting for the
+    // 30s staleTime.
+    void qc.invalidateQueries({ queryKey: ["admin-inbox-counts"] });
+  }
+
+  const reopenMutation = useMutation({
+    mutationFn: (row: AdminFollowupRow) =>
+      row.kind === "patient"
+        ? reopenAdminPatientFollowup(row.subjectId, row.id)
+        : reopenAdminCustomerFollowup(row.subjectId, row.id),
+    onSuccess: () => {
+      invalidateFollowupQueues();
+      toast({
+        title: "Follow-up reopened",
+        description: "It is back in the queue.",
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not reopen follow-up",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Refresh the queue and try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const completeMutation = useMutation({
@@ -48,12 +95,32 @@ export function AdminFollowupsPage() {
       row.kind === "patient"
         ? completeAdminPatientFollowup(row.subjectId, row.id)
         : completeAdminCustomerFollowup(row.subjectId, row.id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey });
-      // Phase 16 inbox-counts feeds the nav badge — invalidate so the
-      // overdue count drops immediately rather than waiting for the
-      // 30s staleTime.
-      void qc.invalidateQueries({ queryKey: ["admin-inbox-counts"] });
+    onSuccess: (_result, row) => {
+      invalidateFollowupQueues();
+      const subject =
+        row.subjectDisplayName ?? row.subjectEmail ?? "this follow-up";
+      toast({
+        title: "Follow-up completed",
+        description: `${subject} was removed from the queue.`,
+        action: (
+          <ToastAction
+            altText={`Undo completing follow-up for ${subject}`}
+            onClick={() => reopenMutation.mutate(row)}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not complete follow-up",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Refresh the queue and try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -76,6 +143,7 @@ export function AdminFollowupsPage() {
   const completingId = completeMutation.isPending
     ? (completeMutation.variables?.id ?? null)
     : null;
+  const anyCompleting = completeMutation.isPending || reopenMutation.isPending;
 
   return (
     <div
@@ -121,7 +189,7 @@ export function AdminFollowupsPage() {
         tone="danger"
         onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
-        anyCompleting={completeMutation.isPending}
+        anyCompleting={anyCompleting}
       />
       <Bucket
         title="Due today"
@@ -130,7 +198,7 @@ export function AdminFollowupsPage() {
         tone="warning"
         onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
-        anyCompleting={completeMutation.isPending}
+        anyCompleting={anyCompleting}
       />
       <Bucket
         title="Upcoming"
@@ -139,7 +207,7 @@ export function AdminFollowupsPage() {
         tone="muted"
         onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
-        anyCompleting={completeMutation.isPending}
+        anyCompleting={anyCompleting}
       />
     </div>
   );
@@ -151,17 +219,11 @@ function bucketize(rows: AdminFollowupRow[]): {
   upcoming: AdminFollowupRow[];
 } {
   const now = new Date();
-  const endOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    59,
-    999,
-  );
   const nowMs = now.getTime();
-  const endOfTodayMs = endOfToday.getTime();
+  const endOfToday = parseAppDateTimeLocalInput(
+    `${todayAppDateIso(now)}T23:59`,
+  );
+  const endOfTodayMs = (endOfToday?.getTime() ?? nowMs) + 59_999;
   const overdue: AdminFollowupRow[] = [];
   const today: AdminFollowupRow[] = [];
   const upcoming: AdminFollowupRow[] = [];
@@ -288,8 +350,7 @@ function Row({
             marginBottom: 2,
           }}
         >
-          Due {new Date(row.dueAt).toLocaleString()} · scheduled by{" "}
-          {row.createdByEmail}
+          Due {formatAppDateTime(row.dueAt)} · scheduled by {row.createdByEmail}
           {row.kind === "patient" && (
             <span
               style={{

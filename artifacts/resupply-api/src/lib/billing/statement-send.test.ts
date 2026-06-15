@@ -10,10 +10,11 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
+import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
 
 const supabaseMock = installSupabaseMock();
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   markStatementsMailed,
@@ -157,7 +158,7 @@ describe("sendOneStatement", () => {
       .mockResolvedValue({ kind: "sent", channel: "email" });
 
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
     );
@@ -174,7 +175,10 @@ describe("sendOneStatement", () => {
       "patient_billing_statements",
       "update",
     )[0] as Record<string, unknown>;
-    expect(claimPayload).toEqual({ delivery_status: "sending" });
+    expect(claimPayload).toEqual({
+      delivery_status: "sending",
+      org_id: MOCK_ORG_ID,
+    });
     const claimFilters = supabaseMock.filterCalls(
       "patient_billing_statements",
       "update",
@@ -193,7 +197,7 @@ describe("sendOneStatement", () => {
 
     const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
     );
@@ -216,7 +220,7 @@ describe("sendOneStatement", () => {
 
     const send = vi.fn<SendFn>();
     await expect(
-      sendOneStatement(getSupabaseServiceRoleClient(), "stmt-1", {
+      sendOneStatement(getOrgScopedClient(MOCK_ORG_ID), "stmt-1", {
         send,
         cfg: stubCfg(),
         now: new Date("2026-06-01T17:00:00Z"),
@@ -229,11 +233,30 @@ describe("sendOneStatement", () => {
     stageStatement({ total_patient_responsibility_cents: 0 });
     const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg() },
     );
     expect(outcome).toEqual({ kind: "skipped", reason: "zero_balance" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("skips an unrendered statement without sending", async () => {
+    stageStatement({ statement_pdf_object_key: null });
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
+    const send = vi.fn<SendFn>();
+    const outcome = await sendOneStatement(
+      getOrgScopedClient(MOCK_ORG_ID),
+      "stmt-1",
+      { send, cfg: stubCfg() },
+    );
+    expect(outcome).toEqual({
+      kind: "skipped",
+      reason: "statement_pdf_missing",
+    });
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -243,11 +266,43 @@ describe("sendOneStatement", () => {
     stageCustomerPrefs({ emailBillingStatements: false });
     const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
     );
     expect(outcome.kind).toBe("skipped");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("fails without sending when a rendered statement link cannot be signed", async () => {
+    stageStatement();
+    stagePatient();
+    stageCustomerPrefs({});
+    stageClaim();
+    stageSupabaseResponse("patient_billing_statements", "update", {
+      data: [{ id: "stmt-1" }],
+      error: null,
+    });
+
+    const send = vi.fn<SendFn>();
+    const signPdfUrl = vi.fn().mockResolvedValue(null);
+    const outcome = await sendOneStatement(
+      getOrgScopedClient(MOCK_ORG_ID),
+      "stmt-1",
+      {
+        send,
+        signPdfUrl,
+        cfg: stubCfg(),
+        now: new Date("2026-06-01T17:00:00Z"),
+      },
+    );
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      channel: "email",
+      reason: "statement_pdf_link_unavailable",
+    });
+    expect(signPdfUrl).toHaveBeenCalledWith("statements/stmt-1.pdf");
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -256,7 +311,7 @@ describe("sendOneStatement", () => {
     stageStatement({ delivery_method: "mail" });
     const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg() },
     );
@@ -274,7 +329,7 @@ describe("sendOneStatement", () => {
       .fn<SendFn>()
       .mockResolvedValue({ kind: "sent", channel: "email" });
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg() },
     );
@@ -288,7 +343,7 @@ describe("sendOneStatement", () => {
     stagePatient({ email: null });
     const send = vi.fn<SendFn>();
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "stmt-1",
       { send, cfg: stubCfg() },
     );
@@ -306,7 +361,7 @@ describe("markStatementsMailed", () => {
       data: [{ id: "stmt-1" }, { id: "stmt-2" }],
       error: null,
     });
-    const marked = await markStatementsMailed(getSupabaseServiceRoleClient(), [
+    const marked = await markStatementsMailed(getOrgScopedClient(MOCK_ORG_ID), [
       "stmt-1",
       "stmt-2",
       "stmt-3",
@@ -316,7 +371,7 @@ describe("markStatementsMailed", () => {
 
   it("is a no-op for an empty id list", async () => {
     const marked = await markStatementsMailed(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       [],
     );
     expect(marked).toBe(0);
@@ -335,7 +390,7 @@ describe("runStatementBatchSend", () => {
         id: "stmt-1",
         patient_id: "pat-1",
         total_patient_responsibility_cents: 5000,
-        statement_pdf_object_key: null,
+        statement_pdf_object_key: "statements/stmt-1.pdf",
         delivery_status: "pending",
       },
       error: null,
@@ -359,6 +414,7 @@ describe("runStatementBatchSend", () => {
       .mockResolvedValue({ kind: "sent", channel: "email" });
 
     const result = await runStatementBatchSend(
+      getOrgScopedClient(MOCK_ORG_ID),
       { cap: 50 },
       { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
     );

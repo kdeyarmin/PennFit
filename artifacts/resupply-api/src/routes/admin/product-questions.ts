@@ -16,7 +16,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   encodeCompositeCursor,
@@ -97,7 +97,12 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Cursor is composite (created_at, id) so we get strict ordering
     // even when many rows share a created_at. PostgREST `.or()` supports
@@ -105,7 +110,6 @@ router.get(
     // The cursor id half is UUID-validated above so PostgREST cannot
     // mis-parse the embedded filter expression.
     let questionsQuery = supabase
-      .schema("resupply")
       .from("shop_product_questions")
       .select(
         "id, product_id, asker_display_name, asker_email, question_body, answer_body, answered_by_email, answered_at, moderation_note, moderated_at, status, created_at",
@@ -133,20 +137,24 @@ router.get(
         : null;
 
     res.json({
-      items: trimmed.map((r) => ({
-        id: r.id,
-        productId: r.product_id,
-        askerDisplayName: r.asker_display_name,
-        askerEmail: r.asker_email,
-        questionBody: r.question_body,
-        answerBody: r.answer_body,
-        answeredByEmail: r.answered_by_email,
-        answeredAt: r.answered_at,
-        moderationNote: r.moderation_note,
-        moderatedAt: r.moderated_at,
-        status: r.status,
-        createdAt: r.created_at,
-      })),
+      items: trimmed.map(
+        (
+          r: Database["resupply"]["Tables"]["shop_product_questions"]["Row"],
+        ) => ({
+          id: r.id,
+          productId: r.product_id,
+          askerDisplayName: r.asker_display_name,
+          askerEmail: r.asker_email,
+          questionBody: r.question_body,
+          answerBody: r.answer_body,
+          answeredByEmail: r.answered_by_email,
+          answeredAt: r.answered_at,
+          moderationNote: r.moderation_note,
+          moderatedAt: r.moderated_at,
+          status: r.status,
+          createdAt: r.created_at,
+        }),
+      ),
       nextCursor,
     });
   },
@@ -177,7 +185,12 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const now = new Date();
     const nowIso = now.toISOString();
 
@@ -190,7 +203,6 @@ router.patch(
       // is the equivalent: PostgREST only updates rows matching all
       // filters and returns just those rows.
       const { data: updatedRow, error: updateErr } = await supabase
-        .schema("resupply")
         .from("shop_product_questions")
         .update({
           status: "answered",
@@ -209,7 +221,6 @@ router.patch(
 
       if (!updatedRow) {
         const { data: existing, error: existErr } = await supabase
-          .schema("resupply")
           .from("shop_product_questions")
           .select("status")
           .eq("id", id)
@@ -251,7 +262,6 @@ router.patch(
     // reject — same atomic guard
     const { moderationNote } = bodyParsed.data;
     const { data: updatedRow, error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_product_questions")
       .update({
         status: "rejected",
@@ -269,7 +279,6 @@ router.patch(
 
     if (!updatedRow) {
       const { data: existing, error: existErr } = await supabase
-        .schema("resupply")
         .from("shop_product_questions")
         .select("status")
         .eq("id", id)

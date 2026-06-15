@@ -29,7 +29,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -81,19 +81,29 @@ router.get(
     const win: Window = parsed.data.window ?? "7d";
     const { from, to } = windowBounds(win);
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Pull the active admin roster up front. We attribute against
     // active members only — including `pending` or `revoked` would
     // confuse a supervisor reviewing "who's actually carrying load
     // right now."
-    const { data: admins, error: adminsErr } = await supabase
-      .schema("resupply")
+    const { data: admins, error: adminsErr } = await db
       .from("admin_users")
       .select("id, email_lower, display_name, role")
       .eq("status", "active");
     if (adminsErr) throw adminsErr;
-    const adminList = admins ?? [];
+    const adminList = (admins ?? []) as Array<{
+      id: string;
+      email_lower: string;
+      display_name: string | null;
+      role: string;
+    }>;
     if (adminList.length === 0) {
       res.json({ window: { kind: win, from, to }, agents: [] });
       return;
@@ -111,14 +121,14 @@ router.get(
       followupsCompleted,
     ] = await Promise.all([
       groupedCount(
-        supabase,
+        db,
         "conversations",
         "assigned_admin_user_id",
         adminIds,
         (q) => q.in("status", ["open", "awaiting_admin", "awaiting_patient"]),
       ),
       groupedCount(
-        supabase,
+        db,
         "conversations",
         "assigned_admin_user_id",
         adminIds,
@@ -128,14 +138,14 @@ router.get(
             .gte("updated_at", from)
             .lte("updated_at", to),
       ),
-      groupedCount(supabase, "shop_returns", "admin_user_id", adminIds, (q) =>
+      groupedCount(db, "shop_returns", "admin_user_id", adminIds, (q) =>
         q.gte("approved_at", from).lte("approved_at", to),
       ),
-      groupedCount(supabase, "shop_returns", "admin_user_id", adminIds, (q) =>
+      groupedCount(db, "shop_returns", "admin_user_id", adminIds, (q) =>
         q.gte("rejected_at", from).lte("rejected_at", to),
       ),
       groupedCount(
-        supabase,
+        db,
         "csr_compliance_alerts",
         "resolved_by_user_id",
         adminIds,
@@ -146,7 +156,7 @@ router.get(
             .lte("resolved_at", to),
       ),
       groupedCount(
-        supabase,
+        db,
         "patient_followups",
         "completed_by_user_id",
         adminIds,
@@ -207,7 +217,7 @@ router.get(
   },
 );
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 // Structural model of the chainable PostgREST filter builder that
 // callers of `groupedCount` build up. Spelling out the upstream
@@ -257,7 +267,6 @@ async function groupedCount(
   if (adminIds.length === 0) return counts;
 
   const base = supabase
-    .schema("resupply")
     .from(table)
     .select(attributionCol) as unknown as PostgrestQuery;
   const refined = refine(base.in(attributionCol, adminIds));

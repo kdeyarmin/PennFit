@@ -22,7 +22,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateChannelEngagement,
@@ -59,21 +59,19 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
-async function loadChannelEngagement(cutoff: string) {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadChannelEngagement(cutoff: string, orgId: string) {
+  const supabase = getOrgScopedClient(orgId);
 
   const [convRes, msgRes, voiceRes, orderRes] = await Promise.all([
     // Conversations active in the window (last_message_at), used to map
     // each message to its channel + count active conversations.
     supabase
-      .schema("resupply")
       .from("conversations")
       .select("id, channel", { count: "exact" })
       .gte("last_message_at", cutoff)
       .order("last_message_at", { ascending: false })
       .limit(READ_CAP),
     supabase
-      .schema("resupply")
       .from("messages")
       .select("conversation_id, direction, delivery_status", {
         count: "exact",
@@ -82,7 +80,6 @@ async function loadChannelEngagement(cutoff: string) {
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     supabase
-      .schema("resupply")
       .from("voice_calls")
       .select(
         "status, direction, duration_seconds, initiated_at, answered_at",
@@ -94,7 +91,6 @@ async function loadChannelEngagement(cutoff: string) {
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("status, amount_total_cents", { count: "exact" })
       .gte("created_at", cutoff)
@@ -117,23 +113,25 @@ async function loadChannelEngagement(cutoff: string) {
     throw new EngagementWindowTooLargeError(READ_CAP);
   }
 
-  const conversations: ConversationRow[] = (convRes.data ?? []).map((r) => ({
+  const asRows = (d: unknown): Array<Record<string, unknown>> =>
+    (d ?? []) as Array<Record<string, unknown>>;
+  const conversations: ConversationRow[] = asRows(convRes.data).map((r) => ({
     id: r.id as string,
     channel: r.channel as string | null,
   }));
-  const messages: MessageRow[] = (msgRes.data ?? []).map((r) => ({
+  const messages: MessageRow[] = asRows(msgRes.data).map((r) => ({
     conversationId: r.conversation_id as string | null,
     direction: r.direction as string | null,
     deliveryStatus: r.delivery_status as string | null,
   }));
-  const voiceCalls: VoiceCallRow[] = (voiceRes.data ?? []).map((r) => ({
+  const voiceCalls: VoiceCallRow[] = asRows(voiceRes.data).map((r) => ({
     status: r.status as string | null,
     direction: r.direction as string | null,
     durationSeconds: r.duration_seconds as number | null,
     initiatedAt: r.initiated_at as string | null,
     answeredAt: r.answered_at as string | null,
   }));
-  const orders: OrderRow[] = (orderRes.data ?? []).map((r) => ({
+  const orders: OrderRow[] = asRows(orderRes.data).map((r) => ({
     status: r.status as string | null,
     amountTotalCents: r.amount_total_cents as number | null,
   }));
@@ -169,8 +167,13 @@ router.get(
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
-      const result = await loadChannelEngagement(isoDaysAgo(days));
+      const result = await loadChannelEngagement(isoDaysAgo(days), orgId);
       res.json({ windowDays: days, ...result });
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
@@ -189,9 +192,14 @@ router.get(
       return;
     }
     const days = parsed.data.days;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     let result: Awaited<ReturnType<typeof loadChannelEngagement>>;
     try {
-      result = await loadChannelEngagement(isoDaysAgo(days));
+      result = await loadChannelEngagement(isoDaysAgo(days), orgId);
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
       throw err;

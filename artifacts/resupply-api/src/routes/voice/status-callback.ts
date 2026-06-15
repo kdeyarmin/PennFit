@@ -18,7 +18,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
@@ -50,8 +50,7 @@ const signatureMiddleware = requireTwilioSignature({
     // Decoupled from full voice config so the URL Twilio signed can
     // be reconstructed even without OPENAI_API_KEY.
     const base = readVoicePublicBaseUrlOrNull() ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -103,10 +102,19 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  // Webhook: no req.orgId. Resolve the seed tenant; on miss, ACK 200 so
+  // Twilio stops retrying (same degrade posture as the per-helper catch
+  // blocks below — a tenant-context gap must not retry-storm Twilio).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(200).type("text/xml").send("<Response/>");
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
   if (TERMINAL_STATUSES.has(callStatus)) {
     let firstTerminalClose = false;
     try {
-      const supabase = getSupabaseServiceRoleClient();
       // Twilio can re-deliver `completed/failed/busy/...` (retry on
       // 5xx, or duplicate after our 200 took >response timeout to
       // ack). The .eq("status","open") guard + .select("id") tells
@@ -114,7 +122,6 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       // the audit row, so the HMAC-chained audit log doesn't grow
       // a duplicate `voice.call.completed` entry on every retry.
       const { data: flipped, error } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: new Date().toISOString() })
         .eq("id", conversationId)
@@ -163,7 +170,7 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   // initiated/answered/ended. Never affects the 200 ack — a telemetry
   // failure must not make Twilio retry the lifecycle.
   try {
-    await recordVoiceCallEvent(getSupabaseServiceRoleClient(), {
+    await recordVoiceCallEvent(supabase.raw(), {
       callSid,
       conversationId,
       callStatus,

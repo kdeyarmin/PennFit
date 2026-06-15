@@ -64,6 +64,7 @@ export interface DirectorSummaryResponse {
     freshDenials: number;
     stuckSubmittedNoAck: number;
     partialEras: number;
+    fulfillmentsToBill: number;
     scrubBlocking: number;
     scrubFixable: number;
     deniedNeedsAnalysis: number;
@@ -91,6 +92,46 @@ export interface DirectorSummaryResponse {
 
 export function fetchDirectorSummary(): Promise<DirectorSummaryResponse> {
   return getJSON<DirectorSummaryResponse>("/admin/billing/director-summary");
+}
+
+export interface FulfillmentToBill {
+  id: string;
+  patientId: string;
+  itemSku: string | null;
+  quantity: number | null;
+  shippedAt: string | null;
+}
+
+export interface BillingDashboardResponse {
+  fulfillmentsToBill: FulfillmentToBill[];
+  counts: {
+    draftStale: number;
+    denied: number;
+    submittedNoAck: number;
+    partialEras: number;
+    fulfillmentsToBill: number;
+  };
+  generatedAt: string;
+}
+
+export interface CreateClaimFromFulfillmentResponse {
+  id: string;
+  patientId: string;
+  lineCount: number;
+  builderNotes: string[];
+}
+
+export function fetchBillingDashboard(): Promise<BillingDashboardResponse> {
+  return getJSON<BillingDashboardResponse>("/admin/billing/dashboard");
+}
+
+export function createClaimFromFulfillment(
+  fulfillmentId: string,
+): Promise<CreateClaimFromFulfillmentResponse> {
+  return postJSON<CreateClaimFromFulfillmentResponse>(
+    `/admin/fulfillments/${encodeURIComponent(fulfillmentId)}/create-claim`,
+    {},
+  );
 }
 
 // ─── AI work queue ──────────────────────────────────────────────────

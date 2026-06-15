@@ -62,7 +62,10 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
-import { applyCompanyIdentityToText } from "../../lib/company-info.js";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBranding,
+} from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
@@ -268,7 +271,7 @@ function buildInitialMessages(
 ): { messages: OpenAiMessage[]; redactionCounts: Record<string, number> } {
   const aggregateCounts: Record<string, number> = {};
   const messages: OpenAiMessage[] = [
-    { role: "system", content: getSystemPrompt() },
+    { role: "system", content: applyPlatformBranding(getSystemPrompt()) },
     ...userTurns.map((m): OpenAiMessage => {
       // Defense-in-depth: scrub user-supplied messages of obvious
       // PII (phone, email, SSN, DOB, long member-id digit runs)
@@ -418,11 +421,17 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     );
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: offlineFallbackReply() });
+      writeSseEvent(res, {
+        type: "chunk",
+        text: applyPlatformBranding(offlineFallbackReply()),
+      });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({ reply: offlineFallbackReply(), offline: true });
+      res.json({
+        reply: applyPlatformBranding(offlineFallbackReply()),
+        offline: true,
+      });
     }
     return;
   }
@@ -497,11 +506,17 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   if (!apiKey || apiKey.trim() === "") {
     if (streaming) {
       startSseHeaders(res);
-      writeSseEvent(res, { type: "chunk", text: offlineFallbackReply() });
+      writeSseEvent(res, {
+        type: "chunk",
+        text: applyPlatformBranding(offlineFallbackReply()),
+      });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
-      res.json({ reply: offlineFallbackReply(), offline: true });
+      res.json({
+        reply: applyPlatformBranding(offlineFallbackReply()),
+        offline: true,
+      });
     }
     return;
   }

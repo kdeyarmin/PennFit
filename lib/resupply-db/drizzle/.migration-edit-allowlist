@@ -20,5 +20,34 @@
 #
 # Remove the entry once the edit has shipped — an allowlisted file stays
 # editable without a tripwire until the line is deleted.
-#
-# (No active entries.)
+
+# 2026-06-14 prefix-collision renumber: the multi-tenant org_id backfill
+# files 0337_org_id_patient_clinical.sql and 0338_org_id_completion.sql
+# collided on main with 0337_smart_trigger_snooze.sql /
+# 0338_clinical_signal_daily_metrics.sql (post-merge tree-wide check). The
+# org_id files were renamed to 0340_/0341_ (identical content, never
+# applied to prod yet). The immutability check sees the old paths as
+# deletions; allowlist them so this renumber PR passes. Safe to delete
+# these two lines after this PR merges.
+0337_org_id_patient_clinical.sql
+0338_org_id_completion.sql
+
+# 2026-06-14 prefix-collision renumber: 0344_tenant_storefront_branding.sql
+# (#847) and 0344_patient_dedup_rpcs_org_scoped.sql (#858) both took prefix
+# 0344 and merged in a race (post-merge tree-wide check). The
+# most-recently-merged file (the patient-dedup RPCs) is renamed to 0345_
+# with IDENTICAL content — migrate.mjs dedups by content sha256, so the
+# already-applied hash is unchanged and it is NOT re-applied to production.
+# The immutability check sees the old 0344 path as a deletion; allowlist it
+# so this renumber PR passes. Safe to delete this line after this PR merges.
+0344_patient_dedup_rpcs_org_scoped.sql
+
+# 2026-06-15 prefix-collision renumber: a marketing PR renamed
+# 0344_tenant_storefront_branding.sql -> 0345_, which then collided with
+# 0345_patient_dedup_rpcs_org_scoped.sql (post-merge tree-wide check). The
+# most-recently-moved file (tenant_storefront_branding) is renamed to 0346_
+# with IDENTICAL content — migrate.mjs dedups by content sha256, so the
+# already-applied hash is unchanged and it is NOT re-applied to production.
+# The immutability check sees the old 0345 path as a deletion; allowlist it
+# so this renumber PR passes. Safe to delete this line after this PR merges.
+0345_tenant_storefront_branding.sql

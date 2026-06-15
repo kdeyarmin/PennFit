@@ -31,7 +31,7 @@ import {
   revokeTeamMember,
   updateTeamMemberRole,
 } from "@workspace/resupply-auth";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { getAuthDeps } from "../../lib/auth-deps.js";
@@ -84,10 +84,15 @@ async function writeAudit(
   action: string,
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) return;
+    const supabase = getOrgScopedClient(orgId);
+    // audit_log is a global (non-tenant) resupply table — no org_id
+    // column — so it goes through the unscoped escape hatch.
     const { error } = await supabase
-      .schema("public")
-      .from("admin_audit_log")
+      .raw()
+      .schema("resupply")
+      .from("audit_log")
       .insert({
         admin_email: req.adminEmail ?? "system",
         admin_user_id: req.adminUserId ?? "system",
@@ -150,10 +155,17 @@ router.get(
   requireAdminOnly,
   adminUsersReadLimiter,
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     // List every staff row in resupply_auth.users. Penn's staff is small
     // (<200 in the foreseeable future), so we don't paginate.
-    const supabase = getSupabaseServiceRoleClient();
+    // resupply_auth is a separate schema (cross-schema) → unscoped client.
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select(
@@ -242,9 +254,15 @@ router.post(
     }
     const { email, role } = parsed.data;
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     // Block re-inviting an already-active member.
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: existingRows, error: existingErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("id, role, status, email_verified_at")
@@ -289,7 +307,7 @@ router.post(
     }
 
     const deps = getAuthDeps();
-    const invite = await inviteTeamMember(supabase, deps, {
+    const invite = await inviteTeamMember(supabase.raw(), deps, {
       emailLower: email,
       role,
       roleLabel: role === "admin" ? "Super admin" : "Customer service rep",
@@ -339,8 +357,14 @@ router.patch(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: lookup } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("email_lower")
@@ -349,7 +373,7 @@ router.patch(
       .maybeSingle();
     const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-    const ok = await updateTeamMemberRole(supabase, userId, role);
+    const ok = await updateTeamMemberRole(supabase.raw(), userId, role);
     if (!ok) {
       res.status(404).json({ error: "Could not find that teammate." });
       return;
@@ -379,8 +403,14 @@ router.delete(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: lookup } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("email_lower")
@@ -389,7 +419,7 @@ router.delete(
       .maybeSingle();
     const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-    await revokeTeamMember(supabase, userId);
+    await revokeTeamMember(supabase.raw(), userId);
 
     await writeAudit(req, `team.revoke user=${targetEmail}`);
     res.json({ ok: true, userId });
@@ -408,8 +438,14 @@ router.delete(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("email_lower, status")
@@ -430,7 +466,7 @@ router.delete(
       return;
     }
 
-    await revokeTeamMember(supabase, invId);
+    await revokeTeamMember(supabase.raw(), invId);
 
     await writeAudit(req, `team.invitation_revoke email=${row.email_lower}`);
     res.json({ ok: true, invitationId: invId });

@@ -272,9 +272,8 @@ describe("PrescriptionsTab — date format validation regex", () => {
     expect(DATE_RE.test("2025-01-15")).toBe(true);
   });
 
-  it("accepts today's date in ISO format", () => {
-    const today = new Date().toISOString().slice(0, 10);
-    expect(DATE_RE.test(today)).toBe(true);
+  it("accepts an ISO calendar date value", () => {
+    expect(DATE_RE.test("2026-06-13")).toBe(true);
   });
 
   it("rejects a date with slashes", () => {

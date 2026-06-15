@@ -112,10 +112,18 @@ export function AdminBillingDenialsPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">Payer</th>
-                  <th className="p-3 text-right">Decisions</th>
-                  <th className="p-3 text-right">Denials</th>
-                  <th className="p-3 text-right">Rate</th>
+                  <th scope="col" className="p-3">
+                    Payer
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Decisions
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Denials
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Rate
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -181,10 +189,18 @@ export function AdminBillingDenialsPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">Payer</th>
-                  <th className="p-3 text-right">Paid claims</th>
-                  <th className="p-3 text-right">Total paid</th>
-                  <th className="p-3 text-right">Avg days</th>
+                  <th scope="col" className="p-3">
+                    Payer
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Paid claims
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Total paid
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Avg days
+                  </th>
                 </tr>
               </thead>
               <tbody>

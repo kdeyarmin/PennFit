@@ -17,10 +17,16 @@
 //   3. STATEMENT closed-with-balance claims
 //      For each closed/paid claim with patient_responsibility_cents > 0
 //      and no statement generated in the last 30 days (per patient),
-//      queue a statement-generation event. We DON'T auto-render the
-//      PDF here (the route does that, and we'd need a delivery
-//      channel); we publish a webhook event the CSR queue / external
-//      systems can consume.
+//      generate one complete patient statement with real line items and
+//      a persisted PDF before publishing the due events.
+//
+//   4. DRAFT secondary / COB claims  (flag: billing.auto_secondary_claims)
+//      For each PAID primary claim that carries a secondary coverage + a
+//      patient-responsibility balance and hasn't yet spawned a secondary,
+//      draft the secondary claim (snapshotting the primary's adjudication
+//      for the 837 2320/2330 COB loop). Status 'draft' — a biller reviews
+//      + submits through the normal batch path; we never auto-SUBMIT. Opt-
+//      in: seeded OFF, fail-soft when the flag is unset/disabled.
 //
 // Each pass is independently bounded — a slow OpenAI call in pass 1
 // doesn't block pass 2's denials from being analyzed.
@@ -28,17 +34,31 @@
 // PHI posture: counts + ids only in the log lines.
 
 import {
+  type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { analyzeDenial } from "./ai-denial-analyzer";
 import { scrubClaim, SCRUB_PROMPT_VERSION } from "./ai-claim-scrubber";
+import {
+  generatePatientBillingStatement,
+  StatementGenerationError,
+} from "./statement-generation";
 import { scoreAndPersist } from "./heuristic-denial-scorer";
+import {
+  filterSecondaryEligible,
+  generateSecondaryClaimDraft,
+  SECONDARY_CLAIM_SELECT,
+  type EligibleCandidate,
+} from "./secondary-claim-generator";
+import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 const SCRUB_TRIGGER_THRESHOLD = 0.5;
 const STATEMENT_COOLDOWN_DAYS = 30;
@@ -49,6 +69,7 @@ export interface AutoWorkflowStats {
   scrubsTriggered: number;
   denialAnalysesTriggered: number;
   statementsQueued: number;
+  secondaryClaimsDrafted: number;
   errors: number;
 }
 
@@ -57,12 +78,18 @@ export async function runAutoWorkflowPass(): Promise<AutoWorkflowStats> {
     scrubsTriggered: 0,
     denialAnalysesTriggered: 0,
     statementsQueued: 0,
+    secondaryClaimsDrafted: 0,
     errors: 0,
   };
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   await runScrubPass(supabase, stats);
   await runDenialAnalysisPass(supabase, stats);
   await runStatementPass(supabase, stats);
+  await runSecondaryClaimPass(supabase, stats);
   return stats;
 }
 
@@ -78,7 +105,6 @@ async function runScrubPass(
   // Pull draft claims that either have never been scored OR were
   // scored more than 24h ago. The `or` clause is PostgREST-style.
   const { data: claims } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, predicted_denial_scored_at, latest_scrub_at, patient_id")
     .eq("status", "draft")
@@ -104,7 +130,6 @@ async function runScrubPass(
       }
       const output = await scrubClaim({ claimId: claim.id });
       const { data: row } = await supabase
-        .schema("resupply")
         .from("claim_scrub_results")
         .insert({
           claim_id: claim.id,
@@ -127,7 +152,6 @@ async function runScrubPass(
         .single();
       if (row) {
         const { error: scrubLinkErr } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .update({
             latest_scrub_verdict: output.verdict,
@@ -173,7 +197,6 @@ async function runDenialAnalysisPass(
   stats: AutoWorkflowStats,
 ): Promise<void> {
   const { data: denied } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, decision_at")
     .eq("status", "denied")
@@ -184,7 +207,6 @@ async function runDenialAnalysisPass(
     try {
       const output = await analyzeDenial({ claimId: claim.id });
       const { data: row } = await supabase
-        .schema("resupply")
         .from("claim_denial_analyses")
         .insert({
           claim_id: claim.id,
@@ -211,7 +233,6 @@ async function runDenialAnalysisPass(
         .single();
       if (row) {
         const { error: analysisLinkErr } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .update({
             latest_denial_analysis_id: row.id,
@@ -261,73 +282,186 @@ async function runStatementPass(
     Date.now() - STATEMENT_COOLDOWN_DAYS * 24 * 3600 * 1000,
   ).toISOString();
   const { data: candidates } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("patient_id, patient_responsibility_cents")
     .in("status", ["paid", "closed"])
     .gt("patient_responsibility_cents", 0)
     .order("decision_at", { ascending: false })
     .limit(2000);
-  const patientIds = [...new Set((candidates ?? []).map((c) => c.patient_id))];
+  const patientIds = [
+    ...new Set<string>(
+      (candidates ?? []).map(
+        (c: Database["resupply"]["Tables"]["insurance_claims"]["Row"]) =>
+          c.patient_id,
+      ),
+    ),
+  ];
   if (patientIds.length === 0) return;
-
-  // Sum patient_responsibility_cents per patient so the placeholder
-  // statement row carries an informative total for the watching
-  // worker / CSR queue.
-  const totalByPatient = new Map<string, number>();
-  for (const c of candidates ?? []) {
-    totalByPatient.set(
-      c.patient_id,
-      (totalByPatient.get(c.patient_id) ?? 0) + c.patient_responsibility_cents,
-    );
-  }
 
   // Look up which patients had a statement generated in the cooldown window.
   const { data: recent } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select("patient_id")
     .in("patient_id", patientIds)
     .gte("created_at", cooldownCutoff);
-  const onCooldown = new Set((recent ?? []).map((r) => r.patient_id));
+  const onCooldown = new Set(
+    (recent ?? []).map(
+      (
+        r: Database["resupply"]["Tables"]["patient_billing_statements"]["Row"],
+      ) => r.patient_id,
+    ),
+  );
 
   for (const patientId of patientIds) {
     if (onCooldown.has(patientId)) continue;
-    // Insert a placeholder `patient_billing_statements` row BEFORE
-    // publishing — otherwise the cooldown above (which reads from
-    // this table) is never armed and we'd re-emit
-    // `billing_statement.due` every cron iteration. The placeholder
-    // carries an empty line_items_json and no PDF / delivery method;
-    // the watching worker fills those in when it renders.
-    const { error: insertErr } = await supabase
-      .schema("resupply")
-      .from("patient_billing_statements")
-      .insert({
-        patient_id: patientId,
-        line_items_json: [] as unknown as Json,
-        total_patient_responsibility_cents: totalByPatient.get(patientId) ?? 0,
-        delivery_method: null,
-        generated_by_email: "system:auto_workflow",
+    // Generate a complete statement before publishing. The statement row is
+    // the cooldown marker, and it is safe for send queues because it has
+    // real line items plus a rendered PDF copy.
+    try {
+      const generated = await generatePatientBillingStatement({
+        patientId,
+        generatedByEmail: "system:auto_workflow",
+        orgId: supabase.orgId,
       });
-    if (insertErr) {
-      // Don't publish the event if we couldn't arm the cooldown —
-      // otherwise the next cron iteration would re-publish. Count + log it
-      // (was a silent `continue`) so a systemic insert failure shows up in
-      // the tick summary instead of looking like "no statements were due."
+      void publishEvent({
+        eventType: "billing_statement.generated",
+        payload: {
+          statement_id: generated.statementId,
+          patient_id: patientId,
+          total_cents: generated.totalPatientResponsibilityCents,
+          claim_count: generated.claimCount,
+          source: "auto_workflow",
+        },
+      });
+      void publishEvent({
+        eventType: "billing_statement.due",
+        payload: {
+          statement_id: generated.statementId,
+          patient_id: patientId,
+          total_cents: generated.totalPatientResponsibilityCents,
+        },
+      });
+      stats.statementsQueued += 1;
+      continue;
+    } catch (err) {
+      if (
+        err instanceof StatementGenerationError &&
+        err.code === "no_open_balance"
+      ) {
+        continue;
+      }
       stats.errors += 1;
       logger.warn(
         {
-          err: insertErr.message,
+          err,
           patientId,
         },
-        "auto-workflow.statements: placeholder insert failed",
+        "auto-workflow.statements: generation failed",
       );
       continue;
     }
-    void publishEvent({
-      eventType: "billing_statement.due",
-      payload: { patient_id: patientId },
-    });
-    stats.statementsQueued += 1;
+  }
+}
+
+// ── Pass 4: draft secondary / COB claims for paid primaries ─────────
+
+// Exported for focused unit testing; called by runAutoWorkflowPass above.
+export async function runSecondaryClaimPass(
+  supabase: SupabaseClient,
+  stats: AutoWorkflowStats,
+): Promise<void> {
+  // Opt-in: auto-drafting claims is a billing action, so it stays behind
+  // a flag that's seeded OFF. When disabled the biller still uses the
+  // manual COB worklist (/admin/billing/secondary-eligible).
+  if (!(await isFeatureEnabled("billing.auto_secondary_claims"))) return;
+
+  // Paid primaries that carry a secondary coverage — the COB candidates.
+  // `filterSecondaryEligible` re-checks balance/sequence and drops any
+  // primary that already spawned a secondary, so this is the same set the
+  // manual worklist surfaces.
+  const { data: candidates, error: candErr } = await supabase
+    .from("insurance_claims")
+    .select(SECONDARY_CLAIM_SELECT)
+    .eq("payer_sequence", "primary")
+    .eq("status", "paid")
+    .not("secondary_coverage_id", "is", null)
+    .order("patient_responsibility_cents", { ascending: false })
+    .limit(MAX_PER_PASS);
+  if (candErr) {
+    stats.errors += 1;
+    logger.warn(
+      { err: candErr.message },
+      "auto-workflow.secondary: candidate query failed",
+    );
+    return;
+  }
+  const rows = (candidates ?? []) as unknown as EligibleCandidate[];
+  if (rows.length === 0) return;
+
+  // Which of these already have a secondary? One query, then filter in
+  // memory — mirrors the GET worklist's dedupe. A failed lookup must NOT
+  // proceed with an empty `existing` set: that would attempt a duplicate
+  // create for every candidate (caught only by the unique constraint).
+  const ids = rows.map((c) => c.id);
+  const existing = new Set<string>();
+  const { data: secRows, error: secErr } = await supabase
+    .from("insurance_claims")
+    .select("primary_claim_id")
+    .eq("payer_sequence", "secondary")
+    .in("primary_claim_id", ids);
+  if (secErr) {
+    stats.errors += 1;
+    logger.warn(
+      { err: secErr.message },
+      "auto-workflow.secondary: existing-secondary lookup failed",
+    );
+    return;
+  }
+  for (const r of (secRows ?? []) as Array<{
+    primary_claim_id?: string | null;
+  }>) {
+    if (r.primary_claim_id) existing.add(r.primary_claim_id);
+  }
+
+  const eligible = filterSecondaryEligible(rows, existing);
+  if (eligible.length === 0) return;
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const scoped = getOrgScopedClient(orgId);
+  for (const item of eligible) {
+    try {
+      const result = await generateSecondaryClaimDraft(scoped, item.claimId);
+      if (result.status === "created") {
+        stats.secondaryClaimsDrafted += 1;
+        void publishEvent({
+          eventType: "claim.secondary_drafted",
+          payload: {
+            claim_id: result.secondaryClaimId,
+            primary_claim_id: item.claimId,
+            patient_responsibility_cents: result.cob.patientRespCents,
+            line_count: result.lineCount,
+          },
+        });
+      } else if (
+        result.status === "query_failed" ||
+        result.status === "create_failed" ||
+        result.status === "line_copy_failed"
+      ) {
+        // `exists` / `not_eligible` / `not_found` are benign no-ops (a
+        // concurrent generate or a candidate that changed under us); only
+        // real failures bump the error counter.
+        stats.errors += 1;
+        logger.warn(
+          { status: result.status, primaryClaimId: item.claimId },
+          "auto-workflow.secondary: draft failed",
+        );
+      }
+    } catch (err) {
+      stats.errors += 1;
+      logger.warn(
+        { err, primaryClaimId: item.claimId },
+        "auto-workflow.secondary: per-claim failure",
+      );
+    }
   }
 }

@@ -1,8 +1,21 @@
-# PennPaps
+# CareMetric Breathe
 
-Privacy-first CPAP fitting, ordering, and resupply automation for
-Penn Home Medical Supply. See [`CLAUDE.md`](./CLAUDE.md) for guidance
-aimed at coding agents (Claude Code and similar).
+Privacy-first CPAP fitting, ordering, and resupply automation — a
+multi-tenant SaaS platform for DME providers. See [`CLAUDE.md`](./CLAUDE.md)
+for guidance aimed at coding agents (Claude Code and similar).
+
+## Brand architecture
+
+**CareMetric Breathe** is the platform (the product this repo builds;
+`PennFit` is just the repository codename). **Penn Home Medical Supply**
+— storefront brand **"PennPaps"** at `pennpaps.com` — is **one tenant**
+operating on it, not the platform itself. PennPaps's own branding,
+contact addresses, and storefront copy are tenant data; additional
+tenants are onboarded with their own brand (`tenant:onboard`). The two
+in-app AI assistants default to the CareMetric names ("CareMetric
+Assistant" / "CareMetric Copilot") and are renameable per tenant — the
+PennPaps tenant keeps "PennBot"/"PennPilot". See the "Brand architecture"
+section of [`CLAUDE.md`](./CLAUDE.md) for the developer-facing rules.
 
 ## Hosting
 
@@ -63,9 +76,12 @@ top-level structure is:
   `nvm use` / `fnm use` / `asdf` auto-select the right major on
   clone — run it before `pnpm install` to avoid an
   `ERR_PNPM_UNSUPPORTED_ENGINE` mismatch.
-- pnpm **v11+** (pinned to `pnpm@11.5.2` via `packageManager`).
+- pnpm **v11+** (pinned to `pnpm@11.6.0` via `packageManager`).
   With Corepack enabled (`corepack enable`), the pinned pnpm is
   selected automatically from the repo root.
+  If pnpm is not on PATH or Corepack cannot fetch the pinned package
+  manager, install the same version CI uses with
+  `npm install -g pnpm@11.6.0`.
 - Postgres **v14+** (we run v16). No extensions required — the
   active resupply schema only relies on `gen_random_uuid()`, which
   has been built into Postgres core since v13.

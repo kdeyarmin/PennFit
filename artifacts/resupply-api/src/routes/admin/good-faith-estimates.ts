@@ -14,7 +14,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -79,10 +79,14 @@ const idParam = z.object({ id: z.string().uuid() });
 router.get(
   "/admin/good-faith-estimates",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("good_faith_estimates")
       .select(
         "id, customer_id, recipient_name, recipient_email, items_json, total_cents, expected_service_date, delivery_method, delivered_at, generated_by_email, created_at",
@@ -103,9 +107,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("good_faith_estimates")
       .select("*")
       .eq("id", idParsed.data.id)
@@ -136,8 +144,17 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
-    const identity = await resolveBillingIdentity({ supabase });
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // dme_organization is a global singleton (not org-scoped); the
+    // billing-identity helper reads it via the unscoped client and reads
+    // tenant clearinghouse credentials via the org-scoped client it builds
+    // from orgId.
+    const identity = await resolveBillingIdentity({ orgId });
     if (identity.source === "stub") {
       res.status(409).json({
         error: "no_dme_organization",
@@ -195,7 +212,6 @@ router.post(
         delivery_method: b.deliveryMethod ?? null,
       };
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("good_faith_estimates")
       .insert(insertRow)
       .select("id")

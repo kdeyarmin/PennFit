@@ -97,6 +97,11 @@ export interface FleetTrendPoint {
   resupplyItemsDue: number;
   setupsInWindow: number;
   setupsAtRisk: number;
+  // Open clinical smart-trigger signals (migration 0338). 0 on
+  // historical points captured before the column existed.
+  clinicalSignalsOpen: number;
+  clinicalSignalsHigh: number;
+  clinicalSignalsMedium: number;
 }
 
 export const getFleetOverview = (windowDays: number) =>
@@ -172,4 +177,73 @@ export const fleetWorklistCsvUrl = (params: {
   if (params.limit) q.set("limit", String(params.limit));
   if (params.reason) q.set("reason", params.reason);
   return `/resupply-api/admin/therapy-fleet/worklist.csv?${q.toString()}`;
+};
+
+// ── Clinical insights report ─────────────────────────────────────────
+// The RT-owned smart-trigger signals derived from imported device data,
+// reported across the whole patient panel.
+
+export type ClinicalTriggerKind =
+  | "pressure_at_max"
+  | "ahi_elevated"
+  | "non_adherent_30d"
+  | "ahi_rising"
+  | "usage_erratic";
+
+export interface ClinicalMetrics {
+  nightsInWindow: number;
+  lastNightDate: string | null;
+  avgAhi: number | null;
+  avgLeakLMin: number | null;
+  avgPressureP95: number | null;
+  avgUsageMinutes: number | null;
+  deviceMaxPressure: number | null;
+}
+
+export interface ClinicalInsightEntry {
+  id: string;
+  patientId: string;
+  patientName: string | null;
+  kind: ClinicalTriggerKind;
+  severity: "high" | "medium";
+  detectedAt: string;
+  windowStartDate: string;
+  windowEndDate: string;
+  metrics: ClinicalMetrics | null;
+}
+
+export interface ClinicalInsightReport {
+  count: number;
+  summary: {
+    total: number;
+    patients: number;
+    byKind: Record<ClinicalTriggerKind, number>;
+    bySeverity: { high: number; medium: number };
+  };
+  entries: ClinicalInsightEntry[];
+}
+
+export const getClinicalInsights = (params?: {
+  kind?: ClinicalTriggerKind;
+  limit?: number;
+}) => {
+  const q = new URLSearchParams();
+  if (params?.kind) q.set("kind", params.kind);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return jsonFetch<ClinicalInsightReport>(
+    `/admin/therapy-fleet/clinical-insights${qs ? `?${qs}` : ""}`,
+  );
+};
+
+/** CSV-export URL for the clinical-insights report. */
+export const clinicalInsightsCsvUrl = (params?: {
+  kind?: ClinicalTriggerKind;
+}): string => {
+  const q = new URLSearchParams();
+  if (params?.kind) q.set("kind", params.kind);
+  const qs = q.toString();
+  return `/resupply-api/admin/therapy-fleet/clinical-insights.csv${
+    qs ? `?${qs}` : ""
+  }`;
 };

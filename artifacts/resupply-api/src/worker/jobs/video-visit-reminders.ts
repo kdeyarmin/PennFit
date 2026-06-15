@@ -25,7 +25,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -208,10 +208,19 @@ export async function runVideoVisitReminderSweep(
   const avail: ChannelAvailability = { sms: !!twilio, email: !!sendgrid };
   if (!avail.sms && !avail.email) return stats;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
+  // seed org. Becomes a per-org loop when a 2nd tenant lands.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { queue: REMINDER_JOB },
+      "video-visit reminder sweep: could not resolve seed org — skipping",
+    );
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS).toISOString();
   const { data, error } = await supabase
-    .schema("resupply")
     .from("video_visits")
     .select(
       "id, link_version, scheduled_at, invite_channel, guest_name, guest_email, guest_phone_e164, patients(status, email, phone_e164, legal_first_name)",
@@ -244,7 +253,6 @@ export async function runVideoVisitReminderSweep(
       // `is null` predicate makes the claim race-safe if a second
       // worker instance ever appears.
       const { data: claimed, error: claimErr } = await supabase
-        .schema("resupply")
         .from("video_visits")
         .update({
           reminder_sent_at: new Date().toISOString(),

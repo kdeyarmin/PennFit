@@ -39,7 +39,9 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly-html";
@@ -111,7 +113,7 @@ type OptInStatus = { optedIn: boolean; hadShopCustomer: boolean };
  * (`.eq` on email_lower) semantics as the original per-row lookup.
  */
 async function loadOptInStatuses(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   emails: readonly string[],
 ): Promise<Map<string, OptInStatus>> {
   const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -120,7 +122,6 @@ async function loadOptInStatuses(
   for (let i = 0; i < lowered.length; i += CHUNK) {
     const chunk = lowered.slice(i, i + CHUNK);
     const { data: custRows, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, communication_preferences")
       .in("email_lower", chunk);
@@ -157,7 +158,18 @@ async function loadOptInStatuses(
 }
 
 export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      candidates: 0,
+      sent: 0,
+      skippedNoData: 0,
+      skippedOptedOut: 0,
+      skippedNoShopCustomer: 0,
+      failed: 0,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const stats: QuarterlySummaryStats = {
     candidates: 0,
     sent: 0,
@@ -188,7 +200,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     scannedTotal < MAX_SCANNED_PER_RUN
   ) {
     let pageQuery = supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, email, legal_first_name, legal_last_name, date_of_birth, quarterly_summary_last_sent_at",
@@ -208,7 +219,9 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
     scannedTotal += candidates.length;
     lastPatientId = candidates[candidates.length - 1]!.id;
 
-    const rows: PatientRow[] = candidates.filter(
+    const rows: PatientRow[] = (
+      candidates as Array<Omit<PatientRow, "email"> & { email: string | null }>
+    ).filter(
       (r): r is PatientRow => typeof r.email === "string" && r.email.length > 0,
     );
 
@@ -250,7 +263,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       const endIso = windowEnd.toISOString().slice(0, 10);
 
       const { data: nights, error: nightsErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select("night_date, usage_minutes, ahi, leak_rate_l_min")
         .eq("patient_id", patient.id)
@@ -275,7 +287,14 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
         windowStart: startIso,
         windowEnd: endIso,
         practiceName,
-        nights: (nights ?? []).map((n) => ({
+        nights: (
+          (nights ?? []) as Array<{
+            night_date: string;
+            usage_minutes: number | null;
+            ahi: number | null;
+            leak_rate_l_min: number | null;
+          }>
+        ).map((n) => ({
           nightDate: n.night_date,
           usageMinutes: n.usage_minutes,
           ahi: n.ahi == null ? null : Number(n.ahi),
@@ -292,7 +311,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
       // Atomic claim — stamp before the send.
       const claimIso = new Date().toISOString();
       const { data: claimed, error: claimErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .update({ quarterly_summary_last_sent_at: claimIso })
         .eq("id", patient.id)
@@ -315,7 +333,6 @@ export async function runQuarterlyTherapySummary(): Promise<QuarterlySummaryStat
 
       const releaseClaim = async (): Promise<void> => {
         const { error: releaseErr } = await supabase
-          .schema("resupply")
           .from("patients")
           .update({
             quarterly_summary_last_sent_at:

@@ -81,8 +81,8 @@ export interface ShopProductView {
   /**
    * Available stock for the one-time-purchase path. Stripe is the
    * source of truth — we read `metadata.stock_count` (parsed as int)
-   * so an admin can edit it from the resupply-dashboard inventory
-   * editor without us shipping a separate inventory table.
+   * so an admin can edit it from the admin shop inventory editor without us
+   * shipping a separate inventory table.
    *
    * Semantics:
    *   * `null`  — not tracked. Treat as "available". This is the
@@ -110,8 +110,8 @@ export interface ShopProductView {
    *
    * Source of truth: Stripe `metadata.low_stock_threshold`. Same
    * Stripe-as-truth philosophy as `stockCount` — admins can edit it
-   * from the resupply-dashboard inventory editor or directly from
-   * the Stripe Dashboard.
+   * from the admin shop inventory editor or directly from the Stripe
+   * Dashboard.
    *
    * Semantics:
    *   * `null`  — not set; storefront uses default of 5.

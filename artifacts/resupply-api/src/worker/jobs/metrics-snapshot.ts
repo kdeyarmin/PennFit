@@ -19,7 +19,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -113,12 +113,15 @@ export async function runMetricsSnapshot(
   now: Date = new Date(),
 ): Promise<MetricsSnapshotStats> {
   const { metricDate, startIso, endIso } = dailyWindowUtc(now);
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { metricDate, written: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Bounded fetch: one day of paid orders. Sum in JS (PostgREST has no
   // portable SUM here) — the daily order volume is small.
   const { data: orders, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("amount_total_cents, amount_refunded_cents")
     .eq("status", "paid")
@@ -143,6 +146,7 @@ export async function runMetricsSnapshot(
 
   const capturedAt = new Date().toISOString();
   const { error: upErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("metrics_daily")
     .upsert(

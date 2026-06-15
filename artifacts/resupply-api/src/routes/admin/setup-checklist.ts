@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -65,9 +65,13 @@ router.post(
     }
     const patientId = idCheck.data.patientId;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("setup_checklist_items")
       .select(
         "step_key, status, note, completed_by_email, completed_at, updated_at",
@@ -130,24 +134,25 @@ router.put(
     }
     const { status, note } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("setup_checklist_items")
-      .upsert(
-        {
-          patient_id: patientId,
-          step_key: stepKey,
-          status,
-          note: note ?? null,
-          completed_by_email:
-            status === "done" ? (req.adminEmail ?? null) : null,
-          completed_at: status === "done" ? nowIso : null,
-          updated_at: nowIso,
-        },
-        { onConflict: "patient_id,step_key" },
-      );
+    const { error } = await supabase.from("setup_checklist_items").upsert(
+      {
+        patient_id: patientId,
+        step_key: stepKey,
+        status,
+        note: note ?? null,
+        completed_by_email: status === "done" ? (req.adminEmail ?? null) : null,
+        completed_at: status === "done" ? nowIso : null,
+        updated_at: nowIso,
+      },
+      { onConflict: "patient_id,step_key" },
+    );
     if (error) {
       res.status(500).json({ error: "upsert_failed", message: error.message });
       return;

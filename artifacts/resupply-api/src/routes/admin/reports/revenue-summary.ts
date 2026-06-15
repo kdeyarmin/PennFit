@@ -17,6 +17,8 @@ import {
   rangeSlug,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
+  reportOrgId,
 } from "./shared";
 
 // Aggregated revenue + refund rollup, one row per calendar day.
@@ -77,10 +79,7 @@ export function rollupRevenue(
     }));
 }
 
-export function writeRevenueCsv(
-  res: import("express").Response,
-  rows: RevenueByDay[],
-): void {
+export function writeRevenueCsv(res: CsvSink, rows: RevenueByDay[]): void {
   const headers = [
     "day",
     "orders_count",
@@ -173,10 +172,12 @@ export const revenueSummaryReport: ReportModule = {
       "/admin/reports/revenue-summary.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
         const [orders, returns] = await Promise.all([
-          fetchOrders(from, to),
-          fetchReturns(from, to),
+          fetchOrders(orgId, from, to),
+          fetchReturns(orgId, from, to),
         ]);
         setDownloadHeaders(
           res,
@@ -191,14 +192,16 @@ export const revenueSummaryReport: ReportModule = {
       "/admin/reports/revenue-summary.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
         const compare = comparePeriodRequested(req);
 
         // Always fetch the current period. Only fetch the prior period
         // when ?compare=true to keep the default download fast.
         const [orders, returns] = await Promise.all([
-          fetchOrders(from, to),
-          fetchReturns(from, to),
+          fetchOrders(orgId, from, to),
+          fetchReturns(orgId, from, to),
         ]);
         const rows = rollupRevenue(orders, returns);
         const totals = totalsFromRevenueRows(rows);
@@ -213,8 +216,8 @@ export const revenueSummaryReport: ReportModule = {
         if (compare) {
           const { priorFrom, priorTo } = computePriorPeriod(from, to);
           const [priorOrders, priorReturns] = await Promise.all([
-            fetchOrders(priorFrom, priorTo),
-            fetchReturns(priorFrom, priorTo),
+            fetchOrders(orgId, priorFrom, priorTo),
+            fetchReturns(orgId, priorFrom, priorTo),
           ]);
           const priorRows = rollupRevenue(priorOrders, priorReturns);
           const priorTotals = totalsFromRevenueRows(priorRows);
@@ -262,25 +265,22 @@ export const revenueSummaryReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
     const [orders, returns] = await Promise.all([
-      fetchOrders(from, to),
-      fetchReturns(from, to),
+      fetchOrders(orgId, from, to),
+      fetchReturns(orgId, from, to),
     ]);
-    writeRevenueCsv(
-      res as unknown as import("express").Response,
-      rollupRevenue(orders, returns),
-    );
+    writeRevenueCsv(res, rollupRevenue(orders, returns));
     return collect();
   },
 
   // The emailed PDF never includes the compare-to-prior block — it
   // matches the default (no ?compare) GET download.
-  async buildEmailPdf(from, to) {
+  async buildEmailPdf(orgId, from, to) {
     const [orders, returns] = await Promise.all([
-      fetchOrders(from, to),
-      fetchReturns(from, to),
+      fetchOrders(orgId, from, to),
+      fetchReturns(orgId, from, to),
     ]);
     const rows = rollupRevenue(orders, returns);
     const totals = totalsFromRevenueRows(rows);

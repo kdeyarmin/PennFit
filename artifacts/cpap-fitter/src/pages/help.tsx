@@ -341,6 +341,22 @@ export function Help() {
           the Virtual Mask Fitter, ordering and checkout, tracking, your
           account, resupply reminders, insurance estimates, and returns.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Just need a quick answer?{" "}
+          <Link
+            href="/faq"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            FAQ
+          </Link>{" "}
+          · Want the in-depth version?{" "}
+          <Link
+            href="/learn"
+            className="text-[hsl(var(--penn-gold))] hover:underline font-medium"
+          >
+            Learn
+          </Link>
+        </p>
 
         {/* Search */}
         <div className="max-w-xl mx-auto pt-2">
@@ -556,8 +572,9 @@ export function Help() {
           Can&apos;t find it? Just ask.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          PennBot answers most questions instantly, and our care team is a phone
-          call away for anything that needs a human.
+          {contact.assistantStorefrontName} answers most questions instantly,
+          and our care team is a phone call away for anything that needs a
+          human.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Button

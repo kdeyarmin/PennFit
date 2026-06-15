@@ -8,6 +8,7 @@ import {
   fetchSubsMetrics,
   type SubsMetrics,
 } from "@/lib/admin/shop-subs-metrics-api";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 export function AdminShopSubscriptionsPage() {
   const query = useQuery({
@@ -17,19 +18,10 @@ export function AdminShopSubscriptionsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-shop-subs-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Subscription health
-        </h1>
-        <p className="text-sm text-slate-600">
-          Live counters across the auto-ship subscription pipeline. Counts come
-          from the local Stripe mirror so the page is fast even with thousands
-          of subscribers.
-        </p>
-      </header>
+      <PageHeader
+        title="Subscription health"
+        description="Live counters across the auto-ship subscription pipeline. Counts come from the local Stripe mirror so the page is fast even with thousands of subscribers."
+      />
 
       {query.isPending ? (
         <div className="text-sm text-slate-500">Loading…</div>
@@ -101,10 +93,18 @@ function Body({ data }: { data: SubsMetrics }) {
           <table className="w-full text-sm min-w-[720px]">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
               <tr>
-                <th className="text-left px-3 py-2">Cohort</th>
-                <th className="text-right px-3 py-2">Created</th>
-                <th className="text-right px-3 py-2">Still live</th>
-                <th className="text-right px-3 py-2">Retention</th>
+                <th scope="col" className="text-left px-3 py-2">
+                  Cohort
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Created
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Still live
+                </th>
+                <th scope="col" className="text-right px-3 py-2">
+                  Retention
+                </th>
               </tr>
             </thead>
             <tbody>

@@ -178,6 +178,11 @@ const AdminEquipmentRecallsPage = lazyWithRetry(() =>
     default: m.AdminEquipmentRecallsPage,
   })),
 );
+const AdminAssetRecoveryPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-asset-recovery").then((m) => ({
+    default: m.AdminAssetRecoveryPage,
+  })),
+);
 const AdminAnalyticsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-analytics").then((m) => ({
     default: m.AdminAnalyticsPage,
@@ -588,6 +593,11 @@ const AdminBillingConfigOrganizationPage = lazyWithRetry(() =>
     default: m.AdminBillingConfigOrganizationPage,
   })),
 );
+const AdminStorefrontBrandingPage = lazyWithRetry(() =>
+  import("@/pages/admin/storefront-branding").then((m) => ({
+    default: m.AdminStorefrontBrandingPage,
+  })),
+);
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-config-clearinghouse").then((m) => ({
     default: m.AdminBillingConfigClearinghousePage,
@@ -838,6 +848,10 @@ function AdminConsole() {
               component={AdminBillingConfigOrganizationPage}
             />
             <Route
+              path="/admin/storefront-branding"
+              component={AdminStorefrontBrandingPage}
+            />
+            <Route
               path="/admin/billing/config/clearinghouse"
               component={AdminBillingConfigClearinghousePage}
             />
@@ -1005,6 +1019,10 @@ function AdminConsole() {
             <Route
               path="/admin/equipment-recalls"
               component={AdminEquipmentRecallsPage}
+            />
+            <Route
+              path="/admin/asset-recovery"
+              component={AdminAssetRecoveryPage}
             />
             <Route
               path="/admin/analytics/margin"

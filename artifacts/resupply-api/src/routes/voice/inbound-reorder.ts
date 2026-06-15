@@ -25,8 +25,10 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   buildConnectStreamTwiml,
@@ -93,8 +95,7 @@ const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readTwilioWebhookAuthTokenOrNull() ?? undefined,
   buildPublicUrl: (req) => {
     const base = readVoicePublicBaseUrlOrNull() ?? "";
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });
@@ -117,7 +118,18 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     return;
   }
   const { From, CallSid } = parsed.data;
-  const supabase = getSupabaseServiceRoleClient();
+
+  // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to a
+  // clean Hangup so a tenant-context gap never retry-storms Twilio.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res
+      .status(200)
+      .type("text/xml")
+      .send(buildHangupTwiml("Voice service unavailable."));
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
@@ -156,7 +168,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // 2. Persist session row.
   const sessionStatus = patientId ? "in_progress" : "patient_not_identified";
   const { data: session, error } = await supabase
-    .schema("resupply")
     .from("voice_reorder_sessions")
     .insert({
       twilio_call_sid: CallSid,
@@ -187,7 +198,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // flows on any fall-through). Records the outcome on the session first.
   const transferToHuman = async (reason: string): Promise<void> => {
     const { error: transferStampErr } = await supabase
-      .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
         status: "transferred_to_human",
@@ -232,7 +242,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     let shopConversationId: string;
     try {
       const { data: conv, error: convErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .insert({
           customer_id: shopCustomerId,
@@ -279,7 +288,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
     // Best-effort metadata stamp — the TwiML response (and the call) must go
     // out regardless, so log a warning on failure rather than throwing.
     const { error: shopStampErr } = await supabase
-      .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
         // The row was inserted as patient_not_identified (no patient), but a
@@ -395,7 +403,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   let conversationId: string;
   try {
     const { data: conv, error: convErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .insert({
         patient_id: patientId,
@@ -438,7 +445,6 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
   // Best-effort metadata stamp — the TwiML response must go out regardless.
   const { error: patientStampErr } = await supabase
-    .schema("resupply")
     .from("voice_reorder_sessions")
     .update({
       outcome_json: {
@@ -484,11 +490,10 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
  * with nothing to reorder.
  */
 async function findActionableEpisodeId(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   patientId: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("episodes")
     .select("id, status, created_at")
     .eq("patient_id", patientId)
@@ -514,14 +519,16 @@ interface IdentifyResult {
 }
 
 async function identifyCaller(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   fromE164: string,
 ): Promise<IdentifyResult> {
   // Unified resolution across clinical patients + cash-pay storefront
   // customers (patients win on a tie). The shared-number / ambiguity
   // rules live in resolveCallerByPhone; we map its discriminated result
   // back onto the IdentifyResult shape the rest of this route expects.
-  const resolution = await resolveCallerByPhone(supabase, fromE164);
+  // resolveCallerByPhone is a shared helper still typed for the unscoped
+  // service-role client (cut over in a later wave), so pass `.raw()`.
+  const resolution = await resolveCallerByPhone(supabase.raw(), fromE164);
   switch (resolution.kind) {
     case "patient":
       return {

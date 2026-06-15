@@ -76,6 +76,36 @@ describe("order — honeypot field still present", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Consent acknowledgement — no duplicate required checkbox
+// ---------------------------------------------------------------------------
+
+describe("order — consent acknowledgement is not a second checkbox", () => {
+  it("defaults consentToContact to true after the prior consent gate", () => {
+    expect(SRC).toContain("consentToContact: true");
+  });
+
+  it("keeps the consent value in the submitted payload", () => {
+    expect(SRC).toContain("consentToContact: values.consentToContact");
+  });
+
+  it("renders the disclosure as an acknowledgement panel", () => {
+    expect(SRC).toContain('data-testid="order-acknowledgement"');
+    expect(SRC).toContain("By submitting this order");
+  });
+
+  it("does not render the removed duplicate consent checkbox", () => {
+    expect(SRC).not.toContain('data-testid="checkbox-consent"');
+    expect(SRC).not.toContain("<Checkbox");
+    expect(SRC).not.toContain('id="consent"');
+  });
+
+  it("does not watch consent as a user-editable field", () => {
+    expect(SRC).not.toContain('watch("consentToContact")');
+    expect(SRC).not.toContain("consentValue");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // formatUsPhone — pure-function unit tests (re-implemented inline)
 // ---------------------------------------------------------------------------
 // The helper is private to the module. To give solid behavioural coverage

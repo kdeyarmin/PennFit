@@ -30,6 +30,11 @@ export interface CompleteAdminPatientFollowupResponse {
   completedAt: string | null;
 }
 
+export interface ReopenAdminPatientFollowupResponse {
+  id: string;
+  completedAt: string | null;
+}
+
 export class AdminPatientFollowupsNotFoundError extends Error {
   constructor() {
     super("Patient or followup not found.");
@@ -106,4 +111,25 @@ export async function completeAdminPatientFollowup(
     throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
   }
   return (await res.json()) as CompleteAdminPatientFollowupResponse;
+}
+
+export async function reopenAdminPatientFollowup(
+  patientId: string,
+  followupId: string,
+): Promise<ReopenAdminPatientFollowupResponse> {
+  const res = await fetch(
+    `/resupply-api/patients/${encodeURIComponent(patientId)}/followups/${encodeURIComponent(followupId)}/reopen`,
+    {
+      method: "PATCH",
+      headers: { Accept: "application/json", ...csrfHeader() },
+    },
+  );
+  if (res.status === 404) {
+    throw new AdminPatientFollowupsNotFoundError();
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res, text || null, { method: "PATCH", url: res.url });
+  }
+  return (await res.json()) as ReopenAdminPatientFollowupResponse;
 }

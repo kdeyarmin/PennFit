@@ -19,7 +19,7 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
@@ -52,9 +52,13 @@ const prefsSchema = z
 router.get("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
   await ensureShopCustomerRow({ customerId, email: null });
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("communication_preferences")
     .eq("customer_id", customerId)
@@ -79,9 +83,13 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
   }
   const customerId = req.userCustomerId!;
   await ensureShopCustomerRow({ customerId, email: null });
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("communication_preferences")
     .eq("customer_id", customerId)
@@ -125,7 +133,6 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
     dndEndHour: proposedDndEnd,
   };
   const { error } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .update({
       communication_preferences: next as unknown as Json,

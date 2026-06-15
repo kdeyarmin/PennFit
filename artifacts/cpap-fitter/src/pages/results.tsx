@@ -259,7 +259,7 @@ export function Results() {
   if (error) {
     // The orval-generated client throws an ApiError with a typed `data`
     // payload of `{ error: string; details?: string[] }` — see
-    // api-server's error responses. Falling back to the generic Error
+    // resupply-api's error responses. Falling back to the generic Error
     // message is enough for offline / network failures.
     const apiError = error as ApiError<{ error?: string; details?: string[] }>;
     const message =

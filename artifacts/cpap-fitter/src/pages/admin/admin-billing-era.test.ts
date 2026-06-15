@@ -159,7 +159,7 @@ describe("admin-billing-era — history table", () => {
   });
 
   it("has 'File' column header", () => {
-    expect(SRC).toContain(">File<");
+    expect(SRC).toMatch(/>\s*File\s*</);
   });
 
   it("has 'Payer check #' column header", () => {
@@ -167,11 +167,11 @@ describe("admin-billing-era — history table", () => {
   });
 
   it("has 'Status' column header", () => {
-    expect(SRC).toContain(">Status<");
+    expect(SRC).toMatch(/>\s*Status\s*</);
   });
 
   it("has 'Paid' column header", () => {
-    expect(SRC).toContain(">Paid<");
+    expect(SRC).toMatch(/>\s*Paid\s*</);
   });
 
   it("has 'Claims paid' column header", () => {
@@ -183,7 +183,7 @@ describe("admin-billing-era — history table", () => {
   });
 
   it("has 'Ingested' column header", () => {
-    expect(SRC).toContain(">Ingested<");
+    expect(SRC).toMatch(/>\s*Ingested\s*</);
   });
 });
 

@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
+import { useCompanyContact } from "@/lib/contact";
 import { SupportPhoneLink } from "@/components/company-contact";
 import {
   Card,
@@ -117,6 +118,7 @@ const faqs = [
 ];
 
 export function HowItWorks() {
+  const assistantName = useCompanyContact().assistantStorefrontName;
   useDocumentTitle(
     "Virtual Mask Fitter",
     "How the PennPaps Virtual Mask Fitter works: a 3-minute on-device face capture matches you to the right CPAP mask. Your face image never leaves your phone.",
@@ -144,8 +146,9 @@ export function HowItWorks() {
           Virtual Mask Fitter
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          A short guide to everything PennPaps does — the on-device mask fitter,
-          the supply shop, customer accounts, and how resupply works.
+          How the on-device Virtual Mask Fitter works: a 3-minute face scan
+          matches you to the right CPAP mask — plus how to get the most accurate
+          fit.
         </p>
       </header>
 
@@ -437,7 +440,7 @@ export function HowItWorks() {
             data-testid="how-it-works-ask-pennbot"
           >
             <Sparkles className="w-4 h-4" />
-            Ask PennBot
+            Ask {assistantName}
           </Button>
         </div>
       </section>

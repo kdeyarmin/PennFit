@@ -19,7 +19,9 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -30,7 +32,7 @@ import {
 } from "./modifier-rules";
 import { fetchUnitCostsBySku } from "./product-cost-lookup";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface ProposedClaimLine {
   hcpcsCode: string;
@@ -95,11 +97,14 @@ const COMPLIANCE_MIN_MINUTES = 240;
 export async function buildClaimFromFulfillment(
   input: BuildFromFulfillmentInput,
 ): Promise<ProposedClaim> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("buildClaimFromFulfillment: tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // 1. Fulfillment + patient.
   const { data: fulfillment, error: fErr } = await supabase
-    .schema("resupply")
     .from("fulfillments")
     .select(
       "id, patient_id, item_sku, quantity, shipped_at, submitted_at, status",
@@ -138,12 +143,17 @@ export async function buildClaimFromFulfillment(
 
   // 2. Primary + secondary insurance coverages.
   const { data: coverages } = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select("id, rank, payer_name, member_id")
     .eq("patient_id", fulfillment.patient_id);
-  const primary = (coverages ?? []).find((c) => c.rank === "primary");
-  const secondary = (coverages ?? []).find((c) => c.rank === "secondary");
+  const primary = (coverages ?? []).find(
+    (c: Database["resupply"]["Tables"]["insurance_coverages"]["Row"]) =>
+      c.rank === "primary",
+  );
+  const secondary = (coverages ?? []).find(
+    (c: Database["resupply"]["Tables"]["insurance_coverages"]["Row"]) =>
+      c.rank === "secondary",
+  );
   if (primary) {
     proposed.insuranceCoverageId = primary.id;
     proposed.payerName = primary.payer_name;
@@ -169,7 +179,6 @@ export async function buildClaimFromFulfillment(
   if (input.payerProfileIdOverride) {
     proposed.payerProfileId = input.payerProfileIdOverride;
     const { data: payer } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(
         "payer_legal_name, required_modifiers_dme, enrollment_status, enrollment_effective_on, member_id_pattern",
@@ -188,7 +197,6 @@ export async function buildClaimFromFulfillment(
     }
   } else if (primary) {
     const { data: payer } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(
         "id, display_name, payer_legal_name, requires_prior_auth_dme, required_modifiers_dme, enrollment_status, enrollment_effective_on, member_id_pattern",
@@ -246,7 +254,6 @@ export async function buildClaimFromFulfillment(
 
   // 4. Diagnosis from latest sleep study.
   const { data: sleep } = await supabase
-    .schema("resupply")
     .from("sleep_studies")
     .select("diagnosis_icd10, interpreting_provider_id")
     .eq("patient_id", fulfillment.patient_id)
@@ -266,7 +273,6 @@ export async function buildClaimFromFulfillment(
   //    (the prescriber) + a fallback HCPCS if the product map lookup
   //    misses.
   const { data: rx } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select("provider_id, hcpcs_code, item_sku")
     .eq("patient_id", fulfillment.patient_id)
@@ -285,7 +291,6 @@ export async function buildClaimFromFulfillment(
   // 6. Prior auth (if applicable).
   if (proposed.payerProfileId) {
     const { data: pa } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .select("auth_number, status, approved_through, hcpcs_code")
       .eq("patient_id", fulfillment.patient_id)
@@ -397,6 +402,7 @@ async function buildLineForSku(
   proposed: ProposedClaim,
 ): Promise<ProposedClaimLine | null> {
   const { data: mapped } = await supabase
+    .raw()
     .schema("resupply")
     .from("product_hcpcs_map")
     .select(
@@ -458,7 +464,6 @@ async function resolveRuleContext(
   // rentalMonth and tripping the wrong KX/KH/KI/KJ rules on the next
   // CPAP rental.
   const { data: priorCpapLines } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("claim_id, insurance_claims!inner(patient_id, status)")
     .eq("hcpcs_code", "E0601")
@@ -466,7 +471,9 @@ async function resolveRuleContext(
     .in("insurance_claims.status", ["submitted", "accepted", "paid", "closed"]);
   let rentalMonth: number | null = null;
   if (priorCpapLines && priorCpapLines.length > 0) {
-    const uniqueClaims = new Set(priorCpapLines.map((l) => l.claim_id));
+    const uniqueClaims = new Set<string>(
+      priorCpapLines.map((l: Record<string, unknown>) => String(l.claim_id)),
+    );
     rentalMonth = Math.min(13, uniqueClaims.size + 1);
   }
 
@@ -475,14 +482,14 @@ async function resolveRuleContext(
     .toISOString()
     .slice(0, 10);
   const { data: nights } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("usage_minutes")
     .eq("patient_id", patientId)
     .gte("night_date", since)
     .limit(60);
   const compliantNights = (nights ?? []).filter(
-    (n) => (n.usage_minutes ?? 0) >= COMPLIANCE_MIN_MINUTES,
+    (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
+      (n.usage_minutes ?? 0) >= COMPLIANCE_MIN_MINUTES,
   ).length;
   const isCompliant = compliantNights >= COMPLIANCE_MIN_NIGHTS;
 
@@ -502,7 +509,6 @@ async function applyPayerModifierRules(
   ctx: ModifierRuleContext,
 ): Promise<string[]> {
   const { data: rules, error } = await supabase
-    .schema("resupply")
     .from("payer_modifier_rules")
     .select("id, condition, modifiers_csv, priority")
     .eq("payer_profile_id", payerProfileId)
@@ -529,10 +535,9 @@ async function lookupFeeSchedule(
   Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"] | null
 > {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("payer_fee_schedules")
     .select(
-      "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at",
+      "id, payer_profile_id, hcpcs_code, modifier, allowed_cents, effective_from, effective_through, source, notes, created_at, updated_at, org_id",
     )
     .eq("payer_profile_id", payerProfileId)
     .eq("hcpcs_code", hcpcsCode)
@@ -546,11 +551,15 @@ async function lookupFeeSchedule(
   // (wildcard) row; then the first match.
   for (const m of modifiers) {
     const match = candidates.find(
-      (r) => (r.modifier ?? "").toUpperCase() === m,
+      (r: Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]) =>
+        (r.modifier ?? "").toUpperCase() === m,
     );
     if (match) return match;
   }
-  const wildcard = candidates.find((r) => r.modifier === null);
+  const wildcard = candidates.find(
+    (r: Database["resupply"]["Tables"]["payer_fee_schedules"]["Row"]) =>
+      r.modifier === null,
+  );
   return wildcard ?? candidates[0] ?? null;
 }
 

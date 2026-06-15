@@ -29,7 +29,7 @@ function readSearchParam(name: string): string | null {
 }
 
 export function NpsLanding() {
-  useDocumentTitle("Thanks for your rating — PennPaps");
+  useDocumentTitle("Thanks for your rating");
   const [, setLocation] = useLocation();
   const [token] = useState(() => readSearchParam("t") ?? "");
   const [score] = useState(() => {

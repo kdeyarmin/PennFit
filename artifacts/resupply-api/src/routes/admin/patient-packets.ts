@@ -25,8 +25,9 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
@@ -208,9 +209,14 @@ router.get(
   "/admin/patient-packet-templates",
   adminReadRateLimiter,
   requirePermission("patients.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
-    const overrides = await loadTemplateOverrides(supabase);
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const overrides = await loadTemplateOverrides(supabase.raw());
     res.json({
       templates: PACKET_TEMPLATES.map((t) => {
         const effective = effectiveTemplateContent(t.key, overrides)!;
@@ -265,14 +271,13 @@ const saveTemplateBody = z
  * Returns the new revision number.
  */
 async function saveTemplateOverride(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   key: string,
   title: string,
   sections: Json,
   adminEmail: string | null,
 ): Promise<number> {
   const { data: existing, error: readErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_template_overrides")
     .select("revision")
     .eq("document_key", key)
@@ -283,7 +288,6 @@ async function saveTemplateOverride(
   const revision = (existing?.revision ?? 0) + 1;
   const nowIso = new Date().toISOString();
   const { error: upsertErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_template_overrides")
     .upsert(
       {
@@ -301,7 +305,6 @@ async function saveTemplateOverride(
   // Append-only history (migration 0306). Best-effort: a history write
   // failure must not roll back the save the operator just made.
   const { error: histErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_template_revisions")
     .insert({
       document_key: key,
@@ -357,7 +360,12 @@ router.put(
     }
 
     const template = getPacketTemplate(key)!;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const revision = await saveTemplateOverride(
       supabase,
       key,
@@ -402,9 +410,13 @@ router.delete(
       return;
     }
     const key = keyParsed.data.key;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: deleted, error } = await supabase
-      .schema("resupply")
       .from("patient_packet_template_overrides")
       .delete()
       .eq("document_key", key)
@@ -415,7 +427,6 @@ router.delete(
     // already-default template is a no-op, not an event).
     if (deleted && deleted.length > 0) {
       const { error: histErr } = await supabase
-        .schema("resupply")
         .from("patient_packet_template_revisions")
         .insert({
           document_key: key,
@@ -465,9 +476,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_packet_template_revisions")
       .select(
         "id, action, revision, title, sections, changed_by_email, created_at",
@@ -504,9 +519,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: rev, error: revErr } = await supabase
-      .schema("resupply")
       .from("patient_packet_template_revisions")
       .select("id, document_key, action, revision, title, sections")
       .eq("id", parsed.data.revisionId)
@@ -589,10 +608,15 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const [company, overrides] = await Promise.all([
-      resolveCompanyProfile(supabase),
-      loadTemplateOverrides(supabase),
+      resolveCompanyProfile(supabase.raw()),
+      loadTemplateOverrides(supabase.raw()),
     ]);
     const effective = effectiveTemplateContent(key, overrides)!;
     const sections = renderPacketDocumentSections({
@@ -634,12 +658,16 @@ router.get(
   async (req, res) => {
     const status =
       typeof req.query.status === "string" ? req.query.status : null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at",
+        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at, chart_document_id, chart_filed_at",
       )
       .order("created_at", { ascending: false })
       .limit(100);
@@ -668,12 +696,16 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .select(
-        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at",
+        "id, patient_id, title, status, recipient_name, recipient_email, sent_at, completed_at, expires_at, created_at, chart_document_id, chart_filed_at",
       )
       .eq("patient_id", parsed.data.id)
       .order("created_at", { ascending: false })
@@ -716,9 +748,14 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const result = await createAndSendPatientPacket({
-      supabase,
+      supabase: supabase.raw(),
       patientId: idParsed.data.id,
       documentKeys: b.documentKeys,
       title: b.title,
@@ -805,9 +842,14 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const result = await createAndSendPatientPacketToContact({
-      supabase,
+      supabase: supabase.raw(),
       email: b.email,
       phone: b.phone,
       recipientName: b.recipientName,
@@ -882,9 +924,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet, error } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .select("*")
       .eq("id", parsed.data.packetId)
@@ -898,13 +944,11 @@ router.get(
 
     const [docsRes, sigRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patient_packet_documents")
         .select("*")
         .eq("packet_id", packet.id)
         .order("sort_order", { ascending: true }),
       supabase
-        .schema("resupply")
         .from("patient_packet_signatures")
         .select(
           "id, signer_name, signer_relationship, consent_esign, acknowledged_document_keys, signed_at, signer_ip, created_at",
@@ -964,9 +1008,13 @@ router.patch(
     }
     const b = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet, error } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .select("id, status")
       .eq("id", parsed.data.packetId)
@@ -1004,7 +1052,11 @@ router.patch(
         });
         return;
       }
-      await reconcilePacketDocuments(supabase, packet.id, docs.uniqueKeys);
+      await reconcilePacketDocuments(
+        supabase.raw(),
+        packet.id,
+        docs.uniqueKeys,
+      );
       documentCount = docs.uniqueKeys.length;
     }
 
@@ -1012,14 +1064,15 @@ router.patch(
     // against the packet's CURRENT document set (post-reconcile).
     if (b.documentOverrides !== undefined && b.documentOverrides.length > 0) {
       const { data: currentDocs, error: curErr } = await supabase
-        .schema("resupply")
         .from("patient_packet_documents")
         .select("document_key")
         .eq("packet_id", packet.id);
       if (curErr) throw curErr;
       const invalidKeys = findInvalidOverrideKeys(
         b.documentOverrides,
-        (currentDocs ?? []).map((d) => d.document_key),
+        (currentDocs ?? []).map(
+          (d: { document_key: string }) => d.document_key,
+        ),
       );
       if (invalidKeys.length > 0) {
         res
@@ -1028,7 +1081,7 @@ router.patch(
         return;
       }
       await applyPacketDocumentOverrides(
-        supabase,
+        supabase.raw(),
         packet.id,
         b.documentOverrides,
       );
@@ -1047,7 +1100,6 @@ router.patch(
         : null;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update(patch)
       .eq("id", packet.id);
@@ -1094,9 +1146,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet, error } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .select(
         "id, patient_id, status, link_version, recipient_name, recipient_email, recipient_phone, expires_at",
@@ -1121,7 +1177,6 @@ router.post(
       Date.now() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
     ).toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update({
         link_version: nextVersion,
@@ -1139,7 +1194,6 @@ router.post(
     let resendPhone = packet.recipient_phone ?? null;
     if (!resendPhone && packet.patient_id) {
       const { data: patient } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("phone_e164")
         .eq("id", packet.patient_id)
@@ -1152,7 +1206,7 @@ router.post(
     const link = signingUrl(getAuthDeps().publicBaseUrl, token);
 
     const { emailSent, smsSent } = await deliverPacketLink({
-      supabase,
+      supabase: supabase.raw(),
       recipientName: packet.recipient_name,
       link,
       email: packet.recipient_email,
@@ -1203,9 +1257,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet, error } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .select("id, status")
       .eq("id", parsed.data.packetId)
@@ -1222,7 +1280,6 @@ router.post(
     }
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update({
         status: "voided",
@@ -1274,10 +1331,14 @@ router.get(
   "/admin/patient-packet-presets",
   adminReadRateLimiter,
   requirePermission("patients.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_packet_presets")
       .select(
         "id, name, description, document_keys, packet_title, created_by_email, created_at",
@@ -1324,9 +1385,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: created, error } = await supabase
-      .schema("resupply")
       .from("patient_packet_presets")
       .insert({
         name: b.name,
@@ -1376,9 +1441,13 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_presets")
       .delete()
       .eq("id", parsed.data.presetId);
@@ -1412,10 +1481,18 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Shared loader (signed-pdf.ts) — the same bytes the auto-file hook
     // writes to the chart, so the two can never drift.
-    const built = await buildSignedPacketPdf(supabase, parsed.data.packetId);
+    const built = await buildSignedPacketPdf(
+      supabase.raw(),
+      parsed.data.packetId,
+    );
     if (!built) {
       res.status(404).json({ error: "not_found" });
       return;

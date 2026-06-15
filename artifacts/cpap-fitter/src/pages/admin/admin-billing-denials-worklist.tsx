@@ -159,7 +159,7 @@ function WorklistTable({ items }: { items: DenialWorkItem[] }) {
     return (
       <Card>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          No open denials. 🎉
+          No open denials.
         </p>
       </Card>
     );
@@ -169,14 +169,30 @@ function WorklistTable({ items }: { items: DenialWorkItem[] }) {
       <table className="w-full text-sm min-w-[860px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
-            <th className="text-right px-3 py-2">#</th>
-            <th className="text-left px-3 py-2">Payer</th>
-            <th className="text-right px-3 py-2">Recoverable</th>
-            <th className="text-right px-3 py-2">Win&nbsp;%</th>
-            <th className="text-right px-3 py-2">Expected</th>
-            <th className="text-left px-3 py-2">Recommendation</th>
-            <th className="text-left px-3 py-2">Denial</th>
-            <th className="text-left px-3 py-2">Claim</th>
+            <th scope="col" className="text-right px-3 py-2">
+              #
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Payer
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Recoverable
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Win&nbsp;%
+            </th>
+            <th scope="col" className="text-right px-3 py-2">
+              Expected
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Recommendation
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Denial
+            </th>
+            <th scope="col" className="text-left px-3 py-2">
+              Claim
+            </th>
           </tr>
         </thead>
         <tbody>

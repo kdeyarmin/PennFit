@@ -217,13 +217,27 @@ export function AdminBillingEraPage() {
                   className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                   style={{ color: "hsl(var(--ink-3))" }}
                 >
-                  <th className="p-3">File</th>
-                  <th className="p-3">Payer check #</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 text-right">Paid</th>
-                  <th className="p-3 text-right">Claims paid</th>
-                  <th className="p-3 text-right">Claims denied</th>
-                  <th className="p-3">Ingested</th>
+                  <th scope="col" className="p-3">
+                    File
+                  </th>
+                  <th scope="col" className="p-3">
+                    Payer check #
+                  </th>
+                  <th scope="col" className="p-3">
+                    Status
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Paid
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Claims paid
+                  </th>
+                  <th scope="col" className="p-3 text-right">
+                    Claims denied
+                  </th>
+                  <th scope="col" className="p-3">
+                    Ingested
+                  </th>
                 </tr>
               </thead>
               <tbody>

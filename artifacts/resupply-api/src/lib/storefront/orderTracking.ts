@@ -19,7 +19,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 /**
  * Reference is "PENN-" + 6 alphanumerics; allow either the full thing
@@ -108,7 +108,11 @@ export async function lookupTrackedOrder(
   normalizedReference: string,
   email: string,
 ): Promise<TrackOrderLookup> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { outcome: "not_found" };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Fitter orders live in public.orders; the shop orders live in
   // resupply.shop_orders. We probe public.orders first (fitter is
@@ -116,6 +120,7 @@ export async function lookupTrackedOrder(
   // to checking shop_orders by stripe_session_id only if a future
   // shop-side path starts emitting the same reference shape.
   const { data: legacyRow, error: legacyErr } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select(

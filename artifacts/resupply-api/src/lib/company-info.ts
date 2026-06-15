@@ -20,9 +20,29 @@
 //     ~30 existing `env.RESUPPLY_PRACTICE_NAME` readers pick up the
 //     value without each being rewritten.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+
+/**
+ * The platform/parent-company brand. PennFit is the codename of this
+ * SaaS; the product the business sells is **CareMetric Breathe**. It is
+ * the constant that does NOT change per tenant — every DME company
+ * (Penn Home Medical Supply / "PennPaps" is one such tenant) runs its
+ * own storefront brand on top of the CareMetric Breathe platform. Use
+ * this anywhere the app refers to *itself* (the software/platform), as
+ * opposed to the operating tenant's own brand (see `CompanyInfo.name`).
+ */
+export const PLATFORM_NAME = "CareMetric Breathe";
+
+/**
+ * CareMetric platform defaults for the two in-app AI assistants. A
+ * tenant owner may rename them from System Configuration
+ * (RESUPPLY_ASSISTANT_STOREFRONT_NAME / RESUPPLY_ASSISTANT_ADMIN_NAME);
+ * the Penn Home Medical Supply tenant is seeded to "PennBot"/"PennPilot".
+ */
+export const DEFAULT_STOREFRONT_ASSISTANT_NAME = "CareMetric Assistant";
+export const DEFAULT_ADMIN_ASSISTANT_NAME = "CareMetric Copilot";
 
 export interface CompanyAddress {
   line1: string;
@@ -53,6 +73,16 @@ export interface CompanyInfo {
   websiteUrl: string | null;
   /** Published support hours, e.g. "Mon–Fri 9a–5p ET". */
   supportHours: string;
+  /**
+   * Display name for the customer-facing storefront chat assistant.
+   * Tenant-configurable; defaults to the CareMetric platform name.
+   */
+  assistantStorefrontName: string;
+  /**
+   * Display name for the in-app admin-console assistant.
+   * Tenant-configurable; defaults to the CareMetric platform name.
+   */
+  assistantAdminName: string;
   /** Physical business address (null until the org row is seeded). */
   address: CompanyAddress | null;
   organizationalNpi: string | null;
@@ -96,6 +126,26 @@ function trimmed(v: string | null | undefined): string {
   return (v ?? "").trim();
 }
 
+/**
+ * The two assistant display names, resolved from the tenant-configurable
+ * env vars (populated by the app_config overlay at boot) with the
+ * CareMetric platform defaults as the fallback. Independent of the
+ * dme_organization row so the names resolve even for an unseeded tenant.
+ */
+function resolveAssistantNames(): {
+  assistantStorefrontName: string;
+  assistantAdminName: string;
+} {
+  return {
+    assistantStorefrontName:
+      trimmed(process.env.RESUPPLY_ASSISTANT_STOREFRONT_NAME) ||
+      DEFAULT_STOREFRONT_ASSISTANT_NAME,
+    assistantAdminName:
+      trimmed(process.env.RESUPPLY_ASSISTANT_ADMIN_NAME) ||
+      DEFAULT_ADMIN_ASSISTANT_NAME,
+  };
+}
+
 function envFallbackInfo(): CompanyInfo {
   const envName = trimmed(process.env.RESUPPLY_PRACTICE_NAME);
   const name = envName || DEFAULTS.name;
@@ -114,6 +164,7 @@ function envFallbackInfo(): CompanyInfo {
     supportHours: DEFAULTS.supportHours,
     address: null,
     organizationalNpi: null,
+    ...resolveAssistantNames(),
     source: envName ? "environment" : "fallback",
   };
 }
@@ -126,9 +177,10 @@ class CompanyInfoLookupTimeout extends Error {
 }
 
 async function loadFromDb(): Promise<CompanyInfo | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
   const lookup = supabase
-    .schema("resupply")
     .from("dme_organization")
     .select("*")
     .eq("singleton", true)
@@ -181,6 +233,7 @@ async function loadFromDb(): Promise<CompanyInfo | null> {
       zip: org.physical_zip,
     },
     organizationalNpi: trimmed(org.organizational_npi) || null,
+    ...resolveAssistantNames(),
     source: "database",
   };
 }
@@ -287,6 +340,43 @@ export function applyCompanyIdentityToText(
   for (const [needle, replacement] of identityReplacements(info)) {
     if (replacement) out = out.split(needle).join(replacement);
   }
+  return out;
+}
+
+/**
+ * Normalize the platform/assistant brand tokens in machine-generated
+ * text (chat system prompts, assistant offline replies, suggestion
+ * emails) to the current tenant's effective names. Distinct from
+ * `applyCompanyIdentityToText`, which swaps the *tenant's* own
+ * brand/contact strings and only fires once a company row is saved:
+ *
+ *   - "PennFit"   → the platform brand (CareMetric Breathe) for EVERY
+ *                   tenant — PennFit is the internal codename; the
+ *                   product is always CareMetric Breathe.
+ *   - "PennBot"   → the tenant's configured storefront assistant name
+ *                   (CareMetric Assistant by default; "PennBot" for the
+ *                   Penn Home Medical Supply tenant — a no-op there).
+ *   - "PennPilot" → the tenant's configured admin assistant name
+ *                   (CareMetric Copilot by default; "PennPilot" for Penn
+ *                   Home Medical Supply — a no-op there).
+ *
+ * Keeping the Penn* tokens as the in-source placeholders means the large
+ * prompt knowledge bases don't need to change; the correct names are
+ * produced at the point the text leaves the server. Idempotent.
+ */
+export function applyPlatformBranding(
+  text: string,
+  info: CompanyInfo = getCompanyInfoSync(),
+): string {
+  if (!text) return text;
+  let out = text.split("PennFit").join(PLATFORM_NAME);
+  if (
+    info.assistantStorefrontName &&
+    info.assistantStorefrontName !== "PennBot"
+  )
+    out = out.split("PennBot").join(info.assistantStorefrontName);
+  if (info.assistantAdminName && info.assistantAdminName !== "PennPilot")
+    out = out.split("PennPilot").join(info.assistantAdminName);
   return out;
 }
 

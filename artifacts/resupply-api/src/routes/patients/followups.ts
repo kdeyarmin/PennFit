@@ -6,6 +6,7 @@
 //   GET    /patients/:id/followups?include=completed — full history
 //   POST   /patients/:id/followups          — create
 //   PATCH  /patients/:id/followups/:fid/complete — mark complete
+//   PATCH  /patients/:id/followups/:fid/reopen — undo complete
 //
 // Mounted under /patients/* (the resupply patient flow's prefix), not
 // /admin/shop/* — patients and shop customers are distinct identity
@@ -19,7 +20,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -59,10 +60,14 @@ router.get(
     const patientId = parsed.data;
     const includeCompleted = req.query.include === "completed";
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -82,7 +87,6 @@ router.get(
     // reviewing the past week's calls would see nothing and might
     // re-attempt outreach the patient already received.
     let listQuery = supabase
-      .schema("resupply")
       .from("patient_followups")
       .select(
         "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
@@ -105,15 +109,25 @@ router.get(
     );
 
     res.json({
-      followups: (rows ?? []).map((r) => ({
-        id: r.id,
-        body: r.body,
-        dueAt: r.due_at,
-        completedAt: r.completed_at,
-        completedByEmail: r.completed_by_email,
-        createdByEmail: r.created_by_email,
-        createdAt: r.created_at,
-      })),
+      followups: (rows ?? []).map(
+        (r: {
+          id: string;
+          body: string;
+          due_at: string;
+          completed_at: string | null;
+          completed_by_email: string | null;
+          created_by_email: string | null;
+          created_at: string;
+        }) => ({
+          id: r.id,
+          body: r.body,
+          dueAt: r.due_at,
+          completedAt: r.completed_at,
+          completedByEmail: r.completed_by_email,
+          createdByEmail: r.created_by_email,
+          createdAt: r.created_at,
+        }),
+      ),
     });
   },
 );
@@ -143,10 +157,14 @@ router.post(
     }
     const { body, dueAt } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -158,7 +176,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_followups")
       .insert({
         patient_id: patientId,
@@ -215,10 +232,14 @@ router.patch(
     }
     const followupId = fIdCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: row } = await supabase
-      .schema("resupply")
       .from("patient_followups")
       .select("id, patient_id, completed_at, body, due_at")
       .eq("id", followupId)
@@ -241,7 +262,6 @@ router.patch(
     }
 
     const { data: updatedRow, error } = await supabase
-      .schema("resupply")
       .from("patient_followups")
       .update({
         completed_at: new Date().toISOString(),
@@ -277,6 +297,96 @@ router.patch(
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
       logger.warn({ err }, "patient.followup.complete audit write failed");
+    });
+
+    res.json({
+      id: updatedRow.id,
+      completedAt: updatedRow.completed_at,
+    });
+  },
+);
+
+router.patch(
+  "/patients/:id/followups/:fid/reopen",
+  adminWriteRateLimiter,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = patientIdParam.safeParse(req.params.id);
+    if (!parsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const patientId = parsed.data;
+
+    const fIdCheck = followupIdParam.safeParse(req.params.fid);
+    if (!fIdCheck.success) {
+      res.status(400).json({ error: "invalid_followup_id" });
+      return;
+    }
+    const followupId = fIdCheck.data;
+
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
+    const { data: row, error: lookupErr } = await supabase
+      .from("patient_followups")
+      .select("id, patient_id, completed_at, body, due_at")
+      .eq("id", followupId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!row || row.patient_id !== patientId) {
+      res.status(404).json({ error: "followup_not_found" });
+      return;
+    }
+    if (row.completed_at === null) {
+      res.status(409).json({
+        error: "already_open",
+        message: "This followup is already open.",
+      });
+      return;
+    }
+
+    const { data: updatedRow, error } = await supabase
+      .from("patient_followups")
+      .update({
+        completed_at: null,
+        completed_by_email: null,
+        completed_by_user_id: null,
+      })
+      .eq("id", followupId)
+      .eq("patient_id", patientId)
+      .not("completed_at", "is", null)
+      .select("id, completed_at")
+      .maybeSingle();
+    if (error) throw error;
+    if (!updatedRow) {
+      res.status(409).json({
+        error: "already_open",
+        message: "This followup is already open.",
+      });
+      return;
+    }
+
+    await logAudit({
+      action: "patient.followup.reopen",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_followups",
+      targetId: followupId,
+      metadata: {
+        patient_id: patientId,
+        body_length: row.body.length,
+        due_at: row.due_at,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.followup.reopen audit write failed");
     });
 
     res.json({

@@ -6,12 +6,24 @@
 // downloaded PDF, the emailed attachment, the faxed media, and the
 // chart-filed copy are byte-identical.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
-import { getDocumentSupplierNameSync } from "../company-info";
+import {
+  getCompanyInfo,
+  getCompanyInfoSync,
+  getDocumentSupplierNameSync,
+} from "../company-info";
 import { getTrackingCodeForDocument } from "../signature-tracking/service";
 import { isManualDocumentType, type ManualDocumentType } from "./catalog";
-import { renderManualDocumentPdf, type ManualDocumentPdfInput } from "./pdf";
+import {
+  renderManualDocumentPdf,
+  type ManualDocumentPdfInput,
+  type ManualDocumentSupplierContact,
+} from "./pdf";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
@@ -49,6 +61,36 @@ export function manualDocumentSupplierName(): string {
   return getDocumentSupplierNameSync();
 }
 
+function formatCompanyAddress(
+  address: ReturnType<typeof getCompanyInfoSync>["address"],
+): string | null {
+  if (!address) return null;
+  const parts: string[] = [];
+  if (address.line1) parts.push(address.line1);
+  if (address.line2) parts.push(address.line2);
+  const cityLine = [
+    address.city,
+    [address.state, address.zip].filter(Boolean).join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  if (cityLine) parts.push(cityLine);
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+/** Supplier contact/identifier block for official payer PDFs. */
+export async function manualDocumentSupplierContact(): Promise<ManualDocumentSupplierContact> {
+  const info = await getCompanyInfo();
+  return {
+    address: formatCompanyAddress(info.address),
+    phone: info.phoneDisplay,
+    fax: info.faxE164,
+    email: info.generalEmail,
+    npi: info.organizationalNpi,
+    website: info.websiteUrl,
+  };
+}
+
 /** Load one row by id. Returns null when not found or the type is bad. */
 export async function loadManualDocumentRow(
   supabase: SupabaseClient,
@@ -79,18 +121,23 @@ export async function loadManualDocumentRow(
  * same whether sent alone or inside a packet.
  */
 export async function buildManualDocumentPdfInput(
-  supabase: SupabaseClient,
   row: ManualDocumentRow,
   generatedOn: Date,
 ): Promise<ManualDocumentPdfInput> {
   // Best-effort: if the signature_tracking query fails (e.g. during a
   // migration window or a transient DB hiccup), render the PDF without
-  // a barcode rather than failing the whole download.
-  const trackingCode = await getTrackingCodeForDocument(
-    supabase,
-    "manual_document",
-    row.id,
-  ).catch(() => null);
+  // a barcode rather than failing the whole download. signature-tracking
+  // reads go through the org-scoped chokepoint; scoped to the seed org
+  // (single-tenant bridge) since the renderer carries no request tenant.
+  const sigOrgId = await resolveSeedOrgId();
+  const trackingCode = sigOrgId
+    ? await getTrackingCodeForDocument(
+        getOrgScopedClient(sigOrgId),
+        "manual_document",
+        row.id,
+      ).catch(() => null)
+    : null;
+  const supplierContact = await manualDocumentSupplierContact();
   return {
     documentType: row.document_type,
     title: row.title,
@@ -102,6 +149,7 @@ export async function buildManualDocumentPdfInput(
     },
     fields: (row.fields ?? null) as Record<string, unknown> | null,
     body: row.body,
+    supplierContact,
     supplierName: manualDocumentSupplierName(),
     generatedOn,
     trackingCode,
@@ -113,10 +161,9 @@ export async function buildManualDocumentPdfInput(
  * email, fax, chart copy) byte-identical.
  */
 export async function renderManualDocumentRowToPdf(
-  supabase: SupabaseClient,
   row: ManualDocumentRow,
   generatedOn: Date = new Date(),
 ): Promise<Buffer> {
-  const input = await buildManualDocumentPdfInput(supabase, row, generatedOn);
+  const input = await buildManualDocumentPdfInput(row, generatedOn);
   return renderManualDocumentPdf(input);
 }

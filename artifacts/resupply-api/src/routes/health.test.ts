@@ -12,8 +12,9 @@ vi.mock("../lib/readiness", () => ({
   checkReadiness: vi.fn(),
 }));
 
-import healthRouter from "./health";
+import healthRouter, { __resetReadyzCacheForTests } from "./health";
 import { checkReadiness } from "../lib/readiness";
+import { __resetRateLimitsForTests } from "../middlewares/rate-limit";
 
 function makeApp(): express.Express {
   const app = express();
@@ -36,6 +37,8 @@ describe("GET /healthz", () => {
 
 describe("GET /readyz", () => {
   beforeEach(() => {
+    __resetReadyzCacheForTests();
+    __resetRateLimitsForTests();
     vi.mocked(checkReadiness).mockReset();
   });
 
@@ -85,6 +88,49 @@ describe("GET /readyz", () => {
     expect(res.body.errors.queue).toBe("schema_not_initialized");
   });
 
+  it("briefly caches readiness snapshots so repeated probes do not repeat DB checks", async () => {
+    vi.mocked(checkReadiness).mockResolvedValue({
+      status: "ready",
+      checks: { db: "ok", queue: "ok" },
+    });
+
+    const app = makeApp();
+    const first = await request(app).get("/readyz");
+    const second = await request(app).get("/readyz");
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual(first.body);
+    expect(checkReadiness).toHaveBeenCalledTimes(1);
+    expect(second.header["cache-control"]).toBe("no-store");
+  });
+
+  it("collapses concurrent readiness probes into one in-flight dependency check", async () => {
+    vi.mocked(checkReadiness).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                status: "ready",
+                checks: { db: "ok", queue: "ok" },
+              }),
+            10,
+          );
+        }),
+    );
+
+    const app = makeApp();
+    const [first, second] = await Promise.all([
+      request(app).get("/readyz"),
+      request(app).get("/readyz"),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(checkReadiness).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to a safe structured 503 if checkReadiness unexpectedly throws", async () => {
     // Defense-in-depth: checkReadiness is contractually never-throw,
     // but if a future regression breaks that, we must NOT fall
@@ -125,6 +171,7 @@ describe("GET /readyz", () => {
       { queue: "database_starting_up" as const },
     ];
     for (const errors of scenarios) {
+      __resetReadyzCacheForTests();
       vi.mocked(checkReadiness).mockResolvedValue({
         status: "not_ready",
         checks: {

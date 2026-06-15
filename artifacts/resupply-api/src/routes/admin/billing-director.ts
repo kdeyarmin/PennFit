@@ -18,7 +18,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -27,8 +27,13 @@ const router: IRouter = Router();
 router.get(
   "/admin/billing/director-summary",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const now = Date.now();
     const t24h = new Date(now - 24 * 3600 * 1000).toISOString();
     const t48h = new Date(now - 48 * 3600 * 1000).toISOString();
@@ -40,72 +45,64 @@ router.get(
 
     const results = await Promise.all([
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id, total_billed_cents", { count: "exact" })
         .eq("status", "draft")
         .lte("created_at", t24h),
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id, total_billed_cents, payer_name", { count: "exact" })
         .eq("status", "denied")
         .gte("decision_at", t14d),
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id, total_billed_cents")
         .eq("status", "submitted")
         .lte("submitted_at", t48h),
       supabase
-        .schema("resupply")
         .from("era_files")
         .select("id")
         .eq("status", "partial")
         .gte("ingested_at", t30d),
       supabase
+        .raw()
         .schema("resupply")
+        .rpc("fulfillments_to_bill_count", { p_since: t7d }),
+      supabase
         .from("insurance_claims")
         .select("id")
         .eq("status", "draft")
         .eq("latest_scrub_verdict", "blocking"),
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id")
         .eq("status", "draft")
         .eq("latest_scrub_verdict", "fixable"),
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id")
         .eq("status", "denied")
         .is("latest_denial_analysis_id", null),
       supabase
-        .schema("resupply")
         .from("claim_denial_analyses")
         .select("id")
         .eq("can_auto_resubmit", true)
         .eq("review_status", "pending"),
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("payer_name, patient_responsibility_cents")
         .gt("patient_responsibility_cents", 0)
         .in("status", ["paid", "denied", "appealed", "closed"]),
       supabase
-        .schema("resupply")
         .from("webhook_deliveries")
         .select("id", { count: "exact", head: true })
         .eq("status", "queued"),
       supabase
-        .schema("resupply")
         .from("webhook_deliveries")
         .select("id", { count: "exact", head: true })
         .eq("status", "exhausted")
         .gte("updated_at", t24h),
       supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("status, decision_at")
         .gte("decision_at", t90d)
@@ -123,6 +120,7 @@ router.get(
       { data: freshDenials },
       { data: stuckSubmitted },
       { data: partialEras },
+      { data: fulfillmentsToBillRaw },
       { data: scrubBlocking },
       { data: scrubFixable },
       { data: deniedNoAnalysis },
@@ -133,23 +131,32 @@ router.get(
       { data: denialRateRows },
     ] = results;
 
+    // PostgREST serialises bigint as a string; coerce defensively.
+    const fulfillmentsToBillCount = Number(fulfillmentsToBillRaw ?? 0);
+
     // Money rollups.
     const dollarsInStuckSubmitted = (stuckSubmitted ?? []).reduce(
-      (s, c) => s + (c.total_billed_cents ?? 0),
+      (s: number, c: { total_billed_cents: number | null }) =>
+        s + (c.total_billed_cents ?? 0),
       0,
     );
     const dollarsInDeniedFresh = (freshDenials ?? []).reduce(
-      (s, c) => s + (c.total_billed_cents ?? 0),
+      (s: number, c: { total_billed_cents: number | null }) =>
+        s + (c.total_billed_cents ?? 0),
       0,
     );
     const dollarsInPatientResp = (openPatientResp ?? []).reduce(
-      (s, c) => s + (c.patient_responsibility_cents ?? 0),
+      (s: number, c: { patient_responsibility_cents: number | null }) =>
+        s + (c.patient_responsibility_cents ?? 0),
       0,
     );
 
     // Top 5 payers by open patient_responsibility.
     const perPayer = new Map<string, number>();
-    for (const c of openPatientResp ?? []) {
+    for (const c of (openPatientResp ?? []) as Array<{
+      payer_name: string;
+      patient_responsibility_cents: number | null;
+    }>) {
       const cur = perPayer.get(c.payer_name) ?? 0;
       perPayer.set(c.payer_name, cur + (c.patient_responsibility_cents ?? 0));
     }
@@ -164,7 +171,10 @@ router.get(
       d30_60: { dec: 0, den: 0 },
       d60_90: { dec: 0, den: 0 },
     };
-    for (const c of denialRateRows ?? []) {
+    for (const c of (denialRateRows ?? []) as Array<{
+      status: string;
+      decision_at: string | null;
+    }>) {
       if (!c.decision_at) continue;
       const ageDays =
         (now - new Date(c.decision_at).getTime()) / (24 * 3600 * 1000);
@@ -188,6 +198,7 @@ router.get(
         freshDenials: freshDenials?.length ?? 0,
         stuckSubmittedNoAck: stuckSubmitted?.length ?? 0,
         partialEras: partialEras?.length ?? 0,
+        fulfillmentsToBill: fulfillmentsToBillCount,
         scrubBlocking: scrubBlocking?.length ?? 0,
         scrubFixable: scrubFixable?.length ?? 0,
         deniedNeedsAnalysis: deniedNoAnalysis?.length ?? 0,

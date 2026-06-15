@@ -150,8 +150,10 @@ describe("signLinkToken / verifyLinkToken", () => {
       action: "confirm",
     });
     delete process.env[KEY_ENV];
-    const r = verifyLinkToken(token);
-    expect(r).toEqual({ valid: false, reason: "bad-signature" });
+    const result = verifyLinkToken(token);
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.reason).toBe("bad-signature");
   });
 
   it("rejects unknown action at sign time", () => {

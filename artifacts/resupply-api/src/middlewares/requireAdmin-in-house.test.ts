@@ -57,6 +57,11 @@ vi.mock("@workspace/resupply-db", () => ({
       }),
     }),
   }),
+  // requireAdmin resolves the (single-tenant) seed org_id best-effort to
+  // attach req.orgId. The middleware path under test doesn't assert on
+  // org_id, so resolve to none — exercising the same "no org attached"
+  // branch a fresh environment hits before the seed tenant is cached.
+  resolveSeedOrgId: async () => null,
 }));
 
 import { requireAdmin, requireAdminOnly } from "./requireAdmin";

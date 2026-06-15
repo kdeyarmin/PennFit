@@ -30,7 +30,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -78,7 +78,11 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     return { skipped: true, scanned: 0, reminded: 0, emailSent: 0, smsSent: 0 };
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { scanned: 0, reminded: 0, emailSent: 0, smsSent: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
   const sentBefore = new Date(
@@ -89,7 +93,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
   ).toISOString();
 
   const { data: candidates, error } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .select(
       "id, patient_id, link_version, reminder_count, recipient_name, recipient_email, sent_at, status, expires_at, last_reminded_at",
@@ -114,9 +117,10 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
 
   // Bulk-resolve patient phone numbers (+ timezone for the TCPA
   // send-window gate) for the SMS channel.
-  const patientIds = Array.from(new Set(rows.map((r) => r.patient_id)));
+  const patientIds = Array.from(
+    new Set(rows.map((r: { patient_id: string }) => r.patient_id)),
+  );
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, phone_e164, timezone, address")
     .in("id", patientIds);
@@ -145,7 +149,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     // Claim: compare-and-set on (reminder_count, link_version) so two
     // overlapping sweeps can't both nudge the same packet.
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update({
         link_version: nextVersion,
@@ -186,7 +189,7 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     let smsSent = false;
     try {
       const res = await deliverPacketLink({
-        supabase,
+        supabase: supabase.raw(),
         recipientName: c.recipient_name,
         link,
         email: c.recipient_email,
@@ -216,7 +219,6 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
       // just wrote, so a concurrent admin resend is never clobbered):
       // the old link works again and the slot is retried next sweep.
       const { error: rollbackErr } = await supabase
-        .schema("resupply")
         .from("patient_packets")
         .update({
           link_version: c.link_version,

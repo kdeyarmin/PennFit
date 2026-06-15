@@ -97,6 +97,10 @@ export function VerifyEmailPage() {
             >
               {errorMessage}
             </p>
+            <p className="text-xs text-muted-foreground">
+              Already verified? This can happen when a link is opened twice — if
+              so, you can just sign in.
+            </p>
             <Link
               href={`${basePath}/sign-in`}
               className="text-xs underline text-[hsl(var(--penn-navy-deep))] block text-center"

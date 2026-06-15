@@ -19,7 +19,7 @@
 # post-merge main run is the one that catches the racing-PR case.
 #
 # The allowlist freezes the duplicates that already exist on main as
-# of 2026-06-12. They cannot be renumbered: applied migrations are
+# of 2026-06-14. They cannot be renumbered: applied migrations are
 # immutable (ADR 003 / check-resupply-migration-immutability.sh), and
 # the migrator handles the existing pairs in lexicographic order with
 # a warning. DO NOT add entries to this list — fix the new collision
@@ -51,6 +51,8 @@ GRANDFATHERED="
 0253:3
 0254:2
 0257:2
+0337:2
+0338:2
 "
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

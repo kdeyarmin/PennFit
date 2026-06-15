@@ -28,9 +28,7 @@
 
 import { randomInt } from "node:crypto";
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 export type SignatureDocumentKind = "prescription_request" | "manual_document";
 export type SignatureTrackingStatus =
@@ -43,12 +41,18 @@ export type SignatureDeliveryChannel =
   | "email"
   | "hand_delivery";
 
-const CODE_PREFIX = "PFS-";
+// Current brand prefix for newly minted codes (CareMetric Breathe).
+const CODE_PREFIX = "CMB-";
+// Legacy prefix from before the platform rebrand ("PennFit Signature").
+// Still accepted on scan/lookup so signed documents already in the field —
+// faxes carrying a printed PFS- barcode — keep round-tripping. Never
+// minted anymore.
+const LEGACY_CODE_PREFIX = "PFS-";
 // Crockford-ish alphabet minus the easily-confused glyphs (0/O, 1/I/L).
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CODE_BODY_LENGTH = 8;
 
-/** Mint a random, human-keyable, barcode-safe tracking code (PFS-XXXXXXXX). */
+/** Mint a random, human-keyable, barcode-safe tracking code (CMB-XXXXXXXX). */
 export function generateTrackingCode(): string {
   let body = "";
   for (let i = 0; i < CODE_BODY_LENGTH; i += 1) {
@@ -59,28 +63,33 @@ export function generateTrackingCode(): string {
 
 /**
  * Normalise a scanned / typed code for lookup: uppercase, strip spaces +
- * dashes, and re-apply the canonical PFS- prefix. Accepts the code with
- * or without the prefix and with arbitrary internal spacing (faxed
- * barcodes are sometimes hand-keyed with a space after the prefix).
+ * dashes. A recognised brand prefix — the current `CMB-` or the legacy
+ * `PFS-` — is PRESERVED so a code minted under either resolves to its
+ * stored row (lookups are exact-match on `tracking_code`). A prefixless,
+ * hand-keyed body gets the current prefix. Tolerant of arbitrary internal
+ * spacing (faxed barcodes are sometimes hand-keyed with a space).
  */
 export function normalizeTrackingCode(raw: string): string {
   const compact = raw.toUpperCase().replace(/[\s-]+/g, "");
-  const body = compact.startsWith("PFS") ? compact.slice(3) : compact;
-  return `${CODE_PREFIX}${body}`;
+  if (compact.startsWith("CMB")) return `${CODE_PREFIX}${compact.slice(3)}`;
+  if (compact.startsWith("PFS")) {
+    return `${LEGACY_CODE_PREFIX}${compact.slice(3)}`;
+  }
+  return `${CODE_PREFIX}${compact}`;
 }
 
-// Canonical shape: PFS- + 8 chars from the unambiguous alphabet. Built
-// from the same constants `generateTrackingCode` mints from so the two
-// can never drift.
+// Canonical shape: the current OR legacy prefix + 8 chars from the
+// unambiguous alphabet. Built from the same constants
+// `generateTrackingCode` mints from so the two can never drift.
 const WELL_FORMED_CODE_RE = new RegExp(
-  `^${CODE_PREFIX}[${CODE_ALPHABET}]{${CODE_BODY_LENGTH}}$`,
+  `^(?:${CODE_PREFIX}|${LEGACY_CODE_PREFIX})[${CODE_ALPHABET}]{${CODE_BODY_LENGTH}}$`,
 );
 
 /**
  * True when `raw` (after {@link normalizeTrackingCode}) is a syntactically
- * valid PennFit tracking code. Used to reject a hallucinated / misread
- * code from the fax barcode scan BEFORE it hits the database — a value
- * that can't be one of ours never warrants a lookup.
+ * valid tracking code (current CMB- or legacy PFS-). Used to reject a
+ * hallucinated / misread code from the fax barcode scan BEFORE it hits the
+ * database — a value that can't be one of ours never warrants a lookup.
  */
 export function isWellFormedTrackingCode(raw: string): boolean {
   return WELL_FORMED_CODE_RE.test(normalizeTrackingCode(raw));
@@ -107,11 +116,10 @@ export interface RegisterSignatureTrackingInput {
  * awaiting_signature (the document is being sent again).
  */
 export async function registerSignatureTracking(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   input: RegisterSignatureTrackingInput,
 ): Promise<{ trackingCode: string; id: string; created: boolean }> {
   const { data: existing, error: loadErr } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select("id, tracking_code")
     .eq("document_kind", input.kind)
@@ -123,7 +131,6 @@ export async function registerSignatureTracking(
   const nowIso = new Date().toISOString();
   if (existing) {
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("signature_tracking")
       .update({
         title: input.title,
@@ -152,7 +159,6 @@ export async function registerSignatureTracking(
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const trackingCode = generateTrackingCode();
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("signature_tracking")
       .insert({
         tracking_code: trackingCode,
@@ -183,7 +189,6 @@ export async function registerSignatureTracking(
     const code = (insertErr as { code?: string } | null)?.code;
     if (code === "23505") {
       const { data: raced } = await supabase
-        .schema("resupply")
         .from("signature_tracking")
         .select("id, tracking_code")
         .eq("document_kind", input.kind)
@@ -207,12 +212,11 @@ export async function registerSignatureTracking(
 
 /** Look up the tracking code already assigned to a document, if any. */
 export async function getTrackingCodeForDocument(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select("tracking_code")
     .eq("document_kind", kind)
@@ -230,13 +234,12 @@ export async function getTrackingCodeForDocument(
  * feature) is a no-op rather than an error.
  */
 export async function recordTrackingSent(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
   channel: SignatureDeliveryChannel,
 ): Promise<void> {
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select("id, sent_count")
     .eq("document_kind", kind)
@@ -247,7 +250,6 @@ export async function recordTrackingSent(
   if (!row) return;
   const nowIso = new Date().toISOString();
   const { error: updErr } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .update({
       sent_count: (row.sent_count ?? 0) + 1,
@@ -262,13 +264,12 @@ export async function recordTrackingSent(
 
 /** Mark the document's tracking row as returned-signed. Best-effort. */
 export async function markTrackingReturned(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
 ): Promise<void> {
   const nowIso = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .update({
       status: "returned_signed",
@@ -290,14 +291,13 @@ export async function markTrackingReturned(
  * terminal).
  */
 export async function markReturnedAndCascade(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   row: SignatureTrackingRow,
 ): Promise<{ cascaded: boolean }> {
   await markTrackingReturned(supabase, row.documentKind, row.documentId);
   if (row.documentKind !== "prescription_request") return { cascaded: false };
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase
-    .schema("resupply")
     .from("prescription_request_packets")
     .update({ status: "signed", signed_at: nowIso, updated_at: nowIso })
     .eq("id", row.documentId)
@@ -309,13 +309,12 @@ export async function markReturnedAndCascade(
 
 /** Mark the document's tracking row as canceled. Best-effort. */
 export async function markTrackingCanceled(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
 ): Promise<void> {
   const nowIso = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .update({ status: "canceled", canceled_at: nowIso, updated_at: nowIso })
     .eq("document_kind", kind)
@@ -399,12 +398,11 @@ function projectRow(r: SignatureTrackingDbRow): SignatureTrackingRow {
 
 /** Resolve a scanned / typed tracking code to its row (or null). */
 export async function lookupTrackingByCode(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   rawCode: string,
 ): Promise<SignatureTrackingRow | null> {
   const code = normalizeTrackingCode(rawCode);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select(ROW_COLUMNS)
     .eq("tracking_code", code)
@@ -417,11 +415,10 @@ export async function lookupTrackingByCode(
 
 /** Load one tracking row by its id. */
 export async function getTrackingById(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   id: string,
 ): Promise<SignatureTrackingRow | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select(ROW_COLUMNS)
     .eq("id", id)
@@ -481,14 +478,13 @@ const MAX_LIMIT = 500;
  * {@link recordTrackingSent}.
  */
 export async function listOutstandingSignatures(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   opts: ListOutstandingOptions = {},
 ): Promise<OutstandingSignaturesResult> {
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
   const status = opts.status ?? "awaiting_signature";
 
   let query = supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select(ROW_COLUMNS)
     .eq("status", status)

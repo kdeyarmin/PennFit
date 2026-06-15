@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
@@ -20,6 +21,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel, describeError } from "@/components/admin/ErrorPanel";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { formatAppDate } from "@/lib/utils";
 import {
   createManualDocumentPacket,
   getManualDocumentCatalog,
@@ -139,7 +141,7 @@ export function AdminDocumentsPage() {
   const createPacket = useMutation({
     mutationFn: (documentIds: string[]) =>
       createManualDocumentPacket({
-        title: `Document packet — ${new Date().toLocaleDateString(undefined, {
+        title: `Document packet — ${formatAppDate(new Date(), {
           year: "numeric",
           month: "short",
           day: "numeric",
@@ -168,13 +170,26 @@ export function AdminDocumentsPage() {
             </h1>
             <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
               Type out a CMN, prescription, agreement, delivery ticket, or fax
-              cover by hand, then send each one on its own — or select several
-              and send them together as a packet.
+              cover as a manual PDF for email, fax, download, or chart filing.
+              For patient electronic signatures, send a Document packet.
             </p>
           </div>
-          <Button onClick={() => setComposing((s) => !s)}>
-            {composing ? "Close" : "New document"}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Link
+              href="/admin/patient-packets"
+              className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-semibold transition-all"
+              style={{
+                backgroundColor: "hsl(var(--surface-2))",
+                color: "hsl(var(--penn-navy-deep))",
+                borderColor: "hsl(var(--penn-gold))",
+              }}
+            >
+              Send for e-sign
+            </Link>
+            <Button onClick={() => setComposing((s) => !s)}>
+              {composing ? "Close" : "New document"}
+            </Button>
+          </div>
         </div>
 
         {composing && (
@@ -301,7 +316,7 @@ export function AdminDocumentsPage() {
           ) : documents.length === 0 ? (
             <EmptyState
               title="No documents yet"
-              hint="Click “New document” to type out a Certificate of Medical Necessity, prescription/order, agreement, delivery ticket, fax cover, or free-form letter. Each can be sent on its own or bundled into a packet."
+              hint="Click New document to type out a Certificate of Medical Necessity, prescription/order, agreement, delivery ticket, fax cover, or free-form letter. These manual PDFs can be emailed, faxed, downloaded, filed, or bundled into a combined PDF packet."
             />
           ) : (
             <div className="overflow-x-auto">
@@ -311,14 +326,25 @@ export function AdminDocumentsPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="pl-5 pr-2 py-2 font-medium">
+                    <th scope="col" className="pl-5 pr-2 py-2 font-medium">
                       <span className="sr-only">Select</span>
                     </th>
-                    <th className="px-5 py-2 font-medium">Title</th>
-                    <th className="px-5 py-2 font-medium">Type</th>
-                    <th className="px-5 py-2 font-medium">Status</th>
-                    <th className="px-5 py-2 font-medium">Created</th>
-                    <th className="px-5 py-2 font-medium text-right">
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Title
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Type
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Status
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Created
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-5 py-2 font-medium text-right"
+                    >
                       Actions
                     </th>
                   </tr>
@@ -405,7 +431,7 @@ export function AdminDocumentsPage() {
 
         <Card
           title="Packets"
-          subtitle="Bundles of the documents above, sent as one combined PDF — generated cover sheet first, then each document."
+          subtitle="Bundles of the documents above, sent as one combined PDF for email, fax, download, or chart filing. This is not an electronic-signature packet."
         >
           {packetPdfError && (
             <div
@@ -436,11 +462,22 @@ export function AdminDocumentsPage() {
                     className="text-left"
                     style={{ color: "hsl(var(--ink-3))" }}
                   >
-                    <th className="px-5 py-2 font-medium">Title</th>
-                    <th className="px-5 py-2 font-medium">Documents</th>
-                    <th className="px-5 py-2 font-medium">Status</th>
-                    <th className="px-5 py-2 font-medium">Created</th>
-                    <th className="px-5 py-2 font-medium text-right">
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Title
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Documents
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Status
+                    </th>
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Created
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-5 py-2 font-medium text-right"
+                    >
                       Actions
                     </th>
                   </tr>

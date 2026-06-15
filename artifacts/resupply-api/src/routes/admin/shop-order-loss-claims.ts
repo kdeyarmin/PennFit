@@ -10,7 +10,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -53,9 +53,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("shop_order_loss_claims")
       .select(
         "id, order_id, opened_by_user_id, status, carrier_claim_number, resolution_note, opened_at, carrier_filed_at, resolved_at, created_at, updated_at",
@@ -64,7 +68,11 @@ router.get(
       .order("opened_at", { ascending: false });
     if (error) throw error;
     res.json({
-      claims: (data ?? []).map((r) => ({
+      claims: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_order_loss_claims"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         orderId: r.order_id,
         openedByUserId: r.opened_by_user_id,
@@ -100,9 +108,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_order_loss_claims")
       .insert({
         order_id: idParse.data,
@@ -160,9 +172,13 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: prior, error: priorErr } = await supabase
-      .schema("resupply")
       .from("shop_order_loss_claims")
       .select("id, status, order_id")
       .eq("id", idParse.data)
@@ -204,7 +220,6 @@ router.patch(
       update.resolution_note = parsed.data.resolutionNote;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("shop_order_loss_claims")
       .update(update)
       .eq("id", idParse.data);

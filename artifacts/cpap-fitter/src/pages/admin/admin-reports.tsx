@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { PageHeader } from "@/components/admin/PageHeader";
 import {
   createReportPreset,
   deleteReportPreset,
@@ -81,20 +82,10 @@ export function AdminReportsPage() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admin-reports-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Reports
-        </h1>
-        <p className="text-sm text-slate-600">
-          Expansive operational + finance exports. Pick a date range (max 90
-          days per export) and choose a format. PDF is best for archival; CSV is
-          best for spreadsheets; the QuickBooks formats plug directly into
-          Desktop (.iif) or Online (.csv).
-        </p>
-      </header>
+      <PageHeader
+        title="Reports"
+        description="Expansive operational + finance exports. Pick a date range (max 90 days per export) and choose a format. PDF is best for archival; CSV is best for spreadsheets; the QuickBooks formats plug directly into Desktop (.iif) or Online (.csv)."
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
         <div

@@ -43,7 +43,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -82,7 +82,9 @@ interface ConversationSweepRow {
 /** Exported for test injection. Runs one sweep cycle and returns
  *  the counts so a test can assert behavior without scheduling. */
 export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { scanned: 0, unassigned: 0 };
+  const supabase = getOrgScopedClient(orgId);
   let scanned = 0;
   let unassigned = 0;
   let lastConversationId: string | null = null;
@@ -93,7 +95,6 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
     //    skip rows because this job unassigns conversations in-loop,
     //    which shrinks the filtered set between pages.
     const pageQuery = supabase
-      .schema("resupply")
       .from("conversations")
       .select("id, assigned_admin_user_id, assigned_at, status")
       .not("assigned_admin_user_id", "is", null)
@@ -123,13 +124,14 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
       continue;
     }
     const { data: revokedAssignees, error: assigneeErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id")
       .in("id", assigneeIds)
       .eq("status", "revoked");
     if (assigneeErr) throw assigneeErr;
-    const revokedIds = new Set((revokedAssignees ?? []).map((r) => r.id));
+    const revokedIds = new Set(
+      ((revokedAssignees ?? []) as Array<{ id: string }>).map((r) => r.id),
+    );
 
     // 3. For every conversation whose assignee is in the revoked
     //    set, clear the assignment. We issue one UPDATE per row
@@ -145,7 +147,6 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
         continue;
       }
       const { error: updErr } = await supabase
-        .schema("resupply")
         .from("conversations")
         .update({
           assigned_admin_user_id: null,

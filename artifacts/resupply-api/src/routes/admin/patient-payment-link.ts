@@ -27,7 +27,7 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -270,10 +270,15 @@ router.post(
       return;
     }
     const body = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
+    const { data: patient, error: patientErr } = await db
       .from("patients")
       .select("id, status, email, phone_e164, legal_first_name")
       .eq("id", idCheck.data)

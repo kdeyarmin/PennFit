@@ -36,6 +36,9 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { PayerNameAutocomplete } from "@/components/admin/PayerNameAutocomplete";
+import { HcpcsCodeAutocomplete } from "@/components/admin/HcpcsCodeAutocomplete";
+import { todayAppDateIso } from "@/lib/utils";
 import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
@@ -279,9 +282,7 @@ function CreateClaimDialog({
 }) {
   const queryClient = useQueryClient();
   const [payerName, setPayerName] = useState("");
-  const [dateOfService, setDateOfService] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [dateOfService, setDateOfService] = useState(todayAppDateIso());
   const [claimNumber, setClaimNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -317,9 +318,9 @@ function CreateClaimDialog({
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs font-medium block mb-1">Payer name</span>
-            <Input
+            <PayerNameAutocomplete
               value={payerName}
-              onChange={(e) => setPayerName(e.target.value)}
+              onValueChange={setPayerName}
               placeholder="e.g. Aetna, Medicare Part B"
               maxLength={120}
             />
@@ -598,6 +599,28 @@ function ClaimDrawerContent({
             {formatMoneyCents(claim.patientResponsibilityCents)}
           </span>
         </div>
+        {(claim.deductibleCents > 0 ||
+          claim.coinsuranceCents > 0 ||
+          claim.copayCents > 0) && (
+          <p
+            className="text-xs text-slate-500"
+            data-testid="claim-resp-breakdown"
+          >
+            {[
+              claim.deductibleCents > 0
+                ? `Deductible ${formatMoneyCents(claim.deductibleCents)}`
+                : null,
+              claim.coinsuranceCents > 0
+                ? `Coinsurance ${formatMoneyCents(claim.coinsuranceCents)}`
+                : null,
+              claim.copayCents > 0
+                ? `Copay ${formatMoneyCents(claim.copayCents)}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
         {claim.denialReason && (
           <p className="text-xs text-rose-700">
             Denial reason: {claim.denialReason}
@@ -1083,11 +1106,11 @@ function AddLineForm({
     >
       <p className="text-xs font-medium">Add line item</p>
       <div className="grid grid-cols-2 gap-2">
-        <Input
+        <HcpcsCodeAutocomplete
           placeholder="HCPCS (e.g. E0601)"
           aria-label="HCPCS code"
           value={hcpcsCode}
-          onChange={(e) => setHcpcsCode(e.target.value.toUpperCase())}
+          onValueChange={(v) => setHcpcsCode(v.toUpperCase())}
           maxLength={12}
         />
         <Input

@@ -10,7 +10,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   CoverageNotForPatientError,
@@ -63,6 +63,7 @@ router.post(
         patientId: parsed.data.id,
         hcpcsCode: bodyParsed.data?.hcpcsCode,
         requestedByEmail: req.adminEmail ?? "unknown",
+        orgId: req.orgId,
       });
       await logAudit({
         action: "eligibility.verify",
@@ -109,9 +110,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data } = await db
       .from("eligibility_checks")
       .select("*")
       .eq("patient_id", parsed.data.id)

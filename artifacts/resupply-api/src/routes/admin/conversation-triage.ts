@@ -5,7 +5,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { safeCsvCell } from "../../lib/safe-csv-cell";
@@ -83,9 +83,13 @@ router.patch(
     } else {
       snoozedUntil = parsed.data.snoozedUntil ?? null;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({
         snoozed_until: snoozedUntil,
@@ -120,9 +124,13 @@ router.patch(
     const tags = Array.from(
       new Set(parsed.data.tags.map((t) => t.trim().toLowerCase())),
     );
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({ tags, updated_at: new Date().toISOString() })
       .eq("id", params.data.id)
@@ -155,10 +163,14 @@ router.post(
       res.status(500).json({ error: "admin_user_id_missing" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: claimed, error } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({
         assigned_admin_user_id: adminUserId,
@@ -174,7 +186,6 @@ router.post(
       // disambiguate with a follow-up read so the SPA can render
       // the appropriate banner.
       const { data: existing } = await supabase
-        .schema("resupply")
         .from("conversations")
         .select("assigned_admin_user_id")
         .eq("id", params.data.id)
@@ -220,9 +231,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: convo } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("id, channel, patient_id, customer_id")
       .eq("id", params.data.id)
@@ -233,7 +248,6 @@ router.get(
       return;
     }
     const { data: messages, error } = await supabase
-      .schema("resupply")
       .from("messages")
       .select(
         "id, direction, sender_role, body, delivery_status, delivery_error, sent_at, created_at",

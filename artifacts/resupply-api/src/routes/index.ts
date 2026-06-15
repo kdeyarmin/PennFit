@@ -31,6 +31,7 @@ import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import counterOrdersRouter from "./admin/counter-orders.js";
 import csrOrderRequestsAdminRouter from "./admin/csr-order-requests.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import storefrontBrandingAdminRouter from "./admin/storefront-branding.js";
 import inventoryReconciliationRouter from "./admin/inventory-reconciliation.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import alertsRouter from "./admin/alerts.js";
@@ -56,6 +57,7 @@ import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import referralReviewsRouter from "./admin/referral-reviews.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
+import assetRecoveryRouter from "./admin/asset-recovery.js";
 import analyticsRouter from "./admin/analytics.js";
 import analyticsOutreachAttributionRouter from "./admin/analytics-outreach-attribution.js";
 import analyticsMarginRouter from "./admin/analytics-margin.js";
@@ -97,6 +99,7 @@ import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js"
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import therapyFleetRouter from "./admin/therapy-fleet.js";
+import therapyClinicalInsightsRouter from "./admin/therapy-clinical-insights.js";
 import therapyResupplyRouter from "./admin/therapy-resupply.js";
 import therapyComplianceRouter from "./admin/therapy-compliance.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
@@ -649,6 +652,9 @@ router.use(dispenseReadinessRouter);
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
 router.use(shopProductsAdminRouter);
+// /admin/storefront-branding/* — a tenant configures their own
+// storefront name / tagline / logo and binds + verifies a custom domain.
+router.use(storefrontBrandingAdminRouter);
 // /admin/shop/orders/* — fulfillment tooling on shop_orders rows
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
@@ -791,6 +797,11 @@ router.use(referralReviewsRouter);
 // Philips-DreamStation-style workflows where every DME needs to
 // know which dispensed serials are in the recall lot.
 router.use(equipmentRecallsRouter);
+// /admin/asset-recovery/* — worklist for recovering CPAP machines from
+// patients who discontinued therapy, so the device can be refurbished
+// and redeployed. The ACTION half of the discontinuation signals the
+// smart-trigger + lapsed-winback jobs already detect.
+router.use(assetRecoveryRouter);
 // /admin/analytics/* — clinical-side analytics (resupply funnel,
 // compliance cohorts, CSR productivity). Distinct from storefront
 // analytics at /admin/storefront/analytics which covers orders +
@@ -922,6 +933,10 @@ router.use(integrationsErrorsRouter);
 // compliance cohorts + prioritized clinical/compliance outreach
 // worklist (with CSV export) over the patient_therapy_nights rollup.
 router.use(therapyFleetRouter);
+// /admin/therapy-fleet/clinical-insights[.csv] — cross-panel report of
+// the RT-owned clinical smart-trigger signals (pressure pegging, AHI
+// elevated/rising, non-adherence, erratic use) with a CSV export.
+router.use(therapyClinicalInsightsRouter);
 // /admin/therapy-resupply/* — resupply opportunities from device data:
 // vendor supply rosters whose nextEligibleDate has arrived, surfaced as
 // a fleet "due/overdue" queue (with CSV export) to drive resupply orders.

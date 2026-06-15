@@ -6,7 +6,7 @@
 // provider hasn't enrolled yet).
 
 import { useState, type FormEvent } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 
 import { AuthError, authErrorMessage } from "@workspace/resupply-auth-react";
 
@@ -142,14 +142,17 @@ export function ProviderSignIn() {
             >
               {signIn.isPending ? "Signing in…" : "Continue"}
             </Button>
-            <div className="text-center text-sm">
-              <Link
-                href="/forgot-password"
-                className="text-blue-700 hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
+            {/*
+              Provider accounts authenticate against /api/provider/auth/*,
+              which has no self-service reset flow. Don't link to the
+              customer storefront's /forgot-password — that posts to a
+              different auth backend and can't reset a provider account.
+              Recovery is coordinator-mediated.
+            */}
+            <p className="text-center text-sm text-slate-500">
+              Locked out? Contact your PennPaps coordinator to reset your
+              access.
+            </p>
           </form>
         ) : (
           <form onSubmit={onMfaSubmit} className="space-y-4">

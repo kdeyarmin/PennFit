@@ -218,7 +218,8 @@ export function ComfortGuaranteePage() {
             }
             data-testid="comfort-guarantee-ask-pennbot"
           >
-            <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
+            <Sparkles className="w-4 h-4 mr-2" /> Ask{" "}
+            {contact.assistantStorefrontName}
           </Button>
           <Link href="/shop/orders">
             <Button>

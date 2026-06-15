@@ -19,7 +19,7 @@ import {
   INTEGRATION_SOURCES,
   type IntegrationSource,
 } from "@workspace/resupply-integrations";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   getIntegrationAdapters,
@@ -53,9 +53,15 @@ interface AdapterSummary {
 router.get(
   "/admin/integrations/status",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const adapters = await getIntegrationAdaptersWithDbOverrides();
-    const supabase = getSupabaseServiceRoleClient();
+    const db = getOrgScopedClient(orgId);
     const cutoff = new Date(
       Date.now() - LOOKBACK_DAYS * 86400_000,
     ).toISOString();
@@ -73,15 +79,13 @@ router.get(
       if (!adapter) continue;
 
       // Head-only counts per fetch_status for the last 7 days.
-      const okHead = await supabase
-        .schema("resupply")
+      const okHead = await db
         .from("patient_integration_snapshots")
         .select("*", { count: "exact", head: true })
         .eq("source", source)
         .eq("fetch_status", "ok")
         .gte("fetched_at", cutoff);
-      const errHead = await supabase
-        .schema("resupply")
+      const errHead = await db
         .from("patient_integration_snapshots")
         .select("*", { count: "exact", head: true })
         .eq("source", source)
@@ -89,8 +93,7 @@ router.get(
         .gte("fetched_at", cutoff);
 
       // Sample the most recent error codes (cap 50 rows; bucket in JS).
-      const { data: errSample } = await supabase
-        .schema("resupply")
+      const { data: errSample } = await db
         .from("patient_integration_snapshots")
         .select("fetch_error")
         .eq("source", source)
@@ -108,8 +111,7 @@ router.get(
         .sort((a, b) => b.count - a.count)
         .slice(0, 3);
 
-      const { data: lastRow } = await supabase
-        .schema("resupply")
+      const { data: lastRow } = await db
         .from("patient_integration_snapshots")
         .select("fetched_at")
         .eq("source", source)

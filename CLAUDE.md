@@ -3,6 +3,37 @@
 Guidance for Claude Code (and other coding agents) working in this repository.
 For the human-facing setup guide, see [`README.md`](./README.md).
 
+## Brand architecture (read this first — it prevents naming confusion)
+
+There are two distinct layers, and they must not be conflated:
+
+- **CareMetric Breathe** is the **platform / parent product** — the
+  multi-tenant SaaS this repository builds. `PennFit` is only the
+  repository **codename**; user-facing and self-referential copy says
+  **CareMetric Breathe**. The canonical platform name lives in code as
+  `PLATFORM_NAME` (`artifacts/resupply-api/src/lib/company-info.ts`).
+- **Penn Home Medical Supply** — storefront brand **"PennPaps"**
+  (`pennpaps.com`) — is **one tenant** operating on the platform, not the
+  platform itself. Its brand, `info@pennpaps.com` From address, storefront
+  SEO, and practice-name default are **tenant data** and stay as-is. Other
+  tenants are onboarded with `tenant:onboard` and carry their own brand.
+
+Practical rules:
+
+- When the app refers to **itself** (the software/deployment/platform),
+  use **CareMetric Breathe**, not "PennFit" or "PennPaps".
+- Tenant-specific copy (the PennPaps storefront, contact addresses) stays
+  tenant-branded — don't globally rename "PennPaps" to "CareMetric".
+- **The two in-app AI assistants are tenant-configurable.** Platform
+  defaults are **"CareMetric Assistant"** (storefront chatbot) and
+  **"CareMetric Copilot"** (admin assistant). The Penn Home Medical Supply
+  tenant keeps **"PennBot"/"PennPilot"** via seeded `app_config` keys
+  (`RESUPPLY_ASSISTANT_STOREFRONT_NAME` / `RESUPPLY_ASSISTANT_ADMIN_NAME`,
+  migration 0349); a tenant owner renames them from System Configuration.
+  In source, `PennBot`/`PennPilot` remain the canonical placeholders and
+  are normalized at the I/O boundary by `applyPlatformBranding()` — so the
+  large prompt knowledge bases don't need editing.
+
 ## Start-of-session checklist
 
 Every session — agent or human — must align to the canonical ref **before**
@@ -97,7 +128,7 @@ side is worse than a visible conflict.
 
 ## Repository map
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.5.2).
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.6.0).
 Workspace globs (`pnpm-workspace.yaml`): `artifacts/*`, `lib/*`,
 and `scripts`.
 

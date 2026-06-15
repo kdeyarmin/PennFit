@@ -9,7 +9,7 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { logger } from "../../lib/logger.js";
 
 const router = Router();
@@ -72,8 +72,18 @@ router.post("/usage-events", async (req, res) => {
     return;
   }
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // Public, unauthenticated route (pattern 3): no req.orgId. Resolve the
+    // seed org and degrade gracefully — usage_events is a global public-
+    // schema table (no org_id), so it is reached via .raw(), but we still
+    // resolve a tenant to build the scoped client. A miss must never block.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(204).end();
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
+      .raw()
       .schema("public")
       .from("usage_events")
       .insert({

@@ -21,11 +21,20 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+// The org-scoped facade is loosely typed (its `.select()` returns the
+// underlying dynamic builder), so the awaited `.data` rows come back as
+// `any`. Re-attach the generated Row types at the read sites below to keep
+// the JS row-mapping callbacks fully typed under noImplicitAny.
+type RxRow = Database["resupply"]["Tables"]["prescriptions"]["Row"];
+type EpisodeRow = Database["resupply"]["Tables"]["episodes"]["Row"];
+type ConvRow = Database["resupply"]["Tables"]["conversations"]["Row"];
+type FulfillmentRow = Database["resupply"]["Tables"]["fulfillments"]["Row"];
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -43,7 +52,12 @@ router.get(
     }
     const { id } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Five independent reads (header + four child collections), each
     // keyed on the patient id. Run them concurrently so the detail
@@ -60,7 +74,6 @@ router.get(
       fulfillmentsRes,
     ] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select(
           "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, insurance_payer, cadence_override_days, channel_preference, location_id, created_at, updated_at, portal_auth_user_id, portal_invited_at",
@@ -69,7 +82,6 @@ router.get(
         .limit(1)
         .maybeSingle(),
       supabase
-        .schema("resupply")
         .from("prescriptions")
         .select(
           "id, item_sku, hcpcs_code, provider_id, cadence_days, valid_from, valid_until, status, created_at, attachment_filename, attachment_content_type, attachment_size_bytes, attachment_uploaded_at",
@@ -77,20 +89,17 @@ router.get(
         .eq("patient_id", id)
         .order("created_at", { ascending: false }),
       supabase
-        .schema("resupply")
         .from("episodes")
         .select("id, prescription_id, status, due_at, expires_at, created_at")
         .eq("patient_id", id)
         .order("created_at", { ascending: false }),
       supabase
-        .schema("resupply")
         .from("conversations")
         .select("id, episode_id, channel, status, last_message_at, created_at")
         .eq("patient_id", id)
         .order("created_at", { ascending: false })
         .limit(10),
       supabase
-        .schema("resupply")
         .from("fulfillments")
         .select(
           "id, episode_id, item_sku, quantity, status, pacware_order_ref, submitted_at, shipped_at, delivered_at, created_at",
@@ -117,7 +126,7 @@ router.get(
     // by the prescription_id list pulled from this page's episodes.
     const episodePrescriptionIds = Array.from(
       new Set(
-        (episodesRes.data ?? [])
+        ((episodesRes.data ?? []) as EpisodeRow[])
           .map((e) => e.prescription_id)
           .filter((v): v is string => v !== null),
       ),
@@ -130,7 +139,6 @@ router.get(
       locationRes,
     ] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patient_latest_message")
         .select("last_message_at, last_message_direction, last_message_preview")
         .eq("patient_id", id)
@@ -138,6 +146,7 @@ router.get(
         .maybeSingle(),
       patient.portal_auth_user_id
         ? supabase
+            .raw()
             .schema("resupply_auth")
             .from("users")
             .select("email_verified_at")
@@ -147,7 +156,6 @@ router.get(
         : Promise.resolve({ data: null, error: null } as const),
       episodePrescriptionIds.length > 0
         ? supabase
-            .schema("resupply")
             .from("prescriptions")
             .select("id, item_sku")
             .in("id", episodePrescriptionIds)
@@ -160,7 +168,6 @@ router.get(
       // the detail page offer a real "view their customer record" jump.
       patient.portal_auth_user_id
         ? supabase
-            .schema("resupply")
             .from("shop_customers")
             .select("customer_id")
             .eq("auth_user_id", patient.portal_auth_user_id)
@@ -172,7 +179,6 @@ router.get(
       // branch without a second client round-trip.
       patient.location_id
         ? supabase
-            .schema("resupply")
             .from("locations")
             .select("id, name")
             .eq("id", patient.location_id)
@@ -244,7 +250,7 @@ router.get(
       // (null when the patient has no portal account or no matching
       // customer). Drives the "view customer record" link.
       linkedCustomerUserId: linkedCustomerRes.data?.customer_id ?? null,
-      prescriptions: (prescriptionsRes.data ?? []).map((p) => ({
+      prescriptions: ((prescriptionsRes.data ?? []) as RxRow[]).map((p) => ({
         id: p.id,
         itemSku: p.item_sku,
         hcpcsCode: p.hcpcs_code,
@@ -265,7 +271,7 @@ router.get(
         attachmentSizeBytes: p.attachment_size_bytes,
         attachmentUploadedAt: p.attachment_uploaded_at,
       })),
-      episodes: (episodesRes.data ?? []).map((e) => ({
+      episodes: ((episodesRes.data ?? []) as EpisodeRow[]).map((e) => ({
         id: e.id,
         prescriptionId: e.prescription_id,
         itemSku: itemSkuByRxId.get(e.prescription_id) ?? "",
@@ -274,7 +280,7 @@ router.get(
         expiresAt: e.expires_at,
         createdAt: e.created_at,
       })),
-      conversations: (conversationsRes.data ?? []).map((c) => ({
+      conversations: ((conversationsRes.data ?? []) as ConvRow[]).map((c) => ({
         id: c.id,
         episodeId: c.episode_id,
         channel: c.channel,
@@ -282,18 +288,20 @@ router.get(
         lastMessageAt: c.last_message_at,
         createdAt: c.created_at,
       })),
-      fulfillments: (fulfillmentsRes.data ?? []).map((f) => ({
-        id: f.id,
-        episodeId: f.episode_id,
-        itemSku: f.item_sku,
-        quantity: f.quantity,
-        status: f.status,
-        pacwareOrderRef: f.pacware_order_ref,
-        submittedAt: f.submitted_at,
-        shippedAt: f.shipped_at,
-        deliveredAt: f.delivered_at,
-        createdAt: f.created_at,
-      })),
+      fulfillments: ((fulfillmentsRes.data ?? []) as FulfillmentRow[]).map(
+        (f) => ({
+          id: f.id,
+          episodeId: f.episode_id,
+          itemSku: f.item_sku,
+          quantity: f.quantity,
+          status: f.status,
+          pacwareOrderRef: f.pacware_order_ref,
+          submittedAt: f.submitted_at,
+          shippedAt: f.shipped_at,
+          deliveredAt: f.delivered_at,
+          createdAt: f.created_at,
+        }),
+      ),
     });
   },
 );

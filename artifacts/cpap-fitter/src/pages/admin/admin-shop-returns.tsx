@@ -41,6 +41,7 @@ import {
   type ReturnStatus,
 } from "@/lib/admin/shop-returns-api";
 import { ReturnNotesPanel } from "@/components/admin/ReturnNotesPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 type Tab = ReturnStatus | "all" | "open";
 
@@ -78,19 +79,10 @@ export function AdminShopReturnsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-shop-returns-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Returns &amp; RMAs
-        </h1>
-        <p className="text-sm text-slate-600">
-          Process customer return requests under the 60-day comfort guarantee.
-          Each row advances through a strict state machine; admin notes are
-          appended newest-first.
-        </p>
-      </header>
+      <PageHeader
+        title="Returns & RMAs"
+        description="Process customer return requests under the 60-day comfort guarantee. Each row advances through a strict state machine; admin notes are appended newest-first."
+      />
       <TabStrip tab={tab} onChange={setTab} />
       <ReturnsList key={tab} tab={tab} />
     </div>
@@ -107,6 +99,7 @@ function TabStrip({
   return (
     <div
       role="tablist"
+      aria-label="Return status filter"
       className="inline-flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100"
     >
       {TABS.map((t) => {

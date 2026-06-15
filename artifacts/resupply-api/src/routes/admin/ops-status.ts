@@ -13,7 +13,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getConfigOverrides } from "../../lib/app-config/store";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -86,8 +86,14 @@ router.get(
   "/admin/ops-status",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Vendor flags are computed AFTER the fetch below — they depend on
     // the effective env (process.env + saved app_config overrides), which
@@ -143,8 +149,7 @@ router.get(
       // waiting for the next deploy.
       getConfigOverrides(),
 
-      supabase
-        .schema("resupply")
+      db
         .from("shop_abandoned_carts")
         .select("*", { count: "estimated", head: true })
         .lte("updated_at", cutoff24h)
@@ -153,8 +158,7 @@ router.get(
         .is("cleared_at", null)
         .neq("items", "[]"),
 
-      supabase
-        .schema("resupply")
+      db
         .from("shop_orders")
         .select("*", { count: "estimated", head: true })
         .eq("status", "paid")
@@ -162,8 +166,7 @@ router.get(
         .is("review_request_sent_at", null)
         .not("customer_id", "is", null),
 
-      supabase
-        .schema("resupply")
+      db
         .from("prescriptions")
         .select("*", { count: "estimated", head: true })
         .eq("status", "active")
@@ -171,8 +174,7 @@ router.get(
         .not("valid_until", "is", null)
         .lte("valid_until", renewalCutoff),
 
-      supabase
-        .schema("resupply")
+      db
         .from("patient_smart_trigger_events")
         .select("*", { count: "estimated", head: true })
         .is("sent_at", null)
@@ -186,28 +188,24 @@ router.get(
       // open the row and manually re-queue. Restrict to `pending`
       // (truly dispatcher-eligible) so the tile shrinks back to zero
       // when the queue drains.
-      supabase
-        .schema("resupply")
+      db
         .from("physician_fax_outreach")
         .select("*", { count: "estimated", head: true })
         .eq("status", "pending"),
 
-      supabase
-        .schema("resupply")
+      db
         .from("admin_users")
         .select("*", { count: "exact", head: true })
         .eq("status", "active")
         .eq("role", "admin"),
 
-      supabase
-        .schema("resupply")
+      db
         .from("admin_users")
         .select("*", { count: "exact", head: true })
         .eq("status", "active")
         .eq("role", "agent"),
 
-      supabase
-        .schema("resupply")
+      db
         .from("admin_users")
         .select("*", { count: "exact", head: true })
         .eq("status", "pending"),
@@ -221,15 +219,13 @@ router.get(
       // this counts exactly what sits in the supervisor's escalated
       // queue right now. The urgent slice is the distressed-sentiment
       // subset (routed at urgent priority).
-      supabase
-        .schema("resupply")
+      db
         .from("conversations")
         .select("*", { count: "exact", head: true })
         .not("escalated_at", "is", null)
         .like("escalation_reason", "voice_post_call_handoff%"),
 
-      supabase
-        .schema("resupply")
+      db
         .from("conversations")
         .select("*", { count: "exact", head: true })
         .not("escalated_at", "is", null)

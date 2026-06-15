@@ -14,7 +14,7 @@
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   ObjectNotFoundError,
@@ -32,9 +32,13 @@ router.get("/shop/orders/:sessionId/pod", async (req, res) => {
     res.status(400).json({ error: "invalid_session_id" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: order, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("pod_object_key")
     .eq("stripe_session_id", sessionId)

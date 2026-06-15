@@ -30,18 +30,20 @@
 //   the human-in-the-loop at exactly the right place.
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type CsrComplianceAlertSeverity,
   type CsrComplianceAlertType,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { maybeDispatchLowUsageCheckinAlert } from "./alerts/low-usage-checkin-trigger";
 import { logger } from "./logger";
 
 export interface ScanOptions {
-  /** Optional Supabase client. Defaults to the shared singleton. */
-  supabase?: ResupplySupabaseClient;
+  /** Optional org-scoped Supabase client. Defaults to the seed-org
+   *  scoped client resolved at call time. */
+  supabase?: OrgScopedClient;
   /** Defaults to `new Date()`. Tests pass a fixed clock. */
   asOf?: Date;
   /** Per-run cap on alerts processed. Default 200 — well above the
@@ -81,20 +83,38 @@ export async function scanCompliance(
 ): Promise<ScanSummary> {
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  let supabase = opts.supabase;
+  if (!supabase) {
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // No seed tenant resolvable — nothing to scan. Return the zero
+      // summary the caller already handles as "clean run, no alerts".
+      return {
+        scanned: 0,
+        alertsCreated: 0,
+        alertsUpdated: 0,
+        skippedTooEarly: 0,
+        onTrack: 0,
+        sendFailureFlagged: 0,
+        noResponseFlagged: 0,
+      };
+    }
+    supabase = getOrgScopedClient(orgId);
+  }
 
   const { data: journeyRows, error: journeysErr } = await supabase
-    .schema("resupply")
     .from("patient_onboarding_journeys")
     .select("id, patient_id, started_at")
     .eq("status", "active")
     .limit(cap);
   if (journeysErr) throw journeysErr;
-  const journeys: JourneyScanRow[] = (journeyRows ?? []).map((j) => ({
-    journeyId: j.id,
-    patientId: j.patient_id,
-    startedAt: new Date(j.started_at),
-  }));
+  const journeys: JourneyScanRow[] = (journeyRows ?? []).map(
+    (j: { id: string; patient_id: string; started_at: string }) => ({
+      journeyId: j.id,
+      patientId: j.patient_id,
+      startedAt: new Date(j.started_at),
+    }),
+  );
 
   let scanned = 0;
   let alertsCreated = 0;
@@ -122,7 +142,6 @@ export async function scanCompliance(
     // than to miss credit) by de-duping on night_date.
     const startedDate = j.startedAt.toISOString().slice(0, 10);
     const { data: nightRows, error: nightsErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("night_date, usage_minutes")
       .eq("patient_id", j.patientId)
@@ -130,7 +149,10 @@ export async function scanCompliance(
     if (nightsErr) throw nightsErr;
     const allNights = new Set<string>();
     const goodNightDates = new Set<string>();
-    for (const n of nightRows ?? []) {
+    for (const n of (nightRows ?? []) as Array<{
+      night_date: string;
+      usage_minutes: number | null;
+    }>) {
       allNights.add(n.night_date);
       if (
         n.usage_minutes !== null &&
@@ -260,7 +282,7 @@ interface SendFailureFinding {
 }
 
 async function detectSendFailures(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   now: Date,
 ): Promise<SendFailureFinding[]> {
   const sinceIso = new Date(
@@ -275,7 +297,6 @@ async function detectSendFailures(
   // patient with vendor errors across multiple channels is even MORE
   // likely to have stale contact info, not less.
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patient_checkin_attempts")
     .select("patient_id, journey_id, error_code, attempted_at")
     .eq("outcome", "vendor_error")
@@ -290,7 +311,12 @@ async function detectSendFailures(
     lastAttemptAt: string | null;
   }
   const buckets = new Map<string, Bucket>();
-  for (const r of rows ?? []) {
+  for (const r of (rows ?? []) as Array<{
+    patient_id: string;
+    journey_id: string | null;
+    error_code: string | null;
+    attempted_at: string | null;
+  }>) {
     const key = `${r.patient_id}|${r.journey_id ?? ""}`;
     const bucket = buckets.get(key) ?? {
       patientId: r.patient_id,
@@ -356,7 +382,7 @@ interface NoResponseFinding {
 }
 
 async function detectNoResponse(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   now: Date,
 ): Promise<NoResponseFinding[]> {
   const cutoffMs = now.getTime() - NO_RESPONSE_GAP_DAYS * MS_PER_DAY;
@@ -371,24 +397,32 @@ async function detectNoResponse(
   // entry in the projection are exactly the population we want to
   // flag.
   const { data: journeyRows, error: journeysErr } = await supabase
-    .schema("resupply")
     .from("patient_onboarding_journeys")
     .select("id, patient_id, started_at")
     .eq("status", "active")
     .lte("started_at", minStartedAtIso);
   if (journeysErr) throw journeysErr;
-  const journeys = journeyRows ?? [];
+  const journeys = (journeyRows ?? []) as Array<{
+    id: string;
+    patient_id: string;
+    started_at: string;
+  }>;
   if (journeys.length === 0) return [];
 
   const patientIds = Array.from(new Set(journeys.map((r) => r.patient_id)));
   const { data: latestRows, error: latestErr } = await supabase
-    .schema("resupply")
     .from("patient_latest_message")
     .select("patient_id, last_message_at, last_message_direction")
     .in("patient_id", patientIds);
   if (latestErr) throw latestErr;
   const latestByPatient = new Map(
-    (latestRows ?? []).map((r) => [r.patient_id, r]),
+    (
+      (latestRows ?? []) as Array<{
+        patient_id: string;
+        last_message_at: string | null;
+        last_message_direction: string | null;
+      }>
+    ).map((r) => [r.patient_id, r] as const),
   );
 
   const findings: NoResponseFinding[] = [];
@@ -473,7 +507,7 @@ function renderSummary(args: {
 }
 
 async function upsertOpenAlert(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   input: {
     patientId: string;
     journeyId: string | null;
@@ -488,7 +522,6 @@ async function upsertOpenAlert(
   // type). We try INSERT first; on 23505 we UPDATE the existing
   // open row. Returns true if an existing row was refreshed.
   const { error: insertErr } = await supabase
-    .schema("resupply")
     .from("csr_compliance_alerts")
     .insert({
       patient_id: input.patientId,
@@ -503,7 +536,6 @@ async function upsertOpenAlert(
   }
   if ((insertErr as { code?: string }).code === "23505") {
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .update({
         severity: input.severity,

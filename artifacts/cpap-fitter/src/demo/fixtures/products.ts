@@ -268,7 +268,7 @@ export const DEMO_PRODUCTS: ShopProductView[] = [
     bundleContents: [],
     replacementHint: "Reorder monthly",
     imageUrl: "/products/wipes-citrus.jpg",
-    manufacturer: "PennFit",
+    manufacturer: "CareMetric Breathe",
     modelNumber: "WIPE-62",
     price: price(1299),
     recurringPrice: monthly(1299),

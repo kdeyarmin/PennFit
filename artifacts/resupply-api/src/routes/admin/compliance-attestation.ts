@@ -16,7 +16,7 @@ import PDFDocument from "pdfkit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getDocumentSupplierName } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
@@ -62,10 +62,15 @@ router.get(
     }
 
     const patientId = params.data.id;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    const { data: patientRow, error: pErr } = await supabase
-      .schema("resupply")
+    const { data: patientRow, error: pErr } = await db
       .from("patients")
       .select("id, legal_first_name, legal_last_name, date_of_birth")
       .eq("id", patientId)
@@ -81,15 +86,20 @@ router.get(
     // is bounded by anchor + 90 days, but we sort + filter in JS to
     // keep the SQL simple. CPAP patients typically have hundreds to
     // low-thousands of nights — fine to fetch in one query.
-    const { data: nightRows, error: nErr } = await supabase
-      .schema("resupply")
+    const { data: nightRowsRaw, error: nErr } = await db
       .from("patient_therapy_nights")
       .select("night_date, source, usage_minutes")
       .eq("patient_id", patientId)
       .order("night_date", { ascending: true });
     if (nErr) throw nErr;
 
-    if (!nightRows || nightRows.length === 0) {
+    const nightRows = (nightRowsRaw ?? []) as Array<{
+      night_date: string;
+      source: string;
+      usage_minutes: number | null;
+    }>;
+
+    if (nightRows.length === 0) {
       res.status(422).json({
         error: "no_therapy_data",
         message:

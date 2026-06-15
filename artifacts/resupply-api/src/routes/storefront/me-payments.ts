@@ -8,7 +8,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   createPaymentCheckoutSession,
@@ -52,11 +55,10 @@ const checkoutSessionBody = z
   .strict();
 
 async function resolvePatientForCustomer(
+  supabase: OrgScopedClient,
   customerId: string,
 ): Promise<{ patientId: string; customerEmail: string } | null> {
-  const supabase = getSupabaseServiceRoleClient();
   const { data: customer } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
@@ -74,7 +76,6 @@ async function resolvePatientForCustomer(
     (c: string) => `\\${c}`,
   );
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, email")
     .ilike("email", escapedEmail)
@@ -87,8 +88,7 @@ async function resolvePatientForCustomer(
 }
 
 router.post("/me/payments/intent", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -104,7 +104,13 @@ router.post("/me/payments/intent", async (req, res) => {
     });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.status(404).json({ error: "no_linked_patient" });
     return;
@@ -147,8 +153,7 @@ router.post("/me/payments/intent", async (req, res) => {
 });
 
 router.post("/me/payments/checkout-session", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
@@ -164,7 +169,13 @@ router.post("/me/payments/checkout-session", async (req, res) => {
     });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.status(404).json({ error: "no_linked_patient" });
     return;
@@ -276,20 +287,23 @@ router.post("/me/payments/checkout-session", async (req, res) => {
 });
 
 router.get("/me/payments", async (req, res) => {
-  const customerId =
-    (req as unknown as { shopCustomerId?: string }).shopCustomerId ?? null;
+  const customerId = req.shopCustomerId ?? null;
   if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const link = await resolvePatientForCustomer(customerId);
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const link = await resolvePatientForCustomer(supabase, customerId);
   if (!link) {
     res.json({ payments: [] });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
   const { data } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .select(
       "id, amount_cents, currency, status, applied_claims_json, note, failure_reason, succeeded_at, created_at",

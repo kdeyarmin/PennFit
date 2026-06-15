@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { InputHTMLAttributes, SelectHTMLAttributes } from "react";
 
 // Brand-aligned form controls. Kept minimal — these are filter
@@ -24,18 +25,22 @@ export function Label({
 
 type InputProps = InputHTMLAttributes<HTMLInputElement>;
 
-export function Input({ className = "", ...rest }: InputProps) {
-  return (
-    <input
-      {...rest}
-      className={`block w-full rounded-md border px-3 py-1.5 text-sm bg-white ${className}`}
-      style={{
-        borderColor: "hsl(var(--line-2))",
-        color: "hsl(var(--ink-1))",
-      }}
-    />
-  );
-}
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ className = "", ...rest }, ref) => {
+    return (
+      <input
+        {...rest}
+        ref={ref}
+        className={`block w-full rounded-md border px-3 py-1.5 text-sm bg-white ${className}`}
+        style={{
+          borderColor: "hsl(var(--line-2))",
+          color: "hsl(var(--ink-1))",
+        }}
+      />
+    );
+  },
+);
+Input.displayName = "Input";
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   options: ReadonlyArray<{ value: string; label: string }>;

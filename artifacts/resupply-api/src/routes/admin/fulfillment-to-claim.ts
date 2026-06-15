@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold";
 import {
@@ -30,6 +30,20 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 const params = z.object({ fulfillmentId: z.string().uuid() });
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "23505" &&
+    "message" in err &&
+    typeof (err as { message?: unknown }).message === "string" &&
+    (err as { message: string }).message.includes(
+      "insurance_claims_open_fulfillment_uidx",
+    )
+  );
+}
 
 const body = z
   .object({
@@ -84,7 +98,12 @@ router.post(
       throw err;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Duplicate guard: refuse when this fulfillment already has an
     // open (non-denied/closed) claim. A double-click — or two CSRs
@@ -96,7 +115,6 @@ router.post(
     // the second becomes invisible work. Denied/closed claims don't
     // block — a re-bill after a denial is legitimate.
     const { data: existingClaim, error: existingClaimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("fulfillment_id", idParsed.data.fulfillmentId)
@@ -117,7 +135,6 @@ router.post(
 
     // Insert the claim header.
     const { data: claimRow, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .insert({
         patient_id: proposed.patientId,
@@ -137,7 +154,26 @@ router.post(
       })
       .select("id")
       .single();
-    if (claimErr) throw claimErr;
+    if (claimErr) {
+      if (isUniqueViolation(claimErr)) {
+        const { data: raceWinner } = await supabase
+          .from("insurance_claims")
+          .select("id, status")
+          .eq("fulfillment_id", idParsed.data.fulfillmentId)
+          .not("status", "in", "(denied,closed)")
+          .limit(1)
+          .maybeSingle();
+        res.status(409).json({
+          error: "claim_exists",
+          claimId: raceWinner?.id ?? null,
+          status: raceWinner?.status ?? null,
+          message:
+            "This fulfillment already has an open claim. Work that claim instead of creating a duplicate.",
+        });
+        return;
+      }
+      throw claimErr;
+    }
 
     // Insert the line items (carrying the per-unit COGS snapshot the
     // builder resolved from product_costs — migration 0193).
@@ -148,7 +184,6 @@ router.post(
         new Date().toISOString(),
       );
       const { error: lineErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .insert(lineRows);
       if (lineErr) throw lineErr;
@@ -163,7 +198,6 @@ router.post(
       noteParts.push(`Builder notes: ${proposed.builderNotes.join(" ")}`);
     }
     const { error: claimEventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claimRow.id,
@@ -207,10 +241,25 @@ router.post(
     if (await isFeatureEnabled("billing.bill_hold")) {
       try {
         await seedDefaultRequirementsForClaim(claimRow.id, {
-          supabase,
+          supabase: supabase.raw(),
           createdByEmail: req.adminEmail ?? null,
         });
       } catch (err) {
+        const { error: holdErr } = await supabase
+          .from("insurance_claims")
+          .update({
+            bill_hold: true,
+            bill_hold_reason:
+              "Paperwork checklist failed to initialize; regenerate before billing.",
+            bill_hold_updated_at: new Date().toISOString(),
+          })
+          .eq("id", claimRow.id);
+        if (holdErr) {
+          logger.warn(
+            { err: holdErr, claimId: claimRow.id },
+            "fulfillment-to-claim: fail-safe bill-hold flag failed",
+          );
+        }
         logger.warn(
           { err, claimId: claimRow.id },
           "fulfillment-to-claim: bill-hold seed failed (non-fatal)",

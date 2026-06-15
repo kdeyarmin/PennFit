@@ -33,14 +33,18 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger.js";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBranding,
+} from "../company-info.js";
 
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
 export const MAX_ADMIN_TOOL_ROUNDS = 2;
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** Per-request context the route hands to the tool dispatcher. */
 export interface AdminAssistantToolContext {
@@ -121,7 +125,6 @@ export async function resolveSuperAdminRecipients(
   const out = new Set<string>();
   try {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("email_lower")
       .eq("role", "admin")
@@ -211,7 +214,13 @@ function buildSuggestionEmail(
     `</div>`,
   ].join("");
 
-  return { subject, text, html };
+  // Normalize platform/assistant brand tokens (PennPilot → the tenant's
+  // admin-assistant name, PennFit → CareMetric Breathe) and the tenant's
+  // own brand (PennPaps → saved company name). No-ops for the Penn Home
+  // Medical Supply tenant, whose configured names are the originals.
+  const brand = (s: string): string =>
+    applyCompanyIdentityToText(applyPlatformBranding(s));
+  return { subject: brand(subject), text: brand(text), html: brand(html) };
 }
 
 /**

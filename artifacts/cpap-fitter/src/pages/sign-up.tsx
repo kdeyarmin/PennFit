@@ -1,8 +1,8 @@
 // Customer self-serve sign-up page for the cpap-fitter shop.
 //
-// The api-server mounts /api/auth with `allowSignUp: true`
-// (admin-only resupply-dashboard sets it to false), so this is
-// the supported path for new shoppers.
+// resupply-api mounts /api/auth with `allowSignUp: true`. The admin auth
+// router under /resupply-api/auth disables public signup, so this is the
+// supported path for new shoppers.
 //
 // Server response is "always 200, no enumeration" — we render a
 // friendly success state regardless of whether the email was new

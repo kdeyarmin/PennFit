@@ -18,7 +18,7 @@
 // 270 payload and NOWHERE else — never logged, never persisted, never
 // echoed into audit metadata. Log lines carry timing + outcome only.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
   build270,
@@ -116,10 +116,13 @@ function nextQuickCheckSequence(): number {
 export async function quickCheckEligibility(
   input: QuickEligibilityCheckInput,
 ): Promise<QuickEligibilityCheckResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: payerProfile, error: payerErr } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select(
       "id, display_name, payer_legal_name, office_ally_payer_id, paper_only",
@@ -136,8 +139,8 @@ export async function quickCheckEligibility(
     throw new Error("payer does not accept electronic 270/271");
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
-  const clearinghouse = await resolveClearinghouse({ supabase });
+  const identity = await resolveBillingIdentity({ orgId });
+  const clearinghouse = await resolveClearinghouse({ orgId });
 
   const realtimeConfig = clearinghouse.realtimeConfig;
   if (!realtimeConfig) {
@@ -153,7 +156,6 @@ export async function quickCheckEligibility(
   // Same monotonic ISA13 pool as the patient-attached verifier; the
   // rotating sequence de-collides same-second bursts (see above).
   const { data: priorHigh } = await supabase
-    .schema("resupply")
     .from("office_ally_submissions")
     .select("isa_control_number")
     .order("isa_control_number", { ascending: false })

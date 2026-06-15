@@ -12,7 +12,7 @@
 // PHI posture: builds PHI bytes but never logs them. The caller owns the
 // (PHI-free, counts/ids only) audit row.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   renderPaRequestPdf,
@@ -23,7 +23,8 @@ import {
 import { resolveBillingIdentity } from "./identity-resolver";
 import { getDocumentSupplierName } from "../company-info";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+import type { OrgScopedClient } from "@workspace/resupply-db";
+type SupabaseClient = OrgScopedClient;
 
 // PAP-relevant HCPCS labels so the item line reads in plain language.
 // Falls back to the raw code for anything not listed.
@@ -110,13 +111,13 @@ export interface PaRequestRenderResult {
  * writes, no logging of PHI.
  */
 export async function buildPaRequestPdf(
-  supabase: SupabaseClient,
+  orgId: string,
   patientId: string,
   paId: string,
 ): Promise<PaRequestRenderResult | null> {
+  const supabase = getOrgScopedClient(orgId);
   // 1. The PA row (scoped to the patient).
   const { data: pa, error: paErr } = await supabase
-    .schema("resupply")
     .from("prior_authorizations")
     .select(
       "id, patient_id, insurance_coverage_id, hcpcs_code, payer_name, auth_number, status, notes",
@@ -136,7 +137,6 @@ export async function buildPaRequestPdf(
     { data: study },
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
@@ -146,7 +146,6 @@ export async function buildPaRequestPdf(
       .maybeSingle(),
     pa.insurance_coverage_id
       ? supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("id, payer_name, member_id, group_number, plan_name")
           .eq("id", pa.insurance_coverage_id)
@@ -155,7 +154,6 @@ export async function buildPaRequestPdf(
           .maybeSingle()
       : Promise.resolve({ data: null }),
     supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(
         "display_name, payer_legal_name, prior_auth_fax_e164, prior_auth_phone_e164, prior_auth_submission_method, provider_portal_url, prior_auth_turnaround_business_days, required_claim_modifiers, slug",
@@ -165,7 +163,6 @@ export async function buildPaRequestPdf(
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("sleep_studies")
       .select(
         "study_type, study_date, ahi, rdi, diagnosis_icd10, facility_name",
@@ -181,7 +178,6 @@ export async function buildPaRequestPdf(
   // 3. Ordering provider via the most-recent prescription (prefer one
   //    matching the PA's HCPCS, else the newest).
   const { data: rxMatch } = await supabase
-    .schema("resupply")
     .from("prescriptions")
     .select("provider_id, hcpcs_code, details")
     .eq("patient_id", patientId)
@@ -193,7 +189,6 @@ export async function buildPaRequestPdf(
     rxMatch ??
     (
       await supabase
-        .schema("resupply")
         .from("prescriptions")
         .select("provider_id, hcpcs_code, details")
         .eq("patient_id", patientId)
@@ -210,7 +205,6 @@ export async function buildPaRequestPdf(
   } | null = null;
   if (rx?.provider_id) {
     const { data: prov } = await supabase
-      .schema("resupply")
       .from("providers")
       .select("legal_name, npi, phone_e164, fax_e164")
       .eq("id", rx.provider_id)
@@ -220,7 +214,7 @@ export async function buildPaRequestPdf(
   }
 
   // 4. Servicing supplier (us).
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({ orgId });
   const supplierName =
     identity.source !== "stub"
       ? identity.billingProvider.organizationName

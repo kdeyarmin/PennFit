@@ -32,6 +32,7 @@ import {
   sendDueAbandonedCarts,
 } from "@/lib/admin/abandoned-carts-api";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { PageHeader } from "@/components/admin/PageHeader";
 
 // Match the API constant — keep the two in sync if either changes.
 const COOLING_MS = 24 * 60 * 60 * 1000;
@@ -122,20 +123,18 @@ export function AdminShopAbandonedCartsPage() {
 
   return (
     <div className="space-y-6" data-testid="admin-shop-abandoned-carts-page">
-      <header className="space-y-1">
-        <h1
-          className="text-2xl font-bold tracking-tight"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          Abandoned shop carts
-        </h1>
-        <p className="text-sm text-slate-600 max-w-2xl">
-          Customers whose cart sat for 24+ hours without checkout. Use{" "}
-          <span className="font-semibold">Send due reminders</span> to dispatch
-          one nudge email per eligible row — already-nudged, recovered, and
-          cleared rows are skipped automatically.
-        </p>
-      </header>
+      <PageHeader
+        title="Abandoned shop carts"
+        descriptionClassName="max-w-2xl"
+        description={
+          <>
+            Customers whose cart sat for 24+ hours without checkout. Use{" "}
+            <span className="font-semibold">Send due reminders</span> to
+            dispatch one nudge email per eligible row — already-nudged,
+            recovered, and cleared rows are skipped automatically.
+          </>
+        }
+      />
 
       <div
         className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
@@ -241,12 +240,24 @@ export function AdminShopAbandonedCartsPage() {
         <table className="w-full text-sm min-w-[720px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
-              <th className="text-left px-3 py-2 font-semibold">Status</th>
-              <th className="text-left px-3 py-2 font-semibold">Customer</th>
-              <th className="text-right px-3 py-2 font-semibold">Items</th>
-              <th className="text-right px-3 py-2 font-semibold">Subtotal</th>
-              <th className="text-left px-3 py-2 font-semibold">Updated</th>
-              <th className="text-left px-3 py-2 font-semibold">Nudge</th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Status
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Customer
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Items
+              </th>
+              <th scope="col" className="text-right px-3 py-2 font-semibold">
+                Subtotal
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Updated
+              </th>
+              <th scope="col" className="text-left px-3 py-2 font-semibold">
+                Nudge
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -261,7 +272,7 @@ export function AdminShopAbandonedCartsPage() {
                 </td>
               </tr>
             )}
-            {!isPending && rows.length === 0 && (
+            {!isPending && !isError && rows.length === 0 && (
               <tr>
                 <td
                   colSpan={6}

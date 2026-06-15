@@ -102,7 +102,7 @@ function makeApp(): Express {
   app.use(express.json());
   // Stub req.log so handler-level `req.log.warn(...)` calls don't
   // explode in tests (no pino-http middleware here). Production
-  // mounts pino-http via the api-server bootstrap.
+  // mounts pino-http via the resupply-api bootstrap.
   app.use((req, _res, next) => {
     (
       req as unknown as {

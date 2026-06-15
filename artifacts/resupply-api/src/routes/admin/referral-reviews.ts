@@ -38,7 +38,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { timezoneForUsState } from "@workspace/resupply-domain";
 
@@ -251,12 +252,14 @@ async function uploadChartPdf(
 /** Existing-patient candidates for a (phone, dob, lastName) triple.
  *  Phone matches exactly; DOB+last-name catches a patient whose phone
  *  changed. Capped small — this is a warning, not a search. */
-async function findDuplicateCandidates(input: {
-  phoneE164: string | null;
-  dateOfBirth: string | null;
-  lastName: string | null;
-}) {
-  const supabase = getSupabaseServiceRoleClient();
+async function findDuplicateCandidates(
+  supabase: OrgScopedClient,
+  input: {
+    phoneE164: string | null;
+    dateOfBirth: string | null;
+    lastName: string | null;
+  },
+) {
   const seen = new Set<string>();
   const candidates: Array<{
     id: string;
@@ -270,7 +273,6 @@ async function findDuplicateCandidates(input: {
 
   if (input.phoneE164) {
     const { data } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, email, phone_e164",
@@ -293,7 +295,6 @@ async function findDuplicateCandidates(input: {
   }
   if (input.dateOfBirth && input.lastName) {
     const { data } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, email, phone_e164",
@@ -329,9 +330,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("*")
       .order("created_at", { ascending: false })
@@ -362,9 +367,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("*")
       .eq("id", params.data.id)
@@ -379,7 +388,6 @@ router.get(
     let faxFromE164: string | null = null;
     if (row.inbound_fax_id) {
       const { data: fax } = await supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .select("from_e164")
         .eq("id", row.inbound_fax_id)
@@ -400,9 +408,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("id, media_object_key, media_content_type")
       .eq("id", params.data.id)
@@ -554,9 +566,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .insert({
         source: "upload",
@@ -631,9 +647,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("*")
       .eq("id", params.data.id)
@@ -655,9 +675,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("id, extraction")
       .eq("id", params.data.id)
@@ -692,7 +716,7 @@ router.get(
       typeof patient.lastName === "string" && patient.lastName.trim()
         ? patient.lastName.trim()
         : null;
-    const candidates = await findDuplicateCandidates({
+    const candidates = await findDuplicateCandidates(supabase, {
       phoneE164: phone,
       dateOfBirth: dob,
       lastName,
@@ -727,9 +751,13 @@ router.post(
     }
     const body = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: review, error: getErr } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("*")
       .eq("id", params.data.id)
@@ -748,7 +776,7 @@ router.post(
     // Duplicate guard on the EDITED (human-confirmed) values, not the
     // raw extraction — the reviewer may have corrected a misread phone.
     if (!body.confirmDuplicateOverride) {
-      const candidates = await findDuplicateCandidates({
+      const candidates = await findDuplicateCandidates(supabase, {
         phoneE164: body.patient.phoneE164 ?? null,
         dateOfBirth: body.patient.dateOfBirth,
         lastName: body.patient.legalLastName,
@@ -763,7 +791,6 @@ router.post(
     const nowIso = new Date().toISOString();
     const derivedTimezone = timezoneForUsState(body.patient.address?.state);
     const { data: insertedPatient, error: insErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .insert({
         legal_first_name: body.patient.legalFirstName,
@@ -798,7 +825,6 @@ router.post(
     ].filter((c) => c !== null);
     for (const { rank, cov } of coverageInserts) {
       const { error: covErr } = await supabase
-        .schema("resupply")
         .from("insurance_coverages")
         .insert({
           patient_id: patientId,
@@ -899,7 +925,6 @@ router.post(
               documentType: plan.documentType,
             }).toISOString();
             const { data: docRow, error: docErr } = await supabase
-              .schema("resupply")
               .from("patient_documents")
               .insert({
                 patient_id: patientId,
@@ -935,7 +960,6 @@ router.post(
     // 4. Attach the source fax to the new chart.
     if (review.inbound_fax_id) {
       const { error: faxErr } = await supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .update({
           status: "attached",
@@ -958,7 +982,6 @@ router.post(
 
     // 5. Settle the review.
     const { error: settleErr } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .update({
         status: "accepted",
@@ -1017,9 +1040,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: review, error: getErr } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .select("id, status")
       .eq("id", params.data.id)
@@ -1036,7 +1063,6 @@ router.post(
     }
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("referral_reviews")
       .update({
         status: "dismissed",

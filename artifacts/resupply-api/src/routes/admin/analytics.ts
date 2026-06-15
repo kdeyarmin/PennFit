@@ -21,7 +21,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   aggregateComplianceCohorts,
@@ -43,6 +47,13 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+type EpisodeDbRow = Database["resupply"]["Tables"]["episodes"]["Row"];
+type ConversationDbRow = Database["resupply"]["Tables"]["conversations"]["Row"];
+type FulfillmentDbRow = Database["resupply"]["Tables"]["fulfillments"]["Row"];
+type ShopOrderDbRow = Database["resupply"]["Tables"]["shop_orders"]["Row"];
+type PatientDbRow = Database["resupply"]["Tables"]["patients"]["Row"];
+type MessageDbRow = Database["resupply"]["Tables"]["messages"]["Row"];
+
 const windowSchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
 });
@@ -58,9 +69,13 @@ router.get(
     }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("status")
       .gte("created_at", cutoff);
@@ -89,7 +104,12 @@ router.get(
     }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // These reads are independent of one another, so fan them out
     // concurrently rather than blocking on each in series. (The inbound-
@@ -104,7 +124,6 @@ router.get(
     ] = await Promise.all([
       // Episodes created in the window → confirmation/fulfillment + unique patients.
       supabase
-        .schema("resupply")
         .from("episodes")
         .select("status, patient_id")
         .gte("created_at", cutoff),
@@ -112,7 +131,6 @@ router.get(
       // outreach denominator. episode_id IS NOT NULL excludes in-app
       // shop threads. Capped for safety on very large windows.
       supabase
-        .schema("resupply")
         .from("conversations")
         .select("id")
         .not("episode_id", "is", null)
@@ -120,14 +138,12 @@ router.get(
         .limit(20000),
       // Active-patient count for the orders-per-patient denominator.
       supabase
-        .schema("resupply")
         .from("patients")
         .select("*", { count: "exact", head: true })
         .eq("status", "active"),
       // Fulfillment line items in the window → items per order. Capped for
       // safety on very large windows.
       supabase
-        .schema("resupply")
         .from("fulfillments")
         .select("episode_id")
         .gte("created_at", cutoff)
@@ -136,7 +152,6 @@ router.get(
       // fulfillments bill insurance and carry no cash amount, so AOV is a
       // storefront-cash metric.
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("amount_total_cents")
         .eq("status", "paid")
@@ -149,18 +164,21 @@ router.get(
     if (fulErr) throw fulErr;
     if (ordErr) throw ordErr;
 
-    const episodes: EpisodeKpiRow[] = (episodeRows ?? []).map((r) => ({
+    const episodes: EpisodeKpiRow[] = (
+      (episodeRows ?? []) as EpisodeDbRow[]
+    ).map((r) => ({
       status: r.status,
       patientId: r.patient_id,
     }));
-    const outreachIds = new Set((convRows ?? []).map((r) => r.id));
+    const outreachIds = new Set(
+      ((convRows ?? []) as ConversationDbRow[]).map((r) => r.id),
+    );
 
     // Inbound patient messages in the window → which of those
     // conversations actually got a reply (distinct).
     let respondedCount = 0;
     if (outreachIds.size > 0) {
       const { data: msgRows, error: msgErr } = await supabase
-        .schema("resupply")
         .from("messages")
         .select("conversation_id")
         .eq("direction", "inbound")
@@ -168,7 +186,7 @@ router.get(
         .limit(50000);
       if (msgErr) throw msgErr;
       const responded = new Set<string>();
-      for (const m of msgRows ?? []) {
+      for (const m of (msgRows ?? []) as MessageDbRow[]) {
         if (m.conversation_id && outreachIds.has(m.conversation_id)) {
           responded.add(m.conversation_id);
         }
@@ -176,11 +194,11 @@ router.get(
       respondedCount = responded.size;
     }
 
-    const fulfillments = (fulfillmentRows ?? [])
+    const fulfillments = ((fulfillmentRows ?? []) as FulfillmentDbRow[])
       .filter((r) => r.episode_id)
       .map((r) => ({ episodeId: r.episode_id as string }));
 
-    const paidOrderAmountsCents = (orderRows ?? [])
+    const paidOrderAmountsCents = ((orderRows ?? []) as ShopOrderDbRow[])
       .map((r) => r.amount_total_cents)
       .filter((c): c is number => typeof c === "number");
 
@@ -215,7 +233,12 @@ router.get(
     }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Pull patients onboarded in the window. We don't fetch every
     // patient on file — large practices have tens of thousands of
@@ -224,14 +247,13 @@ router.get(
     // onboarded patients, which is exactly the segment the
     // adherence-trial dashboard is about anyway.
     const { data: patientRows, error: pErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, insurance_payer, created_at")
       .gte("created_at", cutoff)
       .order("created_at", { ascending: true });
     if (pErr) throw pErr;
 
-    const patientIds = (patientRows ?? []).map((r) => r.id);
+    const patientIds = ((patientRows ?? []) as PatientDbRow[]).map((r) => r.id);
     if (patientIds.length === 0) {
       res.json({
         windowDays: days,
@@ -248,7 +270,6 @@ router.get(
     // partition in JS.
     const horizonCutoff = isoDaysAgo(days + 90);
     const { data: nightRows, error: nErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("patient_id, night_date, source, usage_minutes")
       .in("patient_id", patientIds)
@@ -269,7 +290,9 @@ router.get(
     }
 
     const asOfDate = new Date().toISOString().slice(0, 10);
-    const points: PatientCohortPoint[] = (patientRows ?? []).map((patient) => {
+    const points: PatientCohortPoint[] = (
+      (patientRows ?? []) as PatientDbRow[]
+    ).map((patient) => {
       const nights = nightsByPatient.get(patient.id) ?? [];
       let qualifies = false;
       if (nights.length > 0) {
@@ -311,7 +334,12 @@ router.get(
     const fromIso = from.toISOString();
     const toIso = to.toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Per-operator productivity is re-derived from EVENT tables (the
     // same sources as /admin/productivity) now that the historical
@@ -320,7 +348,6 @@ router.get(
     // window; byAction breaks the total down and lastActiveDate is the
     // most recent action timestamp.
     const { data: admins, error: adminsErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id, email_lower")
       .eq("status", "active");
@@ -459,7 +486,7 @@ type CsrActionQuery = {
  * fetch but keeps the timestamp so we can surface "last active".
  */
 async function csrActionRows(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   table:
     | "conversations"
     | "shop_returns"
@@ -472,7 +499,6 @@ async function csrActionRows(
 ): Promise<Array<{ id: string; ts: string | null }>> {
   if (adminIds.length === 0) return [];
   const base = supabase
-    .schema("resupply")
     .from(table)
     .select(`${attributionCol}, ${tsCol}`) as unknown as CsrActionQuery;
   const refined = refine(base.in(attributionCol, adminIds));
@@ -519,10 +545,14 @@ router.get(
       return;
     }
     const { stage, limit } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select(
         "id, patient_id, status, created_at, due_at, expires_at, prescription_id",
@@ -534,21 +564,23 @@ router.get(
 
     // Decorate each row with the patient name + payer so a
     // supervisor can scan the list without opening every row.
+    const stuckEpisodes = (data ?? []) as EpisodeDbRow[];
     const patientIds = Array.from(
-      new Set((data ?? []).map((r) => r.patient_id)),
+      new Set(stuckEpisodes.map((r) => r.patient_id)),
     );
     const { data: patients, error: pErr } = patientIds.length
       ? await supabase
-          .schema("resupply")
           .from("patients")
           .select("id, legal_first_name, legal_last_name, insurance_payer")
           .in("id", patientIds)
       : { data: [], error: null };
     if (pErr) throw pErr;
-    const byId = new Map((patients ?? []).map((p) => [p.id, p] as const));
+    const byId = new Map(
+      ((patients ?? []) as PatientDbRow[]).map((p) => [p.id, p] as const),
+    );
 
     const now = Date.now();
-    const episodes = (data ?? []).map((e) => {
+    const episodes = stuckEpisodes.map((e) => {
       const p = byId.get(e.patient_id);
       const createdAt = e.created_at;
       const ageDays = Math.floor(
@@ -595,9 +627,13 @@ router.get(
     }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("status")
       .gte("created_at", cutoff);
@@ -646,15 +682,19 @@ router.get(
     }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patientRows, error: pErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, insurance_payer, created_at")
       .gte("created_at", cutoff)
       .order("created_at", { ascending: true });
     if (pErr) throw pErr;
-    const patientIds = (patientRows ?? []).map((r) => r.id);
+    const patientIds = ((patientRows ?? []) as PatientDbRow[]).map((r) => r.id);
 
     const filename = `compliance-cohorts-${days}d-${new Date()
       .toISOString()
@@ -669,7 +709,6 @@ router.get(
     }
     const horizonCutoff = isoDaysAgo(days + 90);
     const { data: nightRows, error: nErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("patient_id, night_date, source, usage_minutes")
       .in("patient_id", patientIds)
@@ -685,7 +724,9 @@ router.get(
       nightsByPatient.set(row.patient_id, list);
     }
     const asOfDate = new Date().toISOString().slice(0, 10);
-    const points: PatientCohortPoint[] = (patientRows ?? []).map((p) => {
+    const points: PatientCohortPoint[] = (
+      (patientRows ?? []) as PatientDbRow[]
+    ).map((p) => {
       const nights = nightsByPatient.get(p.id) ?? [];
       let qualifies = false;
       if (nights.length > 0) {
@@ -760,13 +801,17 @@ router.get(
     }
     const { lookbackDays, activeDays, reorderDays } = parsed.data;
     const cutoff = isoDaysAgo(lookbackDays);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Fulfilled episodes only — the real-shipment signal. Capped for
     // safety on a very long lookback; a DME book that exceeds this in a
     // year is a good problem to have and the rates stay representative.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("patient_id, created_at")
       .eq("status", "fulfilled")
@@ -774,7 +819,9 @@ router.get(
       .limit(100000);
     if (error) throw error;
 
-    const episodes: RetentionEpisodeRow[] = (data ?? []).map((r) => ({
+    const episodes: RetentionEpisodeRow[] = (
+      (data ?? []) as EpisodeDbRow[]
+    ).map((r) => ({
       patientId: r.patient_id,
       createdAt: r.created_at,
     }));

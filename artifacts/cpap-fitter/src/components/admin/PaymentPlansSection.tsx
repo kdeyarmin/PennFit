@@ -15,6 +15,7 @@ import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { csrfHeader } from "@/lib/csrf";
+import { todayAppDateIso } from "@/lib/utils";
 
 const BASE = "/resupply-api";
 
@@ -273,9 +274,7 @@ function CreatePlanForm({
   const [frequency, setFrequency] = useState<"weekly" | "biweekly" | "monthly">(
     "monthly",
   );
-  const [startDate, setStartDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [startDate, setStartDate] = useState(todayAppDateIso());
   const [error, setError] = useState<string | null>(null);
 
   const create = useMutation({

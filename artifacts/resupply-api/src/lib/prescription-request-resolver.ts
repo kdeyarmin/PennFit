@@ -16,9 +16,13 @@ import type {
 import { getDocumentSupplierName } from "./company-info";
 import { getTrackingCodeForDocument } from "./signature-tracking/service";
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export type ResolveOutcome =
   | { kind: "ok"; inputs: PrescriptionRequestInputs }
@@ -30,7 +34,6 @@ export async function resolvePrescriptionRequestInputs(
   packetId: string,
 ): Promise<ResolveOutcome> {
   const { data: packet } = await supabase
-    .schema("resupply")
     .from("prescription_request_packets")
     .select(
       "id, patient_id, provider_id, hcpcs_items_json, icd10_codes_json, device_settings_json, length_of_need_months, return_fax_e164, return_email, clinical_notes, created_at",
@@ -40,6 +43,12 @@ export async function resolvePrescriptionRequestInputs(
     .maybeSingle();
   if (!packet) return { kind: "not_found" };
 
+  // signature-tracking reads go through the org-scoped chokepoint. This
+  // resolver runs from both an admin route and a public token route, so
+  // it scopes to the seed org (single-tenant bridge) for the code lookup.
+  const sigOrgId = await resolveSeedOrgId();
+  const sigClient = sigOrgId ? getOrgScopedClient(sigOrgId) : null;
+
   const [
     { data: patient },
     { data: provider },
@@ -47,7 +56,6 @@ export async function resolvePrescriptionRequestInputs(
     trackingCode,
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
@@ -57,6 +65,7 @@ export async function resolvePrescriptionRequestInputs(
       .maybeSingle(),
     packet.provider_id
       ? supabase
+          .raw()
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi, practice_name, fax_e164")
@@ -69,7 +78,6 @@ export async function resolvePrescriptionRequestInputs(
     // coverage first. Missing coverage is non-fatal — the PDF just
     // omits the Insurance section.
     supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select("payer_name, member_id, plan_name, rank")
       .eq("patient_id", packet.patient_id)
@@ -78,7 +86,9 @@ export async function resolvePrescriptionRequestInputs(
       .maybeSingle(),
     // Signature-tracking code (for the top-right barcode). Null when the
     // packet predates the tracking feature or has no row yet.
-    getTrackingCodeForDocument(supabase, "prescription_request", packet.id),
+    sigClient
+      ? getTrackingCodeForDocument(sigClient, "prescription_request", packet.id)
+      : Promise.resolve(null),
   ]);
 
   if (!patient || !provider) {

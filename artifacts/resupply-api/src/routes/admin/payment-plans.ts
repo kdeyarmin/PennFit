@@ -17,7 +17,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   computePlanSummary,
@@ -83,9 +83,13 @@ router.post(
       return;
     }
     const d = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId.data)
@@ -104,7 +108,6 @@ router.post(
     });
 
     const { data: plan, error: planErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .insert({
         patient_id: patientId.data,
@@ -121,7 +124,6 @@ router.post(
     if (planErr) throw planErr;
 
     const { error: instErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plan_installments")
       .insert(
         schedule.map((s) => ({
@@ -135,7 +137,6 @@ router.post(
     if (instErr) {
       // Best-effort cleanup: avoid leaving an orphaned plan if the schedule insert fails.
       const { error: cleanupErr } = await supabase
-        .schema("resupply")
         .from("patient_payment_plans")
         .delete()
         .eq("id", plan.id);
@@ -167,9 +168,13 @@ router.post(
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: plans } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .select(
         "id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, autopay_status, autopay_authorized_at",
@@ -177,10 +182,18 @@ router.post(
       .eq("patient_id", parsed.data.patientId)
       .order("created_at", { ascending: false })
       .limit(200);
-    const planIds = (plans ?? []).map((p) => p.id);
-    const summaryByPlan = await loadSummaries(planIds);
+    const planIds = (
+      (plans ?? []) as Array<
+        Database["resupply"]["Tables"]["patient_payment_plans"]["Row"]
+      >
+    ).map((p) => p.id);
+    const summaryByPlan = await loadSummaries(orgId, planIds);
     res.json({
-      plans: (plans ?? []).map((p) => ({
+      plans: (
+        (plans ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_payment_plans"]["Row"]
+        >
+      ).map((p) => ({
         ...p,
         summary: summaryByPlan.get(p.id) ?? null,
       })),
@@ -198,9 +211,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: plan } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .select(
         "id, patient_id, total_amount_cents, installment_count, frequency, start_date, status, note, created_at, updated_at, autopay_status, autopay_authorized_at",
@@ -213,7 +230,6 @@ router.get(
       return;
     }
     const { data: installments } = await supabase
-      .schema("resupply")
       .from("patient_payment_plan_installments")
       .select(
         "id, seq, due_date, amount_cents, status, paid_at, patient_payment_id",
@@ -245,9 +261,13 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .update({ status: "cancelled", updated_at: new Date().toISOString() })
       .eq("id", id.data)
@@ -294,9 +314,13 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: inst, error: instErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plan_installments")
       .select("id, plan_id")
       .eq("id", id.data)
@@ -314,7 +338,6 @@ router.patch(
     // (derivePlanStatus only ever returns active/completed). Refuse to
     // touch installments on a cancelled plan outright.
     const { data: plan, error: planErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .select("id, status")
       .eq("id", inst.plan_id)
@@ -330,7 +353,6 @@ router.patch(
       return;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plan_installments")
       .update({
         status: parsed.data.status,
@@ -347,13 +369,11 @@ router.patch(
     // Recompute plan lifecycle from the (now-updated) sibling installments,
     // unless the plan was cancelled.
     const { data: siblings } = await supabase
-      .schema("resupply")
       .from("patient_payment_plan_installments")
       .select("amount_cents, status, due_date")
       .eq("plan_id", inst.plan_id);
     const planStatus = derivePlanStatus((siblings ?? []).map(toInstallmentRow));
     const { error: planStatusErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .update({ status: planStatus, updated_at: new Date().toISOString() })
       .eq("id", inst.plan_id)
@@ -390,13 +410,13 @@ function toInstallmentRow(r: {
 }
 
 async function loadSummaries(
+  orgId: string,
   planIds: string[],
 ): Promise<Map<string, ReturnType<typeof computePlanSummary>>> {
   const out = new Map<string, ReturnType<typeof computePlanSummary>>();
   if (planIds.length === 0) return out;
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data } = await supabase
-    .schema("resupply")
     .from("patient_payment_plan_installments")
     .select("plan_id, amount_cents, status, due_date")
     .in("plan_id", planIds);
@@ -477,9 +497,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: plan, error } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .select("id, patient_id, status, stripe_customer_id")
       .eq("id", idCheck.data)
@@ -550,7 +574,6 @@ router.post(
     // regardless, so we don't fail the request — but we surface the error
     // so a stuck 'off' status is debuggable rather than silent.
     const { error: pendingErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .update({
         autopay_status: "pending",

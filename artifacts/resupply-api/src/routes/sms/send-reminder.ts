@@ -19,7 +19,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   sendReminderSms,
   type SendReminderOutcome,
@@ -78,10 +78,17 @@ router.post(
     }
     const { patientId, episodeId, body } = parsed.data;
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     let outcome: SendReminderOutcome;
     try {
       outcome = await sendReminderSms({
-        supabase: getSupabaseServiceRoleClient(),
+        supabase: supabase.raw(),
         cfg: {
           twilioAccountSid: cfg.sms.twilioAccountSid,
           twilioAuthToken: cfg.sms.twilioAuthToken,

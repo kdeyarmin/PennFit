@@ -214,6 +214,14 @@ vi.mock("@workspace/resupply-db", () => ({
       from: (table: string) => makeBuilder(table),
     }),
   }),
+  // The worker now reaches Supabase through the org-scoped facade.
+  resolveSeedOrgId: async () => "00000000-0000-4000-8000-000000000000",
+  getOrgScopedClient: () => ({
+    from: (table: string) => makeBuilder(table),
+    raw: () => ({
+      schema: () => ({ from: (table: string) => makeBuilder(table) }),
+    }),
+  }),
   getDbPool: () => ({ query: poolQueryMock }),
 }));
 

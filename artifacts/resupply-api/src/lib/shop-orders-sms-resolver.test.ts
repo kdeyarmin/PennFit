@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  getSupabaseFilterCalls,
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../test-helpers/supabase-mock";
@@ -18,9 +19,11 @@ const supabaseMock = installSupabaseMock();
 
 import { resolveSmsRecipientForShopOrder } from "./shop-orders-sms-resolver";
 
+const optedInPrefs = { smsTransactional: true };
+
 const OPTED_IN_CUSTOMER = {
   email_lower: "pat@example.com",
-  communication_preferences: { smsTransactional: true },
+  communication_preferences: optedInPrefs,
 };
 
 const PATIENT_ROW = {
@@ -35,17 +38,18 @@ beforeEach(() => {
 });
 
 describe("resolveSmsRecipientForShopOrder", () => {
-  it("returns the phone when exactly one patient matches the email", async () => {
+  it("returns the single matching opted-in patient recipient", async () => {
     stageSupabaseResponse("shop_customers", "select", {
       data: OPTED_IN_CUSTOMER,
     });
     stageSupabaseResponse("patients", "select", { data: [PATIENT_ROW] });
 
-    const recipient = await resolveSmsRecipientForShopOrder({
-      customerId: "cust_1",
+    const result = await resolveSmsRecipientForShopOrder({
+      customerId: "cust-1",
       customerEmailFromOrder: null,
     });
-    expect(recipient).toEqual({
+
+    expect(result).toEqual({
       phoneE164: "+15551234567",
       patientFirstName: "Pat",
       timezone: "America/New_York",
@@ -53,19 +57,40 @@ describe("resolveSmsRecipientForShopOrder", () => {
     });
   });
 
-  it("returns null when MULTIPLE patients share the email (ambiguity guard)", async () => {
+  it("returns null when the email matches more than one patient", async () => {
     stageSupabaseResponse("shop_customers", "select", {
-      data: OPTED_IN_CUSTOMER,
+      data: {
+        email_lower: "shared@example.com",
+        communication_preferences: optedInPrefs,
+      },
     });
     stageSupabaseResponse("patients", "select", {
-      data: [PATIENT_ROW, { ...PATIENT_ROW, phone_e164: "+15559999999" }],
+      data: [
+        {
+          phone_e164: "+15550000001",
+          legal_first_name: "Pat",
+          timezone: null,
+          address: null,
+        },
+        {
+          phone_e164: "+15550000002",
+          legal_first_name: "Sam",
+          timezone: null,
+          address: null,
+        },
+      ],
     });
 
-    const recipient = await resolveSmsRecipientForShopOrder({
-      customerId: "cust_1",
+    const result = await resolveSmsRecipientForShopOrder({
+      customerId: "cust-1",
       customerEmailFromOrder: null,
     });
-    expect(recipient).toBeNull();
+
+    expect(result).toBeNull();
+    expect(getSupabaseFilterCalls("patients", "select")).toContainEqual({
+      verb: "limit",
+      args: [2],
+    });
   });
 
   it("returns null when no patient matches the email", async () => {
@@ -74,11 +99,11 @@ describe("resolveSmsRecipientForShopOrder", () => {
     });
     stageSupabaseResponse("patients", "select", { data: [] });
 
-    const recipient = await resolveSmsRecipientForShopOrder({
+    const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust_1",
       customerEmailFromOrder: null,
     });
-    expect(recipient).toBeNull();
+    expect(result).toBeNull();
   });
 
   it("returns null when the matched patient has no phone", async () => {
@@ -89,11 +114,11 @@ describe("resolveSmsRecipientForShopOrder", () => {
       data: [{ ...PATIENT_ROW, phone_e164: null }],
     });
 
-    const recipient = await resolveSmsRecipientForShopOrder({
+    const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust_1",
       customerEmailFromOrder: null,
     });
-    expect(recipient).toBeNull();
+    expect(result).toBeNull();
   });
 
   it("returns null when smsTransactional is opted out", async () => {
@@ -104,10 +129,10 @@ describe("resolveSmsRecipientForShopOrder", () => {
       },
     });
 
-    const recipient = await resolveSmsRecipientForShopOrder({
+    const result = await resolveSmsRecipientForShopOrder({
       customerId: "cust_1",
       customerEmailFromOrder: null,
     });
-    expect(recipient).toBeNull();
+    expect(result).toBeNull();
   });
 });

@@ -17,7 +17,11 @@ import { createHmac } from "node:crypto";
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -31,7 +35,7 @@ import {
   fetchWithPinnedIp,
 } from "../../lib/safe-outbound";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 const JOB = "webhook.dispatch";
 const CRON = "* * * * *"; // every minute
@@ -64,7 +68,6 @@ export interface DispatchStats {
 export async function runWebhookDispatcher(
   opts: { fetchImpl?: typeof fetch } = {},
 ): Promise<DispatchStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const fetchImpl = opts.fetchImpl ?? fetch;
   const stats: DispatchStats = {
     scanned: 0,
@@ -72,13 +75,15 @@ export async function runWebhookDispatcher(
     retried: 0,
     exhausted: 0,
   };
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   // Step 1: find candidates. This SELECT is racy on its own — two
   // overlapping cron ticks would both see the same rows. The atomic
   // claim below filters down to the rows THIS tick actually owns.
   const { data: candidates, error: candidatesErr } = await supabase
-    .schema("resupply")
     .from("webhook_deliveries")
     .select("id")
     .eq("status", "queued")
@@ -112,9 +117,8 @@ export async function runWebhookDispatcher(
   // SELECT; on worker crash the lease expires and the row is picked
   // up again.
   const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
-  const candidateIds = candidates.map((c) => c.id);
+  const candidateIds = candidates.map((c: { id: string }) => c.id);
   const { data: deliveries, error: claimErr } = await supabase
-    .schema("resupply")
     .from("webhook_deliveries")
     .update({ next_attempt_at: leaseUntil, updated_at: nowIso })
     .in("id", candidateIds)
@@ -127,9 +131,12 @@ export async function runWebhookDispatcher(
 
   // Group by subscription_id so we resolve each subscription row
   // once per tick.
-  const subIds = [...new Set(deliveries.map((d) => d.subscription_id))];
+  const subIds = [
+    ...new Set(
+      deliveries.map((d: { subscription_id: string }) => d.subscription_id),
+    ),
+  ];
   const { data: subs, error: subsErr } = await supabase
-    .schema("resupply")
     .from("webhook_subscriptions")
     .select("id, target_url, signing_secret, max_retries, is_active")
     .in("id", subIds);
@@ -139,7 +146,16 @@ export async function runWebhookDispatcher(
   // terminal failures. Throw instead: the claimed rows stay 'queued'
   // and recover once the lease bump expires.
   if (subsErr) throw subsErr;
-  const subById = new Map((subs ?? []).map((s) => [s.id, s] as const));
+  interface SubRow {
+    id: string;
+    target_url: string;
+    signing_secret: string;
+    max_retries: number;
+    is_active: boolean;
+  }
+  const subById = new Map(
+    ((subs ?? []) as SubRow[]).map((s) => [s.id, s] as const),
+  );
 
   // Step 3: process the claimed batch with bounded parallelism so a
   // slow / dead subscriber doesn't serialise the whole batch. With
@@ -157,7 +173,6 @@ export async function runWebhookDispatcher(
     const sub = subById.get(delivery.subscription_id);
     if (!sub || !sub.is_active) {
       const { error: inactiveErr } = await supabase
-        .schema("resupply")
         .from("webhook_deliveries")
         .update({
           status: "exhausted",
@@ -183,7 +198,6 @@ export async function runWebhookDispatcher(
     } catch (err) {
       const reason = err instanceof SsrfError ? err.reason : "unsafe_url";
       const { error: ssrfErr } = await supabase
-        .schema("resupply")
         .from("webhook_deliveries")
         .update({
           status: "exhausted",
@@ -205,7 +219,6 @@ export async function runWebhookDispatcher(
     } catch (err) {
       const reason = err instanceof SsrfError ? err.reason : "dns_failed";
       const { error: dnsErr } = await supabase
-        .schema("resupply")
         .from("webhook_deliveries")
         .update({
           status: "exhausted",
@@ -238,7 +251,6 @@ export async function runWebhookDispatcher(
       // risks a duplicate delivery but is safer than marking it delivered
       // when the DB write failed.
       const { error: deliveredErr } = await supabase
-        .schema("resupply")
         .from("webhook_deliveries")
         .update({
           status: "delivered",
@@ -258,7 +270,6 @@ export async function runWebhookDispatcher(
       // Best-effort subscription metadata stamp — failure here doesn't
       // affect correctness of the delivery itself.
       const { error: subStampErr } = await supabase
-        .schema("resupply")
         .from("webhook_subscriptions")
         .update({
           last_delivery_at: new Date().toISOString(),
@@ -320,10 +331,10 @@ async function attemptOnce(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-PennFit-Event-Type": delivery.event_type,
-          "X-PennFit-Delivery-Id": delivery.id,
-          "X-PennFit-Signature": signature,
-          "User-Agent": "PennFit-Webhooks/1.0",
+          "X-CareMetric-Event-Type": delivery.event_type,
+          "X-CareMetric-Delivery-Id": delivery.id,
+          "X-CareMetric-Signature": signature,
+          "User-Agent": "CareMetric-Breathe-Webhooks/1.0",
         },
         body,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -357,7 +368,6 @@ async function applyRetryOrExhaust(
   const nextAttempt = delivery.attempt_count + 1;
   if (nextAttempt >= maxRetries) {
     const { error: exhaustedErr } = await supabase
-      .schema("resupply")
       .from("webhook_deliveries")
       .update({
         status: "exhausted",
@@ -379,7 +389,6 @@ async function applyRetryOrExhaust(
   const backoffMin = Math.min(240, Math.pow(2, nextAttempt));
   const nextAt = new Date(Date.now() + backoffMin * 60 * 1000).toISOString();
   const { error: retryErr } = await supabase
-    .schema("resupply")
     .from("webhook_deliveries")
     .update({
       attempt_count: nextAttempt,

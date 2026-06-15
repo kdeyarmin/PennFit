@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { openPennBot } from "@/lib/chat-events";
 import {
   ArrowRight,
@@ -241,6 +242,14 @@ export function Shop() {
   // Populated by the post-products effect further down.
   const [aggregates, setAggregates] = useState<AggregateMap>({});
 
+  // Tracks whether the (decoupled) review-aggregate fetch errored. When
+  // it does, `aggregates` stays empty so "Top rated" sort silently falls
+  // back to the featured order — which would leave the "Top rated" label
+  // lying about the order. We surface a quiet "ratings unavailable" note
+  // in that case so the label stays honest. `false` while loading and on
+  // success.
+  const [aggregatesFailed, setAggregatesFailed] = useState(false);
+
   // Apply the active sort to a list of products. Pure function;
   // returns a new array (never mutates the input). "featured"
   // is a no-op so the admin's curated category order survives.
@@ -367,13 +376,18 @@ export function Shop() {
     if (!data || data.products.length === 0) return;
     let active = true;
     const ids = data.products.map((p) => p.id);
+    setAggregatesFailed(false);
     fetchReviewAggregates(ids)
       .then((r) => {
         if (!active) return;
         setAggregates(r.aggregates);
       })
       .catch(() => {
-        // Silent: leave aggregates empty so cards just hide stars.
+        // Leave aggregates empty so cards just hide stars; flag the
+        // failure so the "Top rated" sort can admit ratings are
+        // unavailable instead of silently ordering by featured.
+        if (!active) return;
+        setAggregatesFailed(true);
       });
     return () => {
       active = false;
@@ -443,6 +457,16 @@ export function Shop() {
             sort={sort}
             onSortChange={setSort}
           />
+          {sort === "top-rated" && aggregatesFailed && (
+            <p
+              className="mt-2 text-xs text-muted-foreground"
+              role="status"
+              data-testid="shop-ratings-unavailable"
+            >
+              Ratings couldn&apos;t load right now, so these are shown in our
+              featured order instead of by rating.
+            </p>
+          )}
           {/* Screen-reader announcement of the visible result count.
               Sighted users see the grid shrink as search / sort /
               machine-filter changes apply; without a live region a
@@ -1197,6 +1221,7 @@ function ShopLoadError({
 }
 
 function ShopComingSoon({ message }: { message: string }) {
+  const assistantName = useCompanyContact().assistantStorefrontName;
   return (
     <div
       className="glass-card rounded-2xl p-10 md:p-14 text-center mt-12 max-w-2xl mx-auto"
@@ -1229,7 +1254,7 @@ function ShopComingSoon({ message }: { message: string }) {
           }
           data-testid="shop-coming-soon-ask-pennbot"
         >
-          <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
+          <Sparkles className="w-4 h-4 mr-2" /> Ask {assistantName}
         </Button>
       </div>
     </div>

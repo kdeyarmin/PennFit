@@ -16,7 +16,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { renderCmnPdf } from "../../lib/billing/cmn-pdf";
 import {
@@ -125,9 +125,13 @@ router.get(
       res.status(400).json({ error: "invalid_patient_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("cmn_documents")
       .select("*")
       .eq("patient_id", idOk.data)
@@ -164,9 +168,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("cmn_documents")
       .insert({
         patient_id: idOk.data,
@@ -207,10 +215,14 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existing, error: loadErr } = await supabase
-      .schema("resupply")
       .from("cmn_documents")
       .select("id, form_type, answers")
       .eq("id", idOk.data)
@@ -255,7 +267,6 @@ router.patch(
       update.length_of_need_months = b.lengthOfNeedMonths;
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("cmn_documents")
       .update(update as never)
       .eq("id", idOk.data);
@@ -281,9 +292,13 @@ router.get(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: cmn, error } = await supabase
-      .schema("resupply")
       .from("cmn_documents")
       .select(
         "id, patient_id, form_type, hcpcs_code, status, answers, physician_name, physician_npi, initial_date, recert_date, length_of_need_months",
@@ -317,7 +332,6 @@ router.get(
     }
 
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("legal_first_name, legal_last_name, date_of_birth, address")
       .eq("id", c.patient_id)
@@ -328,7 +342,7 @@ router.get(
       return;
     }
 
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({ orgId });
     const supplierName =
       identity.source !== "stub"
         ? identity.billingProvider.organizationName
@@ -386,10 +400,14 @@ router.get(
   "/admin/billing/cmn-worklist",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("cmn_documents")
       .select(
         "id, patient_id, form_type, hcpcs_code, status, answers, created_at",

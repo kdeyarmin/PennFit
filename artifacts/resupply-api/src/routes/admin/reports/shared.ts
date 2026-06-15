@@ -44,9 +44,29 @@ export type ReportFormat = (typeof REPORT_FORMATS)[number];
 export interface ReportModule {
   slug: ReportSlug;
   register(router: IRouter): void;
-  buildEmailCsv(from: Date, to: Date): Promise<Buffer>;
-  buildEmailPdf(from: Date, to: Date): Promise<Buffer>;
-  buildEmailQbRows?(from: Date, to: Date): Promise<QuickbooksRowInput[]>;
+  buildEmailCsv(orgId: string, from: Date, to: Date): Promise<Buffer>;
+  buildEmailPdf(orgId: string, from: Date, to: Date): Promise<Buffer>;
+  buildEmailQbRows?(
+    orgId: string,
+    from: Date,
+    to: Date,
+  ): Promise<QuickbooksRowInput[]>;
+}
+
+/**
+ * Resolve the tenant for a reports request, or send a 500 and return
+ * null. Reports are admin-gated; `req.orgId` is attached by `requireAdmin`.
+ */
+export function reportOrgId(
+  req: import("express").Request,
+  res: import("express").Response,
+): string | null {
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return null;
+  }
+  return orgId;
 }
 
 // Read at call time (not module load) so the boot/save-time company-
@@ -155,13 +175,21 @@ export async function renderIifWithAccounts(
 // surfaces as a build error instead of a silent broken email.
 // ─────────────────────────────────────────────────────────────────
 
-export interface BufferedRes {
+// The minimal write surface the CSV writers actually use. Both
+// express's `Response` and the `bufferedRes()` shim below satisfy it
+// structurally. Typing every `writeXxxCsv(res, …)` to this — rather
+// than to the full `Response` — is what makes the shim safe: an
+// accidental `res.setHeader()` / `res.status()` inside a writer is a
+// *compile* error here, exactly as the shim comment promises (the old
+// `res as unknown as Response` casts at the email callsites silently
+// defeated that guarantee).
+export interface CsvSink {
   write(chunk: string): boolean;
   end(): void;
 }
 
 export function bufferedRes(): {
-  res: BufferedRes;
+  res: CsvSink;
   collect: () => Buffer;
 } {
   const chunks: Buffer[] = [];

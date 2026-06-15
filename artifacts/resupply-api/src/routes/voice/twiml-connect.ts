@@ -51,8 +51,7 @@ const signatureMiddleware = requireTwilioSignature({
     const base = readVoicePublicBaseUrlOrNull() ?? "";
     // express request: typed as SignatureRequestLike here, but the real
     // request also carries originalUrl. Cast through unknown to read it.
-    const originalUrl =
-      (req as unknown as { originalUrl?: string }).originalUrl ?? "";
+    const originalUrl = req.originalUrl ?? "";
     return `${base}${originalUrl}`;
   },
 });

@@ -20,8 +20,9 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { safeCsvCell } from "../../lib/safe-csv-cell";
 import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -56,9 +57,15 @@ interface SummaryRow {
 router.get(
   "/admin/therapy-compliance/summary",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("therapy_setup_adherence_summary");
     if (error) throw error;
@@ -101,11 +108,13 @@ interface SetupEntry {
 }
 
 async function buildSetups(
+  orgId: string,
   limit: number,
   status: SetupAdherenceStatus | undefined,
 ): Promise<SetupEntry[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_setup_adherence_list", {
       // Over-fetch when filtering by status so the trimmed result still
@@ -138,7 +147,6 @@ async function buildSetups(
 
   const ids = rows.map((r) => r.patientId);
   const { data: patientRows, error: pErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", ids);
@@ -170,16 +178,22 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { limit, status } = parsed.data;
-    const setups = await buildSetups(limit, status);
+    const setups = await buildSetups(orgId, limit, status);
     res.json({ count: setups.length, setups });
   },
 );
 
+// Delegate to the shared safe-csv-cell helper so patient-derived
+// fields get formula-injection neutralisation, not just RFC 4180
+// quoting.
 function csvCell(v: string | number | null): string {
-  if (v === null) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return safeCsvCell(v);
 }
 
 router.get(
@@ -191,8 +205,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { limit, status } = parsed.data;
-    const setups = await buildSetups(limit, status);
+    const setups = await buildSetups(orgId, limit, status);
 
     const filename = `setup-adherence-${new Date()
       .toISOString()

@@ -30,6 +30,15 @@ vi.mock("../../lib/cart-abandonment/run-dispatch", () => ({
   runCartAbandonmentDispatch: runDispatchMock,
 }));
 
+// The handler resolves the seed org (single-tenant bridge) before
+// dispatching; stub it so the cron contract tests don't hit a real DB.
+const resolveSeedOrgIdMock = vi.hoisted(() => vi.fn(async () => "org-1"));
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  return { ...actual, resolveSeedOrgId: resolveSeedOrgIdMock };
+});
+
 // Capture log calls so we can assert info/error were called with the
 // stats payload.
 const logCalls = vi.hoisted(() => ({

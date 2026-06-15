@@ -140,6 +140,157 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Outreach playbooks (migration 0263; org_id added 0342). uuid ids.
+      outreach_playbooks: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_key: string;
+          name: string;
+          situation: string;
+          description: string | null;
+          category: string;
+          is_active: boolean;
+          is_seeded: boolean;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbooks"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbooks"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_steps: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_id: string;
+          step_index: number;
+          day_offset: number;
+          channel: string;
+          subject: string | null;
+          body: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_steps"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_steps"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_runs: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          playbook_id: string;
+          patient_id: string;
+          status: string;
+          next_step_index: number;
+          next_step_at: string | null;
+          started_by_user_id: string | null;
+          started_by_email: string | null;
+          started_at: string;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_runs"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_runs"]["Row"]
+        >;
+        Relationships: [];
+      };
+      outreach_playbook_step_log: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          run_id: string;
+          step_index: number;
+          channel: string;
+          status: string;
+          detail: string | null;
+          call_script: string | null;
+          call_outcome: string | null;
+          completed_by_email: string | null;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_step_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["outreach_playbook_step_log"]["Row"]
+        >;
+        Relationships: [];
+      };
+      // Cases workspace (migration 0189; org_id added 0342). `id` is a
+      // text uuid, not a native uuid column.
+      cases: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          title: string;
+          status: string;
+          priority: string;
+          patient_id: string | null;
+          customer_id: string | null;
+          assigned_to_user_id: string | null;
+          opened_by_user_id: string | null;
+          opened_by_email: string;
+          summary: string | null;
+          created_at: string;
+          updated_at: string;
+          resolved_at: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["cases"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["cases"]["Row"]>;
+        Relationships: [];
+      };
+      case_links: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          case_id: string;
+          link_kind: string;
+          ref_id: string;
+          note: string | null;
+          created_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["case_links"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["case_links"]["Row"]>;
+        Relationships: [];
+      };
+      // Patient setup checklist (migration 0191; org_id added 0342).
+      setup_checklist_items: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          step_key: string;
+          status: string;
+          note: string | null;
+          completed_by_email: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["setup_checklist_items"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["setup_checklist_items"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: canonical HCPCS reference catalog for PAP
       // resupply. min_interval_days + (max_quantity_per_period /
       // period_days) express the Medicare LCD L33718 replacement
@@ -269,6 +420,7 @@ export interface Database {
       };
       patient_checkin_attempts: {
         Row: {
+          org_id: string | null;
           id: string;
           journey_id: string;
           patient_id: string;
@@ -352,6 +504,7 @@ export interface Database {
       feature_flag_events: {
         Row: {
           id: string;
+          org_id: string | null;
           key: string;
           previous_enabled: boolean;
           next_enabled: boolean;
@@ -360,6 +513,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          org_id?: string | null;
           key: string;
           previous_enabled: boolean;
           next_enabled: boolean;
@@ -377,6 +531,7 @@ export interface Database {
       // /admin/system/config.
       app_config: {
         Row: {
+          org_id: string | null;
           key: string;
           value: string;
           updated_by_user_id: string | null;
@@ -423,6 +578,7 @@ export interface Database {
       };
       admin_users: {
         Row: {
+          org_id: string | null;
           id: string;
           email_lower: string;
           role:
@@ -525,6 +681,7 @@ export interface Database {
       };
       call_dispositions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           conversation_id: string | null;
@@ -555,6 +712,7 @@ export interface Database {
       };
       conversations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           episode_id: string | null;
@@ -584,6 +742,7 @@ export interface Database {
       };
       episodes: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string;
@@ -600,6 +759,7 @@ export interface Database {
       };
       fulfillments: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           episode_id: string;
@@ -621,6 +781,7 @@ export interface Database {
       };
       shop_backorders: {
         Row: {
+          org_id: string | null;
           id: string;
           sku: string;
           marked_at: string;
@@ -639,6 +800,7 @@ export interface Database {
       };
       shop_sku_substitutes: {
         Row: {
+          org_id: string | null;
           id: string;
           primary_sku: string;
           alternative_sku: string;
@@ -659,6 +821,7 @@ export interface Database {
       };
       patients: {
         Row: {
+          org_id: string | null;
           id: string;
           /** PacWare account number. Nullable since migration 0303 —
            * admin intake may create a patient before PacWare knows
@@ -699,6 +862,7 @@ export interface Database {
       };
       frequency_rules: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           priority: number;
@@ -726,6 +890,7 @@ export interface Database {
       // fleet / setup-adherence RPCs; CRUD via /compliance-rules.
       compliance_rules: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           priority: number;
@@ -750,6 +915,7 @@ export interface Database {
       // as more callers migrate.
       shop_returns: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           order_id: string;
@@ -786,6 +952,7 @@ export interface Database {
       };
       shop_reviews: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           product_id: string;
@@ -807,6 +974,7 @@ export interface Database {
       };
       patient_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           object_key: string;
@@ -835,6 +1003,7 @@ export interface Database {
       };
       shop_customer_followups: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           body: string;
@@ -856,6 +1025,7 @@ export interface Database {
       };
       insurance_leads: {
         Row: {
+          org_id: string | null;
           id: string;
           full_name: string;
           email: string;
@@ -887,6 +1057,7 @@ export interface Database {
       };
       fitter_leads: {
         Row: {
+          org_id: string | null;
           id: string;
           email: string;
           marketing_opt_in: boolean;
@@ -942,6 +1113,7 @@ export interface Database {
       // Mig 0243 — staff-initiated AI mask-fitter invitations.
       fitter_invites: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string | null;
           recipient_email: string | null;
@@ -989,6 +1161,7 @@ export interface Database {
       // campaign. One row per (lead, touch_index, channel).
       fitter_campaign_touches: {
         Row: {
+          org_id: string | null;
           id: string;
           lead_id: string;
           touch_index: number;
@@ -1016,6 +1189,7 @@ export interface Database {
       // Mig 0154 — per-click audit log. One row per CTA click.
       fitter_campaign_clicks: {
         Row: {
+          org_id: string | null;
           id: string;
           lead_id: string;
           touch_index: number;
@@ -1037,6 +1211,7 @@ export interface Database {
       };
       shop_product_questions: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           customer_id: string;
@@ -1064,6 +1239,7 @@ export interface Database {
       };
       shop_back_in_stock_notifications: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           email: string;
@@ -1084,6 +1260,7 @@ export interface Database {
       };
       message_attachments: {
         Row: {
+          org_id: string | null;
           id: string;
           message_id: string;
           object_key: string;
@@ -1103,6 +1280,7 @@ export interface Database {
       };
       shop_customer_push_subscriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           endpoint: string;
@@ -1123,6 +1301,7 @@ export interface Database {
       };
       csr_compliance_alerts: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           journey_id: string | null;
@@ -1157,6 +1336,7 @@ export interface Database {
       };
       shop_customer_message_template_overrides: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           template_key: string;
@@ -1181,6 +1361,7 @@ export interface Database {
       };
       alert_definitions: {
         Row: {
+          org_id: string | null;
           id: string;
           key: string;
           name: string;
@@ -1205,6 +1386,7 @@ export interface Database {
       };
       alert_messages: {
         Row: {
+          org_id: string | null;
           id: string;
           alert_key: string;
           channel: "email" | "sms" | "voice";
@@ -1227,6 +1409,7 @@ export interface Database {
       };
       alert_message_overrides: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           alert_key: string;
@@ -1249,8 +1432,70 @@ export interface Database {
         >;
         Relationships: [];
       };
+      video_visits: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string | null;
+          purpose: string;
+          notes: string | null;
+          status: string;
+          scheduled_at: string | null;
+          created_by_admin_user_id: string | null;
+          created_by_email: string | null;
+          link_version: number;
+          invite_channel: string | null;
+          invite_delivered: boolean | null;
+          staff_joined_at: string | null;
+          patient_joined_at: string | null;
+          started_at: string | null;
+          ended_at: string | null;
+          created_at: string;
+          updated_at: string;
+          guest_name: string | null;
+          guest_email: string | null;
+          guest_phone_e164: string | null;
+          reminder_sent_at: string | null;
+          invite_twilio_message_sid: string | null;
+          invite_delivery_status: string | null;
+          invite_delivery_error_code: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["video_visits"]["Row"]>;
+        Relationships: [];
+      };
+      clinical_encounters: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          author_user_id: string | null;
+          author_email: string;
+          encounter_type: string;
+          reason: string | null;
+          assessment: string | null;
+          intervention: string | null;
+          plan: string | null;
+          follow_up_at: string | null;
+          note: string | null;
+          linked_alert_id: string | null;
+          linked_episode_id: string | null;
+          created_at: string;
+          updated_at: string;
+          assessment_category: string | null;
+          outcome_status: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["clinical_encounters"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["clinical_encounters"]["Row"]
+        >;
+        Relationships: [];
+      };
       message_templates: {
         Row: {
+          org_id: string | null;
           id: string;
           template_key: string;
           channel: string;
@@ -1274,6 +1519,7 @@ export interface Database {
       };
       patient_integration_snapshots: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source: string;
@@ -1295,6 +1541,7 @@ export interface Database {
       };
       patient_therapy_links: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source: string;
@@ -1317,6 +1564,7 @@ export interface Database {
       };
       patient_therapy_nights: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           night_date: string;
@@ -1339,6 +1587,7 @@ export interface Database {
       };
       patient_onboarding_journeys: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           started_at: string;
@@ -1364,6 +1613,7 @@ export interface Database {
       };
       patient_smart_trigger_events: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           kind: string;
@@ -1387,6 +1637,7 @@ export interface Database {
       };
       physician_fax_outreach: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string | null;
@@ -1414,6 +1665,7 @@ export interface Database {
       };
       patient_followups: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           body: string;
@@ -1435,6 +1687,7 @@ export interface Database {
       };
       prescriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           provider_id: string | null;
@@ -1482,6 +1735,7 @@ export interface Database {
       };
       sleep_studies: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           study_date: string;
@@ -1517,6 +1771,7 @@ export interface Database {
       };
       insurance_coverages: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           rank: "primary" | "secondary" | "tertiary";
@@ -1560,6 +1815,7 @@ export interface Database {
       };
       prior_authorizations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           insurance_coverage_id: string | null;
@@ -1596,6 +1852,7 @@ export interface Database {
       };
       insurance_claims: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           insurance_coverage_id: string | null;
@@ -1615,6 +1872,14 @@ export interface Database {
           total_allowed_cents: number;
           total_paid_cents: number;
           patient_responsibility_cents: number;
+          // Migration 0327: itemized breakdown of the patient-
+          // responsibility total, summed from the 835 PR-group CAS
+          // adjustments by CARC (1=deductible, 2=coinsurance, 3=copay).
+          // Informational; the authoritative balance stays
+          // patient_responsibility_cents. Default 0, accumulated per ERA.
+          deductible_cents: number;
+          coinsurance_cents: number;
+          copay_cents: number;
           submitted_at: string | null;
           decision_at: string | null;
           paid_at: string | null;
@@ -1695,6 +1960,7 @@ export interface Database {
       };
       insurance_claim_line_items: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           hcpcs_code: string;
@@ -1731,6 +1997,7 @@ export interface Database {
       };
       insurance_claim_events: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           event_type:
@@ -1759,6 +2026,7 @@ export interface Database {
       };
       payer_profiles: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -1865,6 +2133,7 @@ export interface Database {
       };
       payer_fee_schedules: {
         Row: {
+          org_id: string | null;
           id: string;
           payer_profile_id: string;
           hcpcs_code: string;
@@ -1887,6 +2156,7 @@ export interface Database {
       };
       eligibility_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           insurance_coverage_id: string;
           patient_id: string;
@@ -1927,6 +2197,7 @@ export interface Database {
       };
       claim_status_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           payer_profile_id: string | null;
@@ -1957,6 +2228,7 @@ export interface Database {
       };
       locations: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           code: string | null;
@@ -1976,8 +2248,32 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["locations"]["Row"]>;
         Relationships: [];
       };
+      organizations: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          status: "active" | "suspended" | "archived";
+          created_at: string;
+          updated_at: string;
+          storefront_name: string | null;
+          tagline: string | null;
+          logo_url: string | null;
+          logo_object_path: string | null;
+          custom_domain: string | null;
+          custom_domain_status: "none" | "pending" | "verified";
+          custom_domain_token: string | null;
+          custom_domain_verified_at: string | null;
+          custom_domain_tls: "none" | "pending" | "active" | "failed";
+          custom_domain_cf_hostname_id: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Relationships: [];
+      };
       gl_account_mappings: {
         Row: {
+          org_id: string | null;
           mapping_key: "deposit" | "revenue" | "refund" | "patient_pay";
           account_name: string;
           updated_by_email: string | null;
@@ -1993,6 +2289,7 @@ export interface Database {
       };
       medicare_same_or_similar_checks: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_code: string;
@@ -2012,6 +2309,7 @@ export interface Database {
       };
       capped_rental_cycles: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_code: string;
@@ -2037,6 +2335,7 @@ export interface Database {
       };
       dwo_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_family:
@@ -2061,6 +2360,7 @@ export interface Database {
       };
       adherence_predictions: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           model_version: string;
@@ -2081,6 +2381,7 @@ export interface Database {
       };
       voice_reorder_sessions: {
         Row: {
+          org_id: string | null;
           id: string;
           twilio_call_sid: string;
           from_e164: string;
@@ -2108,6 +2409,7 @@ export interface Database {
       };
       davinci_pas_submissions: {
         Row: {
+          org_id: string | null;
           id: string;
           prior_authorization_id: string;
           payer_pas_endpoint: string;
@@ -2140,6 +2442,7 @@ export interface Database {
       };
       webhook_subscriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           target_url: string;
@@ -2163,6 +2466,7 @@ export interface Database {
       };
       webhook_deliveries: {
         Row: {
+          org_id: string | null;
           id: string;
           subscription_id: string;
           event_type: string;
@@ -2186,6 +2490,7 @@ export interface Database {
       };
       patient_billing_statements: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           line_items_json: Json;
@@ -2210,6 +2515,7 @@ export interface Database {
       };
       claim_appeal_letters: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           denial_analysis_id: string | null;
@@ -2230,6 +2536,7 @@ export interface Database {
       };
       dispense_readiness_reviews: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           hcpcs_code: string;
@@ -2324,6 +2631,7 @@ export interface Database {
       };
       patient_payment_plans: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           total_amount_cents: number;
@@ -2346,6 +2654,7 @@ export interface Database {
       };
       patient_payment_plan_installments: {
         Row: {
+          org_id: string | null;
           id: string;
           plan_id: string;
           seq: number;
@@ -2366,6 +2675,7 @@ export interface Database {
       };
       patient_payments: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           stripe_payment_intent_id: string | null;
@@ -2396,6 +2706,7 @@ export interface Database {
       };
       patient_autopay_authorizations: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           shop_customer_id: string | null;
@@ -2427,6 +2738,7 @@ export interface Database {
       };
       prescription_request_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           provider_id: string | null;
@@ -2470,6 +2782,7 @@ export interface Database {
       };
       documentation_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           kind:
@@ -2494,6 +2807,7 @@ export interface Database {
       };
       patient_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           title: string;
@@ -2538,6 +2852,7 @@ export interface Database {
       };
       manual_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           document_type:
             | "cmn"
@@ -2573,6 +2888,7 @@ export interface Database {
       };
       manual_document_packets: {
         Row: {
+          org_id: string | null;
           id: string;
           title: string;
           recipient_name: string | null;
@@ -2598,6 +2914,7 @@ export interface Database {
       };
       signature_tracking: {
         Row: {
+          org_id: string | null;
           id: string;
           tracking_code: string;
           document_kind: "prescription_request" | "manual_document";
@@ -2631,6 +2948,7 @@ export interface Database {
       // bill hold. One row per document a claim needs back signed.
       claim_paperwork_requirements: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string | null;
           patient_id: string;
@@ -2692,6 +3010,7 @@ export interface Database {
       };
       patient_packet_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           packet_id: string;
           document_key: string;
@@ -2722,6 +3041,7 @@ export interface Database {
       // documents for the send panel (e.g. Medicare vs commercial).
       patient_packet_presets: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           description: string | null;
@@ -2744,6 +3064,7 @@ export interface Database {
       // prior revision.
       patient_packet_template_revisions: {
         Row: {
+          org_id: string | null;
           id: string;
           document_key: string;
           action: "saved" | "reverted";
@@ -2766,6 +3087,7 @@ export interface Database {
       // row reverts to the code default.
       patient_packet_template_overrides: {
         Row: {
+          org_id: string | null;
           document_key: string;
           title: string;
           sections: Json;
@@ -2784,6 +3106,7 @@ export interface Database {
       };
       patient_packet_signatures: {
         Row: {
+          org_id: string | null;
           id: string;
           packet_id: string;
           signer_name: string;
@@ -2840,6 +3163,7 @@ export interface Database {
       };
       good_faith_estimates: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string | null;
           recipient_name: string;
@@ -2998,6 +3322,7 @@ export interface Database {
           authorized_signer_title: string | null;
           authorized_signer_signature_object_key: string | null;
           notes: string | null;
+          org_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3042,6 +3367,7 @@ export interface Database {
       };
       clearinghouse_credentials: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -3081,6 +3407,7 @@ export interface Database {
       };
       clearinghouse_inbound_files: {
         Row: {
+          org_id: string | null;
           id: string;
           clearinghouse_id: string;
           remote_path: string;
@@ -3111,6 +3438,7 @@ export interface Database {
       };
       era_files: {
         Row: {
+          org_id: string | null;
           id: string;
           file_name: string;
           file_sha256: string;
@@ -3158,6 +3486,7 @@ export interface Database {
       };
       payer_modifier_rules: {
         Row: {
+          org_id: string | null;
           id: string;
           payer_profile_id: string;
           hcpcs_code: string;
@@ -3187,6 +3516,7 @@ export interface Database {
       };
       claim_scrub_results: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           verdict: "ready" | "fixable" | "blocking" | "errored";
@@ -3216,6 +3546,7 @@ export interface Database {
       };
       claim_denial_analyses: {
         Row: {
+          org_id: string | null;
           id: string;
           claim_id: string;
           era_file_id: string | null;
@@ -3260,6 +3591,7 @@ export interface Database {
       };
       claim_templates: {
         Row: {
+          org_id: string | null;
           id: string;
           slug: string;
           display_name: string;
@@ -3281,6 +3613,7 @@ export interface Database {
       };
       office_ally_submissions: {
         Row: {
+          org_id: string | null;
           id: string;
           file_name: string;
           isa_control_number: string;
@@ -3323,6 +3656,7 @@ export interface Database {
       };
       inbound_faxes: {
         Row: {
+          org_id: string | null;
           id: string;
           twilio_fax_sid: string;
           from_e164: string | null;
@@ -3344,6 +3678,12 @@ export interface Database {
           ocr_status: "extracted" | "failed" | "unsupported" | "offline" | null;
           ocr_extraction: Json | null;
           ocr_extracted_at: string | null;
+          // Barcode auto-file outcome (migration 0296).
+          tracking_code_detected: string | null;
+          auto_file_status: string | null;
+          auto_filed_at: string | null;
+          signature_tracking_id: string | null;
+          chart_document_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -3356,6 +3696,7 @@ export interface Database {
       // structured AI extraction and the human accept/dismiss lifecycle.
       referral_reviews: {
         Row: {
+          org_id: string | null;
           id: string;
           source: "fax" | "upload";
           inbound_fax_id: string | null;
@@ -3394,6 +3735,7 @@ export interface Database {
       };
       voice_calls: {
         Row: {
+          org_id: string | null;
           id: string;
           call_sid: string;
           conversation_id: string | null;
@@ -3412,6 +3754,7 @@ export interface Database {
       };
       equipment_assets: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           prescription_id: string | null;
@@ -3446,8 +3789,48 @@ export interface Database {
         >;
         Relationships: [];
       };
+      asset_recovery_cases: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string | null;
+          patient_label: string | null;
+          device_label: string | null;
+          device_serial: string | null;
+          status:
+            | "identified"
+            | "outreach"
+            | "label_sent"
+            | "in_transit"
+            | "received"
+            | "redeployed"
+            | "closed_unrecovered";
+          reason:
+            | "discontinued"
+            | "non_compliant"
+            | "deceased"
+            | "upgraded"
+            | "insurance_change"
+            | "other";
+          tracking_number: string | null;
+          return_label_url: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          updated_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["asset_recovery_cases"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["asset_recovery_cases"]["Row"]
+        >;
+        Relationships: [];
+      };
       equipment_recalls: {
         Row: {
+          org_id: string | null;
           id: string;
           recall_reference: string;
           title: string;
@@ -3473,6 +3856,7 @@ export interface Database {
       };
       recall_notifications: {
         Row: {
+          org_id: string | null;
           id: string;
           recall_id: string;
           asset_id: string;
@@ -3504,6 +3888,7 @@ export interface Database {
       };
       recall_remediation_actions: {
         Row: {
+          org_id: string | null;
           id: string;
           recall_id: string;
           asset_id: string;
@@ -3607,6 +3992,7 @@ export interface Database {
       };
       bulk_campaigns: {
         Row: {
+          org_id: string | null;
           id: string;
           name: string;
           description: string | null;
@@ -3644,6 +4030,7 @@ export interface Database {
       };
       bulk_campaign_recipients: {
         Row: {
+          org_id: string | null;
           id: string;
           campaign_id: string;
           recipient_kind: "patient" | "shop_customer";
@@ -3754,6 +4141,7 @@ export interface Database {
       };
       patient_maintenance_log: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           task_key: string;
@@ -3771,6 +4159,7 @@ export interface Database {
       };
       patient_maintenance_nudges: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           sent_at: string;
@@ -3788,6 +4177,7 @@ export interface Database {
       };
       office_closures: {
         Row: {
+          org_id: string | null;
           id: string;
           label: string;
           starts_at: string;
@@ -3807,6 +4197,7 @@ export interface Database {
       };
       company_calendar_events: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           event_type:
@@ -3839,6 +4230,7 @@ export interface Database {
       };
       csr_shifts: {
         Row: {
+          org_id: string | null;
           id: string;
           staff_user_id: string;
           starts_at: string;
@@ -3855,6 +4247,7 @@ export interface Database {
       };
       feature_flags: {
         Row: {
+          org_id: string | null;
           key: string;
           enabled: boolean;
           description: string;
@@ -3870,6 +4263,7 @@ export interface Database {
       };
       report_presets: {
         Row: {
+          org_id: string | null;
           id: string;
           user_id: string;
           name: string;
@@ -3893,6 +4287,7 @@ export interface Database {
       };
       shop_order_loss_claims: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           opened_by_user_id: string | null;
@@ -3920,6 +4315,7 @@ export interface Database {
       };
       patient_identity_verifications: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           method:
@@ -3942,6 +4338,7 @@ export interface Database {
       };
       patient_fit_overrides: {
         Row: {
+          org_id: string | null;
           patient_id: string;
           recommended_mask_sku: string;
           recommended_mask_size: string | null;
@@ -3960,6 +4357,7 @@ export interface Database {
       };
       patient_referrals: {
         Row: {
+          org_id: string | null;
           id: string;
           referrer_patient_id: string;
           code: string;
@@ -3982,6 +4380,7 @@ export interface Database {
       };
       patient_form_acknowledgements: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           form_kind:
@@ -4008,6 +4407,7 @@ export interface Database {
       };
       office_recurring_closures: {
         Row: {
+          org_id: string | null;
           id: string;
           label: string;
           day_of_week: number;
@@ -4029,6 +4429,7 @@ export interface Database {
       };
       office_hours: {
         Row: {
+          org_id: string | null;
           id: string;
           day_of_week: number;
           open_time_utc: string;
@@ -4044,6 +4445,7 @@ export interface Database {
       };
       patient_coaching_plans: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           source_alert_id: string | null;
@@ -4075,6 +4477,7 @@ export interface Database {
       };
       patient_address_history: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           line1: string | null;
@@ -4097,6 +4500,7 @@ export interface Database {
       };
       conversation_coaching_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           conversation_id: string;
           target_user_id: string;
@@ -4116,6 +4520,7 @@ export interface Database {
       };
       messages: {
         Row: {
+          org_id: string | null;
           id: string;
           conversation_id: string;
           direction: string;
@@ -4134,6 +4539,7 @@ export interface Database {
       };
       patient_latest_message: {
         Row: {
+          org_id: string | null;
           patient_id: string;
           last_message_at: string;
           last_message_direction: string;
@@ -4151,6 +4557,7 @@ export interface Database {
       };
       patient_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           body: string;
@@ -4164,6 +4571,7 @@ export interface Database {
       };
       shop_subscriptions: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           stripe_subscription_id: string;
@@ -4190,6 +4598,7 @@ export interface Database {
       // channel + (optional) acquisition cost for LTV/CAC cohort math.
       customer_acquisition: {
         Row: {
+          org_id: string | null;
           customer_id: string;
           channel:
             | "organic"
@@ -4218,6 +4627,7 @@ export interface Database {
       };
       shop_customers: {
         Row: {
+          org_id: string | null;
           customer_id: string;
           stripe_customer_id: string | null;
           display_name: string | null;
@@ -4263,6 +4673,7 @@ export interface Database {
       };
       shop_order_items: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           stripe_session_id: string;
@@ -4296,6 +4707,7 @@ export interface Database {
       };
       shop_abandoned_carts: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           email: string | null;
@@ -4318,6 +4730,7 @@ export interface Database {
       };
       shop_orders: {
         Row: {
+          org_id: string | null;
           id: string;
           stripe_session_id: string;
           stripe_payment_intent_id: string | null;
@@ -4373,6 +4786,7 @@ export interface Database {
       };
       patient_therapy_milestones: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           milestone_kind: "100_nights" | "365_nights" | "first_adherence_month";
@@ -4392,6 +4806,7 @@ export interface Database {
       };
       shop_order_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           body: string;
@@ -4409,6 +4824,7 @@ export interface Database {
       };
       shop_order_nps_responses: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           score: number;
@@ -4428,6 +4844,7 @@ export interface Database {
       // Migration 0201 (RT #22a): post-delivery mask-fit micro-survey.
       mask_fit_outcomes: {
         Row: {
+          org_id: string | null;
           id: string;
           order_id: string;
           mask_id: string | null;
@@ -4451,6 +4868,7 @@ export interface Database {
       // Migration 0202 (Biller #29): structured CMN / DIF documents.
       cmn_documents: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           claim_id: string | null;
@@ -4475,6 +4893,7 @@ export interface Database {
       // Migration 0204 (RT #23): proactive clinical outreach log.
       clinical_outreach_log: {
         Row: {
+          org_id: string | null;
           id: string;
           patient_id: string;
           intervention_encounter_id: string | null;
@@ -4526,6 +4945,7 @@ export interface Database {
       };
       shop_customer_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           customer_id: string;
           body: string;
@@ -4541,8 +4961,30 @@ export interface Database {
         >;
         Relationships: [];
       };
+      business_targets: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          metric_key: string;
+          period: string;
+          target_value: number;
+          unit: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["business_targets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["business_targets"]["Row"]
+        >;
+        Relationships: [];
+      };
       inventory_reconciliations: {
         Row: {
+          org_id: string | null;
           id: string;
           period_label: string;
           status: "draft" | "submitted";
@@ -4565,6 +5007,7 @@ export interface Database {
       };
       inventory_reconciliation_lines: {
         Row: {
+          org_id: string | null;
           id: string;
           reconciliation_id: string;
           product_id: string;
@@ -4585,6 +5028,7 @@ export interface Database {
       };
       low_stock_alert_state: {
         Row: {
+          org_id: string | null;
           product_id: string;
           last_observed_count: number | null;
           last_threshold: number | null;
@@ -4603,6 +5047,7 @@ export interface Database {
       };
       shop_product_compatibility: {
         Row: {
+          org_id: string | null;
           id: string;
           product_id: string;
           machine_manufacturer: string;
@@ -4621,6 +5066,7 @@ export interface Database {
       };
       csr_macros: {
         Row: {
+          org_id: string | null;
           id: string;
           key: string;
           label: string;
@@ -4644,6 +5090,7 @@ export interface Database {
       // shop_orders at read time.
       csr_order_requests: {
         Row: {
+          org_id: string | null;
           id: string;
           order_reference: string;
           status: "sent" | "viewed" | "signed" | "canceled";
@@ -4682,6 +5129,7 @@ export interface Database {
       };
       shop_return_notes: {
         Row: {
+          org_id: string | null;
           id: string;
           return_id: string;
           body: string;

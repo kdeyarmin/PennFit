@@ -21,7 +21,12 @@ import PDFDocument from "pdfkit";
 import type PDFKit from "pdfkit";
 
 import { getManualDocumentTypeDef } from "./catalog";
-import { drawManualDocument, type ManualDocumentPdfInput } from "./pdf";
+import {
+  drawManualDocument,
+  drawSupplierContact,
+  type ManualDocumentPdfInput,
+  type ManualDocumentSupplierContact,
+} from "./pdf";
 
 const MARGIN = 72;
 const PAGE_WIDTH = 612;
@@ -41,6 +46,8 @@ export interface ManualDocumentPacketPdfInput {
   includeCoverSheet: boolean;
   /** Practice / supplier name for the cover-sheet letterhead. */
   supplierName: string;
+  /** Supplier identifiers/contact printed under the cover letterhead. */
+  supplierContact?: ManualDocumentSupplierContact | null;
   /** Passed in (not derived) so tests are deterministic. */
   generatedOn: Date;
 }
@@ -116,6 +123,7 @@ function drawPacketCoverSheet(
       width: USABLE_WIDTH,
     })
     .fillColor("#000000");
+  drawSupplierContact(doc, input.supplierContact);
   doc.moveDown(1);
 
   // ── Title + date ────────────────────────────────────────────────

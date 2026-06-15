@@ -12,10 +12,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   adminRateLimit,
   adminReadRateLimiter,
@@ -83,9 +80,13 @@ router.get(
   requireAdmin,
   async (req, res) => {
     const includeInactive = req.query.includeInactive === "1";
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("csr_macros")
       .select("*")
       .order("sort_order", { ascending: true })
@@ -117,10 +118,14 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("csr_macros")
       .insert({
         key: parsed.data.key,
@@ -167,7 +172,12 @@ router.patch(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const adminId = req.adminUserId ?? null;
     // Build the update record translating camelCase request keys to
     // snake_case columns.
@@ -188,7 +198,6 @@ router.patch(
       updateRow.is_active = parsed.data.isActive;
 
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("csr_macros")
       .update(updateRow)
       .eq("id", id)
@@ -216,10 +225,14 @@ router.delete(
     // the picker. Callers who really want to purge can DELETE again
     // with ?hard=1 (admin-only escape hatch).
     const hard = req.query.hard === "1";
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     if (hard) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("csr_macros")
         .delete()
         .eq("id", id)
@@ -234,7 +247,6 @@ router.delete(
     }
     const adminId = req.adminUserId ?? null;
     const { data, error } = await supabase
-      .schema("resupply")
       .from("csr_macros")
       .update({
         is_active: false,

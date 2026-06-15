@@ -11,7 +11,7 @@
 // commonly include PHI ("patient reports nightly mask leak") and
 // have no place in a CSV/PDF that gets emailed around.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -31,6 +31,8 @@ import {
   renderIifWithAccounts,
   setDownloadHeaders,
   type ReportModule,
+  type CsvSink,
+  reportOrgId,
 } from "./shared";
 
 export interface InsuranceClaimRow {
@@ -51,16 +53,16 @@ export interface InsuranceClaimRow {
 }
 
 export async function fetchInsuranceClaims(
+  orgId: string,
   from: Date,
   to: Date,
 ): Promise<InsuranceClaimRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // Date-of-service is the canonical billing-period anchor — payors
   // reconcile against it, not the row's created_at. Operators
   // chasing aging windows ("denials in last 30 DOS days") expect the
   // range to clamp on DOS.
   const { data, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, created_at",
@@ -73,7 +75,7 @@ export async function fetchInsuranceClaims(
 }
 
 export function writeInsuranceClaimsCsv(
-  res: import("express").Response,
+  res: CsvSink,
   rows: InsuranceClaimRow[],
 ): void {
   const headers = [
@@ -145,8 +147,10 @@ export const insuranceClaimsReport: ReportModule = {
       "/admin/reports/insurance-claims.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchInsuranceClaims(from, to);
+        const rows = await fetchInsuranceClaims(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -160,8 +164,10 @@ export const insuranceClaimsReport: ReportModule = {
       "/admin/reports/insurance-claims.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchInsuranceClaims(from, to);
+        const rows = await fetchInsuranceClaims(orgId, from, to);
         const totals = rows.reduce(
           (acc, r) => ({
             billed: acc.billed + r.total_billed_cents / 100,
@@ -215,8 +221,10 @@ export const insuranceClaimsReport: ReportModule = {
       "/admin/reports/insurance-claims.iif",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchInsuranceClaims(from, to);
+        const rows = await fetchInsuranceClaims(orgId, from, to);
         const iif = await renderIifWithAccounts({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -236,8 +244,10 @@ export const insuranceClaimsReport: ReportModule = {
       "/admin/reports/insurance-claims.qbo.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchInsuranceClaims(from, to);
+        const rows = await fetchInsuranceClaims(orgId, from, to);
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -254,17 +264,14 @@ export const insuranceClaimsReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writeInsuranceClaimsCsv(
-      res as unknown as import("express").Response,
-      await fetchInsuranceClaims(from, to),
-    );
+    writeInsuranceClaimsCsv(res, await fetchInsuranceClaims(orgId, from, to));
     return collect();
   },
 
-  async buildEmailPdf(from, to) {
-    const rows = await fetchInsuranceClaims(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const rows = await fetchInsuranceClaims(orgId, from, to);
     const totals = rows.reduce(
       (acc, r) => ({
         billed: acc.billed + r.total_billed_cents / 100,
@@ -307,7 +314,7 @@ export const insuranceClaimsReport: ReportModule = {
     return pdf;
   },
 
-  async buildEmailQbRows(from, to) {
-    return buildQbRowsFromClaims(await fetchInsuranceClaims(from, to));
+  async buildEmailQbRows(orgId, from, to) {
+    return buildQbRowsFromClaims(await fetchInsuranceClaims(orgId, from, to));
   },
 };

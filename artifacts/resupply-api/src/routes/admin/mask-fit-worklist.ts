@@ -15,7 +15,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { respondInvalidBody } from "../../lib/http-validation";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -66,10 +66,14 @@ router.get(
   "/admin/clinical/mask-fit/worklist",
   adminReadRateLimiter,
   requirePermission("clinical.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("mask_fit_outcomes")
       .select("id, order_id, fit_outcome, comment, status, created_at")
       .in("status", ["new", "reviewed"])
@@ -87,7 +91,6 @@ router.get(
     const patientByOrder = new Map<string, string>();
     if (orderIds.length > 0) {
       const { data: orders } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("id, patient_id")
         .in("id", orderIds);
@@ -124,10 +127,14 @@ router.get(
   "/admin/clinical/mask-fit/rec-signal",
   adminReadRateLimiter,
   requirePermission("clinical.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("mask_fit_outcomes")
       .select("mask_id, fit_outcome")
       .not("mask_id", "is", null)
@@ -174,9 +181,13 @@ router.post(
       respondInvalidBody(res, parsed.error);
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("mask_fit_outcomes")
       .update({
         status: parsed.data.status,

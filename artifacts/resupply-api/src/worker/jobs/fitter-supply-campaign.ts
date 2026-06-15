@@ -67,7 +67,9 @@ import type PgBoss from "pg-boss";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 type FitterLeadsUpdate =
@@ -383,10 +385,10 @@ function renderSubscriptionUpsell(
   const subscribeUrl = `${shopUrl}/subscribe`;
   return {
     html: `<div style="margin-top:18px;padding:14px 16px;background:#fef6e0;border-left:3px solid ${BRAND_GOLD};border-radius:4px;font-size:14px;line-height:1.5;">
-      <strong>Never run out:</strong> set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.
+      <strong>Never run out:</strong> set up auto-ship and a fresh set arrives right on schedule — same price as a one-time order. Skip or cancel any month — no commitment.
       <div style="margin-top:8px;"><a href="${wrappedSubscribeUrl}" style="color:${BRAND_NAVY};font-weight:600;text-decoration:underline;">Set up auto-ship</a></div>
     </div>`,
-    text: `\n\nNever run out: set up auto-ship and save 10% on every order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
+    text: `\n\nNever run out: set up auto-ship and a fresh set arrives right on schedule — same price as a one-time order. Skip or cancel any month — no commitment.\n${subscribeUrl}`,
   };
 }
 
@@ -899,7 +901,11 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   // Eligibility: opted-in row in pre-purchase ('campaign_active'),
@@ -908,7 +914,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   // next_campaign_touch_at. The partial index
   // `fitter_leads_campaign_due_idx` (mig 0153) covers all three.
   const { data: leads, error } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .select(
       "id, email, phone_e164, sms_opt_in, recommended_mask_id, recommended_mask_name, recommended_mask_type, campaign_touch_count, completed_at, first_name, first_order_placed_at, journey_stage, engagement_score, click_count",
@@ -925,7 +930,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     .limit(BATCH_SIZE);
   if (error) throw error;
 
-  const candidates = (leads ?? []).filter(
+  const candidates = ((leads ?? []) as Partial<LeadRow>[]).filter(
     (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
   if (candidates.length === 0) return stats;
@@ -980,7 +985,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       ).toISOString();
       const skipIso = new Date().toISOString();
       const { data: skipClaimed, error: skipErr } = await supabase
-        .schema("resupply")
         .from("fitter_leads")
         .update({
           // Pin campaign_touch_count to the T6 value to mark the
@@ -1129,7 +1133,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     if (postSendStage) claimUpdate.journey_stage = postSendStage;
 
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update(claimUpdate)
       .eq("id", lead.id)
@@ -1274,6 +1277,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
         });
         stats.emailed += 1;
         await recordTouch(
+          supabase,
           lead.id,
           nextTouchIndex,
           "email",
@@ -1288,6 +1292,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           "fitter-lead.supply-campaign: email send failed",
         );
         await recordTouch(
+          supabase,
           lead.id,
           nextTouchIndex,
           "email",
@@ -1301,6 +1306,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     } else {
       stats.skippedNoEmailConfig += 1;
       await recordTouch(
+        supabase,
         lead.id,
         nextTouchIndex,
         "email",
@@ -1326,6 +1332,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
           });
           stats.smsSent += 1;
           await recordTouch(
+            supabase,
             lead.id,
             nextTouchIndex,
             "sms",
@@ -1340,6 +1347,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
             "fitter-lead.supply-campaign: sms send failed",
           );
           await recordTouch(
+            supabase,
             lead.id,
             nextTouchIndex,
             "sms",
@@ -1353,6 +1361,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       } else {
         stats.skippedNoSmsConfig += 1;
         await recordTouch(
+          supabase,
           lead.id,
           nextTouchIndex,
           "sms",
@@ -1370,6 +1379,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
 /** Best-effort write to fitter_campaign_touches. Audit log only;
  *  a failure to insert never blocks the send pipeline. */
 async function recordTouch(
+  supabase: OrgScopedClient,
   leadId: string,
   touchIndex: number,
   channel: "email" | "sms",
@@ -1378,22 +1388,18 @@ async function recordTouch(
   subjectVariantKey: string = "A",
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("fitter_campaign_touches")
-      .insert({
-        lead_id: leadId,
-        touch_index: touchIndex,
-        channel,
-        template_key: `fitter_supply_campaign.t${touchIndex}`,
-        status,
-        error_message: errorMessage,
-        // Mig 0157 — subject-line A/B variant. Default 'A' for
-        // call sites in dev/test that don't run experiments;
-        // production worker passes the bucket-assigned key.
-        subject_variant_key: subjectVariantKey,
-      });
+    const { error } = await supabase.from("fitter_campaign_touches").insert({
+      lead_id: leadId,
+      touch_index: touchIndex,
+      channel,
+      template_key: `fitter_supply_campaign.t${touchIndex}`,
+      status,
+      error_message: errorMessage,
+      // Mig 0157 — subject-line A/B variant. Default 'A' for
+      // call sites in dev/test that don't run experiments;
+      // production worker passes the bucket-assigned key.
+      subject_variant_key: subjectVariantKey,
+    });
     if (error) {
       // Unique-constraint hit is expected on a retry of a lost-race
       // claim; everything else is logged.

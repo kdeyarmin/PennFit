@@ -20,7 +20,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -47,9 +47,14 @@ router.post(
     }
     const sourceId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: sourceData, error: srcErr } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: sourceData, error: srcErr } = await db
       .from("prior_authorizations")
       .select(
         "id, patient_id, insurance_coverage_id, hcpcs_code, payer_name, status, approved_through",
@@ -80,8 +85,7 @@ router.post(
 
     // Dedupe: if an open renewal already exists for this patient+hcpcs,
     // return it rather than spawning another draft.
-    const { data: existingOpen, error: dupErr } = await supabase
-      .schema("resupply")
+    const { data: existingOpen, error: dupErr } = await db
       .from("prior_authorizations")
       .select("id, status")
       .eq("patient_id", patientId)
@@ -105,8 +109,7 @@ router.post(
     }
 
     const nowIso = new Date().toISOString();
-    const { data: created, error: insErr } = await supabase
-      .schema("resupply")
+    const { data: created, error: insErr } = await db
       .from("prior_authorizations")
       .insert({
         patient_id: patientId,

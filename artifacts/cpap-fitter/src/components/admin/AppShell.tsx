@@ -551,6 +551,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/equipment-recalls",
             hint: "Manufacturer recall registry + scan against dispensed serials",
           },
+          {
+            href: "/admin/asset-recovery",
+            label: "Asset recovery",
+            icon: Undo2,
+            matchPrefix: "/admin/asset-recovery",
+            requiredPermission: "cases.read",
+            hint: "Recover machines from discontinued patients to refurbish + redeploy",
+          },
         ],
       },
     ],
@@ -856,7 +864,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
       {
         label: "Tools",
         icon: SlidersHorizontal,
-        hint: "ERA posting, manual claim entry, and billing configuration",
+        hint: "Clearinghouse submissions, ERA posting, manual claim entry, and billing configuration",
         tabs: [
           {
             href: "/admin/billing/era",
@@ -864,6 +872,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Wallet,
             matchPrefix: "/admin/billing/era",
             hint: "Upload an 835 to auto-post payer adjudications",
+          },
+          {
+            href: "/admin/billing/office-ally",
+            label: "Office Ally",
+            icon: Send,
+            matchPrefix: "/admin/billing/office-ally",
+            requiredPermission: "admin.tools.manage",
+            hint: "Office Ally clearinghouse — 837P submissions, acknowledgements, and transmission status",
           },
           {
             href: "/admin/billing/manual-claim",
@@ -1139,6 +1155,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Building2,
             matchPrefix: "/admin/company-information",
             hint: "Company name, addresses, and contact info used on documents, the storefront, and messages",
+          },
+          {
+            href: "/admin/storefront-branding",
+            label: "Storefront branding",
+            icon: Store,
+            matchPrefix: "/admin/storefront-branding",
+            hint: "Your storefront name, tagline, and logo — plus wiring up your own custom domain",
           },
           {
             href: "/admin/closures",

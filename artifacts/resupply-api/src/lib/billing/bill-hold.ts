@@ -19,11 +19,31 @@
 // caller already holds.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type ResupplySupabaseClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+// The injected-client contract here is the UNSCOPED service-role client:
+// callers (e.g. claim-preflight) pass `supabase.raw()`, and these helpers
+// filter by claim_id / patient_id directly. When NO client is injected,
+// the default is resolved through the org-scoped chokepoint and unwrapped
+// to its raw client so the type + query bodies stay behavior-identical.
+type SupabaseClient = ResupplySupabaseClient;
+
+/**
+ * Resolve the default unscoped client for the helpers below when the caller
+ * did not inject one. Routes the no-arg default through the seed-org
+ * chokepoint and returns null when no tenant is resolvable.
+ */
+async function resolveDefaultClient(): Promise<SupabaseClient | null> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  return getOrgScopedClient(orgId).raw();
+}
 
 export type RequirementType =
   | "prescription"
@@ -158,8 +178,10 @@ export function pickFaxMatch(
 /** List every paperwork requirement tracked against a claim. */
 export async function listClaimRequirements(
   claimId: string,
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  injected?: SupabaseClient,
 ): Promise<PaperworkRequirementRow[]> {
+  const supabase = injected ?? (await resolveDefaultClient());
+  if (!supabase) return [];
   const { data, error } = await supabase
     .schema("resupply")
     .from("claim_paperwork_requirements")
@@ -173,8 +195,10 @@ export async function listClaimRequirements(
 /** List every paperwork requirement tracked against a patient. */
 export async function listPatientRequirements(
   patientId: string,
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  injected?: SupabaseClient,
 ): Promise<PaperworkRequirementRow[]> {
+  const supabase = injected ?? (await resolveDefaultClient());
+  if (!supabase) return [];
   const { data, error } = await supabase
     .schema("resupply")
     .from("claim_paperwork_requirements")
@@ -193,10 +217,12 @@ export async function listPatientRequirements(
  */
 export async function countOutstandingByClaim(
   claimIds: string[],
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  injected?: SupabaseClient,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (claimIds.length === 0) return counts;
+  const supabase = injected ?? (await resolveDefaultClient());
+  if (!supabase) return counts;
   const { data, error } = await supabase
     .schema("resupply")
     .from("claim_paperwork_requirements")
@@ -238,7 +264,10 @@ export async function recomputeBillHold(
   claimId: string,
   opts: RecomputeOpts = {},
 ): Promise<RecomputeResult> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  if (!supabase) {
+    return { claimId, held: false, changed: false, outstandingCount: 0 };
+  }
 
   const { data: rows, error } = await supabase
     .schema("resupply")
@@ -364,7 +393,10 @@ export async function satisfyRequirement(
   requirement: PaperworkRequirementRow;
   recompute: RecomputeResult | null;
 }> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  if (!supabase) {
+    throw new Error("satisfyRequirement: tenant context missing");
+  }
 
   const { data: existing, error: readErr } = await supabase
     .schema("resupply")
@@ -425,7 +457,8 @@ export async function seedDefaultRequirementsForClaim(
   claimId: string,
   opts: { supabase?: SupabaseClient; createdByEmail?: string | null } = {},
 ): Promise<{ created: number; held: boolean }> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase ?? (await resolveDefaultClient());
+  if (!supabase) return { created: 0, held: false };
 
   const { data: claim, error: claimErr } = await supabase
     .schema("resupply")
@@ -540,12 +573,15 @@ async function resolveOnFile(
 export async function autoMatchInboundFaxToPaperwork(
   faxId: string,
   fromE164: string | null,
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  injected?: SupabaseClient,
 ): Promise<{ matched: boolean; requirementId: string | null }> {
   try {
     if (!fromE164) return { matched: false, requirementId: null };
     const normalized = fromE164.trim();
     if (!normalized) return { matched: false, requirementId: null };
+
+    const supabase = injected ?? (await resolveDefaultClient());
+    if (!supabase) return { matched: false, requirementId: null };
 
     const { data, error } = await supabase
       .schema("resupply")

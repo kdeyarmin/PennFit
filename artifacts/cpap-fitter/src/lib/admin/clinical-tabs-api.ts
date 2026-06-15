@@ -341,6 +341,11 @@ export interface InsuranceClaim {
   totalAllowedCents: number;
   totalPaidCents: number;
   patientResponsibilityCents: number;
+  // Itemized patient-responsibility breakdown from the 835 PR-group CAS
+  // adjustments (migration 0327); 0 when the payer supplied no breakdown.
+  deductibleCents: number;
+  coinsuranceCents: number;
+  copayCents: number;
   submittedAt: string | null;
   decisionAt: string | null;
   paidAt: string | null;

@@ -22,8 +22,9 @@ import { z } from "zod";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CommunicationPreferences,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 import {
@@ -95,15 +96,21 @@ router.post(
     const { id: conversationId } = idParsed.data;
     const { body } = bodyParsed.data;
 
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     // Branch by channel BEFORE we read the messaging-config envvars.
     // In-app threads don't need Twilio/SendGrid to be configured for
     // the message itself to land — the message is just a DB row. We
     // do try to send a notification email afterwards (best-effort),
     // but a missing SENDGRID_API_KEY is not fatal for in-app — the
     // customer will see the message next time they sign in.
-    const earlySupabase = getSupabaseServiceRoleClient();
-    const { data: channelRow, error: channelErr } = await earlySupabase
-      .schema("resupply")
+    const earlyDb = getOrgScopedClient(orgId);
+    const { data: channelRow, error: channelErr } = await earlyDb
       .from("conversations")
       .select("channel")
       .eq("id", conversationId)
@@ -119,6 +126,7 @@ router.post(
       await handleInAppReply({
         req,
         res,
+        supabase: earlyDb,
         conversationId,
         body,
       });
@@ -143,7 +151,10 @@ router.post(
     let outcome: ReplyInConversationOutcome;
     try {
       outcome = await replyInConversation({
-        supabase: getSupabaseServiceRoleClient(),
+        // replyInConversation takes the raw service-role client + orgId
+        // and scopes internally via getOrgScopedClient(orgId, supabase).
+        supabase: earlyDb.raw(),
+        orgId,
         smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
         emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
         conversationId,
@@ -267,13 +278,16 @@ router.post(
 async function handleInAppReply(input: {
   req: import("express").Request;
   res: import("express").Response;
+  supabase: OrgScopedClient;
   conversationId: string;
   body: string;
 }): Promise<void> {
-  const { req, res, conversationId, body } = input;
+  const { req, res, supabase, conversationId, body } = input;
 
   const outcome = await appendAdminInAppReply({
-    supabase: getSupabaseServiceRoleClient(),
+    // appendAdminInAppReply is a shared messaging helper typed for the
+    // raw service-role client; pass the unscoped client per cutover §B.
+    supabase: supabase.raw(),
     conversationId,
     body,
   });
@@ -337,6 +351,7 @@ async function handleInAppReply(input: {
   // who has updated their email after the thread started gets the
   // notification at the new address.
   await tryNotifyCustomerOfReply({
+    supabase,
     conversationId,
     bodyLength: body.length,
   }).catch((err) => {
@@ -368,6 +383,7 @@ async function handleInAppReply(input: {
 const IN_APP_NOTIFICATION_THROTTLE_MS = 15 * 60 * 1000;
 
 async function tryNotifyCustomerOfReply(input: {
+  supabase: OrgScopedClient;
   conversationId: string;
   bodyLength: number;
 }): Promise<void> {
@@ -377,9 +393,8 @@ async function tryNotifyCustomerOfReply(input: {
   // Push notifications fire unconditionally (gated only on the
   // customer having an active subscription); email notifications require
   // a non-null email address and opt-in via communicationPreferences.
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = input.supabase;
   const { data: convRow, error: convErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("customer_id, last_in_app_notification_at")
     .eq("id", input.conversationId)
@@ -389,7 +404,6 @@ async function tryNotifyCustomerOfReply(input: {
   if (!convRow || !convRow.customer_id) return;
 
   const { data: customerRow, error: customerErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower, display_name, communication_preferences")
     .eq("customer_id", convRow.customer_id)
@@ -525,7 +539,6 @@ async function tryNotifyCustomerOfReply(input: {
   // this DB update fails, do not rethrow and let callers misclassify the
   // outcome as an email-send failure.
   const { error: stampErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .update({ last_in_app_notification_at: new Date().toISOString() })
     .eq("id", input.conversationId);

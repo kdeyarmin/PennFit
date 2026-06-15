@@ -2,7 +2,7 @@
 //
 // Constructed once at module load:
 //   * `authClient` — fetch wrapper bound to /api/auth (the path
-//     api-server mounts the in-house router at).
+//     resupply-api mounts the storefront auth router at).
 //   * `authHooks` — React Query hooks (useSession, useSignIn, …).
 //
 // Imported by:

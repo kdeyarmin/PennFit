@@ -180,7 +180,7 @@ describe("runClinicalOutreachBatch", () => {
 
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const result = await runClinicalOutreachBatch(
-      { cap: 10 },
+      { orgId: "org-1", cap: 10 },
       {
         sendEmail,
         cfg: {
@@ -208,7 +208,10 @@ describe("runClinicalOutreachBatch", () => {
       data: [],
       error: null,
     });
-    const result = await runClinicalOutreachBatch({}, { now: noon });
+    const result = await runClinicalOutreachBatch(
+      { orgId: "org-1" },
+      { now: noon },
+    );
     expect(result).toEqual({
       openInterventions: 0,
       selected: 0,

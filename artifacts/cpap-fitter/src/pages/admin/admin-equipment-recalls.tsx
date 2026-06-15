@@ -30,6 +30,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
+import { AdminModal } from "@/components/admin/AdminModal";
 import {
   createEquipmentRecall,
   listEquipmentRecalls,
@@ -263,80 +264,74 @@ function ScanResultModal({
   onClose: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+    <AdminModal
+      title="Recall scan result"
+      onClose={onClose}
+      className="max-w-3xl"
     >
-      <div
-        className="w-full max-w-3xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
-          <h2
-            className="text-lg font-semibold"
-            style={{ color: "hsl(var(--ink-1))" }}
-          >
-            Recall scan result
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Scanned {result.candidatesScanned} candidate devices ·{" "}
-            <strong>{result.affectedCount} affected</strong>.
-          </p>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Scanned {result.candidatesScanned} candidate devices ·{" "}
+          <strong>{result.affectedCount} affected</strong>.
+        </p>
 
-          {result.affectedCount === 0 ? (
-            <div className="rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-              No dispensed devices match this recall&apos;s criteria. Nothing to
-              action.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr
-                  className="text-left border-b"
-                  style={{ borderColor: "hsl(var(--line-1))" }}
-                >
-                  <th className="py-2 font-semibold">Patient</th>
-                  <th className="py-2 font-semibold">Serial</th>
-                  <th className="py-2 font-semibold">Model</th>
-                  <th className="py-2 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.affected.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-b"
-                    style={{ borderColor: "hsl(var(--line-2))" }}
-                  >
-                    <td className="py-2">
-                      <Link
-                        href={`/admin/patients/${a.patientId}`}
-                        className="text-[hsl(var(--penn-navy))] hover:underline"
-                      >
-                        View patient →
-                      </Link>
-                    </td>
-                    <td className="py-2 font-mono text-xs">{a.serialNumber}</td>
-                    <td className="py-2">{a.model}</td>
-                    <td className="py-2 text-xs">{a.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <div className="flex justify-end pt-3 border-t border-border/40">
-            <Button intent="secondary" onClick={onClose}>
-              Close
-            </Button>
+        {result.affectedCount === 0 ? (
+          <div className="rounded border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            No dispensed devices match this recall&apos;s criteria. Nothing to
+            action.
           </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr
+                className="text-left border-b"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                <th scope="col" className="py-2 font-semibold">
+                  Patient
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Serial
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Model
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.affected.map((a) => (
+                <tr
+                  key={a.id}
+                  className="border-b"
+                  style={{ borderColor: "hsl(var(--line-2))" }}
+                >
+                  <td className="py-2">
+                    <Link
+                      href={`/admin/patients/${a.patientId}`}
+                      className="text-[hsl(var(--penn-navy))] hover:underline"
+                    >
+                      View patient →
+                    </Link>
+                  </td>
+                  <td className="py-2 font-mono text-xs">{a.serialNumber}</td>
+                  <td className="py-2">{a.model}</td>
+                  <td className="py-2 text-xs">{a.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <div className="flex justify-end pt-3 border-t border-border/40">
+          <Button intent="secondary" onClick={onClose}>
+            Close
+          </Button>
         </div>
       </div>
-    </div>
+    </AdminModal>
   );
 }
 
@@ -408,178 +403,162 @@ function AddRecallModal({
   const canSave = recallReference.trim() && title.trim() && manufacturer.trim();
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={() => !create.isPending && onClose()}
-      role="dialog"
-      aria-modal="true"
+    <AdminModal
+      title="Record manufacturer recall"
+      onClose={() => {
+        if (!create.isPending) onClose();
+      }}
     >
-      <div
-        className="w-full max-w-2xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
-          <h2
-            className="text-lg font-semibold"
-            style={{ color: "hsl(var(--ink-1))" }}
-          >
-            Record manufacturer recall
-          </h2>
-
-          <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Recall reference"
+            value={recallReference}
+            onChange={setRecallReference}
+            placeholder="Z-1234-2021"
+            required
+          />
+          <Field
+            label="Severity"
+            value={severity}
+            onChange={(v) => setSeverity(v as RecallSeverity)}
+            select={["urgent", "priority", "advisory"]}
+          />
+          <div className="col-span-2">
             <Field
-              label="Recall reference"
-              value={recallReference}
-              onChange={setRecallReference}
-              placeholder="Z-1234-2021"
+              label="Title"
+              value={title}
+              onChange={setTitle}
+              placeholder="Foam degradation — DreamStation"
               required
             />
+          </div>
+          <Field
+            label="Manufacturer"
+            value={manufacturer}
+            onChange={setManufacturer}
+            placeholder="Philips"
+            required
+          />
+          <Field
+            label="Model match (optional)"
+            value={modelMatch}
+            onChange={setModelMatch}
+            placeholder="DreamStation"
+          />
+          <Field
+            label="Issued"
+            type="date"
+            value={issuedAt}
+            onChange={setIssuedAt}
+          />
+          <Field
+            label="Deadline"
+            type="date"
+            value={deadlineAt}
+            onChange={setDeadlineAt}
+          />
+          <div className="col-span-2">
             <Field
-              label="Severity"
-              value={severity}
-              onChange={(v) => setSeverity(v as RecallSeverity)}
-              select={["urgent", "priority", "advisory"]}
+              label="Reference URL"
+              value={referenceUrl}
+              onChange={setReferenceUrl}
+              placeholder="https://www.fda.gov/medical-devices/..."
             />
-            <div className="col-span-2">
+          </div>
+          <div className="col-span-2">
+            <label
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--penn-navy))" }}
+            >
+              Serial criteria
+            </label>
+            <select
+              value={serialKind}
+              onChange={(e) =>
+                setSerialKind(e.target.value as "none" | "range" | "list")
+              }
+              aria-label="Serial criteria"
+              className="w-full rounded border px-2 py-1.5 text-sm"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <option value="none">Every serial from this manufacturer</option>
+              <option value="range">Lexicographic range</option>
+              <option value="list">Explicit list</option>
+            </select>
+          </div>
+          {serialKind === "range" && (
+            <>
               <Field
-                label="Title"
-                value={title}
-                onChange={setTitle}
-                placeholder="Foam degradation — DreamStation"
-                required
+                label="From serial"
+                value={serialFrom}
+                onChange={setSerialFrom}
               />
-            </div>
-            <Field
-              label="Manufacturer"
-              value={manufacturer}
-              onChange={setManufacturer}
-              placeholder="Philips"
-              required
-            />
-            <Field
-              label="Model match (optional)"
-              value={modelMatch}
-              onChange={setModelMatch}
-              placeholder="DreamStation"
-            />
-            <Field
-              label="Issued"
-              type="date"
-              value={issuedAt}
-              onChange={setIssuedAt}
-            />
-            <Field
-              label="Deadline"
-              type="date"
-              value={deadlineAt}
-              onChange={setDeadlineAt}
-            />
-            <div className="col-span-2">
               <Field
-                label="Reference URL"
-                value={referenceUrl}
-                onChange={setReferenceUrl}
-                placeholder="https://www.fda.gov/medical-devices/..."
+                label="To serial"
+                value={serialTo}
+                onChange={setSerialTo}
               />
-            </div>
+            </>
+          )}
+          {serialKind === "list" && (
             <div className="col-span-2">
               <label
                 className="text-xs font-semibold block mb-1"
                 style={{ color: "hsl(var(--penn-navy))" }}
               >
-                Serial criteria
-              </label>
-              <select
-                value={serialKind}
-                onChange={(e) =>
-                  setSerialKind(e.target.value as "none" | "range" | "list")
-                }
-                aria-label="Serial criteria"
-                className="w-full rounded border px-2 py-1.5 text-sm"
-                style={{ borderColor: "hsl(var(--line-1))" }}
-              >
-                <option value="none">
-                  Every serial from this manufacturer
-                </option>
-                <option value="range">Lexicographic range</option>
-                <option value="list">Explicit list</option>
-              </select>
-            </div>
-            {serialKind === "range" && (
-              <>
-                <Field
-                  label="From serial"
-                  value={serialFrom}
-                  onChange={setSerialFrom}
-                />
-                <Field
-                  label="To serial"
-                  value={serialTo}
-                  onChange={setSerialTo}
-                />
-              </>
-            )}
-            {serialKind === "list" && (
-              <div className="col-span-2">
-                <label
-                  className="text-xs font-semibold block mb-1"
-                  style={{ color: "hsl(var(--penn-navy))" }}
-                >
-                  Serial list (comma or newline separated)
-                </label>
-                <textarea
-                  className="w-full rounded border px-2 py-1.5 text-sm font-mono"
-                  style={{ borderColor: "hsl(var(--line-1))" }}
-                  rows={4}
-                  value={serialList}
-                  onChange={(e) => setSerialList(e.target.value)}
-                  placeholder="SN001, SN002, SN003"
-                  aria-label="Serial list"
-                />
-              </div>
-            )}
-            <div className="col-span-2">
-              <label
-                className="text-xs font-semibold block mb-1"
-                style={{ color: "hsl(var(--penn-navy))" }}
-              >
-                Description
+                Serial list (comma or newline separated)
               </label>
               <textarea
-                className="w-full rounded border px-2 py-1.5 text-sm"
+                className="w-full rounded border px-2 py-1.5 text-sm font-mono"
                 style={{ borderColor: "hsl(var(--line-1))" }}
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={5000}
-                aria-label="Description"
+                rows={4}
+                value={serialList}
+                onChange={(e) => setSerialList(e.target.value)}
+                placeholder="SN001, SN002, SN003"
+                aria-label="Serial list"
               />
             </div>
-          </div>
-
-          {error && (
-            <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-              {error}
-            </div>
           )}
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-border/40">
-            <Button intent="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!canSave || create.isPending}
-              isLoading={create.isPending}
-              onClick={() => create.mutate()}
+          <div className="col-span-2">
+            <label
+              className="text-xs font-semibold block mb-1"
+              style={{ color: "hsl(var(--penn-navy))" }}
             >
-              Save recall
-            </Button>
+              Description
+            </label>
+            <textarea
+              className="w-full rounded border px-2 py-1.5 text-sm"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={5000}
+              aria-label="Description"
+            />
           </div>
         </div>
+
+        {error && (
+          <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-border/40">
+          <Button intent="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!canSave || create.isPending}
+            isLoading={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Save recall
+          </Button>
+        </div>
       </div>
-    </div>
+    </AdminModal>
   );
 }
 
@@ -688,90 +667,79 @@ function RecallRosterModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
+    <AdminModal
+      title={`${recallTitle} — roster`}
+      onClose={onClose}
+      className="max-w-4xl"
     >
-      <div
-        className="w-full max-w-4xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6 space-y-4">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-semibold">{recallTitle} — roster</h2>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-xs text-muted-foreground hover:underline"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="flex items-start justify-between gap-2">
-            <RosterCountsBar
-              notifications={notifQuery.data?.counts ?? {}}
-              remediation={remediationQuery.data?.counts ?? {}}
-            />
-            <a
-              href={`/resupply-api/admin/equipment-recalls/${recallId}/roster.csv`}
-              className="rounded border px-2 py-1 text-xs font-semibold whitespace-nowrap"
-              style={{
-                borderColor: "hsl(var(--line-1))",
-                color: "hsl(var(--penn-navy))",
-              }}
-              title="Surveyor binder doc — notifications + remediation joined per asset"
-            >
-              Roster CSV
-            </a>
-          </div>
-
-          {notifQuery.isPending ? (
-            <Spinner />
-          ) : notifQuery.isError ? (
-            <ErrorPanel
-              error={notifQuery.error}
-              onRetry={() => void notifQuery.refetch()}
-            />
-          ) : (notifQuery.data?.notifications ?? []).length === 0 ? (
-            <p className="text-sm py-2 text-muted-foreground">
-              No notifications yet. Run &quot;Match &amp; notify&quot; to
-              populate.
-            </p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr
-                  className="text-left border-b"
-                  style={{ borderColor: "hsl(var(--line-1))" }}
-                >
-                  <th className="py-2 font-semibold">Asset</th>
-                  <th className="py-2 font-semibold">Notification</th>
-                  <th className="py-2 font-semibold">Channel</th>
-                  <th className="py-2 font-semibold">Remediation</th>
-                  <th className="py-2 font-semibold"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(notifQuery.data?.notifications ?? []).map((n) => (
-                  <RosterRow
-                    key={n.id}
-                    recallId={recallId}
-                    notification={n}
-                    existing={remediationByAsset.get(n.assetId) ?? null}
-                    onLogged={invalidate}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-2">
+          <RosterCountsBar
+            notifications={notifQuery.data?.counts ?? {}}
+            remediation={remediationQuery.data?.counts ?? {}}
+          />
+          <a
+            href={`/resupply-api/admin/equipment-recalls/${recallId}/roster.csv`}
+            className="rounded border px-2 py-1 text-xs font-semibold whitespace-nowrap"
+            style={{
+              borderColor: "hsl(var(--line-1))",
+              color: "hsl(var(--penn-navy))",
+            }}
+            title="Surveyor binder doc — notifications + remediation joined per asset"
+          >
+            Roster CSV
+          </a>
         </div>
+
+        {notifQuery.isPending ? (
+          <Spinner />
+        ) : notifQuery.isError ? (
+          <ErrorPanel
+            error={notifQuery.error}
+            onRetry={() => void notifQuery.refetch()}
+          />
+        ) : (notifQuery.data?.notifications ?? []).length === 0 ? (
+          <p className="text-sm py-2 text-muted-foreground">
+            No notifications yet. Run &quot;Match &amp; notify&quot; to
+            populate.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr
+                className="text-left border-b"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                <th scope="col" className="py-2 font-semibold">
+                  Asset
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Notification
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Channel
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Remediation
+                </th>
+                <th scope="col" className="py-2 font-semibold"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {(notifQuery.data?.notifications ?? []).map((n) => (
+                <RosterRow
+                  key={n.id}
+                  recallId={recallId}
+                  notification={n}
+                  existing={remediationByAsset.get(n.assetId) ?? null}
+                  onLogged={invalidate}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-    </div>
+    </AdminModal>
   );
 }
 

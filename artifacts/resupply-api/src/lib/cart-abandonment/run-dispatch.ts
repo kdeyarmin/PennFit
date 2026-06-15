@@ -31,7 +31,7 @@
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CommunicationPreferences,
   type ShopAbandonedCartItem,
 } from "@workspace/resupply-db";
@@ -99,12 +99,17 @@ function mergePrefs(stored: CommunicationPreferences | null) {
  * use real wall-clock time. `log` is best-effort — when omitted we
  * swallow warning paths silently (the worker passes its own logger).
  */
-export async function runCartAbandonmentDispatch(
-  opts: {
-    now?: Date;
-    log?: CartAbandonmentLogger;
-  } = {},
-): Promise<CartAbandonmentStats> {
+export async function runCartAbandonmentDispatch(opts: {
+  /**
+   * Tenant to sweep. Callers resolve it: the admin "Run now" route from
+   * `req.orgId`, the hourly cron from `resolveSeedOrgId()` (single-tenant
+   * bridge — becomes a per-org loop when a 2nd tenant lands). Every
+   * read/write below is scoped to it via `getOrgScopedClient`.
+   */
+  orgId: string;
+  now?: Date;
+  log?: CartAbandonmentLogger;
+}): Promise<CartAbandonmentStats> {
   // Control Center feature gate — admins can disable the nudge
   // dispatcher from /admin/control-center without a deploy. Returns
   // the same zeroed stats envelope as a no-eligible-rows scan, so
@@ -124,14 +129,13 @@ export async function runCartAbandonmentDispatch(
     };
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const db = getOrgScopedClient(opts.orgId);
   const now = opts.now ?? new Date();
   const cutoffIso = new Date(
     now.getTime() - CART_ABANDONMENT_NUDGE_WAIT_MS,
   ).toISOString();
 
-  const { data: candidates, error: candidatesErr } = await supabase
-    .schema("resupply")
+  const { data: candidates, error: candidatesErr } = await db
     .from("shop_abandoned_carts")
     .select("id")
     .lte("updated_at", cutoffIso)
@@ -144,7 +148,9 @@ export async function runCartAbandonmentDispatch(
     .limit(CART_ABANDONMENT_SCAN_LIMIT);
   if (candidatesErr) throw candidatesErr;
 
-  const candidateIds = (candidates ?? []).map((r) => r.id);
+  const candidateIds = ((candidates ?? []) as Array<{ id: string }>).map(
+    (r) => r.id,
+  );
   if (candidateIds.length === 0) {
     return {
       scanned: 0,
@@ -160,8 +166,7 @@ export async function runCartAbandonmentDispatch(
   // under parallel invocations. Postgres serialises the UPDATEs, the
   // second one matches zero rows, and that caller does no work.
   const nowIso = now.toISOString();
-  const { data: claimedRows, error: claimErr } = await supabase
-    .schema("resupply")
+  const { data: claimedRows, error: claimErr } = await db
     .from("shop_abandoned_carts")
     .update({ reminded_at: nowIso })
     .in("id", candidateIds)
@@ -169,7 +174,16 @@ export async function runCartAbandonmentDispatch(
     .select("id, customer_id, email, items, subtotal_cents, currency");
   if (claimErr) throw claimErr;
 
-  const claimed = (claimedRows ?? []).map((r) => ({
+  const claimed = (
+    (claimedRows ?? []) as Array<{
+      id: string;
+      customer_id: string;
+      email: string | null;
+      items: unknown;
+      subtotal_cents: number;
+      currency: string;
+    }>
+  ).map((r) => ({
     id: r.id,
     customerId: r.customer_id,
     email: r.email,
@@ -181,8 +195,7 @@ export async function runCartAbandonmentDispatch(
   const prefsByUser = new Map<string, ReturnType<typeof mergePrefs>>();
   if (claimed.length > 0) {
     const userIds = Array.from(new Set(claimed.map((r) => r.customerId)));
-    const { data: customerRows, error: prefsErr } = await supabase
-      .schema("resupply")
+    const { data: customerRows, error: prefsErr } = await db
       .from("shop_customers")
       .select("customer_id, communication_preferences")
       .in("customer_id", userIds);
@@ -205,8 +218,7 @@ export async function runCartAbandonmentDispatch(
   let configuredFlag = true;
 
   const unclaim = async (id: string): Promise<void> => {
-    const { error: unclaimErr } = await supabase
-      .schema("resupply")
+    const { error: unclaimErr } = await db
       .from("shop_abandoned_carts")
       .update({ reminded_at: null })
       .eq("id", id);
@@ -220,8 +232,7 @@ export async function runCartAbandonmentDispatch(
 
   const unclaimMany = async (ids: string[]): Promise<void> => {
     if (ids.length === 0) return;
-    const { error: unclaimErr } = await supabase
-      .schema("resupply")
+    const { error: unclaimErr } = await db
       .from("shop_abandoned_carts")
       .update({ reminded_at: null })
       .in("id", ids);

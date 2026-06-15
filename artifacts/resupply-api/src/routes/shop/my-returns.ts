@@ -32,8 +32,9 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  type Database,
   type ShopReturnReason,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -103,9 +104,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: order } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select(
         "id, customer_id, status, paid_at, amount_total_cents, amount_refunded_cents",
@@ -157,7 +162,6 @@ router.post(
     // Refuse a duplicate request while one is already in flight.
     // The partial index makes the existence check cheap.
     const { data: openRow } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select("id, status")
       .eq("order_id", order.id)
@@ -191,7 +195,6 @@ router.post(
     // and every downstream status count toward the cap; "rejected"
     // and "requested" do NOT.
     const { data: priorRows, error: priorErr } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select("id")
       .eq("customer_id", customerId)
@@ -240,7 +243,6 @@ router.post(
       [autoApprovalNote, preferenceNote].filter(Boolean).join("\n") || null;
 
     const { data: row, error: insErr } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .insert({
         customer_id: customerId,
@@ -289,9 +291,13 @@ router.get("/shop/me/returns", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_returns")
     .select(
       "id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, return_label_url, return_carrier, return_tracking_number, created_at, updated_at, approved_at, rejected_at, received_at, resolved_at, closed_at",
@@ -302,7 +308,11 @@ router.get("/shop/me/returns", requireSignedIn, async (req, res) => {
   if (error) throw error;
 
   res.json({
-    returns: (rows ?? []).map((r) => ({
+    returns: (
+      (rows ?? []) as Array<
+        Database["resupply"]["Tables"]["shop_returns"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       orderId: r.order_id,
       sessionId: r.stripe_session_id,

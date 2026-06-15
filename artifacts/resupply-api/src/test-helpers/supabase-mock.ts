@@ -273,29 +273,55 @@ function makeTableBuilder(table: string): TableBuilder {
 // (or configure it in a Vitest setupFile) before importing any route/helper
 // that imports `@workspace/resupply-db`. `installSupabaseMock()` only manages
 // staged responses after the mock has been registered.
+function makeMockServiceClient() {
+  return {
+    schema: () => ({
+      from: (table: string) => makeTableBuilder(table),
+      rpc: (fnName: string, args: unknown) => {
+        const prev = rpcCallCounts.get(fnName) ?? 0;
+        rpcCallCounts.set(fnName, prev + 1);
+        const argList = rpcCallArgs.get(fnName) ?? [];
+        argList.push(args);
+        rpcCallArgs.set(fnName, argList);
+        const queue = rpcQueues.get(fnName);
+        if (!queue || queue.length === 0) {
+          return Promise.resolve({ data: null, error: null });
+        }
+        return Promise.resolve(queue.shift()!);
+      },
+    }),
+  };
+}
+
 vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
     "@workspace/resupply-db",
   );
   return {
     ...actual,
-    getSupabaseServiceRoleClient: () => ({
-      schema: () => ({
-        from: (table: string) => makeTableBuilder(table),
-        rpc: (fnName: string, args: unknown) => {
-          const prev = rpcCallCounts.get(fnName) ?? 0;
-          rpcCallCounts.set(fnName, prev + 1);
-          const argList = rpcCallArgs.get(fnName) ?? [];
-          argList.push(args);
-          rpcCallArgs.set(fnName, argList);
-          const queue = rpcQueues.get(fnName);
-          if (!queue || queue.length === 0) {
-            return Promise.resolve({ data: null, error: null });
-          }
-          return Promise.resolve(queue.shift()!);
-        },
-      }),
-    }),
+    getSupabaseServiceRoleClient: () => makeMockServiceClient(),
+    // Routes cut over to the org-scoped chokepoint call
+    // `getOrgScopedClient(req.orgId)` (no client arg), which would
+    // otherwise reach for the REAL service-role client via its own
+    // module-internal import and bypass this mock. Re-run the ACTUAL
+    // facade over the mock client so the real org_id filter/tag logic
+    // is exercised and the mock builder still records the writes.
+    getOrgScopedClient: (
+      orgId: string,
+      client?: Parameters<typeof actual.getOrgScopedClient>[1],
+    ) =>
+      actual.getOrgScopedClient(
+        orgId,
+        client ??
+          (makeMockServiceClient() as unknown as Parameters<
+            typeof actual.getOrgScopedClient
+          >[1]),
+      ),
+    // Worker sweeps resolve their tenant via resolveSeedOrgId() (the
+    // single-tenant bridge) before any query. Stub it to a fixed test
+    // org so the sweep runs against the staged mock responses instead of
+    // short-circuiting on a (mock-unstaged) organizations lookup.
+    resolveSeedOrgId: async () => "00000000-0000-4000-8000-000000000000",
     // Best-effort projection upserts — the route tests don't
     // exercise projection refresh assertions, so we no-op the
     // helper rather than route through the mock builder. Tests

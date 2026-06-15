@@ -9,7 +9,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
@@ -32,9 +32,14 @@ router.delete("/rules/:id", requireAdminOnly, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
+  // Fail closed: never widen to all tenants on a missing orgId.
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const db = getOrgScopedClient(orgId);
+  const { data, error } = await db
     .from("frequency_rules")
     .delete()
     .eq("id", parsed.data.id)

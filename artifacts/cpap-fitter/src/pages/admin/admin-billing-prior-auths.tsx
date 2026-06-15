@@ -321,12 +321,24 @@ function PaBucket({
                 className="text-left text-[11px] uppercase tracking-wider sticky top-0 bg-white"
                 style={{ color: "hsl(var(--ink-3))" }}
               >
-                <th className="p-3">Payer</th>
-                <th className="p-3">HCPCS</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Auth #</th>
-                <th className="p-3">{dateColumn.label}</th>
-                <th className="p-3 text-right">Patient</th>
+                <th scope="col" className="p-3">
+                  Payer
+                </th>
+                <th scope="col" className="p-3">
+                  HCPCS
+                </th>
+                <th scope="col" className="p-3">
+                  Status
+                </th>
+                <th scope="col" className="p-3">
+                  Auth #
+                </th>
+                <th scope="col" className="p-3">
+                  {dateColumn.label}
+                </th>
+                <th scope="col" className="p-3 text-right">
+                  Patient
+                </th>
               </tr>
             </thead>
             <tbody>
