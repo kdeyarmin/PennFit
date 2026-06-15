@@ -40,7 +40,7 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 const FHIR_VERSION = "4.0.1";
-const SOFTWARE_NAME = "PennFit DME Platform";
+const SOFTWARE_NAME = "CareMetric Breathe DME Platform";
 
 router.get("/fhir/r4/metadata", (_req, res) => {
   // Public; the CapabilityStatement itself is not PHI.

@@ -1084,6 +1084,8 @@ async function persistTranscript(
     body: turn.text,
     direction,
     messageAt: sentAt,
+    // Voice WS (no auth tenant context): seed-org bridge.
+    orgId: (await resolveSeedOrgId()) ?? undefined,
   });
 }
 

@@ -17,7 +17,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   computePlanSummary,
@@ -182,10 +182,18 @@ router.post(
       .eq("patient_id", parsed.data.patientId)
       .order("created_at", { ascending: false })
       .limit(200);
-    const planIds = (plans ?? []).map((p: { id: string }) => p.id);
+    const planIds = (
+      (plans ?? []) as Array<
+        Database["resupply"]["Tables"]["patient_payment_plans"]["Row"]
+      >
+    ).map((p) => p.id);
     const summaryByPlan = await loadSummaries(orgId, planIds);
     res.json({
-      plans: (plans ?? []).map((p: { id: string }) => ({
+      plans: (
+        (plans ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_payment_plans"]["Row"]
+        >
+      ).map((p) => ({
         ...p,
         summary: summaryByPlan.get(p.id) ?? null,
       })),

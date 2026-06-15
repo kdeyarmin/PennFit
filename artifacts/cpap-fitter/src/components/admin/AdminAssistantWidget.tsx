@@ -39,6 +39,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { getCompanyContact, useCompanyContact } from "@/lib/contact";
 import {
   AdminAssistantApiError,
   streamAdminAssistantMessage,
@@ -195,7 +196,9 @@ class AssistantErrorBoundary extends React.Component<
         className="fixed bottom-4 right-4 z-50 w-72 rounded-xl border border-border bg-white p-4 text-sm shadow-lg admin-root"
         data-testid="admin-assistant-error"
       >
-        <p className="mb-2 font-semibold">PennPilot hit an error</p>
+        <p className="mb-2 font-semibold">
+          {getCompanyContact().assistantAdminName} hit an error
+        </p>
         <Button size="sm" onClick={this.handleReset}>
           Reset assistant
         </Button>
@@ -214,6 +217,9 @@ export function AdminAssistantWidget(): React.JSX.Element {
 
 function AdminAssistantWidgetInner(): React.JSX.Element {
   const { toast } = useToast();
+  // Tenant-configurable admin-assistant name (CareMetric Copilot by
+  // default; "PennPilot" for the Penn Home Medical Supply tenant).
+  const botName = useCompanyContact().assistantAdminName;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<DisplayMessage[]>(() =>
     readPersistedMessages(),
@@ -306,7 +312,7 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
           });
         } else if (finalMeta.offline) {
           toast({
-            title: "PennPilot is offline",
+            title: `${botName} is offline`,
             description: "No AI provider is configured for this environment.",
           });
         } else if (finalMeta.degraded) {
@@ -336,14 +342,13 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
                 ? {
                     ...m,
                     streaming: false,
-                    content:
-                      "Sorry, I couldn't reach PennPilot. Please try again in a moment.",
+                    content: `Sorry, I couldn't reach ${botName}. Please try again in a moment.`,
                   }
                 : m,
             ),
           );
           toast({
-            title: "PennPilot request failed",
+            title: `${botName} request failed`,
             description: message,
             variant: "destructive",
           });
@@ -353,7 +358,7 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
         abortRef.current = null;
       }
     },
-    [busy, messages, toast],
+    [busy, messages, toast, botName],
   );
 
   const handleSubmit = useCallback(
@@ -373,8 +378,8 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
   const hasMessages = messages.length > 0;
   const greeting = useMemo(
     () =>
-      "Hi, I'm PennPilot. Ask me how anything in the admin console works, or tell me an idea for something it should do and I'll write it up for the team.",
-    [],
+      `Hi, I'm ${botName}. Ask me how anything in the admin console works, or tell me an idea for something it should do and I'll write it up for the team.`,
+    [botName],
   );
 
   if (!open) {
@@ -384,11 +389,11 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
           type="button"
           onClick={() => setOpen(true)}
           className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[hsl(var(--penn-navy))] px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-105"
-          aria-label="Open PennPilot assistant"
+          aria-label={`Open ${botName} assistant`}
           data-testid="admin-assistant-launcher"
         >
           <Sparkles className="h-5 w-5" aria-hidden="true" />
-          Ask PennPilot
+          Ask {botName}
         </button>
       </div>
     );
@@ -399,13 +404,13 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
       <div
         className="fixed bottom-5 right-5 z-50 flex h-[32rem] max-h-[80vh] w-[24rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl"
         role="dialog"
-        aria-label="PennPilot assistant"
+        aria-label={`${botName} assistant`}
         data-testid="admin-assistant-panel"
       >
         <header className="flex items-center justify-between gap-2 border-b border-border/60 bg-[hsl(var(--penn-navy))] px-4 py-3 text-white">
           <div className="flex items-center gap-2">
             <Bot className="h-5 w-5" aria-hidden="true" />
-            <span className="font-semibold">PennPilot</span>
+            <span className="font-semibold">{botName}</span>
           </div>
           <div className="flex items-center gap-1">
             {hasMessages && (
@@ -424,7 +429,7 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
               type="button"
               onClick={() => setOpen(false)}
               className="rounded-md p-1.5 hover:bg-white/15"
-              aria-label="Close PennPilot"
+              aria-label={`Close ${botName}`}
               data-testid="admin-assistant-close"
             >
               <X className="h-4 w-4" aria-hidden="true" />
@@ -492,7 +497,7 @@ function AdminAssistantWidgetInner(): React.JSX.Element {
             maxLength={MAX_USER_MESSAGE_CHARS}
             disabled={busy}
             data-testid="admin-assistant-input"
-            aria-label="Message PennPilot"
+            aria-label={`Message ${botName}`}
             className="flex-1 resize-none"
           />
           <Button

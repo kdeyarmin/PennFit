@@ -18,21 +18,25 @@ const supabaseMock = installSupabaseMock();
 beforeEach(() => supabaseMock.reset());
 
 describe("generateTrackingCode", () => {
-  it("is PFS- + 8 unambiguous chars (no 0/O/1/I/L)", () => {
+  it("is CMB- + 8 unambiguous chars (no 0/O/1/I/L)", () => {
     for (let i = 0; i < 50; i += 1) {
       expect(generateTrackingCode()).toMatch(
-        /^PFS-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/,
+        /^CMB-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/,
       );
     }
   });
 });
 
 describe("normalizeTrackingCode", () => {
-  it("uppercases, strips spaces/dashes, and re-applies the prefix", () => {
+  it("uppercases, strips spaces/dashes, and preserves the brand prefix", () => {
+    // Legacy PFS- codes (faxes already in the field) are preserved so the
+    // exact-match lookup still resolves their stored row.
     expect(normalizeTrackingCode("pfs-7f3k2q9x")).toBe("PFS-7F3K2Q9X");
     expect(normalizeTrackingCode("PFS 7F3K2Q9X")).toBe("PFS-7F3K2Q9X");
-    // Body only (prefix dropped on the fax) still resolves.
-    expect(normalizeTrackingCode("7f3k2q9x")).toBe("PFS-7F3K2Q9X");
+    // Current CMB- codes round-trip too.
+    expect(normalizeTrackingCode("cmb-7f3k2q9x")).toBe("CMB-7F3K2Q9X");
+    // Body only (prefix dropped on the fax) gets the current prefix.
+    expect(normalizeTrackingCode("7f3k2q9x")).toBe("CMB-7F3K2Q9X");
   });
 });
 
@@ -92,7 +96,7 @@ describe("registerSignatureTracking", () => {
     });
     expect(result.created).toBe(true);
     expect(result.id).toBe("t2");
-    expect(result.trackingCode).toMatch(/^PFS-[A-Z2-9]{8}$/);
+    expect(result.trackingCode).toMatch(/^CMB-[A-Z2-9]{8}$/);
   });
 });
 

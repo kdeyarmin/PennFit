@@ -21,7 +21,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   aggregateComplianceCohorts,
@@ -43,6 +47,13 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+type EpisodeDbRow = Database["resupply"]["Tables"]["episodes"]["Row"];
+type ConversationDbRow = Database["resupply"]["Tables"]["conversations"]["Row"];
+type FulfillmentDbRow = Database["resupply"]["Tables"]["fulfillments"]["Row"];
+type ShopOrderDbRow = Database["resupply"]["Tables"]["shop_orders"]["Row"];
+type PatientDbRow = Database["resupply"]["Tables"]["patients"]["Row"];
+type MessageDbRow = Database["resupply"]["Tables"]["messages"]["Row"];
+
 const windowSchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
 });
@@ -56,13 +67,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
+    const cutoff = isoDaysAgo(days);
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
-    const cutoff = isoDaysAgo(days);
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
       .from("episodes")
@@ -91,13 +102,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
+    const cutoff = isoDaysAgo(days);
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
-    const cutoff = isoDaysAgo(days);
     const supabase = getOrgScopedClient(orgId);
 
     // These reads are independent of one another, so fan them out
@@ -153,14 +164,14 @@ router.get(
     if (fulErr) throw fulErr;
     if (ordErr) throw ordErr;
 
-    const episodes: EpisodeKpiRow[] = (episodeRows ?? []).map(
-      (r: { status: string; patient_id: string }) => ({
-        status: r.status,
-        patientId: r.patient_id,
-      }),
-    );
+    const episodes: EpisodeKpiRow[] = (
+      (episodeRows ?? []) as EpisodeDbRow[]
+    ).map((r) => ({
+      status: r.status,
+      patientId: r.patient_id,
+    }));
     const outreachIds = new Set(
-      (convRows ?? []).map((r: { id: string }) => r.id),
+      ((convRows ?? []) as ConversationDbRow[]).map((r) => r.id),
     );
 
     // Inbound patient messages in the window → which of those
@@ -175,7 +186,7 @@ router.get(
         .limit(50000);
       if (msgErr) throw msgErr;
       const responded = new Set<string>();
-      for (const m of msgRows ?? []) {
+      for (const m of (msgRows ?? []) as MessageDbRow[]) {
         if (m.conversation_id && outreachIds.has(m.conversation_id)) {
           responded.add(m.conversation_id);
         }
@@ -183,21 +194,13 @@ router.get(
       respondedCount = responded.size;
     }
 
-    const fulfillments = (fulfillmentRows ?? [])
-      .filter(
-        (r: Database["resupply"]["Tables"]["fulfillments"]["Row"]) =>
-          r.episode_id,
-      )
-      .map((r: Database["resupply"]["Tables"]["fulfillments"]["Row"]) => ({
-        episodeId: r.episode_id as string,
-      }));
+    const fulfillments = ((fulfillmentRows ?? []) as FulfillmentDbRow[])
+      .filter((r) => r.episode_id)
+      .map((r) => ({ episodeId: r.episode_id as string }));
 
-    const paidOrderAmountsCents = (orderRows ?? [])
-      .map(
-        (r: Database["resupply"]["Tables"]["shop_orders"]["Row"]) =>
-          r.amount_total_cents,
-      )
-      .filter((c: unknown): c is number => typeof c === "number");
+    const paidOrderAmountsCents = ((orderRows ?? []) as ShopOrderDbRow[])
+      .map((r) => r.amount_total_cents)
+      .filter((c): c is number => typeof c === "number");
 
     const result = aggregateResupplyKpis({
       episodes,
@@ -228,13 +231,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
+    const cutoff = isoDaysAgo(days);
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
-    const cutoff = isoDaysAgo(days);
     const supabase = getOrgScopedClient(orgId);
 
     // Pull patients onboarded in the window. We don't fetch every
@@ -250,9 +253,7 @@ router.get(
       .order("created_at", { ascending: true });
     if (pErr) throw pErr;
 
-    const patientIds = (patientRows ?? []).map(
-      (r: Database["resupply"]["Tables"]["patients"]["Row"]) => r.id,
-    );
+    const patientIds = ((patientRows ?? []) as PatientDbRow[]).map((r) => r.id);
     if (patientIds.length === 0) {
       res.json({
         windowDays: days,
@@ -279,8 +280,7 @@ router.get(
       string,
       Array<{ date: string; usageMinutes: number | null }>
     >();
-    for (const row of (nightRows ??
-      []) as Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"][]) {
+    for (const row of nightRows ?? []) {
       const list = nightsByPatient.get(row.patient_id) ?? [];
       list.push({
         date: row.night_date,
@@ -290,23 +290,23 @@ router.get(
     }
 
     const asOfDate = new Date().toISOString().slice(0, 10);
-    const points: PatientCohortPoint[] = (patientRows ?? []).map(
-      (patient: Database["resupply"]["Tables"]["patients"]["Row"]) => {
-        const nights = nightsByPatient.get(patient.id) ?? [];
-        let qualifies = false;
-        if (nights.length > 0) {
-          const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
-          const anchor = sorted[0]!.date;
-          const result = findBestAdherenceWindow(sorted, anchor, asOfDate);
-          qualifies = result.qualifies;
-        }
-        return {
-          signedUpAt: patient.created_at,
-          qualifies,
-          insurancePayer: patient.insurance_payer,
-        };
-      },
-    );
+    const points: PatientCohortPoint[] = (
+      (patientRows ?? []) as PatientDbRow[]
+    ).map((patient) => {
+      const nights = nightsByPatient.get(patient.id) ?? [];
+      let qualifies = false;
+      if (nights.length > 0) {
+        const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
+        const anchor = sorted[0]!.date;
+        const result = findBestAdherenceWindow(sorted, anchor, asOfDate);
+        qualifies = result.qualifies;
+      }
+      return {
+        signedUpAt: patient.created_at,
+        qualifies,
+        insurancePayer: patient.insurance_payer,
+      };
+    });
 
     const aggregated = aggregateComplianceCohorts(points);
     res.json({
@@ -486,7 +486,7 @@ type CsrActionQuery = {
  * fetch but keeps the timestamp so we can surface "last active".
  */
 async function csrActionRows(
-  supabase: ReturnType<typeof getOrgScopedClient>,
+  supabase: OrgScopedClient,
   table:
     | "conversations"
     | "shop_returns"
@@ -564,56 +564,44 @@ router.get(
 
     // Decorate each row with the patient name + payer so a
     // supervisor can scan the list without opening every row.
+    const stuckEpisodes = (data ?? []) as EpisodeDbRow[];
     const patientIds = Array.from(
-      new Set(
-        (data ?? []).map(
-          (r: Database["resupply"]["Tables"]["episodes"]["Row"]) =>
-            r.patient_id,
-        ),
-      ),
+      new Set(stuckEpisodes.map((r) => r.patient_id)),
     );
-    type PatientLite = Pick<
-      Database["resupply"]["Tables"]["patients"]["Row"],
-      "id" | "legal_first_name" | "legal_last_name" | "insurance_payer"
-    >;
     const { data: patients, error: pErr } = patientIds.length
       ? await supabase
           .from("patients")
           .select("id, legal_first_name, legal_last_name, insurance_payer")
           .in("id", patientIds)
-      : { data: [] as PatientLite[], error: null };
+      : { data: [], error: null };
     if (pErr) throw pErr;
     const byId = new Map(
-      ((patients ?? []) as PatientLite[]).map(
-        (p: PatientLite) => [p.id, p] as const,
-      ),
+      ((patients ?? []) as PatientDbRow[]).map((p) => [p.id, p] as const),
     );
 
     const now = Date.now();
-    const episodes = (data ?? []).map(
-      (e: Database["resupply"]["Tables"]["episodes"]["Row"]) => {
-        const p = byId.get(e.patient_id);
-        const createdAt = e.created_at;
-        const ageDays = Math.floor(
-          (now - new Date(createdAt).getTime()) / 86_400_000,
-        );
-        const patientName = p
-          ? `${p.legal_first_name} ${p.legal_last_name}`.trim()
-          : null;
-        return {
-          id: e.id,
-          patientId: e.patient_id,
-          patientName,
-          insurancePayer: p?.insurance_payer ?? null,
-          status: e.status,
-          createdAt,
-          dueAt: e.due_at,
-          expiresAt: e.expires_at,
-          prescriptionId: e.prescription_id,
-          ageDays,
-        };
-      },
-    );
+    const episodes = stuckEpisodes.map((e) => {
+      const p = byId.get(e.patient_id);
+      const createdAt = e.created_at;
+      const ageDays = Math.floor(
+        (now - new Date(createdAt).getTime()) / 86_400_000,
+      );
+      const patientName = p
+        ? `${p.legal_first_name} ${p.legal_last_name}`.trim()
+        : null;
+      return {
+        id: e.id,
+        patientId: e.patient_id,
+        patientName,
+        insurancePayer: p?.insurance_payer ?? null,
+        status: e.status,
+        createdAt,
+        dueAt: e.due_at,
+        expiresAt: e.expires_at,
+        prescriptionId: e.prescription_id,
+        ageDays,
+      };
+    });
 
     res.json({ stage, count: episodes.length, episodes });
   },
@@ -637,13 +625,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
+    const cutoff = isoDaysAgo(days);
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
-    const cutoff = isoDaysAgo(days);
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
       .from("episodes")
@@ -692,13 +680,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const days = parsed.data.days;
+    const cutoff = isoDaysAgo(days);
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const days = parsed.data.days;
-    const cutoff = isoDaysAgo(days);
     const supabase = getOrgScopedClient(orgId);
     const { data: patientRows, error: pErr } = await supabase
       .from("patients")
@@ -706,9 +694,7 @@ router.get(
       .gte("created_at", cutoff)
       .order("created_at", { ascending: true });
     if (pErr) throw pErr;
-    const patientIds = (patientRows ?? []).map(
-      (r: Database["resupply"]["Tables"]["patients"]["Row"]) => r.id,
-    );
+    const patientIds = ((patientRows ?? []) as PatientDbRow[]).map((r) => r.id);
 
     const filename = `compliance-cohorts-${days}d-${new Date()
       .toISOString()
@@ -732,33 +718,32 @@ router.get(
       string,
       Array<{ date: string; usageMinutes: number | null }>
     >();
-    for (const row of (nightRows ??
-      []) as Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"][]) {
+    for (const row of nightRows ?? []) {
       const list = nightsByPatient.get(row.patient_id) ?? [];
       list.push({ date: row.night_date, usageMinutes: row.usage_minutes });
       nightsByPatient.set(row.patient_id, list);
     }
     const asOfDate = new Date().toISOString().slice(0, 10);
-    const points: PatientCohortPoint[] = (patientRows ?? []).map(
-      (p: Database["resupply"]["Tables"]["patients"]["Row"]) => {
-        const nights = nightsByPatient.get(p.id) ?? [];
-        let qualifies = false;
-        if (nights.length > 0) {
-          const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
-          const result = findBestAdherenceWindow(
-            sorted,
-            sorted[0]!.date,
-            asOfDate,
-          );
-          qualifies = result.qualifies;
-        }
-        return {
-          signedUpAt: p.created_at,
-          qualifies,
-          insurancePayer: p.insurance_payer,
-        };
-      },
-    );
+    const points: PatientCohortPoint[] = (
+      (patientRows ?? []) as PatientDbRow[]
+    ).map((p) => {
+      const nights = nightsByPatient.get(p.id) ?? [];
+      let qualifies = false;
+      if (nights.length > 0) {
+        const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
+        const result = findBestAdherenceWindow(
+          sorted,
+          sorted[0]!.date,
+          asOfDate,
+        );
+        qualifies = result.qualifies;
+      }
+      return {
+        signedUpAt: p.created_at,
+        qualifies,
+        insurancePayer: p.insurance_payer,
+      };
+    });
     const agg = aggregateComplianceCohorts(points);
     for (const b of agg.byMonth) {
       res.write(
@@ -814,13 +799,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const { lookbackDays, activeDays, reorderDays } = parsed.data;
+    const cutoff = isoDaysAgo(lookbackDays);
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const { lookbackDays, activeDays, reorderDays } = parsed.data;
-    const cutoff = isoDaysAgo(lookbackDays);
     const supabase = getOrgScopedClient(orgId);
 
     // Fulfilled episodes only — the real-shipment signal. Capped for
@@ -834,12 +819,12 @@ router.get(
       .limit(100000);
     if (error) throw error;
 
-    const episodes: RetentionEpisodeRow[] = (data ?? []).map(
-      (r: Database["resupply"]["Tables"]["episodes"]["Row"]) => ({
-        patientId: r.patient_id,
-        createdAt: r.created_at,
-      }),
-    );
+    const episodes: RetentionEpisodeRow[] = (
+      (data ?? []) as EpisodeDbRow[]
+    ).map((r) => ({
+      patientId: r.patient_id,
+      createdAt: r.created_at,
+    }));
     const result = aggregatePatientRetention({
       episodes,
       nowMs: Date.now(),

@@ -572,8 +572,9 @@ export function Help() {
           Can&apos;t find it? Just ask.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          PennBot answers most questions instantly, and our care team is a phone
-          call away for anything that needs a human.
+          {contact.assistantStorefrontName} answers most questions instantly,
+          and our care team is a phone call away for anything that needs a
+          human.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Button

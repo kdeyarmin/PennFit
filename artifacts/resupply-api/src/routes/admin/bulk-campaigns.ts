@@ -37,6 +37,10 @@ import { enqueueImmediateTick } from "../../worker/jobs/bulk-campaign-tick.js";
 
 const router: IRouter = Router();
 
+type BulkCampaignRow = Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
+type BulkCampaignRecipientRow =
+  Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"];
+
 const idParam = z.object({ id: z.string().uuid() });
 
 const AUDIENCE_KIND_VALUES: AudienceKind[] = [
@@ -297,33 +301,31 @@ router.get(
       .limit(100);
     if (error) throw error;
     res.json({
-      campaigns: (data ?? []).map(
-        (r: Database["resupply"]["Tables"]["bulk_campaigns"]["Row"]) => ({
-          id: r.id,
-          name: r.name,
-          description: r.description,
-          audienceKind: r.audience_kind,
-          audiencePayer: r.audience_payer,
-          channel: r.channel,
-          category: r.category,
-          templateKey: r.template_key,
-          throttlePerMinute: r.throttle_per_minute,
-          status: r.status,
-          totalRecipients: r.total_recipients,
-          pendingRecipients:
-            r.total_recipients -
-            r.suppressed_count -
-            r.sent_count -
-            r.failed_count,
-          suppressedCount: r.suppressed_count,
-          sentCount: r.sent_count,
-          failedCount: r.failed_count,
-          createdAt: r.created_at,
-          startedAt: r.started_at,
-          completedAt: r.completed_at,
-          cancelledAt: r.cancelled_at,
-        }),
-      ),
+      campaigns: ((data ?? []) as BulkCampaignRow[]).map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        audienceKind: r.audience_kind,
+        audiencePayer: r.audience_payer,
+        channel: r.channel,
+        category: r.category,
+        templateKey: r.template_key,
+        throttlePerMinute: r.throttle_per_minute,
+        status: r.status,
+        totalRecipients: r.total_recipients,
+        pendingRecipients:
+          r.total_recipients -
+          r.suppressed_count -
+          r.sent_count -
+          r.failed_count,
+        suppressedCount: r.suppressed_count,
+        sentCount: r.sent_count,
+        failedCount: r.failed_count,
+        createdAt: r.created_at,
+        startedAt: r.started_at,
+        completedAt: r.completed_at,
+        cancelledAt: r.cancelled_at,
+      })),
     });
   },
 );
@@ -389,10 +391,8 @@ router.get(
       startedAt: row.started_at,
       completedAt: row.completed_at,
       cancelledAt: row.cancelled_at,
-      recipients: (recipients ?? []).map(
-        (
-          r: Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"],
-        ) => ({
+      recipients: ((recipients ?? []) as BulkCampaignRecipientRow[]).map(
+        (r) => ({
           id: r.id,
           recipientKind: r.recipient_kind,
           recipientId: r.recipient_id,

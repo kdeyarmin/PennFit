@@ -210,8 +210,9 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: org } = await supabase
+      .schema("resupply")
       .from("dme_organization")
       .select("*")
       .eq("singleton", true)
@@ -221,12 +222,7 @@ router.get(
       res.json({ organization: null, contacts: [] });
       return;
     }
-    // `dme_organization_contacts` is a GLOBAL table (no org_id column);
-    // it is keyed by `organization_id` (FK to the tenant's
-    // dme_organization row above), so it stays on the unscoped
-    // service-role client via `.raw()`.
     const { data: contacts } = await supabase
-      .raw()
       .schema("resupply")
       .from("dme_organization_contacts")
       .select("*")
@@ -234,7 +230,7 @@ router.get(
       .order("is_primary", { ascending: false })
       .order("role", { ascending: true });
     res.json({
-      organization: orgRowToApi(org as OrgRow),
+      organization: orgRowToApi(org),
       contacts: (contacts ?? []).map((c) => ({
         id: c.id,
         role: c.role,
@@ -273,7 +269,7 @@ router.put(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] =
       {
         singleton: true,
@@ -325,6 +321,7 @@ router.put(
       };
 
     const { data: existing } = await supabase
+      .schema("resupply")
       .from("dme_organization")
       .select("id")
       .eq("singleton", true)
@@ -333,6 +330,7 @@ router.put(
     let rowId: string;
     if (existing) {
       const { error } = await supabase
+        .schema("resupply")
         .from("dme_organization")
         .update(payload)
         .eq("id", existing.id);
@@ -340,6 +338,7 @@ router.put(
       rowId = existing.id;
     } else {
       const { data: newRow, error } = await supabase
+        .schema("resupply")
         .from("dme_organization")
         .insert(payload)
         .select("id")
@@ -399,8 +398,9 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: org } = await supabase
+      .schema("resupply")
       .from("dme_organization")
       .select("id")
       .eq("singleton", true)
@@ -413,11 +413,7 @@ router.post(
       });
       return;
     }
-    // `dme_organization_contacts` is a GLOBAL table (no org_id column),
-    // keyed by `organization_id` (the tenant's dme_organization row
-    // resolved above) — stays on the unscoped client via `.raw()`.
     const { data, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("dme_organization_contacts")
       .insert({
@@ -493,11 +489,8 @@ router.patch(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    // `dme_organization_contacts` is a GLOBAL table (no org_id column) —
-    // stays on the unscoped service-role client via `.raw()`.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: updated, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("dme_organization_contacts")
       .update(update)
@@ -530,11 +523,8 @@ router.delete(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    // `dme_organization_contacts` is a GLOBAL table (no org_id column) —
-    // stays on the unscoped service-role client via `.raw()`.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error } = await supabase
-      .raw()
       .schema("resupply")
       .from("dme_organization_contacts")
       .delete()

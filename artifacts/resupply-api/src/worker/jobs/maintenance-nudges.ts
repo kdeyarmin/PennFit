@@ -313,7 +313,7 @@ export async function runMaintenanceNudgeSweep(
       // Build the overdue list. We only nudge for tasks the patient
       // has STARTED — pure-new patients see the checklist on /account
       // but don't get an email until they've engaged with at least
-      // one task. Avoids "welcome to PennFit, here are 5 chores." A
+      // one task. Avoids "welcome to CareMetric Breathe, here are 5 chores." A
       // patient with no completion rows is absent from the batch (empty
       // map) → treated as not-yet-engaged, exactly as before.
       const hasEngaged = latest.size > 0;

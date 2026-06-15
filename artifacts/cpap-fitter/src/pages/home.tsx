@@ -18,6 +18,7 @@ import {
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import { openPennBot } from "@/lib/chat-events";
+import { useCompanyContact } from "@/lib/contact";
 import { useStorefrontBranding } from "@/lib/branding";
 
 /**
@@ -35,6 +36,7 @@ export function Home() {
   useDocumentTitle("");
   const [, navigate] = useLocation();
   const branding = useStorefrontBranding();
+  const assistantName = useCompanyContact().assistantStorefrontName;
   return (
     <>
       <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-8 md:py-14">
@@ -104,7 +106,7 @@ export function Home() {
               data-testid="home-ask-pennbot"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Or ask PennBot anything</span>
+              <span>Or ask {assistantName} anything</span>
             </button>
           </div>
         </section>

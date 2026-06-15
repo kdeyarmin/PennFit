@@ -33,12 +33,9 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const stale = req.query.stale === "true";
-    // providers_pecos_status is a global reference table (keyed by NPI,
-    // no org_id) — use raw().
     let query = supabase
-      .raw()
       .schema("resupply")
       .from("providers_pecos_status")
       .select(
@@ -70,11 +67,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    // providers_pecos_status is a global reference table (keyed by NPI,
-    // no org_id) — use raw().
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data } = await supabase
-      .raw()
       .schema("resupply")
       .from("providers_pecos_status")
       .select("*")

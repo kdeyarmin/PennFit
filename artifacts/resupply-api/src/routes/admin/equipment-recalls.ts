@@ -36,6 +36,14 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 type EquipmentRecallUpdate =
   Database["resupply"]["Tables"]["equipment_recalls"]["Update"];
+type EquipmentRecallRow =
+  Database["resupply"]["Tables"]["equipment_recalls"]["Row"];
+type EquipmentAssetRow =
+  Database["resupply"]["Tables"]["equipment_assets"]["Row"];
+type RecallNotificationRow =
+  Database["resupply"]["Tables"]["recall_notifications"]["Row"];
+type RecallRemediationActionRow =
+  Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"];
 
 const router: IRouter = Router();
 
@@ -147,24 +155,22 @@ router.get(
     if (error) throw error;
 
     res.json({
-      recalls: (data ?? []).map(
-        (r: Database["resupply"]["Tables"]["equipment_recalls"]["Row"]) => ({
-          id: r.id,
-          recallReference: r.recall_reference,
-          title: r.title,
-          manufacturer: r.manufacturer,
-          modelMatch: r.model_match,
-          serialMatch: r.serial_match as RecallSerialMatch,
-          severity: r.severity,
-          status: r.status,
-          issuedAt: r.issued_at,
-          deadlineAt: r.deadline_at,
-          referenceUrl: r.reference_url,
-          description: r.description,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        }),
-      ),
+      recalls: ((data ?? []) as EquipmentRecallRow[]).map((r) => ({
+        id: r.id,
+        recallReference: r.recall_reference,
+        title: r.title,
+        manufacturer: r.manufacturer,
+        modelMatch: r.model_match,
+        serialMatch: r.serial_match as RecallSerialMatch,
+        severity: r.severity,
+        status: r.status,
+        issuedAt: r.issued_at,
+        deadlineAt: r.deadline_at,
+        referenceUrl: r.reference_url,
+        description: r.description,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
     });
   },
 );
@@ -379,8 +385,8 @@ router.get(
     const { data: candidates, error: cErr } = await query;
     if (cErr) throw cErr;
 
-    const affected = (candidates ?? []).filter(
-      (asset: Database["resupply"]["Tables"]["equipment_assets"]["Row"]) =>
+    const affected = ((candidates ?? []) as EquipmentAssetRow[]).filter(
+      (asset) =>
         recallMatchesAsset({
           asset: {
             manufacturer: asset.manufacturer,
@@ -419,17 +425,15 @@ router.get(
       recallId: recall.id,
       candidatesScanned: candidates?.length ?? 0,
       affectedCount: affected.length,
-      affected: affected.map(
-        (a: Database["resupply"]["Tables"]["equipment_assets"]["Row"]) => ({
-          id: a.id,
-          patientId: a.patient_id,
-          manufacturer: a.manufacturer,
-          model: a.model,
-          serialNumber: a.serial_number,
-          status: a.status,
-          dispensedAt: a.dispensed_at,
-        }),
-      ),
+      affected: affected.map((a) => ({
+        id: a.id,
+        patientId: a.patient_id,
+        manufacturer: a.manufacturer,
+        model: a.model,
+        serialNumber: a.serial_number,
+        status: a.status,
+        dispensedAt: a.dispensed_at,
+      })),
     });
   },
 );
@@ -458,7 +462,7 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     let result;
     try {
-      result = await runRecallBulkMatch(supabase.raw(), idCheck.data);
+      result = await runRecallBulkMatch(supabase, idCheck.data);
     } catch (err) {
       if (err instanceof Error && /recall .* not found/.test(err.message)) {
         res.status(404).json({ error: "recall_not_found" });
@@ -520,11 +524,9 @@ router.get(
 
     // Group counts by status so the SPA can render a summary row
     // without doing the arithmetic itself.
-    const counts = (data ?? []).reduce(
-      (
-        acc: Record<string, number>,
-        r: Database["resupply"]["Tables"]["recall_notifications"]["Row"],
-      ) => {
+    const notifRows = (data ?? []) as RecallNotificationRow[];
+    const counts = notifRows.reduce(
+      (acc, r) => {
         acc[r.status] = (acc[r.status] ?? 0) + 1;
         return acc;
       },
@@ -533,23 +535,21 @@ router.get(
 
     res.json({
       counts,
-      notifications: (data ?? []).map(
-        (r: Database["resupply"]["Tables"]["recall_notifications"]["Row"]) => ({
-          id: r.id,
-          assetId: r.asset_id,
-          patientId: r.patient_id,
-          status: r.status,
-          channel: r.channel,
-          notifiedAt: r.notified_at,
-          failedAt: r.failed_at,
-          failedReason: r.failed_reason,
-          // Twilio carrier-side outcome from the SMS status callback —
-          // null for email sends and pre-callback rows.
-          deliveryStatus: r.delivery_status,
-          deliveryErrorCode: r.delivery_error_code,
-          createdAt: r.created_at,
-        }),
-      ),
+      notifications: notifRows.map((r) => ({
+        id: r.id,
+        assetId: r.asset_id,
+        patientId: r.patient_id,
+        status: r.status,
+        channel: r.channel,
+        notifiedAt: r.notified_at,
+        failedAt: r.failed_at,
+        failedReason: r.failed_reason,
+        // Twilio carrier-side outcome from the SMS status callback —
+        // null for email sends and pre-callback rows.
+        deliveryStatus: r.delivery_status,
+        deliveryErrorCode: r.delivery_error_code,
+        createdAt: r.created_at,
+      })),
     });
   },
 );
@@ -703,11 +703,9 @@ router.get(
       .limit(2000);
     if (error) throw error;
 
-    const counts = (data ?? []).reduce(
-      (
-        acc: Record<string, number>,
-        r: Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"],
-      ) => {
+    const remediationRows = (data ?? []) as RecallRemediationActionRow[];
+    const counts = remediationRows.reduce(
+      (acc, r) => {
         acc[r.action] = (acc[r.action] ?? 0) + 1;
         return acc;
       },
@@ -716,19 +714,15 @@ router.get(
 
     res.json({
       counts,
-      actions: (data ?? []).map(
-        (
-          r: Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"],
-        ) => ({
-          id: r.id,
-          assetId: r.asset_id,
-          action: r.action,
-          evidenceUrl: r.evidence_url,
-          notes: r.notes,
-          performedByUserId: r.performed_by_user_id,
-          performedAt: r.performed_at,
-        }),
-      ),
+      actions: remediationRows.map((r) => ({
+        id: r.id,
+        assetId: r.asset_id,
+        action: r.action,
+        evidenceUrl: r.evidence_url,
+        notes: r.notes,
+        performedByUserId: r.performed_by_user_id,
+        performedAt: r.performed_at,
+      })),
     });
   },
 );
@@ -780,14 +774,12 @@ router.get(
     ]);
     if (notifs.error) throw notifs.error;
     if (remediations.error) throw remediations.error;
-    const notifList = (notifs.data ??
-      []) as Database["resupply"]["Tables"]["recall_notifications"]["Row"][];
+    const notifList = (notifs.data ?? []) as RecallNotificationRow[];
     const remediationByAsset = new Map<
       string,
       { action: string; evidence_url: string | null; performed_at: string }
     >();
-    for (const r of (remediations.data ??
-      []) as Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"][]) {
+    for (const r of (remediations.data ?? []) as RecallRemediationActionRow[]) {
       if (!remediationByAsset.has(r.asset_id)) {
         remediationByAsset.set(r.asset_id, {
           action: r.action,
@@ -797,14 +789,7 @@ router.get(
       }
     }
     void assets;
-    const assetIds = Array.from(
-      new Set(
-        notifList.map(
-          (n: Database["resupply"]["Tables"]["recall_notifications"]["Row"]) =>
-            n.asset_id,
-        ),
-      ),
-    );
+    const assetIds = Array.from(new Set(notifList.map((n) => n.asset_id)));
     let assetMeta = new Map<
       string,
       { manufacturer: string; model: string; serial_number: string }
@@ -815,16 +800,14 @@ router.get(
         .select("id, manufacturer, model, serial_number")
         .in("id", assetIds);
       assetMeta = new Map(
-        (assetData ?? []).map(
-          (a: Database["resupply"]["Tables"]["equipment_assets"]["Row"]) => [
-            a.id,
-            {
-              manufacturer: a.manufacturer,
-              model: a.model,
-              serial_number: a.serial_number,
-            },
-          ],
-        ),
+        ((assetData ?? []) as EquipmentAssetRow[]).map((a) => [
+          a.id,
+          {
+            manufacturer: a.manufacturer,
+            model: a.model,
+            serial_number: a.serial_number,
+          },
+        ]),
       );
     }
 

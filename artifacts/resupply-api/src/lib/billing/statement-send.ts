@@ -17,7 +17,6 @@
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getOrgScopedClient,
   type CommunicationPreferences,
   type Json,
   type OrgScopedClient,
@@ -31,8 +30,6 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
 import { getDocumentSupplierNameSync } from "../company-info";
 import { logger } from "../logger";
-
-type SupabaseClient = OrgScopedClient;
 
 export interface StatementMessagingConfig {
   sendgridApiKey: string | null;
@@ -238,7 +235,7 @@ export interface StatementSendDeps {
 }
 
 async function persistOutcome(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
   outcome: SendOutcome,
 ): Promise<void> {
@@ -292,7 +289,7 @@ async function persistOutcome(
  * The 'sending' state is admitted by migration 0297.
  */
 async function claimStatementForSend(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
 ): Promise<boolean> {
   const { data, error } = await supabase
@@ -311,7 +308,7 @@ async function claimStatementForSend(
  * no email on file (so the bill isn't silently lost).
  */
 async function routeToMail(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
 ): Promise<void> {
   const { error: routeErr } = await supabase
@@ -335,7 +332,7 @@ async function routeToMail(
  * count actually marked.
  */
 export async function markStatementsMailed(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementIds: string[],
 ): Promise<number> {
   if (statementIds.length === 0) return 0;
@@ -367,7 +364,7 @@ interface LoadedStatement {
  * outcome. Shared by the emailed-preference and legacy comm-prefs paths.
  */
 async function deliverOnChannel(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   stmt: LoadedStatement,
   contact: { email: string | null; phoneE164: string | null },
   channel: StatementChannel,
@@ -443,7 +440,7 @@ async function deliverOnChannel(
  * Fail-soft — returns the outcome; never throws for a normal gated send.
  */
 export async function sendOneStatement(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
   deps: StatementSendDeps = {},
 ): Promise<SendOutcome> {
@@ -581,11 +578,10 @@ export interface StatementBatchResult {
  * never repeatedly re-scans them. Fail-soft per statement.
  */
 export async function runStatementBatchSend(
-  orgId: string,
+  supabase: OrgScopedClient,
   opts: StatementBatchOpts = {},
   deps: StatementSendDeps = {},
 ): Promise<StatementBatchResult> {
-  const supabase = getOrgScopedClient(orgId);
   const cap = opts.cap ?? 50;
   const result: StatementBatchResult = {
     scanned: 0,

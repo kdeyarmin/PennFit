@@ -27,25 +27,58 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 cd "$PROJECT_DIR"
 
-# Toolchain reconciliation. The remote web image ships Node 22 + pnpm
-# 10.x, but this repo pins Node 24 + pnpm >=11 (engines / packageManager
-# in package.json). The base image carries only node20/21/22 — Node 24
-# is not installable here — and the workspace builds, typechecks, and
-# tests cleanly on Node 22, so we bridge the gap rather than fail setup:
+# Toolchain reconciliation. This repo pins Node 24 + pnpm@11.6.0 (engines /
+# packageManager in package.json), but the remote web image's default `node`
+# on PATH is v22 (/opt/node22/bin) and its system pnpm is 10.x. Node 24 is
+# NOT baked into the base image — but it IS installable at session start via
+# the image's nvm (network reaches nodejs.org), so we install it and make
+# it (plus a corepack-managed pnpm 11) the default toolchain for the whole
+# session, matching CI and the Railway deploy exactly.
 #
-#   1. Run pnpm via corepack, which honours the `packageManager` pin
-#      (pnpm@11.5.2). A bare `pnpm` resolves to the image's system pnpm
-#      10.x, which trips ERR_PNPM_UNSUPPORTED_ENGINE against the
-#      `engines.pnpm: >=11` constraint AND would resolve the lockfile
-#      with the wrong major.
-#   2. Disable engine-strict so the Node 22-vs-24 minor mismatch only
-#      WARNs instead of aborting. CI (.github/workflows/ci.yml) and the
-#      Railway deploy still run Node 24, so production parity is intact;
-#      this relaxation is scoped to the web-session sandbox.
+# How the upgrade reaches every later shell: Bash tool calls are
+# non-login/non-interactive — they don't re-source /etc/profile or ~/.bashrc,
+# they inherit PATH from the harness parent. That inherited PATH already
+# lists ~/.local/bin AHEAD of /opt/node22/bin, so symlinking the Node 24
+# binaries (and a corepack pnpm shim) into ~/.local/bin makes `node`/`pnpm`
+# resolve to 24/11 in every subsequent shell without touching the image.
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-export npm_config_engine_strict=false
 
-# Prefer corepack (gets pnpm 11.5.2 from the packageManager pin); fall
+LOCAL_BIN="${HOME:-/root}/.local/bin"
+mkdir -p "$LOCAL_BIN"
+
+# Install + activate Node 24 via the image's nvm. Keep going on failure
+# (e.g. offline) so setup still completes on the image's Node 22 rather
+# than aborting the whole session.
+node_upgraded=false
+export NVM_DIR="${NVM_DIR:-/opt/nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$NVM_DIR/nvm.sh"
+  if nvm install 24 >/dev/null 2>&1; then
+    nvm alias default 24 >/dev/null 2>&1 || true
+    NODE24_BIN="$(dirname "$(nvm which 24)")"
+    for b in node npm npx corepack; do
+      [ -x "$NODE24_BIN/$b" ] && ln -sf "$NODE24_BIN/$b" "$LOCAL_BIN/$b"
+    done
+    # corepack pnpm shim → pnpm 11.6.0 (honours the packageManager pin).
+    "$NODE24_BIN/corepack" enable --install-directory "$LOCAL_BIN" pnpm >/dev/null 2>&1 || true
+    node_upgraded=true
+  fi
+fi
+
+export PATH="$LOCAL_BIN:$PATH"
+
+if [ "$node_upgraded" = true ]; then
+  echo "[session-start] Node $(node --version) / pnpm $(pnpm --version)"
+else
+  # Fallback: Node 24 unavailable (offline). Bridge on the image's Node 22
+  # via corepack pnpm 11, relaxing engine-strict so the Node minor mismatch
+  # only WARNs instead of aborting. The workspace builds/tests on Node 22.
+  echo "[session-start] WARN: Node 24 install unavailable; bridging on $(node --version)"
+  export npm_config_engine_strict=false
+fi
+
+# Prefer corepack (gets pnpm 11.6.0 from the packageManager pin); fall
 # back to a bare pnpm if corepack is somehow unavailable.
 if corepack --version >/dev/null 2>&1; then
   PNPM=(corepack pnpm)

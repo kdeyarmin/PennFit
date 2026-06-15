@@ -111,7 +111,6 @@ router.get(
 
     const [providerRes, latestStudyRes] = await Promise.all([
       supabase
-        // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
         .raw()
         .schema("resupply")
         .from("providers")

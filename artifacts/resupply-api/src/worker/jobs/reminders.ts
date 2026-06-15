@@ -71,9 +71,7 @@ import {
   type OutreachRule,
 } from "@workspace/resupply-domain";
 import {
-  type Database,
-  type OrgScopedClient,
-  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
@@ -121,7 +119,7 @@ export const SEND_EMAIL_JOB = "reminders.send-email";
  * resend cleanly when a patient's cadence is daily).
  */
 async function tryClaimReminderDedupKey(
-  supabase: OrgScopedClient,
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   channel: "sms" | "email",
   patientId: string,
   episodeId: string,
@@ -138,6 +136,7 @@ async function tryClaimReminderDedupKey(
   let timezone = "America/New_York";
   try {
     const { data: tzRow } = await supabase
+      .schema("resupply")
       .from("patients")
       .select("timezone")
       .eq("id", patientId)
@@ -164,7 +163,6 @@ async function tryClaimReminderDedupKey(
   const key = `reminder-${channel}:${patientId}:${episodeId}:${todayLocal}`;
   const expiresAt = new Date(Date.now() + 22 * 60 * 60 * 1000).toISOString();
   const { error } = await supabase
-    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .insert({ key, expires_at: expiresAt });
@@ -206,12 +204,11 @@ async function tryClaimReminderDedupKey(
 }
 
 async function releaseReminderDedupKey(
-  supabase: OrgScopedClient,
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   key: string,
   jobId: string,
 ): Promise<void> {
   const { error } = await supabase
-    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .delete()
@@ -425,9 +422,7 @@ export const __testing = {
 export async function scanForDueReminders(
   asOf: Date = new Date(),
 ): Promise<ScanRow[]> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return [];
-  const supabase = getOrgScopedClient(orgId);
+  const supabase = getSupabaseServiceRoleClient();
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
   const quietCutoffIso = quietCutoff.toISOString();
 
@@ -436,6 +431,7 @@ export async function scanForDueReminders(
   // in memory for the duration of the scan and let `resolveOutreachPlan`
   // pick the right one per patient.
   const { data: ruleRows, error: rulesErr } = await supabase
+    .schema("resupply")
     .from("frequency_rules")
     .select(
       "id, priority, created_at, active, match_item_sku_prefix, match_insurance_payer, min_tenure_days, max_tenure_days, cadence_days, default_channel",
@@ -444,10 +440,7 @@ export async function scanForDueReminders(
     .order("priority", { ascending: true })
     .order("created_at", { ascending: true });
   if (rulesErr) throw rulesErr;
-  const rules: OutreachRule[] = (
-    (ruleRows ??
-      []) as Database["resupply"]["Tables"]["frequency_rules"]["Row"][]
-  ).map((r) => ({
+  const rules: OutreachRule[] = (ruleRows ?? []).map((r) => ({
     id: r.id,
     priority: r.priority,
     createdAt: new Date(r.created_at),
@@ -485,6 +478,7 @@ export async function scanForDueReminders(
   }> = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
+      .schema("resupply")
       .from("prescriptions")
       .select("id, patient_id, item_sku, cadence_days, created_at")
       .eq("status", "active")
@@ -518,6 +512,7 @@ export async function scanForDueReminders(
     const idChunk = activePrescriptionIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
+        .schema("resupply")
         .from("episodes")
         .select("id, prescription_id, due_at")
         .in("prescription_id", idChunk)
@@ -551,6 +546,7 @@ export async function scanForDueReminders(
   for (let i = 0; i < patientIds.length; i += 200) {
     const batch = patientIds.slice(i, i + 200);
     const { data, error } = await supabase
+      .schema("resupply")
       .from("patients")
       .select(
         "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164, email, timezone",
@@ -578,6 +574,7 @@ export async function scanForDueReminders(
     const batch = activePatientIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
+        .schema("resupply")
         .from("fulfillments")
         .select("id, patient_id, item_sku, shipped_at")
         .in("patient_id", batch)
@@ -616,6 +613,7 @@ export async function scanForDueReminders(
     const idChunk = candidateEpisodeIds.slice(i, i + 200);
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
+        .schema("resupply")
         .from("conversations")
         .select("id, episode_id")
         .in("episode_id", idChunk)
@@ -913,15 +911,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      logger.warn(
-        { job_id: j.id },
-        "reminders.send-sms: no seed org resolved — skipping",
-      );
-      return;
-    }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getSupabaseServiceRoleClient();
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day). See
     // tryClaimReminderDedupKey for posture.
@@ -937,7 +927,10 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     let outcome: Awaited<ReturnType<typeof sendReminderSms>>;
     try {
       outcome = await sendReminderSms({
-        supabase: supabase.raw(),
+        supabase,
+        // System job: resolve the seed tenant (Phase 0 bridge). When
+        // per-patient org lands the scan will carry it on SendJobData.
+        orgId: (await resolveSeedOrgId()) ?? undefined,
         cfg: cfg.sms,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
@@ -991,15 +984,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      logger.warn(
-        { job_id: j.id },
-        "reminders.send-email: no seed org resolved — skipping",
-      );
-      return;
-    }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getSupabaseServiceRoleClient();
     // Idempotency: short-circuit if another attempt already sent (or
     // is sending) for this (patient, episode, channel, day).
     const { proceed, key: dedupKey } = await tryClaimReminderDedupKey(
@@ -1014,7 +999,10 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     let outcome: Awaited<ReturnType<typeof sendReminderEmail>>;
     try {
       outcome = await sendReminderEmail({
-        supabase: supabase.raw(),
+        supabase,
+        // System job: resolve the seed tenant (Phase 0 bridge). When
+        // per-patient org lands the scan will carry it on SendJobData.
+        orgId: (await resolveSeedOrgId()) ?? undefined,
         cfg: cfg.email,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,

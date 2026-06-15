@@ -1,6 +1,6 @@
 // /admin/account-setup — new-account / production launch checklist.
 //
-// A read-only "is this done?" feed for standing up a fresh PennFit
+// A read-only "is this done?" feed for standing up a fresh CareMetric Breathe
 // deployment, surfaced as a two-tab checklist in the admin console
 // (Settings -> Account Setup). It mirrors the procedure in
 // docs/runbooks/production-launch.md:

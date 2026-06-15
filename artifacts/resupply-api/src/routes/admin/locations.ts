@@ -13,7 +13,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { pickPrimaryLocation } from "../../lib/locations/pick-primary";
 import { logger } from "../../lib/logger";
@@ -63,15 +67,15 @@ function toColumns(d: z.infer<typeof patchBody>): Record<string, unknown> {
 }
 
 /** Clear is_primary on every currently-primary row (before setting a new one). */
-async function clearExistingPrimary(
-  supabase: ReturnType<typeof getOrgScopedClient>,
-): Promise<void> {
+async function clearExistingPrimary(supabase: OrgScopedClient): Promise<void> {
   const { error } = await supabase
     .from("locations")
     .update({ is_primary: false, updated_at: new Date().toISOString() })
     .eq("is_primary", true);
   if (error) throw error;
 }
+
+type LocationRow = Database["resupply"]["Tables"]["locations"]["Row"];
 
 router.get(
   "/admin/locations",
@@ -89,8 +93,7 @@ router.get(
       .order("name", { ascending: true })
       .limit(500);
     if (error) throw error;
-    const rows = (data ??
-      []) as Database["resupply"]["Tables"]["locations"]["Row"][];
+    const rows = (data ?? []) as LocationRow[];
     const primary = pickPrimaryLocation(rows);
     res.json({ locations: rows, primaryId: primary?.id ?? null });
   },
@@ -118,6 +121,8 @@ router.get(
           .select("id, name, is_active")
           .order("name", { ascending: true })
           .limit(500),
+        // The rollup RPC is not org-aware; keep it on the unscoped
+        // client until a tenant-scoped RPC exists.
         supabase.raw().schema("resupply").rpc("location_rollup"),
       ]);
     if (locErr) throw locErr;
@@ -141,14 +146,12 @@ router.get(
     };
 
     res.json({
-      branches: (locs ?? []).map(
-        (l: Database["resupply"]["Tables"]["locations"]["Row"]) => ({
-          locationId: l.id,
-          name: l.name,
-          isActive: l.is_active,
-          ...counts(l.id),
-        }),
-      ),
+      branches: ((locs ?? []) as LocationRow[]).map((l) => ({
+        locationId: l.id,
+        name: l.name,
+        isActive: l.is_active,
+        ...counts(l.id),
+      })),
       // Patients/staff with no branch assigned (RPC's NULL row).
       unassigned: counts(null),
     });

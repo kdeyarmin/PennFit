@@ -66,22 +66,18 @@ router.get(
   "/admin/business-targets",
   requirePermission("targets.manage"),
   async (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    const period = parsed.success ? parsed.data.period : undefined;
+
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-
-    const parsed = listQuery.safeParse(req.query);
-    const period = parsed.success ? parsed.data.period : undefined;
-
     let query = supabase
-      .raw()
-      .schema("resupply")
       .from("business_targets")
       .select(TARGET_SELECT)
-      .eq("org_id", orgId)
       .order("period", { ascending: false })
       .limit(500);
     if (period) query = query.eq("period", period);
@@ -118,6 +114,8 @@ router.get(
         .map((r) => r.endExclusiveDate)
         .sort()
         .at(-1) as string;
+      // metrics_daily is not org-scoped (analytics rollup, no org_id);
+      // read it through the unscoped client.
       const { data: metrics, error: metricsErr } = await supabase
         .raw()
         .schema("resupply")
@@ -196,14 +194,10 @@ router.put(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-
     const { data: row, error } = await supabase
-      .raw()
-      .schema("resupply")
       .from("business_targets")
       .upsert(
         {
-          org_id: orgId,
           metric_key: d.metricKey,
           period: d.period,
           target_value: d.targetValue,

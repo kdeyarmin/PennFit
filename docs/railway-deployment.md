@@ -54,7 +54,7 @@ phases below. `railway.json` overrides the relevant defaults:
 
 | Phase           | What runs                                                                                                       | Source                                |
 | --------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| **Install**     | `pnpm install` (Corepack pins `pnpm@11.5.2` from `packageManager`)                                              | Railpack default                      |
+| **Install**     | `pnpm install` (Corepack pins `pnpm@11.6.0` from `packageManager`)                                              | Railpack default                      |
 | **Build**       | `pnpm -r --workspace-concurrency=1 --if-present run build`                                                      | `build.buildCommand`                  |
 | **Pre-deploy**  | `node lib/resupply-db/scripts/deploy-migrate.mjs` (gates the deploy; **no-op unless `RUN_DB_MIGRATIONS=true`**) | `deploy.preDeployCommand`             |
 | **Start**       | `node --enable-source-maps artifacts/resupply-api/dist/index.mjs`                                               | `deploy.startCommand`                 |
@@ -151,7 +151,7 @@ its default major. It's an environment variable, not a repo file, so it
 can't be committed — if the service is ever recreated, re-add it and
 confirm the resolved Node major in the next Railway **build log**.
 
-**pnpm** is pinned to `pnpm@11.5.2` via the root `packageManager` field;
+**pnpm** is pinned to `pnpm@11.6.0` via the root `packageManager` field;
 Corepack installs that exact version during the install phase.
 
 ## Required environment at boot

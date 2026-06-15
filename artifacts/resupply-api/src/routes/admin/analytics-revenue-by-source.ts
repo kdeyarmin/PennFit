@@ -3,7 +3,7 @@
 //
 // Closed-loop measurement (roadmap Lever 3): a single view of where order
 // VOLUME and cash REVENUE come from, across the three independent order
-// channels PennFit captures through:
+// channels CareMetric Breathe captures through:
 //   * storefront (cash-pay Stripe)      → resupply.shop_orders (has $)
 //   * resupply fulfillment (insurance)  → resupply.fulfillments (units)
 //   * clinical intake form              → public.orders (count only)

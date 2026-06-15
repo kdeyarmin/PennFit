@@ -136,6 +136,7 @@ function Callout({
  */
 function HelpfulWidget({ title, prefix }: { title: string; prefix: string }) {
   const [answer, setAnswer] = useState<null | "yes" | "no">(null);
+  const assistantName = useCompanyContact().assistantStorefrontName;
 
   if (answer === "yes") {
     return (
@@ -154,8 +155,8 @@ function HelpfulWidget({ title, prefix }: { title: string; prefix: string }) {
         className="text-sm text-muted-foreground"
         data-testid={`help-feedback-followup-${prefix}`}
       >
-        Sorry this didn&apos;t do the trick — we&apos;ve opened PennBot so you
-        can ask in your own words.
+        Sorry this didn&apos;t do the trick — we&apos;ve opened {assistantName}{" "}
+        so you can ask in your own words.
       </p>
     );
   }
@@ -495,9 +496,9 @@ export function HelpArticleShell({
                   Still stuck?
                 </h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Ask PennBot for a typed answer in seconds, or call our care
-                  team — real people who fit masks and handle insurance every
-                  day.
+                  Ask {contact.assistantStorefrontName} for a typed answer in
+                  seconds, or call our care team — real people who fit masks and
+                  handle insurance every day.
                 </p>
                 <div className="flex flex-wrap gap-3 pt-2">
                   <Button
@@ -507,7 +508,7 @@ export function HelpArticleShell({
                     data-testid={`help-ask-pennbot-${prefix}`}
                   >
                     <Sparkles className="w-4 h-4" />
-                    Ask PennBot
+                    Ask {contact.assistantStorefrontName}
                   </Button>
                   <a href={`tel:${contact.phoneE164}`}>
                     <Button

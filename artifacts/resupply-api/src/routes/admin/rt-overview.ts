@@ -123,14 +123,15 @@ function chunkIds(ids: string[]): string[][] {
  * reuse the same body.
  */
 export async function buildRtOverview(
+  orgId: string,
   days: number,
-  supabase: ReturnType<typeof getOrgScopedClient>,
 ): Promise<{
   asOf: string;
   windowDays: number;
   summary: ReturnType<typeof summarizeOverview>;
   rows: RtOverviewRow[];
 }> {
+  const supabase = getOrgScopedClient(orgId);
   const asOf = new Date().toISOString();
   const asOfDate = asOf.slice(0, 10);
 
@@ -320,14 +321,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const days = parsed.data.days;
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    const overview = await buildRtOverview(days, supabase);
+    const days = parsed.data.days;
+    const overview = await buildRtOverview(orgId, days);
 
     // Counts-only audit. The patient list is intentionally NOT logged.
     await logAudit({
@@ -356,14 +356,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const days = parsed.data.days;
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    const overview = await buildRtOverview(days, supabase);
+    const days = parsed.data.days;
+    const overview = await buildRtOverview(orgId, days);
 
     await logAudit({
       action: "admin.rt_overview.export_csv",

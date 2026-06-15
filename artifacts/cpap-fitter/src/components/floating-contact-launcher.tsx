@@ -72,11 +72,16 @@ const STORAGE_KEY = "pennbot.session.v1";
  */
 const PERSIST_TURN_CAP = 30;
 
-const GREETING: ChatMessage = {
-  role: "assistant",
-  content:
-    "Hi, I'm PennBot! Ask me anything CPAP — masks, supplies, insurance, replacement schedules, returns, or just getting started. What's on your mind?",
-};
+// Computed at call time so the assistant name reflects the tenant's
+// configured storefront-assistant name once /api/company-info loads
+// (CareMetric Assistant by default; "PennBot" for Penn Home Medical).
+function greeting(): ChatMessage {
+  const name = getCompanyContact().assistantStorefrontName;
+  return {
+    role: "assistant",
+    content: `Hi, I'm ${name}! Ask me anything CPAP — masks, supplies, insurance, replacement schedules, returns, or just getting started. What's on your mind?`,
+  };
+}
 
 /**
  * Page-aware suggested prompts. The widget picks the bucket whose
@@ -161,7 +166,7 @@ const DEFAULT_PROMPTS = [
 // admin-saved company info once it loads.
 function unavailableFallbackText(): string {
   const c = getCompanyContact();
-  return `PennBot is offline right now. For help, call ${c.phoneDisplay} (${c.hours}) or email ${c.email} — our team will answer anything I would have.`;
+  return `${c.assistantStorefrontName} is offline right now. For help, call ${c.phoneDisplay} (${c.hours}) or email ${c.email} — our team will answer anything I would have.`;
 }
 
 interface UiMessage extends ChatMessage {
@@ -237,7 +242,7 @@ export function FloatingContactLauncher() {
 
   const [messages, setMessages] = useState<UiMessage[]>(() => {
     const stored = loadStoredMessages();
-    return stored ?? [{ ...GREETING, id: 0 }];
+    return stored ?? [{ ...greeting(), id: 0 }];
   });
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -583,7 +588,7 @@ export function FloatingContactLauncher() {
 
   const resetConversation = useCallback(() => {
     inFlightRef.current?.abort();
-    setMessages([{ ...GREETING, id: 0 }]);
+    setMessages([{ ...greeting(), id: 0 }]);
     setInput("");
     setSending(false);
     if (typeof window !== "undefined") {
@@ -743,7 +748,8 @@ export function FloatingContactLauncher() {
                 onClick={() => setTab("chat")}
                 testId="floating-contact-tab-chat"
               >
-                <Sparkles className="h-3.5 w-3.5" /> Ask PennBot
+                <Sparkles className="h-3.5 w-3.5" /> Ask{" "}
+                {contact.assistantStorefrontName}
               </TabButton>
               <TabButton
                 active={tab === "contact"}
@@ -757,7 +763,7 @@ export function FloatingContactLauncher() {
             {tab === "chat" ? (
               <div
                 role="tabpanel"
-                aria-label="Ask PennBot"
+                aria-label={`Ask ${contact.assistantStorefrontName}`}
                 className="flex-1 flex flex-col min-h-0"
               >
                 <div
@@ -808,7 +814,7 @@ export function FloatingContactLauncher() {
                   className="border-t border-border p-2 flex items-end gap-2 shrink-0"
                 >
                   <label htmlFor="floating-contact-input" className="sr-only">
-                    Type a question for PennBot
+                    Type a question for {contact.assistantStorefrontName}
                   </label>
                   <textarea
                     id="floating-contact-input"
@@ -846,8 +852,8 @@ export function FloatingContactLauncher() {
                   )}
                 </form>
                 <p className="text-[10px] text-muted-foreground px-3 pb-2 leading-tight shrink-0">
-                  PennBot is an AI assistant. For clinical or account-specific
-                  questions, please call us.
+                  {contact.assistantStorefrontName} is an AI assistant. For
+                  clinical or account-specific questions, please call us.
                 </p>
               </div>
             ) : (
@@ -1124,6 +1130,7 @@ function ChatBubble({
   const isUser = message.role === "user";
   const showTypingIndicator = message.pending && message.content.length === 0;
   const [copied, setCopied] = useState(false);
+  const assistantName = useCompanyContact().assistantStorefrontName;
 
   async function copyContent() {
     if (typeof navigator === "undefined" || !navigator.clipboard) return;
@@ -1166,7 +1173,7 @@ function ChatBubble({
               aria-live="polite"
             >
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>PennBot is typing…</span>
+              <span>{assistantName} is typing…</span>
             </span>
           ) : isUser ? (
             message.content

@@ -72,11 +72,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
-      // education_videos is a GLOBAL content catalog (no org_id column) —
-      // reach it via the unscoped client, not the org-scoped facade.
-      .raw()
       .schema("resupply")
       .from("education_videos")
       .select("*")
@@ -106,11 +103,8 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
-      // education_videos is a GLOBAL content catalog (no org_id column) —
-      // reach it via the unscoped client, not the org-scoped facade.
-      .raw()
       .schema("resupply")
       .from("education_videos")
       .insert({
@@ -167,11 +161,8 @@ router.patch(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
-      // education_videos is a GLOBAL content catalog (no org_id column) —
-      // reach it via the unscoped client, not the org-scoped facade.
-      .raw()
       .schema("resupply")
       .from("education_videos")
       .update(update as never)

@@ -5,7 +5,7 @@
 // `fax.auto_file_signed` feature flag is on (the ingest checks the flag;
 // this module assumes it's enabled). It:
 //
-//   1. Reads the PennFit signature-tracking code (PFS-XXXXXXXX) off the
+//   1. Reads the signature-tracking code (PFS-XXXXXXXX) off the
 //      page. A deterministic Code 128 decode (lib/inbound-fax/barcode-decode)
 //      runs FIRST — free + instant; on a miss it falls back to the
 //      BAA-covered Claude vision scan (lib/inbound-fax/tracking-scan).

@@ -10,8 +10,6 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { OrgScopedClient } from "@workspace/resupply-db";
-
 import { fetchAudienceCandidates } from "./fetch-candidates";
 
 // ── Minimal Supabase fluent-builder mock ────────────────────────────────────
@@ -32,7 +30,7 @@ function makeSupabaseMock(result: QueryResult) {
     then: (resolve: (r: QueryResult) => unknown) =>
       Promise.resolve(resolve(result)),
   };
-  return builder as unknown as OrgScopedClient;
+  return builder as unknown as import("@workspace/resupply-db").OrgScopedClient;
 }
 
 // A mock that captures filter calls so we can assert on .eq() usage.
@@ -67,7 +65,8 @@ function makeCapturingMock(result: QueryResult) {
       Promise.resolve(resolve(result)),
   };
   return {
-    client: builder as unknown as OrgScopedClient,
+    client:
+      builder as unknown as import("@workspace/resupply-db").OrgScopedClient,
     calls,
   };
 }
@@ -346,7 +345,7 @@ describe("fetchAudienceCandidates — manual_list", () => {
           }),
         );
       },
-    } as unknown as OrgScopedClient;
+    } as unknown as import("@workspace/resupply-db").OrgScopedClient;
 
     const result = await fetchAudienceCandidates(builder, {
       audienceKind: "manual_list",
@@ -394,7 +393,7 @@ describe("fetchAudienceCandidates — by_therapy_cohort", () => {
         const data = call === 1 ? opts.alertRows : opts.patientRows;
         return Promise.resolve(resolve({ data, error: null }));
       },
-    } as unknown as OrgScopedClient;
+    } as unknown as import("@workspace/resupply-db").OrgScopedClient;
     return builder;
   }
 

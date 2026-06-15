@@ -96,11 +96,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    // feature_flags is the GLOBAL flag catalog (no per-tenant rows) — read
-    // it through the unscoped client so the org filter isn't applied.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("feature_flags")
       .select(
@@ -144,12 +141,10 @@ router.patch(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
 
     // Read the prior state so the audit row carries before/after.
-    // feature_flags is the GLOBAL flag catalog — use the unscoped client.
     const { data: priorRow, error: priorErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("feature_flags")
       .select(
@@ -174,7 +169,6 @@ router.patch(
     }
 
     const { data: updated, error: updateErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("feature_flags")
       .update({
@@ -227,7 +221,6 @@ router.patch(
     });
 
     const { error: eventErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("feature_flag_events")
       .insert({
@@ -314,10 +307,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-    // feature_flag_events is global (no org_id) — use the unscoped client.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("feature_flag_events")
       .select(
@@ -327,15 +318,13 @@ router.get(
       .limit(limit);
     if (error) throw error;
 
-    const activity: ToggleActivityRow[] = (data ?? []).map(
-      (r: Database["resupply"]["Tables"]["feature_flag_events"]["Row"]) => ({
-        occurredAt: r.occurred_at,
-        operatorEmail: r.operator_email ?? null,
-        key: r.key,
-        from: r.previous_enabled,
-        to: r.next_enabled,
-      }),
-    );
+    const activity: ToggleActivityRow[] = (data ?? []).map((r) => ({
+      occurredAt: r.occurred_at,
+      operatorEmail: r.operator_email ?? null,
+      key: r.key,
+      from: r.previous_enabled,
+      to: r.next_enabled,
+    }));
     res.json({ activity });
   },
 );

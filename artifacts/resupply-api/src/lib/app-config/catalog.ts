@@ -62,6 +62,7 @@ export interface AppConfigSetting {
 }
 
 // Category labels — ordering here is the render order in the UI.
+export const CATEGORY_BRANDING = "Branding & assistants";
 export const CATEGORY_AI = "AI vendors";
 export const CATEGORY_TWILIO = "Voice & telephony (Twilio)";
 export const CATEGORY_TELNYX = "Fax (Telnyx)";
@@ -74,6 +75,33 @@ export const CATEGORY_REACT_HEALTH =
 export const CATEGORY_OFFICE_ALLY = "Clearinghouse (Office Ally)";
 
 export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
+  // ── Branding & assistants ─────────────────────────────────────────
+  // The platform is CareMetric Breathe; each DME (tenant) operates its
+  // own storefront brand on top of it. These let a tenant owner rename
+  // the two in-app AI assistants to fit their brand. Unset → the
+  // CareMetric platform defaults (see company-info.ts). The Penn Home
+  // Medical Supply tenant is seeded to "PennBot" / "PennPilot".
+  {
+    key: "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
+    label: "Storefront assistant name",
+    category: CATEGORY_BRANDING,
+    secret: false,
+    applyMode: "restart",
+    description:
+      "Display name for the customer-facing chat assistant on the storefront. Leave blank for the CareMetric default (“CareMetric Assistant”).",
+    placeholder: "CareMetric Assistant",
+  },
+  {
+    key: "RESUPPLY_ASSISTANT_ADMIN_NAME",
+    label: "Admin assistant name",
+    category: CATEGORY_BRANDING,
+    secret: false,
+    applyMode: "restart",
+    description:
+      "Display name for the in-app admin-console assistant (tech support + program manager). Leave blank for the CareMetric default (“CareMetric Copilot”).",
+    placeholder: "CareMetric Copilot",
+  },
+
   // ── AI vendors ────────────────────────────────────────────────────
   {
     key: "OPENAI_API_KEY",

@@ -90,7 +90,7 @@ export function AdminAccountSetupPage() {
       <PageHeader
         icon={ClipboardCheck}
         title="Account Setup"
-        description="Everything needed to stand up a fresh PennFit deployment. Required items check themselves off as the server detects them; operator-run steps are ticked here and remembered in this browser. Mirrors the production-launch runbook."
+        description="Everything needed to stand up a fresh CareMetric Breathe deployment. Required items check themselves off as the server detects them; operator-run steps are ticked here and remembered in this browser. Mirrors the production-launch runbook."
       />
 
       {query.isPending ? (

@@ -38,6 +38,7 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   getOrgScopedClient,
   type CommunicationPreferences,
+  type Database,
 } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -83,8 +84,9 @@ router.post(
       .limit(SCAN_LIMIT);
     if (candidatesErr) throw candidatesErr;
 
-    const candidateIds = (candidates ?? []).map(
-      (r: { id: string; customer_id: string | null }) => r.id,
+    type ShopOrderRow = Database["resupply"]["Tables"]["shop_orders"]["Row"];
+    const candidateIds = ((candidates ?? []) as ShopOrderRow[]).map(
+      (r) => r.id,
     );
     if (candidateIds.length === 0) {
       res.json({
@@ -109,14 +111,9 @@ router.post(
       .select("id, customer_id");
     if (claimErr) throw claimErr;
 
-    const claimed = (claimedRows ?? []).filter(
-      (r: {
-        id: string;
-        customer_id: string | null;
-      }): r is {
-        id: string;
-        customer_id: string;
-      } => r.customer_id !== null,
+    const claimed = ((claimedRows ?? []) as ShopOrderRow[]).filter(
+      (r): r is ShopOrderRow & { customer_id: string } =>
+        r.customer_id !== null,
     );
 
     if (claimed.length === 0) {
@@ -131,58 +128,41 @@ router.post(
     }
 
     // Batch-fetch comm prefs for every claimed user.
-    const userIds = Array.from(
-      new Set(
-        claimed.map((r: { id: string; customer_id: string }) => r.customer_id),
-      ),
-    );
+    const userIds = Array.from(new Set(claimed.map((r) => r.customer_id)));
     const { data: customerRows, error: customersErr } = await supabase
       .from("shop_customers")
       .select("customer_id, email_lower, communication_preferences")
       .in("customer_id", userIds);
     if (customersErr) throw customersErr;
-    const customerMap = new Map<
-      string,
-      { email: string | null; prefs: CommunicationPreferences }
-    >(
-      (customerRows ?? []).map(
-        (r: {
-          customer_id: string;
-          email_lower: string | null;
-          communication_preferences: unknown;
-        }): [
-          string,
-          { email: string | null; prefs: CommunicationPreferences },
-        ] => [
-          r.customer_id,
-          {
-            email: r.email_lower,
-            prefs: {
-              ...DEFAULT_COMMUNICATION_PREFERENCES,
-              ...((r.communication_preferences as CommunicationPreferences | null) ??
-                {}),
-            },
+    type ShopCustomerRow =
+      Database["resupply"]["Tables"]["shop_customers"]["Row"];
+    const customerMap = new Map(
+      ((customerRows ?? []) as ShopCustomerRow[]).map((r) => [
+        r.customer_id,
+        {
+          email: r.email_lower,
+          prefs: {
+            ...DEFAULT_COMMUNICATION_PREFERENCES,
+            ...((r.communication_preferences as CommunicationPreferences | null) ??
+              {}),
           },
-        ],
-      ),
+        },
+      ]),
     );
 
     // For each claimed order, look up its first product so we can
     // link the customer somewhere meaningful. One query for the whole
     // batch.
-    const claimedOrderIds = claimed.map(
-      (c: { id: string; customer_id: string }) => c.id,
-    );
+    const claimedOrderIds = claimed.map((c) => c.id);
     const { data: itemRows, error: itemsErr } = await supabase
       .from("shop_order_items")
       .select("order_id, product_id")
       .in("order_id", claimedOrderIds);
     if (itemsErr) throw itemsErr;
+    type ShopOrderItemRow =
+      Database["resupply"]["Tables"]["shop_order_items"]["Row"];
     const firstProductByOrder = new Map<string, string>();
-    for (const it of (itemRows ?? []) as Array<{
-      order_id: string;
-      product_id: string;
-    }>) {
+    for (const it of (itemRows ?? []) as ShopOrderItemRow[]) {
       // First (oldest) line item per order wins. We don't bother
       // sorting since we just need any product to link to.
       if (!firstProductByOrder.has(it.order_id)) {

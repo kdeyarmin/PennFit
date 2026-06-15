@@ -1,4 +1,9 @@
-# Multi-Tenant SaaS Strategy: Leasing PennFit under the CareMetric AI Brand
+# Multi-Tenant SaaS Strategy: Leasing the platform under the CareMetric Breathe brand
+
+> **Naming update (2026-06-15):** The platform/parent product is
+> **CareMetric Breathe** (`PennFit` is the repo codename; **PennPaps** /
+> Penn Home Medical Supply is one tenant). Where this doc says "CareMetric
+> AI Resupply", read it as the resupply module of **CareMetric Breathe**.
 
 **Date:** 2026-06-14
 **Status:** Strategy / direction-setting (no code committed yet)

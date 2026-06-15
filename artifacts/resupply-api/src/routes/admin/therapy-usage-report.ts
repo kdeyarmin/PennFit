@@ -243,10 +243,7 @@ async function buildGroupingMap(
         .not("provider_id", "is", null)
         .in("patient_id", chunk);
       if (rxErr) throw rxErr;
-      for (const r of (rxData ?? []) as Array<{
-        patient_id: string;
-        provider_id: string | null;
-      }>) {
+      for (const r of rxData ?? []) {
         if (!r.provider_id) continue;
         let set = providerIdsByPatient.get(r.patient_id);
         if (!set) {
@@ -260,20 +257,16 @@ async function buildGroupingMap(
 
     const providerById = new Map<string, GroupRef>();
     for (const chunk of chunkIds([...providerIds])) {
+      // providers is not org-scoped (shared prescriber directory) —
+      // read it through the unscoped client.
       const { data: provData, error: provErr } = await supabase
-        // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
         .raw()
         .schema("resupply")
         .from("providers")
         .select("id, legal_name, npi, practice_name")
         .in("id", chunk);
       if (provErr) throw provErr;
-      for (const p of (provData ?? []) as Array<{
-        id: string;
-        legal_name: string | null;
-        npi: string | null;
-        practice_name: string | null;
-      }>) {
+      for (const p of provData ?? []) {
         const sublabel = [p.npi ? `NPI ${p.npi}` : null, p.practice_name]
           .filter(Boolean)
           .join(" · ");
@@ -306,10 +299,7 @@ async function buildGroupingMap(
       .in("patient_id", chunk);
     if (eqErr) throw eqErr;
 
-    for (const e of (eqData ?? []) as Array<{
-      patient_id: string;
-      manufacturer: string | null;
-    }>) {
+    for (const e of eqData ?? []) {
       if (!e.manufacturer) continue;
       const label = e.manufacturer.trim();
       if (!label) continue;

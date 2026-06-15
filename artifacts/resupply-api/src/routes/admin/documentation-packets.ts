@@ -27,6 +27,12 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+type SleepStudyRow = Database["resupply"]["Tables"]["sleep_studies"]["Row"];
+type PrescriptionRow = Database["resupply"]["Tables"]["prescriptions"]["Row"];
+type TherapyNightRow =
+  Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"];
+type DwoDocumentRow = Database["resupply"]["Tables"]["dwo_documents"]["Row"];
+
 const idParam = z.object({ id: z.string().uuid() });
 
 const body = z
@@ -130,27 +136,26 @@ router.post(
 
     // Sleep studies summary.
     if (b.includeSleepStudyIds.length > 0) {
-      const { data: studies } = await supabase
+      const { data: studiesData } = await supabase
         .from("sleep_studies")
         .select(
           "id, study_date, study_type, ahi, rdi, lowest_spo2_pct, diagnosis_icd10, facility_name",
         )
         .in("id", b.includeSleepStudyIds)
         .eq("patient_id", idParsed.data.id);
-      const studyRows = (studies ??
-        []) as Database["resupply"]["Tables"]["sleep_studies"]["Row"][];
+      const studies = (studiesData ?? []) as SleepStudyRow[];
       sections.push({
         title: "Sleep Study Records",
         paragraphs: [
-          `The following sleep studies are included with this packet (${studyRows.length} record${
-            studyRows.length === 1 ? "" : "s"
+          `The following sleep studies are included with this packet (${studies?.length ?? 0} record${
+            (studies?.length ?? 0) === 1 ? "" : "s"
           }).`,
         ],
-        bullets: studyRows.map(
+        bullets: (studies ?? []).map(
           (s) =>
             `${s.study_date} — ${s.study_type.toUpperCase()} ${s.facility_name ?? ""}: AHI ${s.ahi}${s.rdi ? `, RDI ${s.rdi}` : ""}${s.lowest_spo2_pct ? `, low SpO2 ${s.lowest_spo2_pct}%` : ""} (${s.diagnosis_icd10 ?? "no dx"})`,
         ),
-        attachments: studyRows.map((s) => ({
+        attachments: (studies ?? []).map((s) => ({
           name: `Sleep study ${s.study_date}`,
           objectKey: null,
         })),
@@ -159,19 +164,18 @@ router.post(
 
     // Prescription summary.
     if (b.includePrescriptionIds.length > 0) {
-      const { data: rxs } = await supabase
+      const { data: rxsData } = await supabase
         .from("prescriptions")
         .select(
           "id, hcpcs_code, item_sku, valid_from, valid_until, status, provider_id",
         )
         .in("id", b.includePrescriptionIds)
         .eq("patient_id", idParsed.data.id);
-      const rxRows = (rxs ??
-        []) as Database["resupply"]["Tables"]["prescriptions"]["Row"][];
+      const rxs = (rxsData ?? []) as PrescriptionRow[];
       sections.push({
         title: "Prescriptions",
-        paragraphs: [`Active prescriptions on file (${rxRows.length}).`],
-        bullets: rxRows.map(
+        paragraphs: [`Active prescriptions on file (${rxs?.length ?? 0}).`],
+        bullets: (rxs ?? []).map(
           (r) =>
             `${r.hcpcs_code ?? r.item_sku} — valid ${r.valid_from}${r.valid_until ? ` – ${r.valid_until}` : ""} (${r.status})`,
         ),
@@ -185,17 +189,14 @@ router.post(
       )
         .toISOString()
         .slice(0, 10);
-      const { data: nights } = await supabase
+      const { data: nightsData } = await supabase
         .from("patient_therapy_nights")
         .select("usage_minutes, night_date")
         .eq("patient_id", idParsed.data.id)
         .gte("night_date", since)
         .limit(180);
-      const nightRows = (nights ?? []) as Array<{
-        usage_minutes: number | null;
-        night_date: string;
-      }>;
-      const withData = nightRows.filter((n) => n.usage_minutes !== null);
+      const nights = (nightsData ?? []) as TherapyNightRow[];
+      const withData = nights.filter((n) => n.usage_minutes !== null);
       const compliantNights = withData.filter(
         (n) => (n.usage_minutes ?? 0) >= 240,
       ).length;
@@ -223,17 +224,16 @@ router.post(
 
     // DWO summary.
     if (b.includeDwoDocumentIds.length > 0) {
-      const { data: dwos } = await supabase
+      const { data: dwosData } = await supabase
         .from("dwo_documents")
         .select("id, hcpcs_family, form_type, signed_on, expires_on")
         .in("id", b.includeDwoDocumentIds)
         .eq("patient_id", idParsed.data.id);
-      const dwoRows = (dwos ??
-        []) as Database["resupply"]["Tables"]["dwo_documents"]["Row"][];
+      const dwos = (dwosData ?? []) as DwoDocumentRow[];
       sections.push({
         title: "DWO / CMN Documents",
-        paragraphs: [`DWO / CMN documents on file (${dwoRows.length}).`],
-        bullets: dwoRows.map(
+        paragraphs: [`DWO / CMN documents on file (${dwos?.length ?? 0}).`],
+        bullets: (dwos ?? []).map(
           (d) =>
             `${d.form_type.toUpperCase()} for ${d.hcpcs_family} — signed ${d.signed_on}, expires ${d.expires_on}`,
         ),

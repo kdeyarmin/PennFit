@@ -141,7 +141,7 @@ export function demoMaskCatalog(): MaskCatalogResponse {
 }
 
 const DEMO_DISCLAIMER =
-  "These recommendations are generated from the measurements and answers you provided and are for guidance only. A PennFit specialist will confirm sizing before your order ships. This is a demonstration — no real order is placed.";
+  "These recommendations are generated from the measurements and answers you provided and are for guidance only. A CareMetric Breathe specialist will confirm sizing before your order ships. This is a demonstration — no real order is placed.";
 
 export function demoRecommendation(): RecommendationResponse {
   const top: MaskRecommendation[] = [

@@ -151,11 +151,6 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const bodyParse = uploadUrlBody.safeParse(req.body);
     if (!bodyParse.success) {
       res.status(400).json({
@@ -180,7 +175,11 @@ router.post(
       return;
     }
 
-    const order = await findOrder(orgId, idParse.data);
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const order = await findOrder(req.orgId, idParse.data);
     if (!order) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -233,11 +232,6 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const bodyParse = finalizeBody.safeParse(req.body);
     if (!bodyParse.success) {
       res.status(400).json({
@@ -262,7 +256,11 @@ router.post(
       return;
     }
 
-    const order = await findOrder(orgId, idParse.data);
+    if (!req.orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const order = await findOrder(req.orgId, idParse.data);
     if (!order) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -360,6 +358,11 @@ router.post(
     // Persist BEFORE the previous-bytes cleanup, so the row points
     // at the new object if cleanup fails (avoids a dangling row).
     const previousObjectKey = order.podObjectKey;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const { error: updateErr } = await supabase
       .from("shop_orders")
@@ -422,12 +425,11 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
+    if (!req.orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const order = await findOrder(orgId, idParse.data);
+    const order = await findOrder(req.orgId, idParse.data);
     if (!order || !order.podObjectKey) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -504,12 +506,11 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
+    if (!req.orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const order = await findOrder(orgId, idParse.data);
+    const order = await findOrder(req.orgId, idParse.data);
     if (!order) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -535,6 +536,11 @@ router.delete(
       }
     }
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const { error: clearErr } = await supabase
       .from("shop_orders")

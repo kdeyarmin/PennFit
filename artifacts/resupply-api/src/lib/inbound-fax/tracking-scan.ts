@@ -1,4 +1,4 @@
-// Inbound-fax barcode scan — read the PennFit signature-tracking code off
+// Inbound-fax barcode scan — read the signature-tracking code off
 // a returned fax so it can be auto-filed.
 //
 // Every document we send out for a provider signature is stamped with a
@@ -59,7 +59,7 @@ export const TRACKING_SCAN_PDF_TYPE = "application/pdf";
  *  the OCR cap. A larger fax is unusual; it falls through to hand triage. */
 export const TRACKING_SCAN_MAX_BYTES = 8 * 1024 * 1024;
 
-/** The model's reply when the page carries no PennFit code. */
+/** The model's reply when the page carries no tracking code. */
 const NONE_SENTINEL = "NONE";
 
 export type TrackingScanResult =
@@ -71,34 +71,37 @@ export type TrackingScanResult =
 
 const SYSTEM_PROMPT =
   "You are reading a single inbound fax to find one specific tracking " +
-  "code. PennFit prints a signature-tracking stamp in the top-right " +
+  "code. Our system prints a signature-tracking stamp in the top-right " +
   "corner of every document it sends out for signature: a small barcode " +
   'with the caption "SIGNATURE TRACKING" and, directly below the bars, a ' +
-  'human-readable code of the form "PFS-" followed by exactly 8 ' +
-  "uppercase letters or digits (for example PFS-7F3K2Q9X). Report ONLY " +
-  "that code. Do not transcribe anything else on the page. If the page " +
-  "has no such PFS- code, the code is unreadable, or you are unsure, " +
-  'reply with exactly "NONE". Never guess or invent characters.';
+  'human-readable code of the form "CMB-" (older documents use "PFS-") ' +
+  "followed by exactly 8 uppercase letters or digits (for example " +
+  "CMB-7F3K2Q9X). Report ONLY that code. Do not transcribe anything else " +
+  "on the page. If the page has no such code, the code is unreadable, or " +
+  'you are unsure, reply with exactly "NONE". Never guess or invent ' +
+  "characters.";
 
 const USER_PROMPT =
-  "What is the PennFit signature-tracking code (PFS-XXXXXXXX) on this " +
-  'fax? Reply with ONLY the code, or exactly "NONE" if there isn\'t one.';
+  "What is the signature-tracking code (CMB-XXXXXXXX, or an older " +
+  "PFS-XXXXXXXX) on this fax? Reply with ONLY the code, or exactly " +
+  '"NONE" if there isn\'t one.';
 
-/** Pull the first PFS-style token out of the model's reply. The model is
- *  asked to return only the code, but it occasionally wraps it in a
- *  sentence; this grabs the token regardless. Returns the raw token (not
- *  yet normalised/validated) or null. */
+/** Pull the first tracking-code token out of the model's reply. The model
+ *  is asked to return only the code, but it occasionally wraps it in a
+ *  sentence; this grabs the token regardless. Accepts the current CMB-
+ *  prefix and the legacy PFS-. Returns the raw token (not yet
+ *  normalised/validated) or null. */
 function extractCodeToken(text: string): string | null {
   const trimmed = text.trim();
   if (trimmed.toUpperCase() === NONE_SENTINEL) return null;
-  // PFS, optional separator/space, then the body — tolerant of how the
-  // model renders it; normalizeTrackingCode tightens it afterwards.
-  const m = trimmed.match(/PFS[\s-]*[A-Za-z0-9]{6,12}/);
+  // CMB / PFS, optional separator/space, then the body — tolerant of how
+  // the model renders it; normalizeTrackingCode tightens it afterwards.
+  const m = trimmed.match(/(?:CMB|PFS)[\s-]*[A-Za-z0-9]{6,12}/);
   return m ? m[0] : null;
 }
 
 /**
- * Scan one fax's media bytes for the PennFit tracking code. Pure of the
+ * Scan one fax's media bytes for the tracking code. Pure of the
  * DB and HTTP layers — the caller fetches the bytes and acts on the
  * result. Never throws.
  */

@@ -449,7 +449,7 @@ router.post(
 
 // POST /admin/inbound-faxes/:id/auto-file — manually run the barcode
 // auto-file on a fax's stored media: the SAME routine the ingest runs on
-// arrival when `fax.auto_file_signed` is on (read the PennFit tracking
+// arrival when `fax.auto_file_signed` is on (read the tracking
 // code, file to the patient chart, mark the signature returned, release
 // the bill hold). Lets a CSR process the backlog after enabling the flag,
 // retry a transient failure, or file a fax that arrived while the flag was

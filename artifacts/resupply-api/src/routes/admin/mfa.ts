@@ -126,14 +126,11 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device: pull EVERY row for this admin so the SPA can
     // render the device list (one row per enrolled device, plus any
     // in-progress unverified row).
-    // admin_mfa_secrets / admin_mfa_recovery_codes are auth-adjacent
-    // global tables (keyed by staff_user_id, NO org_id) — use raw().
     const { data: rows, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, verified_at, last_used_at, created_at, device_label")
@@ -147,7 +144,6 @@ router.get(
     let recoveryCodesRemaining = 0;
     if (verifiedRows.length > 0) {
       const { count } = await supabase
-        .raw()
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
         .select("id", { count: "exact", head: true })
@@ -223,15 +219,13 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device (migration 0091): admins can enroll multiple
     // devices. We DO still consolidate any in-progress unverified
     // row — if the admin clicked "begin" twice without finishing,
     // the second click overwrites the abandoned row rather than
     // accumulating draft rows.
-    // admin_mfa_secrets is a global auth table (no org_id) — raw().
     const { data: existingInProgress, error: existingErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id")
@@ -256,7 +250,6 @@ router.post(
     const nowIso = new Date().toISOString();
     if (existingInProgress) {
       const { error: updErr } = await supabase
-        .raw()
         .schema("resupply")
         .from("admin_mfa_secrets")
         .update({
@@ -268,7 +261,6 @@ router.post(
       if (updErr) throw updErr;
     } else {
       const { error: insErr } = await supabase
-        .raw()
         .schema("resupply")
         .from("admin_mfa_secrets")
         .insert({
@@ -344,12 +336,11 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
 
     // Multi-device: the in-progress enrollment is the most recent
     // unverified row (created or refreshed by /begin). Pick that.
     const { data: row, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter")
@@ -402,7 +393,6 @@ router.post(
     // scoped. Detect "is this the first verified row across all
     // of the admin's enrollments?" by counting prior verified rows.
     const { count: priorVerifiedCount } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id", { count: "exact", head: true })
@@ -411,7 +401,6 @@ router.post(
     const isFirstVerify = (priorVerifiedCount ?? 0) === 0;
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .update({
@@ -437,7 +426,6 @@ router.post(
       // Defensive: wipe any stale rows from a previous enrollment
       // (shouldn't exist — disable cleans them — but cheap safety).
       const { error: delStaleErr } = await supabase
-        .raw()
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
         .delete()
@@ -450,7 +438,6 @@ router.post(
       }
       const batch = generateRecoveryCodes();
       const { error: insErr } = await supabase
-        .raw()
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
         .insert(
@@ -528,13 +515,12 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device: pull ALL verified secrets and accept any code
     // that matches. A user disabling MFA after losing one device
     // shouldn't have to know WHICH device is still working — they
     // just type a code.
     const { data: rows, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter")
@@ -569,7 +555,6 @@ router.post(
     const row = { id: rows[0]!.id } as { id: string };
 
     const { error: delErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .delete()
@@ -581,7 +566,6 @@ router.post(
     // refuses on `mfa_not_enrolled` first), but leaving them in the
     // table inflates the table and confuses the audit picture.
     const { error: delCodesErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_recovery_codes")
       .delete()
@@ -649,9 +633,8 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: rows, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter, device_label")
@@ -710,7 +693,6 @@ router.post(
     // before delete so a partial failure doesn't leave the code reusable.
     if (authDevice.id !== target.id) {
       const { error: burnErr } = await supabase
-        .raw()
         .schema("resupply")
         .from("admin_mfa_secrets")
         .update({ last_used_at: nowIso, last_used_counter: authDevice.counter })
@@ -718,7 +700,6 @@ router.post(
       if (burnErr) throw burnErr;
     }
     const { error: delErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .delete()
@@ -780,7 +761,7 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device (mig 0091): pull ALL verified secrets and accept a
     // code from ANY enrolled device — same posture as /disable above.
     // The previous unordered `.limit(1).maybeSingle()` with no
@@ -788,7 +769,6 @@ router.post(
     // enrollment row, 404ing a legitimately-enrolled admin (or
     // validating the code against the wrong device's secret).
     const { data: rows, error } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter")
@@ -828,7 +808,6 @@ router.post(
     // can't be replayed against /disable. Fail closed — a silently
     // failed burn would leave the code replayable.
     const { error: burnErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_secrets")
       .update({
@@ -844,7 +823,6 @@ router.post(
     // Keeping the used rows around after a regenerate would
     // confuse the "codes remaining" badge in /admin/security.
     const { error: delErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_recovery_codes")
       .delete()
@@ -853,7 +831,6 @@ router.post(
 
     const batch = generateRecoveryCodes();
     const { error: insErr } = await supabase
-      .raw()
       .schema("resupply")
       .from("admin_mfa_recovery_codes")
       .insert(

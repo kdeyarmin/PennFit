@@ -160,7 +160,7 @@ router.post(
       return;
     }
     const summary = await runStatementBatchSend(
-      orgId,
+      getOrgScopedClient(orgId),
       { cap: parsed.data.cap ?? 50 },
       { signPdfUrl },
     );

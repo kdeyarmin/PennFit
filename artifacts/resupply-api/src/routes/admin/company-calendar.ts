@@ -40,6 +40,9 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 type CalendarUpdate =
   Database["resupply"]["Tables"]["company_calendar_events"]["Update"];
+type CalendarRow =
+  Database["resupply"]["Tables"]["company_calendar_events"]["Row"];
+type PatientRow = Database["resupply"]["Tables"]["patients"]["Row"];
 
 const router: IRouter = Router();
 
@@ -185,15 +188,13 @@ router.get(
       .order("starts_at", { ascending: true })
       .limit(1000);
     if (error) throw error;
-    const rows = data ?? [];
+    const rows = (data ?? []) as CalendarRow[];
 
     // Resolve patient names in a single batched lookup (two-step fetch —
     // the repo standard; we don't embed PostgREST relations). Resolving at
     // read time keeps `patients` the single source of truth, so a rename
     // shows up on the calendar immediately.
-    const patientIds = [
-      ...new Set(rows.map((r: { patient_id: string }) => r.patient_id)),
-    ];
+    const patientIds = [...new Set(rows.map((r) => r.patient_id))];
     const patientsById = new Map<
       string,
       { firstName: string; lastName: string }
@@ -204,11 +205,7 @@ router.get(
         .select("id, legal_first_name, legal_last_name")
         .in("id", patientIds);
       if (pErr) throw pErr;
-      for (const p of (patients ?? []) as Array<{
-        id: string;
-        legal_first_name: string;
-        legal_last_name: string;
-      }>) {
+      for (const p of (patients ?? []) as PatientRow[]) {
         patientsById.set(p.id, {
           firstName: p.legal_first_name,
           lastName: p.legal_last_name,
@@ -217,31 +214,27 @@ router.get(
     }
 
     res.json({
-      events: rows.map(
-        (
-          r: Database["resupply"]["Tables"]["company_calendar_events"]["Row"],
-        ) => {
-          const pt = patientsById.get(r.patient_id);
-          return {
-            id: r.id,
-            patientId: r.patient_id,
-            patientFirstName: pt?.firstName ?? null,
-            patientLastName: pt?.lastName ?? null,
-            eventType: r.event_type,
-            status: r.status,
-            startsAt: r.starts_at,
-            endsAt: r.ends_at,
-            location: r.location,
-            notes: r.notes,
-            createdByUserId: r.created_by_user_id,
-            createdByEmail: r.created_by_email,
-            assignedToUserId: r.assigned_to_user_id,
-            assignedToEmail: r.assigned_to_email,
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          };
-        },
-      ),
+      events: rows.map((r) => {
+        const pt = patientsById.get(r.patient_id);
+        return {
+          id: r.id,
+          patientId: r.patient_id,
+          patientFirstName: pt?.firstName ?? null,
+          patientLastName: pt?.lastName ?? null,
+          eventType: r.event_type,
+          status: r.status,
+          startsAt: r.starts_at,
+          endsAt: r.ends_at,
+          location: r.location,
+          notes: r.notes,
+          createdByUserId: r.created_by_user_id,
+          createdByEmail: r.created_by_email,
+          assignedToUserId: r.assigned_to_user_id,
+          assignedToEmail: r.assigned_to_email,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        };
+      }),
     });
   },
 );
@@ -267,7 +260,7 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const staff = await listAssignableStaff(supabase.raw());
+    const staff = await listAssignableStaff(supabase);
     res.json({ staff });
   },
 );
@@ -302,7 +295,7 @@ router.post(
     let assignee: AssignableStaff | null = null;
     if (parsed.data.assignedToUserId) {
       assignee = await resolveAssignableStaff(
-        supabase.raw(),
+        supabase,
         parsed.data.assignedToUserId,
       );
       if (!assignee) {
@@ -378,14 +371,13 @@ router.patch(
       parsed.data.startsAt != null ||
       parsed.data.endsAt != null ||
       parsed.data.assignedToUserId !== undefined;
-    type ExistingCalendarEvent = {
+    let existing: {
       event_type: string;
       starts_at: string;
       ends_at: string;
       location: string | null;
       assigned_to_user_id: string | null;
-    };
-    let existing: ExistingCalendarEvent | null = null;
+    } | null = null;
     if (needsExisting) {
       const { data, error: fetchErr } = await supabase
         .from("company_calendar_events")
@@ -397,7 +389,7 @@ router.patch(
         res.status(404).json({ error: "not_found" });
         return;
       }
-      existing = data as unknown as ExistingCalendarEvent;
+      existing = data;
     }
 
     // Validate the effective time range (incoming side(s) merged with the
@@ -450,7 +442,7 @@ router.patch(
         // left the active roster) and don't re-email.
       } else {
         const assignee = await resolveAssignableStaff(
-          supabase.raw(),
+          supabase,
           parsed.data.assignedToUserId,
         );
         if (!assignee) {

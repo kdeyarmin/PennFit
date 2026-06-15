@@ -53,11 +53,11 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import busboy from "busboy";
 
 import {
-  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
   resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
-  type OrgScopedClient,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -203,15 +203,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     return;
   }
 
-  // Public webhook: there is no req.orgId. Resolve the seed org
-  // (single-tenant posture) and ACK 200 if it can't be resolved so
-  // SendGrid stops retrying (a 5xx would trigger a retry storm).
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    res.status(200).json({ ok: true });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
+  const supabase = getSupabaseServiceRoleClient();
 
   // Case-insensitive email match. Patients' emails aren't normalized
   // at insert time, so compare via .ilike() with LIKE-metachar
@@ -220,6 +212,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // between accounts) and bail rather than mis-routing PHI.
   const escapedEmail = fromEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: lookupRows, error: lookupErr } = await supabase
+    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapedEmail)
@@ -275,6 +268,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // patient's most recent episode.
   let conversationId: string | null;
   const { data: openConv, error: openConvErr } = await supabase
+    .schema("resupply")
     .from("conversations")
     .select("id")
     .eq("patient_id", patientId)
@@ -288,6 +282,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     conversationId = openConv.id;
   } else {
     const { data: recentEp, error: epErr } = await supabase
+      .schema("resupply")
       .from("episodes")
       .select("id")
       .eq("patient_id", patientId)
@@ -315,6 +310,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       return;
     }
     const { data: inserted, error: insertConvErr } = await supabase
+      .schema("resupply")
       .from("conversations")
       .insert({
         patient_id: patientId,
@@ -345,6 +341,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 
   const inboundIso = inboundAt.toISOString();
   const { data: insertedMsg, error: insertMsgErr } = await supabase
+    .schema("resupply")
     .from("messages")
     .insert({
       conversation_id: conversationId,
@@ -365,6 +362,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   if (insertMsgErr) throw insertMsgErr;
   const inboundMessageId = insertedMsg?.id ?? null;
   const { error: stampConvErr } = await supabase
+    .schema("resupply")
     .from("conversations")
     .update({ last_message_at: inboundIso, updated_at: inboundIso })
     .eq("id", conversationId);
@@ -426,16 +424,16 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     });
   }
 
-  // 8. Refresh latest-message projection (best-effort). The projection
-  // helper is a shared db helper typed for the raw service-role client;
-  // pass the unscoped client (`.raw()`) per cutover §B.
+  // 8. Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessageSb(
-    supabase.raw(),
+    supabase,
     {
       conversationId,
       body,
       direction: "inbound",
       messageAt: inboundAt,
+      // Inbound webhook (no auth tenant context): seed-org bridge.
+      orgId: (await resolveSeedOrgId()) ?? undefined,
     },
     req.log,
   );
@@ -492,6 +490,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // awaiting_admin so a teammate sees the reply in the inbox.
   const nextStatus = autoReplied ? "awaiting_patient" : "awaiting_admin";
   const { error: statusErr } = await supabase
+    .schema("resupply")
     .from("conversations")
     .update({ status: nextStatus, updated_at: inboundIso })
     .eq("id", conversationId);
@@ -524,7 +523,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 interface AttemptEmailAutoReplyInput {
-  supabase: OrgScopedClient;
+  supabase: ResupplySupabaseClient;
   conversationId: string;
   patientId: string;
   /** Patient's email address (the inbound `From`) — where the reply goes. */
@@ -590,9 +589,7 @@ async function attemptEmailAutoReply(
   // auto-reply existed.
   if (rfcMessageId) {
     const msgIdClaim = await claimDedupKey(
-      // claimDedupKey is a shared helper typed for the raw service-role
-      // client (worker_dedup_keys is its own table); pass `.raw()`.
-      supabase.raw(),
+      supabase,
       `email-auto-reply:msgid:${sha256Hex(rfcMessageId)}`,
       new Date(Date.now() + AUTO_REPLY_MSGID_TTL_MS).toISOString(),
     );
@@ -611,7 +608,7 @@ async function attemptEmailAutoReply(
   }
   const bucket = Math.floor(Date.now() / AUTO_REPLY_SENDER_BUCKET_MS);
   const senderClaim = await claimDedupKey(
-    supabase.raw(),
+    supabase,
     `email-auto-reply:sender:${sha256Hex(toEmail.toLowerCase())}:${bucket}`,
     new Date((bucket + 2) * AUTO_REPLY_SENDER_BUCKET_MS).toISOString(),
   );
@@ -632,20 +629,14 @@ async function attemptEmailAutoReply(
   // row we just inserted (its body is passed separately as the message to
   // reply to). Oldest-first after the reverse.
   const { data: recent, error: recentErr } = await supabase
+    .schema("resupply")
     .from("messages")
     .select("id, direction, body, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(7);
   if (recentErr) throw recentErr;
-  const thread = (
-    (recent ?? []) as Array<{
-      id: string;
-      direction: string;
-      body: string | null;
-      created_at: string;
-    }>
-  )
+  const thread = (recent ?? [])
     .slice()
     .reverse()
     .filter((m) => m.id !== inboundMessageId && m.body !== null)
@@ -724,6 +715,7 @@ async function attemptEmailAutoReply(
   const sentIso = sentAt.toISOString();
   let outboundMessageId: string | null = null;
   const { data: outMsg, error: outErr } = await supabase
+    .schema("resupply")
     .from("messages")
     .insert({
       conversation_id: conversationId,
@@ -755,11 +747,13 @@ async function attemptEmailAutoReply(
   }
 
   // Refresh the latest-message projection for the outbound (best-effort).
-  await tryUpsertPatientLatestMessageSb(supabase.raw(), {
+  await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body: drafted.reply,
     direction: "outbound",
     messageAt: sentAt,
+    // Inbound webhook (no auth tenant context): seed-org bridge.
+    orgId: (await resolveSeedOrgId()) ?? undefined,
   });
 
   await safeAudit({

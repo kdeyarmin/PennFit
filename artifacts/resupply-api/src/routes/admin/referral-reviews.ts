@@ -39,6 +39,7 @@ import {
   type Database,
   type Json,
   getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { timezoneForUsState } from "@workspace/resupply-domain";
 
@@ -252,14 +253,13 @@ async function uploadChartPdf(
  *  Phone matches exactly; DOB+last-name catches a patient whose phone
  *  changed. Capped small — this is a warning, not a search. */
 async function findDuplicateCandidates(
-  orgId: string,
+  supabase: OrgScopedClient,
   input: {
     phoneE164: string | null;
     dateOfBirth: string | null;
     lastName: string | null;
   },
 ) {
-  const supabase = getOrgScopedClient(orgId);
   const seen = new Set<string>();
   const candidates: Array<{
     id: string;
@@ -716,7 +716,7 @@ router.get(
       typeof patient.lastName === "string" && patient.lastName.trim()
         ? patient.lastName.trim()
         : null;
-    const candidates = await findDuplicateCandidates(orgId, {
+    const candidates = await findDuplicateCandidates(supabase, {
       phoneE164: phone,
       dateOfBirth: dob,
       lastName,
@@ -776,7 +776,7 @@ router.post(
     // Duplicate guard on the EDITED (human-confirmed) values, not the
     // raw extraction — the reviewer may have corrected a misread phone.
     if (!body.confirmDuplicateOverride) {
-      const candidates = await findDuplicateCandidates(orgId, {
+      const candidates = await findDuplicateCandidates(supabase, {
         phoneE164: body.patient.phoneE164 ?? null,
         dateOfBirth: body.patient.dateOfBirth,
         lastName: body.patient.legalLastName,

@@ -73,7 +73,7 @@ const AUTO_FILE_TEXT: Record<
   },
   no_code: {
     tone: "muted",
-    label: "No PennFit tracking barcode was found on this fax.",
+    label: "No CareMetric Breathe tracking barcode was found on this fax.",
   },
   failed: {
     tone: "warn",
@@ -177,8 +177,8 @@ function BarcodeAutoFilePanel({
         </Button>
       </div>
       <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-        Reads the PennFit tracking barcode and, on a match, files this fax to
-        the patient chart and marks the signature returned.
+        Reads the CareMetric Breathe tracking barcode and, on a match, files
+        this fax to the patient chart and marks the signature returned.
       </p>
       {run.isError && (
         <p className="text-xs text-rose-700">

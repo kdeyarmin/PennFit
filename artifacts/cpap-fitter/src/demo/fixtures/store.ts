@@ -170,7 +170,7 @@ export const demoStore = {
       id: `${id}-reply`,
       direction: "inbound",
       senderRole: "agent",
-      body: "Thanks for reaching out! A PennFit specialist will follow up shortly. (This is a demo reply.)",
+      body: "Thanks for reaching out! A CareMetric Breathe specialist will follow up shortly. (This is a demo reply.)",
       createdAt: new Date(Date.now() + 1500).toISOString(),
       deliveryStatus: "delivered",
     });

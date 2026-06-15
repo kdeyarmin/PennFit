@@ -12,8 +12,6 @@ import type {
   ShopCustomerCandidate,
 } from "./resolve-audience";
 
-type SupabaseClient = OrgScopedClient;
-
 export type AudienceKind =
   | "all_active_shop_customers"
   | "all_active_patients"
@@ -68,7 +66,7 @@ const BATCH = 1000;
  * @throws The first Supabase error encountered when a query fails.
  */
 export async function fetchAudienceCandidates(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   input: FetchCandidatesInput,
 ): Promise<FetchCandidatesResult> {
   const shopCandidates: ShopCustomerCandidate[] = [];

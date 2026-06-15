@@ -35,9 +35,8 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getOrgScopedClient,
-  type OrgScopedClient,
   type Database,
+  getOrgScopedClient,
   type ShopReturnStatus,
 } from "@workspace/resupply-db";
 
@@ -166,10 +165,11 @@ function sanitizeStripeFailureReason(err: unknown): string {
  * catch and is logged structurally without blocking the response.
  */
 async function resolveCustomerEmailForReturn(
-  supabase: OrgScopedClient,
+  orgId: string,
   customerId: string | null,
   orderId: string,
 ): Promise<string | null> {
+  const supabase = getOrgScopedClient(orgId);
   if (customerId) {
     const { data, error } = await supabase
       .from("shop_customers")
@@ -379,7 +379,7 @@ router.post(
     // committed.
     void (async () => {
       const toEmail = await resolveCustomerEmailForReturn(
-        supabase,
+        orgId,
         updated.customer_id,
         updated.order_id,
       );
@@ -810,7 +810,7 @@ router.post(
     // approve handler above — never blocks the response.
     void (async () => {
       const toEmail = await resolveCustomerEmailForReturn(
-        supabase,
+        orgId,
         updated.customer_id,
         updated.order_id,
       );

@@ -12,7 +12,8 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
 } from "../../test-helpers/supabase-mock";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runRecallBulkMatch } from "./recall-bulk-match";
 
@@ -27,7 +28,7 @@ describe("runRecallBulkMatch", () => {
     stageSupabaseResponse("equipment_recalls", "select", { data: null });
     await expect(
       runRecallBulkMatch(
-        getSupabaseServiceRoleClient(),
+        getOrgScopedClient(MOCK_ORG_ID),
         "00000000-0000-4000-8000-000000000000",
       ),
     ).rejects.toThrow(/not found/);
@@ -55,7 +56,7 @@ describe("runRecallBulkMatch", () => {
         },
       ],
     });
-    const r = await runRecallBulkMatch(getSupabaseServiceRoleClient(), "r_1");
+    const r = await runRecallBulkMatch(getOrgScopedClient(MOCK_ORG_ID), "r_1");
     expect(r.matchedCount).toBe(0);
     expect(r.skippedNonMatchCount).toBe(1);
     expect(r.newlyQueuedCount).toBe(0);
@@ -108,7 +109,7 @@ describe("runRecallBulkMatch", () => {
       data: null,
     });
 
-    const r = await runRecallBulkMatch(getSupabaseServiceRoleClient(), "r_1");
+    const r = await runRecallBulkMatch(getOrgScopedClient(MOCK_ORG_ID), "r_1");
     expect(r.matchedCount).toBe(2);
     expect(r.newlyQueuedCount).toBe(2);
     expect(r.alreadyQueuedCount).toBe(0);
@@ -142,7 +143,7 @@ describe("runRecallBulkMatch", () => {
     stageSupabaseResponse("recall_notifications", "select", {
       data: [{ asset_id: "a_1" }],
     });
-    const r = await runRecallBulkMatch(getSupabaseServiceRoleClient(), "r_1");
+    const r = await runRecallBulkMatch(getOrgScopedClient(MOCK_ORG_ID), "r_1");
     expect(r.matchedCount).toBe(1);
     expect(r.alreadyQueuedCount).toBe(1);
     expect(r.newlyQueuedCount).toBe(0);

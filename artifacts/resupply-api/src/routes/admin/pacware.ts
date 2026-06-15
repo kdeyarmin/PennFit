@@ -8,7 +8,7 @@
 //   * Import:  operator runs the Patient List report in PacWare, uploads
 //              the CSV here -> patients are synced (insert/update) on the
 //              PacWare account number (patients.pacware_id).
-//   * Export:  PennFit emits CSV files shaped for PacWare's import
+//   * Export:  CareMetric Breathe emits CSV files shaped for PacWare's import
 //              screens — the patient roster (round-trips with import) and
 //              the resupply-due worklist (PacWare order entry / billing).
 //
@@ -103,7 +103,7 @@ router.get(
 // ---------------------------------------------------------------------------
 // POST /admin/pacware/import/patients — upload a PacWare patient report.
 //
-// Sync semantics: rows are matched to PennFit patients on pacware_id.
+// Sync semantics: rows are matched to CareMetric Breathe patients on pacware_id.
 // New patients are inserted; existing patients are FILL-ONLY patched —
 // only their BLANK fields are filled, an existing value is never
 // overwritten and never blanked (buildFillPatch skips blank incoming
@@ -197,7 +197,7 @@ router.post(
     }
 
     // commit ---------------------------------------------------------------
-    // "Never overwrite": a sync FILLS blank PennFit fields from the report
+    // "Never overwrite": a sync FILLS blank CareMetric Breathe fields from the report
     // but never changes a field that already holds a value. New patients are
     // inserted in full; existing patients only get their currently-empty
     // optional fields filled. Required fields (name, DOB) are NOT NULL on
