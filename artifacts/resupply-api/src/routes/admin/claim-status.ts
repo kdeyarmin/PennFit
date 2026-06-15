@@ -50,6 +50,7 @@ router.post(
         claimId: parsed.data.claimId,
         patientId: parsed.data.id,
         requestedByEmail: req.adminEmail ?? "unknown",
+        orgId: req.orgId,
       });
       await logAudit({
         action: "claim_status.check_submitted",
