@@ -29,7 +29,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import {
@@ -122,13 +122,16 @@ function chunkIds(ids: string[]): string[][] {
  * with staged Supabase responses and so a future CSV endpoint can
  * reuse the same body.
  */
-export async function buildRtOverview(days: number): Promise<{
+export async function buildRtOverview(
+  orgId: string,
+  days: number,
+): Promise<{
   asOf: string;
   windowDays: number;
   summary: ReturnType<typeof summarizeOverview>;
   rows: RtOverviewRow[];
 }> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const asOf = new Date().toISOString();
   const asOfDate = asOf.slice(0, 10);
 
@@ -144,7 +147,6 @@ export async function buildRtOverview(days: number): Promise<{
   const links: RawTherapyLink[] = [];
   for (let page = 0; page < MAX_LINK_PAGES; page++) {
     const { data: linksRaw, error: linksErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_links")
       .select("patient_id, source, status, last_synced_at, last_sync_status")
       .eq("status", "active")
@@ -174,7 +176,6 @@ export async function buildRtOverview(days: number): Promise<{
   const patients: RawPatient[] = [];
   for (const chunk of chunkIds(linkedPatientIds)) {
     const { data: patientsRaw, error: patientsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, pacware_id, legal_first_name, legal_last_name")
       .in("id", chunk);
@@ -196,7 +197,6 @@ export async function buildRtOverview(days: number): Promise<{
   for (const chunk of chunkIds(linkedPatientIds)) {
     for (let page = 0; page < MAX_NIGHT_PAGES; page++) {
       const { data: nightsRaw, error: nightsErr } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select("patient_id, night_date, usage_minutes, ahi, leak_rate_l_min")
         .in("patient_id", chunk)
@@ -220,7 +220,6 @@ export async function buildRtOverview(days: number): Promise<{
   for (const chunk of chunkIds(linkedPatientIds)) {
     for (let page = 0; page < MAX_TRIGGER_PAGES; page++) {
       const { data: triggersRaw, error: triggersErr } = await supabase
-        .schema("resupply")
         .from("patient_smart_trigger_events")
         .select("id, patient_id, kind, detected_at")
         .in("patient_id", chunk)
@@ -322,8 +321,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
-    const overview = await buildRtOverview(days);
+    const overview = await buildRtOverview(orgId, days);
 
     // Counts-only audit. The patient list is intentionally NOT logged.
     await logAudit({
@@ -352,8 +356,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
-    const overview = await buildRtOverview(days);
+    const overview = await buildRtOverview(orgId, days);
 
     await logAudit({
       action: "admin.rt_overview.export_csv",
