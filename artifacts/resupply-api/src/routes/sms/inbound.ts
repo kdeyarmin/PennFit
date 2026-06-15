@@ -46,6 +46,7 @@ import { Router, type IRouter } from "express";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
   resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
@@ -321,7 +322,12 @@ router.post(
       earlyRouted.intent !== "start"
     ) {
       try {
-        const activeClosure = await findActiveClosure(supabase);
+        // Public webhook (no request tenant): scope the closure lookup to
+        // the seed org (single-tenant bridge).
+        const closureOrgId = await resolveSeedOrgId();
+        const activeClosure = closureOrgId
+          ? await findActiveClosure(getOrgScopedClient(closureOrgId))
+          : null;
         if (activeClosure) {
           await safeAudit({
             action: "messaging.inbound.received",
