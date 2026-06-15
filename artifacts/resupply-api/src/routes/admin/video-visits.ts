@@ -544,7 +544,7 @@ router.post(
   inviteLimiter,
   adminRateLimit({ name: "video_visits.create", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -633,7 +633,7 @@ router.post(
   inviteLimiter,
   adminRateLimit({ name: "video_visits.create_universal", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -699,7 +699,7 @@ router.post(
   inviteLimiter,
   adminRateLimit({ name: "video_visits.invite", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }
@@ -838,7 +838,7 @@ router.post(
   requireAdmin,
   adminRateLimit({ name: "video_visits.join", preset: "mutation" }),
   async (req, res) => {
-    if (!(await isFeatureEnabled("telehealth.video"))) {
+    if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
       res.status(503).json({ error: "feature_disabled" });
       return;
     }

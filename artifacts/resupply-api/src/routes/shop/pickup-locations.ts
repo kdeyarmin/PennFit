@@ -28,8 +28,8 @@ const pickupLocationsLimiter = rateLimit({
 router.get(
   "/shop/pickup-locations",
   pickupLocationsLimiter,
-  async (_req, res) => {
-    if (!(await isFeatureEnabled("storefront.pickup"))) {
+  async (req, res) => {
+    if (!(await isFeatureEnabled("storefront.pickup", req.orgId))) {
       res.json({ enabled: false, locations: [] });
       return;
     }

@@ -268,7 +268,7 @@ router.post(
     const streaming = wantsStreaming(req.get("Accept"));
 
     // Control Center feature gate — operators can turn PennPilot off.
-    if (!(await isFeatureEnabled("admin.assistant"))) {
+    if (!(await isFeatureEnabled("admin.assistant", req.orgId))) {
       const offlineMessage = applyPlatformBranding(
         "PennPilot is currently turned off. You can re-enable it from Control Center (/admin/control-center).",
       );

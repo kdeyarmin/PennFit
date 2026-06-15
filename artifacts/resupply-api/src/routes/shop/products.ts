@@ -287,7 +287,8 @@ router.get("/shop/products", async (req, res) => {
   // short-circuit skips the flag lookup in preview mode, where
   // purchasing is off regardless of the flag.
   const purchasingEnabled =
-    config !== null && (await isFeatureEnabled("storefront.checkout"));
+    config !== null &&
+    (await isFeatureEnabled("storefront.checkout", req.orgId));
 
   res.json({
     previewMode,

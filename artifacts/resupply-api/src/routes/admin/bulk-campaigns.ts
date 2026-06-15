@@ -513,7 +513,7 @@ function makeTransitionHandler(
     // campaign even after they've turned the feature off.
     if (
       (action === "start" || action === "resume") &&
-      !(await isFeatureEnabled("bulk_campaigns.send"))
+      !(await isFeatureEnabled("bulk_campaigns.send", req.orgId))
     ) {
       res.status(503).json({
         error: "feature_disabled",

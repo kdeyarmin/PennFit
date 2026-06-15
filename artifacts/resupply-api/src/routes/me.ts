@@ -63,7 +63,10 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
   // Cached ~5s in isFeatureEnabled; a flip in the Control Center reaches
   // the console on the next /me refetch. In production the lookup fails closed
   // (returns false) on DB errors, so branch UI stays hidden during outages.
-  const multiLocationEnabled = await isFeatureEnabled("multi_location.enabled");
+  const multiLocationEnabled = await isFeatureEnabled(
+    "multi_location.enabled",
+    req.orgId,
+  );
   res.json({
     userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
