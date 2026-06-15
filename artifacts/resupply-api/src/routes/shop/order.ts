@@ -13,7 +13,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -43,9 +43,13 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   // This stops an attacker from probing arbitrary session IDs from
   // unrelated Stripe accounts (Stripe would 404 those, but we'd
   // rather not even ask).
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: local, error: localError } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("status, pod_uploaded_at")
     .eq("stripe_session_id", sessionId)
