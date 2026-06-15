@@ -12,10 +12,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   applyCompanyInfoToEnv,
@@ -207,8 +204,13 @@ function orgRowToApi(r: OrgRow) {
 router.get(
   "/admin/dme-organization",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: org } = await supabase
       .schema("resupply")
       .from("dme_organization")
@@ -262,7 +264,12 @@ router.put(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const payload: Database["resupply"]["Tables"]["dme_organization"]["Insert"] =
       {
         singleton: true,
@@ -386,7 +393,12 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: org } = await supabase
       .schema("resupply")
       .from("dme_organization")
@@ -472,7 +484,12 @@ router.patch(
     if (b.phoneE164 !== undefined) update.phone_e164 = b.phoneE164;
     if (b.isPrimary !== undefined) update.is_primary = b.isPrimary;
     if (b.isActive !== undefined) update.is_active = b.isActive;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: updated, error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")
@@ -501,7 +518,12 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error } = await supabase
       .schema("resupply")
       .from("dme_organization_contacts")

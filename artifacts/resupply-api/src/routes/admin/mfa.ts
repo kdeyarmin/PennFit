@@ -24,7 +24,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   buildOtpauthUri,
@@ -121,7 +121,12 @@ router.get(
       res.status(500).json({ error: "admin_user_id_missing" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device: pull EVERY row for this admin so the SPA can
     // render the device list (one row per enrolled device, plus any
     // in-progress unverified row).
@@ -209,7 +214,12 @@ router.post(
     }
     const deviceLabel = parsedBody.data?.deviceLabel ?? null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device (migration 0091): admins can enroll multiple
     // devices. We DO still consolidate any in-progress unverified
     // row — if the admin clicked "begin" twice without finishing,
@@ -321,7 +331,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
 
     // Multi-device: the in-progress enrollment is the most recent
     // unverified row (created or refreshed by /begin). Pick that.
@@ -495,7 +510,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device: pull ALL verified secrets and accept any code
     // that matches. A user disabling MFA after losing one device
     // shouldn't have to know WHICH device is still working — they
@@ -608,7 +628,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data: rows, error } = await supabase
       .schema("resupply")
       .from("admin_mfa_secrets")
@@ -731,7 +756,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     // Multi-device (mig 0091): pull ALL verified secrets and accept a
     // code from ANY enrolled device — same posture as /disable above.
     // The previous unordered `.limit(1).maybeSingle()` with no

@@ -19,10 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   FEATURE_FLAG_KEYS,
@@ -93,8 +90,13 @@ function rowToApi(r: Row) {
 router.get(
   "/admin/feature-flags",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("feature_flags")
@@ -134,7 +136,12 @@ router.patch(
     }
 
     const key = paramParsed.data.key as FeatureFlagKey;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
 
     // Read the prior state so the audit row carries before/after.
     const { data: priorRow, error: priorErr } = await supabase
@@ -295,7 +302,12 @@ router.get(
       ? parsedQuery.data.limit
       : ACTIVITY_DEFAULT_LIMIT;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { data, error } = await supabase
       .schema("resupply")
       .from("feature_flag_events")
