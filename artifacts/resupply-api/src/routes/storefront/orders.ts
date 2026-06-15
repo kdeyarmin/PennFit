@@ -104,13 +104,15 @@ router.post(
     const orderReference = generateOrderReference();
 
     // Public/guest-capable route (pattern 3): this POST accepts both
-    // anonymous and signed-in orders via `attachSignedIn`, so req.orgId
-    // is not guaranteed. Resolve the seed org to build the scoped client
-    // and degrade gracefully — the order row itself lives in the global
+    // anonymous and signed-in orders via `attachSignedIn`, which now
+    // resolves the tenant by host (verified custom domain → that tenant;
+    // platform host → seed org). Prefer that host-resolved tenant so an
+    // order placed on a tenant's storefront mirrors into THEIR
+    // `shop_customers`; fall back to the seed org only if host resolution
+    // was unavailable. The order row itself lives in the global
     // `public.orders` table (no org_id, written via `.raw()`), so a
-    // missing tenant must never block the order; only the signed-in
-    // `shop_customers` measurement mirror needs the tenant.
-    const orgId = await resolveSeedOrgId();
+    // missing tenant must never block the order.
+    const orgId = req.orgId ?? (await resolveSeedOrgId());
     const supabase = orgId ? getOrgScopedClient(orgId) : null;
 
     let dbId: string | null = null;
