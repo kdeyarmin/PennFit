@@ -28,16 +28,13 @@
 
 import type PgBoss from "pg-boss";
 
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 type CoachingPlanUpdate =
   Database["resupply"]["Tables"]["patient_coaching_plans"]["Update"];
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -54,23 +51,10 @@ export interface ProgressSweepStats {
   movedToImproving: number;
 }
 
-export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
-  const stats: ProgressSweepStats = {
-    scanned: 0,
-    updated: 0,
-    movedToImproving: 0,
-  };
-
-  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
-  // seed org. Becomes a per-org loop when a 2nd tenant lands.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: PROGRESS_JOB },
-      "coaching-plan.progress: could not resolve seed org — skipping",
-    );
-    return stats;
-  }
+async function coachingProgressSweepForOrg(
+  orgId: string,
+  stats: ProgressSweepStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   const { data: plans, error } = await supabase
@@ -82,7 +66,7 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     .limit(500);
   if (error) throw error;
   const planList = plans ?? [];
-  if (planList.length === 0) return stats;
+  if (planList.length === 0) return;
 
   const windowStart = new Date();
   windowStart.setUTCDate(windowStart.getUTCDate() - WINDOW_DAYS);
@@ -172,7 +156,23 @@ export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
     }
     stats.updated += 1;
   }
+}
 
+/**
+ * Run the coaching-plan progress sweep for EVERY active tenant.
+ * `patient_coaching_plans` / `patient_therapy_nights` are tenant-scoped,
+ * so the sweep fans out via `forEachActiveOrg` and accumulates the
+ * counts. Single-tenant behavior unchanged.
+ */
+export async function runCoachingProgressSweep(): Promise<ProgressSweepStats> {
+  const stats: ProgressSweepStats = {
+    scanned: 0,
+    updated: 0,
+    movedToImproving: 0,
+  };
+  await forEachActiveOrg((orgId) => coachingProgressSweepForOrg(orgId, stats), {
+    jobName: PROGRESS_JOB,
+  });
   return stats;
 }
 

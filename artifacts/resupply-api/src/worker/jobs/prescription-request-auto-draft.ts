@@ -40,10 +40,11 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { buildPrescriptionRequestPacketFromRx } from "../../lib/prescription-request-builder";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -65,34 +66,10 @@ export interface AutoDraftStats {
   failed: number;
 }
 
-export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats> {
-  const stats: AutoDraftStats = {
-    scanned: 0,
-    drafted: 0,
-    skipped_recent: 0,
-    skipped_no_provider: 0,
-    skipped_no_hcpcs: 0,
-    failed: 0,
-  };
-
-  const env = process.env;
-  if (env.RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED !== "1") {
-    logger.info(
-      { event: "rx_auto_draft.disabled" },
-      "prescription-request.auto-draft: env flag off, skipping",
-    );
-    return stats;
-  }
-
-  // Single-tenant bridge: sweep the one seed org. Per-org loop later.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: JOB },
-      "prescription-request.auto-draft: could not resolve seed org — skipping",
-    );
-    return stats;
-  }
+async function prescriptionRequestAutoDraftForOrg(
+  orgId: string,
+  stats: AutoDraftStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
   const today = new Date();
   const horizon = new Date(today.getTime() + LOOKAHEAD_DAYS * 86_400_000);
@@ -117,7 +94,7 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
     );
     throw error;
   }
-  if (!candidates || candidates.length === 0) return stats;
+  if (!candidates || candidates.length === 0) return;
   stats.scanned = candidates.length;
 
   // Resolve existing-packet cooldown in one query rather than N+1.
@@ -210,7 +187,36 @@ export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats>
       );
     });
   }
+}
 
+/**
+ * Run the prescription-request auto-draft sweep for EVERY active tenant.
+ * `prescriptions` / `prescription_request_packets` are tenant-scoped, so
+ * the sweep fans out via `forEachActiveOrg`. The env flag is a global
+ * kill-switch (checked once). Single-tenant behavior unchanged.
+ */
+export async function runPrescriptionRequestAutoDraft(): Promise<AutoDraftStats> {
+  const stats: AutoDraftStats = {
+    scanned: 0,
+    drafted: 0,
+    skipped_recent: 0,
+    skipped_no_provider: 0,
+    skipped_no_hcpcs: 0,
+    failed: 0,
+  };
+
+  if (process.env.RESUPPLY_PRESCRIPTION_AUTO_DRAFT_ENABLED !== "1") {
+    logger.info(
+      { event: "rx_auto_draft.disabled" },
+      "prescription-request.auto-draft: env flag off, skipping",
+    );
+    return stats;
+  }
+
+  await forEachActiveOrg(
+    (orgId) => prescriptionRequestAutoDraftForOrg(orgId, stats),
+    { jobName: JOB },
+  );
   return stats;
 }
 
