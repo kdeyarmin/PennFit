@@ -21,7 +21,12 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { runOrphanAssigneeSweep } from "./conversation-orphan-assignee-sweep";
+import {
+  runOrphanAssigneeSweep,
+  runOrphanAssigneeSweepForOrg,
+} from "./conversation-orphan-assignee-sweep";
+
+const TEST_ORG = "00000000-0000-4000-8000-000000000000";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -52,7 +57,7 @@ describe("runOrphanAssigneeSweep — unassign path", () => {
     // Page 2: empty so the loop exits.
     stageSupabaseResponse("conversations", "select", { data: [] });
 
-    const stats = await runOrphanAssigneeSweep();
+    const stats = await runOrphanAssigneeSweepForOrg(TEST_ORG);
     expect(stats).toEqual({ scanned: 1, unassigned: 1 });
 
     const writes = getSupabaseWritePayloads("conversations", "update");
@@ -78,7 +83,7 @@ describe("runOrphanAssigneeSweep — unassign path", () => {
     stageSupabaseResponse("admin_users", "select", { data: [] });
     stageSupabaseResponse("conversations", "select", { data: [] });
 
-    const stats = await runOrphanAssigneeSweep();
+    const stats = await runOrphanAssigneeSweepForOrg(TEST_ORG);
     expect(stats).toEqual({ scanned: 1, unassigned: 0 });
     expect(getSupabaseCallCount("conversations", "update")).toBe(0);
   });
@@ -107,7 +112,7 @@ describe("runOrphanAssigneeSweep — unassign path", () => {
     stageSupabaseResponse("conversations", "update", { data: null });
     stageSupabaseResponse("conversations", "select", { data: [] });
 
-    const stats = await runOrphanAssigneeSweep();
+    const stats = await runOrphanAssigneeSweepForOrg(TEST_ORG);
     expect(stats).toEqual({ scanned: 2, unassigned: 1 });
     expect(getSupabaseCallCount("conversations", "update")).toBe(1);
   });
@@ -116,7 +121,7 @@ describe("runOrphanAssigneeSweep — unassign path", () => {
 describe("runOrphanAssigneeSweep — empty-set behavior", () => {
   it("returns zero counts when no conversations are assigned", async () => {
     stageSupabaseResponse("conversations", "select", { data: [] });
-    const stats = await runOrphanAssigneeSweep();
+    const stats = await runOrphanAssigneeSweepForOrg(TEST_ORG);
     expect(stats).toEqual({ scanned: 0, unassigned: 0 });
     expect(getSupabaseCallCount("conversations", "update")).toBe(0);
     expect(getSupabaseCallCount("admin_users", "select")).toBe(0);
@@ -137,9 +142,47 @@ describe("runOrphanAssigneeSweep — empty-set behavior", () => {
       ],
     });
     stageSupabaseResponse("conversations", "select", { data: [] });
-    const stats = await runOrphanAssigneeSweep();
+    const stats = await runOrphanAssigneeSweepForOrg(TEST_ORG);
     expect(stats).toEqual({ scanned: 1, unassigned: 0 });
     expect(getSupabaseCallCount("admin_users", "select")).toBe(0);
+  });
+});
+
+describe("runOrphanAssigneeSweep — multi-tenant fan-out", () => {
+  it("runs the sweep once per active tenant and sums the counts", async () => {
+    // listActiveOrgIds() reads the organizations directory via the mock.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Tenant A: one revoked assignment, then an empty page.
+    stageSupabaseResponse("conversations", "select", {
+      data: [
+        {
+          id: "conv_a1",
+          assigned_admin_user_id: "admin_revoked",
+          assigned_at: "2026-04-01T12:00:00Z",
+          status: "open",
+        },
+      ],
+    });
+    stageSupabaseResponse("admin_users", "select", {
+      data: [{ id: "admin_revoked" }],
+    });
+    stageSupabaseResponse("conversations", "update", { data: null });
+    stageSupabaseResponse("conversations", "select", { data: [] });
+    // Tenant B: nothing assigned.
+    stageSupabaseResponse("conversations", "select", { data: [] });
+
+    const stats = await runOrphanAssigneeSweep();
+    // 1 scanned + 1 unassigned from tenant A; 0 from tenant B.
+    expect(stats).toEqual({ scanned: 1, unassigned: 1 });
+  });
+
+  it("returns zero counts when there are no active tenants", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runOrphanAssigneeSweep();
+    expect(stats).toEqual({ scanned: 0, unassigned: 0 });
+    expect(getSupabaseCallCount("conversations", "select")).toBe(0);
   });
 });
 
@@ -172,7 +215,7 @@ describe("runOrphanAssigneeSweep — pagination", () => {
     });
     stageSupabaseResponse("conversations", "update", { data: null });
 
-    const stats = await runOrphanAssigneeSweep();
+    const stats = await runOrphanAssigneeSweepForOrg(TEST_ORG);
     expect(stats.scanned).toBe(201);
     expect(stats.unassigned).toBe(1);
     const filters = getSupabaseFilterCalls("conversations", "select");

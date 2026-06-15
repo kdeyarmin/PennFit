@@ -37,6 +37,7 @@ export type { Database, Json, TemplateLine } from "./supabase-types";
 export {
   getOrgScopedClient,
   resolveSeedOrgId,
+  listActiveOrgIds,
   SEED_ORG_SLUG,
   ORG_COLUMN,
   __resetSeedOrgIdForTests,

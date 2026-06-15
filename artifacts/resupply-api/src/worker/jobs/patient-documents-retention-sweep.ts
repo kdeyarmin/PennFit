@@ -36,10 +36,11 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "patient-documents.retention-sweep";
@@ -51,11 +52,11 @@ interface SweepStats {
   flagged: number;
 }
 
-/** Exported for test injection. Runs one sweep cycle and returns
- *  the counts so a test can assert behavior without scheduling. */
-export async function runRetentionSweep(): Promise<SweepStats> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return { backfilled: 0, flagged: 0 };
+/** Run one retention sweep for a SINGLE tenant. Exported for test
+ *  injection (a test drives this with a fixed org). */
+export async function runRetentionSweepForOrg(
+  orgId: string,
+): Promise<SweepStats> {
   const supabase = getOrgScopedClient(orgId);
 
   // ── 1. Backfill retention_until_at for legacy rows ──────────────
@@ -187,6 +188,26 @@ export async function runRetentionSweep(): Promise<SweepStats> {
     );
   }
 
+  return { backfilled, flagged };
+}
+
+/**
+ * Run the retention sweep for EVERY active tenant. `patient_documents`
+ * is tenant-scoped, so the sweep fans out via `forEachActiveOrg`
+ * (per-tenant error isolation) and sums the counts. Single-tenant
+ * behavior is byte-identical to the old seed-org sweep.
+ */
+export async function runRetentionSweep(): Promise<SweepStats> {
+  let backfilled = 0;
+  let flagged = 0;
+  await forEachActiveOrg(
+    async (orgId) => {
+      const s = await runRetentionSweepForOrg(orgId);
+      backfilled += s.backfilled;
+      flagged += s.flagged;
+    },
+    { jobName: SWEEP_JOB },
+  );
   return { backfilled, flagged };
 }
 

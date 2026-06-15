@@ -12,12 +12,13 @@ vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: isFeatureEnabledMock,
 }));
 
-// Guard: if the flag gate ever regresses, these would be called and the
-// test setup (no real Supabase) would throw — but we also assert the
-// resolveSeedOrgId spy is never reached.
-const resolveSeedOrgIdMock = vi.hoisted(() => vi.fn());
+// Guard: if the flag gate ever regresses, the fan-out (listActiveOrgIds)
+// would be reached and the test setup (no real Supabase) would throw — we
+// also assert the listActiveOrgIds spy is never called when the flag is OFF.
+const listActiveOrgIdsMock = vi.hoisted(() => vi.fn());
 vi.mock("@workspace/resupply-db", () => ({
-  resolveSeedOrgId: resolveSeedOrgIdMock,
+  listActiveOrgIds: listActiveOrgIdsMock,
+  resolveSeedOrgId: vi.fn(),
   getOrgScopedClient: vi.fn(),
   getSupabaseServiceRoleClient: vi.fn(),
 }));
@@ -26,11 +27,14 @@ import { runAssetRecoveryAutoPopulate } from "./asset-recovery-auto-populate";
 
 beforeEach(() => {
   isFeatureEnabledMock.mockReset();
-  resolveSeedOrgIdMock.mockReset();
+  listActiveOrgIdsMock.mockReset().mockResolvedValue([]);
 });
 
-describe("runAssetRecoveryAutoPopulate — flag gate", () => {
-  it("no-ops (enabled:false, zero counts) when the flag is OFF", async () => {
+describe("runAssetRecoveryAutoPopulate — per-tenant flag gate", () => {
+  it("no-ops (enabled:false) when no tenant has the flag ON", async () => {
+    // Two active tenants, both with the flag OFF → no work, enabled stays
+    // false (the flag is now checked PER TENANT inside the fan-out).
+    listActiveOrgIdsMock.mockResolvedValue(["org-a", "org-b"]);
     isFeatureEnabledMock.mockResolvedValue(false);
 
     const stats = await runAssetRecoveryAutoPopulate();
@@ -42,26 +46,28 @@ describe("runAssetRecoveryAutoPopulate — flag gate", () => {
       skipped: 0,
       failed: 0,
     });
-    // Must short-circuit before resolving any org / touching the DB.
-    expect(resolveSeedOrgIdMock).not.toHaveBeenCalled();
   });
 
-  it("checks the asset_recovery.auto_populate flag", async () => {
+  it("checks the flag with the tenant's org_id (honors per-tenant opt-out)", async () => {
+    listActiveOrgIdsMock.mockResolvedValue(["org-a"]);
     isFeatureEnabledMock.mockResolvedValue(false);
     await runAssetRecoveryAutoPopulate();
     expect(isFeatureEnabledMock).toHaveBeenCalledWith(
       "asset_recovery.auto_populate",
+      "org-a",
     );
   });
 
-  it("returns enabled:true but no candidates when there is no seed org", async () => {
+  it("returns enabled:false when there are no active orgs", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
-    resolveSeedOrgIdMock.mockResolvedValue(null);
+    listActiveOrgIdsMock.mockResolvedValue([]);
 
     const stats = await runAssetRecoveryAutoPopulate();
 
-    expect(stats.enabled).toBe(true);
+    expect(stats.enabled).toBe(false);
     expect(stats.candidates).toBe(0);
     expect(stats.created).toBe(0);
+    // No tenants → the flag is never consulted.
+    expect(isFeatureEnabledMock).not.toHaveBeenCalled();
   });
 });

@@ -294,7 +294,7 @@ router.post(
     // call up), but by then we'd have already placed — and billed — a
     // real outbound call. Failing here means "Call me" never rings when
     // the agent is off, matching what the UI tells the admin.
-    if (!(await isFeatureEnabled("voice.agent"))) {
+    if (!(await isFeatureEnabled("voice.agent", req.orgId))) {
       res.status(503).json({
         error: "voice_agent_disabled",
         message:

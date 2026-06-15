@@ -238,7 +238,7 @@ router.post(
     // held until its prescription / POD / AOB are on file. Best-effort +
     // gated by the bill_hold flag so turning the gate off stops new holds.
     // Never fails claim creation.
-    if (await isFeatureEnabled("billing.bill_hold")) {
+    if (await isFeatureEnabled("billing.bill_hold", req.orgId)) {
       try {
         await seedDefaultRequirementsForClaim(claimRow.id, {
           supabase: supabase.raw(),

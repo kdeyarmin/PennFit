@@ -18,11 +18,17 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseCallCount,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
 
-import { runFitterConversionAttribution } from "./fitter-conversion-attribution";
+import {
+  runFitterConversionAttribution,
+  runFitterConversionAttributionForOrg,
+} from "./fitter-conversion-attribution";
+
+const TEST_ORG = "00000000-0000-4000-8000-000000000000";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -57,7 +63,7 @@ describe("runFitterConversionAttribution", () => {
   it("returns all-zero stats when there are no recent orders", async () => {
     stageSupabaseResponse("orders", "select", { data: [] });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.ordersScanned).toBe(0);
     expect(stats.leadsMatched).toBe(0);
@@ -77,7 +83,7 @@ describe("runFitterConversionAttribution", () => {
       error: null,
     });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.ordersScanned).toBe(1);
     expect(stats.leadsMatched).toBe(1);
@@ -100,7 +106,7 @@ describe("runFitterConversionAttribution", () => {
       error: null,
     });
 
-    await runFitterConversionAttribution();
+    await runFitterConversionAttributionForOrg(TEST_ORG);
 
     const [updatePayload] = supabaseMock.writePayloads(
       "fitter_leads",
@@ -126,7 +132,7 @@ describe("runFitterConversionAttribution", () => {
       error: null,
     });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.attributed).toBe(1);
   });
@@ -143,7 +149,7 @@ describe("runFitterConversionAttribution", () => {
     stageSupabaseResponse("orders", "select", { data: [order] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.attributed).toBe(0);
     expect(stats.skippedTerminal).toBe(1);
@@ -158,7 +164,7 @@ describe("runFitterConversionAttribution", () => {
     stageSupabaseResponse("orders", "select", { data: [order] });
     stageSupabaseResponse("fitter_leads", "select", { data: [lead] });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.attributed).toBe(0);
     expect(stats.skippedTerminal).toBe(1);
@@ -175,7 +181,7 @@ describe("runFitterConversionAttribution", () => {
       error: { message: "DB write failed" },
     });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.attributed).toBe(0);
     expect(stats.errors).toBe(1);
@@ -197,7 +203,7 @@ describe("runFitterConversionAttribution", () => {
       error: null,
     });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.ordersScanned).toBe(3);
     expect(stats.leadsMatched).toBe(1);
@@ -209,9 +215,9 @@ describe("runFitterConversionAttribution", () => {
       error: { message: "orders table offline" },
     });
 
-    await expect(runFitterConversionAttribution()).rejects.toThrow(
-      "orders table offline",
-    );
+    await expect(
+      runFitterConversionAttributionForOrg(TEST_ORG),
+    ).rejects.toThrow("orders table offline");
   });
 
   it("attributes only the first order (by created_at ASC) when multiple orders share the same email", async () => {
@@ -231,7 +237,7 @@ describe("runFitterConversionAttribution", () => {
       error: null,
     });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     // Only one attribution despite two orders
     expect(stats.attributed).toBe(1);
@@ -255,10 +261,35 @@ describe("runFitterConversionAttribution", () => {
 
     stageSupabaseResponse("orders", "select", { data: orders });
 
-    const stats = await runFitterConversionAttribution();
+    const stats = await runFitterConversionAttributionForOrg(TEST_ORG);
 
     expect(stats.ordersScanned).toBe(1);
     expect(stats.attributed).toBe(0);
     expect(stats.errors).toBe(0);
+  });
+});
+
+describe("runFitterConversionAttribution — multi-tenant fan-out", () => {
+  it("runs once per active tenant and sums the counts", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Each tenant's order scan (public.orders via .raw()) returns empty.
+    const stats = await runFitterConversionAttribution();
+    expect(stats.attributed).toBe(0);
+    expect(stats.ordersScanned).toBe(0);
+  });
+
+  it("no-ops when there are no active tenants", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runFitterConversionAttribution();
+    expect(stats).toEqual({
+      ordersScanned: 0,
+      leadsMatched: 0,
+      attributed: 0,
+      skippedTerminal: 0,
+      errors: 0,
+    });
+    expect(getSupabaseCallCount("orders", "select")).toBe(0);
   });
 });

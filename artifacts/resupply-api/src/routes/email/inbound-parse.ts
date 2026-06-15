@@ -455,7 +455,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   let autoReplied = false;
   if (selectLlmProvider().provider !== "offline") {
     try {
-      if (await isFeatureEnabled("email.auto_reply")) {
+      if (await isFeatureEnabled("email.auto_reply", req.orgId)) {
         autoReplied = await attemptEmailAutoReply({
           supabase,
           conversationId,

@@ -59,7 +59,6 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-
     const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
@@ -134,7 +133,6 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-
     // Render once now so we (a) confirm the PA exists/belongs to the
     // patient and (b) resolve the payer's default fax number. The bytes
     // are discarded — Telnyx re-fetches via the signed URL — but rendering
