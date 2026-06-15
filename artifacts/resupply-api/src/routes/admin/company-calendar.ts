@@ -21,10 +21,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { sendAppointmentAssignedEmail } from "../../lib/calendar/appointment-assigned-email";
@@ -43,6 +40,9 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 type CalendarUpdate =
   Database["resupply"]["Tables"]["company_calendar_events"]["Update"];
+type CalendarRow =
+  Database["resupply"]["Tables"]["company_calendar_events"]["Row"];
+type PatientRow = Database["resupply"]["Tables"]["patients"]["Row"];
 
 const router: IRouter = Router();
 
@@ -170,11 +170,15 @@ router.get(
     const from = parsed.data.from ?? new Date(now - 45 * DAY_MS).toISOString();
     const to = parsed.data.to ?? new Date(now + 45 * DAY_MS).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Events that OVERLAP the [from, to) window: they start before `to`
     // AND end after `from`.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .select(
         "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, assigned_to_user_id, assigned_to_email, created_at, updated_at",
@@ -184,7 +188,7 @@ router.get(
       .order("starts_at", { ascending: true })
       .limit(1000);
     if (error) throw error;
-    const rows = data ?? [];
+    const rows = (data ?? []) as CalendarRow[];
 
     // Resolve patient names in a single batched lookup (two-step fetch —
     // the repo standard; we don't embed PostgREST relations). Resolving at
@@ -197,12 +201,11 @@ router.get(
     >();
     if (patientIds.length > 0) {
       const { data: patients, error: pErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", patientIds);
       if (pErr) throw pErr;
-      for (const p of patients ?? []) {
+      for (const p of (patients ?? []) as PatientRow[]) {
         patientsById.set(p.id, {
           firstName: p.legal_first_name,
           lastName: p.legal_last_name,
@@ -250,8 +253,13 @@ router.get(
   "/admin/company-calendar/assignable-staff",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const staff = await listAssignableStaff(supabase);
     res.json({ staff });
   },
@@ -274,7 +282,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Validate the assignee (if any) against the effectively-active roster
     // before the insert, so an unknown id is a clean 400 rather than a
@@ -292,7 +305,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .insert({
         patient_id: parsed.data.patientId,
@@ -344,7 +356,12 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Fetch the existing row when we need its prior state: to validate the
     // EFFECTIVE time range on a single-sided edit, and/or to detect whether
@@ -363,7 +380,6 @@ router.patch(
     } | null = null;
     if (needsExisting) {
       const { data, error: fetchErr } = await supabase
-        .schema("resupply")
         .from("company_calendar_events")
         .select("event_type, starts_at, ends_at, location, assigned_to_user_id")
         .eq("id", params.data.id)
@@ -452,7 +468,6 @@ router.patch(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .update(update)
       .eq("id", params.data.id)
@@ -490,9 +505,13 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .delete()
       .eq("id", params.data.id);
