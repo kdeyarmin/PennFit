@@ -282,6 +282,7 @@ router.post(
         const profile = await readCustomerProfile(req);
         customerEmail = profile.email;
         const mapping = await getOrCreateStripeCustomer(config, {
+          orgId: req.orgId,
           customerId: req.userCustomerId,
           email: customerEmail,
           displayName: profile.displayName,

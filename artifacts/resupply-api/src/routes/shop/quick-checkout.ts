@@ -287,6 +287,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
+      orgId: req.orgId,
       customerId: customerId,
       email,
       displayName,
