@@ -24,7 +24,11 @@
 
 import type { WebSocket } from "ws";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
@@ -80,9 +84,10 @@ interface VisitRow {
 }
 
 async function loadVisit(visitId: string): Promise<VisitRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) throw new Error("tenant context missing");
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("video_visits")
     .select(
       "id, status, link_version, started_at, staff_joined_at, patient_joined_at",
@@ -99,20 +104,36 @@ function updateVisit(
   patch: Record<string, string>,
   event: string,
 ): void {
-  const supabase = getSupabaseServiceRoleClient();
-  void supabase
-    .schema("resupply")
-    .from("video_visits")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", visitId)
-    .then(({ error }) => {
-      if (error) {
-        logger.warn(
-          { event, visitId, err: error.message },
-          "video visit row update failed",
-        );
-      }
-    });
+  // Sync fire-and-forget: resolve the tenant inside the detached async
+  // path (resolveSeedOrgId is async; this function stays void/non-awaited).
+  void (async () => {
+    let supabase: OrgScopedClient;
+    try {
+      const orgId = await resolveSeedOrgId();
+      if (!orgId) throw new Error("tenant context missing");
+      supabase = getOrgScopedClient(orgId);
+    } catch (err) {
+      logger.warn(
+        {
+          event,
+          visitId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "video visit row update failed",
+      );
+      return;
+    }
+    const { error } = await supabase
+      .from("video_visits")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", visitId);
+    if (error) {
+      logger.warn(
+        { event, visitId, err: error.message },
+        "video visit row update failed",
+      );
+    }
+  })();
 }
 
 function stampJoin(role: VideoRole, visit: VisitRow): void {

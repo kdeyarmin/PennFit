@@ -31,7 +31,7 @@ import {
   sendWithRetry,
   type AnthropicClient,
 } from "@workspace/resupply-ai";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   DEFAULT_ANTHROPIC_MODEL_CLASSIFY,
@@ -119,9 +119,13 @@ export async function suggestIcd10(
   // Resolve the study row up front — both providers need the same
   // structured context, and a missing row should fail-fast before we
   // pay for an LLM round trip.
-  const supabase = getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // degrades to the same `errored(...)` result a missing study yields,
+  // before paying for an LLM round trip.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return errored("tenant context missing");
+  const supabase = getOrgScopedClient(orgId);
   const { data: study } = await supabase
-    .schema("resupply")
     .from("sleep_studies")
     .select(
       "id, study_type, ahi, rdi, lowest_spo2_pct, sleep_efficiency_pct, source",

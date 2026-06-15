@@ -20,10 +20,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Json,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
 
 import {
@@ -140,10 +137,12 @@ function projectRequest(row: OrderRequestRow, payment: CsrOrderPaymentState) {
   };
 }
 
-async function loadRequest(id: string): Promise<OrderRequestRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadRequest(
+  orgId: string,
+  id: string,
+): Promise<OrderRequestRow | null> {
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("csr_order_requests")
     .select(LIST_COLUMNS)
     .eq("id", id)
@@ -173,9 +172,13 @@ router.get(
     const { status, page, pageSize } = parsed.data;
     const offset = (page - 1) * pageSize;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let rowsQuery = supabase
-      .schema("resupply")
       .from("csr_order_requests")
       .select(LIST_COLUMNS, { count: "exact" })
       .order("created_at", { ascending: false })
@@ -186,7 +189,7 @@ router.get(
 
     const rows = (data ?? []) as OrderRequestRow[];
     const payments = await lookupPaymentStates(
-      supabase,
+      supabase.raw(),
       rows.flatMap((r) => (r.stripe_session_id ? [r.stripe_session_id] : [])),
     );
 
@@ -261,8 +264,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
-    const snapshot = await snapshotOrderDocuments(supabase, [
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const snapshot = await snapshotOrderDocuments(supabase.raw(), [
       ...new Set(b.documentKeys),
     ]);
     if (!snapshot.ok) {
@@ -280,7 +288,6 @@ router.post(
     ).toISOString();
 
     const { data: created, error: insertErr } = await supabase
-      .schema("resupply")
       .from("csr_order_requests")
       .insert({
         order_reference: generateCsrOrderReference(),
@@ -308,7 +315,7 @@ router.post(
       ttlDays * 24 * 60 * 60,
     );
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
-      supabase,
+      supabase: supabase.raw(),
       customerName: b.customerName,
       email,
       phone: phoneE164,
@@ -371,13 +378,21 @@ router.get(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const row = await loadRequest(params.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await loadRequest(orgId, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
+    const supabase = getOrgScopedClient(orgId);
+    const payment = await lookupPaymentState(
+      supabase.raw(),
+      row.stripe_session_id,
+    );
     res.json({
       request: projectRequest(row, payment),
       // A copyable link for the CURRENT version — only while open.
@@ -404,7 +419,12 @@ router.post(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const row = await loadRequest(params.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await loadRequest(orgId, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -413,8 +433,11 @@ router.post(
       res.status(409).json({ error: "order_canceled" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
+    const supabase = getOrgScopedClient(orgId);
+    const payment = await lookupPaymentState(
+      supabase.raw(),
+      row.stripe_session_id,
+    );
     if (payment.status === "paid" || payment.status === "refunded") {
       res.status(409).json({ error: "already_paid" });
       return;
@@ -428,7 +451,6 @@ router.post(
     ).toISOString();
     const newVersion = row.link_version + 1;
     const { error: bumpErr } = await supabase
-      .schema("resupply")
       .from("csr_order_requests")
       .update({
         link_version: newVersion,
@@ -441,7 +463,7 @@ router.post(
 
     const signingLink = buildCsrOrderSigningLink(row.id, newVersion);
     const { emailSent, smsSent } = await deliverCsrOrderInvite({
-      supabase,
+      supabase: supabase.raw(),
       customerName: row.customer_name,
       email: row.customer_email,
       phone: row.customer_phone,
@@ -482,7 +504,12 @@ router.post(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const row = await loadRequest(params.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await loadRequest(orgId, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -491,8 +518,11 @@ router.post(
       res.json({ status: "canceled" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const payment = await lookupPaymentState(supabase, row.stripe_session_id);
+    const supabase = getOrgScopedClient(orgId);
+    const payment = await lookupPaymentState(
+      supabase.raw(),
+      row.stripe_session_id,
+    );
     if (payment.status === "paid" || payment.status === "refunded") {
       // A paid order is refunded through the shop-order refund flow,
       // not canceled here.
@@ -502,7 +532,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { error: cancelErr } = await supabase
-      .schema("resupply")
       .from("csr_order_requests")
       .update({
         status: "canceled",

@@ -3,7 +3,7 @@
 // weekly worker; kept here (not in the job file) so it's importable +
 // mockable by the job's registration test.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { summarizeOopBySlug } from "./learn";
 
@@ -18,13 +18,18 @@ export interface RefreshStatsResult {
 }
 
 export async function refreshPayerEstimateStats(): Promise<RefreshStatsResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { slugsWritten: 0, samplesScanned: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const cutoff = new Date(
     Date.now() - PAYER_STATS_WINDOW_DAYS * 24 * 3600 * 1000,
   ).toISOString();
 
   // One row per adjudicated claim: { payer_name, oop_cents }.
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .rpc("payer_oop_samples", { p_cutoff: cutoff });
   if (error) throw error;
@@ -40,6 +45,7 @@ export async function refreshPayerEstimateStats(): Promise<RefreshStatsResult> {
   // Replace the table contents. PostgREST requires a filter on delete;
   // slug is never empty, so neq '' matches every row.
   const { error: delErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("payer_estimate_stats")
     .delete()
@@ -49,6 +55,7 @@ export async function refreshPayerEstimateStats(): Promise<RefreshStatsResult> {
   if (stats.length > 0) {
     const computedAt = new Date().toISOString();
     const { error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("payer_estimate_stats")
       .insert(

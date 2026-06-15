@@ -31,7 +31,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createTwilioClient,
   TwilioApiError,
@@ -91,21 +91,24 @@ router.post(
     }
     const { patientId, episodeId } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Patient existence + phone + status. PostgREST has no JOIN, so
     // the patient and episode reads stay separate but can run in
     // parallel.
     const [patientRes, episodeRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id, phone_e164, status")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle(),
       supabase
-        .schema("resupply")
         .from("episodes")
         .select("id, patient_id")
         .eq("id", episodeId)
@@ -150,7 +153,6 @@ router.post(
     // Create the conversation row up front so the dashboard timeline
     // shows the attempt even if Twilio rejects the dial.
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .insert({
         patient_id: patientId,
@@ -241,7 +243,6 @@ router.post(
 
     getPendingSessions().attachCallSid(conversationId, callSid);
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({
         external_ref: callSid,

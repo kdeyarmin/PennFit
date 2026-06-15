@@ -101,6 +101,22 @@ printf 'const c = getSupabaseServiceRoleClient();\n' \
   >"$FIX/artifacts/resupply-api/src/routes/gamma.ts"
 run >/dev/null 2>&1
 check "new violation fails even alongside a stale entry" 1 $?
+
+# 6. Lock-in: once the baseline is EMPTY (cutover complete), --update is
+#    removal-only — it must REFUSE to add a new offender back rather than
+#    laundering it onto the baseline to dodge the guard.
+printf '# header only, no entries\n' >"$BASELINE"
+printf 'const c = getSupabaseServiceRoleClient();\n' \
+  >"$FIX/artifacts/resupply-api/src/routes/delta.ts"
+run --update >/dev/null 2>&1
+check "empty baseline: --update refuses to re-add a new offender" 1 $?
+if grep -q "delta.ts" "$BASELINE"; then
+  echo "  FAIL: removal-only --update still wrote the offender to the baseline" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok: removal-only --update left the empty baseline untouched"
+  pass=$((pass + 1))
+fi
 set -e
 
 echo "check-tenant-isolation self-test: ${pass} passed, ${fail} failed."

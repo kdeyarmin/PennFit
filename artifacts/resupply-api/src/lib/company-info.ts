@@ -20,7 +20,7 @@
 //     ~30 existing `env.RESUPPLY_PRACTICE_NAME` readers pick up the
 //     value without each being rewritten.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -177,9 +177,10 @@ class CompanyInfoLookupTimeout extends Error {
 }
 
 async function loadFromDb(): Promise<CompanyInfo | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  const supabase = getOrgScopedClient(orgId);
   const lookup = supabase
-    .schema("resupply")
     .from("dme_organization")
     .select("*")
     .eq("singleton", true)

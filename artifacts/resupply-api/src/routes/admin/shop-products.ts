@@ -31,7 +31,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type Stripe from "stripe";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   requireAdminOnly,
@@ -785,7 +785,12 @@ router.post(
     }
 
     const objectPath = `shop-products/${randomUUID()}.${extension}`;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error: uploadError } = await supabase.storage
       .from(bucket)
       .upload(objectPath, imageBytes, {

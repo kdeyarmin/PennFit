@@ -17,10 +17,14 @@
 // the submit button so the CSR notices.
 
 import {
+  type Database,
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
   resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
+
+type ClaimLineRow =
+  Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"];
 
 import {
   listClaimRequirements,
@@ -36,7 +40,6 @@ import {
 } from "./denial-risk";
 import { getCachedEligibility } from "./eligibility-verifier";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** A parsed 271 older than this no longer counts as "verified" on the
@@ -84,12 +87,27 @@ export interface PreflightSummary {
 export async function preflightClaim(
   claimId: string,
 ): Promise<PreflightSummary> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      readyToSubmit: false,
+      errorCount: 1,
+      warningCount: 0,
+      items: [
+        {
+          key: "tenant_context",
+          severity: "error",
+          label: "Tenant context unavailable",
+          detail: "No organization context resolved; cannot run preflight.",
+        },
+      ],
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const items: PreflightItem[] = [];
   let payerRequiresReferringProviderNpi = true;
 
   const { data: claim, error: cErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_name, payer_profile_id, date_of_service, status, total_billed_cents, insurance_coverage_id, rendering_provider_id, referring_provider_id, secondary_coverage_id, fulfillment_id",
@@ -136,21 +154,13 @@ export async function preflightClaim(
   // missing/unreadable paperwork state blocks submit until a CSR can verify it.
   if (await isFeatureEnabled("billing.bill_hold")) {
     try {
-      // bill-hold reads/writes go through the org-scoped chokepoint. This
-      // is a claim-id-driven path with no request tenant, so it scopes to
-      // the seed org (single-tenant bridge).
-      const billHoldOrgId = await resolveSeedOrgId();
-      if (!billHoldOrgId) {
-        throw new Error("no seed org for bill-hold preflight");
-      }
-      const billHold = getOrgScopedClient(billHoldOrgId);
-      let reqs = await listClaimRequirements(claim.id, billHold);
+      let reqs = await listClaimRequirements(claim.id, supabase.raw());
       if (reqs.length === 0) {
         await seedDefaultRequirementsForClaim(claim.id, {
-          supabase: billHold,
+          supabase: supabase.raw(),
           createdByEmail: "system:preflight",
         });
-        reqs = await listClaimRequirements(claim.id, billHold);
+        reqs = await listClaimRequirements(claim.id, supabase.raw());
       }
       if (reqs.length === 0) {
         items.push({
@@ -199,7 +209,6 @@ export async function preflightClaim(
   // ── Payer profile ───────────────────────────────────────────────
   if (claim.payer_profile_id) {
     const { data: payer } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(
         "id, display_name, is_active, paper_only, office_ally_payer_id, claim_format, requires_prior_auth_dme, edi_enrollment_status, timely_filing_days, required_modifiers_dme, requires_referring_provider_npi, enrollment_status, enrollment_effective_on",
@@ -365,7 +374,6 @@ export async function preflightClaim(
         });
       } else {
         const { data: lines } = await supabase
-          .schema("resupply")
           .from("insurance_claim_line_items")
           .select("hcpcs_code, modifier")
           .eq("claim_id", claim.id);
@@ -528,7 +536,6 @@ export async function preflightClaim(
 
   // ── Patient demographics + address ──────────────────────────────
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("legal_first_name, legal_last_name, date_of_birth, address")
     .eq("id", claim.patient_id)
@@ -563,7 +570,6 @@ export async function preflightClaim(
 
   // ── Diagnosis (from latest sleep study) ─────────────────────────
   const { data: sleep } = await supabase
-    .schema("resupply")
     .from("sleep_studies")
     .select("diagnosis_icd10, study_date")
     .eq("patient_id", claim.patient_id)
@@ -590,7 +596,6 @@ export async function preflightClaim(
 
   // ── Line items ──────────────────────────────────────────────────
   const { data: lines } = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("id, hcpcs_code, modifier, billed_cents, quantity, narrative")
     .eq("claim_id", claim.id);
@@ -609,12 +614,14 @@ export async function preflightClaim(
       label: `${lines.length} line item${lines.length === 1 ? "" : "s"} present`,
       detail: lines
         .slice(0, 3)
-        .map((l) => `${l.hcpcs_code} × ${l.quantity}`)
+        .map((l: ClaimLineRow) => `${l.hcpcs_code} × ${l.quantity}`)
         .join(", "),
     });
 
     // Each line should have a billed amount > 0.
-    const zeroBilled = lines.filter((l) => (l.billed_cents ?? 0) === 0);
+    const zeroBilled = lines.filter(
+      (l: ClaimLineRow) => (l.billed_cents ?? 0) === 0,
+    );
     if (zeroBilled.length > 0) {
       items.push({
         key: "line_billed_amount",
@@ -635,7 +642,7 @@ export async function preflightClaim(
     // 837P builder emits the loop-2400 NTE only when the line has one, so
     // flag a NOC line whose `narrative` is blank before it's submitted.
     const nocMissingNarrative = lines.filter(
-      (l) =>
+      (l: ClaimLineRow) =>
         isNocHcpcs(l.hcpcs_code) && (l.narrative ?? "").trim().length === 0,
     );
     if (nocMissingNarrative.length > 0) {
@@ -645,7 +652,7 @@ export async function preflightClaim(
         severity: "error",
         label: "Miscellaneous HCPCS line needs a narrative",
         detail: `${nocMissingNarrative
-          .map((l) => l.hcpcs_code)
+          .map((l: ClaimLineRow) => l.hcpcs_code)
           .join(
             ", ",
           )} is a not-otherwise-classified code — Medicare DME requires an item description + MSRP narrative (837P NTE) or the line denies. Add it to the line.`,
@@ -663,7 +670,8 @@ export async function preflightClaim(
     // billed_cents is per-unit; the extended line charge is
     // billed_cents * quantity, matching the header total recompute.
     const sum = lines.reduce(
-      (s, l) => s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
+      (s: number, l: ClaimLineRow) =>
+        s + (l.billed_cents ?? 0) * (l.quantity ?? 1),
       0,
     );
     if (sum !== claim.total_billed_cents) {
@@ -730,7 +738,6 @@ export async function preflightClaim(
   // ── Prior authorization (when payer requires) ───────────────────
   if (claim.payer_profile_id && lines && lines.length > 0) {
     const { data: payer } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("requires_prior_auth_dme, display_name")
       .eq("id", claim.payer_profile_id)
@@ -740,9 +747,8 @@ export async function preflightClaim(
       // Look up the PA per HCPCS — a CPAP machine usually requires
       // PA but supplies don't. We treat ANY approved PA covering one
       // of the line HCPCS codes as sufficient.
-      const hcpcsList = lines.map((l) => l.hcpcs_code);
+      const hcpcsList = lines.map((l: ClaimLineRow) => l.hcpcs_code);
       const { data: pas } = await supabase
-        .schema("resupply")
         .from("prior_authorizations")
         .select("auth_number, status, approved_through, hcpcs_code")
         .eq("patient_id", claim.patient_id)
@@ -774,7 +780,9 @@ export async function preflightClaim(
   // ── KX modifier implies documented compliance ───────────────────
   if (
     lines &&
-    lines.some((l) => (l.modifier ?? "").toUpperCase().includes("KX"))
+    lines.some((l: ClaimLineRow) =>
+      (l.modifier ?? "").toUpperCase().includes("KX"),
+    )
   ) {
     const compliant = await isPatientCompliant(supabase, claim.patient_id);
     items.push(
@@ -803,11 +811,14 @@ export async function preflightClaim(
   // → no opinion (never adds an error, never blocks, never throws).
   if (claim.payer_profile_id && lines && lines.length > 0) {
     try {
-      const distinctHcpcs = [...new Set(lines.map((l) => l.hcpcs_code))];
+      const distinctHcpcs = [
+        ...new Set(lines.map((l: ClaimLineRow) => l.hcpcs_code)),
+      ];
       const cutoff = new Date(
         Date.now() - DENIAL_RISK_WINDOW_DAYS * MS_PER_DAY,
       ).toISOString();
       const { data: riskRows, error: riskErr } = await supabase
+        .raw()
         .schema("resupply")
         .rpc("billing_denial_risk", {
           p_payer_profile_id: claim.payer_profile_id,
@@ -926,21 +937,21 @@ function toUtcDateEpochMs(value: Date): number {
 }
 
 async function isPatientCompliant(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
 ): Promise<boolean> {
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000)
     .toISOString()
     .slice(0, 10);
   const { data: nights } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("usage_minutes")
     .eq("patient_id", patientId)
     .gte("night_date", since)
     .limit(60);
   const compliant = (nights ?? []).filter(
-    (n) => (n.usage_minutes ?? 0) >= 240,
+    (n: Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]) =>
+      (n.usage_minutes ?? 0) >= 240,
   ).length;
   return compliant >= 21;
 }

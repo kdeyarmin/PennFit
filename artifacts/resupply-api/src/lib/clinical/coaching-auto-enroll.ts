@@ -26,7 +26,7 @@
 // (a CSR just worked/resolved it) — is suppressed, so re-runs never pile
 // duplicate plans onto the same patient or churn a freshly-closed one.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
@@ -93,7 +93,6 @@ export interface AutoEnrollSweepStats {
  * ones (capped per run). Returns a stats envelope for the worker to log.
  */
 export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
   const stats: AutoEnrollSweepStats = {
     candidates: 0,
     scored: 0,
@@ -101,18 +100,30 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
     skippedExistingPlan: 0,
   };
 
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // degrades to the zeroed stats envelope (the same "nothing to do" shape
+  // the no-candidates branch returns).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
+
   // 1. Candidates: patients with a recent therapy night (active on PAP).
   const since = new Date();
   since.setUTCDate(since.getUTCDate() - RECENT_NIGHT_DAYS);
   const sinceIso = since.toISOString().slice(0, 10);
   const { data: nightRows, error: nightsErr } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("patient_id")
     .gte("night_date", sinceIso)
     .limit(MAX_CANDIDATES * RECENT_NIGHT_DAYS);
   if (nightsErr) throw nightsErr;
-  const candidateIds = [...new Set((nightRows ?? []).map((r) => r.patient_id))];
+  const candidateIds = [
+    ...new Set<string>(
+      (nightRows ?? []).map((r: Record<string, unknown>) =>
+        String(r.patient_id),
+      ),
+    ),
+  ];
   stats.candidates = candidateIds.length;
   if (candidateIds.length === 0) return stats;
 
@@ -125,12 +136,16 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
   for (let i = 0; i < candidateIds.length; i += 200) {
     const chunk = candidateIds.slice(i, i + 200);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .select("patient_id, closed_at")
       .in("patient_id", chunk);
     if (error) throw error;
-    plans.push(...(data ?? []));
+    plans.push(
+      ...((data ?? []) as Array<{
+        patient_id: string;
+        closed_at: string | null;
+      }>),
+    );
   }
 
   const suppressed = new Set<string>();
@@ -167,7 +182,6 @@ export async function runCoachingAutoEnrollSweep(): Promise<AutoEnrollSweepStats
     if (!shouldAutoEnroll(score)) continue;
 
     const { error: insErr } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .insert({
         patient_id: patientId,

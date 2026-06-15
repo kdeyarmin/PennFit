@@ -55,8 +55,9 @@ import { z } from "zod";
 import type Stripe from "stripe";
 
 import {
-  getSupabaseServiceRoleClient,
-  type ResupplySupabaseClient,
+  getOrgScopedClient,
+  type Database,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 interface SubscriptionItemSnapshot {
@@ -88,12 +89,11 @@ const router: IRouter = Router();
 // targeted. Returns null if not found OR not owned — caller maps to
 // 404 to avoid leaking ownership.
 async function findOwnedSubscription(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   localId: string,
   customerId: string,
 ): Promise<OwnedSubscription | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_subscriptions")
     .select("id, stripe_subscription_id, status, cancel_at_period_end, items")
     .eq("id", localId)
@@ -123,9 +123,13 @@ router.get("/shop/me/subscriptions", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("shop_subscriptions")
     .select(
       "id, stripe_subscription_id, status, items, current_period_end, cancel_at_period_end, canceled_at, created_at",
@@ -136,17 +140,19 @@ router.get("/shop/me/subscriptions", requireSignedIn, async (req, res) => {
   if (error) throw error;
 
   res.json({
-    subscriptions: (rows ?? []).map((r) => ({
-      id: r.id,
-      stripeSubscriptionId: r.stripe_subscription_id,
-      status: r.status,
-      items: r.items,
-      // PostgREST returns timestamptz as ISO string already.
-      currentPeriodEnd: r.current_period_end,
-      cancelAtPeriodEnd: r.cancel_at_period_end,
-      canceledAt: r.canceled_at,
-      createdAt: r.created_at,
-    })),
+    subscriptions: (rows ?? []).map(
+      (r: Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]) => ({
+        id: r.id,
+        stripeSubscriptionId: r.stripe_subscription_id,
+        status: r.status,
+        items: r.items,
+        // PostgREST returns timestamptz as ISO string already.
+        currentPeriodEnd: r.current_period_end,
+        cancelAtPeriodEnd: r.cancel_at_period_end,
+        canceledAt: r.canceled_at,
+        createdAt: r.created_at,
+      }),
+    ),
   });
 });
 
@@ -169,13 +175,19 @@ router.post(
       return;
     }
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     const localId = req.params.id;
     if (!localId || typeof localId !== "string") {
       res.status(400).json({ error: "missing_subscription_id" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // Look up the row by our local id AND owner — never by stripe
     // subscription id directly, to make IDOR via guessing
     // sub_xxx values impossible. Belt-and-suspenders: also gate on
@@ -223,7 +235,6 @@ router.post(
     // the immediate next page render shouldn't show "active" with
     // no cancel flag.
     const { error: flipErr } = await supabase
-      .schema("resupply")
       .from("shop_subscriptions")
       .update({ cancel_at_period_end: true })
       .eq("id", sub.id);
@@ -272,13 +283,18 @@ router.get(
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const localId = req.params.id;
     if (!localId || typeof localId !== "string") {
       res.status(400).json({ error: "missing_subscription_id" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
@@ -383,13 +399,19 @@ async function handlePauseOrResume(
     return;
   }
 
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+
   const localId = req.params.id;
   if (!localId || typeof localId !== "string") {
     res.status(400).json({ error: "missing_subscription_id" });
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const sub = await findOwnedSubscription(supabase, localId, customerId);
   if (!sub) {
     res.status(404).json({ error: "subscription_not_found" });
@@ -531,7 +553,12 @@ router.post(
     }
     const { priceId: newPriceId } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });

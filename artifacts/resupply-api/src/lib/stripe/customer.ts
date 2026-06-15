@@ -28,7 +28,8 @@
 import type Stripe from "stripe";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
@@ -55,18 +56,25 @@ export async function getOrCreateStripeCustomer(
     displayName?: string | null;
   },
 ): Promise<CustomerMapping> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "getOrCreateStripeCustomer: tenant context missing (no seed org).",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const raw = supabase.raw();
   const stripe = getStripeClient(config);
 
   // Step 1: ensure a local row exists. The PUT /shop/me path also
   // creates this; we re-create on demand so checkout flows that
   // skip the account page still work.
-  const existing = await readRow(supabase, args.customerId);
-  let row: ShopCustomerRow = existing ?? (await insertRow(supabase, args));
+  const existing = await readRow(raw, args.customerId);
+  let row: ShopCustomerRow = existing ?? (await insertRow(raw, args));
 
   // Refresh cached email if the auth provider's primary changed since row creation.
   if (args.email && args.email.toLowerCase() !== row.email_lower) {
-    row = await updateEmail(supabase, args.customerId, args.email);
+    row = await updateEmail(raw, args.customerId, args.email);
   }
 
   if (row.stripe_customer_id) {
@@ -95,7 +103,6 @@ export async function getOrCreateStripeCustomer(
   // they're the same Stripe Customer anyway.
   try {
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .update({
         stripe_customer_id: customer.id,
@@ -112,7 +119,7 @@ export async function getOrCreateStripeCustomer(
   } catch {
     /* fall through to re-read */
   }
-  const refreshed = await readRow(supabase, args.customerId);
+  const refreshed = await readRow(raw, args.customerId);
   if (refreshed?.stripe_customer_id) {
     return { stripeCustomerId: refreshed.stripe_customer_id, row: refreshed };
   }
@@ -128,8 +135,13 @@ export async function getOrCreateStripeCustomer(
 export async function readShopCustomer(
   customerId: string,
 ): Promise<ShopCustomerRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
-  return readRow(supabase, customerId);
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — treat as "no row" (same null outcome
+    // readRow returns when no shop_customers row exists).
+    return null;
+  }
+  return readRow(getOrgScopedClient(orgId).raw(), customerId);
 }
 
 /**
@@ -142,7 +154,13 @@ export async function ensureShopCustomerRow(args: {
   email: string | null;
   displayName?: string | null;
 }): Promise<ShopCustomerRow> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "ensureShopCustomerRow: tenant context missing (no seed org).",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId).raw();
   const existing = await readRow(supabase, args.customerId);
   if (existing) {
     if (args.email && args.email.toLowerCase() !== existing.email_lower) {

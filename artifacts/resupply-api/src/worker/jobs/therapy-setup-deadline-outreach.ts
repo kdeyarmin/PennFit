@@ -27,8 +27,9 @@ import type PgBoss from "pg-boss";
 
 import {
   type CommunicationPreferences,
+  type OrgScopedClient,
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
@@ -187,12 +188,14 @@ export function planDeadlineOutreach(
 }
 
 export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachResult> {
-  const supabase = getSupabaseServiceRoleClient();
   const result: SetupDeadlineOutreachResult = {
     inWindow: 0,
     eligible: 0,
     messaged: 0,
   };
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return result;
+  const supabase = getOrgScopedClient(orgId);
 
   const outreachOn =
     (await isFeatureEnabled("therapy_fleet.auto_outreach")) &&
@@ -200,6 +203,7 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
   const cfg = outreachOn ? readSmsConfig() : null;
 
   const setups = await supabase
+    .raw()
     .schema("resupply")
     .rpc("therapy_setup_adherence_list", { p_limit: 1000 });
   if (setups.error) throw setups.error;
@@ -256,13 +260,12 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
 // alerts-scan's consent → DND → claim-cap ordering exactly, and shares
 // the SAME cap key namespace so the two jobs can't double-text a patient.
 async function maybeSendDeadlineSms(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   cfg: SmsSendConfig,
   patientId: string,
   body: string,
 ): Promise<boolean> {
   const patientRes = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, timezone, address")
     .eq("id", patientId)
@@ -275,7 +278,6 @@ async function maybeSendDeadlineSms(
   const email = patientRow?.email;
   if (!email) return false;
   const prefsRes = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("communication_preferences")
     .eq("email_lower", email.toLowerCase())
@@ -309,7 +311,7 @@ async function maybeSendDeadlineSms(
   const expiresAt = new Date(
     Date.now() + OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claim = await claimDedupKey(supabase, capKey, expiresAt);
+  const claim = await claimDedupKey(supabase.raw(), capKey, expiresAt);
   if (claim.outcome !== "claimed") {
     if (claim.outcome === "error") {
       logger.warn(
@@ -331,9 +333,7 @@ async function maybeSendDeadlineSms(
   };
   try {
     const outcome = await sendReminderSms({
-      supabase,
-      // System job: resolve the seed tenant (Phase 0 bridge).
-      orgId: (await resolveSeedOrgId()) ?? undefined,
+      supabase: supabase.raw(),
       cfg,
       patientId,
       body,
@@ -353,10 +353,11 @@ async function maybeSendDeadlineSms(
 }
 
 async function releaseCapKey(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   key: string,
 ): Promise<void> {
   const { error } = await supabase
+    .raw()
     .schema("resupply")
     .from("worker_dedup_keys")
     .delete()

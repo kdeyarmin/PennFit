@@ -23,12 +23,16 @@
 // The route layer enforces these gates again so a hallucinated
 // `can_auto_resubmit: true` can NOT push a destructive patch.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { parseAiPatches, type AiPatch } from "./ai-patch";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export const DENIAL_PROMPT_VERSION = "denial-1.0";
 export const DEFAULT_DENIAL_MODEL = "gpt-4o-mini";
@@ -153,7 +157,11 @@ export async function analyzeDenial(
     return errored("OPENAI_API_KEY not configured");
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return errored("tenant context missing");
+  }
+  const supabase = getOrgScopedClient(orgId);
   let denialContext;
   try {
     denialContext = await assembleDenialContext(supabase, input.claimId);
@@ -253,7 +261,6 @@ async function assembleDenialContext(
   claimId: string,
 ): Promise<Record<string, unknown> | null> {
   const { data: claim } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, status, payer_name, payer_profile_id, date_of_service, total_billed_cents, total_paid_cents, denial_reason",
@@ -266,14 +273,12 @@ async function assembleDenialContext(
   const [{ data: lines }, { data: events }, { data: payer }] =
     await Promise.all([
       supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .select(
           "hcpcs_code, modifier, billed_cents, allowed_cents, paid_cents, status, denial_reason, quantity",
         )
         .eq("claim_id", claim.id),
       supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .select("event_type, amount_cents, payer_ref, note, occurred_at")
         .eq("claim_id", claim.id)
@@ -281,7 +286,6 @@ async function assembleDenialContext(
         .limit(20),
       claim.payer_profile_id
         ? supabase
-            .schema("resupply")
             .from("payer_profiles")
             .select(
               // Phase 13: timely-filing + modifier + referring-NPI fields
@@ -302,8 +306,12 @@ async function assembleDenialContext(
   const extractedCodes = new Set<{ system: "carc" | "rarc"; code: string }>();
   for (const text of [
     claim.denial_reason ?? "",
-    ...(lines ?? []).map((l) => l.denial_reason ?? ""),
-    ...(events ?? []).map((e) => e.note ?? ""),
+    ...(lines ?? []).map(
+      (l: Record<string, unknown>) => (l.denial_reason as string | null) ?? "",
+    ),
+    ...(events ?? []).map(
+      (e: Record<string, unknown>) => (e.note as string | null) ?? "",
+    ),
   ]) {
     for (const m of text.matchAll(/(CARC|RARC)\s+([A-Z]?\d+)/gi)) {
       const system = m[1]!.toLowerCase() as "carc" | "rarc";
@@ -320,6 +328,7 @@ async function assembleDenialContext(
   }> = [];
   if (codeList.length > 0) {
     const { data } = await supabase
+      .raw()
       .schema("resupply")
       .from("denial_codes")
       .select("code_system, code, description, category, recommended_action")
@@ -343,7 +352,7 @@ async function assembleDenialContext(
       headerDenialReason: claim.denial_reason,
     },
     payerProfile: payer ?? null,
-    lines: (lines ?? []).map((l) => ({
+    lines: (lines ?? []).map((l: Record<string, unknown>) => ({
       hcpcsCode: l.hcpcs_code,
       modifier: l.modifier,
       billedCents: l.billed_cents,
@@ -353,15 +362,17 @@ async function assembleDenialContext(
       status: l.status,
       denialReason: l.denial_reason,
     })),
-    eraEvents: (events ?? []).slice(0, 10).map((e) => ({
-      eventType: e.event_type,
-      amountCents: e.amount_cents,
-      payerRef: e.payer_ref,
-      // Keep the note short — we don't need the full ERA filename
-      // in the prompt; just the summary line.
-      note: e.note ? e.note.slice(0, 240) : null,
-      occurredAt: e.occurred_at,
-    })),
+    eraEvents: (events ?? [])
+      .slice(0, 10)
+      .map((e: Record<string, unknown>) => ({
+        eventType: e.event_type,
+        amountCents: e.amount_cents,
+        payerRef: e.payer_ref,
+        // Keep the note short — we don't need the full ERA filename
+        // in the prompt; just the summary line.
+        note: e.note ? (e.note as string).slice(0, 240) : null,
+        occurredAt: e.occurred_at,
+      })),
     extractedDenialCodes: codeList,
     catalogEntries: catalogEntries.map((c) => ({
       system: c.code_system,

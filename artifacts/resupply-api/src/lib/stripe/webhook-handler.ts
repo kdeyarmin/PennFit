@@ -42,7 +42,8 @@ import type Stripe from "stripe";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
 
@@ -107,7 +108,16 @@ export async function tryRecordWebhookEvent(
   log: { warn?: (...args: unknown[]) => void } | undefined,
 ): Promise<"inserted" | "duplicate" | "error"> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // Tenant context missing — proceed un-gated (same non-fatal
+      // "error" outcome the catch below returns; callers treat it as
+      // "dedup table unavailable, proceed anyway").
+      return "error";
+    }
+    // stripe_webhook_events is GLOBAL (no org_id) — idempotency is
+    // keyed on event_id across all tenants, so use the unscoped client.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error } = await supabase
       .schema("resupply")
       .from("stripe_webhook_events")
@@ -138,7 +148,18 @@ export async function tryDeleteWebhookEventRecord(
   log: { warn?: (...args: unknown[]) => void } | undefined,
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      // Tenant context missing — nothing we can release; log + return
+      // (this cleanup is best-effort and never throws).
+      log?.warn?.(
+        { eventId },
+        "stripe webhook: dedup record cleanup skipped — tenant context missing",
+      );
+      return;
+    }
+    // stripe_webhook_events is GLOBAL (no org_id) — use the unscoped client.
+    const supabase = getOrgScopedClient(orgId).raw();
     const { error } = await supabase
       .schema("resupply")
       .from("stripe_webhook_events")
@@ -666,7 +687,17 @@ async function markStatusByPaymentIntent(
       | undefined;
   },
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — treat like an unknown payment_intent
+    // (skip the refund mirror; same non-throwing "nothing to do" path).
+    ctx.log?.info?.(
+      { paymentIntentId },
+      "shop order refund event skipped — tenant context missing",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // Resolve the order first so we can decide between partial and
   // full refund. The previous implementation wrote `status:"refunded"`
   // on EVERY charge.refunded event regardless of whether the refund
@@ -674,7 +705,6 @@ async function markStatusByPaymentIntent(
   // status, hid the order from /shop/me/orders, blocked the return
   // flow, and made the order's true paid history unrecoverable.
   const { data: existing, error: lookupErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, customer_id, amount_total_cents, status")
     .eq("stripe_payment_intent_id", paymentIntentId)
@@ -708,7 +738,6 @@ async function markStatusByPaymentIntent(
   // (0 < incoming) still applies. Mirrors the out-of-order guard on the
   // subscription upsert above.
   const { data: updated, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update(update)
     .eq("id", row.id)
@@ -833,7 +862,17 @@ export async function sendOrderConfirmationIfFirst(args: {
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
   const { session, paidOrderId, items, log } = args;
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // Tenant context missing — skip the send (same non-throwing "skip"
+    // outcome used when the row is missing or already sent).
+    log?.info?.(
+      { orderId: paidOrderId },
+      "order confirmation email skipped — tenant context missing",
+    );
+    return { skipped: true, reason: "tenant_context_missing" };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Atomic claim: stamp the timestamp ONLY if it is currently NULL.
   // The RETURNING gives back the canonical row fields the email needs
@@ -842,7 +881,6 @@ export async function sendOrderConfirmationIfFirst(args: {
   // Both are "skip" outcomes for this send.
   const nowIso = new Date().toISOString();
   const { data: claimedRows, error: claimErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update({
       confirmation_email_sent_at: nowIso,
@@ -874,7 +912,6 @@ export async function sendOrderConfirmationIfFirst(args: {
   const releaseClaim = async (): Promise<void> => {
     try {
       const { error: releaseErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .update({
           confirmation_email_sent_at: null,
@@ -903,7 +940,6 @@ export async function sendOrderConfirmationIfFirst(args: {
     let toEmail: string | null = null;
     if (claimed.customer_id) {
       const { data: cust, error: custErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select("email_lower")
         .eq("customer_id", claimed.customer_id)

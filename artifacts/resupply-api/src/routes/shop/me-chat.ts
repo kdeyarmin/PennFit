@@ -48,7 +48,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CpapDeviceInfo,
   type SavedShippingAddress,
 } from "@workspace/resupply-db";
@@ -203,6 +203,7 @@ function startSseHeaders(res: Response): void {
  * rather than aborting the request.
  */
 async function loadAccountContext(
+  orgId: string,
   customerId: string,
   displayName: string | null,
 ): Promise<CustomerChatAccountContext> {
@@ -216,27 +217,24 @@ async function loadAccountContext(
   };
 
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // Run the four reads in parallel — the original SQL path
     // ran them sequentially but they're independent and indexed on
     // customer_id.
     const [customerRes, orderCountRes, latestOrderRes, subsRes] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("shop_customers")
           .select("cpap_device_json, created_at")
           .eq("customer_id", customerId)
           .limit(1)
           .maybeSingle(),
         supabase
-          .schema("resupply")
           .from("shop_orders")
           .select("*", { count: "exact", head: true })
           .eq("customer_id", customerId)
           .eq("status", "paid"),
         supabase
-          .schema("resupply")
           .from("shop_orders")
           .select(
             "id, stripe_session_id, amount_total_cents, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, shipping_address_json",
@@ -255,7 +253,6 @@ async function loadAccountContext(
         // upper bound (tens at most per customer) so a single SELECT
         // is fine.
         supabase
-          .schema("resupply")
           .from("shop_subscriptions")
           .select("status")
           .eq("customer_id", customerId),
@@ -308,7 +305,8 @@ async function loadAccountContext(
       : null;
 
     const activeSubscriptionCount = (subsRes.data ?? []).filter(
-      (s) => s.status !== "canceled" && s.status !== "incomplete_expired",
+      (s: { status: string }) =>
+        s.status !== "canceled" && s.status !== "incomplete_expired",
     ).length;
 
     return {
@@ -411,6 +409,12 @@ router.post(
       return;
     }
 
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     const parseResult = chatBodySchema.safeParse(req.body);
     if (!parseResult.success) {
       res.status(400).json({
@@ -470,12 +474,13 @@ router.post(
     }
 
     const accountCtx = await loadAccountContext(
+      orgId,
       customerId,
       req.shopCustomerDisplayName ?? null,
     );
     const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
 
     const { messages: initial, redactionCounts } = buildInitialMessages(
       systemPrompt,
@@ -489,7 +494,11 @@ router.post(
     }
 
     const toolCtx: CustomerChatToolContext = {
-      supabase,
+      // Shared helper (customerChatTools) is typed for the unscoped
+      // service-role client and is being cut over in a later wave; pass
+      // the raw client. Its tools already filter every read on
+      // customer_id.
+      supabase: supabase.raw(),
       customerId,
       // Non-PHI label used only by escalate_to_human to tag the
       // CSR-inbox notification — same label the admin inbox already shows.

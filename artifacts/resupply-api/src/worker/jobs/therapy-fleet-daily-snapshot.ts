@@ -17,7 +17,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import {
@@ -60,17 +60,25 @@ export async function registerTherapyFleetSnapshotJob(
 }
 
 export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      metricDate: new Date().toISOString().slice(0, 10),
+      patientsWithData: 0,
+      atRisk: 0,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const [overview, resupply, setup, clinical] = await Promise.all([
-    supabase.schema("resupply").rpc("therapy_fleet_overview", {
+    supabase.raw().schema("resupply").rpc("therapy_fleet_overview", {
       p_window_days: 30,
     }),
-    supabase.schema("resupply").rpc("therapy_resupply_summary", {
+    supabase.raw().schema("resupply").rpc("therapy_resupply_summary", {
       p_due_within_days: 0,
     }),
-    supabase.schema("resupply").rpc("therapy_setup_adherence_summary"),
-    supabase.schema("resupply").rpc("therapy_clinical_signal_counts"),
+    supabase.raw().schema("resupply").rpc("therapy_setup_adherence_summary"),
+    supabase.raw().schema("resupply").rpc("therapy_clinical_signal_counts"),
   ]);
   if (overview.error) throw overview.error;
   if (resupply.error) throw resupply.error;
@@ -109,6 +117,7 @@ export async function runTherapyFleetSnapshot(): Promise<FleetSnapshotResult> {
   };
 
   const { error: upsertErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("therapy_fleet_daily_metrics")
     .upsert(row, { onConflict: "metric_date" });

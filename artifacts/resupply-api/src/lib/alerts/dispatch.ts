@@ -21,7 +21,8 @@ import { randomUUID } from "node:crypto";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
@@ -162,14 +163,20 @@ function isMissingRelationError(error: unknown): boolean {
 export async function dispatchAlert(
   input: DispatchAlertInput,
 ): Promise<DispatchAlertOutcome> {
-  const supabase = input.supabase ?? getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. When a caller
+  // injects a client (test seam), bind the scoped facade to it so the
+  // body uniformly uses `.from()`; otherwise resolve the seed org. A
+  // missing org degrades to `alert_not_found` (the same fail-closed
+  // "nothing to dispatch" outcome the route already maps to a 404).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { status: "alert_not_found" };
+  const supabase = getOrgScopedClient(orgId, input.supabase);
   const { alertKey, channel, patientId } = input;
 
   // 1. Alert definition. A missing table (migration 0179 not yet
   // applied on this environment) degrades to `alert_not_found` rather
   // than throwing a 500 — the route stays forward-deploy-safe.
   const { data: def, error: defErr } = await supabase
-    .schema("resupply")
     .from("alert_definitions")
     .select("key, channels, allowed_variables, is_active")
     .eq("key", alertKey)
@@ -193,7 +200,6 @@ export async function dispatchAlert(
   // (if any), in parallel — both are single unique-index hits.
   const [globalRes, overrideRes] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("alert_messages")
       .select("subject, body_html, body_text, is_active")
       .eq("alert_key", alertKey)
@@ -201,7 +207,6 @@ export async function dispatchAlert(
       .limit(1)
       .maybeSingle(),
     supabase
-      .schema("resupply")
       .from("alert_message_overrides")
       .select("subject, body_html, body_text, is_active")
       .eq("patient_id", patientId)
@@ -245,7 +250,6 @@ export async function dispatchAlert(
 
   // 3. Patient.
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, status, email, phone_e164, legal_first_name")
     .eq("id", patientId)

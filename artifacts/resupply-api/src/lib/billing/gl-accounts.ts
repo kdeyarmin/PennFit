@@ -5,7 +5,7 @@
 // resolves. Defaults mirror the historical hardcoded constants in
 // lib/quickbooks-export.ts so an unconfigured export is unchanged.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 export const GL_ACCOUNT_KEYS = [
   "deposit",
@@ -65,9 +65,15 @@ export function resolveGlAccounts(
 
 /** Load + resolve the configured GL accounts (defaults when unset). */
 export async function loadGlAccounts(): Promise<ResolvedGlAccounts> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // No tenant context — fall back to the built-in defaults (the same
+    // result as an empty mapping table), so an unconfigured export is
+    // unchanged.
+    return resolveGlAccounts([]);
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data } = await supabase
-    .schema("resupply")
     .from("gl_account_mappings")
     .select("mapping_key, account_name");
   return resolveGlAccounts((data ?? []) as GlAccountMappingRow[]);

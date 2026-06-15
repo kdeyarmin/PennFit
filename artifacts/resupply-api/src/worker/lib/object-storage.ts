@@ -19,7 +19,7 @@
 // Supabase Storage through the same service-role client used
 // elsewhere in the codebase.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 export interface AttachmentObject {
   /** Supabase bucket name (from SUPABASE_STORAGE_BUCKET_PRIVATE). */
@@ -59,7 +59,13 @@ export async function listAttachmentObjects(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<AttachmentObject[]> {
   const bucketName = getPrivateStorageBucket(env);
-  const supabase = getSupabaseServiceRoleClient();
+  // Object storage is a single global private bucket — it is NOT a
+  // tenant-scoped `resupply` table, so it goes through the unscoped
+  // service-role client (`.raw()`) rather than `.from()`. Resolve the
+  // seed org only to obtain that client through the chokepoint.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId).raw();
   const out: AttachmentObject[] = [];
   const pageSize = 100;
   let offset = 0;
@@ -108,7 +114,15 @@ export async function deleteAttachmentObject(
   bucketName: string,
   objectName: string,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  // Single global private bucket — unscoped service-role client via the
+  // chokepoint's `.raw()` (storage is not a tenant `resupply` table).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      `Failed to delete ${bucketName}/${objectName}: tenant context missing`,
+    );
+  }
+  const supabase = getOrgScopedClient(orgId).raw();
   const { error } = await supabase.storage
     .from(bucketName)
     .remove([objectName]);

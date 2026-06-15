@@ -10,7 +10,9 @@ import {
   getSupabaseFilterCalls,
 } from "../test-helpers/supabase-mock";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
+
+import { MOCK_ORG_ID } from "../test-helpers/auth-mocks";
 
 import {
   SIGNATURE_PENDING_STATUSES,
@@ -67,7 +69,7 @@ describe("aggregatePacketsNeedingSignature", () => {
   it("scopes by provider id and filters to pending statuses", async () => {
     stagePackets([ROW_A, ROW_B]);
     const result = await aggregatePacketsNeedingSignature(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       { kind: "provider", providerId: "prv_1" },
     );
 
@@ -98,7 +100,7 @@ describe("aggregatePacketsNeedingSignature", () => {
   it("scopes by practice name via the embedded provider filter", async () => {
     stagePackets([ROW_A]);
     const result = await aggregatePacketsNeedingSignature(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       { kind: "practice", practiceName: "Sleep Wellness Clinic" },
     );
 
@@ -119,7 +121,7 @@ describe("aggregatePacketsNeedingSignature", () => {
   it("returns an empty batch (label falls back to the id) when nothing is pending", async () => {
     stagePackets([]);
     const result = await aggregatePacketsNeedingSignature(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       { kind: "provider", providerId: "prv_missing" },
     );
     expect(result.count).toBe(0);
@@ -136,7 +138,7 @@ describe("aggregatePacketsNeedingSignature", () => {
       },
     ]);
     const result = await aggregatePacketsNeedingSignature(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       { kind: "provider", providerId: "prv_1" },
     );
     expect(result.packets[0]).toMatchObject({
@@ -151,7 +153,7 @@ describe("aggregatePacketsNeedingSignature", () => {
       error: { message: "boom" },
     });
     await expect(
-      aggregatePacketsNeedingSignature(getSupabaseServiceRoleClient(), {
+      aggregatePacketsNeedingSignature(getOrgScopedClient(MOCK_ORG_ID), {
         kind: "provider",
         providerId: "prv_1",
       }),

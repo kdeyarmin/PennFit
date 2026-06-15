@@ -13,6 +13,21 @@
 
 import { describe, it, expect, vi } from "vitest";
 
+// The dispatcher resolves its tenant via `resolveSeedOrgId()` before any
+// DB use (see Impl.db()). With no live database that real resolver
+// returns null and the dispatcher throws "tenant context missing", so we
+// stub the seed resolver to a fixed test org. `getOrgScopedClient` stays
+// REAL so the injected stub client is wrapped by the production facade
+// (the query bodies are identical on both paths).
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  return {
+    ...actual,
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
+  };
+});
+
 import { createVoiceToolDispatcher } from "./tools-impl";
 
 interface StubRow {

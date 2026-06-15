@@ -31,7 +31,11 @@ import {
 import { createHmac } from "node:crypto";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 import { getLinkHmacKey } from "@workspace/resupply-secrets";
 import {
   readAuthEnv,
@@ -55,10 +59,83 @@ let cachedDeps: AuthDeps | undefined;
  *
  * @returns The assembled `AuthDeps` instance; the same cached instance is returned on subsequent calls.
  */
+/**
+ * Resolve the raw (unscoped) service-role client through the org-scoped
+ * chokepoint. The auth repository and the MFA/customer probes operate on
+ * GLOBAL data — `resupply_auth` tables (cross-schema) and the
+ * org-less provider portal tables — so they legitimately route through
+ * `.raw()` rather than the tenant-scoped facade. We still go through the
+ * chokepoint (not the raw service-role acquisition directly) so this file
+ * has no direct service-role acquisition. Single-tenant: the seed org is
+ * the only tenant; `.raw()` returns the same underlying client regardless
+ * of which org id the scoped wrapper was built with.
+ */
+async function getRawServiceClient(): Promise<
+  ReturnType<OrgScopedClient["raw"]>
+> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("tenant context missing (seed org unresolved)");
+  }
+  return getOrgScopedClient(orgId).raw();
+}
+
+/**
+ * Resolve the org-scoped client for the seed org (single-tenant). The
+ * customer resolver writes the tenant-scoped `shop_customers` table, so
+ * it goes through the facade (`.from()`) to pick up auto-scoping; the
+ * MFA/auth probes use `.raw()` off this same client for their global /
+ * cross-schema tables.
+ */
+async function getScopedClient(): Promise<OrgScopedClient> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error("tenant context missing (seed org unresolved)");
+  }
+  return getOrgScopedClient(orgId);
+}
+
+/**
+ * Lazily build the resupply_auth repository through the chokepoint.
+ * `getAuthDeps()` is synchronous, but the seed-org resolution that backs
+ * the raw client is async — so we defer the real repo's construction to
+ * first method use and memoize it. Each AuthRepository method delegates
+ * to the resolved real repo. The repository operates entirely on the
+ * GLOBAL `resupply_auth` schema, so it legitimately uses `.raw()`.
+ */
+function makeLazyAuthRepo(): AuthDeps["repo"] {
+  let realRepoPromise: Promise<AuthDeps["repo"]> | undefined;
+  const getRealRepo = (): Promise<AuthDeps["repo"]> => {
+    if (!realRepoPromise) {
+      realRepoPromise = getRawServiceClient().then((raw) =>
+        supabaseAuthRepository(raw),
+      );
+    }
+    return realRepoPromise;
+  };
+  // Proxy every AuthRepository method to the lazily-resolved real repo.
+  return new Proxy({} as AuthDeps["repo"], {
+    get(_target, prop: string | symbol) {
+      return (...args: unknown[]) =>
+        getRealRepo().then((repo) => {
+          const fn = (repo as unknown as Record<string | symbol, unknown>)[
+            prop
+          ];
+          return (fn as (...a: unknown[]) => unknown).apply(repo, args);
+        });
+    },
+  });
+}
+
 export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;
   const env = readAuthEnv(process.env);
-  const repo = supabaseAuthRepository(getSupabaseServiceRoleClient());
+  // The auth repository operates entirely on the global `resupply_auth`
+  // schema. `getAuthDeps()` is synchronous (every caller depends on
+  // that), so we cannot await the seed-org resolution here; instead we
+  // build a lazy repo whose methods resolve the raw service-role client
+  // through the chokepoint on first use and memoize it.
+  const repo = makeLazyAuthRepo();
 
   const audit: AuthDeps["audit"] = (event) => {
     // logAudit is async + write-through; auth handlers don't
@@ -139,11 +216,12 @@ export function getAuthDeps(): AuthDeps {
  * the sign-in handler passes auth.users.id, so we bridge here.
  */
 async function adminIdForAuthUser(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   authUserId: string,
 ): Promise<string | null> {
+  // admin_users is a tenant-scoped table (has org_id) — the facade
+  // `.from()` auto-applies the org filter.
   const { data, error } = await supabase
-    .schema("resupply")
     .from("admin_users")
     .select("id")
     .eq("auth_user_id", authUserId)
@@ -158,10 +236,13 @@ async function adminIdForAuthUser(
  * provider_mfa_secrets.account_id references the portal account.
  */
 async function providerAccountIdForAuthUser(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   authUserId: string,
 ): Promise<string | null> {
+  // provider_portal_accounts is a BLOCKED GLOBAL table (no org_id, not
+  // in the typed union) — route through the raw client, no org filter.
   const { data, error } = await supabase
+    .raw()
     .schema("resupply")
     .from("provider_portal_accounts")
     .select("id")
@@ -193,7 +274,7 @@ async function providerAccountIdForAuthUser(
 function makeMfaProbe(): MfaProbe {
   return {
     async findActiveSecret(userId) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = await getScopedClient();
       // After the multi-device migration, this is "any active
       // secret" — used by sign-in to detect "does this user have
       // MFA at all?" The verify path uses findAllActiveSecrets to
@@ -201,6 +282,7 @@ function makeMfaProbe(): MfaProbe {
       const adminId = await adminIdForAuthUser(supabase, userId);
       if (adminId) {
         const { data, error } = await supabase
+          .raw()
           .schema("resupply")
           .from("admin_mfa_secrets")
           .select("secret_base32, verified_at, last_used_counter")
@@ -220,6 +302,7 @@ function makeMfaProbe(): MfaProbe {
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return null;
       const { data, error } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .select("secret_base32, verified_at, last_used_counter")
@@ -235,10 +318,11 @@ function makeMfaProbe(): MfaProbe {
       };
     },
     async findAllActiveSecrets(userId) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = await getScopedClient();
       const adminId = await adminIdForAuthUser(supabase, userId);
       if (adminId) {
         const { data, error } = await supabase
+          .raw()
           .schema("resupply")
           .from("admin_mfa_secrets")
           .select("id, secret_base32, last_used_counter")
@@ -258,6 +342,7 @@ function makeMfaProbe(): MfaProbe {
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return [];
       const { data, error } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .select("id, secret_base32, last_used_counter")
@@ -272,7 +357,7 @@ function makeMfaProbe(): MfaProbe {
       }));
     },
     async recordVerify(userId, counter, secretId) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = await getScopedClient();
       const nowIso = new Date().toISOString();
       // Per the MfaProbe contract this is best-effort (a failure must
       // not block the sign-in — the 30s TOTP step still bounds the
@@ -290,12 +375,14 @@ function makeMfaProbe(): MfaProbe {
       // doesn't own it, so we don't need to know the population.
       if (secretId) {
         const { error: adminErr } = await supabase
+          .raw()
           .schema("resupply")
           .from("admin_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
           .eq("id", secretId);
         if (adminErr) logBumpError("admin_mfa_secrets", adminErr);
         const { error: provErr } = await supabase
+          .raw()
           .schema("resupply")
           .from("provider_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
@@ -307,6 +394,7 @@ function makeMfaProbe(): MfaProbe {
       const adminId = await adminIdForAuthUser(supabase, userId);
       if (adminId) {
         const { error: adminErr } = await supabase
+          .raw()
           .schema("resupply")
           .from("admin_mfa_secrets")
           .update({ last_used_counter: counter, last_used_at: nowIso })
@@ -317,6 +405,7 @@ function makeMfaProbe(): MfaProbe {
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return;
       const { error: provErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_secrets")
         .update({ last_used_counter: counter, last_used_at: nowIso })
@@ -324,13 +413,14 @@ function makeMfaProbe(): MfaProbe {
       if (provErr) logBumpError("provider_mfa_secrets", provErr);
     },
     async findRecoveryCodeMatch(userId, codeHash) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = await getScopedClient();
       // Spendable rows only — used_at IS NULL. The unique index on
       // code_hash means at most one row matches; the owner filter
       // prevents a code minted for one account being spent by another.
       const adminId = await adminIdForAuthUser(supabase, userId);
       if (adminId) {
         const { data, error } = await supabase
+          .raw()
           .schema("resupply")
           .from("admin_mfa_recovery_codes")
           .select("id")
@@ -345,6 +435,7 @@ function makeMfaProbe(): MfaProbe {
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return null;
       const { data, error } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_recovery_codes")
         .select("id")
@@ -357,12 +448,13 @@ function makeMfaProbe(): MfaProbe {
       return data ? { id: data.id } : null;
     },
     async markRecoveryCodeUsed(rowId, ip) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = await getScopedClient();
       const usedAt = new Date().toISOString();
       // The row lives in exactly one table; update both by id (the
       // non-owning update is a no-op). A failed update means the code
       // is NOT burned and could be replayed — log at error level.
       const { error: adminErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("admin_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
@@ -379,6 +471,7 @@ function makeMfaProbe(): MfaProbe {
         );
       }
       const { error: provErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
@@ -396,7 +489,7 @@ function makeMfaProbe(): MfaProbe {
       }
     },
     async consumeRecoveryCode(userId, codeHash, ip) {
-      const supabase = getSupabaseServiceRoleClient();
+      const supabase = await getScopedClient();
       const usedAt = new Date().toISOString();
       // Atomic compare-and-set: the .is("used_at", null) clause is
       // part of the UPDATE WHERE, so Postgres only flips rows that
@@ -405,6 +498,7 @@ function makeMfaProbe(): MfaProbe {
       const adminId = await adminIdForAuthUser(supabase, userId);
       if (adminId) {
         const { data, error } = await supabase
+          .raw()
           .schema("resupply")
           .from("admin_mfa_recovery_codes")
           .update({ used_at: usedAt, used_ip: ip ?? null })
@@ -419,6 +513,7 @@ function makeMfaProbe(): MfaProbe {
       const accountId = await providerAccountIdForAuthUser(supabase, userId);
       if (!accountId) return null;
       const { data, error } = await supabase
+        .raw()
         .schema("resupply")
         .from("provider_mfa_recovery_codes")
         .update({ used_at: usedAt, used_ip: ip ?? null })
@@ -477,9 +572,8 @@ function deriveMfaChallengeKey(): Buffer | undefined {
  */
 function makeCustomerIdResolver(): CustomerIdResolver {
   return async (input) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = await getScopedClient();
     const { data: existing, error: existingErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id, display_name, email_lower")
       .eq("auth_user_id", input.authUserId)
@@ -510,15 +604,12 @@ function makeCustomerIdResolver(): CustomerIdResolver {
     // (rare: a backfilled or re-bootstrapped shop_customers row). So
     // we INSERT first and only fall back to a targeted UPDATE on a
     // unique-violation, mirroring the prior behavior.
-    const { error: insertErr } = await supabase
-      .schema("resupply")
-      .from("shop_customers")
-      .insert({
-        customer_id: input.authUserId,
-        auth_user_id: input.authUserId,
-        email_lower: input.emailLower,
-        display_name: input.displayName ?? null,
-      });
+    const { error: insertErr } = await supabase.from("shop_customers").insert({
+      customer_id: input.authUserId,
+      auth_user_id: input.authUserId,
+      email_lower: input.emailLower,
+      display_name: input.displayName ?? null,
+    });
     if (insertErr) {
       if ((insertErr as { code?: string }).code === "23505") {
         const updatePayload: {
@@ -533,7 +624,6 @@ function makeCustomerIdResolver(): CustomerIdResolver {
         // when the caller actually has a value.
         if (input.emailLower) updatePayload.email_lower = input.emailLower;
         const { error: updateErr } = await supabase
-          .schema("resupply")
           .from("shop_customers")
           .update(updatePayload)
           .eq("customer_id", input.authUserId);
