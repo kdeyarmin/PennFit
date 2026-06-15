@@ -9,7 +9,6 @@
 import {
   type Database,
   type Json,
-  type OrgScopedClient,
   getOrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
@@ -17,8 +16,6 @@ import {
 import { resolveBillingIdentity } from "./identity-resolver";
 import { renderStatementPdf } from "./statement-pdf";
 import { persistStatementPdfCopy } from "./statement-storage";
-
-type SupabaseClient = OrgScopedClient;
 
 const CLAIM_PAGE = 1000;
 const MAX_CLAIM_PAGES = 10;
@@ -52,7 +49,9 @@ export interface GeneratePatientBillingStatementInput {
   deliveryMethod?: "email" | "sms" | "mail" | "in_person";
   generatedByEmail: string;
   adminUserId?: string | null;
-  supabase?: SupabaseClient;
+  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
+   *  (single-tenant bridge). */
+  orgId?: string;
 }
 
 export interface GeneratedPatientBillingStatement {
@@ -64,29 +63,14 @@ export interface GeneratedPatientBillingStatement {
   chartDocumentId: string | null;
 }
 
-/**
- * Resolve the seed tenant and return the org-scoped client. The injected
- * `supabase?` param is already an `OrgScopedClient` (the converted callers
- * pass one); the file-local worker pattern routes only the no-arg default
- * through the chokepoint. Fails closed: a missing seed org throws rather
- * than silently widening to all tenants.
- */
-async function resolveSeedScopedClient(): Promise<SupabaseClient> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new StatementGenerationError(
-      "no_dme_organization",
-      "tenant context missing (seed org unresolved)",
-      500,
-    );
-  }
-  return getOrgScopedClient(orgId);
-}
-
 export async function generatePatientBillingStatement(
   input: GeneratePatientBillingStatementInput,
 ): Promise<GeneratedPatientBillingStatement> {
-  const supabase = input.supabase ?? (await resolveSeedScopedClient());
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    throw new Error("statement-generation: no tenant resolved");
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: patient, error: patientErr } = await supabase
     .from("patients")
@@ -151,7 +135,7 @@ export async function generatePatientBillingStatement(
     );
   }
 
-  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+  const identity = await resolveBillingIdentity({ orgId });
   if (identity.source === "stub") {
     throw new StatementGenerationError(
       "no_dme_organization",

@@ -321,7 +321,7 @@ async function runStatementPass(
       const generated = await generatePatientBillingStatement({
         patientId,
         generatedByEmail: "system:auto_workflow",
-        supabase,
+        orgId: supabase.orgId,
       });
       void publishEvent({
         eventType: "billing_statement.generated",

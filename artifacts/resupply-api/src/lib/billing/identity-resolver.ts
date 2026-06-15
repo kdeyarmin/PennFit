@@ -14,8 +14,9 @@
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
   getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
@@ -58,18 +59,23 @@ export interface ResolvedClearinghouse {
 
 export async function resolveBillingIdentity(
   opts: {
-    supabase?: SupabaseClient;
+    /** Tenant for the org-scoped clearinghouse read. Defaults to the
+     *  seed org (single-tenant bridge). dme_organization is a global
+     *  singleton and is always read via the unscoped client. */
+    orgId?: string;
     env?: NodeJS.ProcessEnv;
     clearinghouseSlug?: string;
   } = {},
 ): Promise<ResolvedBillingIdentity> {
-  const supabase = opts.supabase ?? (await resolveSeedScopedRawClient());
   const env = opts.env ?? process.env;
   const clearinghouseSlug = opts.clearinghouseSlug ?? "office_ally";
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  const scoped = orgId ? getOrgScopedClient(orgId) : null;
 
-  // 1. Try the DB.
-  const org = await loadOrganization(supabase);
-  const ch = await loadClearinghouse(supabase, clearinghouseSlug);
+  // 1. Try the DB. dme_organization is global (no org_id); the
+  //    clearinghouse credentials are tenant-scoped.
+  const org = await loadOrganization(getSupabaseServiceRoleClient());
+  const ch = scoped ? await loadClearinghouse(scoped, clearinghouseSlug) : null;
 
   if (org && ch) {
     return {
@@ -120,15 +126,18 @@ export async function resolveBillingIdentity(
 
 export async function resolveClearinghouse(
   opts: {
-    supabase?: SupabaseClient;
+    /** Tenant for the org-scoped clearinghouse_credentials read.
+     *  Defaults to the seed org (single-tenant bridge). */
+    orgId?: string;
     env?: NodeJS.ProcessEnv;
     slug?: string;
   } = {},
 ): Promise<ResolvedClearinghouse> {
-  const supabase = opts.supabase ?? (await resolveSeedScopedRawClient());
   const env = opts.env ?? process.env;
   const slug = opts.slug ?? "office_ally";
-  const row = await loadClearinghouse(supabase, slug);
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  const scoped = orgId ? getOrgScopedClient(orgId) : null;
+  const row = scoped ? await loadClearinghouse(scoped, slug) : null;
   // Real-time config is independent of the SFTP path — compute it once
   // from (row, env) and surface it in every branch.
   const realtimeConfig = buildRealtimeConfig(row, env);
@@ -234,27 +243,6 @@ function buildRealtimeConfig(
   return readOfficeAllyRealtimeConfigOrNull(env);
 }
 
-// ── Tenant resolution ───────────────────────────────────────────────
-
-/**
- * Resolve the seed tenant and return the unscoped (`.raw()`) service-role
- * client bound through the org-scoped chokepoint. The loaders below read
- * tenant tables via `.schema("resupply").from(...)` on a RAW client, and
- * every caller that already cut over passes `supabase.raw()` here, so the
- * injected-client signature stays raw-typed; only the no-arg DEFAULT is
- * routed through `getOrgScopedClient`. Fails closed: a missing seed org
- * throws rather than silently widening to all tenants.
- */
-async function resolveSeedScopedRawClient(): Promise<SupabaseClient> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "identity-resolver: tenant context missing (seed org unresolved)",
-    );
-  }
-  return getOrgScopedClient(orgId).raw();
-}
-
 // ── Loaders ─────────────────────────────────────────────────────────
 
 async function loadOrganization(
@@ -280,11 +268,10 @@ async function loadOrganization(
 }
 
 async function loadClearinghouse(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   slug: string,
 ): Promise<ClearinghouseRow | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("clearinghouse_credentials")
     .select(
       "id, slug, display_name, usage_indicator, sftp_host, sftp_port, sftp_username, private_key_path, known_hosts_path, remote_inbox_dir, remote_outbound_dir, remote_archive_dir, etin, submitter_organization_name, contact_name, contact_phone_e164, is_active, last_polled_at, notes, realtime_enabled, realtime_url, realtime_username, realtime_sender_id, realtime_receiver_id, realtime_timeout_ms, realtime_password, created_at, updated_at, org_id",

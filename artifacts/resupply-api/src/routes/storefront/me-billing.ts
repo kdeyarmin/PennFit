@@ -219,7 +219,7 @@ router.get("/me/billing-statements/:id/pdf", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
-  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+  const identity = await resolveBillingIdentity({ orgId });
   if (identity.source === "stub") {
     res.status(503).json({ error: "billing_identity_unconfigured" });
     return;

@@ -17,9 +17,9 @@
 // The COB math (`deriveSecondaryCob`) is pure and unit-tested. PHI posture:
 // money + ids only — never patient detail.
 
-import { getOrgScopedClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface PrimaryClaimTotals {
   status: string;

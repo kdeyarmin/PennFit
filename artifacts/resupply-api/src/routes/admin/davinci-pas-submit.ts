@@ -186,7 +186,7 @@ router.post(
       return;
     }
 
-    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+    const identity = await resolveBillingIdentity({ orgId });
     if (identity.source === "stub") {
       res.status(409).json({
         error: "no_dme_organization",

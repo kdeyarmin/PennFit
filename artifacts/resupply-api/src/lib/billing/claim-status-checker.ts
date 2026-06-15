@@ -36,6 +36,8 @@ export interface SubmitClaimStatusCheckInput {
   /** Patient id from the route — asserts the claim belongs to them. */
   patientId: string;
   requestedByEmail: string;
+  /** Tenant for the org-scoped reads/writes. Defaults to the seed org. */
+  orgId?: string;
 }
 
 export class ClaimNotForPatientError extends Error {
@@ -62,10 +64,8 @@ export interface SubmitClaimStatusCheckResult {
 export async function submitClaimStatusCheck(
   input: SubmitClaimStatusCheckInput,
 ): Promise<SubmitClaimStatusCheckResult> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error("tenant context missing");
-  }
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) throw new Error("claim-status-checker: no tenant resolved");
   const supabase = getOrgScopedClient(orgId);
 
   const { data: claim, error: claimErr } = await supabase
@@ -112,10 +112,8 @@ export async function submitClaimStatusCheck(
       ).data?.member_id ?? "")
     : "";
 
-  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
-  const clearinghouse = await resolveClearinghouse({
-    supabase: supabase.raw(),
-  });
+  const identity = await resolveBillingIdentity({ orgId });
+  const clearinghouse = await resolveClearinghouse({ orgId });
 
   // ISA13s must be strictly monotonic across all outbound EDI files.
   // Both office_ally_submissions (837P / 270) and claim_status_checks

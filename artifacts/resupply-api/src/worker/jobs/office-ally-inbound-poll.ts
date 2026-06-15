@@ -138,11 +138,7 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
   }
   const supabase = getOrgScopedClient(orgId);
 
-  // resolveClearinghouse is a shared helper not yet cut over (recipe-2
-  // §B) — pass the unscoped client it is typed for.
-  const clearinghouse = await resolveClearinghouse({
-    supabase: supabase.raw(),
-  });
+  const clearinghouse = await resolveClearinghouse({ orgId });
   if (!clearinghouse.config || !clearinghouse.row) {
     logger.info(
       { source: clearinghouse.source },

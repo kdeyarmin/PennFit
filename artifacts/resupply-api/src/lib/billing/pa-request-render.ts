@@ -23,7 +23,8 @@ import {
 import { resolveBillingIdentity } from "./identity-resolver";
 import { getDocumentSupplierName } from "../company-info";
 
-type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
+import type { OrgScopedClient } from "@workspace/resupply-db";
+type SupabaseClient = OrgScopedClient;
 
 // PAP-relevant HCPCS labels so the item line reads in plain language.
 // Falls back to the raw code for anything not listed.
@@ -110,10 +111,11 @@ export interface PaRequestRenderResult {
  * writes, no logging of PHI.
  */
 export async function buildPaRequestPdf(
-  supabase: SupabaseClient,
+  orgId: string,
   patientId: string,
   paId: string,
 ): Promise<PaRequestRenderResult | null> {
+  const supabase = getOrgScopedClient(orgId);
   // 1. The PA row (scoped to the patient).
   const { data: pa, error: paErr } = await supabase
     .from("prior_authorizations")
@@ -203,8 +205,6 @@ export async function buildPaRequestPdf(
   } | null = null;
   if (rx?.provider_id) {
     const { data: prov } = await supabase
-      .raw()
-      .schema("resupply")
       .from("providers")
       .select("legal_name, npi, phone_e164, fax_e164")
       .eq("id", rx.provider_id)
@@ -214,7 +214,7 @@ export async function buildPaRequestPdf(
   }
 
   // 4. Servicing supplier (us).
-  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+  const identity = await resolveBillingIdentity({ orgId });
   const supplierName =
     identity.source !== "stub"
       ? identity.billingProvider.organizationName

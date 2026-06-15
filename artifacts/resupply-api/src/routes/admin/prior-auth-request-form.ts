@@ -62,7 +62,7 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
 
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;
@@ -142,7 +142,7 @@ router.post(
     // patient and (b) resolve the payer's default fax number. The bytes
     // are discarded — Telnyx re-fetches via the signed URL — but rendering
     // here is the cheapest way to validate + resolve the destination.
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;

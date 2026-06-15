@@ -151,8 +151,10 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
     // dme_organization is a global singleton (not org-scoped); the
-    // billing-identity helper reads it via the unscoped client.
-    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
+    // billing-identity helper reads it via the unscoped client and reads
+    // tenant clearinghouse credentials via the org-scoped client it builds
+    // from orgId.
+    const identity = await resolveBillingIdentity({ orgId });
     if (identity.source === "stub") {
       res.status(409).json({
         error: "no_dme_organization",

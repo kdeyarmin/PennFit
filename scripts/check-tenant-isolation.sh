@@ -90,6 +90,12 @@ EXCLUDES=(
   # exception, like the migrator). Every other request path gets its
   # org-scoped client downstream of this middleware.
   --glob '!**/middlewares/requireAdmin.ts'
+  # identity-resolver reads the GLOBAL dme_organization singleton
+  # (.eq("singleton", true), no org_id) via the unscoped client — the
+  # billing entity is platform-wide, not tenant-scoped. Its tenant data
+  # (clearinghouse_credentials) IS read through getOrgScopedClient(orgId).
+  # A reviewed global-table exception, like requireAdmin above.
+  --glob '!**/lib/billing/identity-resolver.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`

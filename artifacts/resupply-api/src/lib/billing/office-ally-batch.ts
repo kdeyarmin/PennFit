@@ -64,14 +64,17 @@ type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
  * client construction through the chokepoint. Fails closed: a missing
  * seed org throws rather than silently widening to all tenants.
  */
-async function resolveSeedScopedRawClient(): Promise<SupabaseClient> {
+async function resolveSeedScopedRawClient(): Promise<{
+  supabase: SupabaseClient;
+  orgId: string;
+}> {
   const orgId = await resolveSeedOrgId();
   if (!orgId) {
     throw new Error(
       "office-ally-batch: tenant context missing (seed org unresolved)",
     );
   }
-  return getOrgScopedClient(orgId).raw();
+  return { supabase: getOrgScopedClient(orgId).raw(), orgId };
 }
 
 /**
@@ -170,6 +173,7 @@ async function findUninitializedBillHoldClaims(
 
 async function findEligibilityBlocksForSubmit(input: {
   supabase: SupabaseClient;
+  orgId: string;
   claims: ClaimRow[];
   payerName: string;
   adminEmail: string | null;
@@ -217,7 +221,7 @@ async function findEligibilityBlocksForSubmit(input: {
     "billing.eligibility_precheck_refresh",
   );
   const clearinghouse = refreshEnabled
-    ? await resolveClearinghouse({ supabase: input.supabase })
+    ? await resolveClearinghouse({ orgId: input.orgId })
     : null;
   const realtimeAvailable = !!clearinghouse?.realtimeConfig;
   let freshChecks = 0;
@@ -285,7 +289,7 @@ async function findEligibilityBlocksForSubmit(input: {
 export async function executeOfficeAllyBatchSubmit(
   input: BatchSubmitInput,
 ): Promise<BatchSubmitResult> {
-  const supabase = await resolveSeedScopedRawClient();
+  const { supabase, orgId } = await resolveSeedScopedRawClient();
 
   const { data: claims, error } = await supabase
     .schema("resupply")
@@ -414,6 +418,7 @@ export async function executeOfficeAllyBatchSubmit(
 
   const eligibilityBlocks = await findEligibilityBlocksForSubmit({
     supabase,
+    orgId,
     claims: claims as ClaimRow[],
     payerName: payer.payer_legal_name,
     adminEmail: input.adminEmail,
@@ -445,7 +450,7 @@ export async function executeOfficeAllyBatchSubmit(
       "billing.eligibility_precheck_refresh",
     );
     const realtimeAvailable = refreshEnabled
-      ? !!(await resolveClearinghouse({ supabase })).realtimeConfig
+      ? !!(await resolveClearinghouse({ orgId })).realtimeConfig
       : false;
 
     // Dedup coverages — verify each at most once even if several claims in
@@ -602,7 +607,7 @@ export async function executeOfficeAllyBatchSubmit(
     ReturnType<ReturnType<typeof createOfficeAllyAdapter>["submitClaims"]>
   >;
   try {
-    identity = await resolveBillingIdentity({ supabase });
+    identity = await resolveBillingIdentity({ orgId });
     const adapter = createOfficeAllyAdapter({
       submitterOverride: identity.submitter,
       billingProviderOverride: identity.billingProvider,
@@ -785,7 +790,7 @@ export async function executeOfficeAllyBatchSubmit(
 export async function buildEdiPayloadForSubmission(
   submissionId: string,
 ): Promise<{ payload: string; usageIndicator: "P" | "T" } | null> {
-  const supabase = await resolveSeedScopedRawClient();
+  const { supabase, orgId } = await resolveSeedScopedRawClient();
   const { data: sub } = await supabase
     .schema("resupply")
     .from("office_ally_submissions")
@@ -827,7 +832,7 @@ export async function buildEdiPayloadForSubmission(
     details.push(d);
   }
 
-  const identity = await resolveBillingIdentity({ supabase });
+  const identity = await resolveBillingIdentity({ orgId });
   const built = build837P({
     submitter: identity.submitter,
     receiver: { interchangeId: "OFFCLY", organizationName: "OFFICE ALLY" },

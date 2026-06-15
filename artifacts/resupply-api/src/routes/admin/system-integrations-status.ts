@@ -34,8 +34,8 @@ router.get(
 
     const [identity, clearinghouse, queueDepth, recentWebhookFails] =
       await Promise.all([
-        resolveBillingIdentity({ supabase: supabase.raw() }),
-        resolveClearinghouse({ supabase: supabase.raw() }),
+        resolveBillingIdentity({ orgId }),
+        resolveClearinghouse({ orgId }),
         supabase
           .from("webhook_deliveries")
           .select("id", { count: "exact", head: true })

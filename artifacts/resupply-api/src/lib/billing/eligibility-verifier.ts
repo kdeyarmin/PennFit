@@ -70,6 +70,10 @@ export interface VerifyEligibilityInput {
   /** Optional HCPCS scope; defaults to general health (STC 30). */
   hcpcsCode?: string | null;
   requestedByEmail: string;
+  /** Tenant for the org-scoped reads/writes. Defaults to the seed org
+   *  (single-tenant bridge). dme_organization + the ISA13 counter are
+   *  global and read via the unscoped client. */
+  orgId?: string;
 }
 
 export class CoverageNotForPatientError extends Error {
@@ -115,10 +119,8 @@ export interface VerifyEligibilityResult {
 export async function verifyEligibility(
   input: VerifyEligibilityInput,
 ): Promise<VerifyEligibilityResult> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error("tenant context missing");
-  }
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) throw new Error("eligibility-verifier: no tenant resolved");
   const supabase = getOrgScopedClient(orgId);
 
   const { data: coverage, error: covErr } = await supabase
@@ -159,10 +161,8 @@ export async function verifyEligibility(
     throw new Error("payer does not accept electronic 270/271");
   }
 
-  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
-  const clearinghouse = await resolveClearinghouse({
-    supabase: supabase.raw(),
-  });
+  const identity = await resolveBillingIdentity({ orgId });
+  const clearinghouse = await resolveClearinghouse({ orgId });
 
   // Allocate monotonic control numbers vs. the office_ally_submissions
   // ISA13 history. Eligibility and claim ISA13s share the same pool.
@@ -337,12 +337,11 @@ export async function verifyEligibility(
 export async function getCachedEligibility(
   insuranceCoverageId: string,
   freshnessMs = 24 * 3600 * 1000,
+  orgId?: string,
 ): Promise<Database["resupply"]["Tables"]["eligibility_checks"]["Row"] | null> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return null;
-  }
-  const supabase = getOrgScopedClient(orgId);
+  const resolvedOrg = orgId ?? (await resolveSeedOrgId());
+  if (!resolvedOrg) return null;
+  const supabase = getOrgScopedClient(resolvedOrg);
   const cutoff = new Date(Date.now() - freshnessMs).toISOString();
   const { data } = await supabase
     .from("eligibility_checks")
@@ -353,11 +352,7 @@ export async function getCachedEligibility(
     .order("responded_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return (
-    (data as
-      | Database["resupply"]["Tables"]["eligibility_checks"]["Row"]
-      | null) ?? null
-  );
+  return data ?? null;
 }
 
 // Suppress no-unused-vars for the SupabaseClient alias.

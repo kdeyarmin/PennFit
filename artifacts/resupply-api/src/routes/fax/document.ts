@@ -72,9 +72,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
     const result = await renderAppealPdfForLetterId(
-      // Shared render helpers are typed for the raw service-role client
-      // and not in this wave's file list; pass `.raw()` per cutover §B.
-      supabase.raw(),
+      orgId,
       verified.outreachId,
     );
     if (!result.ok) {
@@ -141,9 +139,9 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     }
     const patientId = verified.outreachId.slice(0, sep);
     const paId = verified.outreachId.slice(sep + 1);
-    // buildPaRequestPdf is already on the org-scoped client; reuse the
-    // tenant-scoped client resolved at the top of the handler.
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    // buildPaRequestPdf builds its own org-scoped client; pass the tenant
+    // id resolved at the top of the handler.
+    const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;

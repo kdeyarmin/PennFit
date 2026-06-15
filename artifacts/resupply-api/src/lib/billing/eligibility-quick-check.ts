@@ -139,10 +139,8 @@ export async function quickCheckEligibility(
     throw new Error("payer does not accept electronic 270/271");
   }
 
-  const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
-  const clearinghouse = await resolveClearinghouse({
-    supabase: supabase.raw(),
-  });
+  const identity = await resolveBillingIdentity({ orgId });
+  const clearinghouse = await resolveClearinghouse({ orgId });
 
   const realtimeConfig = clearinghouse.realtimeConfig;
   if (!realtimeConfig) {
