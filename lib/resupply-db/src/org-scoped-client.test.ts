@@ -204,10 +204,11 @@ function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
 
 describe("listActiveOrgIds", () => {
   it("returns the ids of active tenants, filtering on status = active", async () => {
-    const { client } = makeDirectoryClient({
+    const dir = makeDirectoryClient({
       data: [{ id: "org-a" }, { id: "org-b" }],
     });
-    const ids = await listActiveOrgIds(client);
+    const ids = await listActiveOrgIds(dir.client);
+    expect(dir.lastEq).toEqual({ column: "status", value: "active" });
     expect(ids).toEqual(["org-a", "org-b"]);
   });
 
