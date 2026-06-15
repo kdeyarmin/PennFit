@@ -131,6 +131,16 @@ jobs:
           scripts/check-admin-route-gates.sh --self-test
           scripts/check-admin-route-gates.sh
 
+      # Multi-tenant isolation ratchet (Phase 0 workstream E1). The
+      # --self-test plants a new/stale violation in a fixture tree and
+      # asserts the checker catches it; the bare invocation enforces that
+      # no NEW file calls getSupabaseServiceRoleClient() directly outside
+      # the shrinking cutover baseline (scripts/tenant-isolation-baseline.txt).
+      - name: Tenant isolation guard
+        run: |
+          scripts/check-tenant-isolation.sh --self-test
+          scripts/check-tenant-isolation.sh
+
       # Fixture-driven negative-test harnesses for the guard scripts:
       # each `--self-test` execs the sibling `*.sh.test`, which builds a
       # synthetic tree, plants known violations, and asserts the checker

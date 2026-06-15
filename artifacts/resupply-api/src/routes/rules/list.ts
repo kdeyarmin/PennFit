@@ -11,18 +11,26 @@
 import { Router, type IRouter } from "express";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
+type FrequencyRuleRow =
+  Database["resupply"]["Tables"]["frequency_rules"]["Row"];
+
 const router: IRouter = Router();
 
 router.get("/rules", adminReadRateLimiter, requireAdmin, async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .schema("resupply")
+  // Fail closed: never widen to all tenants on a missing orgId.
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const db = getOrgScopedClient(orgId);
+  const { data, error } = await db
     .from("frequency_rules")
     .select("*")
     .order("priority", { ascending: true })
@@ -56,7 +64,7 @@ router.get("/rules", adminReadRateLimiter, requireAdmin, async (req, res) => {
   }
 
   res.status(200).json({
-    rules: rows.map((r) => ({
+    rules: rows.map((r: FrequencyRuleRow) => ({
       id: r.id,
       name: r.name,
       priority: r.priority,

@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   GL_ACCOUNT_DEFAULTS,
@@ -37,10 +37,14 @@ const KEY_TO_RESOLVED: Record<GlAccountKey, keyof typeof GL_ACCOUNT_DEFAULTS> =
 router.get(
   "/admin/billing/gl-account-mappings",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("gl_account_mappings")
       .select("mapping_key, account_name, updated_at");
     if (error) throw error;
@@ -78,19 +82,21 @@ router.put(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("resupply")
-      .from("gl_account_mappings")
-      .upsert(
-        {
-          mapping_key: key.data,
-          account_name: parsed.data.accountName,
-          updated_by_email: req.adminEmail ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "mapping_key" },
-      );
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const { error } = await supabase.from("gl_account_mappings").upsert(
+      {
+        mapping_key: key.data,
+        account_name: parsed.data.accountName,
+        updated_by_email: req.adminEmail ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "mapping_key" },
+    );
     if (error) throw error;
     await logAudit({
       action: "gl_account_mapping.upsert",

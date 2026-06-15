@@ -4,6 +4,10 @@ import { spawnSync } from "node:child_process";
 const CHECKS = [
   "scripts/check-resupply-architecture.sh",
   "scripts/check-admin-route-gates.sh",
+  // Multi-tenant isolation ratchet (Phase 0 workstream E1): fails on any
+  // NEW direct getSupabaseServiceRoleClient() callsite outside the
+  // shrinking cutover baseline. See check-tenant-isolation.sh.
+  "scripts/check-tenant-isolation.sh",
 ];
 
 function commandWorks(command) {
