@@ -266,11 +266,6 @@ artifacts/resupply-api/src/routes/patients/patient-documents.ts
 artifacts/resupply-api/src/routes/provider-portal.ts
 artifacts/resupply-api/src/routes/provider/mfa.ts
 artifacts/resupply-api/src/routes/provider/portal.ts
-artifacts/resupply-api/src/routes/rules/create.ts
-artifacts/resupply-api/src/routes/rules/delete.ts
-artifacts/resupply-api/src/routes/rules/list.ts
-artifacts/resupply-api/src/routes/rules/test.ts
-artifacts/resupply-api/src/routes/rules/update.ts
 artifacts/resupply-api/src/routes/rx-request-document.ts
 artifacts/resupply-api/src/routes/shop/cart-snapshot.ts
 artifacts/resupply-api/src/routes/shop/checkout.ts
