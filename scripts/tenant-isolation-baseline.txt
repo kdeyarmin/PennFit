@@ -270,7 +270,6 @@ artifacts/resupply-api/src/routes/voice/place-call.ts
 artifacts/resupply-api/src/routes/voice/status-callback.ts
 artifacts/resupply-api/src/worker/jobs/bill-hold-sweep.ts
 artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts
-artifacts/resupply-api/src/worker/jobs/deductible-reset-push.ts
 artifacts/resupply-api/src/worker/jobs/failed-order-emails-digest.ts
 artifacts/resupply-api/src/worker/jobs/fitter-supply-campaign.ts
 artifacts/resupply-api/src/worker/jobs/idempotency-keys-prune.ts
@@ -285,7 +284,6 @@ artifacts/resupply-api/src/worker/jobs/owner-digest.ts
 artifacts/resupply-api/src/worker/jobs/patient-packet-reminders.ts
 artifacts/resupply-api/src/worker/jobs/pecos-sync.ts
 artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts
-artifacts/resupply-api/src/worker/jobs/reminder-escalation.ts
 artifacts/resupply-api/src/worker/jobs/reminders.ts
 artifacts/resupply-api/src/worker/jobs/therapy-fleet-alerts-scan.ts
 artifacts/resupply-api/src/worker/jobs/therapy-fleet-daily-snapshot.ts

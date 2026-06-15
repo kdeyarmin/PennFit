@@ -1,4 +1,4 @@
--- 0347_org_isolation_rls_policies — multi-tenant RLS backstop.
+-- 0348_org_isolation_rls_policies — multi-tenant RLS backstop.
 -- Phase 0, plan workstream D (the defense-in-depth layer).
 --
 -- See docs/multi-tenant-phase-0-engineering-plan-2026-06-14.md.
