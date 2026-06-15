@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getOrgScopedClient, ORG_COLUMN } from "./org-scoped-client";
+import {
+  getOrgScopedClient,
+  listActiveOrgIds,
+  ORG_COLUMN,
+} from "./org-scoped-client";
 import type { ResupplySupabaseClient } from "./supabase-client";
 
 // A recording fake of the slice of the Supabase client the facade
@@ -166,5 +170,60 @@ describe("getOrgScopedClient", () => {
       .upsert([{ id: "1" }]);
     expect(captured.builder.op).toBe("upsert");
     expect(captured.builder.args[0]).toEqual([{ id: "1", [ORG_COLUMN]: ORG }]);
+  });
+});
+
+// A minimal directory-read fake: `.schema().from().select().eq()` resolves
+// to the staged `{ data, error }` envelope (PostgREST select-many shape).
+function makeDirectoryClient(result: {
+  data?: unknown;
+  error?: unknown;
+}): { client: ResupplySupabaseClient; lastEq?: { column: string; value: unknown } } {
+  const state: { lastEq?: { column: string; value: unknown } } = {};
+  const builder = {
+    select() {
+      return this;
+    },
+    eq(column: string, value: unknown) {
+      state.lastEq = { column, value };
+      return Promise.resolve(result);
+    },
+  };
+  const client = {
+    schema() {
+      return { from: () => builder };
+    },
+  } as unknown as ResupplySupabaseClient;
+  return { client, get lastEq() { return state.lastEq; } };
+}
+
+describe("listActiveOrgIds", () => {
+  it("returns the ids of active tenants, filtering on status = active", async () => {
+    const { client } = makeDirectoryClient({
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    const ids = await listActiveOrgIds(client);
+    expect(ids).toEqual(["org-a", "org-b"]);
+  });
+
+  it("drops rows with a missing / empty id", async () => {
+    const { client } = makeDirectoryClient({
+      data: [{ id: "org-a" }, { id: "" }, {}, { id: "org-c" }],
+    });
+    expect(await listActiveOrgIds(client)).toEqual(["org-a", "org-c"]);
+  });
+
+  it("returns [] on a query error (fail-soft, never throws)", async () => {
+    const { client } = makeDirectoryClient({ error: { message: "boom" } });
+    expect(await listActiveOrgIds(client)).toEqual([]);
+  });
+
+  it("returns [] when the directory read throws", async () => {
+    const throwingClient = {
+      schema() {
+        throw new Error("connection refused");
+      },
+    } as unknown as ResupplySupabaseClient;
+    expect(await listActiveOrgIds(throwingClient)).toEqual([]);
   });
 });
