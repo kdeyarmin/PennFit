@@ -71,10 +71,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // row) instead of the physician cover letter. Same signed-URL posture;
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
-    const result = await renderAppealPdfForLetterId(
-      orgId,
-      verified.outreachId,
-    );
+    const result = await renderAppealPdfForLetterId(orgId, verified.outreachId);
     if (!result.ok) {
       const status = result.reason === "no_dme_organization" ? 409 : 404;
       res.status(status).json({ error: result.reason });
@@ -94,10 +91,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // routes/admin/manual-documents.ts). Same signed-URL posture; no PHI
   // in the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document") {
-    const pdf = await renderManualDocumentForFax(
-      supabase,
-      verified.outreachId,
-    );
+    const pdf = await renderManualDocumentForFax(supabase, verified.outreachId);
     if (!pdf) {
       res.status(404).json({ error: "not_found" });
       return;

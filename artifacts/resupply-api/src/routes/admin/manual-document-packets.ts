@@ -226,10 +226,7 @@ async function loadPacketForRender(
     res.status(404).json({ error: "not_found" });
     return null;
   }
-  const { documents, missingIds } = await loadPacketDocuments(
-    supabase,
-    packet,
-  );
+  const { documents, missingIds } = await loadPacketDocuments(supabase, packet);
   if (missingIds.length > 0 || documents.length === 0) {
     res.status(409).json({
       error: "packet_documents_missing",
