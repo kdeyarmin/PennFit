@@ -2,19 +2,19 @@
 // content from the DME organization billing identity, falling back to
 // safe defaults when the org row hasn't been seeded (dev / preview).
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "../billing/identity-resolver";
 import { logger } from "../logger";
 import { FALLBACK_COMPANY, type CompanyProfile } from "./templates";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export async function resolveCompanyProfile(
   supabase: SupabaseClient,
 ): Promise<CompanyProfile> {
   try {
-    const identity = await resolveBillingIdentity({});
+    const identity = await resolveBillingIdentity({ orgId: supabase.orgId });
     const org = identity.organization;
     const bp = identity.billingProvider;
     const legalName = org?.legal_name ?? bp.organizationName;
