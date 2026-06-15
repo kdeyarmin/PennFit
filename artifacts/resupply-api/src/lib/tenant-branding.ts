@@ -178,9 +178,105 @@ export async function resolveBrandingByHost(
   return branding;
 }
 
-/** Drop the branding cache so an admin save is visible on the next read. */
+/**
+ * Drop the branding cache so an admin save is visible on the next read.
+ * Also drops the host→org cache: every branding/custom-domain mutation
+ * invalidates this, and a domain bind/unbind changes which org a host
+ * resolves to, so the two must clear together.
+ */
 export function invalidateBrandingCache(): void {
   cache.clear();
+  orgIdCache.clear();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Host → tenant (org_id) resolution.
+//
+// The branding resolver above answers "what does this host LOOK like";
+// this answers "whose DATA does a request on this host operate on". They
+// share the same verified-custom-domain lookup but are kept separate so
+// the public branding endpoint can stay cacheable/PII-free while the
+// org-id resolver feeds request-scoped data access (requireSignedIn,
+// storefront routes).
+//
+// Resolution mirrors branding exactly:
+//   * a VERIFIED custom domain → that tenant's org_id,
+//   * everything else (platform host, unverified, miss, error) → the
+//     SEED org id — so single-tenant behavior is byte-identical.
+// ────────────────────────────────────────────────────────────────────
+
+interface OrgIdCacheEntry {
+  orgId: string | null;
+  expiresAt: number;
+}
+
+const orgIdCache = new Map<string, OrgIdCacheEntry>();
+
+async function loadOrgIdForHost(host: string): Promise<string | null> {
+  const normalized = normalizeCustomDomain(host);
+  if (!normalized) return resolveSeedOrgId();
+
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) return null;
+  // GLOBAL `organizations` directory — reach via `.raw()` (see
+  // loadSeedBranding) so the org-scoped facade doesn't append a filter.
+  const supabase = getOrgScopedClient(seedOrgId);
+  const { data, error } = await withTimeout(
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("custom_domain", normalized)
+      .eq("custom_domain_status", "verified")
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle(),
+  );
+  if (error) throw error;
+  // No verified tenant on this host → the default site (seed org).
+  return data?.id ?? seedOrgId;
+}
+
+/**
+ * The tenant (`org_id`) a request on this host operates on. Cached ~60s
+ * per host; never throws — any failure degrades to the seed org so the
+ * storefront/customer surface stays up and single-tenant-correct.
+ *
+ * Returns null only when even the seed org can't be resolved (DB down at
+ * boot); callers treat that exactly as they treat a missing `req.orgId`.
+ */
+export async function resolveOrgIdByHost(
+  host: string | undefined,
+): Promise<string | null> {
+  const key = normalizeCustomDomain(host ?? "") ?? "";
+  const now = Date.now();
+  const hit = orgIdCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.orgId;
+
+  let orgId: string | null;
+  try {
+    orgId = key ? await loadOrgIdForHost(key) : await resolveSeedOrgId();
+  } catch (err) {
+    logger.warn(
+      {
+        event: "tenant_org_resolve_failed",
+        err: err instanceof Error ? err : new Error(String(err ?? "unknown")),
+      },
+      "host→org resolve failed; falling back to seed org",
+    );
+    // Fail-soft to the seed org (single-tenant-correct).
+    orgId = await resolveSeedOrgId().catch(() => null);
+  }
+  // Only cache a positive resolution; a null (DB-down) result should be
+  // retried on the next request rather than pinned for the TTL.
+  if (orgId) orgIdCache.set(key, { orgId, expiresAt: now + CACHE_TTL_MS });
+  return orgId;
+}
+
+/** Drop the host→org cache (call when a domain verification changes). */
+export function invalidateOrgIdCache(): void {
+  orgIdCache.clear();
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -267,6 +363,7 @@ export function warmVerifiedCustomDomains(): void {
 /** Test-only: reset all module caches between cases. */
 export function __resetTenantBrandingForTests(): void {
   cache.clear();
+  orgIdCache.clear();
   verifiedDomains = new Set<string>();
   verifiedDomainsExpiresAt = 0;
   verifiedRefreshInFlight = null;

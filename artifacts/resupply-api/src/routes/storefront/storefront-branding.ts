@@ -12,18 +12,10 @@
 
 import { Router, type IRouter } from "express";
 
+import { requestHost } from "../../lib/request-host";
 import { resolveBrandingByHost } from "../../lib/tenant-branding";
 
 const router: IRouter = Router();
-
-/** Bare lowercase host for the request (honors the proxy-forwarded host). */
-function requestHost(req: {
-  headers: Record<string, string | string[] | undefined>;
-}): string {
-  const fwd = req.headers["x-forwarded-host"];
-  const raw = Array.isArray(fwd) ? fwd[0] : (fwd ?? req.headers.host);
-  return (typeof raw === "string" ? raw : "").split(",")[0]!.trim();
-}
 
 router.get("/storefront-branding", async (req, res) => {
   const branding = await resolveBrandingByHost(requestHost(req));
