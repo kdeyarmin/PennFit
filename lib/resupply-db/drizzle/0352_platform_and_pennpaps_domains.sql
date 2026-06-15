@@ -1,4 +1,4 @@
--- 0351_platform_and_pennpaps_domains — split the platform homepage from
+-- 0352_platform_and_pennpaps_domains — split the platform homepage from
 -- the Penn Home Medical Supply tenant storefront.
 --
 -- CareMetric Breathe now uses cmbreathe.com as the platform/home domain.
