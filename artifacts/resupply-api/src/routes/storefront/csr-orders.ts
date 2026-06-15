@@ -29,7 +29,6 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -40,6 +39,7 @@ import {
 } from "../../lib/csr-order/order";
 import { verifyCsrOrderToken } from "../../lib/csr-order/token";
 import { logger } from "../../lib/logger";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPacketDocumentSections } from "../../lib/patient-packet/content";
 import {
@@ -92,17 +92,30 @@ type ResolvedOrderRow = {
 const ORDER_COLUMNS =
   "id, order_reference, status, customer_name, customer_email, items, amount_total_cents, currency, note_to_customer, documents, link_version, expires_at, signed_at, signer_name, stripe_session_id";
 
-// Verify a token against a freshly-loaded order row. Returns the order
-// when the link is valid + open, or an error code to surface.
+// Verify a token against a freshly-loaded order row. The signed token is
+// the authorization, so we resolve the order's TENANT from its record
+// (so a tenant-B link lands in tenant B) and scope every read/write to it.
+// Returns the order + its org-scoped client, or an error code to surface.
 async function resolveOpenOrder(
-  supabase: OrgScopedClient,
   token: string,
 ): Promise<
-  | { ok: true; order: ResolvedOrderRow }
+  | {
+      ok: true;
+      order: ResolvedOrderRow;
+      supabase: OrgScopedClient;
+      orgId: string;
+    }
   | { ok: false; code: "invalid" | "not_found" | "expired" | "canceled" }
 > {
   const verified = verifyCsrOrderToken(token);
   if (!verified.valid) return { ok: false, code: "invalid" };
+
+  const orgId = await resolveOrgIdForSignedRecord(
+    "csr_order_requests",
+    verified.orderRequestId,
+  );
+  if (!orgId) return { ok: false, code: "not_found" };
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: order, error } = await supabase
     .from("csr_order_requests")
@@ -120,7 +133,7 @@ async function resolveOpenOrder(
   if (order.expires_at && new Date(order.expires_at).getTime() < Date.now()) {
     return { ok: false, code: "expired" };
   }
-  return { ok: true, order: order as ResolvedOrderRow };
+  return { ok: true, order: order as ResolvedOrderRow, supabase, orgId };
 }
 
 function errorStatus(code: "invalid" | "not_found" | "expired" | "canceled") {
@@ -134,18 +147,13 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
     res.status(400).json({ error: "missing_token" });
     return;
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
-  const resolved = await resolveOpenOrder(supabase, token);
+  const resolved = await resolveOpenOrder(token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
     return;
   }
   const order = resolved.order;
+  const supabase = resolved.supabase;
 
   const company = await resolveCompanyProfile(supabase);
   const payment = await lookupPaymentState(supabase, order.stripe_session_id);
@@ -240,18 +248,13 @@ router.post("/csr-orders/sign", mutateLimiter, async (req, res) => {
   }
   const b = parsed.data;
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
-  const resolved = await resolveOpenOrder(supabase, b.token);
+  const resolved = await resolveOpenOrder(b.token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
     return;
   }
   const order = resolved.order;
+  const supabase = resolved.supabase;
   if (order.signed_at) {
     res.status(409).json({ error: "already_signed" });
     return;
@@ -329,18 +332,13 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
-  const resolved = await resolveOpenOrder(supabase, parsed.data.token);
+  const resolved = await resolveOpenOrder(parsed.data.token);
   if (!resolved.ok) {
     res.status(errorStatus(resolved.code)).json({ error: resolved.code });
     return;
   }
   const order = resolved.order;
+  const supabase = resolved.supabase;
 
   // Server-side gate: paperwork must be signed before payment.
   if (!order.signed_at) {
