@@ -167,7 +167,6 @@ artifacts/resupply-api/src/routes/admin/order-notes.ts
 artifacts/resupply-api/src/routes/admin/outreach-playbooks.ts
 artifacts/resupply-api/src/routes/admin/pacware.ts
 artifacts/resupply-api/src/routes/admin/patient-documents-retention.ts
-artifacts/resupply-api/src/routes/admin/patient-fit-overrides.ts
 artifacts/resupply-api/src/routes/admin/patient-onboarding.ts
 artifacts/resupply-api/src/routes/admin/patient-packets.ts
 artifacts/resupply-api/src/routes/admin/patient-portal-invite.ts
@@ -194,14 +193,11 @@ artifacts/resupply-api/src/routes/admin/reports/patient-payments.ts
 artifacts/resupply-api/src/routes/admin/reports/returns.ts
 artifacts/resupply-api/src/routes/admin/resupply-funnel.ts
 artifacts/resupply-api/src/routes/admin/return-notes.ts
-artifacts/resupply-api/src/routes/admin/rt-outcomes.ts
 artifacts/resupply-api/src/routes/admin/rt-overview.ts
 artifacts/resupply-api/src/routes/admin/secondary-claims.ts
 artifacts/resupply-api/src/routes/admin/setup-checklist.ts
 artifacts/resupply-api/src/routes/admin/shop-back-in-stock.ts
 artifacts/resupply-api/src/routes/admin/shop-backorders.ts
-artifacts/resupply-api/src/routes/admin/shop-membership.ts
-artifacts/resupply-api/src/routes/admin/shop-order-loss-claims.ts
 artifacts/resupply-api/src/routes/admin/shop-order-pod-upload.ts
 artifacts/resupply-api/src/routes/admin/shop-order-pod.ts
 artifacts/resupply-api/src/routes/admin/shop-orders.ts
@@ -223,8 +219,6 @@ artifacts/resupply-api/src/routes/admin/therapy-resupply.ts
 artifacts/resupply-api/src/routes/admin/therapy-usage-report.ts
 artifacts/resupply-api/src/routes/admin/today.ts
 artifacts/resupply-api/src/routes/admin/video-visits.ts
-artifacts/resupply-api/src/routes/admin/voice-metrics.ts
-artifacts/resupply-api/src/routes/admin/webhook-delivery-retry.ts
 artifacts/resupply-api/src/routes/admin/webhook-subscriptions.ts
 artifacts/resupply-api/src/routes/admin/webhook-test-send.ts
 artifacts/resupply-api/src/routes/admin/work-items.ts
