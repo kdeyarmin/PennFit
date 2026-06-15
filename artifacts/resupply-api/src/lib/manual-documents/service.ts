@@ -8,7 +8,7 @@
 
 import {
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
@@ -25,7 +25,7 @@ import {
   type ManualDocumentSupplierContact,
 } from "./pdf";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface ManualDocumentRow {
   id: string;
@@ -97,7 +97,6 @@ export async function loadManualDocumentRow(
   id: string,
 ): Promise<ManualDocumentRow | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("manual_documents")
     .select(ROW_COLUMNS)
     .eq("id", id)
