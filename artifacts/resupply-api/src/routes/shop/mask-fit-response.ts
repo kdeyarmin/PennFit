@@ -17,7 +17,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { verifyMaskFitToken } from "../../lib/mask-fit-token";
@@ -59,9 +59,13 @@ router.post("/shop/orders/mask-fit", maskFitRateLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: order } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, status")
     .eq("id", verified.orderId)
@@ -72,20 +76,17 @@ router.post("/shop/orders/mask-fit", maskFitRateLimiter, async (req, res) => {
     return;
   }
 
-  const { error: insertErr } = await supabase
-    .schema("resupply")
-    .from("mask_fit_outcomes")
-    .insert({
-      order_id: verified.orderId,
-      mask_id: verified.maskId,
-      fit_outcome: verified.outcome,
-      comment: parsed.data.comment ?? null,
-      submitter_ip: ip === "unknown" ? null : ip,
-      user_agent:
-        typeof req.headers["user-agent"] === "string"
-          ? req.headers["user-agent"].slice(0, 500)
-          : null,
-    });
+  const { error: insertErr } = await supabase.from("mask_fit_outcomes").insert({
+    order_id: verified.orderId,
+    mask_id: verified.maskId,
+    fit_outcome: verified.outcome,
+    comment: parsed.data.comment ?? null,
+    submitter_ip: ip === "unknown" ? null : ip,
+    user_agent:
+      typeof req.headers["user-agent"] === "string"
+        ? req.headers["user-agent"].slice(0, 500)
+        : null,
+  });
   if (insertErr) {
     logger.warn(
       { err: insertErr.message },

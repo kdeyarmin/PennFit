@@ -19,7 +19,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  type Database,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
@@ -41,9 +45,13 @@ router.get("/shop/products/:productId/compatibility", async (req, res) => {
   }
   const productId = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_product_compatibility")
     .select("id, machine_manufacturer, machine_model, notes")
     .eq("product_id", productId)
@@ -51,7 +59,11 @@ router.get("/shop/products/:productId/compatibility", async (req, res) => {
   if (error) throw error;
 
   res.json({
-    compatibility: (data ?? []).map((r) => ({
+    compatibility: (
+      (data ?? []) as Array<
+        Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       machineManufacturer: r.machine_manufacturer,
       machineModel: r.machine_model,
@@ -74,7 +86,12 @@ router.get("/shop/products/compatibility", async (req, res) => {
   }
   const model = modelParsed.data ?? null;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(503).json({ error: "tenant_unavailable" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Match the requested machine: rows where the manufacturer matches
   // case-insensitively AND (model matches OR model is null — null
@@ -87,7 +104,6 @@ router.get("/shop/products/compatibility", async (req, res) => {
     `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
   let matchQuery = supabase
-    .schema("resupply")
     .from("shop_product_compatibility")
     .select("product_id")
     .ilike("machine_manufacturer", manufacturer);
@@ -109,7 +125,6 @@ router.get("/shop/products/compatibility", async (req, res) => {
   // browsing a product without compat rows would have to do a
   // per-product round-trip to know whether to show it.
   const { data: allConstrained, error: allErr } = await supabase
-    .schema("resupply")
     .from("shop_product_compatibility")
     .select("product_id");
   if (allErr) throw allErr;
@@ -118,10 +133,22 @@ router.get("/shop/products/compatibility", async (req, res) => {
   // table is small (one row per product × machine combo, ≪ 1000 rows
   // even for a full catalog), so the dedup cost is trivial.
   const explicitCompatibleProductIds = Array.from(
-    new Set((matched ?? []).map((r) => r.product_id)),
+    new Set(
+      (
+        (matched ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]
+        >
+      ).map((r) => r.product_id),
+    ),
   );
   const constrainedProductIds = Array.from(
-    new Set((allConstrained ?? []).map((r) => r.product_id)),
+    new Set(
+      (
+        (allConstrained ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]
+        >
+      ).map((r) => r.product_id),
+    ),
   );
 
   res.json({
