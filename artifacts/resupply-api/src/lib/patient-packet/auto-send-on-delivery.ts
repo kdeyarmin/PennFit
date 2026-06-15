@@ -76,7 +76,7 @@ export async function autoSendPatientPacketOnDelivery(opts: {
   if (existing) return;
 
   const result = await createAndSendPatientPacket({
-    supabase: supabase.raw(),
+    supabase,
     patientId: patient.id,
     createdByEmail: "system:order-delivered",
     // Seed the Proof of Delivery with what we know at delivery time; the
