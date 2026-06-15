@@ -380,10 +380,12 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
 // check whenever a pf_session cookie rides along (the SPA fetch helpers
 // already attach X-PF-CSRF on every state-changing request).
 router.patch(
-  "/reminders/manage",
-  attachSignedIn,
-  requireCsrfWhenSession,
-  async (req, res) => {
+  (req, res, next) => {
+    const tokenOk = GetReminderSubscriptionQueryParams.safeParse(req.query).success;
+    if (tokenOk) return next();
+    if (!req.shopCustomerId) return next();
+    return requireCsrfWhenSession(req, res, next);
+  },
     const lookup = resolveManageLookup(req);
     if (!lookup.ok) {
       res.status(lookup.status).json({ error: lookup.message });
