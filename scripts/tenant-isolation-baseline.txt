@@ -10,5 +10,3 @@
 # callsites" check (Phase 0 gate, plan PR 0.8).
 #
 # Do not hand-edit to ADD entries; regenerate with --update.
-artifacts/resupply-api/src/lib/auth-deps.ts
-artifacts/resupply-api/src/lib/voice/ws-handler.ts

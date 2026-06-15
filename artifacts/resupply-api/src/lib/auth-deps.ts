@@ -65,7 +65,7 @@ let cachedDeps: AuthDeps | undefined;
  * GLOBAL data — `resupply_auth` tables (cross-schema) and the
  * org-less provider portal tables — so they legitimately route through
  * `.raw()` rather than the tenant-scoped facade. We still go through the
- * chokepoint (not `getSupabaseServiceRoleClient()` directly) so this file
+ * chokepoint (not the raw service-role acquisition directly) so this file
  * has no direct service-role acquisition. Single-tenant: the seed org is
  * the only tenant; `.raw()` returns the same underlying client regardless
  * of which org id the scoped wrapper was built with.

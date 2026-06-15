@@ -35,10 +35,9 @@ import type { WebSocket } from "ws";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
   resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   buildSystemPrompt,
@@ -141,7 +140,24 @@ export async function handleVoiceWsConnection(
   pending: PendingSessionEntry,
 ): Promise<void> {
   const config = readVoiceConfigOrThrow();
-  const supabase = getSupabaseServiceRoleClient();
+  // Voice WS has no auth tenant context — resolve the seed org (single-
+  // tenant bridge) and route DB access through the org-scoped chokepoint.
+  // If the tenant can't be resolved the call can't persist anything, so
+  // close cleanly rather than run unscoped.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.error(
+      { event: "voice_ws_no_tenant" },
+      "voice WS: tenant context unavailable; closing connection",
+    );
+    try {
+      ws.close();
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
@@ -241,7 +257,9 @@ export async function handleVoiceWsConnection(
 
   const callerKind = pending.callerKind ?? "patient";
   const dispatcher = createVoiceToolDispatcher({
-    supabase,
+    // The dispatcher (tools-impl) wraps the injected client in its own
+    // org-scoped facade, so hand it the raw service-role client.
+    supabase: supabase.raw(),
     callerKind,
     conversationId: pending.conversationId,
     ...(pending.patientId ? { patientId: pending.patientId } : {}),
@@ -1057,35 +1075,32 @@ export async function handleVoiceDiagnosticWsConnection(
 }
 
 async function persistTranscript(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   conversationId: string,
   turn: TranscriptTurn,
 ): Promise<void> {
   const direction = turn.source === "input" ? "inbound" : "outbound";
   const sentAt = new Date();
   const sentIso = sentAt.toISOString();
-  const { error } = await supabase
-    .schema("resupply")
-    .from("messages")
-    .insert({
-      conversation_id: conversationId,
-      direction,
-      sender_role: turn.source === "input" ? "patient" : "agent",
-      body: turn.text,
-      sent_at: sentIso,
-    });
+  const { error } = await supabase.from("messages").insert({
+    conversation_id: conversationId,
+    direction,
+    sender_role: turn.source === "input" ? "patient" : "agent",
+    body: turn.text,
+    sent_at: sentIso,
+  });
   if (error) throw error;
 
   // Refresh latest-message projection (best-effort). Voice transcripts
   // can be long — `tryUpsert` truncates internally, so we don't need
   // to pre-truncate here.
-  await tryUpsertPatientLatestMessageSb(supabase, {
+  await tryUpsertPatientLatestMessageSb(supabase.raw(), {
     conversationId,
     body: turn.text,
     direction,
     messageAt: sentAt,
     // Voice WS (no auth tenant context): seed-org bridge.
-    orgId: (await resolveSeedOrgId()) ?? undefined,
+    orgId: supabase.orgId,
   });
 }
 
@@ -1103,14 +1118,13 @@ async function persistTranscript(
  * call.
  */
 async function finalizeReorderSession(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   twilioCallSid: string | null,
   orderPlaced: boolean,
 ): Promise<void> {
   if (!twilioCallSid) return;
   try {
     const { error } = await supabase
-      .schema("resupply")
       .from("voice_reorder_sessions")
       .update({
         status: orderPlaced ? "completed_order" : "completed_no_order",
@@ -1131,14 +1145,13 @@ async function finalizeReorderSession(
 }
 
 async function finalizeConversation(
-  supabase: ResupplySupabaseClient,
+  supabase: OrgScopedClient,
   conversationId: string,
   twilioCallSid: string | null,
   reason: string,
 ): Promise<void> {
   const nowIso = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("conversations")
     .update({ status: "closed", updated_at: nowIso })
     .eq("id", conversationId);
