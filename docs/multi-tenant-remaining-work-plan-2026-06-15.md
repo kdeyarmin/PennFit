@@ -58,16 +58,17 @@ Work landed on `claude/multitenant-migration-plan-alh7jy` so far:
   (`reminders.ts`, `csr-orders.ts`, `patient-packets.ts`) should derive
   `org_id` from the **token-referenced record**, not the host — a distinct
   sub-task (they're seed-correct for single-tenant today).
-- **G2 — foundation + first cron landed.** `listActiveOrgIds()` (db
-  package) and `forEachActiveOrg()` (worker lib, per-tenant error
-  isolation), both unit-tested; the conversation orphan-assignee sweep is
-  converted as the proven template. **Remaining:** the other recurring
-  crons. Each needs a per-job global-vs-tenant judgment (several sweeps
-  legitimately stay single-client because they prune **global** tables),
-  and the patient-SMS/billing crons must be done with the Node-24
-  worker integration suite gating each — per the cutover playbook.
+- **G2 — foundation + 6 crons landed.** `listActiveOrgIds()` (db package)
+  and `forEachActiveOrg()` (worker lib, per-tenant error isolation), both
+  unit-tested. Six crons converted across every structural shape
+  (orphan-assignee, prior-auth-expiry, sla-escalation, asset-recovery
+  auto-populate, patient-documents retention, therapy-integrations nightly
+  sync). **Remaining:** the other recurring crons — each is now classified
+  in the G2 table below as FAN-OUT (mechanical), SUITE-GATED (patient-
+  SMS/billing — needs the Node-24 worker integration suite, per the cutover
+  playbook), or KEEP-GLOBAL (sweeps a global table — must not fan out).
 
-The full `resupply-api` suite (5502 tests) and the tenant-isolation guard
+The full `resupply-api` suite (5500+ tests) and the tenant-isolation guard
 (baseline 0) stay green throughout.
 
 ## The load-bearing gaps (must-fix before a 2nd tenant goes live)
@@ -163,6 +164,23 @@ check-ins…) therefore **never run for any tenant but PennPaps**.
    take an explicit `WHERE org_id = $1`.
 4. Per-tenant cron **enable** flags: respect each org's feature flags so a
    tenant that hasn't bought (say) voice outreach isn't swept.
+
+**Progress + the executable remainder.** The fan-out primitives
+(`listActiveOrgIds`, `forEachActiveOrg`) are landed and tested, and **6
+crons are converted** as the proven template across every structural
+shape: `conversation-orphan-assignee-sweep`, `prior-auth-expiry-sweep`,
+`sla-escalation-sweep`, `asset-recovery-auto-populate` (feature-gated),
+`patient-documents-retention-sweep`, `therapy-integrations-nightly-sync`.
+Every remaining cron is classified below — the audit found that several
+"obvious" candidates sweep **global rollup tables that have no `org_id`**
+(`metrics_daily`, `therapy_fleet_daily_metrics`, `providers*`,
+`webhook_*`) and must **not** fan out until those tables are scoped (G12).
+
+| Disposition | Crons | Action |
+| ----------- | ----- | ------ |
+| **FAN-OUT** — tenant-scoped, internal-only; follow the proven template | `bill-hold-sweep`, `coaching-plan-progress`, `dwo-expiry-sweep`, `lapsed-customer-winback`, `lifecycle-touchpoints`, `prescription-request-auto-draft`, `quarterly-therapy-summary`, `therapy-milestones`, `fitter-conversion-attribution`, `prescription-attachment-sweep` | Extract `…ForOrg(orgId)`, fan out, sum stats. Low-risk; mechanical. |
+| **SUITE-GATED FAN-OUT** — tenant-scoped but **sends SMS/email or charges cards**; needs the Node-24 worker integration suite, and `reminders`/`bulk-campaign-tick` also need pg-boss payload `org_id` threading | `reminders`, `reminder-escalation`, `recall-notifications-send`, `cart-abandonment-scan`, `eligibility-reverify-batch`, `low-stock-alerts`, `maintenance-nudges`, `video-visit-reminders`, `therapy-fleet-alerts-scan`, `shop-order-delivery-followup`, `fitter-lead-first-day-nudge`, `fitter-lead-reengage`, `fitter-supply-campaign`, `outreach-playbook-tick`, `patient-packet-reminders`, `patient-autopay-charge`, `payment-plan-autocharge`, `bulk-campaign-tick`, `office-ally-inbound-poll`, `pacware-ready-to-sync-digest` | Same fan-out, but verify per tenant under the DB-backed suite; thread `org_id` through any enqueue→process payloads. |
+| **KEEP GLOBAL** — sweeps a **global** table (no `org_id`); must stay single-client (do *not* fan out) | `idempotency-keys-prune`, `webhook-dispatcher`, `pecos-sync`, `metrics-snapshot`, `metric-alerts-evaluator`, `metric-alerts-notify`, `therapy-fleet-daily-snapshot`, `owner-digest`, `failed-order-emails-digest`, `invite-password-expiry-notify` | Leave as-is; add a one-line "global sweep — single client by design" comment. Several become FAN-OUT only **after** G12 scopes their rollup tables. |
 
 ### G3. `app_config` is still a global singleton — **blocker for credentials**
 
