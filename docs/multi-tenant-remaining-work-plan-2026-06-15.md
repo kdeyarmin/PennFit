@@ -1,0 +1,374 @@
+# Multi-Tenant: Remaining Work Plan
+
+**Date:** 2026-06-15
+**Status:** Plan / direction-setting — gap review against a working tree
+where **Phase 0 is complete and merged**.
+**Parents:**
+[`multi-tenant-caremetric-strategy-2026-06-14.md`](./multi-tenant-caremetric-strategy-2026-06-14.md),
+[`multi-tenant-phase-0-engineering-plan-2026-06-14.md`](./multi-tenant-phase-0-engineering-plan-2026-06-14.md),
+[`multi-tenant-cutover-playbook-2026-06-14.md`](./multi-tenant-cutover-playbook-2026-06-14.md)
+
+This document reviews the **entire app as it stands today** and enumerates
+the work still required to turn CareMetric Breathe from an
+_isolation-ready single-tenant deployment_ into an _operationally
+multi-tenant SaaS_ that can serve a second DME company end-to-end.
+
+---
+
+## TL;DR — where we actually are
+
+The hard part is **done**. Tenant isolation is now a structural property of
+the code:
+
+- `organizations` table exists; every tenant-scoped table carries a
+  `NOT NULL`, indexed, FK'd `org_id` (migrations `0331`–`0351`).
+- All application **and** worker data access flows through
+  `getOrgScopedClient(orgId)`; the direct-`service_role` baseline is **0**
+  and `check-tenant-isolation.sh` is in **fail** mode.
+- RLS `org_isolation` policies exist on every tenant-scoped table
+  (`0348`) as the defense-in-depth backstop.
+- `tenant:onboard` CLI stands up a new org + first admin + feature flags.
+- Per-tenant **feature flags** (`(org_id, key)`, `0350`).
+- Per-tenant **storefront branding** (name / tagline / logo) + **custom
+  domain** verification + **Cloudflare-for-SaaS TLS** automation
+  (`0346`/`0347`); `resolveBrandingByHost()` serves brand by host.
+
+What this means: **isolation is safe** — a new `organizations` row cannot
+read or write another tenant's data. But several **runtime serving paths
+are still hard-pinned to the seed org**, and the **per-tenant external
+identity / platform-operations** layers are not built. A second tenant
+onboarded today would get correct branding on their domain but would
+**share PennPaps' catalog, customers, Stripe account, email sender, phone
+numbers, and would never have its background jobs run**.
+
+---
+
+## Implementation progress (this branch, 2026-06-15)
+
+Work landed on `claude/multitenant-migration-plan-alh7jy` so far:
+
+- **G0 — audited** (see below). Corrected the coverage numbers; classified
+  the 59 non-`org_id` tables; identified the genuine scope-candidates.
+- **G1 — core landed.** `resolveOrgIdByHost()` (verified-custom-domain →
+  `org_id`, fail-soft to seed, cached) + a shared `requestHost()` helper;
+  `requireSignedIn` / `attachSignedIn` now resolve the tenant **by host**
+  instead of always the seed org; `POST /api/orders` mirrors to the
+  host-resolved tenant. 6 resolver unit tests; single-tenant behavior
+  unchanged. **Remaining:** the HMAC signed-link storefront flows
+  (`reminders.ts`, `csr-orders.ts`, `patient-packets.ts`) should derive
+  `org_id` from the **token-referenced record**, not the host — a distinct
+  sub-task (they're seed-correct for single-tenant today).
+- **G2 — foundation + 11 crons landed.** `listActiveOrgIds()` (db package)
+  and `forEachActiveOrg()` (worker lib, per-tenant error isolation), both
+  unit-tested. Eleven internal-only crons converted across every
+  structural shape (see the G2 "DONE" row below). **Remaining:** each
+  remaining cron is classified in the G2 table as FAN-OUT (1 left,
+  mechanical), SUITE-GATED (~24 patient-SMS/email/billing crons — need the
+  Node-24 worker integration suite, per the cutover playbook), or
+  KEEP-GLOBAL (~10 global-table sweeps — must not fan out).
+
+The full `resupply-api` suite (5500+ tests) and the tenant-isolation guard
+(baseline 0) stay green throughout.
+
+## The load-bearing gaps (must-fix before a 2nd tenant goes live)
+
+These are the items that make the difference between "isolation-ready" and
+"actually serves tenant #2." They are ordered by how badly they block a
+real second customer.
+
+### G0. Confirm `org_id` coverage is complete — **correctness audit** ✅ _audited_
+
+**Audited 2026-06-15.** Of 212 `resupply` tables, **153 carry `org_id`**
+and **59 do not**. (An earlier inventory said only 37 — it missed
+migrations `0341`/`0342`, which scoped the long tail; several "candidates"
+it flagged — `locations`, `outreach_playbooks`, `webhook_subscriptions`,
+`gl_account_mappings` — in fact **already have** `org_id`.) The chokepoint
+auto-appends `.eq("org_id", …)`, so a table _without_ the column queried
+via `.from()` would **error** — meaning the 59 are already, by
+construction, reached via `.raw()` as deliberately-global. The audit
+classified the 59:
+
+- **Retired no-op stubs (do NOT scope)** — the migration-0156 compliance
+  tables (`accreditation_*`, `business_associate_agreements`, `hipaa_*`,
+  `oig_leie_*`, `patient_grievances`, `patient_rights_requests`,
+  `staff_training_records`, `quality_improvement_*`, …) and `audit_log`.
+- **Legitimately global** — reference catalogs (`hcpcs_codes`,
+  `denial_codes`, `product_hcpcs_map`, `sku_hcpcs_map`), infra
+  (`idempotency_keys`, `worker_dedup_keys`, `worker_run_summary`,
+  `fhir_jwt_jti_seen`, `inbound_webhooks`, `stripe_webhook_events`), and
+  the directory itself (`organizations`, `ehr_fhir_tenants`).
+- **Genuine candidates to scope (Phase 2 / G12 work)** —
+  `control_number_counters` (EDI sequences must not collide across
+  tenants), `object_storage_acls` (PHI attachment access), the
+  `inbound_referral_*` pipeline, `appointment_requests`, the analytics
+  rollups (`metrics_daily`, `therapy_fleet_daily_metrics`,
+  `payer_estimate_stats`, `metric_alerts`, `metric_thresholds`),
+  `providers` / `provider_portal_accounts` / `providers_pecos_status`,
+  `product_costs`, `education_videos`.
+
+**Remaining work:** add `org_id` (a `035x` migration) to the genuine
+candidates and cut over their (mostly `.raw()`) callsites. Most are not
+on a tenant-serving hot path today (billing EDI, analytics, provider
+networks), so they're sequenced with the Phase 2 / metering work, not the
+G1/G2 blockers.
+
+### G1. Public storefront + customer portal data is pinned to the seed org — **blocker**
+
+`requireSignedIn` and every `routes/storefront/*` handler resolve the
+tenant with `resolveSeedOrgId()`, not by host:
+
+- `artifacts/resupply-api/src/middlewares/requireSignedIn.ts:152` —
+  `req.orgId = (await resolveSeedOrgId())` with the comment
+  _"Single-tenant today → the seed org; later reads shop_customers.org_id."_
+- `routes/storefront/{orders,reminders,csr-orders,...}.ts` all call
+  `resolveSeedOrgId()` directly.
+
+Branding resolves by host (`resolveBrandingByHost`) but **data does not**.
+A second tenant's storefront would render their logo over PennPaps'
+catalog, customers, and orders.
+
+**Work:**
+
+1. ✅ Add `resolveOrgIdByHost(host)` next to `resolveBrandingByHost` (reuse
+   the same verified-`custom_domain` → `organizations.id` lookup + cache).
+   **Done** — `req.orgId` now resolves by host in `requireSignedIn` /
+   `attachSignedIn`, and `POST /api/orders` mirrors to it.
+2. **Make the customer-row resolution org-aware (remaining).** `req.orgId`
+   now switches to the host tenant, but the **customer identity** is still
+   seed-pinned: `customerIdResolver` (in `lib/auth-deps`) and
+   `ensureShopCustomerRow` (used across ~10 patient-portal routes) build a
+   **seed-org** scoped client. So a first-time signed-in tenant shopper
+   gets/creates a _seed_ `shop_customers` row while `/shop/me` and order
+   code read tenant-scoped tables via `getOrgScopedClient(req.orgId)` —
+   profile updates can no-op and returned data can mix tenants. This is
+   **single-tenant-correct today** (all hosts → seed, so the two agree),
+   but must be fixed before tenant #2: resolve org **before** the customer
+   lookup and thread the host-resolved `orgId` through `customerIdResolver`
+   / `ensureShopCustomerRow`. (Flagged by review on PR #969.)
+3. Replace remaining `resolveSeedOrgId()` in the **signed-link**
+   `routes/storefront/**` flows (`reminders`, `csr-orders`,
+   `patient-packets`) with a **token-derived** org (the link/record's
+   tenant), not the host. Keep seed fallback **only** for the apex
+   `pennfit.up.railway.app` host so single-tenant stays correct.
+4. Signed patient links (SMS/email reminders via `RESUPPLY_LINK_HMAC_KEY`)
+   must encode/resolve `org_id` so a click-through lands in the right
+   tenant — audit `lib/resupply-reminders` + the link verifier.
+5. Extend the cross-tenant leakage test to cover a storefront/customer
+   request on tenant B's host.
+
+### G2. Scheduled worker jobs only process the seed org — **blocker**
+
+The cutover scoped _job bodies_ correctly, but the _schedulers_ resolve a
+single org. e.g. `worker/jobs/reminders.ts:428,916` →
+`const orgId = await resolveSeedOrgId()`. The nightly/periodic crons
+(reminders, cart-abandonment, recall, bill-hold sweep, eligibility
+re-verify, claims autosubmit, therapy nightly sync, PHI sweep, onboarding
+check-ins…) therefore **never run for any tenant but PennPaps**.
+
+**Work:**
+
+1. Add a `listActiveOrgIds()` helper (`organizations WHERE status='active'`).
+2. Convert each recurring cron from "do work for seed org" to "enqueue one
+   per-org job item per active org" — the per-item handler already takes an
+   `orgId` and builds `getOrgScopedClient(orgId)`. The pg-boss payload
+   carries `org_id` (the playbook's worker contract).
+3. Audit the handful of raw-`pg` worker paths (`getDbPool()`, e.g.
+   `worker/jobs/bulk-campaign-tick.ts`) — these bypass the facade and must
+   take an explicit `WHERE org_id = $1`.
+4. Per-tenant cron **enable** flags: respect each org's feature flags so a
+   tenant that hasn't bought (say) voice outreach isn't swept.
+
+**Progress + the executable remainder.** The fan-out primitives
+(`listActiveOrgIds`, `forEachActiveOrg`) are landed and tested, and **11
+crons are converted** as the proven template across every structural
+shape: `conversation-orphan-assignee-sweep`, `prior-auth-expiry-sweep`,
+`sla-escalation-sweep`, `asset-recovery-auto-populate` (feature-gated),
+`patient-documents-retention-sweep`, `therapy-integrations-nightly-sync`,
+`bill-hold-sweep`, `dwo-expiry-sweep`, `coaching-plan-progress`,
+`prescription-request-auto-draft`, `fitter-conversion-attribution`. Every
+remaining cron is classified below — the audit found that several
+"obvious" candidates sweep **global rollup tables that have no `org_id`**
+(`metrics_daily`, `therapy_fleet_daily_metrics`, `providers*`,
+`webhook_*`) and must **not** fan out until those tables are scoped (G12),
+and that four sweeps first assumed internal actually **send patient
+email** (`lapsed-customer-winback`, `quarterly-therapy-summary`,
+`lifecycle-touchpoints`, `therapy-milestones`) so they move to
+SUITE-GATED.
+
+| Disposition                                                                                                                                                                                                     | Crons                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Action                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DONE** — converted on this branch                                                                                                                                                                             | `conversation-orphan-assignee-sweep`, `prior-auth-expiry-sweep`, `sla-escalation-sweep`, `asset-recovery-auto-populate`, `patient-documents-retention-sweep`, `therapy-integrations-nightly-sync`, `bill-hold-sweep`, `dwo-expiry-sweep`, `coaching-plan-progress`, `prescription-request-auto-draft`, `fitter-conversion-attribution`                                                                                                                                                                                                                                                                                                      | ✅ fan-out + tests landed.                                                                                                                          |
+| **FAN-OUT remaining** — tenant-scoped, internal-only                                                                                                                                                            | `prescription-attachment-sweep` (multi-phase, mixed global `worker_run_summary` + tenant tables — convert per phase, keep the liveness write single-client)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Extract `…ForOrg(orgId)` per phase, fan out the tenant phases.                                                                                      |
+| **SUITE-GATED FAN-OUT** — tenant-scoped but **sends SMS/email or charges cards**; needs the Node-24 worker integration suite, and `reminders`/`bulk-campaign-tick` also need pg-boss payload `org_id` threading | `reminders`, `reminder-escalation`, `recall-notifications-send`, `cart-abandonment-scan`, `eligibility-reverify-batch`, `low-stock-alerts`, `maintenance-nudges`, `video-visit-reminders`, `therapy-fleet-alerts-scan`, `shop-order-delivery-followup`, `lapsed-customer-winback`, `quarterly-therapy-summary`, `lifecycle-touchpoints`, `therapy-milestones`, `fitter-lead-first-day-nudge`, `fitter-lead-reengage`, `fitter-supply-campaign`, `outreach-playbook-tick`, `patient-packet-reminders`, `patient-autopay-charge`, `payment-plan-autocharge`, `bulk-campaign-tick`, `office-ally-inbound-poll`, `pacware-ready-to-sync-digest` | Same fan-out, but verify per tenant under the DB-backed suite; thread `org_id` through any enqueue→process payloads.                                |
+| **KEEP GLOBAL** — sweeps a **global** table (no `org_id`); must stay single-client (do _not_ fan out)                                                                                                           | `idempotency-keys-prune`, `webhook-dispatcher`, `pecos-sync`, `metrics-snapshot`, `metric-alerts-evaluator`, `metric-alerts-notify`, `therapy-fleet-daily-snapshot`, `owner-digest`, `failed-order-emails-digest`, `invite-password-expiry-notify`                                                                                                                                                                                                                                                                                                                                                                                          | Leave as-is; add a one-line "global sweep — single client by design" comment. Several become FAN-OUT only **after** G12 scopes their rollup tables. |
+
+### G3. `app_config` is still a global singleton — **blocker for credentials**
+
+`app_config` has an `org_id` column (`0336`) but the reader/store
+(`lib/app-config/{store,catalog}.ts`) treats it as a **single global row
+per key** and folds values into `process.env` at boot. So every tenant
+shares one `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `AIRVIEW_CLIENT_ID`,
+assistant names, etc. (Assistant _names_ are per-tenant only by accident
+of the seed having a row.)
+
+**Work:**
+
+1. Re-key `app_config` to `(org_id, key)` like feature flags (`0350` is the
+   template), with seed-org fallback for unset (org, key) rows.
+2. Split the catalog into **platform-global** keys (infra: Supabase, link
+   HMAC, storage bucket — never per-tenant) vs **tenant-overridable** keys
+   (assistant names, branding text, integration creds, thresholds).
+3. Replace the boot-time `process.env` overlay with a **request-scoped**
+   effective-config read for tenant-overridable keys (the env overlay only
+   works for one tenant). Workers read per-org config from the job payload's
+   `orgId`.
+4. Update `/admin/system/configuration` to write the caller's `org_id`.
+
+### G4. No platform super-admin surface — **operational blocker**
+
+`requireAdmin` reads `auth.users.role` ∈ {admin, agent} and every admin is
+bound to exactly one `org_id`. There is **no role above tenant admin** and
+no cross-tenant console. Today onboarding/suspending tenants is a CLI/SQL
+operation; there is no UI to manage tenants, see platform-wide usage, or
+impersonate for support.
+
+**Work:**
+
+1. Add a `platform_admin` (super-admin) capability — either a new role on
+   `auth.users` or a separate `platform_admins` table — explicitly **not**
+   scoped to one org.
+2. A `requirePlatformAdmin` gate + a small `/platform/*` console:
+   list/create/suspend tenants, view per-org usage, trigger
+   `tenant:onboard` from the UI, manage custom domains.
+3. Scoped **support impersonation** ("act as tenant X") with an audit trail,
+   since the no-audit-machinery rule means this needs a deliberate, minimal
+   log.
+
+---
+
+## Phase 2 — Per-tenant external identity (revenue + deliverability)
+
+Each tenant must bill, email, and text under **their own** identity. All of
+these intentionally relax current single-valued invariants.
+
+### G5. Stripe → Stripe Connect
+
+Today Stripe is single-account (`STRIPE_SECRET_KEY`, one set of products in
+`lib/stripe/`). For SaaS, each DME connects their own Stripe account.
+
+**Work:** Stripe **Connect** (Standard/Express accounts). Store
+`stripe_account_id` on `organizations`; route Checkout/PaymentIntents with
+`stripeAccount`; optional `application_fee` for platform revenue share;
+per-account webhook routing (resolve `org_id` from the Connect account id).
+Seed catalog/products become per-tenant.
+
+### G6. Per-tenant email From address
+
+The **"one From address" hard rule** (`info@pennpaps.com`, enforced in
+`createSendgridClient()` + `preflight:prod`) must become **one From address
+_per tenant_**. This is a deliberate, documented relaxation of a current
+hard rule — CLAUDE.md and the preflight check must be updated in lockstep.
+
+**Work:** add `from_email` / `from_name` (+ sending-domain/subuser state) to
+`organizations`; have `createSendgridClient()` accept a per-tenant sender;
+SendGrid **authenticated sending domains** or **subusers** per tenant;
+update the inbound-parse reply path. Keep a platform fallback for
+unconfigured tenants.
+
+### G7. Per-tenant telecom (Twilio)
+
+SMS + voice currently use one Twilio identity. No subaccount logic exists.
+
+**Work:** per-tenant Twilio **subaccounts** or at least per-tenant
+**Messaging Service SID** / from-numbers stored on `organizations`; route
+the inbound webhooks (SMS, voice, MMS) to the right `org_id` by the
+**called number**; per-tenant voice agent config (the agent prompt/brand
+already normalizes via `applyPlatformBranding`).
+
+### G8. Clearinghouse / payer creds per tenant
+
+`clearinghouse_credentials` is already org-scoped (multi-row, scoped via
+#950). **Verify** Office Ally / Availity / DaVinci PAS submission paths read
+the caller's org creds + NPI/PTAN end-to-end (837P/835 builders, SFTP
+outbox), and that the `dme_organization` billing identity (NPI/PTAN/tax id)
+is per-tenant. Mostly verification + closing any remaining seed-pinned reads.
+
+---
+
+## Phase 1 finish — branding polish
+
+### G9. Admin theme driven by org branding
+
+Admin tokens (`--penn-navy`, etc.) are hardcoded in `src/admin.css` under
+`.admin-root`. Drive them from the tenant's branding (logo already is).
+Respect the **hard rule**: re-point only the **raw** `--background` /
+`--foreground` vars under `.admin-root`, never add a global `@theme` block
+(see `admin.scope.test.ts`). Lower priority — cosmetic, not a blocker.
+
+---
+
+## Phase 3 finish — routing & onboarding
+
+- **G10. Subdomain routing** (`acme.caremetric.ai`) in addition to custom
+  domains — resolve `org_id` from the subdomain label as a zero-DNS-setup
+  default. Custom-domain path (`0346`/`0347`) already exists; this is the
+  cheaper onboarding default.
+- **G11. Self-serve onboarding** on top of the `tenant:onboard` CLI — the
+  super-admin console (G4) is the minimum; a true self-serve signup is
+  optional.
+
+## Phase 0 commercial — usage metering
+
+- **G12. Per-org usage metering.** The strategy doc calls for building
+  `org_id`-scoped usage metering _in Phase 0 so billing isn't retrofitted_
+  — this was **not** built. Add a metering table (active patients / messages
+  / orders per org per period) and a rollup the platform console reads.
+  Needed before per-active-patient pricing.
+
+## Phase 4 — CareMetric cross-linking (later, optional)
+
+- **G13.** Deep links between the CareMetric EMR and Resupply.
+- **G14.** Wire the EMR as a FHIR partner via the existing
+  `ehr_fhir_tenants` machinery (no merge).
+- **G15.** Optional shared SSO.
+
+## Compliance / business (parallel, gates _signing_ tenants)
+
+- **G16.** You become a **Business Associate** to every tenant. The in-app
+  HIPAA machinery was deliberately retired; hosting other companies' PHI
+  brings it back as a **business/legal** workstream: a **BAA per tenant** and
+  realistically **SOC 2**. The RLS backstop (`0348`) is already the evidence
+  artifact reviewers expect. This gates _signing_, not _code_.
+
+---
+
+## Suggested sequencing
+
+| Order | Item                                                           | Why first                                                                                    |
+| ----- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 0     | **G0** `org_id` coverage audit                                 | Cheap, and it confirms the isolation guarantee has no missing-column holes before tenant #2. |
+| 1     | **G1** storefront/customer host→org + **G2** worker fan-out    | Without these a 2nd tenant cannot transact or be served at all. Highest blast radius.        |
+| 2     | **G3** per-tenant `app_config`                                 | Unblocks per-tenant credentials that G5–G8 depend on.                                        |
+| 3     | **G4** platform super-admin console + impersonation            | Operate/support tenants without SQL.                                                         |
+| 4     | **G5–G8** Stripe Connect, email, telecom, payer creds          | Per-tenant money/comms identity. Can parallelize across the four.                            |
+| 5     | **G12** usage metering, **G10** subdomains, **G9** admin theme | Commercial + polish.                                                                         |
+| 6     | **G16** BAA/SOC 2 (start in parallel — long lead)              | Gates signing, not shipping.                                                                 |
+| 7     | **G13–G15** CareMetric cross-linking                           | Loosely coupled; do when EMR integration is prioritized.                                     |
+
+Items 1–4 are the real "make it multitenant" tail; everything Phase 0
+guaranteed (isolation safety) is already in place, so each of these is an
+additive, independently shippable, single-tenant-correct change.
+
+---
+
+## Definition of done (operationally multi-tenant)
+
+1. A second `organizations` row, given a verified domain, serves **its own**
+   catalog, customers, orders, and branding — verified by an extended
+   cross-tenant leakage/serving test on tenant B's host (G1).
+2. Every recurring background job runs for **every active tenant** (G2).
+3. Tenant-overridable config + credentials resolve per `org_id` (G3).
+4. A platform super-admin can onboard, suspend, meter, and support tenants
+   from a UI (G4, G12).
+5. Each tenant bills, emails, and texts under its **own** identity (G5–G8).
+6. A BAA + SOC 2 path exists for signing tenants (G16).

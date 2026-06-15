@@ -19,11 +19,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import {
   type IntegrationSource,
   integrationSnapshotSchema,
@@ -32,6 +28,7 @@ import {
 import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -161,18 +158,9 @@ export interface NightlySyncResult {
   nightsPersisted: number;
 }
 
-export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
-  // Single-tenant bridge: this nightly sweep has no per-tenant payload,
-  // so scope to the one seed org. Becomes a per-org loop when a 2nd
-  // tenant lands.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: THERAPY_NIGHTLY_SYNC_JOB },
-      "therapy nightly-sync: could not resolve seed org — skipping",
-    );
-    return { scanned: 0, refreshed: 0, failed: 0, nightsPersisted: 0 };
-  }
+export async function runTherapyNightlySyncForOrg(
+  orgId: string,
+): Promise<NightlySyncResult> {
   const supabase = getOrgScopedClient(orgId);
   const adapters = await getIntegrationAdaptersWithDbOverrides();
   const result: NightlySyncResult = {
@@ -369,5 +357,32 @@ export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
     );
   }
 
+  return result;
+}
+
+/**
+ * Run the nightly therapy-cloud sync for EVERY active tenant.
+ * `patient_therapy_links` / `patient_integration_snapshots` are
+ * tenant-scoped, so the sync fans out via `forEachActiveOrg` (per-tenant
+ * error isolation) and sums the counts. Single-tenant behavior is
+ * byte-identical to the old seed-org sweep.
+ */
+export async function runTherapyNightlySync(): Promise<NightlySyncResult> {
+  const result: NightlySyncResult = {
+    scanned: 0,
+    refreshed: 0,
+    failed: 0,
+    nightsPersisted: 0,
+  };
+  await forEachActiveOrg(
+    async (orgId) => {
+      const r = await runTherapyNightlySyncForOrg(orgId);
+      result.scanned += r.scanned;
+      result.refreshed += r.refreshed;
+      result.failed += r.failed;
+      result.nightsPersisted += r.nightsPersisted;
+    },
+    { jobName: THERAPY_NIGHTLY_SYNC_JOB },
+  );
   return result;
 }
