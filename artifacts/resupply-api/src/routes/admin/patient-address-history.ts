@@ -15,9 +15,6 @@ import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-type PatientAddressHistoryRow =
-  Database["resupply"]["Tables"]["patient_address_history"]["Row"];
-
 const patientIdParam = z.object({ id: z.string().uuid() });
 
 const addressBody = z
@@ -59,7 +56,11 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      history: ((data ?? []) as PatientAddressHistoryRow[]).map((r) => ({
+      history: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_address_history"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         line1: r.line1,
         line2: r.line2,

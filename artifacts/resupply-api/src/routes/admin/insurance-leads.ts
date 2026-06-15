@@ -153,8 +153,9 @@ router.get(
 
     res.json({
       rows: (
-        (rows ??
-          []) as Database["resupply"]["Tables"]["insurance_leads"]["Row"][]
+        (rows ?? []) as Array<
+          Database["resupply"]["Tables"]["insurance_leads"]["Row"]
+        >
       ).map((r) => ({
         id: r.id,
         fullName: r.full_name,

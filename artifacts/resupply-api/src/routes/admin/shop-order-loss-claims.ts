@@ -69,8 +69,9 @@ router.get(
     if (error) throw error;
     res.json({
       claims: (
-        (data ??
-          []) as Database["resupply"]["Tables"]["shop_order_loss_claims"]["Row"][]
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_order_loss_claims"]["Row"]
+        >
       ).map((r) => ({
         id: r.id,
         orderId: r.order_id,

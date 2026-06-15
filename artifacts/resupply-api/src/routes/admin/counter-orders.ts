@@ -51,8 +51,8 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
   type Database,
+  getOrgScopedClient,
   type Json,
   type SavedShippingAddress,
 } from "@workspace/resupply-db";
@@ -169,7 +169,12 @@ router.post(
       return;
     }
     const stripe = getStripeClient(config);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Collapse duplicate-priceId lines (sum quantities). The
     // shop_order_items unique index is
@@ -197,7 +202,6 @@ router.post(
     let customerEmail = body.customerEmail ?? null;
     if (body.patientId) {
       const { data: patientRow, error: patErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("email")
         .eq("id", body.patientId)
@@ -357,7 +361,6 @@ router.post(
     };
 
     const { data: orderRow, error: orderErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .insert(orderInsert)
       .select("id")
@@ -387,7 +390,6 @@ router.post(
       };
     });
     const { error: itemsErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .insert(itemRows);
     if (itemsErr) throw itemsErr;

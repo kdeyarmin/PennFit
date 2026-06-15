@@ -13,10 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   canTransition,
@@ -68,9 +65,13 @@ router.get(
   requirePermission("patients.read"),
   async (req, res) => {
     const showClosed = req.query.include === "closed";
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .select(
         "id, patient_id, source_alert_id, opened_by_user_id, status, target_compliance_pct, latest_compliance_pct, target_date, latest_outreach_at, resolution_note, opened_at, closed_at, created_at, updated_at",
@@ -83,7 +84,11 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({
-      plans: (data ?? []).map((r) => ({
+      plans: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_coaching_plans"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         patientId: r.patient_id,
         sourceAlertId: r.source_alert_id,
@@ -117,9 +122,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .insert({
         patient_id: parsed.data.patientId,
@@ -142,7 +151,6 @@ router.post(
       const snoozeUntil = new Date();
       snoozeUntil.setUTCDate(snoozeUntil.getUTCDate() + 30);
       const { error: alertErr } = await supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .update({
           status: "snoozed",
@@ -199,9 +207,13 @@ router.patch(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: prior, error: priorErr } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .select("id, status, patient_id")
       .eq("id", params.data.id)
@@ -256,7 +268,6 @@ router.patch(
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_coaching_plans")
       .update(update)
       .eq("id", params.data.id);

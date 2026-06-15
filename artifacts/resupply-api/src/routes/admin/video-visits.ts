@@ -27,7 +27,7 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -334,10 +334,14 @@ router.get(
   adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const includeClosed = req.query.include === "closed";
     let query = supabase
-      .schema("resupply")
       .from("video_visits")
       .select(VISIT_SELECT)
       .order("created_at", { ascending: false })
@@ -439,9 +443,13 @@ async function createVisitAndRespond(
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: created, error: insertErr } = await supabase
-    .schema("resupply")
     .from("video_visits")
     .insert({
       patient_id: subject.kind === "patient" ? subject.id : null,
@@ -483,7 +491,6 @@ async function createVisitAndRespond(
     delivered = delivery.delivered;
     deliveryError = delivery.delivered ? null : (delivery.reason ?? null);
     await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         invite_delivered: delivered,
@@ -557,9 +564,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, status, email, phone_e164, legal_first_name")
       .eq("id", idCheck.data)
@@ -639,9 +650,13 @@ router.post(
     }
     const body = parsed.data;
     if (body.patientId) {
-      const supabase = getSupabaseServiceRoleClient();
+      const orgId = req.orgId;
+      if (!orgId) {
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
+      }
+      const supabase = getOrgScopedClient(orgId);
       const { data: patient, error: patientErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, status, email, phone_e164, legal_first_name")
         .eq("id", body.patientId)
@@ -699,9 +714,13 @@ router.post(
       return;
     }
     const body = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select(
         "id, patient_id, purpose, notes, status, scheduled_at, created_by_email, link_version, invite_channel, invite_delivered, invite_delivery_status, invite_delivery_error_code, staff_joined_at, patient_joined_at, started_at, ended_at, created_at, guest_name, guest_email, guest_phone_e164, patients(legal_first_name, legal_last_name, status, email, phone_e164)",
@@ -776,7 +795,6 @@ router.post(
     });
 
     await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         invite_channel: body.channel,
@@ -829,9 +847,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select(VISIT_SELECT)
       .eq("id", idCheck.data)
@@ -874,9 +896,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select("id, patient_id, status, link_version")
       .eq("id", idCheck.data)
@@ -893,7 +919,6 @@ router.post(
     // Bumping link_version revokes every outstanding patient link; the
     // signaling handler also re-checks status on connect.
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         status: "cancelled",
@@ -932,9 +957,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .select("id, patient_id, status")
       .eq("id", idCheck.data)
@@ -949,7 +978,6 @@ router.post(
       return;
     }
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("video_visits")
       .update({
         status: "completed",
