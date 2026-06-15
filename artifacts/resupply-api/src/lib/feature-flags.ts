@@ -1,9 +1,13 @@
 // Feature flag runtime helper.
 //
-// Backed by `resupply.feature_flags` (migration 0149). Provides:
-//   * `isFeatureEnabled(key)` — process-cached lookup used by route
-//     handlers, dispatchers, and worker jobs to gate work behind an
-//     admin-flippable boolean.
+// Backed by `resupply.feature_flags`, which is PER-TENANT since Phase 1
+// (migration 0350 re-keyed it from (key) to (org_id, key)). Provides:
+//   * `isFeatureEnabled(key, orgId?)` — process-cached lookup used by
+//     route handlers, dispatchers, and worker jobs to gate work behind an
+//     admin-flippable boolean. Pass `req.orgId` to honor the caller's
+//     tenant; omit it (worker/system paths) to use the seed tenant. A
+//     tenant with no row of its own falls back to the seed tenant's value
+//     (the platform default).
 //   * `invalidateFeatureFlagCache(key?)` — drop cached entries; called
 //     by the admin-toggle endpoint after a successful write so the
 //     change takes effect within the next request, not after a deploy.
@@ -29,7 +33,10 @@
 //     propagates without polling, but we don't hammer Supabase on
 //     every webhook.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -120,46 +127,151 @@ class FeatureFlagLookupTimeout extends Error {
   }
 }
 
-/**
- * Returns true when the named feature is enabled. Always reads from
- * the process-local cache when fresh; falls through to Supabase
- * otherwise. See file header for fail-closed posture.
- *
- * The key parameter is typed as the closed `FeatureFlagKey` union so
- * the compiler catches typos at call sites — `isFeatureEnabled("sms.reminder")`
- * (missing the trailing 's') would not compile.
- */
-export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
-  const now = Date.now();
-  const cached = cache.get(key);
-  if (cached && cached.expiresAt > now) return cached.value;
-
+/** Race a lookup against the bounded timeout (see LOOKUP_TIMEOUT_MS). */
+async function withLookupTimeout<T>(run: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new FeatureFlagLookupTimeout()),
+      LOOKUP_TIMEOUT_MS,
+    );
+  });
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const lookup = supabase
+    return await Promise.race([run(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Resolve the enabled state of `(orgId, key)` directly from Supabase,
+ * with a fallback to the seed tenant's row when this org has no row of
+ * its own (a not-yet-provisioned tenant reads the platform default), and
+ * finally to "enabled" for an entirely unknown key. Bounded by
+ * LOOKUP_TIMEOUT_MS. Throws on a real DB error so the caller's
+ * fail-closed/open logic applies.
+ */
+async function lookupEnabled(
+  orgId: string,
+  key: FeatureFlagKey,
+  seedOrgId: string | null,
+): Promise<boolean> {
+  const supabase = getSupabaseServiceRoleClient();
+  return withLookupTimeout(async () => {
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("feature_flags")
+      .select("enabled")
+      .eq("org_id", orgId)
+      .eq("key", key)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data.enabled;
+    // No row for this org. Fall back to the seed org's value (the
+    // platform default) when we're looking at some OTHER org; otherwise
+    // treat an unknown key as enabled (matches the table's posture).
+    if (seedOrgId && orgId !== seedOrgId) {
+      const { data: seedData, error: seedErr } = await supabase
+        .schema("resupply")
+        .from("feature_flags")
+        .select("enabled")
+        .eq("org_id", seedOrgId)
+        .eq("key", key)
+        .maybeSingle();
+      if (seedErr) throw seedErr;
+      if (seedData) return seedData.enabled;
+    }
+    return true;
+  });
+}
+
+/**
+ * Legacy key-only lookup, used only when no tenant can be resolved (no
+ * orgId supplied AND the seed org is unresolvable — e.g. a dev/test/CI
+ * environment without a configured DB, or before the organizations row
+ * exists). Preserves the pre-Phase-1 reader's behavior so the catch
+ * block's "missing DB config / unreachable → enabled in non-prod"
+ * fallbacks still apply. In a real multi-tenant prod the seed org always
+ * resolves, so this path isn't taken.
+ */
+async function lookupEnabledByKeyOnly(key: FeatureFlagKey): Promise<boolean> {
+  const supabase = getSupabaseServiceRoleClient();
+  return withLookupTimeout(async () => {
+    const { data, error } = await supabase
       .schema("resupply")
       .from("feature_flags")
       .select("enabled")
       .eq("key", key)
       .maybeSingle();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new FeatureFlagLookupTimeout()),
-        LOOKUP_TIMEOUT_MS,
-      );
-    });
-    let result: Awaited<typeof lookup>;
-    try {
-      result = await Promise.race([lookup, timeout]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-    const { data, error } = result;
     if (error) throw error;
-    // Unknown key → default to enabled (matches the table's posture).
-    const value = data?.enabled ?? true;
-    cache.set(key, { value, expiresAt: now + CACHE_TTL_MS });
+    return data?.enabled ?? true;
+  });
+}
+
+/**
+ * Returns true when the named feature is enabled for a tenant. Always
+ * reads from the process-local cache when fresh; falls through to
+ * Supabase otherwise. See file header for fail-closed posture.
+ *
+ * `orgId` selects the tenant. When omitted (worker/system paths with no
+ * request context), the seed tenant is used — so the ~74 existing
+ * `isFeatureEnabled(key)` call sites keep their single-tenant behavior.
+ * Request handlers that should honor the caller's tenant pass
+ * `req.orgId`.
+ *
+ * The key parameter is typed as the closed `FeatureFlagKey` union so
+ * the compiler catches typos at call sites — `isFeatureEnabled("sms.reminder")`
+ * (missing the trailing 's') would not compile.
+ */
+export async function isFeatureEnabled(
+  key: FeatureFlagKey,
+  orgId?: string,
+): Promise<boolean> {
+  const now = Date.now();
+  // Built per (org, key). Hoisted so the catch block caches a failure
+  // under the same entry a retry will read.
+  let cacheKey = orgId ? `${orgId}:${key}` : key;
+
+  try {
+    // Bound the seed-org resolution: it's an extra DB round-trip on this
+    // hot path and, unlike the flag lookup itself, carries no timeout of
+    // its own. A degraded/unreachable DB must not let it hang the caller
+    // (e.g. a checkout request) — a timeout degrades to "unresolved",
+    // which falls through to the legacy key-only path + the catch block's
+    // fail-closed/open posture. Resolves instantly from cache once warm.
+    let seedOrgId: string | null = null;
+    try {
+      seedOrgId = await withLookupTimeout(() => resolveSeedOrgId());
+    } catch {
+      seedOrgId = null;
+    }
+    const effectiveOrgId = orgId ?? seedOrgId;
+
+    if (!effectiveOrgId) {
+      // No tenant resolvable (no orgId AND the seed org couldn't be
+      // resolved — e.g. a dev/test/CI env with no DB, or before the
+      // organizations row exists). Fall back to the legacy key-only
+      // lookup so behavior matches the pre-Phase-1 reader and the catch
+      // block's non-prod fail-open still applies when the DB is simply
+      // unconfigured.
+      cacheKey = key;
+      const cachedLegacy = cache.get(cacheKey);
+      if (cachedLegacy && cachedLegacy.expiresAt > now)
+        return cachedLegacy.value;
+      const legacyValue = await lookupEnabledByKeyOnly(key);
+      cache.set(cacheKey, {
+        value: legacyValue,
+        expiresAt: now + CACHE_TTL_MS,
+      });
+      return legacyValue;
+    }
+
+    cacheKey = `${effectiveOrgId}:${key}`;
+    const cached = cache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cached.value;
+
+    const value = await lookupEnabled(effectiveOrgId, key, seedOrgId);
+    cache.set(cacheKey, { value, expiresAt: now + CACHE_TTL_MS });
     return value;
   } catch (err) {
     // The supabase client throws plain Error subclasses for missing
@@ -203,7 +315,7 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       // we still fail CLOSED on the off-chance the boot-time gate
       // was bypassed or regressed — silently running with every
       // feature enabled is worse than disabled.
-      cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
+      cache.set(cacheKey, { value: true, expiresAt: now + CACHE_TTL_MS });
       return true;
     }
     if (isUnreachable && process.env.NODE_ENV !== "production") {
@@ -213,7 +325,7 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
       // In production an unreachable DB is a real outage; the file
       // header pins fail-CLOSED posture, so we fall through to the
       // fail-closed branch below instead.
-      cache.set(key, { value: true, expiresAt: now + CACHE_TTL_MS });
+      cache.set(cacheKey, { value: true, expiresAt: now + CACHE_TTL_MS });
       return true;
     }
     logger.warn(
@@ -227,7 +339,7 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
     // Cache the failure for a SHORT window so a downed DB doesn't
     // turn into a per-request 503 storm. The next request after the
     // TTL expires tries again.
-    cache.set(key, { value: false, expiresAt: now + 1_000 });
+    cache.set(cacheKey, { value: false, expiresAt: now + 1_000 });
     return false;
   }
 }
@@ -238,9 +350,14 @@ export async function isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
  * (used by tests).
  */
 export function invalidateFeatureFlagCache(key?: FeatureFlagKey): void {
-  if (key) {
-    cache.delete(key);
-  } else {
+  if (!key) {
     cache.clear();
+    return;
+  }
+  // Cache entries are keyed `${orgId}:${key}` (or the bare key in the
+  // degraded no-org path), so drop every tenant's entry for this flag.
+  const suffix = `:${key}`;
+  for (const cacheKey of cache.keys()) {
+    if (cacheKey === key || cacheKey.endsWith(suffix)) cache.delete(cacheKey);
   }
 }

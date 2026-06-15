@@ -43,7 +43,10 @@ import {
   renderTeamInviteEmail,
   supabaseAuthRepository,
 } from "@workspace/resupply-auth";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  SEED_ORG_SLUG,
+} from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -131,6 +134,57 @@ function parseArgs(argv: string[]): ParsedArgs {
   };
 }
 
+type OnboardClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+
+/**
+ * Provision the tenant's feature-flag rows. Since Phase 1 (migration
+ * 0350) feature_flags is keyed (org_id, key), so a new org needs its own
+ * row per flag before its admins can toggle anything in Control Center.
+ * Copies the seed tenant's current catalog (keys + enabled + metadata)
+ * as the starting point. Idempotent: existing (org_id, key) rows are left
+ * untouched. No-op when onboarding the seed tenant itself (it already
+ * carries the canonical rows from the seed migrations).
+ */
+async function provisionFeatureFlags(
+  supabase: OnboardClient,
+  orgId: string,
+): Promise<{ provisioned: number; skipped: boolean }> {
+  const { data: seedOrg, error: seedErr } = await supabase
+    .schema("resupply")
+    .from("organizations")
+    .select("id")
+    .eq("slug", SEED_ORG_SLUG)
+    .maybeSingle();
+  if (seedErr) throw seedErr;
+  if (!seedOrg || seedOrg.id === orgId) {
+    return { provisioned: 0, skipped: true };
+  }
+
+  const { data: seedFlags, error: flagsErr } = await supabase
+    .schema("resupply")
+    .from("feature_flags")
+    .select("key, enabled, description, category")
+    .eq("org_id", seedOrg.id);
+  if (flagsErr) throw flagsErr;
+  if (!seedFlags || seedFlags.length === 0) {
+    return { provisioned: 0, skipped: false };
+  }
+
+  const rows = seedFlags.map((f) => ({
+    org_id: orgId,
+    key: f.key,
+    enabled: f.enabled,
+    description: f.description,
+    category: f.category,
+  }));
+  const { error: insErr } = await supabase
+    .schema("resupply")
+    .from("feature_flags")
+    .upsert(rows, { onConflict: "org_id,key", ignoreDuplicates: true });
+  if (insErr) throw insErr;
+  return { provisioned: rows.length, skipped: false };
+}
+
 async function main(): Promise<void> {
   const a = parseArgs(process.argv);
 
@@ -179,6 +233,9 @@ async function main(): Promise<void> {
     orgId = created.id;
     orgAction = "created";
   }
+
+  // ── 1b. Provision the tenant's feature flags (Phase 1, org-scoped). ─
+  const flagsResult = await provisionFeatureFlags(supabase, orgId);
 
   // ── 2. Auth user: create (with set-password link) or reuse. ────────
   const existingUser = await repo.findUserByEmail(emailLower);
@@ -332,6 +389,11 @@ async function main(): Promise<void> {
     `\n[tenant:onboard] Tenant '${a.orgSlug}' ready.\n` +
       `  organization      = ${a.orgName} (${orgAction}) org_id=${orgId} status=${a.status}\n` +
       `  storefront_name   = ${a.storefrontName ?? "(falls back to name)"}\n` +
+      `  feature flags     = ${
+        flagsResult.skipped
+          ? "skipped (seed tenant / no seed org)"
+          : `${flagsResult.provisioned} provisioned from seed catalog`
+      }\n` +
       `  admin auth user   = ${emailLower} (${userAction}) role=admin\n` +
       `  admin_users row   = role=admin status=active org_id=${orgId} [${adminAction}]\n`,
   );

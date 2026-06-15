@@ -487,6 +487,7 @@ export interface Database {
       feature_flag_events: {
         Row: {
           id: string;
+          org_id: string | null;
           key: string;
           previous_enabled: boolean;
           next_enabled: boolean;
@@ -495,6 +496,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          org_id?: string | null;
           key: string;
           previous_enabled: boolean;
           next_enabled: boolean;
