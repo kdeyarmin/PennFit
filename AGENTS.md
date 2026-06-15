@@ -24,7 +24,7 @@ Standard lint/typecheck/test/build commands are in `README.md` /
 
 ### Toolchain (Node version gotcha)
 
-The repo pins `engines.node=24.x` and `pnpm@11.5.2`. The platform's
+The repo pins `engines.node=24.x` and `pnpm@11.6.0`. The platform's
 default `node` on `PATH` (`/exec-daemon/node`) is **v22** and shadows nvm,
 which breaks native modules (`argon2`). This environment is wired so that:
 

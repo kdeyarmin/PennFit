@@ -97,7 +97,7 @@ side is worse than a visible conflict.
 
 ## Repository map
 
-This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.5.2).
+This is a `pnpm` workspaces monorepo (Node v24, TypeScript ~6.0, pnpm 11.6.0).
 Workspace globs (`pnpm-workspace.yaml`): `artifacts/*`, `lib/*`,
 and `scripts`.
 
