@@ -29,7 +29,7 @@ Practical rules:
   **"CareMetric Copilot"** (admin assistant). The Penn Home Medical Supply
   tenant keeps **"PennBot"/"PennPilot"** via seeded `app_config` keys
   (`RESUPPLY_ASSISTANT_STOREFRONT_NAME` / `RESUPPLY_ASSISTANT_ADMIN_NAME`,
-  migration 0347); a tenant owner renames them from System Configuration.
+  migration 0349); a tenant owner renames them from System Configuration.
   In source, `PennBot`/`PennPilot` remain the canonical placeholders and
   are normalized at the I/O boundary by `applyPlatformBranding()` — so the
   large prompt knowledge bases don't need editing.

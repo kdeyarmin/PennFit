@@ -16,7 +16,7 @@
 -- never clobbers a value the tenant owner later set in the UI.
 
 INSERT INTO resupply.app_config (key, value, updated_by_email)
-SELECT 'RESUPPLY_ASSISTANT_STOREFRONT_NAME', 'PennBot', 'migration:0347'
+SELECT 'RESUPPLY_ASSISTANT_STOREFRONT_NAME', 'PennBot', 'migration:0349'
 WHERE EXISTS (
   SELECT 1
   FROM resupply.dme_organization
@@ -30,7 +30,7 @@ ON CONFLICT (key) DO NOTHING;
 --> statement-breakpoint
 
 INSERT INTO resupply.app_config (key, value, updated_by_email)
-SELECT 'RESUPPLY_ASSISTANT_ADMIN_NAME', 'PennPilot', 'migration:0347'
+SELECT 'RESUPPLY_ASSISTANT_ADMIN_NAME', 'PennPilot', 'migration:0349'
 WHERE EXISTS (
   SELECT 1
   FROM resupply.dme_organization
