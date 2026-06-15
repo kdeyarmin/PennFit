@@ -123,6 +123,66 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      // Cases workspace (migration 0189; org_id added 0342). `id` is a
+      // text uuid, not a native uuid column.
+      cases: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          title: string;
+          status: string;
+          priority: string;
+          patient_id: string | null;
+          customer_id: string | null;
+          assigned_to_user_id: string | null;
+          opened_by_user_id: string | null;
+          opened_by_email: string;
+          summary: string | null;
+          created_at: string;
+          updated_at: string;
+          resolved_at: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["cases"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["cases"]["Row"]>;
+        Relationships: [];
+      };
+      case_links: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          case_id: string;
+          link_kind: string;
+          ref_id: string;
+          note: string | null;
+          created_by_email: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["case_links"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["case_links"]["Row"]>;
+        Relationships: [];
+      };
+      // Patient setup checklist (migration 0191; org_id added 0342).
+      setup_checklist_items: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          patient_id: string;
+          step_key: string;
+          status: string;
+          note: string | null;
+          completed_by_email: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["setup_checklist_items"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["setup_checklist_items"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0171: canonical HCPCS reference catalog for PAP
       // resupply. min_interval_days + (max_quantity_per_period /
       // period_days) express the Medicare LCD L33718 replacement
