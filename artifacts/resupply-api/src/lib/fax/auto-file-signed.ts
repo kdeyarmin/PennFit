@@ -32,7 +32,11 @@
 import type { Logger } from "pino";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { satisfyRequirement } from "../billing/bill-hold";
 import { tryDecodeTrackingBarcode } from "../inbound-fax/barcode-decode";
@@ -418,10 +422,16 @@ async function satisfyMatchingRequirements(
       .eq("status", "outstanding");
     if (error) throw error;
     const reqs = (data ?? []) as { id: string }[];
+    // bill-hold writes go through the org-scoped chokepoint. This is a
+    // webhook/worker path (no request tenant), so it scopes to the seed
+    // org — the single-tenant bridge.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return 0;
+    const scoped = getOrgScopedClient(orgId);
     let satisfied = 0;
     for (const r of reqs) {
       await satisfyRequirement(r.id, {
-        supabase,
+        supabase: scoped,
         via: "inbound_fax",
         actorEmail: "system:fax-barcode",
         inboundFaxId: faxId,

@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold";
 import {
@@ -98,7 +98,12 @@ router.post(
       throw err;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Duplicate guard: refuse when this fulfillment already has an
     // open (non-denied/closed) claim. A double-click — or two CSRs
@@ -110,7 +115,6 @@ router.post(
     // the second becomes invisible work. Denied/closed claims don't
     // block — a re-bill after a denial is legitimate.
     const { data: existingClaim, error: existingClaimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, status")
       .eq("fulfillment_id", idParsed.data.fulfillmentId)
@@ -131,7 +135,6 @@ router.post(
 
     // Insert the claim header.
     const { data: claimRow, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .insert({
         patient_id: proposed.patientId,
@@ -154,7 +157,6 @@ router.post(
     if (claimErr) {
       if (isUniqueViolation(claimErr)) {
         const { data: raceWinner } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .select("id, status")
           .eq("fulfillment_id", idParsed.data.fulfillmentId)
@@ -182,7 +184,6 @@ router.post(
         new Date().toISOString(),
       );
       const { error: lineErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .insert(lineRows);
       if (lineErr) throw lineErr;
@@ -197,7 +198,6 @@ router.post(
       noteParts.push(`Builder notes: ${proposed.builderNotes.join(" ")}`);
     }
     const { error: claimEventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claimRow.id,
@@ -246,7 +246,6 @@ router.post(
         });
       } catch (err) {
         const { error: holdErr } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .update({
             bill_hold: true,

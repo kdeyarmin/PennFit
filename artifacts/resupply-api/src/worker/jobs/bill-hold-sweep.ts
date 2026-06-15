@@ -20,7 +20,11 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
@@ -52,7 +56,7 @@ export interface BillHoldSweepStats {
 }
 
 export async function runBillHoldSweep(
-  supabase = getSupabaseServiceRoleClient(),
+  supabase: OrgScopedClient,
 ): Promise<BillHoldSweepStats> {
   const stats: BillHoldSweepStats = {
     skipped: false,
@@ -69,27 +73,25 @@ export async function runBillHoldSweep(
 
   // ── 1. Backfill: seed defaults onto draft claims with no requirements ──
   const { data: drafts, error: draftErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id")
     .eq("status", "draft")
     .order("created_at", { ascending: true })
     .limit(SEED_SCAN_CAP);
   if (draftErr) throw draftErr;
-  const draftIds = (drafts ?? []).map((c) => (c as { id: string }).id);
+  const draftIds = ((drafts ?? []) as Array<{ id: string }>).map((c) => c.id);
   stats.draftClaimsScanned = draftIds.length;
 
   if (draftIds.length > 0) {
     // Which of these already carry a requirement? One read, then seed the rest.
     const { data: withReqs, error: reqErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("claim_id")
       .in("claim_id", draftIds);
     if (reqErr) throw reqErr;
     const haveReqs = new Set(
-      (withReqs ?? [])
-        .map((r) => (r as { claim_id: string | null }).claim_id)
+      ((withReqs ?? []) as Array<{ claim_id: string | null }>)
+        .map((r) => r.claim_id)
         .filter((id): id is string => id != null),
     );
     for (const claimId of draftIds) {
@@ -122,7 +124,6 @@ export async function runBillHoldSweep(
       now - REMIND_INTERVAL_DAYS * MS_PER_DAY,
     ).toISOString();
     const { data: stale, error: staleErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, reminder_count, last_reminded_at")
       .eq("status", "outstanding")
@@ -141,7 +142,6 @@ export async function runBillHoldSweep(
       // Skip if reminded within the interval.
       if (r.last_reminded_at && r.last_reminded_at > remindBefore) continue;
       const { error: updErr } = await supabase
-        .schema("resupply")
         .from("claim_paperwork_requirements")
         .update({
           reminder_count: (r.reminder_count ?? 0) + 1,
@@ -167,7 +167,17 @@ export async function registerBillHoldSweepJob(boss: PgBoss): Promise<void> {
   await createQueueWithDlq(boss, BILL_HOLD_SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
   await boss.work(BILL_HOLD_SWEEP_JOB, async () => {
     try {
-      const stats = await runBillHoldSweep();
+      // Single-tenant bridge: the sweep operates on tenant data, so it
+      // runs scoped to the seed org. (Multi-org would loop every org.)
+      const orgId = await resolveSeedOrgId();
+      if (!orgId) {
+        logger.info(
+          { event: "billing.bill-hold-sweep.skipped_no_org" },
+          "bill-hold-sweep: no seed org resolved; skipping",
+        );
+        return;
+      }
+      const stats = await runBillHoldSweep(getOrgScopedClient(orgId));
       logger.info(
         { event: "billing.bill-hold-sweep.completed", ...stats },
         "bill-hold-sweep: completed",

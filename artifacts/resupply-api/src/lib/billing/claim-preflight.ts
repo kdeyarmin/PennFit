@@ -16,7 +16,11 @@
 // disable the button. "warning" is non-blocking but surfaces above
 // the submit button so the CSR notices.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import {
   listClaimRequirements,
@@ -132,13 +136,21 @@ export async function preflightClaim(
   // missing/unreadable paperwork state blocks submit until a CSR can verify it.
   if (await isFeatureEnabled("billing.bill_hold")) {
     try {
-      let reqs = await listClaimRequirements(claim.id, supabase);
+      // bill-hold reads/writes go through the org-scoped chokepoint. This
+      // is a claim-id-driven path with no request tenant, so it scopes to
+      // the seed org (single-tenant bridge).
+      const billHoldOrgId = await resolveSeedOrgId();
+      if (!billHoldOrgId) {
+        throw new Error("no seed org for bill-hold preflight");
+      }
+      const billHold = getOrgScopedClient(billHoldOrgId);
+      let reqs = await listClaimRequirements(claim.id, billHold);
       if (reqs.length === 0) {
         await seedDefaultRequirementsForClaim(claim.id, {
-          supabase,
+          supabase: billHold,
           createdByEmail: "system:preflight",
         });
-        reqs = await listClaimRequirements(claim.id, supabase);
+        reqs = await listClaimRequirements(claim.id, billHold);
       }
       if (reqs.length === 0) {
         items.push({

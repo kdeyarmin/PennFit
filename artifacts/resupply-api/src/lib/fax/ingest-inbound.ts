@@ -29,7 +29,11 @@
 
 import type { Logger } from "pino";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
@@ -224,7 +228,16 @@ export async function ingestInboundFax(
   // run after a barcode match could release an UNRELATED requirement's hold
   // with the same fax. Best-effort + never throws.
   if (!barcodeFiled) {
-    await autoMatchInboundFaxToPaperwork(rowId, input.fromE164, supabase);
+    // bill-hold auto-match goes through the org-scoped chokepoint; this
+    // webhook path scopes to the seed org (single-tenant bridge).
+    const billHoldOrgId = await resolveSeedOrgId();
+    if (billHoldOrgId) {
+      await autoMatchInboundFaxToPaperwork(
+        rowId,
+        input.fromE164,
+        getOrgScopedClient(billHoldOrgId),
+      );
+    }
   }
 
   // Step 5: referral review (opt-in). When `fax.referral_review` is on and
