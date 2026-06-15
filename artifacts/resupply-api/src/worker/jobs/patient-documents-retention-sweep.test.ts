@@ -17,7 +17,12 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { runRetentionSweep } from "./patient-documents-retention-sweep";
+import {
+  runRetentionSweep,
+  runRetentionSweepForOrg,
+} from "./patient-documents-retention-sweep";
+
+const TEST_ORG = "00000000-0000-4000-8000-000000000000";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -45,7 +50,7 @@ describe("runRetentionSweep — backfill", () => {
     // staged response is empty).
     stageSupabaseResponse("patient_documents", "update", { data: [] });
 
-    const stats = await runRetentionSweep();
+    const stats = await runRetentionSweepForOrg(TEST_ORG);
     expect(stats.backfilled).toBe(1);
 
     const writes = getSupabaseWritePayloads("patient_documents", "update");
@@ -87,7 +92,7 @@ describe("runRetentionSweep — flag", () => {
     // metadata block can read the fields.
     stageSupabaseResponse("patient_documents", "update", { data: flaggedRows });
 
-    const stats = await runRetentionSweep();
+    const stats = await runRetentionSweepForOrg(TEST_ORG);
     expect(stats.flagged).toBe(2);
 
     const writes = getSupabaseWritePayloads("patient_documents", "update");
@@ -104,11 +109,33 @@ describe("runRetentionSweep — flag", () => {
   it("returns zero counts when nothing is due", async () => {
     stageSupabaseResponse("patient_documents", "select", { data: [] });
     stageSupabaseResponse("patient_documents", "update", { data: [] });
-    const stats = await runRetentionSweep();
+    const stats = await runRetentionSweepForOrg(TEST_ORG);
     expect(stats.backfilled).toBe(0);
     expect(stats.flagged).toBe(0);
     // No flagged rows → no audit writes (zero per-document trail when
     // nothing was touched).
     expect(getSupabaseCallCount("audit_log", "insert")).toBe(0);
+  });
+});
+
+describe("runRetentionSweep — multi-tenant fan-out", () => {
+  it("runs the sweep once per active tenant and sums the counts", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Each tenant: empty backfill page, then empty flag page → zero work.
+    // (4 patient_documents selects total across 2 tenants.)
+    for (let i = 0; i < 4; i++) {
+      stageSupabaseResponse("patient_documents", "select", { data: [] });
+    }
+    const stats = await runRetentionSweep();
+    expect(stats).toEqual({ backfilled: 0, flagged: 0 });
+  });
+
+  it("returns zero counts when there are no active tenants", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runRetentionSweep();
+    expect(stats).toEqual({ backfilled: 0, flagged: 0 });
+    expect(getSupabaseCallCount("patient_documents", "select")).toBe(0);
   });
 });

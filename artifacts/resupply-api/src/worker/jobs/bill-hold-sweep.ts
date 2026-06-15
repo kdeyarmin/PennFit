@@ -20,11 +20,12 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -51,25 +52,16 @@ export interface BillHoldSweepStats {
   remindersBumped: number;
 }
 
-export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
-  const stats: BillHoldSweepStats = {
-    skipped: false,
-    draftClaimsScanned: 0,
-    claimsSeeded: 0,
-    requirementsCreated: 0,
-    remindersBumped: 0,
-  };
-
-  if (!(await isFeatureEnabled("billing.bill_hold"))) {
-    stats.skipped = true;
-    return stats;
-  }
-
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    stats.skipped = true;
-    return stats;
-  }
+/**
+ * Run the bill-hold sweep for a SINGLE tenant, accumulating into the
+ * shared `stats`. Extracted so the cron can fan out across every active
+ * tenant. `insurance_claims` / `claim_paperwork_requirements` are
+ * tenant-scoped.
+ */
+async function billHoldSweepForOrg(
+  orgId: string,
+  stats: BillHoldSweepStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   // ── 1. Backfill: seed defaults onto draft claims with no requirements ──
@@ -83,7 +75,7 @@ export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
   const draftIds = (drafts ?? []).map(
     (c: { id: string }) => (c as { id: string }).id,
   );
-  stats.draftClaimsScanned = draftIds.length;
+  stats.draftClaimsScanned += draftIds.length;
 
   if (draftIds.length > 0) {
     // Which of these already carry a requirement? One read, then seed the rest.
@@ -123,7 +115,7 @@ export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
   }
 
   // ── 2. Auto-remind stale outstanding requirements ───────────────────
-  if (await isFeatureEnabled("billing.bill_hold_auto_remind")) {
+  if (await isFeatureEnabled("billing.bill_hold_auto_remind", orgId)) {
     const now = Date.now();
     const createdBefore = new Date(
       now - REMIND_AFTER_DAYS * MS_PER_DAY,
@@ -167,7 +159,33 @@ export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
       }
     }
   }
+}
 
+/**
+ * Run the bill-hold sweep for EVERY active tenant. The `billing.bill_hold`
+ * feature flag is checked PER TENANT (`feature_flags` is `(org_id, key)`),
+ * so one tenant's opt-out doesn't sweep another's claims. `skipped`
+ * reports that NO active tenant had the feature on.
+ */
+export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
+  const stats: BillHoldSweepStats = {
+    skipped: false,
+    draftClaimsScanned: 0,
+    claimsSeeded: 0,
+    requirementsCreated: 0,
+    remindersBumped: 0,
+  };
+
+  let anyEnabled = false;
+  await forEachActiveOrg(
+    async (orgId) => {
+      if (!(await isFeatureEnabled("billing.bill_hold", orgId))) return;
+      anyEnabled = true;
+      await billHoldSweepForOrg(orgId, stats);
+    },
+    { jobName: BILL_HOLD_SWEEP_JOB },
+  );
+  stats.skipped = !anyEnabled;
   return stats;
 }
 

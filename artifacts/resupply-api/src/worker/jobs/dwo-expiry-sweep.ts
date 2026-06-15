@@ -9,9 +9,10 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB = "dwo.expiry-sweep";
@@ -58,21 +59,10 @@ interface SweepStats {
   byWindow: Record<number, number>;
 }
 
-async function runDwoExpirySweep(): Promise<SweepStats> {
-  const stats: SweepStats = {
-    scanned: 0,
-    alertsCreated: 0,
-    byWindow: { 60: 0, 30: 0, 7: 0 },
-  };
-  // Single-tenant bridge: sweep the one seed org. Per-org loop later.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: JOB },
-      "dwo.expiry-sweep: could not resolve seed org — skipping",
-    );
-    return stats;
-  }
+async function dwoExpirySweepForOrg(
+  orgId: string,
+  stats: SweepStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -160,5 +150,22 @@ async function runDwoExpirySweep(): Promise<SweepStats> {
       stats.byWindow[window] = (stats.byWindow[window] ?? 0) + 1;
     }
   }
+}
+
+/**
+ * Run the DWO expiry sweep for EVERY active tenant. `dwo_documents` /
+ * `csr_compliance_alerts` are tenant-scoped, so the sweep fans out via
+ * `forEachActiveOrg` and accumulates the counts. Exported for test
+ * injection. Single-tenant behavior unchanged.
+ */
+export async function runDwoExpirySweep(): Promise<SweepStats> {
+  const stats: SweepStats = {
+    scanned: 0,
+    alertsCreated: 0,
+    byWindow: { 60: 0, 30: 0, 7: 0 },
+  };
+  await forEachActiveOrg((orgId) => dwoExpirySweepForOrg(orgId, stats), {
+    jobName: JOB,
+  });
   return stats;
 }
