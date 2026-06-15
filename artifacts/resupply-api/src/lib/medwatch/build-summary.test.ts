@@ -49,7 +49,7 @@ describe("buildMedWatchSummary", () => {
     expect(r.fields.eventDate).toBe("2026-04-22");
     expect(r.fields.productName).toBe("Philips DreamStation");
     expect(r.fields.lotSerial).toBe("S2024-0099");
-    expect(r.fields.reportReference).toBe("PennFit-g_abcdef");
+    expect(r.fields.reportReference).toBe("CMB-g_abcdef");
   });
 
   it("falls back to '—' fields when no asset is supplied", () => {

@@ -181,7 +181,8 @@ export async function lookupNpi(
         // like an anonymous scraper.
         headers: {
           accept: "application/json",
-          "user-agent": "PennFit-Resupply/1.0 (+https://pennpaps.com)",
+          "user-agent":
+            "CareMetric-Breathe-Resupply/1.0 (+https://pennpaps.com)",
         },
       },
     );

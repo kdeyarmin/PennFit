@@ -43,12 +43,18 @@ export type SignatureDeliveryChannel =
   | "email"
   | "hand_delivery";
 
-const CODE_PREFIX = "PFS-";
+// Current brand prefix for newly minted codes (CareMetric Breathe).
+const CODE_PREFIX = "CMB-";
+// Legacy prefix from before the platform rebrand ("PennFit Signature").
+// Still accepted on scan/lookup so signed documents already in the field —
+// faxes carrying a printed PFS- barcode — keep round-tripping. Never
+// minted anymore.
+const LEGACY_CODE_PREFIX = "PFS-";
 // Crockford-ish alphabet minus the easily-confused glyphs (0/O, 1/I/L).
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CODE_BODY_LENGTH = 8;
 
-/** Mint a random, human-keyable, barcode-safe tracking code (PFS-XXXXXXXX). */
+/** Mint a random, human-keyable, barcode-safe tracking code (CMB-XXXXXXXX). */
 export function generateTrackingCode(): string {
   let body = "";
   for (let i = 0; i < CODE_BODY_LENGTH; i += 1) {
@@ -59,28 +65,33 @@ export function generateTrackingCode(): string {
 
 /**
  * Normalise a scanned / typed code for lookup: uppercase, strip spaces +
- * dashes, and re-apply the canonical PFS- prefix. Accepts the code with
- * or without the prefix and with arbitrary internal spacing (faxed
- * barcodes are sometimes hand-keyed with a space after the prefix).
+ * dashes. A recognised brand prefix — the current `CMB-` or the legacy
+ * `PFS-` — is PRESERVED so a code minted under either resolves to its
+ * stored row (lookups are exact-match on `tracking_code`). A prefixless,
+ * hand-keyed body gets the current prefix. Tolerant of arbitrary internal
+ * spacing (faxed barcodes are sometimes hand-keyed with a space).
  */
 export function normalizeTrackingCode(raw: string): string {
   const compact = raw.toUpperCase().replace(/[\s-]+/g, "");
-  const body = compact.startsWith("PFS") ? compact.slice(3) : compact;
-  return `${CODE_PREFIX}${body}`;
+  if (compact.startsWith("CMB")) return `${CODE_PREFIX}${compact.slice(3)}`;
+  if (compact.startsWith("PFS")) {
+    return `${LEGACY_CODE_PREFIX}${compact.slice(3)}`;
+  }
+  return `${CODE_PREFIX}${compact}`;
 }
 
-// Canonical shape: PFS- + 8 chars from the unambiguous alphabet. Built
-// from the same constants `generateTrackingCode` mints from so the two
-// can never drift.
+// Canonical shape: the current OR legacy prefix + 8 chars from the
+// unambiguous alphabet. Built from the same constants
+// `generateTrackingCode` mints from so the two can never drift.
 const WELL_FORMED_CODE_RE = new RegExp(
-  `^${CODE_PREFIX}[${CODE_ALPHABET}]{${CODE_BODY_LENGTH}}$`,
+  `^(?:${CODE_PREFIX}|${LEGACY_CODE_PREFIX})[${CODE_ALPHABET}]{${CODE_BODY_LENGTH}}$`,
 );
 
 /**
  * True when `raw` (after {@link normalizeTrackingCode}) is a syntactically
- * valid PennFit tracking code. Used to reject a hallucinated / misread
- * code from the fax barcode scan BEFORE it hits the database — a value
- * that can't be one of ours never warrants a lookup.
+ * valid tracking code (current CMB- or legacy PFS-). Used to reject a
+ * hallucinated / misread code from the fax barcode scan BEFORE it hits the
+ * database — a value that can't be one of ours never warrants a lookup.
  */
 export function isWellFormedTrackingCode(raw: string): boolean {
   return WELL_FORMED_CODE_RE.test(normalizeTrackingCode(raw));

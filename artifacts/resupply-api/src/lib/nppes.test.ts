@@ -110,7 +110,7 @@ describe("lookupNpi", () => {
     );
     expect(init.headers).toMatchObject({
       accept: "application/json",
-      "user-agent": expect.stringContaining("PennFit"),
+      "user-agent": expect.stringContaining("CareMetric"),
     });
   });
 
