@@ -71,6 +71,11 @@ const EXCLUDED_EXACT = new Set([
   "/forgot-password",
   "/reset-password",
   "/verify-email",
+  // CareMetric.ai "Breathe" platform marketing/showcase page. It is a
+  // separate-brand B2B surface, NOT tenant content — pennpaps.com is
+  // reserved for the first tenant (Penn Home Medical Supply), so this
+  // route must NOT appear in the tenant's sitemap.
+  "/breathe",
 ]);
 
 function staticRoutePaths(): string[] {
