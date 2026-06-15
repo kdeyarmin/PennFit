@@ -19,7 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -52,10 +52,14 @@ router.get(
       return;
     }
     const returnId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: ret } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select("id")
       .eq("id", returnId)
@@ -67,7 +71,6 @@ router.get(
     }
 
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("shop_return_notes")
       .select("id, body, author_email, author_user_id, created_at")
       .eq("return_id", returnId)
@@ -88,7 +91,11 @@ router.get(
     );
 
     res.json({
-      notes: (rows ?? []).map((r) => ({
+      notes: (
+        (rows ?? []) as Array<
+          Database["resupply"]["Tables"]["shop_return_notes"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         body: r.body ?? "",
         authorEmail: r.author_email,
@@ -125,10 +132,14 @@ router.post(
     }
     const { body } = bodyParsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: ret } = await supabase
-      .schema("resupply")
       .from("shop_returns")
       .select("id")
       .eq("id", returnId)
@@ -140,7 +151,6 @@ router.post(
     }
 
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("shop_return_notes")
       .insert({
         return_id: returnId,

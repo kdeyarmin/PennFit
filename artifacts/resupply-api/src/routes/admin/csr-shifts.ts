@@ -8,7 +8,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
@@ -41,9 +41,13 @@ router.get(
     const from =
       (typeof req.query.from === "string" && req.query.from) || undefined;
     const to = (typeof req.query.to === "string" && req.query.to) || undefined;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("csr_shifts")
       .select(
         "id, staff_user_id, starts_at, ends_at, status, notes, created_at, updated_at",
@@ -55,7 +59,11 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({
-      shifts: (data ?? []).map((r) => ({
+      shifts: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["csr_shifts"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         staffUserId: r.staff_user_id,
         startsAt: r.starts_at,
@@ -73,11 +81,15 @@ router.get(
   "/admin/csr-shifts/on-now",
   // Who's on shift right now — same CSR-visible scope.
   requirePermission("conversations.manage"),
-  async (_req, res) => {
+  async (req, res) => {
     const iso = new Date().toISOString();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("csr_shifts")
       .select("id, staff_user_id, starts_at, ends_at, status")
       .lte("starts_at", iso)
@@ -87,7 +99,11 @@ router.get(
       .limit(50);
     if (error) throw error;
     res.json({
-      onShift: (data ?? []).map((r) => ({
+      onShift: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["csr_shifts"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         staffUserId: r.staff_user_id,
         startsAt: r.starts_at,
@@ -108,9 +124,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("csr_shifts")
       .insert({
         staff_user_id: parsed.data.staffUserId,
@@ -157,9 +177,13 @@ router.patch(
     // Read back so we distinguish "no row to update" (404) from a real
     // update (200). Without this the handler silently returned 200
     // even when the id was nonexistent.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("csr_shifts")
       .update(update)
       .eq("id", params.data.id)

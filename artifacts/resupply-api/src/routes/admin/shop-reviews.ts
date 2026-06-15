@@ -20,7 +20,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -109,9 +109,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let listQuery = supabase
-      .schema("resupply")
       .from("shop_reviews")
       .select(
         "id, product_id, rating, title, body, author_display_name, author_email, status, moderation_note, moderated_at, created_at, updated_at",
@@ -142,21 +146,23 @@ router.get(
         : null;
 
     res.json({
-      items: trimmed.map((r) => ({
-        id: r.id,
-        productId: r.product_id,
-        rating: r.rating,
-        title: r.title,
-        body: r.body,
-        authorDisplayName: r.author_display_name,
-        authorEmail: r.author_email,
-        status: r.status,
-        moderationNote: r.moderation_note,
-        // PostgREST returns timestamptz as ISO string already.
-        moderatedAt: r.moderated_at,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      })),
+      items: trimmed.map(
+        (r: Database["resupply"]["Tables"]["shop_reviews"]["Row"]) => ({
+          id: r.id,
+          productId: r.product_id,
+          rating: r.rating,
+          title: r.title,
+          body: r.body,
+          authorDisplayName: r.author_display_name,
+          authorEmail: r.author_email,
+          status: r.status,
+          moderationNote: r.moderation_note,
+          // PostgREST returns timestamptz as ISO string already.
+          moderatedAt: r.moderated_at,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        }),
+      ),
       nextCursor,
     });
   },
@@ -173,10 +179,14 @@ router.post(
       return;
     }
     const adminId = req.adminUserId ?? null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .update({
         status: "approved",
@@ -248,10 +258,14 @@ router.post(
       return;
     }
     const adminId = req.adminUserId ?? null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .update({
         status: "rejected",
@@ -330,12 +344,16 @@ router.post(
       return;
     }
     const adminId = req.adminUserId ?? null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Guard: only `rejected` rows are eligible. The status filter on
     // the UPDATE keeps a concurrent rejected→approved transition from
     // racing into a pending state.
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .update({
         status: "pending",
@@ -399,11 +417,15 @@ router.patch(
       typeof parse.data.note === "string" && parse.data.note.trim() !== ""
         ? parse.data.note.trim()
         : null;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Same guard as unreject: only `rejected` rows can have their
     // note edited. Approved + pending rows have no public note slot.
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_reviews")
       .update({
         moderation_note: note,

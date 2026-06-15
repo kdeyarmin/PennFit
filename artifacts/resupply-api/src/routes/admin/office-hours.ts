@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -47,10 +47,14 @@ const putBody = z
 router.get(
   "/admin/office-hours",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("office_hours")
       .select(
         "id, day_of_week, open_time_utc, close_time_utc, active, created_at, updated_at",
@@ -60,7 +64,11 @@ router.get(
       .limit(200);
     if (error) throw error;
     res.json({
-      windows: (data ?? []).map((r) => ({
+      windows: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["office_hours"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         dayOfWeek: r.day_of_week,
         openTimeUtc: r.open_time_utc,
@@ -87,14 +95,18 @@ router.put(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Replace the schedule: clear all rows, then insert the new set. The
     // body is fully validated above, so the insert won't fail on shape. The
     // `.not("id", "is", null)` filter is PostgREST's "match every row" form
     // (a bare delete is refused as a guard against accidental full wipes).
     const { error: delErr } = await supabase
-      .schema("resupply")
       .from("office_hours")
       .delete()
       .not("id", "is", null);
@@ -109,7 +121,6 @@ router.put(
         created_by_user_id: req.adminUserId ?? null,
       }));
       const { error: insErr } = await supabase
-        .schema("resupply")
         .from("office_hours")
         .insert(rows);
       if (insErr) throw insErr;
