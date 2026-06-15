@@ -3661,6 +3661,12 @@ export interface Database {
           ocr_status: "extracted" | "failed" | "unsupported" | "offline" | null;
           ocr_extraction: Json | null;
           ocr_extracted_at: string | null;
+          // Barcode auto-file outcome (migration 0296).
+          tracking_code_detected: string | null;
+          auto_file_status: string | null;
+          auto_filed_at: string | null;
+          signature_tracking_id: string | null;
+          chart_document_id: string | null;
           created_at: string;
           updated_at: string;
         };
