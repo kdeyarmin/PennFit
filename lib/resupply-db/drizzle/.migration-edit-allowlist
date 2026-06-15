@@ -41,3 +41,13 @@
 # The immutability check sees the old 0344 path as a deletion; allowlist it
 # so this renumber PR passes. Safe to delete this line after this PR merges.
 0344_patient_dedup_rpcs_org_scoped.sql
+
+# 2026-06-15 prefix-collision renumber: a marketing PR renamed
+# 0344_tenant_storefront_branding.sql -> 0345_, which then collided with
+# 0345_patient_dedup_rpcs_org_scoped.sql (post-merge tree-wide check). The
+# most-recently-moved file (tenant_storefront_branding) is renamed to 0346_
+# with IDENTICAL content — migrate.mjs dedups by content sha256, so the
+# already-applied hash is unchanged and it is NOT re-applied to production.
+# The immutability check sees the old 0345 path as a deletion; allowlist it
+# so this renumber PR passes. Safe to delete this line after this PR merges.
+0345_tenant_storefront_branding.sql
