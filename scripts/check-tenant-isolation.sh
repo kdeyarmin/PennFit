@@ -109,21 +109,40 @@ write_baseline() {
 # Tenant-isolation baseline — API files that still call
 # getSupabaseServiceRoleClient() directly instead of getOrgScopedClient().
 #
-# Managed by scripts/check-tenant-isolation.sh (workstream E1). This is
-# Phase 0 cutover DEBT and may ONLY shrink: as each file moves to the
-# scoped wrapper, run `bash scripts/check-tenant-isolation.sh --update`
-# and commit the (removal-only) diff. New files must NOT be added here —
-# they have to use getOrgScopedClient from the start. When this list is
-# empty, retire the baseline and make the guard a plain "no direct
-# callsites" check (Phase 0 gate, plan PR 0.8).
-#
-# Do not hand-edit to ADD entries; regenerate with --update.
+# Managed by scripts/check-tenant-isolation.sh (workstream E1). The
+# Phase 0 cutover is COMPLETE — this list is empty, so the guard is now a
+# plain "no direct getSupabaseServiceRoleClient() callsite" check: ANY
+# offender hard-fails CI. `--update` is removal-only (it refuses to add a
+# new caller back), so the empty state can't regress. New code must use
+# getOrgScopedClient(orgId) from the start.
 HEADER
     [[ -n "$current_offenders" ]] && printf '%s\n' "$current_offenders"
   } >"$BASELINE_FILE"
 }
 
 if [[ "${1:-}" == "--update" ]]; then
+  # Once the cutover is COMPLETE (the committed baseline has reached empty),
+  # --update is REMOVAL-ONLY: it must never add a new direct caller back
+  # onto the baseline. Enforcing this — rather than relying on the "do not
+  # add entries" convention — is what locks the cutover in: a new file that
+  # reaches for the raw service-role client can't be laundered onto the
+  # baseline to dodge the guard; it has to use getOrgScopedClient from the
+  # start. While the baseline is still non-empty (mid-cutover) or absent
+  # (first bootstrap), --update records offenders as before.
+  prior_entries="$(grep -vE '^[[:space:]]*(#|$)' "$BASELINE_FILE" 2>/dev/null | sort -u || true)"
+  prior_count="$(printf '%s\n' "$prior_entries" | grep -c . || true)"
+  if [[ -f "$BASELINE_FILE" && "$prior_count" -eq 0 ]]; then
+    additions="$(comm -23 \
+      <(printf '%s\n' "$current_offenders" | grep -E . || true) \
+      <(printf '%s\n' "$prior_entries" | grep -E . || true) || true)"
+    if [[ -n "$additions" ]]; then
+      echo "check-tenant-isolation: --update refused — the cutover is complete and the" >&2
+      echo "  baseline is removal-only. Convert these to getOrgScopedClient(orgId)" >&2
+      echo "  instead of baselining them:" >&2
+      printf '    %s\n' $additions >&2
+      exit 1
+    fi
+  fi
   write_baseline
   count="$(printf '%s' "$current_offenders" | grep -c . || true)"
   echo "check-tenant-isolation: baseline rewritten — $count file(s) on the raw client." >&2

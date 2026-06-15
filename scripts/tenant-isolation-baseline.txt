@@ -1,12 +1,9 @@
 # Tenant-isolation baseline — API files that still call
 # getSupabaseServiceRoleClient() directly instead of getOrgScopedClient().
 #
-# Managed by scripts/check-tenant-isolation.sh (workstream E1). This is
-# Phase 0 cutover DEBT and may ONLY shrink: as each file moves to the
-# scoped wrapper, run `bash scripts/check-tenant-isolation.sh --update`
-# and commit the (removal-only) diff. New files must NOT be added here —
-# they have to use getOrgScopedClient from the start. When this list is
-# empty, retire the baseline and make the guard a plain "no direct
-# callsites" check (Phase 0 gate, plan PR 0.8).
-#
-# Do not hand-edit to ADD entries; regenerate with --update.
+# Managed by scripts/check-tenant-isolation.sh (workstream E1). The
+# Phase 0 cutover is COMPLETE — this list is empty, so the guard is now a
+# plain "no direct getSupabaseServiceRoleClient() callsite" check: ANY
+# offender hard-fails CI. `--update` is removal-only (it refuses to add a
+# new caller back), so the empty state can't regress. New code must use
+# getOrgScopedClient(orgId) from the start.
