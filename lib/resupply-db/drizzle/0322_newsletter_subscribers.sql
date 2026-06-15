@@ -13,8 +13,8 @@
 -- * public schema, same as the other storefront tables (orders,
 --   reminder_subscriptions) — this is marketing data tied to the shop
 --   surface, not the resupply clinical domain.
--- * email is unique (case-insensitively: the route lowercases before
---   insert) so repeat submissions upsert instead of duplicating.
+-- * email is unique (writers lowercase before insert) so repeat submissions
+--   upsert instead of duplicating.
 -- * `source` records which surface captured the address (e.g.
 --   "learn-newsletter") for attribution; free-text but length-capped
 --   at the route boundary.
