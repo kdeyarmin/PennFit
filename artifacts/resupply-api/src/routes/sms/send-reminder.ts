@@ -82,6 +82,7 @@ router.post(
     try {
       outcome = await sendReminderSms({
         supabase: getSupabaseServiceRoleClient(),
+        orgId: req.orgId,
         cfg: {
           twilioAccountSid: cfg.sms.twilioAccountSid,
           twilioAuthToken: cfg.sms.twilioAuthToken,

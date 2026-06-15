@@ -122,6 +122,7 @@ router.post(
       patientByEpisode.set(row.id, row.patient_id);
     }
 
+    const orgId = req.orgId;
     const actor = {
       kind: "admin" as const,
       adminEmail: req.adminEmail ?? null,
@@ -149,6 +150,7 @@ router.post(
         if (channel === "sms") {
           outcome = await sendReminderSms({
             supabase,
+            orgId,
             cfg: {
               twilioAccountSid: cfg.sms.twilioAccountSid,
               twilioAuthToken: cfg.sms.twilioAuthToken,
@@ -164,6 +166,7 @@ router.post(
         } else {
           outcome = await sendReminderEmail({
             supabase,
+            orgId,
             cfg: {
               sendgridApiKey: cfg.email.sendgridApiKey,
               sendgridFromEmail: cfg.email.sendgridFromEmail,

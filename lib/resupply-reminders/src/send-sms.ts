@@ -18,6 +18,8 @@
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
@@ -32,6 +34,15 @@ import type { SendActor, SendReminderOutcome, SmsSendConfig } from "./types";
 
 export interface SendReminderSmsInput {
   supabase: ResupplySupabaseClient;
+  /**
+   * Tenant the send happens in. Every tenant-scoped read/write goes
+   * through `getOrgScopedClient(orgId, supabase)` so a reminder can
+   * only ever touch the caller's tenant. Optional with a seed-org
+   * bridge: when omitted the original operating company is resolved,
+   * so callers that don't yet thread orgId (the worker jobs) keep
+   * working without an atomic all-callers change (Phase 0 cutover).
+   */
+  orgId?: string;
   cfg: SmsSendConfig;
   patientId: string;
   episodeId?: string;
@@ -48,9 +59,13 @@ export async function sendReminderSms(
   input: SendReminderSmsInput,
 ): Promise<SendReminderOutcome> {
   const { supabase, cfg, patientId, actor } = input;
+  // Tenant isolation chokepoint: scope every read/write to orgId. The
+  // seed-org bridge resolves the original operating company when a
+  // caller hasn't threaded orgId yet (see input doc).
+  const orgId = input.orgId ?? (await resolveSeedOrgId()) ?? "";
+  const db = getOrgScopedClient(orgId, supabase);
 
-  const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
+  const { data: patient, error: patientErr } = await db
     .from("patients")
     .select("id, status, phone_e164, legal_first_name")
     .eq("id", patientId)
@@ -66,8 +81,7 @@ export async function sendReminderSms(
   // Resolve episode — explicit if provided, else most recent.
   let episodeId = input.episodeId;
   if (!episodeId) {
-    const { data: recent, error: recentErr } = await supabase
-      .schema("resupply")
+    const { data: recent, error: recentErr } = await db
       .from("episodes")
       .select("id")
       .eq("patient_id", patientId)
@@ -78,8 +92,7 @@ export async function sendReminderSms(
     episodeId = recent?.id;
     if (!episodeId) return { status: "no_episode_for_patient" };
   } else {
-    const { data: ep, error: epErr } = await supabase
-      .schema("resupply")
+    const { data: ep, error: epErr } = await db
       .from("episodes")
       .select("id, patient_id")
       .eq("id", episodeId)
@@ -104,14 +117,13 @@ export async function sendReminderSms(
   // confirmations) will route to whichever row Postgres returns
   // first. We refuse to send before the ambiguity exists, audit it,
   // and let an admin de-duplicate the patient roster.
-  const { data: otherOwners, error: otherOwnersErr } = await supabase
-    .schema("resupply")
+  const { data: otherOwners, error: otherOwnersErr } = await db
     .from("patients")
     .select("id")
     .eq("phone_e164", normalizedPhone)
     .limit(2); // need at most 2 rows to detect the conflict
   if (otherOwnersErr) throw otherOwnersErr;
-  const otherIds = (otherOwners ?? [])
+  const otherIds = ((otherOwners ?? []) as Array<{ id: string }>)
     .map((r) => r.id)
     .filter((id) => id !== patientId);
   if (otherIds.length > 0) {
@@ -147,8 +159,7 @@ export async function sendReminderSms(
     messagingServiceSid: cfg.twilioMessagingServiceSid,
   });
 
-  const { data: insertedConv, error: insertConvErr } = await supabase
-    .schema("resupply")
+  const { data: insertedConv, error: insertConvErr } = await db
     .from("conversations")
     .insert({
       patient_id: patientId,
@@ -168,8 +179,7 @@ export async function sendReminderSms(
   // failure exit (vendor error AND unexpected throw) — see the
   // quiet-period rationale above.
   const deleteOrphanConversation = async (): Promise<void> => {
-    const { error: deleteConvErr } = await supabase
-      .schema("resupply")
+    const { error: deleteConvErr } = await db
       .from("conversations")
       .delete()
       .eq("id", conversationId);
@@ -254,21 +264,17 @@ export async function sendReminderSms(
   // retry, which would re-call this function and send a duplicate SMS.
   // The vendorRef in the log is sufficient for ops to manually reconcile.
   try {
-    const { error: insertMsgErr } = await supabase
-      .schema("resupply")
-      .from("messages")
-      .insert({
-        conversation_id: conversationId,
-        direction: "outbound",
-        sender_role: "agent",
-        body: messageBody,
-        delivery_status: "queued",
-        vendor_metadata: { twilio_message_sid: messageSid } as unknown as Json,
-        sent_at: sentAtIso,
-      });
+    const { error: insertMsgErr } = await db.from("messages").insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_role: "agent",
+      body: messageBody,
+      delivery_status: "queued",
+      vendor_metadata: { twilio_message_sid: messageSid } as unknown as Json,
+      sent_at: sentAtIso,
+    });
     if (insertMsgErr) throw insertMsgErr;
-    const { error: stampConvErr } = await supabase
-      .schema("resupply")
+    const { error: stampConvErr } = await db
       .from("conversations")
       .update({
         external_ref: messageSid,
@@ -319,6 +325,7 @@ export async function sendReminderSms(
     body: messageBody,
     direction: "outbound",
     messageAt: sentAt,
+    orgId: orgId || undefined,
   });
 
   await safeAuditFromActor({

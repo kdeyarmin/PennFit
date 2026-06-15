@@ -70,7 +70,10 @@ import {
   type OutreachPrescription,
   type OutreachRule,
 } from "@workspace/resupply-domain";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
@@ -925,6 +928,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderSms({
         supabase,
+        // System job: resolve the seed tenant (Phase 0 bridge). When
+        // per-patient org lands the scan will carry it on SendJobData.
+        orgId: (await resolveSeedOrgId()) ?? undefined,
         cfg: cfg.sms,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
@@ -994,6 +1000,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderEmail({
         supabase,
+        // System job: resolve the seed tenant (Phase 0 bridge). When
+        // per-patient org lands the scan will carry it on SendJobData.
+        orgId: (await resolveSeedOrgId()) ?? undefined,
         cfg: cfg.email,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,

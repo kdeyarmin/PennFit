@@ -110,9 +110,9 @@ export async function replyInConversation(
 ): Promise<ReplyInConversationOutcome> {
   const { supabase, orgId, conversationId, body, actor } = input;
   // Tenant isolation chokepoint: scope every read/write to orgId. The
-  // patient_latest_message projection call below still uses the raw
-  // client (it is a denormalized cache; org-scoping it is tracked as a
-  // follow-up with the rest of the projection callers).
+  // patient_latest_message projection refresh below is now org-aware
+  // too — it takes `orgId` and routes through getOrgScopedClient
+  // internally.
   const db = getOrgScopedClient(orgId, supabase);
 
   const { data: conv, error: convErr } = await db
@@ -392,12 +392,14 @@ export async function replyInConversation(
     );
   }
 
-  // Refresh latest-message projection (best-effort).
+  // Refresh latest-message projection (best-effort). Now org-scoped:
+  // the projection routes through getOrgScopedClient(orgId) internally.
   await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body,
     direction: "outbound",
     messageAt: sentAt,
+    orgId,
   });
 
   await safeAuditFromActor({
