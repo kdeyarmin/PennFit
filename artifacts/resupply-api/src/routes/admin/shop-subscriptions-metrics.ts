@@ -30,7 +30,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -46,8 +46,13 @@ router.get(
   // Subscription KPI rollup. `reports.read` like the rest of the
   // analytics surface.
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Anchor every "last N days" / "last 6 months" window to the
     // same `now` so the counters are internally consistent.
@@ -63,7 +68,6 @@ router.get(
     const cohortStartIso = cohortStart.toISOString();
 
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("shop_subscriptions")
       .select("status, created_at, canceled_at, cancel_at_period_end");
     if (error) throw error;
