@@ -1038,13 +1038,8 @@ router.post(
       );
     }
 
-    await recordTrackingSent(
-      supabase,
-      "manual_document",
-      row.id,
-      "fax",
-    ).catch((err) =>
-      logger.warn({ err }, "manual_document.tracking_sent failed"),
+    await recordTrackingSent(supabase, "manual_document", row.id, "fax").catch(
+      (err) => logger.warn({ err }, "manual_document.tracking_sent failed"),
     );
 
     await logAudit({

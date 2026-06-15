@@ -208,3 +208,40 @@ export async function resolveSeedOrgId(): Promise<string | null> {
 export function __resetSeedOrgIdForTests(): void {
   cachedSeedOrgId = null;
 }
+
+/**
+ * List the ids of every ACTIVE tenant (`organizations.status = 'active'`).
+ *
+ * This is the multi-tenant counterpart to `resolveSeedOrgId()` for code
+ * that has no request context — chiefly the recurring worker crons, which
+ * must do their sweep for EVERY tenant, not just the seed org. A caller
+ * iterates the returned ids and builds a `getOrgScopedClient(orgId)` per
+ * tenant (or enqueues one per-org job item carrying `org_id`).
+ *
+ * Like `resolveSeedOrgId()` this is a TENANT-DIRECTORY read (it resolves
+ * *which* orgs exist), so it legitimately uses the service-role client.
+ *
+ * Fail-soft: returns `[]` on any lookup error so a flaky directory read
+ * skips a tick rather than throwing inside a scheduler. Suspended /
+ * archived tenants are intentionally excluded — their crons should not
+ * run. NOT cached: tenant status changes (suspend/reactivate) must take
+ * effect on the next tick without a process restart.
+ */
+export async function listActiveOrgIds(
+  client: ResupplySupabaseClient = getSupabaseServiceRoleClient(),
+): Promise<string[]> {
+  try {
+    const supabase = client;
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("status", "active");
+    if (error || !data) return [];
+    return data
+      .map((row) => (row as { id?: string }).id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+  } catch {
+    return [];
+  }
+}

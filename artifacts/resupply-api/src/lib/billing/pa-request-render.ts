@@ -23,9 +23,6 @@ import {
 import { resolveBillingIdentity } from "./identity-resolver";
 import { getDocumentSupplierName } from "../company-info";
 
-import type { OrgScopedClient } from "@workspace/resupply-db";
-type SupabaseClient = OrgScopedClient;
-
 // PAP-relevant HCPCS labels so the item line reads in plain language.
 // Falls back to the raw code for anything not listed.
 const HCPCS_LABELS: Record<string, string> = {
