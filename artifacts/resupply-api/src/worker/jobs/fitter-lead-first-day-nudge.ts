@@ -48,7 +48,8 @@ import type PgBoss from "pg-boss";
 
 import {
   escapePostgRESTFilterValue,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -196,7 +197,9 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     errors: 0,
   };
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
   const olderThan = new Date(now - MAX_AGE_MS).toISOString();
@@ -210,7 +213,6 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
   // contradict it. Finishers get the supply campaign; non-finishers
   // get this nudge.
   const { data: leads, error } = await supabase
-    .schema("resupply")
     .from("fitter_leads")
     .select("id, email, phone_e164, sms_opt_in, source, created_at")
     .eq("marketing_opt_in", true)
@@ -222,7 +224,13 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     .limit(BATCH_SIZE);
   if (error) throw error;
 
-  const candidates = (leads ?? []).filter(
+  const candidates = (
+    (leads ?? []) as Array<{
+      id: string;
+      email: string | null;
+      created_at: string;
+    }>
+  ).filter(
     (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
   if (candidates.length === 0) return stats;
@@ -246,6 +254,7 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
       .map((e) => `patient_email.ilike.${escapePostgRESTFilterValue(e)}`)
       .join(",");
     const { data: converted, error: convErr } = await supabase
+      .raw()
       .schema("public")
       .from("orders")
       .select("patient_email")
@@ -306,7 +315,6 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     // crash mid-send doesn't double-deliver on the next hourly tick.
     const claimIso = new Date().toISOString();
     const { data: claimResult, error: claimErr } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update({ first_day_nudged_at: claimIso })
       .eq("id", lead.id)
