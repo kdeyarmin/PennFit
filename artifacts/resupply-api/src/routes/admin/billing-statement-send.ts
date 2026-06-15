@@ -17,7 +17,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
 import {
@@ -68,10 +68,14 @@ router.get(
   "/admin/billing/statements/pending",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_billing_statements")
       .select("id, patient_id, total_patient_responsibility_cents, created_at")
       .eq("delivery_status", "pending")
@@ -120,8 +124,13 @@ router.post(
       res.status(400).json({ error: "invalid_statement_id" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(orgId),
       parsed.data,
       { signPdfUrl },
     );
@@ -145,7 +154,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const summary = await runStatementBatchSend(
+      getOrgScopedClient(orgId),
       { cap: parsed.data.cap ?? 50 },
       { signPdfUrl },
     );
@@ -173,10 +188,14 @@ router.get(
   "/admin/billing/statements/mail-queue",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_billing_statements")
       .select("id, patient_id, total_patient_responsibility_cents, created_at")
       .eq("delivery_status", "pending")
@@ -217,10 +236,14 @@ router.get(
   "/admin/billing/statements/mail-queue/print",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_billing_statements")
       .select("id, patient_id, line_items_json, created_at")
       .eq("delivery_status", "pending")
@@ -240,7 +263,7 @@ router.get(
     }>;
 
     // Resolve the issuer once (org-wide), then batch-fetch every patient.
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
     if (identity.source === "stub") {
       res.status(409).json({ error: "no_dme_organization" });
       return;
@@ -270,7 +293,6 @@ router.get(
     >();
     if (patientIds.length > 0) {
       const { data: pats, error: patsErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name, address, email")
         .in("id", patientIds);
@@ -364,8 +386,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const marked = await markStatementsMailed(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(orgId),
       parsed.data.statementIds,
     );
     req.log?.info(
