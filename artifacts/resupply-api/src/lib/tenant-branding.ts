@@ -261,6 +261,7 @@ export async function resolveOrgIdByHost(
     logger.warn(
       {
         event: "tenant_org_resolve_failed",
+        host: key,
         err: err instanceof Error ? err : new Error(String(err ?? "unknown")),
       },
       "host→org resolve failed; falling back to seed org",
