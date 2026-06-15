@@ -128,14 +128,26 @@ A second tenant's storefront would render their logo over PennPaps'
 catalog, customers, and orders.
 
 **Work:**
-1. Add `resolveOrgIdByHost(host)` next to `resolveBrandingByHost` (reuse
-   the same verified-`custom_domain` → `organizations.id` lookup + cache)
-   in `lib/tenant-branding.ts` / a new `lib/tenant-context.ts`.
-2. In `requireSignedIn`, resolve `org_id` from the authenticated
-   `shop_customers.org_id` first (the row already carries it post-0334);
-   fall back to host resolution for the pre-auth/guest catalog surface.
-3. Replace `resolveSeedOrgId()` in `routes/storefront/**` with the
-   host-/customer-derived org. Keep seed fallback **only** for the apex
+1. ✅ Add `resolveOrgIdByHost(host)` next to `resolveBrandingByHost` (reuse
+   the same verified-`custom_domain` → `organizations.id` lookup + cache).
+   **Done** — `req.orgId` now resolves by host in `requireSignedIn` /
+   `attachSignedIn`, and `POST /api/orders` mirrors to it.
+2. **Make the customer-row resolution org-aware (remaining).** `req.orgId`
+   now switches to the host tenant, but the **customer identity** is still
+   seed-pinned: `customerIdResolver` (in `lib/auth-deps`) and
+   `ensureShopCustomerRow` (used across ~10 patient-portal routes) build a
+   **seed-org** scoped client. So a first-time signed-in tenant shopper
+   gets/creates a *seed* `shop_customers` row while `/shop/me` and order
+   code read tenant-scoped tables via `getOrgScopedClient(req.orgId)` —
+   profile updates can no-op and returned data can mix tenants. This is
+   **single-tenant-correct today** (all hosts → seed, so the two agree),
+   but must be fixed before tenant #2: resolve org **before** the customer
+   lookup and thread the host-resolved `orgId` through `customerIdResolver`
+   / `ensureShopCustomerRow`. (Flagged by review on PR #969.)
+3. Replace remaining `resolveSeedOrgId()` in the **signed-link**
+   `routes/storefront/**` flows (`reminders`, `csr-orders`,
+   `patient-packets`) with a **token-derived** org (the link/record's
+   tenant), not the host. Keep seed fallback **only** for the apex
    `pennfit.up.railway.app` host so single-tenant stays correct.
 4. Signed patient links (SMS/email reminders via `RESUPPLY_LINK_HMAC_KEY`)
    must encode/resolve `org_id` so a click-through lands in the right

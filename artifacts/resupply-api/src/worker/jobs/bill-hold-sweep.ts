@@ -75,7 +75,7 @@ async function billHoldSweepForOrg(
   const draftIds = (drafts ?? []).map(
     (c: { id: string }) => (c as { id: string }).id,
   );
-  stats.draftClaimsScanned = draftIds.length;
+  stats.draftClaimsScanned += draftIds.length;
 
   if (draftIds.length > 0) {
     // Which of these already carry a requirement? One read, then seed the rest.
@@ -115,7 +115,7 @@ async function billHoldSweepForOrg(
   }
 
   // ── 2. Auto-remind stale outstanding requirements ───────────────────
-  if (await isFeatureEnabled("billing.bill_hold_auto_remind")) {
+  if (await isFeatureEnabled("billing.bill_hold_auto_remind", orgId)) {
     const now = Date.now();
     const createdBefore = new Date(
       now - REMIND_AFTER_DAYS * MS_PER_DAY,
@@ -162,9 +162,10 @@ async function billHoldSweepForOrg(
 }
 
 /**
- * Run the bill-hold sweep for EVERY active tenant. The feature flag is a
- * global kill-switch (checked once); the per-tenant work fans out via
- * `forEachActiveOrg`. Single-tenant behavior unchanged.
+ * Run the bill-hold sweep for EVERY active tenant. The `billing.bill_hold`
+ * feature flag is checked PER TENANT (`feature_flags` is `(org_id, key)`),
+ * so one tenant's opt-out doesn't sweep another's claims. `skipped`
+ * reports that NO active tenant had the feature on.
  */
 export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
   const stats: BillHoldSweepStats = {
@@ -175,14 +176,16 @@ export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
     remindersBumped: 0,
   };
 
-  if (!(await isFeatureEnabled("billing.bill_hold"))) {
-    stats.skipped = true;
-    return stats;
-  }
-
-  await forEachActiveOrg((orgId) => billHoldSweepForOrg(orgId, stats), {
-    jobName: BILL_HOLD_SWEEP_JOB,
-  });
+  let anyEnabled = false;
+  await forEachActiveOrg(
+    async (orgId) => {
+      if (!(await isFeatureEnabled("billing.bill_hold", orgId))) return;
+      anyEnabled = true;
+      await billHoldSweepForOrg(orgId, stats);
+    },
+    { jobName: BILL_HOLD_SWEEP_JOB },
+  );
+  stats.skipped = !anyEnabled;
   return stats;
 }
 

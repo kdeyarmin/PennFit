@@ -27,21 +27,33 @@ beforeEach(() => {
   listActiveOrgIdsMock.mockReset().mockResolvedValue([]);
 });
 
-describe("runBillHoldSweep — flag gate + fan-out", () => {
-  it("skips (no fan-out) when the billing.bill_hold flag is OFF", async () => {
+describe("runBillHoldSweep — per-tenant flag gate + fan-out", () => {
+  it("skips (no work) when no tenant has the billing.bill_hold flag ON", async () => {
+    listActiveOrgIdsMock.mockResolvedValue(["org-a", "org-b"]);
     isFeatureEnabledMock.mockResolvedValue(false);
     const stats = await runBillHoldSweep();
+    // No tenant enabled → skipped, no claims scanned.
     expect(stats.skipped).toBe(true);
-    expect(isFeatureEnabledMock).toHaveBeenCalledWith("billing.bill_hold");
-    // Must short-circuit before fanning out / touching the DB.
-    expect(listActiveOrgIdsMock).not.toHaveBeenCalled();
+    expect(stats.draftClaimsScanned).toBe(0);
+    // Flag is checked PER TENANT with the org_id.
+    expect(isFeatureEnabledMock).toHaveBeenCalledWith(
+      "billing.bill_hold",
+      "org-a",
+    );
   });
 
-  it("fans out over active tenants when the flag is ON", async () => {
+  it("does not skip when at least one tenant has the flag ON", async () => {
+    listActiveOrgIdsMock.mockResolvedValue(["org-a"]);
     isFeatureEnabledMock.mockResolvedValue(true);
-    listActiveOrgIdsMock.mockResolvedValue([]); // no tenants → no-op body
     const stats = await runBillHoldSweep();
     expect(stats.skipped).toBe(false);
-    expect(listActiveOrgIdsMock).toHaveBeenCalled();
+  });
+
+  it("reports skipped when there are no active tenants", async () => {
+    listActiveOrgIdsMock.mockResolvedValue([]);
+    isFeatureEnabledMock.mockResolvedValue(true);
+    const stats = await runBillHoldSweep();
+    expect(stats.skipped).toBe(true);
+    expect(isFeatureEnabledMock).not.toHaveBeenCalled();
   });
 });

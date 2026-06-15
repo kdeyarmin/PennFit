@@ -160,9 +160,10 @@ async function autoPopulateForOrg(
  * Run the asset-recovery auto-populate sweep for EVERY active tenant.
  * `asset_recovery_cases`, `patient_smart_trigger_events`, and `patients`
  * are tenant-scoped, so the sweep fans out via `forEachActiveOrg` and
- * accumulates the counts. The feature flag is checked once as a global
- * kill-switch (single-tenant behavior unchanged). Per-tenant flag gating
- * is a Phase-1 follow-on.
+ * accumulates the counts. The `asset_recovery.auto_populate` feature flag
+ * is checked PER TENANT (`feature_flags` is `(org_id, key)`), so one
+ * tenant's opt-out doesn't sweep another's patients. `enabled` reports
+ * whether at least one active tenant had it on.
  */
 export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats> {
   const stats: AutoPopulateStats = {
@@ -173,14 +174,16 @@ export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats>
     failed: 0,
   };
 
-  if (!(await isFeatureEnabled("asset_recovery.auto_populate"))) {
-    return stats;
-  }
-  stats.enabled = true;
-
-  await forEachActiveOrg((orgId) => autoPopulateForOrg(orgId, stats), {
-    jobName: JOB_NAME,
-  });
+  await forEachActiveOrg(
+    async (orgId) => {
+      if (!(await isFeatureEnabled("asset_recovery.auto_populate", orgId))) {
+        return;
+      }
+      stats.enabled = true;
+      await autoPopulateForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
   return stats;
 }
 

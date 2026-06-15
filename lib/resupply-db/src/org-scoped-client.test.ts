@@ -175,10 +175,10 @@ describe("getOrgScopedClient", () => {
 
 // A minimal directory-read fake: `.schema().from().select().eq()` resolves
 // to the staged `{ data, error }` envelope (PostgREST select-many shape).
-function makeDirectoryClient(result: {
-  data?: unknown;
-  error?: unknown;
-}): { client: ResupplySupabaseClient; lastEq?: { column: string; value: unknown } } {
+function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
+  client: ResupplySupabaseClient;
+  lastEq?: { column: string; value: unknown };
+} {
   const state: { lastEq?: { column: string; value: unknown } } = {};
   const builder = {
     select() {
@@ -194,16 +194,24 @@ function makeDirectoryClient(result: {
       return { from: () => builder };
     },
   } as unknown as ResupplySupabaseClient;
-  return { client, get lastEq() { return state.lastEq; } };
+  return {
+    client,
+    get lastEq() {
+      return state.lastEq;
+    },
+  };
 }
 
 describe("listActiveOrgIds", () => {
   it("returns the ids of active tenants, filtering on status = active", async () => {
-    const { client } = makeDirectoryClient({
+    const dir = makeDirectoryClient({
       data: [{ id: "org-a" }, { id: "org-b" }],
     });
-    const ids = await listActiveOrgIds(client);
+    const ids = await listActiveOrgIds(dir.client);
     expect(ids).toEqual(["org-a", "org-b"]);
+    // Assert the query shape so a regression (wrong column/value or a
+    // dropped filter) fails the test rather than silently passing.
+    expect(dir.lastEq).toEqual({ column: "status", value: "active" });
   });
 
   it("drops rows with a missing / empty id", async () => {
