@@ -31,8 +31,9 @@ vi.mock("../feature-flags", () => ({
 }));
 
 import { build837P } from "@workspace/resupply-integrations-office-ally";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
+import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
 import { isFeatureEnabled } from "../feature-flags";
 import {
   buildOneDetail,
@@ -462,7 +463,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 3198 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -487,7 +488,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 24999 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -508,7 +509,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 8000 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -532,7 +533,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 24999 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -553,7 +554,7 @@ describe("buildOneDetail — serviceLines billedCents = billed_cents × quantity
     ]);
 
     const claim = makeClaimRow({ date_of_service: "2026-05-15" });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -603,7 +604,7 @@ describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () 
       total_billed_cents: 24999,
     });
     const detail = await buildOneDetail(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       claim as never,
       "Aetna",
       "60054",
@@ -667,7 +668,7 @@ describe("buildOneDetail — line-level ordering provider (A2, flag-gated)", () 
     // Default mock impl returns false for billing.line_ordering_provider.
     const claim = makeClaimRow({ referring_provider_id: "prov-rx-001" });
     const detail = await buildOneDetail(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       claim as never,
       "Aetna",
       "60054",
@@ -728,7 +729,7 @@ describe("buildOneDetail — coordination of benefits", () => {
       cob_primary_paid_cents: 12000,
       secondary_coverage_id: null,
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -788,7 +789,7 @@ describe("buildOneDetail — coordination of benefits", () => {
     });
 
     const claim = makeClaimRow({ secondary_coverage_id: "cov-sec-1" });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -813,7 +814,7 @@ describe("buildOneDetail — coordination of benefits", () => {
 describe("buildOneDetail — null guard paths", () => {
   it("returns null when insurance_coverage_id is missing from claim", async () => {
     const claim = makeClaimRow({ insurance_coverage_id: null });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -848,7 +849,7 @@ describe("buildOneDetail — null guard paths", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -885,7 +886,7 @@ describe("buildOneDetail — null guard paths", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -917,7 +918,7 @@ describe("buildOneDetail — null guard paths", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -939,7 +940,7 @@ describe("buildOneDetail — claim-level fields", () => {
     ]);
 
     const claim = makeClaimRow({ total_billed_cents: 99999 });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -959,7 +960,7 @@ describe("buildOneDetail — claim-level fields", () => {
     const claim = makeClaimRow({
       id: "00000000-0000-4000-8000-000000000001",
     });
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -976,7 +977,7 @@ describe("buildOneDetail — claim-level fields", () => {
     ]);
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -1023,7 +1024,7 @@ describe("buildOneDetail — claim-level fields", () => {
     });
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
@@ -1067,7 +1068,7 @@ describe("buildOneDetail — claim-level fields", () => {
     // sleep_studies unstaged → returns null
 
     const claim = makeClaimRow();
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(MOCK_ORG_ID);
     const detail = await buildOneDetail(
       supabase,
       claim as never,
