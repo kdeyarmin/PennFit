@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   aggregateMargin,
   type MarginAggregate,
@@ -85,9 +85,13 @@ router.get(
     const days = parsed.success ? (parsed.data.days ?? 30) : 30;
     const cutoffIso = new Date(Date.now() - days * 86_400_000).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: items, error } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .select("product_id, quantity, unit_amount_cents, unit_cost_cents")
       .gte("paid_at", cutoffIso)
@@ -121,7 +125,6 @@ router.get(
     const nameByProduct = new Map<string, string>();
     if (productIds.length > 0) {
       const { data: names } = await supabase
-        .schema("resupply")
         .from("inventory_reconciliation_lines")
         .select("product_id, product_name, created_at")
         .in("product_id", productIds)
