@@ -14,9 +14,9 @@
 // agents who can edit the calendar must still be able to load + validate
 // assignees.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { Database, OrgScopedClient } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type AdminUserRow = Database["resupply"]["Tables"]["admin_users"]["Row"];
 
 export interface AssignableStaff {
   /** resupply_auth.users.id — equals req.adminUserId / created_by_user_id. */
@@ -27,18 +27,24 @@ export interface AssignableStaff {
 
 /** Auth-user ids (subset of the input) whose email is verified. */
 async function emailVerifiedSet(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   authUserIds: string[],
 ): Promise<Set<string>> {
   const out = new Set<string>();
   if (authUserIds.length === 0) return out;
+  // resupply_auth.users is the global auth table (not org-scoped) —
+  // read it through the unscoped client.
   const { data, error } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("users")
     .select("id, email_verified_at")
     .in("id", authUserIds);
   if (error) throw error;
-  for (const r of data ?? []) {
+  for (const r of (data ?? []) as Array<{
+    id: string;
+    email_verified_at: string | null;
+  }>) {
     if (r.email_verified_at) out.add(r.id);
   }
   return out;
@@ -46,18 +52,17 @@ async function emailVerifiedSet(
 
 /** Every effectively-active staff member, for the assignee picker. */
 export async function listAssignableStaff(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
 ): Promise<AssignableStaff[]> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("admin_users")
     .select("auth_user_id, email_lower, display_name, status")
     .neq("status", "revoked")
     .not("auth_user_id", "is", null)
     .order("display_name", { ascending: true });
   if (error) throw error;
-  const rows = (data ?? []).filter(
-    (r): r is typeof r & { auth_user_id: string } => r.auth_user_id != null,
+  const rows = ((data ?? []) as AdminUserRow[]).filter(
+    (r): r is AdminUserRow & { auth_user_id: string } => r.auth_user_id != null,
   );
   const verified = await emailVerifiedSet(
     supabase,
@@ -78,11 +83,10 @@ export async function listAssignableStaff(
  * the assignment rather than email an arbitrary / revoked address).
  */
 export async function resolveAssignableStaff(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   authUserId: string,
 ): Promise<AssignableStaff | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("admin_users")
     .select("auth_user_id, email_lower, display_name, status")
     .eq("auth_user_id", authUserId)
@@ -90,12 +94,13 @@ export async function resolveAssignableStaff(
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  if (!data || !data.auth_user_id) return null;
-  const verified = await emailVerifiedSet(supabase, [data.auth_user_id]);
-  if (!verified.has(data.auth_user_id)) return null;
+  const row = data as AdminUserRow | null;
+  if (!row || !row.auth_user_id) return null;
+  const verified = await emailVerifiedSet(supabase, [row.auth_user_id]);
+  if (!verified.has(row.auth_user_id)) return null;
   return {
-    userId: data.auth_user_id,
-    email: data.email_lower,
-    displayName: data.display_name,
+    userId: row.auth_user_id,
+    email: row.email_lower,
+    displayName: row.display_name,
   };
 }
