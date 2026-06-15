@@ -138,7 +138,7 @@ router.post(
   async (req, res) => {
     // Control Center gate — admins can disable counter ordering without
     // a deploy. Existing orders and the rest of the app are unaffected.
-    if (!(await isFeatureEnabled("frontdesk.counter_orders"))) {
+    if (!(await isFeatureEnabled("frontdesk.counter_orders", req.orgId))) {
       res.status(503).json({
         error: "counter_orders_disabled",
         message:

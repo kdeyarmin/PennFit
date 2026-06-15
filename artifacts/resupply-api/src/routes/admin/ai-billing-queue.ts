@@ -75,7 +75,7 @@ router.get(
     // turned off we return an empty queue so the admin UI stays
     // functional (manual workflow keeps going); the flag display in
     // the response lets the UI surface an "AI offline" banner.
-    if (!(await isFeatureEnabled("ai_billing.suggestions"))) {
+    if (!(await isFeatureEnabled("ai_billing.suggestions", req.orgId))) {
       const disabledResponse = aiBillingQueueResponseSchema.parse({
         scrubBlockingClaims: [],
         scrubFixableClaims: [],

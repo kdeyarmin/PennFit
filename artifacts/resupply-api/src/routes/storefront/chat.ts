@@ -396,7 +396,7 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // we surface a single-message "offline" response. The shape
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
-  if (!(await isFeatureEnabled("storefront.chatbot"))) {
+  if (!(await isFeatureEnabled("storefront.chatbot", req.orgId))) {
     const offlineMessage =
       "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
     if (streaming) {

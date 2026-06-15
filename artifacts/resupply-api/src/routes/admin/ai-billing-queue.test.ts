@@ -15,6 +15,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -143,7 +144,10 @@ describe("GET /admin/billing/ai-queue — feature flag gate", () => {
 
     await request(makeApp()).get("/admin/billing/ai-queue");
 
-    expect(isFeatureEnabledMock).toHaveBeenCalledWith("ai_billing.suggestions");
+    expect(isFeatureEnabledMock).toHaveBeenCalledWith(
+      "ai_billing.suggestions",
+      MOCK_ORG_ID,
+    );
   });
 });
 
