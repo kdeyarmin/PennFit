@@ -36,11 +36,11 @@ ALTER TABLE "resupply"."organizations"
 -- (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID) is configured. With either
 -- absent, domain verify behaves exactly as before (mark verified; manual
 -- operator TLS step per docs/runbooks/tenant-custom-domain.md).
-INSERT INTO "resupply"."feature_flags" ("key", "enabled", "description", "category")
+INSERT INTO resupply.feature_flags (key, enabled, description, category)
 VALUES (
   'domains.tls_automation',
   false,
   'Automatically provision + renew TLS for tenant custom domains via Cloudflare for SaaS (Custom Hostnames) when a domain is verified. Requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID. Off = manual operator edge binding.',
   'Integrations'
 )
-ON CONFLICT ("key") DO NOTHING;
+ON CONFLICT (key) DO NOTHING;
