@@ -4,7 +4,7 @@
 // `fetchReturns` used by the revenue-summary / refunds-journal /
 // all-financial reports.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -46,9 +46,10 @@ export interface ReturnRow {
 }
 
 export async function fetchReturns(from: Date, to: Date): Promise<ReturnRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_returns")
     .select(
       "id, order_id, customer_id, stripe_session_id, status, reason, resolution, refund_cents, stripe_refund_id, exchange_product_id, created_at, approved_at, received_at, resolved_at, closed_at",

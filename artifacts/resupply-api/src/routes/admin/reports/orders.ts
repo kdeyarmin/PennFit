@@ -2,7 +2,7 @@
 // in range. CSV / PDF / IIF / QBO CSV downloads plus the matching
 // email-attachment builders.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -42,9 +42,10 @@ export interface OrderRow {
 }
 
 export async function fetchOrders(from: Date, to: Date): Promise<OrderRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select(
       "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number",

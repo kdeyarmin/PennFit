@@ -11,7 +11,7 @@
 // commonly include PHI ("patient reports nightly mask leak") and
 // have no place in a CSV/PDF that gets emailed around.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -55,13 +55,14 @@ export async function fetchInsuranceClaims(
   from: Date,
   to: Date,
 ): Promise<InsuranceClaimRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId);
   // Date-of-service is the canonical billing-period anchor — payors
   // reconcile against it, not the row's created_at. Operators
   // chasing aging windows ("denials in last 30 DOS days") expect the
   // range to clamp on DOS.
   const { data, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, submitted_at, decision_at, paid_at, created_at",

@@ -20,7 +20,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
@@ -51,9 +51,7 @@ export interface BillHoldSweepStats {
   remindersBumped: number;
 }
 
-export async function runBillHoldSweep(
-  supabase = getSupabaseServiceRoleClient(),
-): Promise<BillHoldSweepStats> {
+export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
   const stats: BillHoldSweepStats = {
     skipped: false,
     draftClaimsScanned: 0,
@@ -67,36 +65,48 @@ export async function runBillHoldSweep(
     return stats;
   }
 
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    stats.skipped = true;
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
   // ── 1. Backfill: seed defaults onto draft claims with no requirements ──
   const { data: drafts, error: draftErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id")
     .eq("status", "draft")
     .order("created_at", { ascending: true })
     .limit(SEED_SCAN_CAP);
   if (draftErr) throw draftErr;
-  const draftIds = (drafts ?? []).map((c) => (c as { id: string }).id);
+  const draftIds = (drafts ?? []).map(
+    (c: { id: string }) => (c as { id: string }).id,
+  );
   stats.draftClaimsScanned = draftIds.length;
 
   if (draftIds.length > 0) {
     // Which of these already carry a requirement? One read, then seed the rest.
     const { data: withReqs, error: reqErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("claim_id")
       .in("claim_id", draftIds);
     if (reqErr) throw reqErr;
     const haveReqs = new Set(
       (withReqs ?? [])
-        .map((r) => (r as { claim_id: string | null }).claim_id)
-        .filter((id): id is string => id != null),
+        .map(
+          (r: { claim_id: string | null }) =>
+            (r as { claim_id: string | null }).claim_id,
+        )
+        .filter((id: string | null): id is string => id != null),
     );
     for (const claimId of draftIds) {
       if (haveReqs.has(claimId)) continue;
       try {
         const result = await seedDefaultRequirementsForClaim(claimId, {
-          supabase,
+          // Shared helper not yet cut over — pass the unscoped client it
+          // is typed for (recipe-2 §B).
+          supabase: supabase.raw(),
           createdByEmail: "system:bill-hold-sweep",
         });
         if (result.created > 0) {
@@ -122,7 +132,6 @@ export async function runBillHoldSweep(
       now - REMIND_INTERVAL_DAYS * MS_PER_DAY,
     ).toISOString();
     const { data: stale, error: staleErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, reminder_count, last_reminded_at")
       .eq("status", "outstanding")
@@ -141,7 +150,6 @@ export async function runBillHoldSweep(
       // Skip if reminded within the interval.
       if (r.last_reminded_at && r.last_reminded_at > remindBefore) continue;
       const { error: updErr } = await supabase
-        .schema("resupply")
         .from("claim_paperwork_requirements")
         .update({
           reminder_count: (r.reminder_count ?? 0) + 1,

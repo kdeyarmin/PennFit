@@ -26,7 +26,8 @@
 import { Router } from "express";
 import { SubmitOrderBody } from "../../lib/api-zod/index.js";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type FacialMeasurementsInfo,
   type Json,
 } from "@workspace/resupply-db";
@@ -102,50 +103,61 @@ router.post(
     // the same value.
     const orderReference = generateOrderReference();
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Public/guest-capable route (pattern 3): this POST accepts both
+    // anonymous and signed-in orders via `attachSignedIn`, so req.orgId
+    // is not guaranteed. Resolve the seed org to build the scoped client
+    // and degrade gracefully — the order row itself lives in the global
+    // `public.orders` table (no org_id, written via `.raw()`), so a
+    // missing tenant must never block the order; only the signed-in
+    // `shop_customers` measurement mirror needs the tenant.
+    const orgId = await resolveSeedOrgId();
+    const supabase = orgId ? getOrgScopedClient(orgId) : null;
 
     let dbId: string | null = null;
-    try {
-      const { data: inserted, error: insertErr } = await supabase
-        .schema("public")
-        .from("orders")
-        .insert({
-          order_reference: orderReference,
-          patient_first_name: order.patient.firstName,
-          patient_last_name: order.patient.lastName,
-          patient_email: order.patient.email,
-          patient_phone: order.patient.phone,
-          patient_date_of_birth: order.patient.dateOfBirth,
-          mask_id: order.chosenMask.maskId,
-          mask_name: order.chosenMask.name,
-          mask_manufacturer: order.chosenMask.manufacturer,
-          mask_model_number: order.chosenMask.modelNumber,
-          shipping_city: order.shippingAddress.city,
-          shipping_state: order.shippingAddress.state,
-          shipping_zip: order.shippingAddress.zip,
-          // SubmitOrderBody is a typed Zod object; PostgREST `Json` rejects
-          // it without a cast at the boundary.
-          payload: order as unknown as Json,
-        })
-        .select("id")
-        .limit(1)
-        .maybeSingle();
-      if (insertErr) throw insertErr;
-      dbId = inserted?.id ?? null;
-    } catch (err) {
-      // We deliberately don't fail the whole request on a DB write error.
-      // The patient's primary expectation is that Penn receives the order;
-      // losing the audit row is bad but recoverable, losing the email is not.
-      //
-      // Strip the supabase-js error to name+code+message only. Its raw
-      // shape includes `.details`/`.hint` which echo the rejected row's
-      // column values on constraint violation — for orders these carry
-      // DOB, insurance member ID, and email (PHI). CLAUDE.md hard rule:
-      // "No order request bodies in the application logger."
-      logger.error(
-        { err: redactDbErr(err) },
-        "Failed to persist order before send (continuing with email)",
-      );
+    if (supabase) {
+      try {
+        const { data: inserted, error: insertErr } = await supabase
+          .raw()
+          .schema("public")
+          .from("orders")
+          .insert({
+            order_reference: orderReference,
+            patient_first_name: order.patient.firstName,
+            patient_last_name: order.patient.lastName,
+            patient_email: order.patient.email,
+            patient_phone: order.patient.phone,
+            patient_date_of_birth: order.patient.dateOfBirth,
+            mask_id: order.chosenMask.maskId,
+            mask_name: order.chosenMask.name,
+            mask_manufacturer: order.chosenMask.manufacturer,
+            mask_model_number: order.chosenMask.modelNumber,
+            shipping_city: order.shippingAddress.city,
+            shipping_state: order.shippingAddress.state,
+            shipping_zip: order.shippingAddress.zip,
+            // SubmitOrderBody is a typed Zod object; PostgREST `Json` rejects
+            // it without a cast at the boundary.
+            payload: order as unknown as Json,
+          })
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        if (insertErr) throw insertErr;
+        dbId = inserted?.id ?? null;
+      } catch (err) {
+        // We deliberately don't fail the whole request on a DB write error.
+        // The patient's primary expectation is that Penn receives the order;
+        // losing the audit row is bad but recoverable, losing the email is not.
+        //
+        // Strip the supabase-js error to name+code+message only. Its raw
+        // shape includes `.details`/`.hint` which echo the rejected row's
+        // column values on constraint violation — for orders these carry
+        // DOB, insurance member ID, and email (PHI). CLAUDE.md hard rule:
+        // "No order request bodies in the application logger."
+        logger.error(
+          { err: redactDbErr(err) },
+          "Failed to persist order before send (continuing with email)",
+        );
+      }
     }
 
     // If the order arrived with on-device measurements AND the caller
@@ -162,7 +174,7 @@ router.post(
           calibrationMethod?: string;
         })
       | undefined;
-    if (req.userCustomerId && rawMeasurements) {
+    if (req.userCustomerId && rawMeasurements && supabase) {
       try {
         // The OpenAPI schema for SubmitOrderBody allows a wider
         // `calibrationMethod` enum than `FacialMeasurementsInfo` (the DB
@@ -197,7 +209,6 @@ router.post(
               .join(" ") || null,
         });
         const { error: updateErr } = await supabase
-          .schema("resupply")
           .from("shop_customers")
           .update({
             facial_measurements_json: value as unknown as Json,
@@ -219,7 +230,7 @@ router.post(
 
     // Update DB row with delivery status (best-effort; do not surface errors
     // to the patient if this update fails)
-    if (dbId) {
+    if (dbId && supabase) {
       try {
         const status: "sent" | "failed" | "skipped" = !result.configured
           ? "skipped"
@@ -227,6 +238,7 @@ router.post(
             ? "sent"
             : "failed";
         const { error: updateErr } = await supabase
+          .raw()
           .schema("public")
           .from("orders")
           .update({

@@ -24,7 +24,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
@@ -56,11 +56,17 @@ const postBody = z
 
 router.get("/shop/me/messages", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // Make sure the row exists so future PUT /shop/me writes don't fail
   // on a fresh account that has only ever messaged.
   await ensureShopCustomerRow({ customerId, email: null });
   const result = await fetchInAppThread({
-    supabase: getSupabaseServiceRoleClient(),
+    supabase: supabase.raw(),
     customerId,
   });
   res.json(result);
@@ -74,9 +80,15 @@ router.get(
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId!;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     await ensureShopCustomerRow({ customerId, email: null });
     const count = await fetchInAppUnreadCount({
-      supabase: getSupabaseServiceRoleClient(),
+      supabase: supabase.raw(),
       customerId,
     });
     res.json({ unreadFromCsr: count });
@@ -93,9 +105,15 @@ router.post(
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId!;
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     await ensureShopCustomerRow({ customerId, email: null });
     const updated = await markInAppThreadRead({
-      supabase: getSupabaseServiceRoleClient(),
+      supabase: supabase.raw(),
       customerId,
     });
     res.json({ ok: true, threadUpdated: updated });
@@ -115,10 +133,16 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
     return;
   }
   const customerId = req.userCustomerId!;
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   await ensureShopCustomerRow({ customerId, email: null });
 
   const result = await appendCustomerMessage({
-    supabase: getSupabaseServiceRoleClient(),
+    supabase: supabase.raw(),
     customerId,
     body: parsed.data.body,
   });

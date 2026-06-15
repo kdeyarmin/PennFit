@@ -15,7 +15,7 @@
 // "check memo: re: my husband's CPAP") are intentionally NOT pulled,
 // mirroring the insurance-claims fetcher.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -54,12 +54,13 @@ export async function fetchPatientPayments(
   from: Date,
   to: Date,
 ): Promise<PatientPaymentRow[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId);
   // Clamp on created_at (consistent with orders/returns); the QB
   // builder anchors each receipt on succeeded_at so the ledger date
   // reflects when the cash actually landed.
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .select(
       "id, patient_id, stripe_payment_intent_id, amount_cents, currency, status, source, succeeded_at, created_at",

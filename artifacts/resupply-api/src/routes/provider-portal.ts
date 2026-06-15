@@ -11,7 +11,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { verifyProviderPortalToken } from "../lib/provider-portal-token";
 import { RATE_LIMITS } from "../lib/rate-limits-config";
@@ -46,8 +46,19 @@ router.get(
       res.status(401).json({ error: "invalid_or_expired_token" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Provider-token route — no req.orgId. Resolve the seed org
+    // (single-tenant posture) and degrade to the route's existing 404
+    // when it can't be resolved.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(404).json({ error: "provider_not_found" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // `providers` is a GLOBAL table (NPI registry, no org_id) — read it via
+    // the unscoped client, not the org-scoped `.from()` facade.
     const { data: provider, error: pErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select(
@@ -80,7 +91,6 @@ router.get(
     // `valid_until is null` covers the "no end-of-life set" case.
     const todayIso = new Date().toISOString().slice(0, 10);
     const { data: rxs, error: rErr } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select(
         "id, item_sku, hcpcs_code, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name)",
@@ -99,7 +109,7 @@ router.get(
         practiceName: provider.practice_name,
         taxonomyCode: provider.taxonomy_code,
       },
-      prescriptions: (rxs ?? []).map((r) => {
+      prescriptions: (rxs ?? []).map((r: Record<string, unknown>) => {
         const p = (r as { patients?: unknown }).patients as {
           legal_first_name: string | null;
           legal_last_name: string | null;

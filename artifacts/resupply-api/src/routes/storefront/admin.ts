@@ -19,7 +19,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { permissionsForRole } from "@workspace/resupply-auth";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit.js";
 import { requireCsrf } from "../../middlewares/csrf.js";
@@ -71,7 +71,12 @@ router.get("/admin/orders", async (req, res) => {
   }
   const { q, status, page, pageSize } = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const offset = (page - 1) * pageSize;
 
   // Build the rows query and the count query side-by-side. PostgREST
@@ -85,7 +90,8 @@ router.get("/admin/orders", async (req, res) => {
   ) => base.select(select, opts);
   void buildQuery;
 
-  let rowsQuery = supabase
+  const raw = supabase.raw();
+  let rowsQuery = raw
     .schema("public")
     .from("orders")
     .select(
@@ -93,7 +99,7 @@ router.get("/admin/orders", async (req, res) => {
     )
     .order("created_at", { ascending: false })
     .range(offset, offset + pageSize - 1);
-  let countQuery = supabase
+  let countQuery = raw
     .schema("public")
     .from("orders")
     .select("*", { count: "exact", head: true });
@@ -134,6 +140,7 @@ router.get("/admin/orders", async (req, res) => {
     filterParts.push(`page=${page}`);
     const action = `list_orders${filterParts.length ? `:${filterParts.join("&")}` : ""}`;
     const { error: auditErr } = await supabase
+      .raw()
       .schema("public")
       .from("admin_audit_log")
       .insert({
@@ -186,8 +193,14 @@ router.get("/admin/orders/:id", async (req, res) => {
     res.status(400).json({ error: "Invalid order id" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
+    .raw()
     .schema("public")
     .from("orders")
     .select("*")
@@ -205,6 +218,7 @@ router.get("/admin/orders/:id", async (req, res) => {
   // but we surface it via server logs.
   if (req.adminEmail && req.adminUserId) {
     const { error: auditErr } = await supabase
+      .raw()
       .schema("public")
       .from("admin_audit_log")
       .insert({
@@ -250,8 +264,13 @@ router.get("/admin/orders/:id", async (req, res) => {
 
 // ---------- GET /admin/analytics ----------
 
-router.get("/admin/analytics", async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
+router.get("/admin/analytics", async (req, res) => {
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const sinceIso = new Date(
     Date.now() - 30 * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -260,19 +279,20 @@ router.get("/admin/analytics", async (_req, res) => {
   // reduce JS-side. The dataset is admin-internal and bounded
   // (low-thousands of orders / events at our scale); when this grows
   // these become RPC functions exposing pre-aggregated views.
+  const raw = supabase.raw();
   const [totalRes, statusRes, masksRes, funnelRes, recentRes] =
     await Promise.all([
-      supabase
+      raw
         .schema("public")
         .from("orders")
         .select("*", { count: "exact", head: true }),
-      supabase.schema("public").from("orders").select("email_status"),
-      supabase
+      raw.schema("public").from("orders").select("email_status"),
+      raw
         .schema("public")
         .from("orders")
         .select("mask_name, mask_manufacturer"),
-      supabase.schema("public").from("usage_events").select("step"),
-      supabase
+      raw.schema("public").from("usage_events").select("step"),
+      raw
         .schema("public")
         .from("orders")
         .select("created_at")
@@ -365,9 +385,15 @@ router.get("/admin/audit-log", async (req, res) => {
   const { page, pageSize } = parsed.data;
   const offset = (page - 1) * pageSize;
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
+  const raw = supabase.raw();
   const [rowsRes, countRes] = await Promise.all([
-    supabase
+    raw
       .schema("public")
       .from("admin_audit_log")
       .select(
@@ -375,7 +401,7 @@ router.get("/admin/audit-log", async (req, res) => {
       )
       .order("occurred_at", { ascending: false })
       .range(offset, offset + pageSize - 1),
-    supabase
+    raw
       .schema("public")
       .from("admin_audit_log")
       .select("*", { count: "exact", head: true }),
@@ -426,9 +452,15 @@ router.get("/admin/me", (req, res) => {
 // List all reminder subscribers (active + unsubscribed). Includes per-item
 // nextDueAt so the admin can see who's coming up. Not paginated yet — this
 // is a small opt-in list, hundreds at most. Add pagination if it grows.
-router.get("/admin/reminders", async (_req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
+router.get("/admin/reminders", async (req, res) => {
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select(
@@ -483,8 +515,14 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
     Date.now() - QUIET_PERIOD_DAYS * 24 * 60 * 60 * 1000,
   );
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: candidates, error } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select("id, email, manage_token, items, last_sent_at")
@@ -530,6 +568,7 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
 
     const nowIso = new Date().toISOString();
     const { error: stampErr } = await supabase
+      .raw()
       .schema("public")
       .from("reminder_subscriptions")
       .update({ last_sent_at: nowIso, updated_at: nowIso })
@@ -549,6 +588,7 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
   // email recipients aren't logged because we don't log PHI/PII to audit.
   if (sent > 0 || failed > 0) {
     const { error: auditErr } = await supabase
+      .raw()
       .schema("public")
       .from("admin_audit_log")
       .insert({

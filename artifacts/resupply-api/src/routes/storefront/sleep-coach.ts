@@ -14,7 +14,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { askSleepCoach } from "../../lib/clinical/sleep-coach";
 import { RATE_LIMITS } from "../../lib/rate-limits-config";
@@ -75,9 +75,16 @@ router.post("/me/sleep-coach", sleepCoachLimiter, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  // Authenticated handler (pattern 1): this route 401s above when not
+  // signed in, so reaching here means `attachSignedIn` populated req.orgId.
+  // Fail closed if tenant context is somehow missing.
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: customer } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
@@ -97,7 +104,6 @@ router.post("/me/sleep-coach", sleepCoachLimiter, async (req, res) => {
     (c: string) => `\\${c}`,
   );
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapedEmail)

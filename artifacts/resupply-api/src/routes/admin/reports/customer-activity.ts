@@ -11,7 +11,11 @@
 // protected) this keeps the export safe to email and to leave
 // open on a screen during a meeting.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { renderTablePdf } from "../../../lib/report-pdf";
 import { requirePermission } from "../../../middlewares/requireAdmin";
@@ -38,7 +42,9 @@ export async function fetchCustomerActivity(
   from: Date,
   to: Date,
 ): Promise<CustomerActivityByDay[]> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return [];
+  const supabase = getOrgScopedClient(orgId);
 
   // Every order in range. We classify "returning vs new" by
   // comparing the order's created_at against the customer's
@@ -48,7 +54,6 @@ export async function fetchCustomerActivity(
   // even though they did place an order — but it matches operator
   // intuition for the "new-customer cohort" tile.
   const { data: orders, error: ordersErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("customer_id, created_at")
     .gte("created_at", from.toISOString())
@@ -59,7 +64,8 @@ export async function fetchCustomerActivity(
 
   // Collect unique customer IDs from orders in the range.
   const relevantCustomerIds = new Set<string>();
-  for (const o of orders ?? []) {
+  for (const o of (orders ??
+    []) as Database["resupply"]["Tables"]["shop_orders"]["Row"][]) {
     if (o.customer_id) relevantCustomerIds.add(o.customer_id);
   }
 
@@ -68,7 +74,6 @@ export async function fetchCustomerActivity(
   // This ensures we correctly classify returning customers who signed
   // up before the report period.
   const { data: allCustomers, error: customerErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, created_at")
     .in("customer_id", Array.from(relevantCustomerIds))
@@ -76,7 +81,8 @@ export async function fetchCustomerActivity(
   if (customerErr) throw customerErr;
 
   const firstSeenByCustomer = new Map<string, string>();
-  for (const c of allCustomers ?? []) {
+  for (const c of (allCustomers ??
+    []) as Database["resupply"]["Tables"]["shop_customers"]["Row"][]) {
     if (c.customer_id) firstSeenByCustomer.set(c.customer_id, c.created_at);
   }
 
@@ -85,7 +91,6 @@ export async function fetchCustomerActivity(
   // first cash-pay checkout) all funnel through the same row, so
   // a count by created_at is a clean "new customers per day".
   const { data: signups, error: signupErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, created_at")
     .gte("created_at", from.toISOString())
@@ -114,10 +119,12 @@ export async function fetchCustomerActivity(
     return v;
   }
 
-  for (const s of signups ?? []) {
+  for (const s of (signups ??
+    []) as Database["resupply"]["Tables"]["shop_customers"]["Row"][]) {
     bucket(s.created_at.slice(0, 10)).newCustomers += 1;
   }
-  for (const o of orders ?? []) {
+  for (const o of (orders ??
+    []) as Database["resupply"]["Tables"]["shop_orders"]["Row"][]) {
     const day = o.created_at.slice(0, 10);
     const b = bucket(day);
     b.totalOrders += 1;

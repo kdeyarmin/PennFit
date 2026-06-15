@@ -17,7 +17,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   renderPrescriptionRequest,
@@ -51,9 +51,15 @@ router.get("/rx-request/document/:token", rxDocLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // No tenant context — treat like a missing packet (signed-link 404).
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolvePrescriptionRequestInputs(
-    supabase,
+    supabase.raw(),
     verified.packetId,
   );
   if (resolved.kind === "not_found") {

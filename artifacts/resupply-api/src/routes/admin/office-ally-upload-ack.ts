@@ -177,19 +177,19 @@ router.post(
     try {
       switch (kind) {
         case "999":
-          await dispatch999(supabase.raw(), row.id, content);
+          await dispatch999(supabase, row.id, content);
           break;
         case "277ca":
-          await dispatch277ca(supabase.raw(), row.id, content);
+          await dispatch277ca(supabase, row.id, content);
           break;
         case "277":
-          await dispatch277(supabase.raw(), row.id, content);
+          await dispatch277(supabase, row.id, content);
           break;
         case "835":
-          await dispatch835(supabase.raw(), row.id, fileName, content);
+          await dispatch835(supabase, row.id, fileName, content);
           break;
         case "271":
-          await dispatch271(supabase.raw(), row.id, content);
+          await dispatch271(supabase, row.id, content);
           break;
       }
       const { error: dispatchedErr } = await supabase

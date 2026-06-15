@@ -28,7 +28,7 @@
 import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   renderClickConfirmation,
   renderClickError,
@@ -123,10 +123,26 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
   const verified = extractVerifiedToken(req, res, cfg.practiceName);
   if (!verified) return;
 
+  // Public signed-link route: there is no req.orgId. Resolve the seed
+  // org (single-tenant posture) and degrade to the route's existing
+  // generic error page when it can't be resolved — never 500 here.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res
+      .status(400)
+      .type("text/html")
+      .send(
+        renderClickError({
+          practiceName: cfg.practiceName,
+          reason: "malformed",
+        }),
+      );
+    return;
+  }
+
   // Audit the link open (no state change — audit is informational only).
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data: convRow, error: convErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("id, episode_id")
     .eq("id", verified.conversationId)
@@ -172,7 +188,10 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
   let dueItems: ClickLandingItem[] = [];
   if (verified.action === "confirm" && convRow.episode_id) {
     try {
-      dueItems = await buildResupplyDueItems(supabase, convRow.episode_id);
+      dueItems = await buildResupplyDueItems(
+        supabase.raw(),
+        convRow.episode_id,
+      );
     } catch (err) {
       logger.warn(
         {
@@ -218,9 +237,24 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
 
   const { conversationId, action } = verified;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public signed-link route: no req.orgId. Resolve the seed org and
+  // degrade to the generic error page when it can't be resolved.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res
+      .status(400)
+      .type("text/html")
+      .send(
+        renderClickError({
+          practiceName: cfg.practiceName,
+          reason: "malformed",
+        }),
+      );
+    return;
+  }
+
+  const supabase = getOrgScopedClient(orgId);
   const { data: conv, error: convErr } = await supabase
-    .schema("resupply")
     .from("conversations")
     .select("id, patient_id, episode_id")
     .eq("id", conversationId)
@@ -269,7 +303,6 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
         });
         if (result.status === "ok" || result.status === "already_confirmed") {
           const { error: closeErr } = await supabase
-            .schema("resupply")
             .from("conversations")
             .update({
               status: "closed",
@@ -332,7 +365,6 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           // page (200, not an error), flip the conversation to
           // awaiting_admin (lands in the CSR queue), and audit the block.
           const { error: notEligErr } = await supabase
-            .schema("resupply")
             .from("conversations")
             .update({
               status: "awaiting_admin",
@@ -377,7 +409,6 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           // queue, audit the block, and render the same truthful
           // "we'll review" page (200, not an error).
           const { error: covErr } = await supabase
-            .schema("resupply")
             .from("conversations")
             .update({
               status: "awaiting_admin",
@@ -421,7 +452,6 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           // and left the episode pending. Same handling as the other
           // two guards: CSR queue, audit, truthful "we'll review" page.
           const { error: usageErr } = await supabase
-            .schema("resupply")
             .from("conversations")
             .update({
               status: "awaiting_admin",
@@ -472,7 +502,6 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
       }
       case "edit": {
         const { error: editErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({
             status: "awaiting_admin",
@@ -509,7 +538,6 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
       case "stop": {
         await pausePatient(conv.patient_id);
         const { error: stopErr } = await supabase
-          .schema("resupply")
           .from("conversations")
           .update({
             status: "closed",

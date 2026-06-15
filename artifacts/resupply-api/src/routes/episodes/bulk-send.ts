@@ -24,7 +24,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   sendReminderSms,
   sendReminderEmail,
@@ -106,19 +106,28 @@ router.post(
     }
     const { episodeIds, channel } = parsed.data;
 
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     // Single round-trip lookup of (id → patient_id). Episodes whose
     // ids don't appear in the result will be reported as
     // `episode_not_found` per-id below — the bulk endpoint deliberately
     // does NOT 404 the whole request just because one id was bogus.
-    const supabase = getSupabaseServiceRoleClient();
     const { data: lookupRows, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("id, patient_id")
       .in("id", episodeIds);
     if (lookupErr) throw lookupErr;
     const patientByEpisode = new Map<string, string>();
-    for (const row of lookupRows ?? []) {
+    for (const row of (lookupRows ?? []) as Array<{
+      id: string;
+      patient_id: string;
+    }>) {
       patientByEpisode.set(row.id, row.patient_id);
     }
 
@@ -148,7 +157,11 @@ router.post(
       try {
         if (channel === "sms") {
           outcome = await sendReminderSms({
-            supabase,
+            // sendReminderSms/sendReminderEmail are shared
+            // lib/resupply-reminders helpers not in this wave's file
+            // list; they're typed for the raw service-role client. Pass
+            // the unscoped client (`.raw()`) per cutover §B.
+            supabase: supabase.raw(),
             cfg: {
               twilioAccountSid: cfg.sms.twilioAccountSid,
               twilioAuthToken: cfg.sms.twilioAuthToken,
@@ -163,7 +176,7 @@ router.post(
           });
         } else {
           outcome = await sendReminderEmail({
-            supabase,
+            supabase: supabase.raw(),
             cfg: {
               sendgridApiKey: cfg.email.sendgridApiKey,
               sendgridFromEmail: cfg.email.sendgridFromEmail,

@@ -17,11 +17,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import {
-  getSupabaseServiceRoleClient,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
@@ -61,14 +57,24 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public signed-link route: there is no req.orgId. Resolve the seed
+  // org (single-tenant posture) and degrade to the route's existing
+  // 404 when it can't be resolved — never 500 a signed-link fetch.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Appeal-letter faxes render the stored appeal PDF (claim_appeal_letters
   // row) instead of the physician cover letter. Same signed-URL posture;
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
     const result = await renderAppealPdfForLetterId(
-      supabase,
+      // Shared render helpers are typed for the raw service-role client
+      // and not in this wave's file list; pass `.raw()` per cutover §B.
+      supabase.raw(),
       verified.outreachId,
     );
     if (!result.ok) {
@@ -90,7 +96,10 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // routes/admin/manual-documents.ts). Same signed-URL posture; no PHI
   // in the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document") {
-    const pdf = await renderManualDocumentForFax(supabase, verified.outreachId);
+    const pdf = await renderManualDocumentForFax(
+      supabase.raw(),
+      verified.outreachId,
+    );
     if (!pdf) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -107,7 +116,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document_packet") {
     const pdf = await renderManualDocumentPacketForFax(
-      supabase,
+      supabase.raw(),
       verified.outreachId,
     );
     if (!pdf) {
@@ -132,16 +141,9 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     }
     const patientId = verified.outreachId.slice(0, sep);
     const paId = verified.outreachId.slice(sep + 1);
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      res.status(404).json({ error: "prior_auth_not_found" });
-      return;
-    }
-    const result = await buildPaRequestPdf(
-      getOrgScopedClient(orgId),
-      patientId,
-      paId,
-    );
+    // buildPaRequestPdf is already on the org-scoped client; reuse the
+    // tenant-scoped client resolved at the top of the handler.
+    const result = await buildPaRequestPdf(supabase, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;
@@ -154,7 +156,6 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   }
 
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("physician_fax_outreach")
     .select("physician_name, cover_letter_text")
     .eq("id", verified.outreachId)

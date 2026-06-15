@@ -17,7 +17,8 @@
 import { Router, raw, type IRouter, type RequestHandler } from "express";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
 } from "@workspace/resupply-db";
 import {
@@ -85,7 +86,15 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Public webhook: there is no req.orgId. Resolve the seed org
+    // (single-tenant posture) and ACK 200 if it can't be resolved so
+    // SendGrid stops retrying (a 5xx would trigger a retry storm).
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(200).json({ ok: true });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const handleEvent = async (ev: SendgridEvent): Promise<void> => {
       const sgMessageId = ev.sg_message_id ?? null;
@@ -113,7 +122,6 @@ router.post(
             update.delivered_at = new Date().toISOString();
           }
           let query = supabase
-            .schema("resupply")
             .from("messages")
             .update(update)
             .filter(

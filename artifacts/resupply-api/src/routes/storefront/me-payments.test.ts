@@ -47,6 +47,10 @@ function makeApp(customerId: string | null = CUSTOMER_ID): Express {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
+    // attachSignedIn also attaches the tenant; mirror it so the
+    // org-scoped route handlers resolve a tenant context.
+    (req as unknown as Record<string, unknown>).orgId =
+      "00000000-0000-0000-0000-000000000001";
     if (customerId !== null) {
       (req as unknown as Record<string, unknown>).shopCustomerId = customerId;
     }

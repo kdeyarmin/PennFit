@@ -43,7 +43,7 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { ADMIN_PASSWORD_TTL_MS } from "@workspace/resupply-auth";
 
 import { logger } from "../../lib/logger";
@@ -220,7 +220,11 @@ export async function runInvitePasswordExpiryNotifySweep(
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   // A credential becomes "reminder due" when its age crosses
   // `TTL - LEAD_MS` (i.e. ~day 5 with the default 7-day TTL +
@@ -236,6 +240,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   //    `set_by_admin_at` vs. `expiry_reminder_sent_at` ordering in
   //    JS to handle re-invites that reused the row).
   const { data: reminderRows, error: reminderErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("password_credentials")
     .select(
@@ -266,6 +271,7 @@ export async function runInvitePasswordExpiryNotifySweep(
   // 2. Expired-notice candidates: TTL elapsed, never notified for
   //    THIS invite.
   const { data: expiredRows, error: expiredErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("password_credentials")
     .select(
@@ -304,6 +310,7 @@ export async function runInvitePasswordExpiryNotifySweep(
     ]),
   );
   const { data: userRows, error: userErr } = await supabase
+    .raw()
     .schema("resupply_auth")
     .from("users")
     .select("id, email_lower, display_name, status")
@@ -344,6 +351,7 @@ export async function runInvitePasswordExpiryNotifySweep(
     // racing on the same row.
     const nowIso = new Date().toISOString();
     const claim = supabase
+      .raw()
       .schema("resupply_auth")
       .from("password_credentials")
       .update({ expiry_reminder_sent_at: nowIso })
@@ -410,6 +418,7 @@ export async function runInvitePasswordExpiryNotifySweep(
 
     const nowIso = new Date().toISOString();
     const claim = supabase
+      .raw()
       .schema("resupply_auth")
       .from("password_credentials")
       .update({ expired_notice_sent_at: nowIso })
