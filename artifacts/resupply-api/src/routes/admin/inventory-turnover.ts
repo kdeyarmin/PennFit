@@ -16,7 +16,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -140,11 +140,15 @@ router.get(
     const days = parsed.success ? (parsed.data.days ?? 90) : 90;
     const cutoffIso = new Date(Date.now() - days * 86_400_000).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const [itemsRes, reconRes, waitersRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("shop_order_items")
         .select(
           "product_id, quantity, unit_amount_cents, unit_cost_cents, paid_at",
@@ -153,14 +157,12 @@ router.get(
         .order("paid_at", { ascending: false })
         .limit(5000),
       supabase
-        .schema("resupply")
         .from("inventory_reconciliation_lines")
         .select("product_id, product_name, counted_qty, created_at")
         .order("created_at", { ascending: false })
         .limit(2000),
       // Open waiters = back-in-stock signups not yet notified.
       supabase
-        .schema("resupply")
         .from("shop_back_in_stock_notifications")
         .select("product_id, notified_at")
         .is("notified_at", null)
