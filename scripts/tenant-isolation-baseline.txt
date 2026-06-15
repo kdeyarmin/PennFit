@@ -256,8 +256,6 @@ artifacts/resupply-api/src/routes/email/inbound-parse.ts
 artifacts/resupply-api/src/routes/email/send-reminder.ts
 artifacts/resupply-api/src/routes/email/sendgrid-events.ts
 artifacts/resupply-api/src/routes/episodes/bulk-send.ts
-artifacts/resupply-api/src/routes/episodes/counts.ts
-artifacts/resupply-api/src/routes/episodes/list.ts
 artifacts/resupply-api/src/routes/fax/document.ts
 artifacts/resupply-api/src/routes/fax/status-callback.ts
 artifacts/resupply-api/src/routes/fhir/index.ts
