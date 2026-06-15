@@ -22,7 +22,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_PATH = resolve(
   __dirname,
-  "../../../../../lib/resupply-db/drizzle/0344_patient_dedup_rpcs_org_scoped.sql",
+  "../../../../../lib/resupply-db/drizzle/0345_patient_dedup_rpcs_org_scoped.sql",
 );
 
 const ORG_A = "aaaaaaaa-0000-4000-8000-000000000001";
