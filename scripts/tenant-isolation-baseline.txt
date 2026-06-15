@@ -241,10 +241,6 @@ artifacts/resupply-api/src/routes/admin/webhook-delivery-retry.ts
 artifacts/resupply-api/src/routes/admin/webhook-subscriptions.ts
 artifacts/resupply-api/src/routes/admin/webhook-test-send.ts
 artifacts/resupply-api/src/routes/admin/work-items.ts
-artifacts/resupply-api/src/routes/compliance-rules/create.ts
-artifacts/resupply-api/src/routes/compliance-rules/delete.ts
-artifacts/resupply-api/src/routes/compliance-rules/list.ts
-artifacts/resupply-api/src/routes/compliance-rules/update.ts
 artifacts/resupply-api/src/routes/conversations/assignment.ts
 artifacts/resupply-api/src/routes/conversations/attachment.ts
 artifacts/resupply-api/src/routes/conversations/detail.ts
