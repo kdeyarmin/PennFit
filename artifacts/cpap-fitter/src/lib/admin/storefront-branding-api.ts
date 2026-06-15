@@ -16,6 +16,13 @@ export interface DomainDnsInstructions {
 }
 
 export type CustomDomainStatus = "none" | "pending" | "verified";
+export type CustomDomainTlsStatus = "none" | "pending" | "active" | "failed";
+
+export interface CloudflareValidation {
+  type: "txt";
+  name: string;
+  value: string;
+}
 
 export interface StorefrontBrandingView {
   storefrontName: string;
@@ -27,6 +34,12 @@ export interface StorefrontBrandingView {
     status: CustomDomainStatus;
     verifiedAt: string | null;
     instructions: DomainDnsInstructions | null;
+    /** Edge TLS provisioning state (Cloudflare for SaaS), when automated. */
+    tls?: {
+      automation: boolean;
+      status: CustomDomainTlsStatus;
+      validation: CloudflareValidation | null;
+    };
   };
 }
 
