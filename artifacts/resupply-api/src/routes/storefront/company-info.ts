@@ -26,6 +26,8 @@ router.get("/company-info", async (_req, res) => {
     supportHours: info.supportHours,
     websiteUrl: info.websiteUrl,
     address: info.address,
+    assistantStorefrontName: info.assistantStorefrontName,
+    assistantAdminName: info.assistantAdminName,
   });
 });
 

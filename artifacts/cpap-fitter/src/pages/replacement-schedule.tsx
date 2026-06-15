@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useCompanyContact } from "@/lib/contact";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 import {
@@ -139,6 +140,7 @@ const tones: Record<Reason["tone"], string> = {
 };
 
 export function ReplacementSchedule() {
+  const assistantName = useCompanyContact().assistantStorefrontName;
   useDocumentTitle(
     "CPAP replacement schedule",
     "When to replace CPAP cushions, headgear, tubing, filters, and humidifier chambers — Medicare and ResMed/Philips manufacturer guidance in plain English.",
@@ -337,7 +339,7 @@ export function ReplacementSchedule() {
                 data-testid="schedule-ask-pennbot"
               >
                 <Sparkles className="w-4 h-4" />
-                Ask PennBot about timing
+                Ask {assistantName} about timing
               </Button>
             </div>
           </div>

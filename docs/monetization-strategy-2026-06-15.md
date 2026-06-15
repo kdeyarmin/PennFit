@@ -1,12 +1,18 @@
-# PennFit / CareMetric — Monetization Strategy & Pricing
+# CareMetric Breathe — Monetization Strategy & Pricing
 
 **Date:** 2026-06-15
 **Status:** Strategy / direction-setting (research + recommendations; no code)
 **Audience:** Owner, partners, anyone deciding how this platform makes money.
 
+> **Naming:** The platform/parent product is **CareMetric Breathe**
+> (`PennFit` is the repo codename). **Penn Home Medical Supply** —
+> storefront brand **"PennPaps"** — is **one tenant** on it. Earlier drafts
+> of the multi-tenant docs used "CareMetric AI Resupply" for the leasable
+> product; read those as the resupply module of **CareMetric Breathe**.
+
 > This is a planning document. It does not change any running code. It
 > pairs with [`multi-tenant-caremetric-strategy-2026-06-14.md`](./multi-tenant-caremetric-strategy-2026-06-14.md),
-> which decided *that* PennFit should be leased as a multi-tenant SaaS but
+> which decided _that_ PennFit should be leased as a multi-tenant SaaS but
 > deliberately deferred the pricing decision (its §6). This document fills
 > that gap: it benchmarks the market and recommends concrete numbers for
 > both the consumer business and the SaaS business.
@@ -25,7 +31,7 @@ should be monetized differently:
    resupply order rate toward the industry's 45–50%.
 
 2. **B2B SaaS — lease the whole platform to other DME companies as
-   "CareMetric AI Resupply."** This is the larger, higher-margin
+   CareMetric Breathe.** This is the larger, higher-margin
    opportunity and the architecture is already pointed at it (organizations,
    per-tenant branding, custom domains, `tenant:onboard`). Recommended model
    is **per-active-patient-per-month (PAPPM) + a platform base fee + AI/usage
@@ -33,12 +39,12 @@ should be monetized differently:
 
 **Headline recommended SaaS pricing** (detail in §5):
 
-| Tier | Base platform fee | Per active patient / mo | Best for |
-| --- | --- | --- | --- |
-| **Starter** | $499/mo | $1.25 | Single-location DME, <1,000 active patients |
-| **Growth** | $1,500/mo | $0.95 | Regional DME, 1k–10k patients |
-| **Enterprise** | $4,000+/mo | $0.65 (volume-tiered) | Multi-site / >10k patients |
-| **Dedicated** | Custom (≥$8k/mo) | Custom | Security-demanding whale (DB-per-tenant) |
+| Tier           | Base platform fee | Per active patient / mo | Best for                                    |
+| -------------- | ----------------- | ----------------------- | ------------------------------------------- |
+| **Starter**    | $499/mo           | $1.25                   | Single-location DME, <1,000 active patients |
+| **Growth**     | $1,500/mo         | $0.95                   | Regional DME, 1k–10k patients               |
+| **Enterprise** | $4,000+/mo        | $0.65 (volume-tiered)   | Multi-site / >10k patients                  |
+| **Dedicated**  | Custom (≥$8k/mo)  | Custom                  | Security-demanding whale (DB-per-tenant)    |
 
 Plus metered add-ons (AI voice minutes, clearinghouse claims, SMS/voice
 telecom passthrough) and a **0.5–1.0% Stripe Connect application fee** on
@@ -85,12 +91,12 @@ of this and still do resupply badly.** That is the wedge.
 
 ### 3.1 Direct DME / resupply software competitors
 
-| Vendor | What it is | Published / reported pricing | Notes |
-| --- | --- | --- | --- |
-| **Brightree** (ResMed) | Market-leading HME/DME platform + Brightree Resupply (+ SnapWorx) | Reported ~**$250/mo for 1 user**, ~**$1,500/mo for 10 users**, **$5,000–$7,000/mo** at ~100 users; custom quotes, no free tier | Per-seat-ish, plus modules. Resupply is an add-on. |
-| **WellSky / S3 Resupply** | SaaS resupply communication platform; optional live managed outreach | Custom quote (not public). Publishes outcomes: **45–50% order rates, $175+ AOV** | Outcome marketing is the benchmark to beat. |
-| **Bonafide** | DME/HME billing + management | Custom quote; reported "around the same cost as Brightree" | Billing-led. |
-| **NikoHealth** | Modern HME/DME platform; positions as S3 alternative | "Transparent flat pricing," custom quote | Positions on simplicity + transparent pricing. |
+| Vendor                    | What it is                                                           | Published / reported pricing                                                                                                   | Notes                                              |
+| ------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| **Brightree** (ResMed)    | Market-leading HME/DME platform + Brightree Resupply (+ SnapWorx)    | Reported ~**$250/mo for 1 user**, ~**$1,500/mo for 10 users**, **$5,000–$7,000/mo** at ~100 users; custom quotes, no free tier | Per-seat-ish, plus modules. Resupply is an add-on. |
+| **WellSky / S3 Resupply** | SaaS resupply communication platform; optional live managed outreach | Custom quote (not public). Publishes outcomes: **45–50% order rates, $175+ AOV**                                               | Outcome marketing is the benchmark to beat.        |
+| **Bonafide**              | DME/HME billing + management                                         | Custom quote; reported "around the same cost as Brightree"                                                                     | Billing-led.                                       |
+| **NikoHealth**            | Modern HME/DME platform; positions as S3 alternative                 | "Transparent flat pricing," custom quote                                                                                       | Positions on simplicity + transparent pricing.     |
 
 **Key takeaways for positioning:**
 
@@ -122,7 +128,7 @@ of this and still do resupply badly.** That is the wedge.
   **~$1/patient/month ($12/yr)** to lift order rate from ~30% to ~50% pays
   for itself many times over — that is the entire sales pitch.
 
-*Sources are listed at the end of this document.*
+_Sources are listed at the end of this document._
 
 ---
 
@@ -132,6 +138,7 @@ This business is already monetized. The work is optimization, not
 reinvention.
 
 ### 4.1 Current state
+
 - **Cash-pay shop** via Stripe (≈60 SKUs, masks $79–$199, cushions/
   tubing/filters $12–$45) — one-time + Subscribe & Save.
 - **Insurance billing** via Office Ally (claim reimbursement net of COGS).
@@ -168,7 +175,7 @@ reinvention.
 
 ---
 
-## 5. Business model #2 — B2B SaaS ("CareMetric AI Resupply")
+## 5. Business model #2 — B2B SaaS (CareMetric Breathe)
 
 This is the larger prize. The multi-tenant strategy doc already chose
 **pooled multi-tenancy (org_id + RLS)** and a **loosely-coupled CareMetric
@@ -191,21 +198,21 @@ defensible to customers.)
 
 ### 5.2 Recommended tiers
 
-| | **Starter** | **Growth** | **Enterprise** | **Dedicated** |
-| --- | --- | --- | --- | --- |
-| Base platform fee | **$499/mo** | **$1,500/mo** | **$4,000+/mo** | Custom, **≥$8,000/mo** |
-| Per active patient/mo | **$1.25** | **$0.95** | **$0.65** (volume-tiered) | Custom |
-| Target size | <1,000 active | 1k–10k | >10k / multi-site | Whale needing physical isolation |
-| Isolation | Pooled + RLS | Pooled + RLS | Pooled + RLS | DB/project-per-tenant |
-| Storefront + fitting | ✅ | ✅ | ✅ | ✅ |
-| Resupply engine + reminders | ✅ | ✅ | ✅ | ✅ |
-| Billing / clearinghouse | ✅ | ✅ | ✅ | ✅ |
-| Analytics suite | Core | Full | Full + custom reports | Full + custom |
-| AI add-ons | Metered | Metered (discounted) | Included allotment | Custom |
-| Custom domain + branding | Add-on | ✅ | ✅ | ✅ |
-| Onboarding | Self-serve + guide | Guided | White-glove | White-glove |
-| Support | Email | Email + chat | Priority + CSM | Dedicated CSM |
-| **Implementation fee** | $1,500 | $5,000 | $10,000+ | Custom |
+|                             | **Starter**        | **Growth**           | **Enterprise**            | **Dedicated**                    |
+| --------------------------- | ------------------ | -------------------- | ------------------------- | -------------------------------- |
+| Base platform fee           | **$499/mo**        | **$1,500/mo**        | **$4,000+/mo**            | Custom, **≥$8,000/mo**           |
+| Per active patient/mo       | **$1.25**          | **$0.95**            | **$0.65** (volume-tiered) | Custom                           |
+| Target size                 | <1,000 active      | 1k–10k               | >10k / multi-site         | Whale needing physical isolation |
+| Isolation                   | Pooled + RLS       | Pooled + RLS         | Pooled + RLS              | DB/project-per-tenant            |
+| Storefront + fitting        | ✅                 | ✅                   | ✅                        | ✅                               |
+| Resupply engine + reminders | ✅                 | ✅                   | ✅                        | ✅                               |
+| Billing / clearinghouse     | ✅                 | ✅                   | ✅                        | ✅                               |
+| Analytics suite             | Core               | Full                 | Full + custom reports     | Full + custom                    |
+| AI add-ons                  | Metered            | Metered (discounted) | Included allotment        | Custom                           |
+| Custom domain + branding    | Add-on             | ✅                   | ✅                        | ✅                               |
+| Onboarding                  | Self-serve + guide | Guided               | White-glove               | White-glove                      |
+| Support                     | Email              | Email + chat         | Priority + CSM            | Dedicated CSM                    |
+| **Implementation fee**      | $1,500             | $5,000               | $10,000+                  | Custom                           |
 
 **Worked example (Growth, 3,000 active patients):**
 `$1,500 + 3,000 × $0.95 = $4,350/mo` (~$52k/yr) before add-ons. For a DME
@@ -219,15 +226,15 @@ band while delivering the AI layer they don't have.
 Price these as **cost-plus passthrough with margin** so vendor price
 changes never make a tier unprofitable:
 
-| Add-on | Suggested price | Rationale |
-| --- | --- | --- |
-| **AI voice agent (outbound resupply calls)** | **$0.18–$0.25/min** | Below the $0.10–0.50/min managed-market rate; well above our OpenAI/ElevenLabs/Deepgram cost. Bundle a free monthly allotment in Growth+. |
-| **AI auto-submit claims** | **$0.50–$1.00 / claim** auto-coded, or include in Enterprise | This is direct labor replacement (a biller's time) — high willingness to pay. |
-| **Clearinghouse claims** | Passthrough + **$0.10–$0.25/claim** | Office Ally costs are per-transaction. |
-| **SMS / MMS** | Twilio passthrough + ~20% | Standard telecom markup. |
-| **Email** | Included up to a cap, then SendGrid passthrough | Volume-gated. |
-| **AI sleep coach / chatbot** | Per-active-patient uplift (~$0.25) or Growth+ inclusion | Differentiator; can be a tier gate. |
-| **Dedicated instance** | Flat premium ($3–5k/mo) | Covers the DB-per-tenant ops cost. |
+| Add-on                                       | Suggested price                                              | Rationale                                                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **AI voice agent (outbound resupply calls)** | **$0.18–$0.25/min**                                          | Below the $0.10–0.50/min managed-market rate; well above our OpenAI/ElevenLabs/Deepgram cost. Bundle a free monthly allotment in Growth+. |
+| **AI auto-submit claims**                    | **$0.50–$1.00 / claim** auto-coded, or include in Enterprise | This is direct labor replacement (a biller's time) — high willingness to pay.                                                             |
+| **Clearinghouse claims**                     | Passthrough + **$0.10–$0.25/claim**                          | Office Ally costs are per-transaction.                                                                                                    |
+| **SMS / MMS**                                | Twilio passthrough + ~20%                                    | Standard telecom markup.                                                                                                                  |
+| **Email**                                    | Included up to a cap, then SendGrid passthrough              | Volume-gated.                                                                                                                             |
+| **AI sleep coach / chatbot**                 | Per-active-patient uplift (~$0.25) or Growth+ inclusion      | Differentiator; can be a tier gate.                                                                                                       |
+| **Dedicated instance**                       | Flat premium ($3–5k/mo)                                      | Covers the DB-per-tenant ops cost.                                                                                                        |
 
 ### 5.4 Payments revenue share (Stripe Connect)
 
@@ -272,13 +279,13 @@ much**:
 
 ## 7. Phased monetization roadmap
 
-| Phase | B2C | B2B SaaS | New revenue unlocked |
-| --- | --- | --- | --- |
-| **Now** | Make Subscribe & Save default; push order rate to 45–50% | — | Higher LTV on existing patients |
-| **Q1** | Launch "PennPaps Plus" membership ($9.99/mo) | Land 1–2 **design-partner** DMEs at a discounted flat fee while Phase 0 ships | Consumer recurring + first SaaS logos |
-| **Q2** | Bundle kits; AOV lift | Stand up tiered PAPPM pricing + metering; BAA template + SOC 2 kickoff | SaaS MRR begins |
-| **Q3** | — | Stripe Connect rev-share; AI add-on metering live | Payments share + usage revenue |
-| **Q4+** | — | Enterprise/Dedicated tier; CareMetric EMR cross-sell bundle | Move upmarket; raise ACV |
+| Phase   | B2C                                                      | B2B SaaS                                                                      | New revenue unlocked                  |
+| ------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------- |
+| **Now** | Make Subscribe & Save default; push order rate to 45–50% | —                                                                             | Higher LTV on existing patients       |
+| **Q1**  | Launch "PennPaps Plus" membership ($9.99/mo)             | Land 1–2 **design-partner** DMEs at a discounted flat fee while Phase 0 ships | Consumer recurring + first SaaS logos |
+| **Q2**  | Bundle kits; AOV lift                                    | Stand up tiered PAPPM pricing + metering; BAA template + SOC 2 kickoff        | SaaS MRR begins                       |
+| **Q3**  | —                                                        | Stripe Connect rev-share; AI add-on metering live                             | Payments share + usage revenue        |
+| **Q4+** | —                                                        | Enterprise/Dedicated tier; CareMetric EMR cross-sell bundle                   | Move upmarket; raise ACV              |
 
 ---
 
@@ -293,10 +300,10 @@ add-on + payments usage.
 - **≈ $4,925/mo per tenant → ~$59k ARR/tenant**
 
 | Tenants | Approx. ARR |
-| --- | --- |
-| 5 | ~$295k |
-| 20 | ~$1.2M |
-| 50 | ~$3.0M |
+| ------- | ----------- |
+| 5       | ~$295k      |
+| 20      | ~$1.2M      |
+| 50      | ~$3.0M      |
 
 Even at 20 tenants this materially exceeds the value of the platform as a
 single-company internal tool — which is the entire thesis of the CareMetric
@@ -311,7 +318,7 @@ direction.
 2. **B2C quick wins now** — Subscribe & Save default + PennPaps Plus
    membership; neither needs the multi-tenant work and both compound LTV.
 3. **Start the BAA template + SOC 2 scoping in parallel with Phase 0** —
-   these gate *signing* tenants regardless of code readiness, and they
+   these gate _signing_ tenants regardless of code readiness, and they
    underwrite the premium tiers' pricing.
 4. **Sign 1–2 design-partner DMEs** at a discounted flat fee to validate
    the per-active-patient meter and the ROI narrative before list pricing

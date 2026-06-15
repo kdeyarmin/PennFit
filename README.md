@@ -1,8 +1,21 @@
-# PennPaps
+# CareMetric Breathe
 
-Privacy-first CPAP fitting, ordering, and resupply automation for
-Penn Home Medical Supply. See [`CLAUDE.md`](./CLAUDE.md) for guidance
-aimed at coding agents (Claude Code and similar).
+Privacy-first CPAP fitting, ordering, and resupply automation — a
+multi-tenant SaaS platform for DME providers. See [`CLAUDE.md`](./CLAUDE.md)
+for guidance aimed at coding agents (Claude Code and similar).
+
+## Brand architecture
+
+**CareMetric Breathe** is the platform (the product this repo builds;
+`PennFit` is just the repository codename). **Penn Home Medical Supply**
+— storefront brand **"PennPaps"** at `pennpaps.com` — is **one tenant**
+operating on it, not the platform itself. PennPaps's own branding,
+contact addresses, and storefront copy are tenant data; additional
+tenants are onboarded with their own brand (`tenant:onboard`). The two
+in-app AI assistants default to the CareMetric names ("CareMetric
+Assistant" / "CareMetric Copilot") and are renameable per tenant — the
+PennPaps tenant keeps "PennBot"/"PennPilot". See the "Brand architecture"
+section of [`CLAUDE.md`](./CLAUDE.md) for the developer-facing rules.
 
 ## Hosting
 

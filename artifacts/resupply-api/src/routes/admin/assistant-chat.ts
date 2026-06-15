@@ -34,6 +34,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { applyPlatformBranding } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   buildAdminAssistantSystemPrompt,
@@ -268,8 +269,9 @@ router.post(
 
     // Control Center feature gate — operators can turn PennPilot off.
     if (!(await isFeatureEnabled("admin.assistant"))) {
-      const offlineMessage =
-        "PennPilot is currently turned off. You can re-enable it from Control Center (/admin/control-center).";
+      const offlineMessage = applyPlatformBranding(
+        "PennPilot is currently turned off. You can re-enable it from Control Center (/admin/control-center).",
+      );
       if (streaming) {
         startSseHeaders(res);
         writeSseEvent(res, { type: "chunk", text: offlineMessage });
@@ -293,12 +295,15 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: ADMIN_OFFLINE_FALLBACK_REPLY,
+          text: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
-        res.json({ reply: ADMIN_OFFLINE_FALLBACK_REPLY, offline: true });
+        res.json({
+          reply: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
+          offline: true,
+        });
       }
       return;
     }
@@ -307,7 +312,9 @@ router.post(
       adminEmail: req.adminEmail ?? null,
       adminRole: req.adminRole ?? null,
     };
-    const systemPrompt = buildAdminAssistantSystemPrompt(ctx);
+    const systemPrompt = applyPlatformBranding(
+      buildAdminAssistantSystemPrompt(ctx),
+    );
 
     const supabase = getSupabaseServiceRoleClient();
     const toolCtx: AdminAssistantToolContext = {
@@ -347,12 +354,15 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: ADMIN_OFFLINE_FALLBACK_REPLY,
+          text: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
-        res.json({ reply: ADMIN_OFFLINE_FALLBACK_REPLY, offline: true });
+        res.json({
+          reply: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
+          offline: true,
+        });
       }
       return;
     }

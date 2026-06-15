@@ -617,7 +617,7 @@ function QuickCheckSection() {
     <>
       <Card
         title="Who are we checking?"
-        subtitle="Checked directly against the payer — the person does not need to be in PennFit, and nothing is saved."
+        subtitle="Checked directly against the payer — the person does not need to be in CareMetric Breathe, and nothing is saved."
       >
         {payers.isPending ? (
           <Spinner label="Loading payers…" />
