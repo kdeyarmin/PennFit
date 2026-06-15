@@ -11,7 +11,7 @@ import { FALLBACK_COMPANY, type CompanyProfile } from "./templates";
 type SupabaseClient = OrgScopedClient;
 
 export async function resolveCompanyProfile(
-  _supabase: SupabaseClient,
+  supabase: SupabaseClient,
 ): Promise<CompanyProfile> {
   try {
     const identity = await resolveBillingIdentity({ orgId: supabase.orgId });
