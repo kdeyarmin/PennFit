@@ -90,16 +90,30 @@ PATTERN='getSupabaseServiceRoleClient\('
 SCAN_DIRS=(artifacts/ lib/)
 
 # Offending files (one path per line, sorted, repo-relative).
-# `rg -l` exits 1 on zero matches; tolerate under set -e.
-offenders="$(
-  rg -l "${EXCLUDES[@]}" "$PATTERN" "${SCAN_DIRS[@]}" 2>/dev/null | sort -u || true
-)"
+# `rg -l` exits 0 (matches), 1 (no matches), or 2 (a real error: bad
+# pattern, unreadable dir, …). Tolerate ONLY "no matches" (1); a genuine
+# rg failure must NOT be silently treated as "zero offenders", which would
+# make the guard pass while enforcing nothing (the failure mode the
+# architecture checker documents). Capture rg's own exit code directly
+# (no pipe to mask it) before sorting.
+set +e
+offenders_raw="$(rg -l "${EXCLUDES[@]}" "$PATTERN" "${SCAN_DIRS[@]}" 2>/dev/null)"
+rg_status=$?
+set -e
+if [[ "$rg_status" -gt 1 ]]; then
+  echo "check-tenant-isolation: ripgrep exited $rg_status (expected 0 or 1)." >&2
+  echo "  Refusing to pass — a real rg error can't be read as 'zero offenders'." >&2
+  exit 2
+fi
+offenders="$(printf '%s\n' "$offenders_raw" | grep -E . | sort -u || true)"
 
 if [[ -n "$offenders" ]]; then
   echo "TENANT ISOLATION VIOLATION: direct getSupabaseServiceRoleClient() call(s)." >&2
   echo "These request/worker paths must reach the DB through getOrgScopedClient(req.orgId)" >&2
   echo "(lib/resupply-db/src/org-scoped-client.ts), not the raw service-role client:" >&2
-  printf '  %s\n' $offenders >&2
+  while IFS= read -r offender; do
+    [[ -n "$offender" ]] && printf '  %s\n' "$offender" >&2
+  done <<<"$offenders"
   echo >&2
   echo "If this is a genuinely global/auth table read (not tenant data), add a reviewed" >&2
   echo "exemption to EXCLUDES in scripts/check-tenant-isolation.sh with a justifying comment." >&2
