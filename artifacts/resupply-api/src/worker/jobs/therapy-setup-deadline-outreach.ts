@@ -29,6 +29,7 @@ import {
   type CommunicationPreferences,
   DEFAULT_COMMUNICATION_PREFERENCES,
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   type SendActor,
@@ -331,6 +332,8 @@ async function maybeSendDeadlineSms(
   try {
     const outcome = await sendReminderSms({
       supabase,
+      // System job: resolve the seed tenant (Phase 0 bridge).
+      orgId: (await resolveSeedOrgId()) ?? undefined,
       cfg,
       patientId,
       body,

@@ -63,6 +63,7 @@ router.post(
     try {
       outcome = await sendReminderEmail({
         supabase: getSupabaseServiceRoleClient(),
+        orgId: req.orgId,
         cfg: {
           sendgridApiKey: cfg.email.sendgridApiKey,
           sendgridFromEmail: cfg.email.sendgridFromEmail,

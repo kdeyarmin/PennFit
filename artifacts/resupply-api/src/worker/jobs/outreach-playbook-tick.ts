@@ -41,6 +41,7 @@ import type PgBoss from "pg-boss";
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 import {
@@ -470,6 +471,8 @@ export async function runOutreachPlaybookSweep(
         }
         const outcome = await sendReminderSms({
           supabase,
+          // System job: resolve the seed tenant (Phase 0 bridge).
+          orgId: (await resolveSeedOrgId()) ?? undefined,
           cfg: cfg.sms,
           patientId: run.patient_id,
           body: rendered,
@@ -525,6 +528,8 @@ export async function runOutreachPlaybookSweep(
       });
       const outcome = await sendReminderEmail({
         supabase,
+        // System job: resolve the seed tenant (Phase 0 bridge).
+        orgId: (await resolveSeedOrgId()) ?? undefined,
         cfg: cfg.email,
         patientId: run.patient_id,
         content: { subject, bodyText: rendered },
