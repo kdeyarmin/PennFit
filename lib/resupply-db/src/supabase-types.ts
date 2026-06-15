@@ -4936,6 +4936,27 @@ export interface Database {
         >;
         Relationships: [];
       };
+      business_targets: {
+        Row: {
+          org_id: string | null;
+          id: string;
+          metric_key: string;
+          period: string;
+          target_value: number;
+          unit: string | null;
+          notes: string | null;
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["business_targets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["business_targets"]["Row"]
+        >;
+        Relationships: [];
+      };
       inventory_reconciliations: {
         Row: {
           org_id: string | null;
