@@ -30,7 +30,7 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -102,11 +102,11 @@ const objectStorage = new ObjectStorageService();
  * disambiguate; staying silent would invisibly cross-link PHI.
  */
 async function findPatientByEmail(
+  orgId: string,
   email: string,
 ): Promise<{ id: string } | "ambiguous" | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .eq("email", email)
@@ -160,7 +160,15 @@ router.post(
       return;
     }
 
-    const patient = await findPatientByEmail(customerEmail);
+    const orgIdForLookup = req.orgId;
+
+    if (!orgIdForLookup) {
+      res.status(500).json({ error: "tenant_context_missing" });
+
+      return;
+    }
+
+    const patient = await findPatientByEmail(orgIdForLookup, customerEmail);
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
       return;
@@ -245,7 +253,15 @@ router.post("/shop/me/documents", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const patient = await findPatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+
+    return;
+  }
+
+  const patient = await findPatientByEmail(orgIdForLookup, customerEmail);
   if (!patient) {
     res.status(404).json({ error: "patient_not_found" });
     return;
@@ -314,7 +330,12 @@ router.post("/shop/me/documents", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   // Compute retention horizon at upload time. The nightly sweep
   // backfills legacy rows; new rows get the column populated
@@ -324,7 +345,6 @@ router.post("/shop/me/documents", requireSignedIn, async (req, res) => {
     documentType: body.data.documentType,
   }).toISOString();
   const { data: insertedRow, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .insert({
       patient_id: patient.id,
@@ -372,15 +392,27 @@ router.get("/shop/me/documents", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const patient = await findPatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+
+    return;
+  }
+
+  const patient = await findPatientByEmail(orgIdForLookup, customerEmail);
   if (!patient || patient === "ambiguous") {
     res.json({ documents: [] });
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .select(
       "id, document_type, filename, content_type, size_bytes, created_at, reviewed_at",
@@ -391,7 +423,11 @@ router.get("/shop/me/documents", requireSignedIn, async (req, res) => {
   if (error) throw error;
 
   res.json({
-    documents: (rows ?? []).map((r) => ({
+    documents: (
+      (rows ?? []) as Array<
+        Database["resupply"]["Tables"]["patient_documents"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       documentType: r.document_type,
       filename: r.filename,
@@ -416,15 +452,27 @@ router.get("/shop/me/documents/:docId", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const patient = await findPatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+
+    return;
+  }
+
+  const patient = await findPatientByEmail(orgIdForLookup, customerEmail);
   if (!patient || patient === "ambiguous") {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: doc, error } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .select("id, object_key, filename, content_type")
     .eq("id", param.data.docId)
@@ -520,15 +568,27 @@ router.delete(
       return;
     }
 
-    const patient = await findPatientByEmail(customerEmail);
+    const orgIdForLookup = req.orgId;
+
+    if (!orgIdForLookup) {
+      res.status(500).json({ error: "tenant_context_missing" });
+
+      return;
+    }
+
+    const patient = await findPatientByEmail(orgIdForLookup, customerEmail);
     if (!patient || patient === "ambiguous") {
       res.status(404).json({ error: "not_found" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: doc, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, object_key")
       .eq("id", param.data.docId)
@@ -561,7 +621,6 @@ router.delete(
     }
 
     const { error: deleteErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .delete()
       .eq("id", doc.id);
