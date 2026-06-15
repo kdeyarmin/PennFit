@@ -28,7 +28,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -122,9 +122,15 @@ router.get(
         ? Math.min(MAX_LIMIT, rawLimit)
         : DEFAULT_LIMIT;
     const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select(
@@ -179,8 +185,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("*")
@@ -229,13 +241,19 @@ router.post(
     }
     const body = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Dedupe by NPI: if a row already exists with this NPI, return its
     // id with a 200 instead of creating a duplicate. The UNIQUE index
     // would refuse the insert anyway; surfacing the existing row keeps
     // the CSR flow happy (they get to the same provider regardless).
     const { data: existing, error: lookupErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id")
@@ -252,6 +270,7 @@ router.post(
       body.source === "nppes" ? new Date().toISOString() : null;
 
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .insert({
@@ -310,9 +329,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select(
         "id, patient_id, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name, email, phone_e164, status)",
@@ -383,8 +406,14 @@ router.post(
     // embedded version is below the row's current value, so bumping
     // this column revokes every outstanding token (see the new
     // DELETE handler below).
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: pErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, portal_link_version")
@@ -423,8 +452,14 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: pErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("id, portal_link_version")
@@ -438,6 +473,7 @@ router.delete(
     }
     const nextVersion = (existing.portal_link_version ?? 0) + 1;
     const { error: updErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .update({
