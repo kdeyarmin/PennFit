@@ -17,9 +17,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { requestHost } from "../../lib/request-host.js";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
 
 const router: IRouter = Router();
 
@@ -46,7 +48,15 @@ router.post("/newsletter/subscribe", async (req, res) => {
   }
   const { email, source } = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // This route is mounted before attachSignedIn, so guest requests may
+  // not have req.orgId yet; resolve by host as a fallback.
+  const orgId = req.orgId ?? (await resolveOrgIdByHost(requestHost(req)));
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+
+  const supabase = getOrgScopedClient(orgId).raw();
   const { error } = await supabase
     .schema("public")
     .from("newsletter_subscribers")
