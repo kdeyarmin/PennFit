@@ -1,4 +1,4 @@
--- 0345_tenant_storefront_branding — per-tenant storefront identity +
+-- 0346_tenant_storefront_branding — per-tenant storefront identity +
 -- custom-domain wiring (multi-tenant Phase 3, the first customer-facing
 -- slice on top of the Phase 0 foundation).
 --

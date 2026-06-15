@@ -28,7 +28,7 @@ import {
   type Database,
   INSURANCE_LEAD_STATUSES,
   type InsuranceLeadStatus,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -95,10 +95,14 @@ router.get(
       return;
     }
     const { status, limit } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     let leadsQuery = supabase
-      .schema("resupply")
       .from("insurance_leads")
       .select("*")
       .order("created_at", { ascending: false })
@@ -113,22 +117,18 @@ router.get(
     const [newCount, contactedCount, verifiedCount, closedCount] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("insurance_leads")
           .select("*", { count: "exact", head: true })
           .eq("status", "new"),
         supabase
-          .schema("resupply")
           .from("insurance_leads")
           .select("*", { count: "exact", head: true })
           .eq("status", "contacted"),
         supabase
-          .schema("resupply")
           .from("insurance_leads")
           .select("*", { count: "exact", head: true })
           .eq("status", "verified"),
         supabase
-          .schema("resupply")
           .from("insurance_leads")
           .select("*", { count: "exact", head: true })
           .eq("status", "closed"),
@@ -152,7 +152,10 @@ router.get(
     );
 
     res.json({
-      rows: (rows ?? []).map((r) => ({
+      rows: (
+        (rows ??
+          []) as Database["resupply"]["Tables"]["insurance_leads"]["Row"][]
+      ).map((r) => ({
         id: r.id,
         fullName: r.full_name,
         email: r.email,
@@ -215,9 +218,13 @@ router.patch(
     if (parse.data.status !== undefined) update.status = parse.data.status;
     if (parse.data.csrNote !== undefined) update.csr_note = parse.data.csrNote;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("insurance_leads")
       .update(update)
       .eq("id", idParam)
