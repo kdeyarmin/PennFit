@@ -24,10 +24,11 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const JOB_NAME = "asset-recovery.auto-populate";
@@ -59,29 +60,15 @@ export interface AutoPopulateStats {
   failed: number;
 }
 
-export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats> {
-  const stats: AutoPopulateStats = {
-    enabled: false,
-    candidates: 0,
-    created: 0,
-    skipped: 0,
-    failed: 0,
-  };
-
-  if (!(await isFeatureEnabled("asset_recovery.auto_populate"))) {
-    return stats;
-  }
-  stats.enabled = true;
-
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { event: "asset-recovery.auto-populate.no_org" },
-      "asset-recovery.auto-populate: no seed org resolved; skipping",
-    );
-    return stats;
-  }
-
+/**
+ * Auto-populate asset-recovery cases for a SINGLE tenant, accumulating
+ * into the shared `stats`. Extracted so the cron can fan out across every
+ * active tenant.
+ */
+async function autoPopulateForOrg(
+  orgId: string,
+  stats: AutoPopulateStats,
+): Promise<void> {
   const db = getOrgScopedClient(orgId);
 
   // 1. Candidate patients: undismissed usage_dropping triggers, recent.
@@ -101,8 +88,8 @@ export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats>
         .filter((id): id is string => !!id),
     ),
   ].slice(0, PER_RUN_MAX);
-  stats.candidates = patientIds.length;
-  if (patientIds.length === 0) return stats;
+  stats.candidates += patientIds.length;
+  if (patientIds.length === 0) return;
 
   // 2. Dedup: patients that already have a non-terminal case.
   const { data: existing, error: existErr } = await db
@@ -167,7 +154,33 @@ export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats>
     }
     stats.created += 1;
   }
+}
 
+/**
+ * Run the asset-recovery auto-populate sweep for EVERY active tenant.
+ * `asset_recovery_cases`, `patient_smart_trigger_events`, and `patients`
+ * are tenant-scoped, so the sweep fans out via `forEachActiveOrg` and
+ * accumulates the counts. The feature flag is checked once as a global
+ * kill-switch (single-tenant behavior unchanged). Per-tenant flag gating
+ * is a Phase-1 follow-on.
+ */
+export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats> {
+  const stats: AutoPopulateStats = {
+    enabled: false,
+    candidates: 0,
+    created: 0,
+    skipped: 0,
+    failed: 0,
+  };
+
+  if (!(await isFeatureEnabled("asset_recovery.auto_populate"))) {
+    return stats;
+  }
+  stats.enabled = true;
+
+  await forEachActiveOrg((orgId) => autoPopulateForOrg(orgId, stats), {
+    jobName: JOB_NAME,
+  });
   return stats;
 }
 

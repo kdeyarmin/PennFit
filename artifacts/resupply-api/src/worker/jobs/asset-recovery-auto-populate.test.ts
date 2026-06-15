@@ -12,12 +12,13 @@ vi.mock("../../lib/feature-flags", () => ({
   isFeatureEnabled: isFeatureEnabledMock,
 }));
 
-// Guard: if the flag gate ever regresses, these would be called and the
-// test setup (no real Supabase) would throw — but we also assert the
-// resolveSeedOrgId spy is never reached.
-const resolveSeedOrgIdMock = vi.hoisted(() => vi.fn());
+// Guard: if the flag gate ever regresses, the fan-out (listActiveOrgIds)
+// would be reached and the test setup (no real Supabase) would throw — we
+// also assert the listActiveOrgIds spy is never called when the flag is OFF.
+const listActiveOrgIdsMock = vi.hoisted(() => vi.fn());
 vi.mock("@workspace/resupply-db", () => ({
-  resolveSeedOrgId: resolveSeedOrgIdMock,
+  listActiveOrgIds: listActiveOrgIdsMock,
+  resolveSeedOrgId: vi.fn(),
   getOrgScopedClient: vi.fn(),
   getSupabaseServiceRoleClient: vi.fn(),
 }));
@@ -26,7 +27,7 @@ import { runAssetRecoveryAutoPopulate } from "./asset-recovery-auto-populate";
 
 beforeEach(() => {
   isFeatureEnabledMock.mockReset();
-  resolveSeedOrgIdMock.mockReset();
+  listActiveOrgIdsMock.mockReset().mockResolvedValue([]);
 });
 
 describe("runAssetRecoveryAutoPopulate — flag gate", () => {
@@ -42,8 +43,8 @@ describe("runAssetRecoveryAutoPopulate — flag gate", () => {
       skipped: 0,
       failed: 0,
     });
-    // Must short-circuit before resolving any org / touching the DB.
-    expect(resolveSeedOrgIdMock).not.toHaveBeenCalled();
+    // Must short-circuit before fanning out / touching the DB.
+    expect(listActiveOrgIdsMock).not.toHaveBeenCalled();
   });
 
   it("checks the asset_recovery.auto_populate flag", async () => {
@@ -54,9 +55,9 @@ describe("runAssetRecoveryAutoPopulate — flag gate", () => {
     );
   });
 
-  it("returns enabled:true but no candidates when there is no seed org", async () => {
+  it("returns enabled:true but no candidates when there are no active orgs", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
-    resolveSeedOrgIdMock.mockResolvedValue(null);
+    listActiveOrgIdsMock.mockResolvedValue([]);
 
     const stats = await runAssetRecoveryAutoPopulate();
 
