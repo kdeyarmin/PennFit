@@ -35,7 +35,9 @@
 
 import {
   type Json,
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { analyzeDenial } from "./ai-denial-analyzer";
@@ -363,6 +365,13 @@ export async function runSecondaryClaimPass(
   // manual COB worklist (/admin/billing/secondary-eligible).
   if (!(await isFeatureEnabled("billing.auto_secondary_claims"))) return;
 
+  // Secondary-claim drafting writes go through the org-scoped chokepoint.
+  // This automation pass has no request tenant, so it scopes to the seed
+  // org (single-tenant bridge).
+  const secOrgId = await resolveSeedOrgId();
+  if (!secOrgId) return;
+  const scopedClient = getOrgScopedClient(secOrgId);
+
   // Paid primaries that carry a secondary coverage — the COB candidates.
   // `filterSecondaryEligible` re-checks balance/sequence and drops any
   // primary that already spawned a secondary, so this is the same set the
@@ -416,7 +425,10 @@ export async function runSecondaryClaimPass(
   const eligible = filterSecondaryEligible(rows, existing);
   for (const item of eligible) {
     try {
-      const result = await generateSecondaryClaimDraft(supabase, item.claimId);
+      const result = await generateSecondaryClaimDraft(
+        scopedClient,
+        item.claimId,
+      );
       if (result.status === "created") {
         stats.secondaryClaimsDrafted += 1;
         void publishEvent({

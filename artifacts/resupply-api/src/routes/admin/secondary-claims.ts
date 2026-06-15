@@ -20,7 +20,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -48,10 +48,14 @@ router.get(
   "/admin/billing/secondary-eligible",
   adminReadRateLimiter,
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const candRes = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(CLAIM_SELECT)
       .eq("payer_sequence", "primary")
@@ -72,7 +76,6 @@ router.get(
     const existing = new Set<string>();
     if (ids.length > 0) {
       const secRes = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("primary_claim_id")
         .eq("payer_sequence", "secondary")
@@ -107,7 +110,12 @@ router.post(
       return;
     }
     const primaryId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const result = await generateSecondaryClaimDraft(supabase, primaryId);
     switch (result.status) {
