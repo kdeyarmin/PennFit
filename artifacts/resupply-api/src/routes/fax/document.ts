@@ -61,7 +61,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // org (single-tenant posture) and degrade to the route's existing
   // 404 when it can't be resolved — never 500 a signed-link fetch.
   const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  if (!orgId || !orgId.trim()) {
     res.status(404).json({ error: "not_found" });
     return;
   }
@@ -95,7 +95,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // in the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document") {
     const pdf = await renderManualDocumentForFax(
-      supabase.raw(),
+      supabase,
       verified.outreachId,
     );
     if (!pdf) {
@@ -114,7 +114,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document_packet") {
     const pdf = await renderManualDocumentPacketForFax(
-      supabase.raw(),
+      supabase,
       verified.outreachId,
     );
     if (!pdf) {

@@ -7,7 +7,7 @@
 // means the downloaded PDF, the emailed attachment, and the faxed media
 // are byte-identical.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { isManualDocumentType } from "./catalog";
 import { renderManualDocumentPacketPdf } from "./packet-pdf";
@@ -19,7 +19,7 @@ import {
   type ManualDocumentRow,
 } from "./service";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export interface ManualDocumentPacketRow {
   id: string;
@@ -59,7 +59,6 @@ export async function loadManualDocumentPacketRow(
   id: string,
 ): Promise<ManualDocumentPacketRow | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("manual_document_packets")
     .select(PACKET_ROW_COLUMNS)
     .eq("id", id)
@@ -89,7 +88,6 @@ export async function loadPacketDocuments(
   const ids = packetDocumentIds(packet);
   if (ids.length === 0) return { documents: [], missingIds: [] };
   const { data, error } = await supabase
-    .schema("resupply")
     .from("manual_documents")
     .select(MANUAL_DOCUMENT_ROW_COLUMNS)
     .in("id", ids);
