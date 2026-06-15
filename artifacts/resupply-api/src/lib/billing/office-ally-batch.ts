@@ -15,7 +15,9 @@
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   allocateControlNumbers,
@@ -312,6 +314,17 @@ export async function executeOfficeAllyBatchSubmit(
   // out the door. Feature-flagged so it can be turned off whole-cloth, and
   // inert for any claim that has no requirements tracked against it.
   if (await isFeatureEnabled("billing.bill_hold")) {
+    // bill-hold reads/writes go through the org-scoped chokepoint; this
+    // batch path scopes to the seed org (single-tenant bridge).
+    const billHoldOrgId = await resolveSeedOrgId();
+    if (!billHoldOrgId) {
+      return {
+        ok: false,
+        kind: "bill_hold",
+        detail: { held: [] },
+      };
+    }
+    const billHold = getOrgScopedClient(billHoldOrgId);
     const uninitialized = await findUninitializedBillHoldClaims(
       supabase,
       claims.map((c) => c.id),
@@ -323,7 +336,7 @@ export async function executeOfficeAllyBatchSubmit(
     for (const claimId of uninitialized) {
       try {
         await seedDefaultRequirementsForClaim(claimId, {
-          supabase,
+          supabase: billHold,
           createdByEmail: input.adminEmail ?? "system:office-ally-submit",
         });
       } catch (err) {
@@ -350,7 +363,7 @@ export async function executeOfficeAllyBatchSubmit(
     }
     const outstanding = await countOutstandingByClaim(
       claims.map((c) => c.id),
-      supabase,
+      billHold,
     );
     const heldClaimIds = claims
       .filter((c) => (outstanding.get(c.id) ?? 0) > 0)

@@ -19,11 +19,9 @@
 // caller already holds.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export type RequirementType =
   | "prescription"
@@ -158,10 +156,9 @@ export function pickFaxMatch(
 /** List every paperwork requirement tracked against a claim. */
 export async function listClaimRequirements(
   claimId: string,
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  supabase: OrgScopedClient,
 ): Promise<PaperworkRequirementRow[]> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select(REQUIREMENT_COLUMNS)
     .eq("claim_id", claimId)
@@ -173,10 +170,9 @@ export async function listClaimRequirements(
 /** List every paperwork requirement tracked against a patient. */
 export async function listPatientRequirements(
   patientId: string,
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  supabase: OrgScopedClient,
 ): Promise<PaperworkRequirementRow[]> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select(REQUIREMENT_COLUMNS)
     .eq("patient_id", patientId)
@@ -193,12 +189,11 @@ export async function listPatientRequirements(
  */
 export async function countOutstandingByClaim(
   claimIds: string[],
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  supabase: OrgScopedClient,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (claimIds.length === 0) return counts;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("claim_id")
     .in("claim_id", claimIds)
@@ -213,7 +208,7 @@ export async function countOutstandingByClaim(
 }
 
 export interface RecomputeOpts {
-  supabase?: SupabaseClient;
+  supabase: OrgScopedClient;
   /** Stamped on the release columns when the hold lifts. */
   actorEmail?: string | null;
   /** When the hold transitions (set or lift), append a claim event. */
@@ -236,12 +231,11 @@ export interface RecomputeResult {
  */
 export async function recomputeBillHold(
   claimId: string,
-  opts: RecomputeOpts = {},
+  opts: RecomputeOpts,
 ): Promise<RecomputeResult> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase;
 
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("status, required, label")
     .eq("claim_id", claimId);
@@ -256,7 +250,6 @@ export async function recomputeBillHold(
   ).length;
 
   const { data: claim, error: claimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, bill_hold, status")
     .eq("id", claimId)
@@ -275,7 +268,6 @@ export async function recomputeBillHold(
     if (held) {
       const labels = outstandingLabels(reqRows);
       const { error: reasonErr } = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .update({
           bill_hold_reason: holdReason(labels),
@@ -295,7 +287,6 @@ export async function recomputeBillHold(
   const nowIso = new Date().toISOString();
   const labels = outstandingLabels(reqRows);
   const { error: flipErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .update({
       bill_hold: held,
@@ -316,7 +307,6 @@ export async function recomputeBillHold(
 
   if (opts.writeEvent) {
     const { error: eventErr } = await supabase
-      .schema("resupply")
       .from("insurance_claim_events")
       .insert({
         claim_id: claimId,
@@ -343,7 +333,7 @@ function holdReason(labels: string[]): string {
 }
 
 export interface SatisfyOpts {
-  supabase?: SupabaseClient;
+  supabase: OrgScopedClient;
   via: SatisfiedVia;
   actorEmail?: string | null;
   inboundFaxId?: string | null;
@@ -364,10 +354,9 @@ export async function satisfyRequirement(
   requirement: PaperworkRequirementRow;
   recompute: RecomputeResult | null;
 }> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase;
 
   const { data: existing, error: readErr } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select(REQUIREMENT_COLUMNS)
     .eq("id", requirementId)
@@ -384,7 +373,6 @@ export async function satisfyRequirement(
 
   const nowIso = new Date().toISOString();
   const { data: updated, error: updErr } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .update({
       status: "satisfied",
@@ -423,12 +411,11 @@ export async function satisfyRequirement(
  */
 export async function seedDefaultRequirementsForClaim(
   claimId: string,
-  opts: { supabase?: SupabaseClient; createdByEmail?: string | null } = {},
+  opts: { supabase: OrgScopedClient; createdByEmail?: string | null },
 ): Promise<{ created: number; held: boolean }> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
+  const supabase = opts.supabase;
 
   const { data: claim, error: claimErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id")
     .eq("id", claimId)
@@ -438,7 +425,6 @@ export async function seedDefaultRequirementsForClaim(
   if (!claim) return { created: 0, held: false };
 
   const { data: existing, error: existErr } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .select("id")
     .eq("claim_id", claimId)
@@ -467,7 +453,6 @@ export async function seedDefaultRequirementsForClaim(
     };
   });
   const { error: insErr } = await supabase
-    .schema("resupply")
     .from("claim_paperwork_requirements")
     .insert(inserts);
   if (insErr) throw insErr;
@@ -488,7 +473,7 @@ export async function seedDefaultRequirementsForClaim(
  * outstanding — it's generated at delivery and faxed/signed back.
  */
 async function resolveOnFile(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   patientId: string,
 ): Promise<
   Partial<
@@ -500,12 +485,13 @@ async function resolveOnFile(
   > = {};
 
   const { data: acks } = await supabase
-    .schema("resupply")
     .from("patient_form_acknowledgements")
     .select("form_kind")
     .eq("patient_id", patientId);
   if (
-    (acks ?? []).some((a) => (a as { form_kind: string }).form_kind === "aob")
+    ((acks ?? []) as Array<{ form_kind: string }>).some(
+      (a) => a.form_kind === "aob",
+    )
   ) {
     out.aob = { via: "esign", documentId: null };
   }
@@ -513,7 +499,6 @@ async function resolveOnFile(
   // A signed, unexpired DWO/SWO covers the prescription requirement.
   const today = new Date().toISOString().slice(0, 10);
   const { data: dwos } = await supabase
-    .schema("resupply")
     .from("dwo_documents")
     .select("id, expires_on")
     .eq("patient_id", patientId)
@@ -540,7 +525,7 @@ async function resolveOnFile(
 export async function autoMatchInboundFaxToPaperwork(
   faxId: string,
   fromE164: string | null,
-  supabase: SupabaseClient = getSupabaseServiceRoleClient(),
+  supabase: OrgScopedClient,
 ): Promise<{ matched: boolean; requirementId: string | null }> {
   try {
     if (!fromE164) return { matched: false, requirementId: null };
@@ -548,7 +533,6 @@ export async function autoMatchInboundFaxToPaperwork(
     if (!normalized) return { matched: false, requirementId: null };
 
     const { data, error } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(REQUIREMENT_COLUMNS)
       .eq("expected_return_fax_e164", normalized)

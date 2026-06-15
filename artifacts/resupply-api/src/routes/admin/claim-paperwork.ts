@@ -17,7 +17,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   listClaimRequirements,
@@ -90,7 +90,15 @@ router.get(
       res.status(400).json({ error: "invalid_claim_id" });
       return;
     }
-    const rows = await listClaimRequirements(claimId.data);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const rows = await listClaimRequirements(
+      claimId.data,
+      getOrgScopedClient(orgId),
+    );
     res.json(holdSummary(rows));
   },
 );
@@ -117,7 +125,15 @@ router.post(
       });
       return;
     }
-    const rows = await listPatientRequirements(parsed.data.patientId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const rows = await listPatientRequirements(
+      parsed.data.patientId,
+      getOrgScopedClient(orgId),
+    );
     res.json(holdSummary(rows));
   },
 );
@@ -162,9 +178,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, patient_id")
       .eq("id", claimId.data)
@@ -178,7 +198,6 @@ router.post(
 
     const nowSent = parsed.data.sentVia != null;
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .insert({
         claim_id: claim.id,
@@ -222,7 +241,13 @@ router.post(
       res.status(400).json({ error: "invalid_claim_id" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const result = await seedDefaultRequirementsForClaim(claimId.data, {
+      supabase: getOrgScopedClient(orgId),
       createdByEmail: req.adminEmail ?? null,
     });
     await audit(req, "bill_hold.requirements_seeded", claimId.data, {
@@ -274,9 +299,13 @@ router.patch(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: readErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, claim_id, status")
       .eq("id", id.data)
@@ -312,7 +341,6 @@ router.patch(
     if (parsed.data.notes != null) patch.notes = parsed.data.notes;
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .update(patch)
       .eq("id", id.data);
@@ -360,8 +388,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     try {
       const { requirement, recompute } = await satisfyRequirement(id.data, {
+        supabase: getOrgScopedClient(orgId),
         via: parsed.data.via,
         actorEmail: req.adminEmail ?? null,
         documentId: parsed.data.documentId ?? null,
@@ -396,9 +430,13 @@ router.post(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: readErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, status, reminder_count")
       .eq("id", id.data)
@@ -414,7 +452,6 @@ router.post(
       return;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .update({
         reminder_count: (existing.reminder_count ?? 0) + 1,
@@ -450,9 +487,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: fax, error: faxErr } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select("id, status")
       .eq("id", faxId.data)
@@ -467,6 +508,7 @@ router.post(
       const { requirement, recompute } = await satisfyRequirement(
         parsed.data.requirementId,
         {
+          supabase,
           via: "manual",
           actorEmail: req.adminEmail ?? null,
           inboundFaxId: faxId.data,
@@ -474,7 +516,6 @@ router.post(
       );
       // Mark the fax triaged so it leaves the "new" queue.
       const { error: faxStatusErr } = await supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .update({ status: "triaged" })
         .eq("id", faxId.data);
@@ -505,10 +546,14 @@ router.post(
 router.get(
   "/admin/billing/bill-hold-worklist",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claims, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, payer_name, date_of_service, total_billed_cents, bill_hold_reason, bill_hold_updated_at",
@@ -517,7 +562,15 @@ router.get(
       .order("bill_hold_updated_at", { ascending: true })
       .limit(500);
     if (error) throw error;
-    const claimRows = claims ?? [];
+    const claimRows = (claims ?? []) as Array<{
+      id: string;
+      patient_id: string;
+      payer_name: string | null;
+      date_of_service: string | null;
+      total_billed_cents: number | null;
+      bill_hold_reason: string | null;
+      bill_hold_updated_at: string | null;
+    }>;
     if (claimRows.length === 0) {
       res.json({ items: [], count: 0, totalHeldCents: 0 });
       return;
@@ -525,7 +578,6 @@ router.get(
 
     const claimIds = claimRows.map((c) => c.id);
     const { data: reqs, error: reqErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(
         "claim_id, label, requirement_type, reminder_count, last_reminded_at",
@@ -551,7 +603,6 @@ router.get(
 
     const patientIds = [...new Set(claimRows.map((c) => c.patient_id))];
     const { data: patients } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
       .in("id", patientIds);
