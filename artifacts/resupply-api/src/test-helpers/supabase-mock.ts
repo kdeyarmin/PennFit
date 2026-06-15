@@ -322,6 +322,21 @@ vi.mock("@workspace/resupply-db", async () => {
     // org so the sweep runs against the staged mock responses instead of
     // short-circuiting on a (mock-unstaged) organizations lookup.
     resolveSeedOrgId: async () => "00000000-0000-4000-8000-000000000000",
+    // Multi-tenant cron fan-out resolves the active-tenant list via
+    // listActiveOrgIds(). Like getOrgScopedClient above, re-run the
+    // ACTUAL implementation over the mock client so the directory read
+    // resolves from the staged `organizations` select response (a test
+    // stages `stageSupabaseResponse("organizations", "select", { data:
+    // [{ id }] })` to control which tenants the sweep fans out over).
+    listActiveOrgIds: (
+      client?: Parameters<typeof actual.listActiveOrgIds>[0],
+    ) =>
+      actual.listActiveOrgIds(
+        client ??
+          (makeMockServiceClient() as unknown as Parameters<
+            typeof actual.listActiveOrgIds
+          >[0]),
+      ),
     // Best-effort projection upserts — the route tests don't
     // exercise projection refresh assertions, so we no-op the
     // helper rather than route through the mock builder. Tests

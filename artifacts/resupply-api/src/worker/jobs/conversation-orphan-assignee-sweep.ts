@@ -43,9 +43,10 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "conversations.orphan-assignee-sweep";
@@ -79,11 +80,15 @@ interface ConversationSweepRow {
   status: string;
 }
 
-/** Exported for test injection. Runs one sweep cycle and returns
- *  the counts so a test can assert behavior without scheduling. */
-export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return { scanned: 0, unassigned: 0 };
+/**
+ * Run one orphan-assignee sweep for a SINGLE tenant. Exported for test
+ * injection (a test drives this directly with a fixed org so it doesn't
+ * need to stage the tenant-directory lookup). Returns the per-tenant
+ * counts.
+ */
+export async function runOrphanAssigneeSweepForOrg(
+  orgId: string,
+): Promise<SweepStats> {
   const supabase = getOrgScopedClient(orgId);
   let scanned = 0;
   let unassigned = 0;
@@ -194,6 +199,28 @@ export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
     if (rows.length < SWEEP_PAGE_SIZE) break;
   }
 
+  return { scanned, unassigned };
+}
+
+/**
+ * Run the sweep for EVERY active tenant. `conversations` and
+ * `admin_users` are tenant-scoped, so the orphan reassignment must
+ * happen per tenant. Fans out via `forEachActiveOrg` (per-tenant error
+ * isolation — one tenant's failure can't abort the others) and sums the
+ * counts. With a single tenant this is byte-identical to the old
+ * seed-org sweep.
+ */
+export async function runOrphanAssigneeSweep(): Promise<SweepStats> {
+  let scanned = 0;
+  let unassigned = 0;
+  await forEachActiveOrg(
+    async (orgId) => {
+      const stats = await runOrphanAssigneeSweepForOrg(orgId);
+      scanned += stats.scanned;
+      unassigned += stats.unassigned;
+    },
+    { jobName: SWEEP_JOB },
+  );
   return { scanned, unassigned };
 }
 
