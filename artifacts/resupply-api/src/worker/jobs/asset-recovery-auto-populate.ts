@@ -11,10 +11,12 @@
 // OFF, migration 0342) — so cases are created only manually via the admin
 // UI until an operator opts in.
 //
-// Tenancy: signals are read with the service-role client (system scan,
-// cross-org by nature); new cases are WRITTEN through the org-scoped
-// client so org_id is set. While the platform is single-tenant the seed
-// org covers every patient; per-patient org resolution is a later step.
+// Tenancy: this system cron resolves the single seed org (the
+// single-tenant bridge) and runs entirely through the org-scoped client —
+// both the trigger/patient reads and the case writes are tenant-scoped
+// (org_id auto-filtered on read, auto-injected on insert). While the
+// platform is single-tenant the seed org covers every patient; per-tenant
+// fan-out is a later step.
 //
 // PHI / log posture: logs counts only — never patient ids or labels in
 // the completion line. The case row stores patient_label (PHI) as the
@@ -22,11 +24,7 @@
 
 import type PgBoss from "pg-boss";
 
-import {
-  getOrgScopedClient,
-  getSupabaseServiceRoleClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
@@ -84,12 +82,10 @@ export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats>
     return stats;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
   const db = getOrgScopedClient(orgId);
 
   // 1. Candidate patients: undismissed usage_dropping triggers, recent.
-  const { data: triggers, error: trigErr } = await supabase
-    .schema("resupply")
+  const { data: triggers, error: trigErr } = await db
     .from("patient_smart_trigger_events")
     .select("patient_id")
     .eq("kind", "usage_dropping")
@@ -100,8 +96,8 @@ export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats>
 
   const patientIds = [
     ...new Set(
-      (triggers ?? [])
-        .map((t) => (t as { patient_id: string | null }).patient_id)
+      ((triggers ?? []) as Array<{ patient_id: string | null }>)
+        .map((t) => t.patient_id)
         .filter((id): id is string => !!id),
     ),
   ].slice(0, PER_RUN_MAX);
@@ -126,18 +122,18 @@ export async function runAssetRecoveryAutoPopulate(): Promise<AutoPopulateStats>
   );
 
   // 3. Patient display labels for the new cases.
-  const { data: pats } = await supabase
-    .schema("resupply")
+  const { data: pats } = await db
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", patientIds);
   const labelById = new Map<string, string | null>(
-    (pats ?? []).map((p) => {
-      const row = p as {
+    (
+      (pats ?? []) as Array<{
         id: string;
         legal_first_name: string | null;
         legal_last_name: string | null;
-      };
+      }>
+    ).map((row) => {
       const label =
         [row.legal_first_name, row.legal_last_name]
           .filter((s) => !!s && s.trim())
