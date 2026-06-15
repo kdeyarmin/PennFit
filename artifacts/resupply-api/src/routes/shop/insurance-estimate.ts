@@ -24,7 +24,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import {
   PAYER_SLUGS,
@@ -57,8 +57,15 @@ async function fetchLearnedEstimate(
   slug: string,
 ): Promise<LearnedEstimate | null> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    // payer_estimate_stats is a GLOBAL learned-stats table (no org_id):
+    // the OOP benchmarks are shared across tenants. Resolve the seed org
+    // only for a client, then read via .raw() (the facade .from() would
+    // append an org_id filter the column lacks). Fail-soft to null.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return null;
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("payer_estimate_stats")
       .select("p50_cents, p90_cents, sample_size")

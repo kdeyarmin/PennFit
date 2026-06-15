@@ -34,7 +34,7 @@ import { readCustomerProfile } from "../../lib/customer-profile";
 import type Stripe from "stripe";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -171,9 +171,13 @@ router.post(
         return;
       }
 
-      const supabase = getSupabaseServiceRoleClient();
+      const orgId = req.orgId;
+      if (!orgId) {
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
+      }
+      const supabase = getOrgScopedClient(orgId);
       const { data: owned, error: ownedErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("stripe_session_id")
         .eq("stripe_session_id", reorderSessionId!)
@@ -444,20 +448,22 @@ router.post(
     // customer_id is still unset OR already equals this caller —
     // i.e. either we're claiming an unowned row OR we're idempotently
     // re-stamping our own.
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
-    const { error: insertErr } = await supabase
-      .schema("resupply")
-      .from("shop_orders")
-      .upsert(
-        {
-          stripe_session_id: session.id,
-          status: "pending",
-          customer_id: customerId,
-          updated_at: nowIso,
-        },
-        { onConflict: "stripe_session_id", ignoreDuplicates: true },
-      );
+    const { error: insertErr } = await supabase.from("shop_orders").upsert(
+      {
+        stripe_session_id: session.id,
+        status: "pending",
+        customer_id: customerId,
+        updated_at: nowIso,
+      },
+      { onConflict: "stripe_session_id", ignoreDuplicates: true },
+    );
     if (insertErr) {
       req.log?.error(
         { err: insertErr, sessionId: session.id },
@@ -471,7 +477,6 @@ router.post(
     // `customer_id` here is the race guard: a concurrent caller's
     // upsert wins for its own session, ours is a no-op.
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ customer_id: customerId, updated_at: nowIso })
       .eq("stripe_session_id", session.id)

@@ -37,7 +37,7 @@
 import { Router, type IRouter } from "express";
 import type Stripe from "stripe";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
@@ -106,13 +106,17 @@ router.post(
     }
     const stripe = getStripeClient(stripeConfig);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Combined ownership + status check so a single SELECT returns
     // either "yes you can re-send" or "treat as not found". We
     // intentionally don't differentiate "wrong owner" from "missing"
     // in the response — both leak information.
     const { data: orderRow } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, stripe_session_id")
       .eq("stripe_session_id", sessionId)
