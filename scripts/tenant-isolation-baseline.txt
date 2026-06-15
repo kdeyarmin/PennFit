@@ -242,7 +242,6 @@ artifacts/resupply-api/src/routes/admin/webhook-subscriptions.ts
 artifacts/resupply-api/src/routes/admin/webhook-test-send.ts
 artifacts/resupply-api/src/routes/admin/work-items.ts
 artifacts/resupply-api/src/routes/conversations/reply.ts
-artifacts/resupply-api/src/routes/dashboard/summary.ts
 artifacts/resupply-api/src/routes/email/click.ts
 artifacts/resupply-api/src/routes/email/inbound-parse.ts
 artifacts/resupply-api/src/routes/email/send-reminder.ts
@@ -295,7 +294,6 @@ artifacts/resupply-api/src/worker/jobs/fitter-lead-reengage.ts
 artifacts/resupply-api/src/worker/jobs/fitter-supply-campaign.ts
 artifacts/resupply-api/src/worker/jobs/idempotency-keys-prune.ts
 artifacts/resupply-api/src/worker/jobs/invite-password-expiry-notify.ts
-artifacts/resupply-api/src/worker/jobs/lapsed-customer-winback.ts
 artifacts/resupply-api/src/worker/jobs/lifecycle-touchpoints.ts
 artifacts/resupply-api/src/worker/jobs/low-stock-alerts.ts
 artifacts/resupply-api/src/worker/jobs/metric-alerts-evaluator.ts
