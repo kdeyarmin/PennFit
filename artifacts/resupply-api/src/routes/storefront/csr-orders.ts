@@ -96,9 +96,7 @@ const ORDER_COLUMNS =
 // the authorization, so we resolve the order's TENANT from its record
 // (so a tenant-B link lands in tenant B) and scope every read/write to it.
 // Returns the order + its org-scoped client, or an error code to surface.
-async function resolveOpenOrder(
-  token: string,
-): Promise<
+async function resolveOpenOrder(token: string): Promise<
   | {
       ok: true;
       order: ResolvedOrderRow;
