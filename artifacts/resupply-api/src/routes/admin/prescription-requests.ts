@@ -70,7 +70,9 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   createTelnyxFaxClient,
@@ -109,6 +111,15 @@ type PacketUpdate =
   Database["resupply"]["Tables"]["prescription_request_packets"]["Update"];
 
 const router: IRouter = Router();
+
+// signature-tracking writes go through the org-scoped chokepoint. The
+// rest of this route's queries are converted separately; this resolves
+// the request tenant for the tracking calls only and fails closed.
+function reqOrgClient(req: import("express").Request): OrgScopedClient {
+  const orgId = req.orgId;
+  if (!orgId) throw new Error("tenant_context_missing");
+  return getOrgScopedClient(orgId);
+}
 const idParam = z.object({ id: z.string().uuid() });
 const patientParam = z.object({ id: z.string().uuid() });
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -264,7 +275,7 @@ router.post(
     // fail the packet create (the PDF just renders without a barcode).
     let trackingCode: string | null = null;
     try {
-      const reg = await registerSignatureTracking(supabase, {
+      const reg = await registerSignatureTracking(reqOrgClient(req), {
         kind: "prescription_request",
         documentId: inserted.id,
         title: "Prescription request",
@@ -686,7 +697,7 @@ async function dispatchPacketFax(
       );
     }
     await recordTrackingSent(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       packet.id,
       "fax",
@@ -891,7 +902,7 @@ router.post(
       .eq("id", params.data.id);
     if (updErr) throw updErr;
     await markTrackingReturned(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       params.data.id,
     ).catch((err) => {
@@ -955,7 +966,7 @@ router.post(
       .eq("id", params.data.id);
     if (error) throw error;
     await markTrackingCanceled(
-      supabase,
+      reqOrgClient(req),
       "prescription_request",
       params.data.id,
     ).catch((err) => {

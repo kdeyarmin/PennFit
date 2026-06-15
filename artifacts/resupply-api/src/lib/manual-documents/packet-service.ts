@@ -121,7 +121,7 @@ export async function renderManualDocumentPacketToPdf(
 ): Promise<Buffer> {
   const inputs = [];
   for (const row of documents) {
-    inputs.push(await buildManualDocumentPdfInput(supabase, row, generatedOn));
+    inputs.push(await buildManualDocumentPdfInput(row, generatedOn));
   }
   const supplierContact = await manualDocumentSupplierContact();
   return renderManualDocumentPacketPdf({

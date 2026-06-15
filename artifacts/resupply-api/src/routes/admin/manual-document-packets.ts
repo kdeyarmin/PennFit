@@ -32,8 +32,10 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { createSendgridClient } from "@workspace/resupply-email";
 import {
@@ -67,6 +69,14 @@ import {
 } from "./physician-fax-outreach.js";
 
 const router: IRouter = Router();
+
+// signature-tracking writes go through the org-scoped chokepoint; the rest
+// of this route is converted separately. Fails closed if no tenant.
+function reqOrgClient(req: import("express").Request): OrgScopedClient {
+  const orgId = req.orgId;
+  if (!orgId) throw new Error("tenant_context_missing");
+  return getOrgScopedClient(orgId);
+}
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 const MAX_PACKET_DOCUMENTS = 25;
@@ -165,6 +175,7 @@ async function findMissingDocumentIds(
  */
 async function stampMemberDocumentsSent(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  sigClient: OrgScopedClient,
   documents: ManualDocumentRow[],
   channel: "email" | "fax",
   nowIso: string,
@@ -203,7 +214,7 @@ async function stampMemberDocumentsSent(
       continue;
     }
     await recordTrackingSent(
-      supabase,
+      sigClient,
       "manual_document",
       docRow.id,
       channel,
@@ -637,7 +648,13 @@ router.post(
         "manual_document_packet.send_email status stamp failed",
       );
     }
-    await stampMemberDocumentsSent(supabase, documents, "email", nowIso);
+    await stampMemberDocumentsSent(
+      supabase,
+      reqOrgClient(req),
+      documents,
+      "email",
+      nowIso,
+    );
 
     await logAudit({
       action: "manual_document_packet.emailed",
@@ -734,7 +751,13 @@ router.post(
         "manual_document_packet.send_fax status stamp failed",
       );
     }
-    await stampMemberDocumentsSent(supabase, documents, "fax", nowIso);
+    await stampMemberDocumentsSent(
+      supabase,
+      reqOrgClient(req),
+      documents,
+      "fax",
+      nowIso,
+    );
 
     await logAudit({
       action: "manual_document_packet.faxed",

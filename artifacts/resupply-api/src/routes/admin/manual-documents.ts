@@ -36,8 +36,10 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { createSendgridClient } from "@workspace/resupply-email";
 import {
@@ -85,6 +87,14 @@ import {
 } from "./physician-fax-outreach.js";
 
 const router: IRouter = Router();
+
+// signature-tracking writes go through the org-scoped chokepoint (the
+// rest of this route is converted separately); fails closed if no tenant.
+function reqOrgClient(req: import("express").Request): OrgScopedClient {
+  const orgId = req.orgId;
+  if (!orgId) throw new Error("tenant_context_missing");
+  return getOrgScopedClient(orgId);
+}
 const objectStorage = new ObjectStorageService();
 
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -565,7 +575,7 @@ router.post(
     let trackingCode: string | null = null;
     if (getManualDocumentTypeDef(type).requiresSignature) {
       try {
-        const reg = await registerSignatureTracking(supabase, {
+        const reg = await registerSignatureTracking(reqOrgClient(req), {
           kind: "manual_document",
           documentId: inserted.id,
           title: b.title,
@@ -728,7 +738,7 @@ router.delete(
     if (error) throw error;
 
     await markTrackingCanceled(
-      supabase,
+      reqOrgClient(req),
       "manual_document",
       parsed.data.id,
     ).catch((err) =>
@@ -771,7 +781,7 @@ router.get(
     }
     let pdf: Buffer;
     try {
-      pdf = await renderManualDocumentRowToPdf(supabase, row);
+      pdf = await renderManualDocumentRowToPdf(row);
     } catch (err) {
       logger.warn({ err }, "manual_document.pdf render failed");
       res.status(500).json({ error: "render_failed" });
@@ -834,7 +844,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(supabase, row);
+    const pdf = await renderManualDocumentRowToPdf(row);
     const supplier = manualDocumentSupplierName();
     const text = [
       `Please find the attached document from ${supplier}.`,
@@ -888,7 +898,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      supabase,
+      reqOrgClient(req),
       "manual_document",
       row.id,
       "email",
@@ -995,8 +1005,13 @@ router.post(
       );
     }
 
-    await recordTrackingSent(supabase, "manual_document", row.id, "fax").catch(
-      (err) => logger.warn({ err }, "manual_document.tracking_sent failed"),
+    await recordTrackingSent(
+      reqOrgClient(req),
+      "manual_document",
+      row.id,
+      "fax",
+    ).catch((err) =>
+      logger.warn({ err }, "manual_document.tracking_sent failed"),
     );
 
     await logAudit({
@@ -1059,7 +1074,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(supabase, row);
+    const pdf = await renderManualDocumentRowToPdf(row);
 
     // Upload the rendered PDF to private object storage, owned by the
     // patient — same pattern as the inbound-fax / portal-upload paths.

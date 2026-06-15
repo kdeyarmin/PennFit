@@ -194,6 +194,21 @@ export async function autoFileSignedFax(
   const decode = deps.decode ?? tryDecodeTrackingBarcode;
   const scan = deps.scan ?? scanFaxForTrackingCode;
 
+  // signature-tracking reads/writes go through the org-scoped chokepoint.
+  // This is a webhook path (no request tenant) so it scopes to the seed
+  // org — the single-tenant bridge.
+  const sigOrgId = await resolveSeedOrgId();
+  if (!sigOrgId) {
+    log.warn({}, "fax_auto_file_no_seed_org");
+    return {
+      status: "failed",
+      trackingCode: null,
+      signatureTrackingId: null,
+      chartDocumentId: null,
+    };
+  }
+  const sigClient = getOrgScopedClient(sigOrgId);
+
   const fail = async (
     status: AutoFileStatus,
     trackingCode: string | null,
@@ -218,7 +233,7 @@ export async function autoFileSignedFax(
     //    it shows up for triage instead of looking like a clean no-match.
     let tracking: Awaited<ReturnType<typeof lookupTrackingByCode>>;
     try {
-      tracking = await lookupTrackingByCode(supabase, code);
+      tracking = await lookupTrackingByCode(sigClient, code);
     } catch (err) {
       log.warn(
         { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -236,7 +251,7 @@ export async function autoFileSignedFax(
       // We can mark the signature returned (it genuinely came back) but
       // there's no patient to file it under — leave it for manual triage.
       try {
-        await markReturnedAndCascade(supabase, tracking);
+        await markReturnedAndCascade(sigClient, tracking);
       } catch (err) {
         log.warn(
           { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -318,7 +333,7 @@ export async function autoFileSignedFax(
     //    document with the signature still outstanding (recoverable by a
     //    CSR), never a released hold with an unsigned packet.
     try {
-      await markReturnedAndCascade(supabase, tracking);
+      await markReturnedAndCascade(sigClient, tracking);
     } catch (err) {
       log.warn(
         { err, fax_id_first8: input.faxId.slice(0, 8) },
