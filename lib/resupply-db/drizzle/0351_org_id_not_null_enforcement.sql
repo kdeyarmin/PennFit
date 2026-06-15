@@ -1,4 +1,4 @@
--- 0350_org_id_not_null_enforcement — tighten org_id to NOT NULL.
+-- 0351_org_id_not_null_enforcement — tighten org_id to NOT NULL.
 -- Phase 0, plan workstream D ("Finishing enforcement", step 1).
 --
 -- See docs/multi-tenant-phase-0-engineering-plan-2026-06-14.md and
@@ -26,10 +26,13 @@
 --     error regardless (CLAUDE.md), so this is belt-and-suspenders.
 --
 -- WHY feature_flags IS EXCLUDED
---   `feature_flags` carries org_id but is GLOBAL by design: a NULL org_id
---   row is a platform-wide flag, a non-NULL row a per-tenant override.
---   The code reaches it through the chokepoint's `.raw()` escape hatch
---   (it is a catalog, not tenant data), so its org_id must stay nullable.
+--   `feature_flags` is handled by the prior migration 0350, which re-keys
+--   it to a per-tenant (org_id, key) PRIMARY KEY (Phase 1). A PK column is
+--   implicitly NOT NULL, so feature_flags.org_id is already constrained by
+--   the time this runs and falls out of the nullable set below. The name
+--   guard is belt-and-suspenders: it keeps this migration correct even on
+--   an environment that hasn't taken 0350's rekey yet, where feature_flags
+--   may still legitimately hold NULL (platform-wide) rows.
 --
 -- WHY A CATALOG LOOP (not a hand-maintained table list)
 --   Mirrors 0170 / 0348: iterate the live catalog for columns that

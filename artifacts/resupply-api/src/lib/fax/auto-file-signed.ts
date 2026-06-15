@@ -237,7 +237,7 @@ export async function autoFileSignedFax(
     //    it shows up for triage instead of looking like a clean no-match.
     let tracking: Awaited<ReturnType<typeof lookupTrackingByCode>>;
     try {
-      tracking = await lookupTrackingByCode(supabase.raw(), code);
+      tracking = await lookupTrackingByCode(supabase, code);
     } catch (err) {
       log.warn(
         { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -255,7 +255,7 @@ export async function autoFileSignedFax(
       // We can mark the signature returned (it genuinely came back) but
       // there's no patient to file it under — leave it for manual triage.
       try {
-        await markReturnedAndCascade(supabase.raw(), tracking);
+        await markReturnedAndCascade(supabase, tracking);
       } catch (err) {
         log.warn(
           { err, fax_id_first8: input.faxId.slice(0, 8) },
@@ -336,7 +336,7 @@ export async function autoFileSignedFax(
     //    document with the signature still outstanding (recoverable by a
     //    CSR), never a released hold with an unsigned packet.
     try {
-      await markReturnedAndCascade(supabase.raw(), tracking);
+      await markReturnedAndCascade(supabase, tracking);
     } catch (err) {
       log.warn(
         { err, fax_id_first8: input.faxId.slice(0, 8) },

@@ -2,7 +2,7 @@
 // in range. CSV / PDF / IIF / QBO CSV downloads plus the matching
 // email-attachment builders.
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   customerKeyForId,
@@ -20,6 +20,7 @@ import {
   rangeLabel,
   rangeSlug,
   renderIifWithAccounts,
+  reportOrgId,
   setDownloadHeaders,
   type CsvSink,
   type ReportModule,
@@ -41,9 +42,11 @@ export interface OrderRow {
   tracking_number: string | null;
 }
 
-export async function fetchOrders(from: Date, to: Date): Promise<OrderRow[]> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return [];
+export async function fetchOrders(
+  orgId: string,
+  from: Date,
+  to: Date,
+): Promise<OrderRow[]> {
   const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
     .from("shop_orders")
@@ -129,8 +132,10 @@ export const ordersReport: ReportModule = {
       "/admin/reports/orders.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const orders = await fetchOrders(from, to);
+        const orders = await fetchOrders(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -144,8 +149,10 @@ export const ordersReport: ReportModule = {
       "/admin/reports/orders.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const orders = await fetchOrders(from, to);
+        const orders = await fetchOrders(orgId, from, to);
         const totalUsd = orders.reduce(
           (s, o) => s + centsToDollars(o.amount_total_cents),
           0,
@@ -193,8 +200,10 @@ export const ordersReport: ReportModule = {
       "/admin/reports/orders.iif",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const orders = await fetchOrders(from, to);
+        const orders = await fetchOrders(orgId, from, to);
         const iif = await renderIifWithAccounts({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -214,8 +223,10 @@ export const ordersReport: ReportModule = {
       "/admin/reports/orders.qbo.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const orders = await fetchOrders(from, to);
+        const orders = await fetchOrders(orgId, from, to);
         const csv = renderQboCsv({
           from: from.toISOString().slice(0, 10),
           to: to.toISOString().slice(0, 10),
@@ -232,14 +243,14 @@ export const ordersReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writeOrdersCsv(res, await fetchOrders(from, to));
+    writeOrdersCsv(res, await fetchOrders(orgId, from, to));
     return collect();
   },
 
-  async buildEmailPdf(from, to) {
-    const orders = await fetchOrders(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const orders = await fetchOrders(orgId, from, to);
     const totalUsd = orders.reduce(
       (s, o) => s + centsToDollars(o.amount_total_cents),
       0,
@@ -276,7 +287,7 @@ export const ordersReport: ReportModule = {
     return pdf;
   },
 
-  async buildEmailQbRows(from, to) {
-    return buildQbRowsFromOrders(await fetchOrders(from, to));
+  async buildEmailQbRows(orgId, from, to) {
+    return buildQbRowsFromOrders(await fetchOrders(orgId, from, to));
   },
 };

@@ -11,11 +11,7 @@
 // protected) this keeps the export safe to email and to leave
 // open on a screen during a meeting.
 
-import {
-  getOrgScopedClient,
-  resolveSeedOrgId,
-  type Database,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { renderTablePdf } from "../../../lib/report-pdf";
 import { requirePermission } from "../../../middlewares/requireAdmin";
@@ -29,6 +25,7 @@ import {
   setDownloadHeaders,
   type ReportModule,
   type CsvSink,
+  reportOrgId,
 } from "./shared";
 
 export interface CustomerActivityByDay {
@@ -39,11 +36,10 @@ export interface CustomerActivityByDay {
 }
 
 export async function fetchCustomerActivity(
+  orgId: string,
   from: Date,
   to: Date,
 ): Promise<CustomerActivityByDay[]> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return [];
   const supabase = getOrgScopedClient(orgId);
 
   // Every order in range. We classify "returning vs new" by
@@ -64,8 +60,7 @@ export async function fetchCustomerActivity(
 
   // Collect unique customer IDs from orders in the range.
   const relevantCustomerIds = new Set<string>();
-  for (const o of (orders ??
-    []) as Database["resupply"]["Tables"]["shop_orders"]["Row"][]) {
+  for (const o of orders ?? []) {
     if (o.customer_id) relevantCustomerIds.add(o.customer_id);
   }
 
@@ -81,8 +76,7 @@ export async function fetchCustomerActivity(
   if (customerErr) throw customerErr;
 
   const firstSeenByCustomer = new Map<string, string>();
-  for (const c of (allCustomers ??
-    []) as Database["resupply"]["Tables"]["shop_customers"]["Row"][]) {
+  for (const c of allCustomers ?? []) {
     if (c.customer_id) firstSeenByCustomer.set(c.customer_id, c.created_at);
   }
 
@@ -119,12 +113,10 @@ export async function fetchCustomerActivity(
     return v;
   }
 
-  for (const s of (signups ??
-    []) as Database["resupply"]["Tables"]["shop_customers"]["Row"][]) {
+  for (const s of signups ?? []) {
     bucket(s.created_at.slice(0, 10)).newCustomers += 1;
   }
-  for (const o of (orders ??
-    []) as Database["resupply"]["Tables"]["shop_orders"]["Row"][]) {
+  for (const o of orders ?? []) {
     const day = o.created_at.slice(0, 10);
     const b = bucket(day);
     b.totalOrders += 1;
@@ -183,8 +175,10 @@ export const customerActivityReport: ReportModule = {
       "/admin/reports/customer-activity.csv",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchCustomerActivity(from, to);
+        const rows = await fetchCustomerActivity(orgId, from, to);
         setDownloadHeaders(
           res,
           "text/csv; charset=utf-8",
@@ -198,8 +192,10 @@ export const customerActivityReport: ReportModule = {
       "/admin/reports/customer-activity.pdf",
       requirePermission("reports.read"),
       async (req, res) => {
+        const orgId = reportOrgId(req, res);
+        if (!orgId) return;
         const { from, to } = parseRange(req);
-        const rows = await fetchCustomerActivity(from, to);
+        const rows = await fetchCustomerActivity(orgId, from, to);
         const totals = rows.reduce(
           (acc, r) => ({
             newCustomers: acc.newCustomers + r.newCustomers,
@@ -252,14 +248,14 @@ export const customerActivityReport: ReportModule = {
     );
   },
 
-  async buildEmailCsv(from, to) {
+  async buildEmailCsv(orgId, from, to) {
     const { res, collect } = bufferedRes();
-    writeCustomerActivityCsv(res, await fetchCustomerActivity(from, to));
+    writeCustomerActivityCsv(res, await fetchCustomerActivity(orgId, from, to));
     return collect();
   },
 
-  async buildEmailPdf(from, to) {
-    const rows = await fetchCustomerActivity(from, to);
+  async buildEmailPdf(orgId, from, to) {
+    const rows = await fetchCustomerActivity(orgId, from, to);
     const totals = rows.reduce(
       (acc, r) => ({
         newCustomers: acc.newCustomers + r.newCustomers,

@@ -222,9 +222,7 @@ router.get(
       .in("status", ["open", "awaiting_admin", "awaiting_patient"]);
     if (openErr) throw openErr;
     const queueSize = new Map<string, number>();
-    for (const r of (openConvos ?? []) as Array<{
-      assigned_admin_user_id: string | null;
-    }>) {
+    for (const r of openConvos ?? []) {
       const id = r.assigned_admin_user_id;
       if (!id) continue;
       queueSize.set(id, (queueSize.get(id) ?? 0) + 1);
@@ -291,10 +289,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const result = await maybeAutoAssignConversation(
-      supabase.raw(),
-      idCheck.data,
-    );
+    const result = await maybeAutoAssignConversation(supabase, idCheck.data);
 
     if (result.assigned) {
       await logAudit({

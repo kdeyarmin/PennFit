@@ -578,7 +578,7 @@ router.post(
     let trackingCode: string | null = null;
     if (getManualDocumentTypeDef(type).requiresSignature) {
       try {
-        const reg = await registerSignatureTracking(supabase.raw(), {
+        const reg = await registerSignatureTracking(supabase, {
           kind: "manual_document",
           documentId: inserted.id,
           title: b.title,
@@ -752,7 +752,7 @@ router.delete(
     if (error) throw error;
 
     await markTrackingCanceled(
-      supabase.raw(),
+      supabase,
       "manual_document",
       parsed.data.id,
     ).catch((err) =>
@@ -800,7 +800,7 @@ router.get(
     }
     let pdf: Buffer;
     try {
-      pdf = await renderManualDocumentRowToPdf(supabase.raw(), row);
+      pdf = await renderManualDocumentRowToPdf(row);
     } catch (err) {
       logger.warn({ err }, "manual_document.pdf render failed");
       res.status(500).json({ error: "render_failed" });
@@ -868,7 +868,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(supabase.raw(), row);
+    const pdf = await renderManualDocumentRowToPdf(row);
     const supplier = manualDocumentSupplierName();
     const text = [
       `Please find the attached document from ${supplier}.`,
@@ -921,7 +921,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      supabase.raw(),
+      supabase,
       "manual_document",
       row.id,
       "email",
@@ -1033,7 +1033,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      supabase.raw(),
+      supabase,
       "manual_document",
       row.id,
       "fax",
@@ -1105,7 +1105,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(supabase.raw(), row);
+    const pdf = await renderManualDocumentRowToPdf(row);
 
     // Upload the rendered PDF to private object storage, owned by the
     // patient — same pattern as the inbound-fax / portal-upload paths.

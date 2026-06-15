@@ -116,7 +116,7 @@ router.get(
     const supabase = getOrgScopedClient(orgId);
     const { status, ...rest } = parsed.data;
     const result = await listOutstandingSignatures(
-      supabase.raw(),
+      supabase,
       status === "unsent"
         ? { ...rest, status: "awaiting_signature", dispatched: false }
         : { ...rest, status },
@@ -146,7 +146,7 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const row = await lookupTrackingByCode(supabase.raw(), parsed.data.code);
+    const row = await lookupTrackingByCode(supabase, parsed.data.code);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -175,7 +175,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const row = await getTrackingById(supabase.raw(), params.data.id);
+    const row = await getTrackingById(supabase, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -189,7 +189,7 @@ router.post(
 
     // Mark returned and advance the source document (a prescription
     // packet still open is stamped signed so the two views agree).
-    await markReturnedAndCascade(supabase.raw(), row).catch((err) => {
+    await markReturnedAndCascade(supabase, row).catch((err) => {
       logger.warn(
         { err, document_id: row.documentId },
         "signature_tracking.mark_returned cascade failed",
@@ -248,7 +248,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const row = await getTrackingById(supabase.raw(), params.data.id);
+    const row = await getTrackingById(supabase, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -263,7 +263,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      supabase.raw(),
+      supabase,
       row.documentKind,
       row.documentId,
       "hand_delivery",
@@ -312,16 +312,12 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    const row = await getTrackingById(supabase.raw(), params.data.id);
+    const row = await getTrackingById(supabase, params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    await markTrackingCanceled(
-      supabase.raw(),
-      row.documentKind,
-      row.documentId,
-    );
+    await markTrackingCanceled(supabase, row.documentKind, row.documentId);
 
     await logAudit({
       action: "signature_tracking.canceled",

@@ -103,6 +103,7 @@ router.get(
       .select(
         "key, enabled, description, category, updated_by_email, updated_at",
       )
+      .eq("org_id", orgId)
       .order("category", { ascending: true })
       .order("key", { ascending: true });
     if (error) throw error;
@@ -150,13 +151,15 @@ router.patch(
       .select(
         "key, enabled, description, category, updated_by_email, updated_at",
       )
+      .eq("org_id", orgId)
       .eq("key", key)
       .maybeSingle();
     if (priorErr) throw priorErr;
     if (!priorRow) {
-      // The migration seeds every key; a missing row means the
-      // seed didn't run on this environment. Refuse rather than
-      // upsert blindly so we don't paper over a deploy bug.
+      // Every tenant is provisioned a full set of rows (the seed
+      // migration for the seed org; `tenant:onboard` for new orgs). A
+      // missing row means this org wasn't provisioned — refuse rather
+      // than upsert blindly so we don't paper over an onboarding bug.
       res.status(404).json({ error: "flag_not_seeded", key });
       return;
     }
@@ -177,6 +180,7 @@ router.patch(
         updated_by_email: req.adminEmail ?? null,
         updated_at: new Date().toISOString(),
       })
+      .eq("org_id", orgId)
       .eq("key", key)
       .select(
         "key, enabled, description, category, updated_by_email, updated_at",
@@ -224,6 +228,7 @@ router.patch(
       .schema("resupply")
       .from("feature_flag_events")
       .insert({
+        org_id: orgId,
         key,
         previous_enabled: priorRow.enabled,
         next_enabled: bodyParsed.data.enabled,
@@ -314,6 +319,7 @@ router.get(
       .select(
         "occurred_at, operator_email, key, previous_enabled, next_enabled",
       )
+      .eq("org_id", orgId)
       .order("occurred_at", { ascending: false })
       .limit(limit);
     if (error) throw error;

@@ -201,7 +201,7 @@ async function stampMemberDocumentsSent(
       continue;
     }
     await recordTrackingSent(
-      supabase.raw(),
+      supabase,
       "manual_document",
       docRow.id,
       channel,

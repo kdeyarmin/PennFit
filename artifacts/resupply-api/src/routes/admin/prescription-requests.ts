@@ -268,7 +268,7 @@ router.post(
     // fail the packet create (the PDF just renders without a barcode).
     let trackingCode: string | null = null;
     try {
-      const reg = await registerSignatureTracking(supabase.raw(), {
+      const reg = await registerSignatureTracking(supabase, {
         kind: "prescription_request",
         documentId: inserted.id,
         title: "Prescription request",
@@ -718,7 +718,7 @@ async function dispatchPacketFax(
       );
     }
     await recordTrackingSent(
-      supabase.raw(),
+      supabase,
       "prescription_request",
       packet.id,
       "fax",
@@ -933,7 +933,7 @@ router.post(
       .eq("id", params.data.id);
     if (updErr) throw updErr;
     await markTrackingReturned(
-      supabase.raw(),
+      supabase,
       "prescription_request",
       params.data.id,
     ).catch((err) => {
@@ -1000,7 +1000,7 @@ router.post(
       .eq("id", params.data.id);
     if (error) throw error;
     await markTrackingCanceled(
-      supabase.raw(),
+      supabase,
       "prescription_request",
       params.data.id,
     ).catch((err) => {

@@ -6,7 +6,11 @@
 // downloaded PDF, the emailed attachment, the faxed media, and the
 // chart-filed copy are byte-identical.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import {
   getCompanyInfo,
@@ -117,18 +121,22 @@ export async function loadManualDocumentRow(
  * same whether sent alone or inside a packet.
  */
 export async function buildManualDocumentPdfInput(
-  supabase: SupabaseClient,
   row: ManualDocumentRow,
   generatedOn: Date,
 ): Promise<ManualDocumentPdfInput> {
   // Best-effort: if the signature_tracking query fails (e.g. during a
   // migration window or a transient DB hiccup), render the PDF without
-  // a barcode rather than failing the whole download.
-  const trackingCode = await getTrackingCodeForDocument(
-    supabase,
-    "manual_document",
-    row.id,
-  ).catch(() => null);
+  // a barcode rather than failing the whole download. signature-tracking
+  // reads go through the org-scoped chokepoint; scoped to the seed org
+  // (single-tenant bridge) since the renderer carries no request tenant.
+  const sigOrgId = await resolveSeedOrgId();
+  const trackingCode = sigOrgId
+    ? await getTrackingCodeForDocument(
+        getOrgScopedClient(sigOrgId),
+        "manual_document",
+        row.id,
+      ).catch(() => null)
+    : null;
   const supplierContact = await manualDocumentSupplierContact();
   return {
     documentType: row.document_type,
@@ -153,10 +161,9 @@ export async function buildManualDocumentPdfInput(
  * email, fax, chart copy) byte-identical.
  */
 export async function renderManualDocumentRowToPdf(
-  supabase: SupabaseClient,
   row: ManualDocumentRow,
   generatedOn: Date = new Date(),
 ): Promise<Buffer> {
-  const input = await buildManualDocumentPdfInput(supabase, row, generatedOn);
+  const input = await buildManualDocumentPdfInput(row, generatedOn);
   return renderManualDocumentPdf(input);
 }

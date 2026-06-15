@@ -28,9 +28,7 @@
 
 import { randomInt } from "node:crypto";
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 export type SignatureDocumentKind = "prescription_request" | "manual_document";
 export type SignatureTrackingStatus =
@@ -118,11 +116,10 @@ export interface RegisterSignatureTrackingInput {
  * awaiting_signature (the document is being sent again).
  */
 export async function registerSignatureTracking(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   input: RegisterSignatureTrackingInput,
 ): Promise<{ trackingCode: string; id: string; created: boolean }> {
   const { data: existing, error: loadErr } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select("id, tracking_code")
     .eq("document_kind", input.kind)
@@ -134,7 +131,6 @@ export async function registerSignatureTracking(
   const nowIso = new Date().toISOString();
   if (existing) {
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("signature_tracking")
       .update({
         title: input.title,
@@ -163,7 +159,6 @@ export async function registerSignatureTracking(
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const trackingCode = generateTrackingCode();
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("signature_tracking")
       .insert({
         tracking_code: trackingCode,
@@ -194,7 +189,6 @@ export async function registerSignatureTracking(
     const code = (insertErr as { code?: string } | null)?.code;
     if (code === "23505") {
       const { data: raced } = await supabase
-        .schema("resupply")
         .from("signature_tracking")
         .select("id, tracking_code")
         .eq("document_kind", input.kind)
@@ -218,12 +212,11 @@ export async function registerSignatureTracking(
 
 /** Look up the tracking code already assigned to a document, if any. */
 export async function getTrackingCodeForDocument(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
 ): Promise<string | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select("tracking_code")
     .eq("document_kind", kind)
@@ -241,13 +234,12 @@ export async function getTrackingCodeForDocument(
  * feature) is a no-op rather than an error.
  */
 export async function recordTrackingSent(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
   channel: SignatureDeliveryChannel,
 ): Promise<void> {
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select("id, sent_count")
     .eq("document_kind", kind)
@@ -258,7 +250,6 @@ export async function recordTrackingSent(
   if (!row) return;
   const nowIso = new Date().toISOString();
   const { error: updErr } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .update({
       sent_count: (row.sent_count ?? 0) + 1,
@@ -273,13 +264,12 @@ export async function recordTrackingSent(
 
 /** Mark the document's tracking row as returned-signed. Best-effort. */
 export async function markTrackingReturned(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
 ): Promise<void> {
   const nowIso = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .update({
       status: "returned_signed",
@@ -301,14 +291,13 @@ export async function markTrackingReturned(
  * terminal).
  */
 export async function markReturnedAndCascade(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   row: SignatureTrackingRow,
 ): Promise<{ cascaded: boolean }> {
   await markTrackingReturned(supabase, row.documentKind, row.documentId);
   if (row.documentKind !== "prescription_request") return { cascaded: false };
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase
-    .schema("resupply")
     .from("prescription_request_packets")
     .update({ status: "signed", signed_at: nowIso, updated_at: nowIso })
     .eq("id", row.documentId)
@@ -320,13 +309,12 @@ export async function markReturnedAndCascade(
 
 /** Mark the document's tracking row as canceled. Best-effort. */
 export async function markTrackingCanceled(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   kind: SignatureDocumentKind,
   documentId: string,
 ): Promise<void> {
   const nowIso = new Date().toISOString();
   const { error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .update({ status: "canceled", canceled_at: nowIso, updated_at: nowIso })
     .eq("document_kind", kind)
@@ -410,12 +398,11 @@ function projectRow(r: SignatureTrackingDbRow): SignatureTrackingRow {
 
 /** Resolve a scanned / typed tracking code to its row (or null). */
 export async function lookupTrackingByCode(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   rawCode: string,
 ): Promise<SignatureTrackingRow | null> {
   const code = normalizeTrackingCode(rawCode);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select(ROW_COLUMNS)
     .eq("tracking_code", code)
@@ -428,11 +415,10 @@ export async function lookupTrackingByCode(
 
 /** Load one tracking row by its id. */
 export async function getTrackingById(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   id: string,
 ): Promise<SignatureTrackingRow | null> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select(ROW_COLUMNS)
     .eq("id", id)
@@ -492,14 +478,13 @@ const MAX_LIMIT = 500;
  * {@link recordTrackingSent}.
  */
 export async function listOutstandingSignatures(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   opts: ListOutstandingOptions = {},
 ): Promise<OutstandingSignaturesResult> {
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
   const status = opts.status ?? "awaiting_signature";
 
   let query = supabase
-    .schema("resupply")
     .from("signature_tracking")
     .select(ROW_COLUMNS)
     .eq("status", status)

@@ -11,7 +11,8 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
+import { MOCK_ORG_ID } from "../../test-helpers/auth-mocks";
 
 import { maybeAutoAssignConversation } from "./auto-assign";
 
@@ -40,7 +41,7 @@ describe("maybeAutoAssignConversation — availability", () => {
     stageSupabaseResponse("conversations", "update", { data: [{ id: "c1" }] });
 
     const result = await maybeAutoAssignConversation(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "c1",
     );
     expect(result).toEqual({
@@ -63,7 +64,7 @@ describe("maybeAutoAssignConversation — availability", () => {
     });
 
     const result = await maybeAutoAssignConversation(
-      getSupabaseServiceRoleClient(),
+      getOrgScopedClient(MOCK_ORG_ID),
       "c1",
     );
     expect(result).toEqual({

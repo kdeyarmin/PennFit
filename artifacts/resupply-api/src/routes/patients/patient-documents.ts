@@ -430,11 +430,11 @@ router.post(
     let signatureMarkedReturned = false;
     if (body.data.signatureTrackingCode) {
       const tracking = await lookupTrackingByCode(
-        supabase.raw(),
+        supabase,
         body.data.signatureTrackingCode,
       ).catch(() => null);
       if (tracking && tracking.status === "awaiting_signature") {
-        await markReturnedAndCascade(supabase.raw(), tracking).catch((err) => {
+        await markReturnedAndCascade(supabase, tracking).catch((err) => {
           logger.warn({ err }, "admin_patient_document.mark_returned failed");
         });
         signatureMarkedReturned = true;
