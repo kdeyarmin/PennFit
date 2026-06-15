@@ -154,7 +154,7 @@ router.post(
     }
 
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -433,7 +433,7 @@ router.post(
     const patientId = idCheck.data;
 
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -581,7 +581,7 @@ router.delete(
     const patientId = idCheck.data;
 
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
