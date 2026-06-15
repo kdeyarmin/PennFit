@@ -13,7 +13,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   MAINTENANCE_CATALOG,
@@ -31,12 +31,12 @@ const logParams = z.object({
 });
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -52,7 +52,15 @@ router.get("/shop/me/maintenance", requireSignedIn, async (req, res) => {
     res.json(emptyResponse({ patientLinked: false }));
     return;
   }
-  const patientId = await resolveSinglePatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(
+    orgIdForLookup,
+    customerEmail,
+  );
   if (!patientId) {
     res.json(emptyResponse({ patientLinked: false }));
     return;
@@ -62,9 +70,13 @@ router.get("/shop/me/maintenance", requireSignedIn, async (req, res) => {
   // do GROUP BY MAX cleanly, so we fetch all rows for the patient
   // and reduce in memory. The data is small (5 tasks × N
   // completions; even a daily wipe over a year is 365 rows).
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: log, error } = await supabase
-    .schema("resupply")
     .from("patient_maintenance_log")
     .select("task_key, completed_at")
     .eq("patient_id", patientId)
@@ -118,7 +130,15 @@ router.post(
       res.status(403).json({ error: "patient_not_linked" });
       return;
     }
-    const patientId = await resolveSinglePatientByEmail(customerEmail);
+    const orgIdForLookup = req.orgId;
+    if (!orgIdForLookup) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const patientId = await resolveSinglePatientByEmail(
+      orgIdForLookup,
+      customerEmail,
+    );
     if (!patientId) {
       res.status(403).json({ error: "patient_not_linked" });
       return;
@@ -130,9 +150,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patient_maintenance_log")
       .insert({
         patient_id: patientId,

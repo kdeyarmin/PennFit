@@ -4,7 +4,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { buildQuarterlySummary } from "../../lib/therapy-summary/build-quarterly-html";
 import { logger } from "../../lib/logger";
@@ -14,16 +14,18 @@ const router: IRouter = Router();
 
 const WINDOW_DAYS = 90;
 
-async function resolveSinglePatientByEmail(customerEmail: string): Promise<{
+async function resolveSinglePatientByEmail(
+  orgId: string,
+  customerEmail: string,
+): Promise<{
   id: string;
   legalFirstName: string;
   legalLastName: string;
   dateOfBirth: string | null;
 } | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name, date_of_birth")
     .ilike("email", escaped)
@@ -45,7 +47,15 @@ router.get("/shop/me/quarterly-summary", requireSignedIn, async (req, res) => {
     res.status(403).json({ error: "patient_not_linked" });
     return;
   }
-  const patient = await resolveSinglePatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patient = await resolveSinglePatientByEmail(
+    orgIdForLookup,
+    customerEmail,
+  );
   if (!patient) {
     res.status(403).json({ error: "patient_not_linked" });
     return;
@@ -56,9 +66,13 @@ router.get("/shop/me/quarterly-summary", requireSignedIn, async (req, res) => {
   const startIso = windowStart.toISOString().slice(0, 10);
   const endIso = windowEnd.toISOString().slice(0, 10);
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: nights, error } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("night_date, usage_minutes, ahi, leak_rate_l_min, source")
     .eq("patient_id", patient.id)
@@ -72,7 +86,11 @@ router.get("/shop/me/quarterly-summary", requireSignedIn, async (req, res) => {
     windowStart: startIso,
     windowEnd: endIso,
     practiceName: process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
-    nights: (nights ?? []).map((n) => ({
+    nights: (
+      (nights ?? []) as Array<
+        Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]
+      >
+    ).map((n) => ({
       nightDate: n.night_date,
       usageMinutes: n.usage_minutes,
       ahi: n.ahi == null ? null : Number(n.ahi),

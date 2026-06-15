@@ -28,7 +28,8 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  type Database,
+  getOrgScopedClient,
   SMART_TRIGGER_KINDS,
   type SmartTriggerKind,
 } from "@workspace/resupply-db";
@@ -76,14 +77,14 @@ interface CustomerInsight {
  * the local part, so the escape isn't optional.
  */
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   // Escape LIKE metacharacters so e.g. "alice_smith@…" doesn't match
   // "aliceXsmith@…".
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escaped)
@@ -110,13 +111,26 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
 
   // No match → no data to surface. Ambiguous email → empty rather
   // than risk exposing one patient's data to another.
-  const patientId = await resolveSinglePatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const patientId = await resolveSinglePatientByEmail(
+    orgIdForLookup,
+    customerEmail,
+  );
   if (!patientId) {
     res.json({ insights: [] });
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   // Restrict to the patient-facing kinds (the ones COPY can render).
   // The trigger table also holds clinician-owned CLINICAL kinds
   // (pressure_at_max, ahi_elevated, ahi_rising, non_adherent_30d,
@@ -124,7 +138,6 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
   // COPY has no entry for, so projecting one would 500. Filtering at the
   // query also keeps clinical rows from consuming the RESPONSE_LIMIT.
   const { data: events, error } = await supabase
-    .schema("resupply")
     .from("patient_smart_trigger_events")
     .select(
       "id, kind, detected_at, window_start_date, window_end_date, sent_at",
@@ -136,7 +149,11 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
     .limit(RESPONSE_LIMIT);
   if (error) throw error;
 
-  const insights: CustomerInsight[] = (events ?? []).map((e) =>
+  const insights: CustomerInsight[] = (
+    (events ?? []) as Array<
+      Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]
+    >
+  ).map((e) =>
     project(e.id, e.kind as SmartTriggerKind, e.detected_at, {
       windowStartDate: e.window_start_date,
       windowEndDate: e.window_end_date,
@@ -190,13 +207,29 @@ router.post(
     }
     const id = idParse.data;
 
-    const patientId = await resolveSinglePatientByEmail(customerEmail);
+    const orgIdForLookup = req.orgId;
+
+    if (!orgIdForLookup) {
+      res.status(500).json({ error: "tenant_context_missing" });
+
+      return;
+    }
+
+    const patientId = await resolveSinglePatientByEmail(
+      orgIdForLookup,
+      customerEmail,
+    );
     if (!patientId) {
       res.status(404).json({ error: "insight_not_found" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Atomic dismiss — scoped to the single unambiguous patient row.
     // The .is("dismissed_at", null) guard mirrors the original
@@ -204,7 +237,6 @@ router.post(
     // or wrong patient_id, both of which collapse to a 404.
     const nowIso = new Date().toISOString();
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .update({
         dismissed_at: nowIso,

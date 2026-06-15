@@ -6,7 +6,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -36,7 +36,12 @@ router.post(
       res.status(401).json({ error: "unauthenticated" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Verify the order belongs to this customer by customer_id — the
     // session-derived key every sibling `/shop/me/*` route filters on
     // (see resend-receipt.ts). The previous customer_email match let
@@ -44,7 +49,6 @@ router.post(
     // member's separate account, or a guest order later claimed under
     // the same address) open loss claims on it.
     const { data: order, error: orderErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, customer_id, shipped_at")
       .eq("id", idParse.data)
@@ -66,7 +70,6 @@ router.post(
     // Duplicate guard: one OPEN claim per order. Re-submitting while a
     // claim is being worked just resurfaces the same CSR task.
     const { data: existingClaim, error: existingErr } = await supabase
-      .schema("resupply")
       .from("shop_order_loss_claims")
       .select("id")
       .eq("order_id", idParse.data)
@@ -84,7 +87,6 @@ router.post(
       return;
     }
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_order_loss_claims")
       .insert({
         order_id: idParse.data,
