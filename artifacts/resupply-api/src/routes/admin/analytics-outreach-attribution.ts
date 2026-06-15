@@ -16,7 +16,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateOutreachAttribution,
@@ -71,13 +71,16 @@ function handleWindowTooLarge(err: unknown, res: Response): boolean {
   return false;
 }
 
-async function loadOutreachAttribution(cutoff: string, windowDays: number) {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadOutreachAttribution(
+  orgId: string,
+  cutoff: string,
+  windowDays: number,
+) {
+  const supabase = getOrgScopedClient(orgId);
 
   const [convRes, clinRes, fulRes] = await Promise.all([
     // Resupply reminders = episode-linked conversations opened in window.
     supabase
-      .schema("resupply")
       .from("conversations")
       .select("patient_id, created_at", { count: "exact" })
       .not("episode_id", "is", null)
@@ -86,7 +89,6 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
       .limit(READ_CAP),
     // Clinical outreach actually sent in window.
     supabase
-      .schema("resupply")
       .from("clinical_outreach_log")
       .select("patient_id, created_at", { count: "exact" })
       .eq("status", "sent")
@@ -96,7 +98,6 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
     // Fulfillments from window start onward (a contact can only be
     // credited a fulfillment at/after it).
     supabase
-      .schema("resupply")
       .from("fulfillments")
       .select("patient_id, created_at", { count: "exact" })
       .gte("created_at", cutoff)
@@ -128,8 +129,8 @@ async function loadOutreachAttribution(cutoff: string, windowDays: number) {
       }));
 
   const fulfillments: FulfillmentEvent[] = (fulRes.data ?? [])
-    .filter((r) => r.patient_id && r.created_at)
-    .map((r) => ({
+    .filter((r: Record<string, unknown>) => r.patient_id && r.created_at)
+    .map((r: Record<string, unknown>) => ({
       patientId: r.patient_id as string,
       at: r.created_at as string,
     }));
@@ -146,6 +147,11 @@ router.get(
   "/admin/analytics/outreach-attribution",
   requirePermission("reports.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
@@ -154,6 +160,7 @@ router.get(
     const { days, attributionWindowDays } = parsed.data;
     try {
       const result = await loadOutreachAttribution(
+        orgId,
         isoDaysAgo(days),
         attributionWindowDays,
       );
@@ -169,6 +176,11 @@ router.get(
   "/admin/analytics/outreach-attribution.csv",
   requirePermission("reports.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
@@ -178,6 +190,7 @@ router.get(
     let result: Awaited<ReturnType<typeof loadOutreachAttribution>>;
     try {
       result = await loadOutreachAttribution(
+        orgId,
         isoDaysAgo(days),
         attributionWindowDays,
       );

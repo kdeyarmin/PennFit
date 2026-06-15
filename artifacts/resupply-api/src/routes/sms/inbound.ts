@@ -46,6 +46,7 @@ import { Router, type IRouter } from "express";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
   tryUpsertPatientLatestMessageSb,
   type Json,
@@ -320,7 +321,10 @@ router.post(
       earlyRouted.intent !== "start"
     ) {
       try {
-        const activeClosure = await findActiveClosure(supabase);
+        const orgId = req.orgId;
+        const activeClosure = orgId
+          ? await findActiveClosure(orgId, getOrgScopedClient(orgId))
+          : null;
         if (activeClosure) {
           await safeAudit({
             action: "messaging.inbound.received",

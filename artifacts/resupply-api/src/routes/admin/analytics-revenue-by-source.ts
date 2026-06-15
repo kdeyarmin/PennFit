@@ -19,7 +19,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   aggregateRevenueBySource,
@@ -54,26 +54,27 @@ function isoDaysAgo(days: number): string {
   return d.toISOString();
 }
 
-async function loadRevenueBySource(cutoff: string) {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadRevenueBySource(orgId: string, cutoff: string) {
+  const supabase = getOrgScopedClient(orgId);
 
   const [shopRes, fulRes, clinicalRes] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("status, amount_total_cents", { count: "exact" })
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     supabase
-      .schema("resupply")
       .from("fulfillments")
       .select("status, quantity", { count: "exact" })
       .gte("created_at", cutoff)
       .order("created_at", { ascending: false })
       .limit(READ_CAP),
     // Head-only count — public.orders holds PHI; we never pull its rows.
+    // public.orders is a non-tenant (cross-schema) table, so it stays on
+    // the raw client rather than the org-scoped `.from()` facade.
     supabase
+      .raw()
       .schema("public")
       .from("orders")
       .select("id", { count: "exact", head: true })
@@ -118,9 +119,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     try {
-      const result = await loadRevenueBySource(isoDaysAgo(days));
+      const result = await loadRevenueBySource(orgId, isoDaysAgo(days));
       res.json({ windowDays: days, ...result });
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
@@ -138,10 +144,15 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     let result: Awaited<ReturnType<typeof loadRevenueBySource>>;
     try {
-      result = await loadRevenueBySource(isoDaysAgo(days));
+      result = await loadRevenueBySource(orgId, isoDaysAgo(days));
     } catch (err) {
       if (handleWindowTooLarge(err, res)) return;
       throw err;

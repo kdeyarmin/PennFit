@@ -2,9 +2,7 @@
 // the inbound SMS handler to swap the normal intent dispatcher for
 // an auto-reply, and by the admin UI to render a banner.
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 export interface ActiveClosure {
   id: string;
@@ -20,13 +18,13 @@ export interface ActiveClosure {
  *  a recorded "Christmas Day" closure overrides a generic "every
  *  Sunday" rule if both happen to overlap. */
 export async function findActiveClosure(
-  supabase: SupabaseClient,
+  orgId: string,
+  supabase: OrgScopedClient,
   asOf: Date = new Date(),
 ): Promise<ActiveClosure | null> {
   const iso = asOf.toISOString();
   // One-off check first.
   const { data: oneOff, error: oneOffErr } = await supabase
-    .schema("resupply")
     .from("office_closures")
     .select("id, label, starts_at, ends_at, auto_reply_message")
     .lte("starts_at", iso)
@@ -52,7 +50,6 @@ export async function findActiveClosure(
   const ss = String(asOf.getUTCSeconds()).padStart(2, "0");
   const nowTimeUtc = `${hh}:${mm}:${ss}`;
   const { data: recurring, error: recErr } = await supabase
-    .schema("resupply")
     .from("office_recurring_closures")
     .select(
       "id, label, day_of_week, start_time_utc, end_time_utc, auto_reply_message, active",
