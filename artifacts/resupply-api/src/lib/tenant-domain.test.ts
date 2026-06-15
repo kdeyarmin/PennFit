@@ -62,13 +62,19 @@ describe("generateDomainToken", () => {
 
 describe("buildDomainInstructions", () => {
   const prev = process.env.PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET;
+  const prevRailwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
   afterEach(() => {
     if (prev === undefined)
       delete process.env.PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET;
     else process.env.PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET = prev;
+
+    if (prevRailwayPublicDomain === undefined)
+      delete process.env.RAILWAY_PUBLIC_DOMAIN;
+    else process.env.RAILWAY_PUBLIC_DOMAIN = prevRailwayPublicDomain;
   });
 
   it("builds the default CNAME target, TXT name under the verify label, and embeds the token", () => {
+    delete process.env.RAILWAY_PUBLIC_DOMAIN;
     const ins = buildDomainInstructions("shop.acme.com", "tok123");
     expect(ins.cnameTarget).toBe("cmbreathe.com");
     expect(ins.txtName).toBe(`${DOMAIN_VERIFY_TXT_HOST}.shop.acme.com`);
