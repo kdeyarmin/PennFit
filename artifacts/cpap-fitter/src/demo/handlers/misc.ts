@@ -19,7 +19,7 @@ function chatReply(messages: ChatMessage[] | undefined): string {
     .find((m) => m.role === "user");
   const q = (lastUser?.content ?? "").toLowerCase();
   if (q.includes("leak")) {
-    return "Mask leaks usually come down to fit. Try re-seating the cushion with the machine running and loosen the top straps a touch — over-tightening is the most common cause. If it keeps leaking, you might be between sizes and a quick refit would help. (You're in the PennFit demo, so this is a sample answer.)";
+    return "Mask leaks usually come down to fit. Try re-seating the cushion with the machine running and loosen the top straps a touch — over-tightening is the most common cause. If it keeps leaking, you might be between sizes and a quick refit would help. (You're in the CareMetric Breathe demo, so this is a sample answer.)";
   }
   if (q.includes("insurance") || q.includes("cost") || q.includes("price")) {
     return "Most insurance plans cover CPAP resupplies on a set schedule. Once your deductible is met, many members pay little or nothing out of pocket. Head to the Insurance page for a quick estimate. (Demo answer — no real account is used.)";
@@ -27,7 +27,7 @@ function chatReply(messages: ChatMessage[] | undefined): string {
   if (q.includes("order") || q.includes("ship") || q.includes("track")) {
     return "You can see every order, tracking number, and delivery date under Account → Orders. Reorders ship on your subscription cadence, and you can change that anytime. (This is a demonstration response.)";
   }
-  return "Hi! I'm PennBot. I can help with mask fit, resupply timing, insurance, and orders. Ask me anything — and remember you're exploring the PennFit demo, so the data here is simulated.";
+  return "Hi! I'm CareMetric Assistant. I can help with mask fit, resupply timing, insurance, and orders. Ask me anything — and remember you're exploring the CareMetric Breathe demo, so the data here is simulated.";
 }
 
 function chatHandler(req: Parameters<DemoHandler["handle"]>[0]): Response {

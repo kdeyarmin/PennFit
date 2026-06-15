@@ -1,4 +1,4 @@
-// Inbound-fax barcode fast-path — read the PennFit signature-tracking code
+// Inbound-fax barcode fast-path — read the signature-tracking code
 // off a returned fax DETERMINISTICALLY, before falling back to the (paid,
 // AI) vision scan in tracking-scan.ts.
 //
@@ -53,7 +53,7 @@ const MAX_PDF_PAGES = 3;
 /**
  * Decode one raster row (grayscale in the first channel) into a tracking
  * code, or null. Binarizes against the row's own midpoint so it adapts to a
- * faint fax, and only returns a code that is a well-formed PennFit handle.
+ * faint fax, and only returns a code that is a well-formed tracking-code handle.
  */
 function decodeRowAt(
   data: Uint8Array | Buffer,
@@ -205,7 +205,7 @@ async function decodeRasterImage(bytes: Buffer): Promise<string | null> {
 }
 
 /**
- * Deterministically read the PennFit tracking code off a fax, or null.
+ * Deterministically read the tracking code off a fax, or null.
  * Never throws — any error (unsupported type, missing rasterizer, decode
  * miss) returns null so the caller falls back to the vision scan.
  */

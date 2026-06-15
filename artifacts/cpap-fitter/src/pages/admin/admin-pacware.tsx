@@ -63,10 +63,11 @@ export function AdminPacwarePage() {
           <Boxes className="h-6 w-6" /> PacWare data exchange
         </h1>
         <p className="text-sm mt-1" style={{ color: "hsl(var(--ink-3))" }}>
-          PacWare has no API, so PennFit exchanges data with it as CSV files.
-          Import patient reports (a <strong>fill-only sync</strong> that never
-          overwrites existing values), and sync PennFit data to PacWare after
-          verifying exactly what will be sent. Step-by-step instructions live in{" "}
+          PacWare has no API, so CareMetric Breathe exchanges data with it as
+          CSV files. Import patient reports (a <strong>fill-only sync</strong>{" "}
+          that never overwrites existing values), and sync CareMetric Breathe
+          data to PacWare after verifying exactly what will be sent.
+          Step-by-step instructions live in{" "}
           <code className="text-xs">
             docs/runbooks/pacware-import-export.md
           </code>
@@ -112,7 +113,7 @@ function HowToCard() {
         <div className="mt-3 grid gap-6 md:grid-cols-2 text-sm">
           <div>
             <h3 className="font-semibold mb-1">
-              Import: PacWare → PennFit (patients)
+              Import: PacWare → CareMetric Breathe (patients)
             </h3>
             <ol className="list-decimal pl-5 space-y-1" style={muted}>
               <li>
@@ -132,13 +133,14 @@ function HowToCard() {
               <li>
                 Re-running is safe: rows match on{" "}
                 <code className="text-xs">pacware_id</code> and the sync is
-                fill-only — existing PennFit values are never overwritten.
+                fill-only — existing CareMetric Breathe values are never
+                overwritten.
               </li>
             </ol>
           </div>
           <div>
             <h3 className="font-semibold mb-1">
-              Export: PennFit → PacWare (roster / resupply-due)
+              Export: CareMetric Breathe → PacWare (roster / resupply-due)
             </h3>
             <ol className="list-decimal pl-5 space-y-1" style={muted}>
               <li>
@@ -237,8 +239,8 @@ function ImportCard() {
         In PacWare, run the Patient List / Patient Demographics report and
         export it to CSV. Upload it here — patients are matched on the PacWare
         account number: new patients are created, and for existing patients only{" "}
-        <strong>blank</strong> fields are filled in — a value already in PennFit
-        is never overwritten.
+        <strong>blank</strong> fields are filled in — a value already in
+        CareMetric Breathe is never overwritten.
       </p>
 
       <div className="flex items-center gap-3">

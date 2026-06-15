@@ -134,7 +134,7 @@ async function sendIntegrationAlert(
     throw err;
   }
 
-  const subject = `[PennFit] Integration alert: ${key} has failed ${consecutiveFailures} consecutive time(s)`;
+  const subject = `[CareMetric Breathe] Integration alert: ${key} has failed ${consecutiveFailures} consecutive time(s)`;
   const html = `
     <p>The <strong>${escHtml(key)}</strong> integration cron has failed
     <strong>${consecutiveFailures}</strong> consecutive run(s).</p>

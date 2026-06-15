@@ -36,6 +36,10 @@ import {
 import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger.js";
+import {
+  applyCompanyIdentityToText,
+  applyPlatformBranding,
+} from "../company-info.js";
 
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
 export const MAX_ADMIN_TOOL_ROUNDS = 2;
@@ -211,7 +215,13 @@ function buildSuggestionEmail(
     `</div>`,
   ].join("");
 
-  return { subject, text, html };
+  // Normalize platform/assistant brand tokens (PennPilot → the tenant's
+  // admin-assistant name, PennFit → CareMetric Breathe) and the tenant's
+  // own brand (PennPaps → saved company name). No-ops for the Penn Home
+  // Medical Supply tenant, whose configured names are the originals.
+  const brand = (s: string): string =>
+    applyCompanyIdentityToText(applyPlatformBranding(s));
+  return { subject: brand(subject), text: brand(text), html: brand(html) };
 }
 
 /**

@@ -3,7 +3,7 @@
 // Unlike the therapy-cloud adapters (which need vendor credentials to be
 // "configured"), the PacWare exchange is a MANUAL FILE exchange: an
 // operator runs a report in the PacWare client and uploads it, and
-// downloads PennFit exports to import into PacWare. There are no
+// downloads CareMetric Breathe exports to import into PacWare. There are no
 // credentials, so the surface is always available unless an operator
 // explicitly disables it.
 //

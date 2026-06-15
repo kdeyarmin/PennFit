@@ -190,7 +190,7 @@ export async function ingestInboundFax(
 
   // Step 3: barcode auto-file (opt-in). When `fax.auto_file_signed` is on
   // and this is a signed copy of a document we sent out, read the printed
-  // PennFit tracking code, file the fax into the patient's chart, mark the
+  // tracking code, file the fax into the patient's chart, mark the
   // signature returned, and release the bill hold. Runs BEFORE the
   // fax-number match below so the precise per-document match takes
   // precedence. Best-effort — never throws; an unmatched fax just stays

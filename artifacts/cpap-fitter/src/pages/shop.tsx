@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
 import { openPennBot } from "@/lib/chat-events";
 import {
   ArrowRight,
@@ -1202,6 +1203,7 @@ function ShopLoadError({
 }
 
 function ShopComingSoon({ message }: { message: string }) {
+  const assistantName = useCompanyContact().assistantStorefrontName;
   return (
     <div
       className="glass-card rounded-2xl p-10 md:p-14 text-center mt-12 max-w-2xl mx-auto"
@@ -1234,7 +1236,7 @@ function ShopComingSoon({ message }: { message: string }) {
           }
           data-testid="shop-coming-soon-ask-pennbot"
         >
-          <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
+          <Sparkles className="w-4 h-4 mr-2" /> Ask {assistantName}
         </Button>
       </div>
     </div>
