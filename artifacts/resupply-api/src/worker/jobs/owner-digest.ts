@@ -15,7 +15,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -219,17 +219,28 @@ export interface OwnerDigestResult {
 export async function runOwnerDigest(
   deps: DigestDeps = {},
 ): Promise<OwnerDigestResult> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return {
+      hasData: false,
+      emailed: 0,
+      skippedNoSendgrid: false,
+      skippedNoRecipients: true,
+    };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const cutoff = dateMinusDays(Date.now(), 14);
 
   const [metricsRes, alertsRes] = await Promise.all([
     supabase
+      .raw()
       .schema("resupply")
       .from("metrics_daily")
       .select("metric_key, metric_date, metric_value")
       .gte("metric_date", cutoff)
       .limit(5000),
     supabase
+      .raw()
       .schema("resupply")
       .from("metric_alerts")
       .select("severity, metric_key, metric_date, message, status")

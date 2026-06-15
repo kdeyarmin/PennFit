@@ -23,7 +23,8 @@
 import { randomBytes } from "node:crypto";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Json,
 } from "@workspace/resupply-db";
 
@@ -148,9 +149,14 @@ export async function autoEnrollReminderFromOrder(
   if (items.length === 0) return { enrolled: false, reason: "no_consumables" };
 
   const email = input.email.trim().toLowerCase();
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { enrolled: false, reason: "disabled" };
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: existing, error: lookupErr } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select("email, status, items")
@@ -170,6 +176,7 @@ export async function autoEnrollReminderFromOrder(
       return { enrolled: false, reason: "no_change" };
     }
     const { error: updErr } = await supabase
+      .raw()
       .schema("public")
       .from("reminder_subscriptions")
       .update({
@@ -182,6 +189,7 @@ export async function autoEnrollReminderFromOrder(
   }
 
   const { error: insErr } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .insert({

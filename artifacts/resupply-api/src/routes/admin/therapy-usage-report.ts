@@ -261,6 +261,9 @@ async function buildGroupingMap(
     const providerById = new Map<string, GroupRef>();
     for (const chunk of chunkIds([...providerIds])) {
       const { data: provData, error: provErr } = await supabase
+        // providers is a GLOBAL NPI registry (no org_id) — unscoped client.
+        .raw()
+        .schema("resupply")
         .from("providers")
         .select("id, legal_name, npi, practice_name")
         .in("id", chunk);

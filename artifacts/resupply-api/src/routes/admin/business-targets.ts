@@ -13,7 +13,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { parsePeriodRange, computeGoalPace } from "@workspace/resupply-domain";
 
 import { logger } from "../../lib/logger";
@@ -66,14 +66,22 @@ router.get(
   "/admin/business-targets",
   requirePermission("targets.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     const parsed = listQuery.safeParse(req.query);
     const period = parsed.success ? parsed.data.period : undefined;
 
-    const supabase = getSupabaseServiceRoleClient();
     let query = supabase
+      .raw()
       .schema("resupply")
       .from("business_targets")
       .select(TARGET_SELECT)
+      .eq("org_id", orgId)
       .order("period", { ascending: false })
       .limit(500);
     if (period) query = query.eq("period", period);
@@ -111,6 +119,7 @@ router.get(
         .sort()
         .at(-1) as string;
       const { data: metrics, error: metricsErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("metrics_daily")
         .select("metric_key, metric_date, metric_value")
@@ -181,12 +190,20 @@ router.put(
     }
     const d = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     const { data: row, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("business_targets")
       .upsert(
         {
+          org_id: orgId,
           metric_key: d.metricKey,
           period: d.period,
           target_value: d.targetValue,

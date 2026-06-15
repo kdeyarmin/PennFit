@@ -74,6 +74,10 @@ router.get(
     }
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      // education_videos is a GLOBAL content catalog (no org_id column) —
+      // reach it via the unscoped client, not the org-scoped facade.
+      .raw()
+      .schema("resupply")
       .from("education_videos")
       .select("*")
       .order("sort_order", { ascending: true })
@@ -104,6 +108,10 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      // education_videos is a GLOBAL content catalog (no org_id column) —
+      // reach it via the unscoped client, not the org-scoped facade.
+      .raw()
+      .schema("resupply")
       .from("education_videos")
       .insert({
         title: b.title,
@@ -161,6 +169,10 @@ router.patch(
     }
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      // education_videos is a GLOBAL content catalog (no org_id column) —
+      // reach it via the unscoped client, not the org-scoped facade.
+      .raw()
+      .schema("resupply")
       .from("education_videos")
       .update(update as never)
       .eq("id", idOk.data)

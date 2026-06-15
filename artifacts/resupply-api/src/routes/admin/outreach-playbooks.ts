@@ -28,7 +28,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   PLAYBOOK_CHANNELS,
@@ -158,14 +158,21 @@ router.get(
   "/admin/outreach-playbooks",
   adminReadRateLimiter,
   requirePermission("conversations.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const playbooksRes = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbooks")
       .select(
         "id, playbook_key, name, situation, description, category, is_active, is_seeded, updated_at",
       )
+      .eq("org_id", orgId)
       .order("category", { ascending: true })
       .order("name", { ascending: true })
       .limit(200);
@@ -185,19 +192,23 @@ router.get(
     const [stepsRes, activeRunsRes] = await Promise.all([
       playbookIds.length > 0
         ? supabase
+            .raw()
             .schema("resupply")
             .from("outreach_playbook_steps")
             .select(
               "id, playbook_id, step_index, day_offset, channel, subject, body",
             )
+            .eq("org_id", orgId)
             .in("playbook_id", playbookIds)
             .order("step_index", { ascending: true })
             .limit(4000)
         : Promise.resolve({ data: [], error: null }),
       supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_runs")
         .select("playbook_id")
+        .eq("org_id", orgId)
         .eq("status", "active")
         .limit(5000),
     ]);
@@ -273,11 +284,18 @@ router.post(
       .slice(0, 80);
     const playbookKey = `custom_${slug || "playbook"}_${Date.now().toString(36)}`;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: created, error: createErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbooks")
       .insert({
+        org_id: orgId,
         playbook_key: playbookKey,
         name: parsed.data.name,
         situation: parsed.data.situation,
@@ -298,10 +316,12 @@ router.post(
     const playbookId = (created as { id: string }).id;
 
     const { error: stepsErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_steps")
       .insert(
         steps.map((s) => ({
+          org_id: orgId,
           playbook_id: playbookId,
           step_index: s.stepIndex,
           day_offset: s.dayOffset,
@@ -314,9 +334,11 @@ router.post(
       // Best-effort rollback of the header row so a half-created
       // playbook doesn't linger in the library.
       await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbooks")
         .delete()
+        .eq("org_id", orgId)
         .eq("id", playbookId);
       res
         .status(500)
@@ -378,11 +400,18 @@ router.patch(
       update.is_active = parsed.data.isActive;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbooks")
       .update(update)
+      .eq("org_id", orgId)
       .eq("id", idParsed.data)
       .select("id")
       .maybeSingle();
@@ -434,11 +463,18 @@ router.put(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: playbook, error: pbErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbooks")
       .select("id")
+      .eq("org_id", orgId)
       .eq("id", idParsed.data)
       .maybeSingle();
     if (pbErr) {
@@ -461,9 +497,11 @@ router.put(
     // restore them if the insert fails, so a transient error can't
     // leave the playbook with an empty cadence.
     const { data: priorSteps, error: priorErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_steps")
       .select("step_index, day_offset, channel, subject, body")
+      .eq("org_id", orgId)
       .eq("playbook_id", idParsed.data);
     if (priorErr) {
       res
@@ -472,19 +510,23 @@ router.put(
       return;
     }
     const { error: delErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_steps")
       .delete()
+      .eq("org_id", orgId)
       .eq("playbook_id", idParsed.data);
     if (delErr) {
       res.status(500).json({ error: "update_failed", message: delErr.message });
       return;
     }
     const { error: insErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_steps")
       .insert(
         steps.map((s) => ({
+          org_id: orgId,
           playbook_id: idParsed.data,
           step_index: s.stepIndex,
           day_offset: s.dayOffset,
@@ -495,11 +537,13 @@ router.put(
       );
     if (insErr) {
       const { error: restoreErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_steps")
         .insert(
           ((priorSteps ?? []) as Array<Record<string, unknown>>).map((s) => ({
             ...s,
+            org_id: orgId,
             playbook_id: idParsed.data,
           })),
         );
@@ -513,9 +557,11 @@ router.put(
       return;
     }
     const { error: touchErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbooks")
       .update({ updated_at: new Date().toISOString() })
+      .eq("org_id", orgId)
       .eq("id", idParsed.data);
     if (touchErr) {
       logger.warn(
@@ -558,23 +604,31 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const [playbookRes, stepsRes, patientRes] = await Promise.all([
       supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbooks")
         .select("id, name, is_active")
+        .eq("org_id", orgId)
         .eq("id", idParsed.data)
         .maybeSingle(),
       supabase
+        .raw()
         .schema("resupply")
         .from("outreach_playbook_steps")
         .select("step_index, day_offset, channel")
+        .eq("org_id", orgId)
         .eq("playbook_id", idParsed.data)
         .order("step_index", { ascending: true }),
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id, status")
         .eq("id", parsed.data.patientId)
@@ -622,9 +676,11 @@ router.post(
 
     const startedAt = new Date();
     const { data: run, error: runErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_runs")
       .insert({
+        org_id: orgId,
         playbook_id: idParsed.data,
         patient_id: parsed.data.patientId,
         status: "active",
@@ -692,13 +748,20 @@ router.get(
     const status = queryParsed.success
       ? (queryParsed.data.status ?? "active")
       : "active";
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: runs, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_runs")
       .select(
         "id, playbook_id, patient_id, status, next_step_index, next_step_at, started_by_email, started_at, completed_at, cancelled_at",
       )
+      .eq("org_id", orgId)
       .eq("status", status)
       .order("started_at", { ascending: false })
       .limit(200);
@@ -724,14 +787,15 @@ router.get(
     const [playbooksRes, patientsRes] = await Promise.all([
       playbookIds.length > 0
         ? supabase
+            .raw()
             .schema("resupply")
             .from("outreach_playbooks")
             .select("id, name")
+            .eq("org_id", orgId)
             .in("id", playbookIds)
         : Promise.resolve({ data: [], error: null }),
       patientIds.length > 0
         ? supabase
-            .schema("resupply")
             .from("patients")
             .select("id, legal_first_name, legal_last_name")
             .in("id", patientIds)
@@ -790,12 +854,19 @@ router.post(
       res.status(400).json({ error: "invalid_run_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_runs")
       .update({ status: "cancelled", cancelled_at: nowIso, updated_at: nowIso })
+      .eq("org_id", orgId)
       .eq("id", idParsed.data)
       .eq("status", "active")
       .select("id");
@@ -813,9 +884,11 @@ router.post(
 
     // Pull the run's still-open call tasks out of the staff queue.
     const { error: taskErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_step_log")
       .update({ status: "skipped", detail: "run_cancelled" })
+      .eq("org_id", orgId)
       .eq("run_id", idParsed.data)
       .eq("status", "call_due");
     if (taskErr) {
@@ -845,12 +918,19 @@ router.get(
   "/admin/outreach-playbooks/call-queue",
   adminReadRateLimiter,
   requirePermission("conversations.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: tasks, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_step_log")
       .select("id, run_id, step_index, call_script, created_at")
+      .eq("org_id", orgId)
       .eq("status", "call_due")
       .order("created_at", { ascending: true })
       .limit(200);
@@ -869,9 +949,11 @@ router.get(
     const { data: runs, error: runsErr } =
       runIds.length > 0
         ? await supabase
+            .raw()
             .schema("resupply")
             .from("outreach_playbook_runs")
             .select("id, playbook_id, patient_id")
+            .eq("org_id", orgId)
             .in("id", runIds)
         : { data: [], error: null };
     if (runsErr) {
@@ -889,14 +971,15 @@ router.get(
     const [playbooksRes, patientsRes] = await Promise.all([
       playbookIds.length > 0
         ? supabase
+            .raw()
             .schema("resupply")
             .from("outreach_playbooks")
             .select("id, name")
+            .eq("org_id", orgId)
             .in("id", playbookIds)
         : Promise.resolve({ data: [], error: null }),
       patientIds.length > 0
         ? supabase
-            .schema("resupply")
             .from("patients")
             .select("id, legal_first_name, legal_last_name, phone_e164")
             .in("id", patientIds)
@@ -966,8 +1049,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("outreach_playbook_step_log")
       .update({
@@ -976,6 +1065,7 @@ router.post(
         completed_by_email: req.adminEmail ?? null,
         completed_at: new Date().toISOString(),
       })
+      .eq("org_id", orgId)
       .eq("id", idParsed.data)
       .eq("status", "call_due")
       .select("id");

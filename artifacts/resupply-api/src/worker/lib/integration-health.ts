@@ -17,7 +17,7 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { parseRecipientList } from "../jobs/metric-alerts-notify.js";
@@ -26,10 +26,19 @@ const ALERT_THRESHOLD = 3;
 const REPEAT_EVERY = 5;
 
 export async function recordIntegrationSuccess(key: string): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { key },
+      "integration-health: recordSuccess skipped — tenant context missing (non-fatal)",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
   const { error } = await supabase
+    .raw()
     .schema("resupply")
     .from("integration_run_health")
     .upsert(
@@ -54,13 +63,22 @@ export async function recordIntegrationFailure(
   key: string,
   detail: string,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    logger.warn(
+      { key },
+      "integration-health: recordFailure skipped — tenant context missing (non-fatal)",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
   const truncatedDetail = detail.slice(0, 2000);
 
   // Read current count so we can increment correctly — PostgREST upsert
   // doesn't support col + 1 expressions.
   const { data: existing, error: readErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("integration_run_health")
     .select("consecutive_failures")
@@ -78,6 +96,7 @@ export async function recordIntegrationFailure(
   const newCount = prevCount + 1;
 
   const { error: writeErr } = await supabase
+    .raw()
     .schema("resupply")
     .from("integration_run_health")
     .upsert(

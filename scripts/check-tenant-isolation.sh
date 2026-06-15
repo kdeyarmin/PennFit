@@ -84,6 +84,12 @@ EXCLUDES=(
   --glob '!**/*.spec.ts'
   --glob '!**/test-helpers/**' # shared test fixtures
   --glob '!scripts/**'         # operator utilities, not request paths
+  # requireAdmin is the tenant RESOLVER: it reads auth.users to attach
+  # req.orgId, so it runs BEFORE any tenant context exists and legitimately
+  # uses the unscoped service-role client (a reviewed directory-access
+  # exception, like the migrator). Every other request path gets its
+  # org-scoped client downstream of this middleware.
+  --glob '!**/middlewares/requireAdmin.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`
