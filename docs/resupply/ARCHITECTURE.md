@@ -184,7 +184,7 @@ scripts/check-admin-route-gates.sh
 pnpm verify
 ```
 
-The repo targets Node 24 and pnpm 11.5.2. `artifacts/resupply-api` and
+The repo targets Node 24 and pnpm 11.6.0. `artifacts/resupply-api` and
 `artifacts/cpap-fitter` should run on distinct local ports; Railway injects
 `PORT` in production and defaults `BASE_PATH` to `/`.
 
