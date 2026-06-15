@@ -17,7 +17,10 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
@@ -128,7 +131,14 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     }
     const patientId = verified.outreachId.slice(0, sep);
     const paId = verified.outreachId.slice(sep + 1);
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    // Public token route (no request tenant); the PA render scopes to the
+    // seed org (single-tenant bridge).
+    const paOrgId = await resolveSeedOrgId();
+    if (!paOrgId) {
+      res.status(404).json({ error: "prior_auth_not_found" });
+      return;
+    }
+    const result = await buildPaRequestPdf(paOrgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;
