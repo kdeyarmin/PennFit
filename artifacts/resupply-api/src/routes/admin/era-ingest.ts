@@ -112,7 +112,7 @@ router.post(
     // payer — update the catalog".
     const resolvedPayer = await resolvePayerProfileForEra(
       { payerId: parsedEra.payerId, payerName: parsedEra.payerName },
-      { supabase },
+      { orgId: req.orgId },
     );
     if (!resolvedPayer) {
       logger.info(
@@ -171,6 +171,7 @@ router.post(
       actorEmail: `system:era_ingest:${req.adminEmail ?? "unknown"}`,
       fileName,
       checkOrEftNumber: parsedEra.checkOrEftNumber,
+      orgId: req.orgId,
     });
 
     // Update with the parser+reconciler counts and promote status.
