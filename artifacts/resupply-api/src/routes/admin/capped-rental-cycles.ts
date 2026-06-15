@@ -7,10 +7,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runCappedRentalAdvance } from "../../lib/billing/capped-rental-advancer";
 import { logger } from "../../lib/logger";
@@ -64,9 +61,13 @@ router.get(
   "/admin/capped-rental-cycles",
   requirePermission("patients.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .select("*")
       .order("start_date", { ascending: false })
@@ -98,9 +99,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .insert({
         patient_id: b.patientId,
@@ -155,9 +160,13 @@ router.patch(
     if (b.ownershipTransferredOn !== undefined)
       update.ownership_transferred_on = b.ownershipTransferredOn;
     if (b.notes !== undefined) update.notes = b.notes;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("capped_rental_cycles")
       .update(update)
       .eq("id", idParsed.data.id);
