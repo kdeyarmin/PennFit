@@ -20,7 +20,11 @@
 import type PgBoss from "pg-boss";
 import type Stripe from "stripe";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
@@ -99,13 +103,10 @@ function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
   };
 }
 
-function buildSupabaseSink(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
-): AutochargeSink {
+function buildSupabaseSink(supabase: OrgScopedClient): AutochargeSink {
   return {
     async markPaid({ installmentId, paymentIntentId }) {
       const { error } = await supabase
-        .schema("resupply")
         .from("patient_payment_plan_installments")
         .update({
           status: "paid",
@@ -125,7 +126,6 @@ function buildSupabaseSink(
       paymentIntentId,
     }) {
       const { error } = await supabase
-        .schema("resupply")
         .from("patient_payment_plan_installments")
         .update({
           status,
@@ -163,7 +163,9 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
     );
     return stats;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const charger = buildStripeOffSessionCharger(getStripeClient(config));
   const sink = buildSupabaseSink(supabase);
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -183,7 +185,6 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
   let planCursor: string | null = null;
   for (;;) {
     let pageQuery = supabase
-      .schema("resupply")
       .from("patient_payment_plans")
       .select(
         "id, patient_id, autopay_status, stripe_customer_id, stripe_payment_method_id",
@@ -210,7 +211,6 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       stripePaymentMethodId: p.stripe_payment_method_id,
     };
     const { data: instRows, error: instErr } = await supabase
-      .schema("resupply")
       .from("patient_payment_plan_installments")
       .select(
         "id, plan_id, seq, due_date, amount_cents, status, charge_attempts, last_charge_attempt_at",
@@ -226,7 +226,17 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
           .last_charge_attempt_at ?? null,
       );
     }
-    const installments: AutochargeInstallment[] = (instRows ?? []).map((r) => ({
+    const installments: AutochargeInstallment[] = (
+      (instRows ?? []) as Array<{
+        id: string;
+        plan_id: string;
+        seq: number;
+        due_date: string;
+        amount_cents: number;
+        status: string;
+        charge_attempts: number | null;
+      }>
+    ).map((r) => ({
       id: r.id,
       planId: r.plan_id,
       seq: r.seq,
@@ -257,7 +267,6 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       // write path to be down for a full day of retries.
       const nowIso = new Date().toISOString();
       let claim = supabase
-        .schema("resupply")
         .from("patient_payment_plan_installments")
         .update({ last_charge_attempt_at: nowIso })
         .eq("id", inst.id)
@@ -303,7 +312,6 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       );
       if (planStatus === "completed") {
         const { error: completeErr } = await supabase
-          .schema("resupply")
           .from("patient_payment_plans")
           .update({ status: "completed", updated_at: new Date().toISOString() })
           .eq("id", plan.id)

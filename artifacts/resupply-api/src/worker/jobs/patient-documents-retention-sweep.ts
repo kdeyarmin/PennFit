@@ -36,7 +36,7 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
@@ -54,7 +54,9 @@ interface SweepStats {
 /** Exported for test injection. Runs one sweep cycle and returns
  *  the counts so a test can assert behavior without scheduling. */
 export async function runRetentionSweep(): Promise<SweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return { backfilled: 0, flagged: 0 };
+  const supabase = getOrgScopedClient(orgId);
 
   // ── 1. Backfill retention_until_at for legacy rows ──────────────
   // We process in batches so a deploy on a 100k-row table doesn't
@@ -63,7 +65,6 @@ export async function runRetentionSweep(): Promise<SweepStats> {
   let backfilled = 0;
   while (true) {
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, document_type, created_at")
       .is("retention_until_at", null)
@@ -85,7 +86,6 @@ export async function runRetentionSweep(): Promise<SweepStats> {
         documentType: row.document_type,
       });
       const { error: updErr } = await supabase
-        .schema("resupply")
         .from("patient_documents")
         .update({ retention_until_at: until.toISOString() })
         .eq("id", row.id);
@@ -113,7 +113,6 @@ export async function runRetentionSweep(): Promise<SweepStats> {
   const FLAG_BATCH_SIZE = 500;
   const nowIso = new Date().toISOString();
   const { data: eligible, error: eligibleErr } = await supabase
-    .schema("resupply")
     .from("patient_documents")
     .select("id, patient_id, document_type, size_bytes, retention_until_at")
     .lte("retention_until_at", nowIso)
@@ -123,11 +122,16 @@ export async function runRetentionSweep(): Promise<SweepStats> {
     .order("retention_until_at", { ascending: true })
     .limit(FLAG_BATCH_SIZE);
   if (eligibleErr) throw eligibleErr;
-  const eligibleList = eligible ?? [];
+  const eligibleList = (eligible ?? []) as Array<{
+    id: string;
+    patient_id: string | null;
+    document_type: string | null;
+    size_bytes: number | null;
+    retention_until_at: string | null;
+  }>;
   let flaggedList: typeof eligibleList = [];
   if (eligibleList.length > 0) {
     const { data: flaggedRows, error: flagErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .update({ retention_marked_at: nowIso })
       .in(

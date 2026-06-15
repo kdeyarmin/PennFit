@@ -500,6 +500,15 @@ const ProviderPortalRoute = lazyWithRetry(() =>
   })),
 );
 
+// Breathe — the public marketing / showcase homepage for the DME
+// operating platform by CareMetric.ai. A self-contained dark "command
+// center" surface rendered OUTSIDE the patient <Layout> (its own chrome),
+// so it's mounted in TopRouter. Lazy-loaded — its bespoke CSS + page code
+// never weigh on the patient-shop initial bundle.
+const Breathe = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.Breathe })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1088,6 +1097,13 @@ function TopRouter() {
     */
     <Suspense fallback={<RouteFallback />}>
       <Switch>
+        {/*
+          Breathe marketing/showcase page. Mounted here (not in the
+          patient <Layout>) so it renders in its own full-bleed dark
+          chrome instead of the storefront header/footer.
+        */}
+        <Route path="/breathe" component={Breathe} />
+
         <Route path="/sign-in" component={SignInPage} />
         <Route path="/sign-in/*" component={SignInPage} />
         <Route path="/sign-up" component={SignUpPage} />
