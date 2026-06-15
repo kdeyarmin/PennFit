@@ -12,7 +12,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import {
   buildDialTwiml,
   buildHangupTwiml,
@@ -55,9 +55,16 @@ router.post(
     const config = readVoiceConfigOrNull();
     const callerId = config?.twilioPhoneNumber;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to
+    // the same clean Hangup any other miss returns so Twilio doesn't
+    // retry-storm on a tenant-context gap.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      sendHangup("We couldn't connect this call. Please try again.");
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const dispRes = await supabase
-      .schema("resupply")
       .from("call_dispositions")
       .select("id, patient_id")
       .eq("id", dispositionId)
@@ -77,7 +84,6 @@ router.post(
     }
 
     const patientRes = await supabase
-      .schema("resupply")
       .from("patients")
       .select("phone_e164")
       .eq("id", patientId)

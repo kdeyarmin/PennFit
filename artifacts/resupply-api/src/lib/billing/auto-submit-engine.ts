@@ -28,7 +28,11 @@
 // module logs names — only counts + ids ever reach the logger. The
 // Office Ally batch core owns the EDI build and never logs the payload.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { preflightClaim } from "./claim-preflight";
 import {
@@ -37,7 +41,7 @@ import {
   type BatchSubmitResult,
 } from "./office-ally-batch";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** A parsed 270/271 older than this no longer counts as current. */
 export const ELIGIBILITY_FRESH_DAYS = 90;
@@ -220,9 +224,26 @@ interface DraftClaimRow {
 export async function selectSubmissionReadyClaims(
   opts: SelectReadyOpts = {},
 ): Promise<SubmissionReadiness> {
-  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
-  const preflight = opts.preflight ?? preflightClaim;
   const nowMs = opts.nowMs ?? Date.now();
+  let supabase: SupabaseClient;
+  if (opts.supabase) {
+    supabase = opts.supabase;
+  } else {
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      return {
+        groups: [],
+        readyClaimCount: 0,
+        readyPayerCount: 0,
+        readyTotalBilledCents: 0,
+        excluded: [],
+        scannedCount: 0,
+        generatedAt: new Date(nowMs).toISOString(),
+      };
+    }
+    supabase = getOrgScopedClient(orgId);
+  }
+  const preflight = opts.preflight ?? preflightClaim;
   const maxClaims = opts.maxClaims ?? DEFAULT_MAX_CLAIMS_PER_RUN;
   // When a specific claim-id set is supplied (operator approval), the
   // scan must cover all of them so none is dropped by the default cap.
@@ -237,7 +258,6 @@ export async function selectSubmissionReadyClaims(
   // 1. Pull the oldest draft claims (oldest first → submit the claims
   //    closest to their timely-filing deadline before newer ones).
   let filter = supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(
       "id, patient_id, payer_profile_id, insurance_coverage_id, total_billed_cents, date_of_service",
@@ -388,7 +408,6 @@ async function loadLatestParsedEligibility(
   >();
   if (coverageIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("eligibility_checks")
     .select("insurance_coverage_id, is_active, responded_at")
     .in("insurance_coverage_id", coverageIds)
@@ -425,7 +444,6 @@ async function loadPayerNames(
   const map = new Map<string, string>();
   if (payerProfileIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("payer_profiles")
     .select("id, display_name")
     .in("id", payerProfileIds);
@@ -443,7 +461,6 @@ async function loadPatientNames(
   const map = new Map<string, string>();
   if (patientIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .in("id", patientIds);

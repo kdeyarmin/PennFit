@@ -33,7 +33,7 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger.js";
 import {
@@ -44,7 +44,7 @@ import {
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
 export const MAX_ADMIN_TOOL_ROUNDS = 2;
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** Per-request context the route hands to the tool dispatcher. */
 export interface AdminAssistantToolContext {
@@ -125,7 +125,6 @@ export async function resolveSuperAdminRecipients(
   const out = new Set<string>();
   try {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("email_lower")
       .eq("role", "admin")

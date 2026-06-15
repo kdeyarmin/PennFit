@@ -26,7 +26,7 @@ import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
@@ -155,13 +155,28 @@ router.post(
       ? dayRaw
       : null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to
+    // the same Goodbye hangup this handler already returns for an unknown
+    // patient, so a tenant-context gap never 5xx-loops Twilio.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res
+        .status(200)
+        .type("application/xml")
+        .send(
+          [
+            `<?xml version="1.0" encoding="UTF-8"?>`,
+            `<Response><Say voice="Polly.Joanna">Thanks. Goodbye.</Say><Hangup/></Response>`,
+          ].join("\n"),
+        );
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Belt-and-braces: confirm the patient exists before we insert.
     // A malicious caller who somehow forged a Twilio signature still
     // can't use this endpoint to create alerts for arbitrary UUIDs.
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -194,7 +209,6 @@ router.post(
     }
 
     const { error: insertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,

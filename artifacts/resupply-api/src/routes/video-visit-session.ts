@@ -12,7 +12,7 @@
 import { Router, type IRouter } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../lib/feature-flags";
 import { readPracticeName } from "../lib/messaging/messaging-config";
@@ -54,9 +54,14 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // No tenant context — treat the link as not resolvable (signed-link 404).
+    res.status(404).json({ state: "invalid" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: visit, error } = await supabase
-    .schema("resupply")
     .from("video_visits")
     .select("id, status, purpose, scheduled_at, link_version")
     .eq("id", verified.visitId)

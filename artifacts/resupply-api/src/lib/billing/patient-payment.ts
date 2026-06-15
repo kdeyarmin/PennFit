@@ -15,6 +15,8 @@ import {
   type Database,
   type Json,
   getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
@@ -83,13 +85,18 @@ export async function createPaymentIntent(
       message: "Stripe secret key is not set",
     };
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "patient-payment: tenant context missing (seed org unresolved)",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Validate every claim belongs to the patient AND the requested
   // allocation doesn't exceed the open balance.
   const claimIds = input.allocations.map((a) => a.claimId);
   const { data: claimsData, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, patient_responsibility_cents")
     .in("id", claimIds);
@@ -101,7 +108,10 @@ export async function createPaymentIntent(
     throw new Error(`Database query failed: ${error.message}`);
   }
   for (const allocation of input.allocations) {
-    const claim = (claimsData ?? []).find((c) => c.id === allocation.claimId);
+    const claim = (claimsData ?? []).find(
+      (c: Database["resupply"]["Tables"]["insurance_claims"]["Row"]) =>
+        c.id === allocation.claimId,
+    );
     if (!claim || claim.patient_id !== input.patientId) {
       return {
         error: "claim_not_owned",
@@ -120,7 +130,6 @@ export async function createPaymentIntent(
   // the Stripe metadata. If Stripe call fails we leave the row in
   // status='failed' for audit.
   const { data: row, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .insert({
       patient_id: input.patientId,
@@ -160,7 +169,6 @@ export async function createPaymentIntent(
     );
   } catch (err) {
     const { error: failStampErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update({
         status: "failed",
@@ -186,7 +194,6 @@ export async function createPaymentIntent(
 
   // First stamp the PaymentIntent id so the webhook can correlate.
   const { error: updateErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .update({
       stripe_payment_intent_id: intent.id,
@@ -275,7 +282,13 @@ export async function createPaymentCheckoutSession(
       message: "Stripe secret key is not set",
     };
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "patient-payment: tenant context missing (seed org unresolved)",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Same per-allocation ownership + balance gates as the intent
   // flow — duplicated here rather than refactored because the
@@ -297,7 +310,6 @@ export async function createPaymentCheckoutSession(
   // claim_id; tracked separately as a heavier lift.
   const claimIds = input.allocations.map((a) => a.claimId);
   const { data: claimsData, error } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, patient_responsibility_cents")
     .in("id", claimIds);
@@ -309,7 +321,10 @@ export async function createPaymentCheckoutSession(
     throw new Error(`Database query failed: ${error.message}`);
   }
   for (const allocation of input.allocations) {
-    const claim = (claimsData ?? []).find((c) => c.id === allocation.claimId);
+    const claim = (claimsData ?? []).find(
+      (c: Database["resupply"]["Tables"]["insurance_claims"]["Row"]) =>
+        c.id === allocation.claimId,
+    );
     if (!claim || claim.patient_id !== input.patientId) {
       return {
         error: "claim_not_owned",
@@ -328,7 +343,6 @@ export async function createPaymentCheckoutSession(
   // Session metadata can reference it; if Stripe rejects we mark
   // the row failed so the audit trail is complete.
   const { data: row, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .insert({
       patient_id: input.patientId,
@@ -394,7 +408,6 @@ export async function createPaymentCheckoutSession(
     );
   } catch (err) {
     const { error: failStampErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update({
         status: "failed",
@@ -423,7 +436,6 @@ export async function createPaymentCheckoutSession(
     // is belt-and-braces for the typed-as-nullable field. Mark the
     // row as failed before returning.
     const { error: noUrlStampErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update({
         status: "failed",
@@ -508,14 +520,19 @@ export async function createAdhocPaymentCheckoutSession(
       message: "Stripe secret key is not set",
     };
   }
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "patient-payment: tenant context missing (seed org unresolved)",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Reserve our patient_payments row up front so the Checkout Session
   // metadata can reference it; if Stripe rejects we mark the row failed
   // so the audit trail is complete. source='csr' + empty allocations:
   // staff entered on behalf of the patient, not tied to a claim.
   const { data: row, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .insert({
       patient_id: input.patientId,
@@ -577,7 +594,6 @@ export async function createAdhocPaymentCheckoutSession(
     );
   } catch (err) {
     const { error: failStampErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update({
         status: "failed",
@@ -603,7 +619,6 @@ export async function createAdhocPaymentCheckoutSession(
 
   if (!session.url) {
     const { error: noUrlStampErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update({
         status: "failed",
@@ -666,7 +681,13 @@ export interface MarkPaymentInput {
 export async function markPaymentStatus(
   input: MarkPaymentInput,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    throw new Error(
+      "patient-payment: tenant context missing (seed org unresolved)",
+    );
+  }
+  const supabase = getOrgScopedClient(orgId);
   const update: Database["resupply"]["Tables"]["patient_payments"]["Update"] = {
     status: input.status,
     updated_at: new Date().toISOString(),
@@ -682,7 +703,6 @@ export async function markPaymentStatus(
     // succeeded_at) when the row isn't already there, so a Stripe
     // redelivery doesn't rewrite succeeded_at.
     const { error: flipErr } = await supabase
-      .schema("resupply")
       .from("patient_payments")
       .update(update)
       .eq("id", input.paymentId)
@@ -696,11 +716,10 @@ export async function markPaymentStatus(
     // migration 0214), so this completes any unfinished decrement without
     // double-applying. The previous early-return-on-redelivery left a
     // crash-interrupted apply permanently incomplete (balance overstated).
-    await applySucceededPayment(supabase, input.paymentId);
+    await applySucceededPayment(supabase.raw(), input.paymentId);
     return;
   }
   const { error: statusErr } = await supabase
-    .schema("resupply")
     .from("patient_payments")
     .update(update)
     .eq("id", input.paymentId);

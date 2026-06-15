@@ -33,7 +33,7 @@
 //     entirely (both live and boot) in case a bad row ever needs to be
 //     ignored without a DB round-trip.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { APP_CONFIG_KEYS, isAppConfigKey } from "./catalog";
@@ -85,11 +85,13 @@ async function loadOverridesFromDb(
   timeoutMs: number,
 ): Promise<Record<string, string>> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const lookup = supabase
-      .schema("resupply")
-      .from("app_config")
-      .select("key, value");
+    // Resolve the tenant for the file-local worker pattern. A missing org
+    // degrades exactly like a DB error here — "no overrides" (`{}`), so the
+    // process keeps running on its Railway env. Fail-soft, never throws.
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) return {};
+    const supabase = getOrgScopedClient(orgId);
+    const lookup = supabase.from("app_config").select("key, value");
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {

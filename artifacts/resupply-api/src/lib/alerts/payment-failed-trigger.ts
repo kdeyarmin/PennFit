@@ -22,7 +22,7 @@
 // can't resolve simply logs + returns. A patient is never messaged
 // unless the whole chain succeeds AND the flag is on.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { dispatchAlert } from "./dispatch";
@@ -96,11 +96,15 @@ export async function dispatchPaymentFailedAlertOrThrow(
   // until an operator turns the flag on.
   if (!(await isFeatureEnabled("alerts.auto_dispatch"))) return;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Resolve the tenant for the file-local worker pattern. A missing org
+  // degrades the same way the rest of the chain does — return cleanly so
+  // a patient is never messaged without a resolvable tenant context.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const supabase = getOrgScopedClient(orgId);
 
   // Stripe customer → shop_customers.email_lower.
   const { data: shopCustomer, error: scErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("email_lower")
     .eq("stripe_customer_id", stripeCustomerId)
@@ -118,7 +122,6 @@ export async function dispatchPaymentFailedAlertOrThrow(
 
   // Email → patients.id (case-insensitive).
   const { data: patients, error: pErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapeIlike(email))

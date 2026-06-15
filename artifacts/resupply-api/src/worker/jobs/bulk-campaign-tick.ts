@@ -43,7 +43,9 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  type OrgScopedClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import { renderMessage } from "@workspace/resupply-templates";
 
@@ -131,12 +133,19 @@ export async function processTick(
   payload: BulkCampaignTickPayload,
   log: typeof logger,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    log.warn(
+      { campaignId: payload.campaignId },
+      "bulk_campaigns.tick: no seed org resolved — skipping tick",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // 1. Re-read the campaign state so a pause/cancel that landed
   //    after the tick was scheduled is honored.
   const { data: campaign, error: cErr } = await supabase
-    .schema("resupply")
     .from("bulk_campaigns")
     .select(
       "id, name, status, throttle_per_minute, template_key, category, sent_count, failed_count, total_recipients, suppressed_count",
@@ -180,7 +189,6 @@ export async function processTick(
     Date.now() - SENDING_LEASE_MS,
   ).toISOString();
   const { data: reclaimedRows, error: reclaimErr } = await supabase
-    .schema("resupply")
     .from("bulk_campaign_recipients")
     .update({ status: "pending" })
     .eq("campaign_id", campaign.id)
@@ -206,7 +214,6 @@ export async function processTick(
   // 2. Claim a batch of pending recipients atomically.
   const batchSize = batchSizeForThrottle(campaign.throttle_per_minute);
   const { data: pendingRows, error: pErr } = await supabase
-    .schema("resupply")
     .from("bulk_campaign_recipients")
     .select("id, recipient_kind, recipient_id, recipient_email, send_attempts")
     .eq("campaign_id", campaign.id)
@@ -238,7 +245,10 @@ export async function processTick(
   // independently atomic (the `status = pending` guard still prevents a
   // concurrent tick from double-claiming), so accumulating the RETURNING
   // rows across chunks is equivalent to one UPDATE.
-  const claimedIds = pendingRows.map((r) => r.id);
+  const claimedIds = pendingRows.map(
+    (r: Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"]) =>
+      r.id,
+  );
   const claimed: Array<{
     id: string;
     recipient_email: string | null;
@@ -249,7 +259,6 @@ export async function processTick(
   for (let i = 0; i < claimedIds.length; i += 200) {
     const idChunk = claimedIds.slice(i, i + 200);
     const { data, error: claimErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaign_recipients")
       .update({ status: "sending" })
       .in("id", idChunk)
@@ -310,7 +319,6 @@ export async function processTick(
     );
     // Bail the campaign — every send would fail the same way.
     const { error: pauseErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .update({ status: "paused" })
       .eq("id", campaign.id);
@@ -326,7 +334,6 @@ export async function processTick(
     const winningIdList = Array.from(winningIds);
     for (let i = 0; i < winningIdList.length; i += 200) {
       const { error: rollbackErr } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({ status: "pending" })
         .in("id", winningIdList.slice(i, i + 200));
@@ -374,7 +381,6 @@ export async function processTick(
       // Should be impossible — resolver suppresses empty emails —
       // but defensively flip to failed if encountered.
       const { error: noEmailErr } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({ status: "failed", error: "no_email_at_send_time" })
         .eq("id", row.id);
@@ -401,7 +407,6 @@ export async function processTick(
     );
     if (optedOut) {
       const { error: supErr } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
           status: "suppressed",
@@ -414,7 +419,6 @@ export async function processTick(
           "bulk_campaigns.tick: suppression update failed — marking recipient failed",
         );
         const { error: failMarkErr } = await supabase
-          .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({ status: "failed", error: supErr.message.slice(0, 500) })
           .eq("id", row.id);
@@ -444,7 +448,6 @@ export async function processTick(
         customArgs: customArgsFor(campaign.id, row.id),
       });
       const { error: finalizeErr } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
           status: "sent",
@@ -469,7 +472,6 @@ export async function processTick(
           "bulk_campaigns.tick: 'sent' finalize failed after vendor accept — parking recipient as failed to prevent duplicate send",
         );
         const { error: parkErr } = await supabase
-          .schema("resupply")
           .from("bulk_campaign_recipients")
           .update({
             status: "failed",
@@ -510,7 +512,6 @@ export async function processTick(
         (err as { retryable: boolean }).retryable;
       const willRetry = isRetryable && nextAttempts < MAX_SEND_ATTEMPTS;
       const { error: retryUpdateErr } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .update({
           status: willRetry ? "retry_pending" : "failed",
@@ -603,7 +604,6 @@ export async function processTick(
   //    before doing any work, so if the campaign really was cancelled
   //    the extra tick is a harmless no-op.
   const { data: nextCampaign, error: statusErr } = await supabase
-    .schema("resupply")
     .from("bulk_campaigns")
     .select("status")
     .eq("id", campaign.id)
@@ -643,12 +643,11 @@ export async function processTick(
  */
 async function finalizeOrReschedule(
   boss: PgBoss,
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   campaignId: string,
   log: typeof logger,
 ): Promise<void> {
   const { count: remaining, error } = await supabase
-    .schema("resupply")
     .from("bulk_campaign_recipients")
     .select("*", { count: "exact", head: true })
     .eq("campaign_id", campaignId)
@@ -700,7 +699,7 @@ async function finalizeOrReschedule(
  * narrow window where prefs changed mid-campaign.
  */
 async function isRecipientOptedOut(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   kind: string,
   id: string,
   category: string,
@@ -726,7 +725,6 @@ async function isRecipientOptedOut(
 
   try {
     const { data } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
       .eq("customer_id", id)
@@ -750,7 +748,7 @@ async function isRecipientOptedOut(
  * mid-tick, which needs no retry.
  */
 async function markCampaignSent(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   campaignId: string,
 ): Promise<boolean> {
   const update: CampaignUpdate = {
@@ -758,7 +756,6 @@ async function markCampaignSent(
     completed_at: new Date().toISOString(),
   };
   const { data: updated, error } = await supabase
-    .schema("resupply")
     .from("bulk_campaigns")
     .update(update)
     .eq("id", campaignId)

@@ -21,7 +21,10 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   createAutopaySetupSession,
@@ -52,11 +55,10 @@ function customerKeyFn(req: import("express").Request): string {
 }
 
 async function resolvePatientForCustomer(
+  supabase: OrgScopedClient,
   customerId: string,
 ): Promise<{ patientId: string; customerEmail: string } | null> {
-  const supabase = getSupabaseServiceRoleClient();
   const { data: customer } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("customer_id, email_lower")
     .eq("customer_id", customerId)
@@ -71,7 +73,6 @@ async function resolvePatientForCustomer(
     (c: string) => `\\${c}`,
   );
   const { data: patients } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id")
     .ilike("email", escapedEmail)
@@ -147,7 +148,13 @@ router.get(
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
-    const link = await resolvePatientForCustomer(customerId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const link = await resolvePatientForCustomer(supabase, customerId);
     if (!link) {
       // No linked patient → nothing to manage; report an empty state rather
       // than a hard error so the portal section renders cleanly.
@@ -185,7 +192,13 @@ router.post(
       res.status(503).json({ error: "stripe_not_configured" });
       return;
     }
-    const link = await resolvePatientForCustomer(customerId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const link = await resolvePatientForCustomer(supabase, customerId);
     if (!link) {
       res.status(404).json({ error: "no_linked_patient" });
       return;
@@ -259,7 +272,13 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const link = await resolvePatientForCustomer(customerId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const link = await resolvePatientForCustomer(supabase, customerId);
     if (!link) {
       res.status(404).json({ error: "no_linked_patient" });
       return;
@@ -312,7 +331,13 @@ router.delete(
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
-    const link = await resolvePatientForCustomer(customerId);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const link = await resolvePatientForCustomer(supabase, customerId);
     if (!link) {
       res.status(404).json({ error: "no_linked_patient" });
       return;

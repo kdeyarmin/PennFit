@@ -153,6 +153,8 @@ router.get(
           .eq("id", row.patient_id)
           .limit(1)
           .maybeSingle(),
+        // `providers` is a GLOBAL reference table (no org_id column), so
+        // it stays on the unscoped service-role client via `.raw()`.
         row.signing_provider_id
           ? supabase
               .raw()

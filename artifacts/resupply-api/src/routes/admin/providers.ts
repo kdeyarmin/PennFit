@@ -357,9 +357,10 @@ router.get(
       validFrom: string | null;
       validUntil: string | null;
     }> = [];
-    for (const r of data ?? []) {
-      if (seen.has(r.patient_id)) continue;
-      seen.add(r.patient_id);
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      const patientId = String(r.patient_id ?? "");
+      if (seen.has(patientId)) continue;
+      seen.add(patientId);
       const p = (r as { patients?: unknown }).patients as {
         id: string;
         legal_first_name: string | null;
@@ -369,16 +370,16 @@ router.get(
         status: string | null;
       } | null;
       patients.push({
-        patientId: r.patient_id,
+        patientId,
         legalFirstName: p?.legal_first_name ?? null,
         legalLastName: p?.legal_last_name ?? null,
         email: p?.email ?? null,
         phoneE164: p?.phone_e164 ?? null,
         patientStatus: p?.status ?? null,
-        prescriptionId: r.id,
-        prescriptionStatus: r.status,
-        validFrom: r.valid_from,
-        validUntil: r.valid_until,
+        prescriptionId: String(r.id ?? ""),
+        prescriptionStatus: (r.status as string | null) ?? null,
+        validFrom: (r.valid_from as string | null) ?? null,
+        validUntil: (r.valid_until as string | null) ?? null,
       });
     }
     res.json({ patients });

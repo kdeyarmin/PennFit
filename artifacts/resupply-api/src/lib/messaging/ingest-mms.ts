@@ -54,7 +54,7 @@
 import type { Logger } from "pino";
 import { Readable } from "node:stream";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { ObjectStorageService } from "../object-storage/objectStorage";
 
@@ -596,9 +596,19 @@ export async function persistInboundAttachment(
     input.twilioMediaSid ?? null,
   );
 
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    // No seed tenant resolvable — the GCS bytes we just uploaded become
+    // an orphan the attachment sweep reaps. Count as a transient error
+    // (same outcome as a failed DB insert below).
+    logger.warn(
+      { source: input.source ?? "unknown" },
+      "attachment_ingest_tenant_context_missing",
+    );
+    return "errored";
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { error: insertErr } = await supabase
-    .schema("resupply")
     .from("message_attachments")
     .insert({
       message_id: input.messageId,

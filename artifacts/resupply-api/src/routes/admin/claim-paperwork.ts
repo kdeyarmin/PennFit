@@ -90,15 +90,7 @@ router.get(
       res.status(400).json({ error: "invalid_claim_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const rows = await listClaimRequirements(
-      claimId.data,
-      getOrgScopedClient(orgId),
-    );
+    const rows = await listClaimRequirements(claimId.data);
     res.json(holdSummary(rows));
   },
 );
@@ -125,15 +117,7 @@ router.post(
       });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
-    const rows = await listPatientRequirements(
-      parsed.data.patientId,
-      getOrgScopedClient(orgId),
-    );
+    const rows = await listPatientRequirements(parsed.data.patientId);
     res.json(holdSummary(rows));
   },
 );
@@ -218,7 +202,7 @@ router.post(
     if (insErr) throw insErr;
 
     const recompute = await recomputeBillHold(claim.id, {
-      supabase,
+      supabase: supabase.raw(),
       actorEmail: req.adminEmail ?? null,
       writeEvent: true,
     });
@@ -241,13 +225,7 @@ router.post(
       res.status(400).json({ error: "invalid_claim_id" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const result = await seedDefaultRequirementsForClaim(claimId.data, {
-      supabase: getOrgScopedClient(orgId),
       createdByEmail: req.adminEmail ?? null,
     });
     await audit(req, "bill_hold.requirements_seeded", claimId.data, {
@@ -349,7 +327,7 @@ router.patch(
     let billHold = null;
     if (existing.claim_id) {
       billHold = await recomputeBillHold(existing.claim_id, {
-        supabase,
+        supabase: supabase.raw(),
         actorEmail: req.adminEmail ?? null,
         writeEvent: true,
       });
@@ -388,14 +366,8 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     try {
       const { requirement, recompute } = await satisfyRequirement(id.data, {
-        supabase: getOrgScopedClient(orgId),
         via: parsed.data.via,
         actorEmail: req.adminEmail ?? null,
         documentId: parsed.data.documentId ?? null,
@@ -508,7 +480,6 @@ router.post(
       const { requirement, recompute } = await satisfyRequirement(
         parsed.data.requirementId,
         {
-          supabase,
           via: "manual",
           actorEmail: req.adminEmail ?? null,
           inboundFaxId: faxId.data,
@@ -562,21 +533,13 @@ router.get(
       .order("bill_hold_updated_at", { ascending: true })
       .limit(500);
     if (error) throw error;
-    const claimRows = (claims ?? []) as Array<{
-      id: string;
-      patient_id: string;
-      payer_name: string | null;
-      date_of_service: string | null;
-      total_billed_cents: number | null;
-      bill_hold_reason: string | null;
-      bill_hold_updated_at: string | null;
-    }>;
+    const claimRows = claims ?? [];
     if (claimRows.length === 0) {
       res.json({ items: [], count: 0, totalHeldCents: 0 });
       return;
     }
 
-    const claimIds = claimRows.map((c) => c.id);
+    const claimIds = claimRows.map((c: { id: string }) => c.id);
     const { data: reqs, error: reqErr } = await supabase
       .from("claim_paperwork_requirements")
       .select(
@@ -601,7 +564,9 @@ router.get(
       outstandingByClaim.set(cid, list);
     }
 
-    const patientIds = [...new Set(claimRows.map((c) => c.patient_id))];
+    const patientIds = [
+      ...new Set(claimRows.map((c: { patient_id: string }) => c.patient_id)),
+    ];
     const { data: patients } = await supabase
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
@@ -616,21 +581,35 @@ router.get(
       );
     }
 
-    const items = claimRows.map((c) => ({
-      claimId: c.id,
-      patientId: c.patient_id,
-      patientName: nameById.get(c.patient_id) ?? "(unknown patient)",
-      payerName: c.payer_name,
-      dateOfService: c.date_of_service,
-      totalBilledCents: c.total_billed_cents,
-      heldSince: c.bill_hold_updated_at,
-      reason: c.bill_hold_reason,
-      outstanding: outstandingByClaim.get(c.id) ?? [],
-    }));
+    const items = claimRows.map(
+      (c: {
+        id: string;
+        patient_id: string;
+        payer_name: string | null;
+        date_of_service: string | null;
+        total_billed_cents: number | null;
+        bill_hold_updated_at: string | null;
+        bill_hold_reason: string | null;
+      }) => ({
+        claimId: c.id,
+        patientId: c.patient_id,
+        patientName: nameById.get(c.patient_id) ?? "(unknown patient)",
+        payerName: c.payer_name,
+        dateOfService: c.date_of_service,
+        totalBilledCents: c.total_billed_cents,
+        heldSince: c.bill_hold_updated_at,
+        reason: c.bill_hold_reason,
+        outstanding: outstandingByClaim.get(c.id) ?? [],
+      }),
+    );
     res.json({
       items,
       count: items.length,
-      totalHeldCents: items.reduce((s, i) => s + (i.totalBilledCents ?? 0), 0),
+      totalHeldCents: items.reduce(
+        (s: number, i: { totalBilledCents: number | null }) =>
+          s + (i.totalBilledCents ?? 0),
+        0,
+      ),
     });
   },
 );

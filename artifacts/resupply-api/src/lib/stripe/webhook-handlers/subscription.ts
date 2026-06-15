@@ -10,7 +10,8 @@
 import type Stripe from "stripe";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
   type Json,
   type ShopSubscriptionItemSnapshot,
@@ -63,7 +64,18 @@ async function upsertSubscription(
       }
     | undefined,
 ): Promise<void> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    log?.warn?.(
+      {
+        subscriptionId: subscription.id,
+        stripeCustomerId: subscription.customer,
+      },
+      "shop_subscriptions upsert skipped — tenant context missing",
+    );
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   const customerId = readCustomerIdFromMetadata(subscription.metadata);
   if (!customerId) {
@@ -163,7 +175,6 @@ async function upsertSubscription(
   const itemsJson = items as unknown as Json;
 
   const { error: insertErr } = await supabase
-    .schema("resupply")
     .from("shop_subscriptions")
     .insert({
       customer_id: customerId,
@@ -206,7 +217,6 @@ async function upsertSubscription(
   // customerId is guaranteed non-null here (we return early when missing).
   update.customer_id = customerId;
   const { data: updated, error: updateErr } = await supabase
-    .schema("resupply")
     .from("shop_subscriptions")
     .update(update)
     .eq("stripe_subscription_id", subscription.id)

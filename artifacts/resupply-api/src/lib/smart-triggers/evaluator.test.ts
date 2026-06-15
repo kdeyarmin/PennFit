@@ -144,6 +144,7 @@ describe("runSmartTriggerEvaluator", () => {
         kind: "leak_rising",
         window_start_date: "2026-04-01",
         window_end_date: "2026-04-14",
+        org_id: "00000000-0000-4000-8000-000000000000",
       },
     ]);
     expect(logAuditMock).toHaveBeenCalledTimes(1);

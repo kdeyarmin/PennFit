@@ -21,7 +21,12 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type Database,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { autofileSignedPacketPdf } from "../../lib/patient-packet/autofile";
@@ -74,7 +79,7 @@ type ResolvedPacket = {
 // Verify a token against a freshly-loaded packet row. Returns the
 // packet when the link is valid + open, or an error code to surface.
 async function resolveOpenPacket(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   token: string,
 ): Promise<
   | { ok: true; packet: ResolvedPacket }
@@ -87,7 +92,6 @@ async function resolveOpenPacket(
   if (!verified.valid) return { ok: false, code: "invalid" };
 
   const { data: packet, error } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .select(
       "id, status, link_version, expires_at, title, recipient_name, recipient_email, recipient_phone, completed_at, delivery_details",
@@ -116,7 +120,15 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
     res.status(400).json({ error: "missing_token" });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  // Public token-gated route (pattern 3): no req.orgId. Resolve the seed
+  // org for the scoped client; degrade to the existing not_found path on
+  // a miss rather than 500 (the token is the auth, not a session).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolveOpenPacket(supabase, token);
   if (!resolved.ok) {
     // Completed is a friendly terminal state, not an error for the UI.
@@ -132,7 +144,6 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
   const packet = resolved.packet;
 
   const { data: docs, error: docsErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .select(
       "document_key, title, requires_signature, content_sections, sort_order",
@@ -141,12 +152,13 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
     .order("sort_order", { ascending: true });
   if (docsErr) throw docsErr;
 
-  const company = await resolveCompanyProfile(supabase);
+  // resolveCompanyProfile is a shared helper not in this wave's list —
+  // pass the unscoped client (recipe-2 §B).
+  const company = await resolveCompanyProfile(supabase.raw());
 
   // First view? Stamp it (best-effort; never blocks the read).
   if (packet.status === "sent") {
     const { error: viewStampErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update({
         status: "viewed",
@@ -163,7 +175,10 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
     }
   }
 
-  const docKeys = (docs ?? []).map((d) => d.document_key);
+  const docKeys = (docs ?? []).map(
+    (d: Database["resupply"]["Tables"]["patient_packet_documents"]["Row"]) =>
+      d.document_key,
+  );
 
   res.json({
     status: "open",
@@ -177,29 +192,33 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
     // The signer must record the date they received the equipment when
     // the packet carries a Proof of Delivery (a Medicare POD field).
     requiresDateReceived: packetRequiresDateReceived(docKeys),
-    documents: (docs ?? []).map((d) => {
-      const t = getPacketTemplate(d.document_key);
-      return {
-        key: d.document_key,
-        title: d.title,
-        category: t?.category ?? "consent",
-        requiresSignature: d.requires_signature,
-        // Signer-side option selection (e.g. the ABN's Option 1/2/3) —
-        // code-defined; content overrides never alter the options.
-        choice: t?.choice ?? null,
-        // Send-time snapshot (tokens resolved here); legacy rows without
-        // a snapshot build from the code template exactly as before.
-        sections: renderPacketDocumentSections({
-          documentKey: d.document_key,
-          storedSections: d.content_sections,
-          company,
-          recipientName: packet.recipient_name,
-          recipientEmail: packet.recipient_email,
-          recipientPhone: packet.recipient_phone,
-          deliveryDetails: packet.delivery_details,
-        }),
-      };
-    }),
+    documents: (docs ?? []).map(
+      (
+        d: Database["resupply"]["Tables"]["patient_packet_documents"]["Row"],
+      ) => {
+        const t = getPacketTemplate(d.document_key);
+        return {
+          key: d.document_key,
+          title: d.title,
+          category: t?.category ?? "consent",
+          requiresSignature: d.requires_signature,
+          // Signer-side option selection (e.g. the ABN's Option 1/2/3) —
+          // code-defined; content overrides never alter the options.
+          choice: t?.choice ?? null,
+          // Send-time snapshot (tokens resolved here); legacy rows without
+          // a snapshot build from the code template exactly as before.
+          sections: renderPacketDocumentSections({
+            documentKey: d.document_key,
+            storedSections: d.content_sections,
+            company,
+            recipientName: packet.recipient_name,
+            recipientEmail: packet.recipient_email,
+            recipientPhone: packet.recipient_phone,
+            deliveryDetails: packet.delivery_details,
+          }),
+        };
+      },
+    ),
   });
 });
 
@@ -260,7 +279,15 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   }
   const b = parsed.data;
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public token-gated route (pattern 3): no req.orgId. Resolve the seed
+  // org for the scoped client; degrade to the existing not_found path on
+  // a miss (the token is the auth, not a session).
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const resolved = await resolveOpenPacket(supabase, b.token);
   if (!resolved.ok) {
     if (resolved.code === "completed") {
@@ -276,12 +303,16 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
 
   // Every document in the packet must be acknowledged before signing.
   const { data: docs, error: docsErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .select("document_key")
     .eq("packet_id", packet.id);
   if (docsErr) throw docsErr;
-  const requiredKeys = new Set((docs ?? []).map((d) => d.document_key));
+  const requiredKeys = new Set<string>(
+    (docs ?? []).map(
+      (d: Database["resupply"]["Tables"]["patient_packet_documents"]["Row"]) =>
+        d.document_key,
+    ),
+  );
   const ackedKeys = new Set(b.acknowledgedDocumentKeys);
   const missing = [...requiredKeys].filter((k) => !ackedKeys.has(k));
   if (missing.length > 0) {
@@ -330,7 +361,6 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   const userAgent = (req.get("user-agent") ?? "").slice(0, 500) || null;
 
   const { error: sigErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_signatures")
     .insert({
       packet_id: packet.id,
@@ -351,7 +381,6 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
 
   // Mark documents acknowledged.
   const { error: docUpdErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .update({ acknowledged: true, acknowledged_at: nowIso })
     .eq("packet_id", packet.id);
@@ -359,7 +388,6 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
 
   // Finalize: complete + invalidate the link (bump version high).
   const { data: finalized, error: finErr } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .update({
       status: "completed",
@@ -395,7 +423,9 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   // best-effort (autofile.ts logs and swallows its own failures). The
   // patient's signing response must never wait on PDF rendering or
   // object storage.
-  void autofileSignedPacketPdf(supabase, packet.id);
+  // autofileSignedPacketPdf is a shared helper not in this wave's list —
+  // pass the unscoped client (recipe-2 §B).
+  void autofileSignedPacketPdf(supabase.raw(), packet.id);
 
   res.json({ status: "completed", completedAt: nowIso });
 });

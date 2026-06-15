@@ -34,10 +34,11 @@
 // PHI posture: counts + ids only in the log lines.
 
 import {
+  type Database,
   type Json,
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
   resolveSeedOrgId,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { analyzeDenial } from "./ai-denial-analyzer";
@@ -57,7 +58,7 @@ import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
 import { publishEvent } from "../webhooks/publisher";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 const SCRUB_TRIGGER_THRESHOLD = 0.5;
 const STATEMENT_COOLDOWN_DAYS = 30;
@@ -80,7 +81,11 @@ export async function runAutoWorkflowPass(): Promise<AutoWorkflowStats> {
     secondaryClaimsDrafted: 0,
     errors: 0,
   };
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
   await runScrubPass(supabase, stats);
   await runDenialAnalysisPass(supabase, stats);
   await runStatementPass(supabase, stats);
@@ -100,7 +105,6 @@ async function runScrubPass(
   // Pull draft claims that either have never been scored OR were
   // scored more than 24h ago. The `or` clause is PostgREST-style.
   const { data: claims } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, predicted_denial_scored_at, latest_scrub_at, patient_id")
     .eq("status", "draft")
@@ -126,7 +130,6 @@ async function runScrubPass(
       }
       const output = await scrubClaim({ claimId: claim.id });
       const { data: row } = await supabase
-        .schema("resupply")
         .from("claim_scrub_results")
         .insert({
           claim_id: claim.id,
@@ -149,7 +152,6 @@ async function runScrubPass(
         .single();
       if (row) {
         const { error: scrubLinkErr } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .update({
             latest_scrub_verdict: output.verdict,
@@ -195,7 +197,6 @@ async function runDenialAnalysisPass(
   stats: AutoWorkflowStats,
 ): Promise<void> {
   const { data: denied } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id, patient_id, decision_at")
     .eq("status", "denied")
@@ -206,7 +207,6 @@ async function runDenialAnalysisPass(
     try {
       const output = await analyzeDenial({ claimId: claim.id });
       const { data: row } = await supabase
-        .schema("resupply")
         .from("claim_denial_analyses")
         .insert({
           claim_id: claim.id,
@@ -233,7 +233,6 @@ async function runDenialAnalysisPass(
         .single();
       if (row) {
         const { error: analysisLinkErr } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .update({
             latest_denial_analysis_id: row.id,
@@ -283,24 +282,35 @@ async function runStatementPass(
     Date.now() - STATEMENT_COOLDOWN_DAYS * 24 * 3600 * 1000,
   ).toISOString();
   const { data: candidates } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("patient_id, patient_responsibility_cents")
     .in("status", ["paid", "closed"])
     .gt("patient_responsibility_cents", 0)
     .order("decision_at", { ascending: false })
     .limit(2000);
-  const patientIds = [...new Set((candidates ?? []).map((c) => c.patient_id))];
+  const patientIds = [
+    ...new Set<string>(
+      (candidates ?? []).map(
+        (c: Database["resupply"]["Tables"]["insurance_claims"]["Row"]) =>
+          c.patient_id,
+      ),
+    ),
+  ];
   if (patientIds.length === 0) return;
 
   // Look up which patients had a statement generated in the cooldown window.
   const { data: recent } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select("patient_id")
     .in("patient_id", patientIds)
     .gte("created_at", cooldownCutoff);
-  const onCooldown = new Set((recent ?? []).map((r) => r.patient_id));
+  const onCooldown = new Set(
+    (recent ?? []).map(
+      (
+        r: Database["resupply"]["Tables"]["patient_billing_statements"]["Row"],
+      ) => r.patient_id,
+    ),
+  );
 
   for (const patientId of patientIds) {
     if (onCooldown.has(patientId)) continue;
@@ -311,6 +321,7 @@ async function runStatementPass(
       const generated = await generatePatientBillingStatement({
         patientId,
         generatedByEmail: "system:auto_workflow",
+        orgId: supabase.orgId,
       });
       void publishEvent({
         eventType: "billing_statement.generated",
@@ -364,19 +375,11 @@ export async function runSecondaryClaimPass(
   // manual COB worklist (/admin/billing/secondary-eligible).
   if (!(await isFeatureEnabled("billing.auto_secondary_claims"))) return;
 
-  // Secondary-claim drafting writes go through the org-scoped chokepoint.
-  // This automation pass has no request tenant, so it scopes to the seed
-  // org (single-tenant bridge).
-  const secOrgId = await resolveSeedOrgId();
-  if (!secOrgId) return;
-  const scopedClient = getOrgScopedClient(secOrgId);
-
   // Paid primaries that carry a secondary coverage — the COB candidates.
   // `filterSecondaryEligible` re-checks balance/sequence and drops any
   // primary that already spawned a secondary, so this is the same set the
   // manual worklist surfaces.
   const { data: candidates, error: candErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(SECONDARY_CLAIM_SELECT)
     .eq("payer_sequence", "primary")
@@ -402,7 +405,6 @@ export async function runSecondaryClaimPass(
   const ids = rows.map((c) => c.id);
   const existing = new Set<string>();
   const { data: secRows, error: secErr } = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("primary_claim_id")
     .eq("payer_sequence", "secondary")
@@ -422,12 +424,13 @@ export async function runSecondaryClaimPass(
   }
 
   const eligible = filterSecondaryEligible(rows, existing);
+  if (eligible.length === 0) return;
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const scoped = getOrgScopedClient(orgId);
   for (const item of eligible) {
     try {
-      const result = await generateSecondaryClaimDraft(
-        scopedClient,
-        item.claimId,
-      );
+      const result = await generateSecondaryClaimDraft(scoped, item.claimId);
       if (result.status === "created") {
         stats.secondaryClaimsDrafted += 1;
         void publishEvent({

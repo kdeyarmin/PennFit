@@ -20,11 +20,7 @@
 
 import type PgBoss from "pg-boss";
 
-import {
-  getOrgScopedClient,
-  type OrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
@@ -55,9 +51,7 @@ export interface BillHoldSweepStats {
   remindersBumped: number;
 }
 
-export async function runBillHoldSweep(
-  supabase: OrgScopedClient,
-): Promise<BillHoldSweepStats> {
+export async function runBillHoldSweep(): Promise<BillHoldSweepStats> {
   const stats: BillHoldSweepStats = {
     skipped: false,
     draftClaimsScanned: 0,
@@ -71,6 +65,13 @@ export async function runBillHoldSweep(
     return stats;
   }
 
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    stats.skipped = true;
+    return stats;
+  }
+  const supabase = getOrgScopedClient(orgId);
+
   // ── 1. Backfill: seed defaults onto draft claims with no requirements ──
   const { data: drafts, error: draftErr } = await supabase
     .from("insurance_claims")
@@ -79,7 +80,9 @@ export async function runBillHoldSweep(
     .order("created_at", { ascending: true })
     .limit(SEED_SCAN_CAP);
   if (draftErr) throw draftErr;
-  const draftIds = ((drafts ?? []) as Array<{ id: string }>).map((c) => c.id);
+  const draftIds = (drafts ?? []).map(
+    (c: { id: string }) => (c as { id: string }).id,
+  );
   stats.draftClaimsScanned = draftIds.length;
 
   if (draftIds.length > 0) {
@@ -90,15 +93,20 @@ export async function runBillHoldSweep(
       .in("claim_id", draftIds);
     if (reqErr) throw reqErr;
     const haveReqs = new Set(
-      ((withReqs ?? []) as Array<{ claim_id: string | null }>)
-        .map((r) => r.claim_id)
-        .filter((id): id is string => id != null),
+      (withReqs ?? [])
+        .map(
+          (r: { claim_id: string | null }) =>
+            (r as { claim_id: string | null }).claim_id,
+        )
+        .filter((id: string | null): id is string => id != null),
     );
     for (const claimId of draftIds) {
       if (haveReqs.has(claimId)) continue;
       try {
         const result = await seedDefaultRequirementsForClaim(claimId, {
-          supabase,
+          // Shared helper not yet cut over — pass the unscoped client it
+          // is typed for (recipe-2 §B).
+          supabase: supabase.raw(),
           createdByEmail: "system:bill-hold-sweep",
         });
         if (result.created > 0) {
@@ -167,17 +175,7 @@ export async function registerBillHoldSweepJob(boss: PgBoss): Promise<void> {
   await createQueueWithDlq(boss, BILL_HOLD_SWEEP_JOB, CRON_SCAN_QUEUE_OPTS);
   await boss.work(BILL_HOLD_SWEEP_JOB, async () => {
     try {
-      // Single-tenant bridge: the sweep operates on tenant data, so it
-      // runs scoped to the seed org. (Multi-org would loop every org.)
-      const orgId = await resolveSeedOrgId();
-      if (!orgId) {
-        logger.info(
-          { event: "billing.bill-hold-sweep.skipped_no_org" },
-          "bill-hold-sweep: no seed org resolved; skipping",
-        );
-        return;
-      }
-      const stats = await runBillHoldSweep(getOrgScopedClient(orgId));
+      const stats = await runBillHoldSweep();
       logger.info(
         { event: "billing.bill-hold-sweep.completed", ...stats },
         "bill-hold-sweep: completed",

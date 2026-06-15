@@ -41,7 +41,10 @@ const { dbStaged, dbUpsertPayloads, storageResults, resetAll } = vi.hoisted(
 // Inline mock of @workspace/resupply-db
 // ---------------------------------------------------------------------------
 
-vi.mock("@workspace/resupply-db", () => {
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+
   function popDbStage(
     table: string,
     op: string,
@@ -134,16 +137,31 @@ vi.mock("@workspace/resupply-db", () => {
     };
   }
 
-  return {
-    getSupabaseServiceRoleClient: () => ({
+  const makeMockClient = () => ({
+    from: (table: string) => makeDbBuilder(table),
+    schema: () => ({
       from: (table: string) => makeDbBuilder(table),
-      schema: () => ({
-        from: (table: string) => makeDbBuilder(table),
-      }),
-      storage: {
-        from: (bucket: string) => makeStorageBuilder(bucket),
-      },
     }),
+    storage: {
+      from: (bucket: string) => makeStorageBuilder(bucket),
+    },
+  });
+
+  return {
+    ...actual,
+    getSupabaseServiceRoleClient: () => makeMockClient(),
+    getOrgScopedClient: (
+      orgId: string,
+      client?: Parameters<typeof actual.getOrgScopedClient>[1],
+    ) =>
+      actual.getOrgScopedClient(
+        orgId,
+        client ??
+          (makeMockClient() as unknown as Parameters<
+            typeof actual.getOrgScopedClient
+          >[1]),
+      ),
+    resolveSeedOrgId: async () => "00000000-0000-0000-0000-000000000001",
   };
 });
 

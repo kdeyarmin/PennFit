@@ -35,7 +35,8 @@ import {
   type ReminderItem,
 } from "../../lib/api-zod/index.js";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
@@ -171,13 +172,27 @@ router.post("/reminders", async (req, res) => {
   const items = parsed.data.items;
   const itemsWithDue = withNextDue(items);
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public, unauthenticated route (pattern 3): no req.orgId. Resolve the
+  // seed org to build the scoped client and degrade gracefully —
+  // reminder_subscriptions is a global public-schema table (no org_id),
+  // reached via `.raw()`, but we still resolve a tenant for the client.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.json({
+      success: true,
+      emailStatus: "skipped" as const,
+      message: "Check your email for a manage link.",
+    });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
 
   // Look up by email. We branch hard here: existing rows DO NOT receive
   // the new items in the response and DO NOT have their token disclosed.
   // This closes a takeover hole where an attacker could submit a victim's
   // email and read back the capability token.
   const { data: existing, error: existingErr } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select("email, manage_token")
@@ -221,6 +236,7 @@ router.post("/reminders", async (req, res) => {
   // unauthenticated callers cannot mint and retain tokens for arbitrary
   // email addresses without proving inbox ownership.
   const { data: row, error: insertErr } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .insert({
@@ -330,8 +346,17 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
     res.status(lookup.status).json({ error: lookup.message });
     return;
   }
-  const supabase = getSupabaseServiceRoleClient();
+  // Token/session route (pattern 3): no guaranteed req.orgId. Resolve the
+  // seed org; reminder_subscriptions is a global public-schema table
+  // reached via `.raw()`. Degrade to the existing "not found" path.
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    res.status(404).json({ error: "Subscription not found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: row, error } = await supabase
+    .raw()
     .schema("public")
     .from("reminder_subscriptions")
     .select(
@@ -379,8 +404,14 @@ router.patch(
 
     const itemsWithDue = withNextDue(bodyParsed.data.items);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(404).json({ error: "Subscription not found" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
+      .raw()
       .schema("public")
       .from("reminder_subscriptions")
       .update({
@@ -415,8 +446,14 @@ router.post(
       res.status(lookup.status).json({ error: lookup.message });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(404).json({ error: "Subscription not found" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
+      .raw()
       .schema("public")
       .from("reminder_subscriptions")
       .update({

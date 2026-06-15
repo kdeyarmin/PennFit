@@ -26,7 +26,7 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
@@ -40,7 +40,20 @@ export async function registerIdempotencyKeysPruneJob(
   await createQueueWithDlq(boss, PRUNE_JOB, CRON_SCAN_QUEUE_OPTS);
 
   await boss.work(PRUNE_JOB, async () => {
-    const supabase = getSupabaseServiceRoleClient();
+    // idempotency_keys and worker_dedup_keys are GLOBAL tables (no
+    // org_id column) — they are pruned across all tenants. We still
+    // resolve the seed org to obtain a client, then use the unscoped
+    // `.raw()` escape hatch so no org filter is applied. A missing
+    // seed org is a no-op (fire-and-forget sweep — never throw).
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      logger.info(
+        { event: "idempotency-keys.prune.no_seed_org" },
+        "idempotency-keys.prune: no seed org resolved — skipping",
+      );
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     try {
       // PostgREST RETURNING is page-size capped (~1000 rows by
       // default). The DB DELETE removes every matching row, but the
@@ -51,6 +64,7 @@ export async function registerIdempotencyKeysPruneJob(
       // DELETE itself so the response carries the true deleted-row
       // count without paging.
       const { count, error } = await supabase
+        .raw()
         .schema("resupply")
         .from("idempotency_keys")
         .delete({ count: "exact" })
@@ -65,6 +79,7 @@ export async function registerIdempotencyKeysPruneJob(
       // rows for keys that are actively re-claimed. This DELETE is the
       // promised sweeper (app-review 2026-06-10, P1-2).
       const { count: dedupCount, error: dedupError } = await supabase
+        .raw()
         .schema("resupply")
         .from("worker_dedup_keys")
         .delete({ count: "exact" })

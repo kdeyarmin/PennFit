@@ -33,10 +33,7 @@
 //     propagates without polling, but we don't hammer Supabase on
 //     every webhook.
 
-import {
-  getSupabaseServiceRoleClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -156,13 +153,13 @@ async function lookupEnabled(
   key: FeatureFlagKey,
   seedOrgId: string | null,
 ): Promise<boolean> {
-  const supabase = getSupabaseServiceRoleClient();
   return withLookupTimeout(async () => {
-    const { data, error } = await supabase
-      .schema("resupply")
+    // Tenant-scoped read through the org chokepoint — the facade appends
+    // `.eq("org_id", orgId)` for us (feature_flags is per-tenant since
+    // Phase 1 / migration 0350).
+    const { data, error } = await getOrgScopedClient(orgId)
       .from("feature_flags")
       .select("enabled")
-      .eq("org_id", orgId)
       .eq("key", key)
       .maybeSingle();
     if (error) throw error;
@@ -171,40 +168,17 @@ async function lookupEnabled(
     // platform default) when we're looking at some OTHER org; otherwise
     // treat an unknown key as enabled (matches the table's posture).
     if (seedOrgId && orgId !== seedOrgId) {
-      const { data: seedData, error: seedErr } = await supabase
-        .schema("resupply")
+      const { data: seedData, error: seedErr } = await getOrgScopedClient(
+        seedOrgId,
+      )
         .from("feature_flags")
         .select("enabled")
-        .eq("org_id", seedOrgId)
         .eq("key", key)
         .maybeSingle();
       if (seedErr) throw seedErr;
       if (seedData) return seedData.enabled;
     }
     return true;
-  });
-}
-
-/**
- * Legacy key-only lookup, used only when no tenant can be resolved (no
- * orgId supplied AND the seed org is unresolvable — e.g. a dev/test/CI
- * environment without a configured DB, or before the organizations row
- * exists). Preserves the pre-Phase-1 reader's behavior so the catch
- * block's "missing DB config / unreachable → enabled in non-prod"
- * fallbacks still apply. In a real multi-tenant prod the seed org always
- * resolves, so this path isn't taken.
- */
-async function lookupEnabledByKeyOnly(key: FeatureFlagKey): Promise<boolean> {
-  const supabase = getSupabaseServiceRoleClient();
-  return withLookupTimeout(async () => {
-    const { data, error } = await supabase
-      .schema("resupply")
-      .from("feature_flags")
-      .select("enabled")
-      .eq("key", key)
-      .maybeSingle();
-    if (error) throw error;
-    return data?.enabled ?? true;
   });
 }
 
@@ -250,20 +224,14 @@ export async function isFeatureEnabled(
     if (!effectiveOrgId) {
       // No tenant resolvable (no orgId AND the seed org couldn't be
       // resolved — e.g. a dev/test/CI env with no DB, or before the
-      // organizations row exists). Fall back to the legacy key-only
-      // lookup so behavior matches the pre-Phase-1 reader and the catch
-      // block's non-prod fail-open still applies when the DB is simply
-      // unconfigured.
+      // organizations row exists). feature_flags is per-tenant since
+      // Phase 1, so there is no tenant row to read; defer to the catch
+      // block's posture (enabled in non-prod, fail-closed in prod) by
+      // signalling an unreachable lookup. This matches the pre-Phase-1
+      // reader's effective behavior, where the key-only DB read also
+      // threw (no/unreachable DB) and fell through to the same catch.
       cacheKey = key;
-      const cachedLegacy = cache.get(cacheKey);
-      if (cachedLegacy && cachedLegacy.expiresAt > now)
-        return cachedLegacy.value;
-      const legacyValue = await lookupEnabledByKeyOnly(key);
-      cache.set(cacheKey, {
-        value: legacyValue,
-        expiresAt: now + CACHE_TTL_MS,
-      });
-      return legacyValue;
+      throw new FeatureFlagLookupTimeout();
     }
 
     cacheKey = `${effectiveOrgId}:${key}`;

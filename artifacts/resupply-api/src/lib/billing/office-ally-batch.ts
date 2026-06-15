@@ -338,7 +338,7 @@ export async function executeOfficeAllyBatchSubmit(
     for (const claimId of uninitialized) {
       try {
         await seedDefaultRequirementsForClaim(claimId, {
-          supabase: billHold,
+          supabase: billHold.raw(),
           createdByEmail: input.adminEmail ?? "system:office-ally-submit",
         });
       } catch (err) {
@@ -365,7 +365,7 @@ export async function executeOfficeAllyBatchSubmit(
     }
     const outstanding = await countOutstandingByClaim(
       claims.map((c) => c.id),
-      billHold,
+      billHold.raw(),
     );
     const heldClaimIds = claims
       .filter((c) => (outstanding.get(c.id) ?? 0) > 0)

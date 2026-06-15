@@ -9,7 +9,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { EmailConfigError } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
@@ -59,11 +59,21 @@ router.post(
     }
     const { patientId, episodeId } = parsed.data;
 
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+
     let outcome: SendReminderOutcome;
     try {
       outcome = await sendReminderEmail({
-        supabase: getSupabaseServiceRoleClient(),
-        orgId: req.orgId,
+        // sendReminderEmail is a shared lib/resupply-reminders helper not
+        // in this wave's file list; it's typed for the raw service-role
+        // client. Pass the unscoped client (`.raw()`) per cutover §B.
+        supabase: supabase.raw(),
         cfg: {
           sendgridApiKey: cfg.email.sendgridApiKey,
           sendgridFromEmail: cfg.email.sendgridFromEmail,
