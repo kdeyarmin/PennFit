@@ -33,7 +33,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -121,7 +121,12 @@ router.get(
   adminReadRateLimiter,
   requireAdmin,
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // requireAdmin guarantees an auth-user id; the `?? ""` only satisfies the
     // type — an empty string matches no uuid, so the worklist is simply empty
     // in the impossible case it's missing.
@@ -146,7 +151,6 @@ router.get(
       assignedApptRes,
     ] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("conversations")
         .select(
           "id, channel, last_message_at, patient_id, customer_id, assigned_admin_user_id",
@@ -155,7 +159,6 @@ router.get(
         .order("last_message_at", { ascending: true, nullsFirst: false })
         .limit(PER_QUEUE_LIMIT),
       supabase
-        .schema("resupply")
         .from("patient_followups")
         .select("id, due_at, body, patient_id")
         .is("completed_at", null)
@@ -163,7 +166,6 @@ router.get(
         .order("due_at", { ascending: true })
         .limit(PER_QUEUE_LIMIT),
       supabase
-        .schema("resupply")
         .from("shop_customer_followups")
         .select("id, due_at, body, customer_id")
         .is("completed_at", null)
@@ -171,7 +173,6 @@ router.get(
         .order("due_at", { ascending: true })
         .limit(PER_QUEUE_LIMIT),
       supabase
-        .schema("resupply")
         .from("shop_returns")
         .select("id, status, reason, customer_id, created_at")
         .in("status", ["requested", "approved", "shipped_back", "received"])
@@ -191,7 +192,6 @@ router.get(
       // alert stayed in `snoozed` status forever and silently dropped
       // off every dashboard.
       supabase
-        .schema("resupply")
         .from("csr_compliance_alerts")
         .select(
           "id, alert_type, severity, summary, patient_id, status, snoozed_until, created_at",
@@ -200,7 +200,6 @@ router.get(
         .order("created_at", { ascending: true })
         .limit(PER_QUEUE_LIMIT * 3),
       supabase
-        .schema("resupply")
         .from("prescriptions")
         .select("id, patient_id, item_sku, hcpcs_code, valid_until")
         .eq("status", "active")
@@ -211,14 +210,12 @@ router.get(
         .order("valid_until", { ascending: true })
         .limit(PER_QUEUE_LIMIT),
       supabase
-        .schema("resupply")
         .from("patient_documents")
         .select("id, document_type, patient_id, filename, created_at")
         .is("reviewed_at", null)
         .order("created_at", { ascending: true })
         .limit(PER_QUEUE_LIMIT),
       supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .select("id, twilio_fax_sid, from_e164, num_pages, received_at")
         .eq("status", "new")
@@ -228,7 +225,6 @@ router.get(
       // posture: ids + type + time + location only; no patient name (the
       // CSR clicks through to the calendar). Mirrors every other queue here.
       supabase
-        .schema("resupply")
         .from("company_calendar_events")
         .select("id, patient_id, event_type, starts_at, ends_at, location")
         .eq("assigned_to_user_id", myUserId)
@@ -268,7 +264,7 @@ router.get(
 
     // Merge the two follow-up queries into one stream sorted by due_at.
     const patientFollowups: FollowupRow[] = (patientFollowupRes.data ?? []).map(
-      (r) => ({
+      (r: Database["resupply"]["Tables"]["patient_followups"]["Row"]) => ({
         id: r.id,
         due_at: r.due_at,
         body: r.body,
@@ -278,7 +274,9 @@ router.get(
       }),
     );
     const shopFollowups: FollowupRow[] = (shopFollowupRes.data ?? []).map(
-      (r) => ({
+      (
+        r: Database["resupply"]["Tables"]["shop_customer_followups"]["Row"],
+      ) => ({
         id: r.id,
         due_at: r.due_at,
         body: r.body,
