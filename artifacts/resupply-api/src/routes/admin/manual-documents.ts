@@ -37,7 +37,6 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
@@ -322,16 +321,20 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = prefillQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
     const { patientId, documentType } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
@@ -347,14 +350,12 @@ router.get(
 
     const [presRes, studyRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("prescriptions")
         .select("item_sku, hcpcs_code, provider_id, status, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(10),
       supabase
-        .schema("resupply")
         .from("sleep_studies")
         .select(
           "diagnosis_icd10, study_date, ahi, rdi, interpreting_provider_id",
@@ -367,7 +368,13 @@ router.get(
     if (presRes.error) throw presRes.error;
     if (studyRes.error) throw studyRes.error;
 
-    const prescriptions = presRes.data ?? [];
+    const prescriptions = (presRes.data ?? []) as Array<{
+      item_sku: string;
+      hcpcs_code: string | null;
+      provider_id: string | null;
+      status: string;
+      created_at: string;
+    }>;
     const activePrescriptions = prescriptions.filter(
       (p) => p.status === "active",
     );
@@ -392,6 +399,7 @@ router.get(
     } | null = null;
     if (providerId) {
       const { data, error: provErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("providers")
         .select(
@@ -497,14 +505,18 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = listQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("manual_documents")
       .select(
         "id, document_type, title, status, patient_id, chart_document_id, " +
@@ -532,6 +544,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.create", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = createBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       invalidBody(res, parsed.error);
@@ -541,10 +558,9 @@ router.post(
     const type = b.documentType as ManualDocumentType;
     const fields = normalizeManualDocumentFields(type, b.fields);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .insert({
         document_type: type,
@@ -615,14 +631,18 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .select(MANUAL_DOCUMENT_ROW_COLUMNS)
       .eq("id", parsed.data.id)
@@ -643,6 +663,11 @@ router.patch(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.update", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -655,9 +680,8 @@ router.patch(
     }
     const b = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: loadErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .select("id, document_type")
       .eq("id", idParsed.data.id)
@@ -691,7 +715,6 @@ router.patch(
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update(patch)
       .eq("id", idParsed.data.id);
@@ -724,14 +747,18 @@ router.delete(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.delete", preset: "destroy" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .delete()
       .eq("id", parsed.data.id);
@@ -768,12 +795,17 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const row = await loadManualDocumentRow(supabase, parsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -817,6 +849,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.send_email", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -832,7 +869,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -882,7 +919,6 @@ router.post(
     // Best-effort stamp — the email already went out, so a failed status
     // write must not 500 (a retry would send a duplicate email).
     const { error: emailStampErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update({
         last_emailed_at: nowIso,
@@ -929,6 +965,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.send_fax", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -944,7 +985,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -990,7 +1031,6 @@ router.post(
     // Best-effort stamp — the fax was already dispatched, so a failed
     // status write must not 500 (a retry would send a duplicate fax).
     const { error: faxStampErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update({
         last_faxed_at: nowIso,
@@ -1037,6 +1077,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.attach", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -1048,7 +1093,7 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
@@ -1062,7 +1107,6 @@ router.post(
 
     // Confirm the chart exists before we render/upload anything.
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -1112,7 +1156,6 @@ router.post(
     }).toISOString();
 
     const { data: docRow, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .insert({
         patient_id: patientId,
@@ -1131,7 +1174,6 @@ router.post(
     if (insertErr) throw insertErr;
 
     const { error: attachErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update({
         patient_id: patientId,

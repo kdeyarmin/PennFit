@@ -17,10 +17,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import {
-  getSupabaseServiceRoleClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
@@ -60,7 +57,14 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  const supabase = getSupabaseServiceRoleClient();
+  // Public token route (no request tenant); scope manual-document and
+  // physician-fax reads to the seed org (single-tenant bridge).
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+  const supabase = getOrgScopedClient(seedOrgId);
 
   // Appeal-letter faxes render the stored appeal PDF (claim_appeal_letters
   // row) instead of the physician cover letter. Same signed-URL posture;
@@ -158,7 +162,6 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   }
 
   const { data: row, error } = await supabase
-    .schema("resupply")
     .from("physician_fax_outreach")
     .select("physician_name, cover_letter_text")
     .eq("id", verified.outreachId)
