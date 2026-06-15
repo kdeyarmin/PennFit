@@ -64,8 +64,11 @@ router.get(
   "/admin/billing/auto-submit/status",
   adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const flagEnabled = await isFeatureEnabled("billing.auto_submit_claims");
+  async (req, res) => {
+    const flagEnabled = await isFeatureEnabled(
+      "billing.auto_submit_claims",
+      req.orgId,
+    );
     const autoSubmitCron = process.env.CLAIMS_AUTOSUBMIT_CRON?.trim() || null;
     const eligibilityCron =
       process.env.ELIGIBILITY_REVERIFY_CRON?.trim() || null;

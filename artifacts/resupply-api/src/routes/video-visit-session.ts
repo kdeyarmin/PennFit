@@ -49,7 +49,7 @@ router.get("/video-visit/session", sessionLimiter, async (req, res) => {
     res.status(404).json({ state: "invalid" });
     return;
   }
-  if (!(await isFeatureEnabled("telehealth.video"))) {
+  if (!(await isFeatureEnabled("telehealth.video", req.orgId))) {
     res.status(503).json({ state: "disabled" });
     return;
   }

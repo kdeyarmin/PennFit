@@ -176,7 +176,7 @@ router.post(
 
     // Seed the default signed-paperwork requirement set (bill hold). Gated
     // by the flag; never fails claim creation.
-    if (await isFeatureEnabled("billing.bill_hold")) {
+    if (await isFeatureEnabled("billing.bill_hold", req.orgId)) {
       try {
         await seedDefaultRequirementsForClaim(newId, {
           supabase: supabase.raw(),
