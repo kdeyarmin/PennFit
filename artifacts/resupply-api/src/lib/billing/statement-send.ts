@@ -17,9 +17,9 @@
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
   type CommunicationPreferences,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -30,8 +30,6 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
 import { getDocumentSupplierNameSync } from "../company-info";
 import { logger } from "../logger";
-
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export interface StatementMessagingConfig {
   sendgridApiKey: string | null;
@@ -237,7 +235,7 @@ export interface StatementSendDeps {
 }
 
 async function persistOutcome(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
   outcome: SendOutcome,
 ): Promise<void> {
@@ -255,7 +253,6 @@ async function persistOutcome(
   // and 'pending' (an unclaimed gate-skip — zero balance / no channel).
   // Anything else means another writer got here first; never stomp it.
   const { data: updated, error: persistErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({
       delivery_status: status,
@@ -292,11 +289,10 @@ async function persistOutcome(
  * The 'sending' state is admitted by migration 0297.
  */
 async function claimStatementForSend(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
 ): Promise<boolean> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({ delivery_status: "sending" })
     .eq("id", statementId)
@@ -312,11 +308,10 @@ async function claimStatementForSend(
  * no email on file (so the bill isn't silently lost).
  */
 async function routeToMail(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
 ): Promise<void> {
   const { error: routeErr } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({ delivery_method: "mail" })
     .eq("id", statementId);
@@ -337,12 +332,11 @@ async function routeToMail(
  * count actually marked.
  */
 export async function markStatementsMailed(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementIds: string[],
 ): Promise<number> {
   if (statementIds.length === 0) return 0;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .update({
       delivery_status: "sent",
@@ -370,7 +364,7 @@ interface LoadedStatement {
  * outcome. Shared by the emailed-preference and legacy comm-prefs paths.
  */
 async function deliverOnChannel(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   stmt: LoadedStatement,
   contact: { email: string | null; phoneE164: string | null },
   channel: StatementChannel,
@@ -446,7 +440,7 @@ async function deliverOnChannel(
  * Fail-soft — returns the outcome; never throws for a normal gated send.
  */
 export async function sendOneStatement(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
   statementId: string,
   deps: StatementSendDeps = {},
 ): Promise<SendOutcome> {
@@ -455,7 +449,6 @@ export async function sendOneStatement(
   const now = deps.now ?? new Date();
 
   const { data: stmt, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select(
       "id, patient_id, total_patient_responsibility_cents, statement_pdf_object_key, delivery_status, delivery_method",
@@ -494,7 +487,6 @@ export async function sendOneStatement(
   }
 
   const { data: patient } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("email, phone_e164, address")
     .eq("id", stmt.patient_id)
@@ -532,7 +524,6 @@ export async function sendOneStatement(
   let prefs = DEFAULT_COMMUNICATION_PREFERENCES;
   if (email) {
     const { data: cust } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("communication_preferences")
       .eq("email_lower", email.toLowerCase())
@@ -587,10 +578,10 @@ export interface StatementBatchResult {
  * never repeatedly re-scans them. Fail-soft per statement.
  */
 export async function runStatementBatchSend(
+  supabase: OrgScopedClient,
   opts: StatementBatchOpts = {},
   deps: StatementSendDeps = {},
 ): Promise<StatementBatchResult> {
-  const supabase = getSupabaseServiceRoleClient();
   const cap = opts.cap ?? 50;
   const result: StatementBatchResult = {
     scanned: 0,
@@ -601,7 +592,6 @@ export async function runStatementBatchSend(
   };
 
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_billing_statements")
     .select("id, total_patient_responsibility_cents")
     .eq("delivery_status", "pending")
