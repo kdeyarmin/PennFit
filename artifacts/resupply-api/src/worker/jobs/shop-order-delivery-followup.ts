@@ -47,7 +47,11 @@
 
 import type PgBoss from "pg-boss";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { sendDeliveryFollowupEmail } from "../../lib/order-emails/send-delivery-followup-email";
 import { sendCaregiverNotificationEmail } from "../../lib/order-emails/send-caregiver-notification-email";
@@ -105,12 +109,11 @@ interface ResolvedRecipient {
 }
 
 async function resolveRecipient(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   order: ClaimableOrder,
 ): Promise<ResolvedRecipient | null> {
   if (order.customer_id) {
     const { data: cust, error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select(
         "email_lower, display_name, caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
@@ -152,7 +155,11 @@ async function resolveRecipient(
  * other than `now` parameter for the window.
  */
 export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) {
+    return { considered: 0, sent: 0, skipped: 0, failed: 0 };
+  }
+  const supabase = getOrgScopedClient(orgId);
   const stats: FollowupSweepStats = {
     considered: 0,
     sent: 0,
@@ -164,7 +171,6 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
   const lower = isoDaysAgo(MAX_DAYS_SINCE_DELIVERY);
 
   const { data: candidates, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, stripe_session_id, customer_id, customer_email, delivered_at")
     .eq("status", "paid")
@@ -182,7 +188,6 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
     // 1. Atomic claim — wins iff still null. Concurrent runs lose.
     const claimIso = new Date().toISOString();
     const { data: claimed, error: claimErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         delivery_followup_sent_at: claimIso,
@@ -209,7 +214,6 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
 
     const releaseClaim = async (): Promise<void> => {
       const { error: releaseErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .update({
           delivery_followup_sent_at: null,
