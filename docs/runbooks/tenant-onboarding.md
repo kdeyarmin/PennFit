@@ -36,16 +36,16 @@ their name / tagline / logo and wire up a custom domain (see
 
 ## Arguments
 
-| Flag                  | Required | Notes                                                                                 |
-| --------------------- | -------- | ------------------------------------------------------------------------------------- |
-| `--org-slug`          | yes      | URL-safe lowercase tenant key (a-z/0-9/hyphen, ≤ 63). Stable; used for host routing.   |
-| `--org-name`          | yes      | The tenant's legal/display name (footer, copyright, the "by …" line).                 |
-| `--admin-email`       | yes      | The first admin's email. Gets the set-password link.                                  |
-| `--storefront-name`   | no       | Short brand shown in the header/hero. Falls back to `--org-name` when omitted.        |
-| `--status`            | no       | `active` (default) / `suspended` / `archived`.                                        |
-| `--base-url`          | no       | Base for the set-password link. Defaults to `SHOP_PUBLIC_BASE_URL` or localhost.      |
-| `--no-email`          | no       | Skip the SendGrid send; use the printed link only.                                    |
-| `--force`             | no       | Required to: re-issue a link for an existing user, promote a non-admin, or move an admin who already belongs to a **different** org. |
+| Flag                | Required | Notes                                                                                                                                |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `--org-slug`        | yes      | URL-safe lowercase tenant key (a-z/0-9/hyphen, ≤ 63). Stable; used for host routing.                                                 |
+| `--org-name`        | yes      | The tenant's legal/display name (footer, copyright, the "by …" line).                                                                |
+| `--admin-email`     | yes      | The first admin's email. Gets the set-password link.                                                                                 |
+| `--storefront-name` | no       | Short brand shown in the header/hero. Falls back to `--org-name` when omitted.                                                       |
+| `--status`          | no       | `active` (default) / `suspended` / `archived`.                                                                                       |
+| `--base-url`        | no       | Base for the set-password link. Defaults to `SHOP_PUBLIC_BASE_URL` or localhost.                                                     |
+| `--no-email`        | no       | Skip the SendGrid send; use the printed link only.                                                                                   |
+| `--force`           | no       | Required to: re-issue a link for an existing user, promote a non-admin, or move an admin who already belongs to a **different** org. |
 
 ## Safety / idempotency
 
