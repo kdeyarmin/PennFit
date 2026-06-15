@@ -32,7 +32,7 @@ export const DOMAIN_VERIFY_TXT_PREFIX = "pennfit-domain-verification=";
  *
  * Strips an accidental scheme / path / port / trailing dot, lowercases,
  * and validates the shape (labels of a-z/0-9/-, at least one dot, no
- * leading/trailing hyphen). Rejects bare `localhost`, Ided addresses, and
+ * leading/trailing hyphen). Rejects bare `localhost`, IP addresses, and
  * the platform's own apex hosts so a tenant can't claim them.
  */
 export function normalizeCustomDomain(raw: string): string | null {
@@ -63,6 +63,7 @@ export function normalizeCustomDomain(raw: string): string | null {
   // Don't let a tenant claim the platform's own hostnames.
   if (value === "localhost" || value.endsWith(".localhost")) return null;
   if (value.endsWith(".up.railway.app")) return null;
+  if (value === "cmbreathe.com" || value === "www.cmbreathe.com") return null;
 
   return value;
 }
@@ -91,7 +92,8 @@ export interface DomainDnsInstructions {
  * The CNAME target defaults to the platform's public host (so a tenant
  * subdomain like `shop.acme.com` flows through Railway/Cloudflare), and is
  * overridable with `PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET` for operators who
- * front the platform with a dedicated ingress hostname.
+ * front the platform with a dedicated ingress hostname. `cmbreathe.com` is
+ * the platform homepage, not a tenant-claimable custom domain.
  */
 export function buildDomainInstructions(
   domain: string,
@@ -100,7 +102,7 @@ export function buildDomainInstructions(
   const target =
     (process.env.PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET ?? "").trim() ||
     (process.env.RAILWAY_PUBLIC_DOMAIN ?? "").trim() ||
-    "pennfit.up.railway.app";
+    "cmbreathe.com";
   return {
     cnameTarget: target,
     txtName: `${DOMAIN_VERIFY_TXT_HOST}.${domain}`,

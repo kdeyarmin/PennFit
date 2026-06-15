@@ -14,7 +14,9 @@ There are two distinct layers, and they must not be conflated:
   `PLATFORM_NAME` (`artifacts/resupply-api/src/lib/company-info.ts`).
 - **Penn Home Medical Supply** — storefront brand **"PennPaps"**
   (`pennpaps.com`) — is **one tenant** operating on the platform, not the
-  platform itself. Its brand, `info@pennpaps.com` From address, storefront
+  platform itself. The platform/home domain is **`cmbreathe.com`**;
+  `pennpaps.com` must route only to the Penn Home Medical Supply tenant.
+  Its brand, `info@pennpaps.com` From address, storefront
   SEO, and practice-name default are **tenant data** and stay as-is. Other
   tenants are onboarded with `tenant:onboard` and carry their own brand.
 
@@ -62,7 +64,8 @@ root; Railpack auto-detects pnpm + Node from `packageManager` and
 `Dockerfile`). Pushing a branch and opening a PR triggers Railway's
 GitHub integration to build a preview environment. Production is the
 `main`-branch deploy under the `pennfit.up.railway.app` host (or the
-bound custom domain `pennpaps.com`). That custom domain is fronted by
+bound platform custom domain `cmbreathe.com`). `pennpaps.com` is a tenant
+custom domain for Penn Home Medical Supply. Both custom domains are fronted by
 **Cloudflare**, which adds an edge cache plus a second proxy hop with two
 operator implications: set Cloudflare's Browser Cache TTL to "Respect
 Existing Headers" so the app's `immutable` `/assets/` caching reaches
@@ -144,8 +147,10 @@ and `scripts`.
 | `e2e/`                       | Playwright end-to-end suite (storefront load, results-page resilience, axe a11y). Run from the repo root, not a workspace.                                                                                                                                                                                                                                                                             |
 | `docs/`                      | Architecture notes, post-mortems, production readiness, runbooks.                                                                                                                                                                                                                                                                                                                                      |
 
-There is **one** customer-facing site (`pennfit.up.railway.app/` or your
-bound custom domain). The former separate `api-server`,
+There is **one** customer-facing app. The platform/home site is
+`cmbreathe.com` (with `pennfit.up.railway.app/` as the Railway fallback),
+while tenant custom domains such as `pennpaps.com` resolve to their owning
+tenant. The former separate `api-server`,
 `resupply-worker`, and `resupply-dashboard` artifacts were folded in
 during the May 2026 consolidations.
 
