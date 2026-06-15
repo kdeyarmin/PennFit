@@ -309,17 +309,17 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = prefillQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
       return;
     }
     const { patientId, documentType } = parsed.data;
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
 
     const { data: patient, error: patientErr } = await supabase
@@ -356,7 +356,13 @@ router.get(
     if (presRes.error) throw presRes.error;
     if (studyRes.error) throw studyRes.error;
 
-    const prescriptions = presRes.data ?? [];
+    const prescriptions = (presRes.data ?? []) as Array<{
+      item_sku: string;
+      hcpcs_code: string | null;
+      provider_id: string | null;
+      status: string;
+      created_at: string;
+    }>;
     const activePrescriptions = prescriptions.filter(
       (p: { status: string | null }) => p.status === "active",
     );
@@ -492,14 +498,14 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = listQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_query" });
-      return;
-    }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -531,6 +537,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.create", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = createBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       invalidBody(res, parsed.error);
@@ -540,11 +551,6 @@ router.post(
     const type = b.documentType as ManualDocumentType;
     const fields = normalizeManualDocumentFields(type, b.fields);
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: inserted, error } = await supabase
@@ -618,14 +624,14 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
-      return;
-    }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -650,6 +656,11 @@ router.patch(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.update", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -662,11 +673,6 @@ router.patch(
     }
     const b = parsed.data;
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: loadErr } = await supabase
       .from("manual_documents")
@@ -734,14 +740,14 @@ router.delete(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.delete", preset: "destroy" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
-      return;
-    }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
     const supabase = getOrgScopedClient(orgId);
@@ -782,18 +788,18 @@ router.get(
   adminReadRateLimiter,
   requirePermission("patients.read"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = idParam.safeParse(req.params);
     if (!parsed.success) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
-    const row = await loadManualDocumentRow(supabase.raw(), parsed.data.id);
+    const row = await loadManualDocumentRow(supabase, parsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -836,6 +842,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.send_email", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -851,13 +862,8 @@ router.post(
       return;
     }
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
-    const row = await loadManualDocumentRow(supabase.raw(), idParsed.data.id);
+    const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -952,6 +958,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.send_fax", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -967,13 +978,8 @@ router.post(
       return;
     }
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
-    const row = await loadManualDocumentRow(supabase.raw(), idParsed.data.id);
+    const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -1064,6 +1070,11 @@ router.post(
   requirePermission("patients.update"),
   adminRateLimit({ name: "manual_documents.attach", preset: "sensitive" }),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId || !orgId.trim()) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const idParsed = idParam.safeParse(req.params);
     if (!idParsed.success) {
       res.status(404).json({ error: "not_found" });
@@ -1075,13 +1086,8 @@ router.post(
       return;
     }
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
-    const row = await loadManualDocumentRow(supabase.raw(), idParsed.data.id);
+    const row = await loadManualDocumentRow(supabase, idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
