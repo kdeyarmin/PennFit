@@ -70,7 +70,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   createTelnyxFaxClient,
@@ -196,19 +196,24 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify patient + provider exist before insert so the FK
     // failure returns a clear 4xx rather than a 500.
     const [{ data: patient }, { data: provider }] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .eq("id", params.data.id)
         .limit(1)
         .maybeSingle(),
       supabase
+        .raw()
         .schema("resupply")
         .from("providers")
         .select("id, fax_e164, legal_name, practice_name")
@@ -228,7 +233,6 @@ router.post(
     const returnFax = parsed.data.returnFaxE164 ?? provider.fax_e164 ?? null;
 
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .insert({
         patient_id: params.data.id,
@@ -264,7 +268,7 @@ router.post(
     // fail the packet create (the PDF just renders without a barcode).
     let trackingCode: string | null = null;
     try {
-      const reg = await registerSignatureTracking(supabase, {
+      const reg = await registerSignatureTracking(supabase.raw(), {
         kind: "prescription_request",
         documentId: inserted.id,
         title: "Prescription request",
@@ -314,9 +318,13 @@ router.get(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select(
         "id, provider_id, status, return_fax_e164, sent_to_fax_e164, sent_at, delivered_at, signed_at, failed_at, failure_reason, created_at",
@@ -375,9 +383,14 @@ router.get(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const aggregation = await aggregatePacketsNeedingSignature(
-      supabase,
+      supabase.raw(),
       targetFromQuery(parsed.data),
       { limit: parsed.data.limit },
     );
@@ -401,9 +414,14 @@ router.get(
       return;
     }
     const target = targetFromQuery(parsed.data);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const aggregation = await aggregatePacketsNeedingSignature(
-      supabase,
+      supabase.raw(),
       target,
       {
         limit: parsed.data.limit,
@@ -422,7 +440,10 @@ router.get(
     const resolved = await Promise.all(
       aggregation.packets.map(async (packet) => ({
         packet,
-        outcome: await resolvePrescriptionRequestInputs(supabase, packet.id),
+        outcome: await resolvePrescriptionRequestInputs(
+          supabase.raw(),
+          packet.id,
+        ),
       })),
     );
 
@@ -509,9 +530,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("*")
       .eq("id", params.data.id)
@@ -535,9 +560,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const resolved = await resolvePrescriptionRequestInputs(
-      supabase,
+      supabase.raw(),
       params.data.id,
     );
     if (resolved.kind === "not_found") {
@@ -595,7 +625,7 @@ router.get(
  * (re-render the same packet, re-fax to the return number).
  */
 async function dispatchPacketFax(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: ReturnType<typeof getOrgScopedClient>,
   packet: { id: string; return_fax_e164: string | null },
   req: Request,
   res: Response,
@@ -608,7 +638,10 @@ async function dispatchPacketFax(
 
   // Verify inputs render before dispatch so we don't fire a Telnyx
   // bill on a packet that the public fetch would 422 on.
-  const resolved = await resolvePrescriptionRequestInputs(supabase, packet.id);
+  const resolved = await resolvePrescriptionRequestInputs(
+    supabase.raw(),
+    packet.id,
+  );
   if (resolved.kind !== "ok") {
     res.status(422).json({
       error: "invalid_inputs",
@@ -671,7 +704,6 @@ async function dispatchPacketFax(
       updated_at: nowIso,
     };
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update(update)
       .eq("id", packet.id);
@@ -686,7 +718,7 @@ async function dispatchPacketFax(
       );
     }
     await recordTrackingSent(
-      supabase,
+      supabase.raw(),
       "prescription_request",
       packet.id,
       "fax",
@@ -721,7 +753,6 @@ async function dispatchPacketFax(
         ? `Telnyx fax error: ${err.message}`
         : `Fax dispatch error: ${String(err)}`;
     const { error: failStampErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update({
         status: "failed",
@@ -754,9 +785,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status, return_fax_e164")
       .eq("id", params.data.id)
@@ -793,9 +828,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: packet } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status, return_fax_e164")
       .eq("id", params.data.id)
@@ -852,9 +891,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status")
       .eq("id", params.data.id)
@@ -885,13 +928,12 @@ router.post(
       update.signed_object_key = body.data.signedObjectKey;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update(update)
       .eq("id", params.data.id);
     if (updErr) throw updErr;
     await markTrackingReturned(
-      supabase,
+      supabase.raw(),
       "prescription_request",
       params.data.id,
     ).catch((err) => {
@@ -926,9 +968,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .select("id, status")
       .eq("id", params.data.id)
@@ -946,7 +992,6 @@ router.post(
       return;
     }
     const { error } = await supabase
-      .schema("resupply")
       .from("prescription_request_packets")
       .update({
         status: "void",
@@ -955,7 +1000,7 @@ router.post(
       .eq("id", params.data.id);
     if (error) throw error;
     await markTrackingCanceled(
-      supabase,
+      supabase.raw(),
       "prescription_request",
       params.data.id,
     ).catch((err) => {

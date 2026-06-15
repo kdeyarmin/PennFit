@@ -10,7 +10,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { resolveBillingIdentity } from "../../lib/billing/identity-resolver";
@@ -47,9 +47,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("patient_billing_statements")
       .select("*")
       .eq("patient_id", parsed.data.id)
@@ -77,9 +81,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "legal_first_name, legal_last_name, address, email, statement_delivery_method",
@@ -110,7 +118,6 @@ router.post(
     let exhausted = false;
     for (let page = 0; page < MAX_CLAIM_PAGES; page++) {
       const { data: batch, error: claimsErr } = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select(
           "id, payer_name, date_of_service, total_billed_cents, total_paid_cents, patient_responsibility_cents",
@@ -146,7 +153,7 @@ router.post(
       });
       return;
     }
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
     if (identity.source === "stub") {
       res.status(409).json({
         error: "no_dme_organization",
@@ -223,7 +230,6 @@ router.post(
         generated_by_email: req.adminEmail ?? "unknown",
       };
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_billing_statements")
       .insert(insertRow)
       .select("id")
@@ -309,9 +315,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("email, statement_delivery_method")
       .eq("id", parsed.data.id)
@@ -361,7 +371,12 @@ router.patch(
       res.status(400).json({ error: "no_fields" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const update: Database["resupply"]["Tables"]["patients"]["Update"] = {
       updated_at: new Date().toISOString(),
     };
@@ -375,7 +390,6 @@ router.patch(
         : null;
     }
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .update(update)
       .eq("id", idParsed.data.id)

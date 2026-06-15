@@ -21,7 +21,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   escapePostgRESTContainsPattern,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -126,9 +126,13 @@ router.get(
   "/admin/office-ally-submissions",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select(FULL_SELECT)
       .order("submitted_at", { ascending: false })
@@ -201,9 +205,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: originals, error: originalsError } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("id, status, attempted_claim_ids")
       .in("id", parsed.data.submissionIds);
@@ -328,13 +336,17 @@ router.post(
 router.get(
   "/admin/office-ally/operations-summary",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
     const { data, error } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("status, submitted_at, ack_999_received_at, claim_count")
       .gte("submitted_at", since)
@@ -414,8 +426,13 @@ router.get(
 router.get(
   "/admin/office-ally/payer-stats",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // 1. Pull recent submissions with their attempted_claim_ids.
@@ -427,7 +444,6 @@ router.get(
     }> = [];
     for (let from = 0; ; from += SUBMISSIONS_PAGE_SIZE) {
       const { data: page, error } = await supabase
-        .schema("resupply")
         .from("office_ally_submissions")
         .select("id, status, claim_count, attempted_claim_ids")
         .gte("submitted_at", since)
@@ -457,7 +473,6 @@ router.get(
     const claimToPayer = new Map<string, string>();
     if (firstClaimIds.length > 0) {
       const { data: claims } = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id, payer_profile_id")
         .in("id", firstClaimIds);
@@ -518,7 +533,6 @@ router.get(
     >();
     if (topPayerIds.length > 0) {
       const { data: payers } = await supabase
-        .schema("resupply")
         .from("payer_profiles")
         .select("id, slug, display_name, line_of_business")
         .in("id", topPayerIds);
@@ -565,10 +579,14 @@ router.get(
 router.get(
   "/admin/office-ally/health",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("clearinghouse_credentials")
       .select("id, slug, display_name, is_active, last_polled_at")
       .eq("is_active", true)
@@ -599,7 +617,6 @@ router.get(
     // share is OK but the outbound write isn't).
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count: recentTransportFailures } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("id", { count: "exact", head: true })
       .eq("status", "transport_failed")
@@ -627,10 +644,14 @@ router.get(
 router.get(
   "/admin/office-ally/enrollment-watchlist",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(
         "id, slug, display_name, line_of_business, edi_enrollment_status, office_ally_payer_id, requirements_last_verified_at",
@@ -641,15 +662,17 @@ router.get(
       .limit(100);
     if (error) throw error;
     res.json({
-      payers: (data ?? []).map((p) => ({
-        id: p.id,
-        slug: p.slug,
-        displayName: p.display_name,
-        lineOfBusiness: p.line_of_business,
-        ediEnrollmentStatus: p.edi_enrollment_status,
-        officeAllyPayerId: p.office_ally_payer_id,
-        requirementsLastVerifiedAt: p.requirements_last_verified_at,
-      })),
+      payers: (data ?? []).map(
+        (p: Database["resupply"]["Tables"]["payer_profiles"]["Row"]) => ({
+          id: p.id,
+          slug: p.slug,
+          displayName: p.display_name,
+          lineOfBusiness: p.line_of_business,
+          ediEnrollmentStatus: p.edi_enrollment_status,
+          officeAllyPayerId: p.office_ally_payer_id,
+          requirementsLastVerifiedAt: p.requirements_last_verified_at,
+        }),
+      ),
     });
   },
 );
@@ -674,7 +697,12 @@ router.get(
   "/admin/office-ally-submissions/export.csv",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const daysRaw =
       typeof req.query.days === "string" ? Number(req.query.days) : 90;
     const days =
@@ -685,7 +713,6 @@ router.get(
       Date.now() - days * 24 * 60 * 60 * 1000,
     ).toISOString();
     let query = supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select(FULL_SELECT)
       .gte("submitted_at", since)
@@ -736,9 +763,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: submission, error } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select(FULL_SELECT)
       .eq("id", parsed.data.id)
@@ -754,7 +785,6 @@ router.get(
     // (set on accepted upload). For transport_failed rows this returns
     // empty; the page falls back to `attempted_claim_ids` below.
     const { data: linkedClaims } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents",
@@ -773,7 +803,6 @@ router.get(
       fallbackClaimIds.length > 0
         ? ((
             await supabase
-              .schema("resupply")
               .from("insurance_claims")
               .select(
                 "id, patient_id, payer_name, claim_number, date_of_service, status, total_billed_cents",
@@ -785,11 +814,12 @@ router.get(
       linkedClaims && linkedClaims.length > 0 ? linkedClaims : fallbackClaims;
 
     // Patient name lookup (single-statement batch via .in()).
-    const patientIds = [...new Set(claims.map((c) => c.patient_id))];
+    const patientIds = [
+      ...new Set(claims.map((c: { patient_id: string }) => c.patient_id)),
+    ];
     const patientNames = new Map<string, string>();
     if (patientIds.length > 0) {
       const { data: patients } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", patientIds);
@@ -806,7 +836,6 @@ router.get(
     const [parentRes, childrenRes] = await Promise.all([
       submission.parent_submission_id
         ? supabase
-            .schema("resupply")
             .from("office_ally_submissions")
             .select(FULL_SELECT)
             .eq("id", submission.parent_submission_id)
@@ -814,7 +843,6 @@ router.get(
             .maybeSingle()
         : Promise.resolve({ data: null }),
       supabase
-        .schema("resupply")
         .from("office_ally_submissions")
         .select(FULL_SELECT)
         .eq("parent_submission_id", submission.id)
@@ -828,7 +856,7 @@ router.get(
     // event per claim so the detail page can render the per-claim
     // reject reason inline instead of forcing the op to scroll to
     // the events tab.
-    const claimIds = claims.map((c) => c.id);
+    const claimIds = claims.map((c: { id: string }) => c.id);
     const ackEvents = new Map<
       string,
       {
@@ -839,7 +867,6 @@ router.get(
     >();
     if (claimIds.length > 0) {
       const { data: events, error } = await supabase
-        .schema("resupply")
         .from("insurance_claim_events")
         .select("claim_id, event_type, note, occurred_at")
         .in("claim_id", claimIds)
@@ -869,30 +896,40 @@ router.get(
 
     res.json({
       submission: rowToApi(submission),
-      claims: claims.map((c) => {
-        const ack = ackEvents.get(c.id) ?? null;
-        return {
-          id: c.id,
-          patientId: c.patient_id,
-          patientName: patientNames.get(c.patient_id) ?? null,
-          payerName: c.payer_name,
-          claimNumber: c.claim_number,
-          dateOfService: c.date_of_service,
-          status: c.status,
-          totalBilledCents: c.total_billed_cents,
-          // Per-claim 277CA outcome + reason. Null when no 277CA has
-          // been received yet for this claim. `reason` strips the
-          // "277CA accepted: " / "277CA rejected: " prefix so the UI
-          // can render it raw.
-          ack277ca: ack
-            ? {
-                outcome: ack.outcome,
-                reason: ack.note.replace(/^277CA (accepted|rejected): /, ""),
-                receivedAt: ack.occurredAt,
-              }
-            : null,
-        };
-      }),
+      claims: claims.map(
+        (c: {
+          id: string;
+          patient_id: string;
+          payer_name: string | null;
+          claim_number: string | null;
+          date_of_service: string | null;
+          status: string;
+          total_billed_cents: number | null;
+        }) => {
+          const ack = ackEvents.get(c.id) ?? null;
+          return {
+            id: c.id,
+            patientId: c.patient_id,
+            patientName: patientNames.get(c.patient_id) ?? null,
+            payerName: c.payer_name,
+            claimNumber: c.claim_number,
+            dateOfService: c.date_of_service,
+            status: c.status,
+            totalBilledCents: c.total_billed_cents,
+            // Per-claim 277CA outcome + reason. Null when no 277CA has
+            // been received yet for this claim. `reason` strips the
+            // "277CA accepted: " / "277CA rejected: " prefix so the UI
+            // can render it raw.
+            ack277ca: ack
+              ? {
+                  outcome: ack.outcome,
+                  reason: ack.note.replace(/^277CA (accepted|rejected): /, ""),
+                  receivedAt: ack.occurredAt,
+                }
+              : null,
+          };
+        },
+      ),
       lineage: {
         parent: parentRes.data ? rowToApi(parentRes.data) : null,
         children: (childrenRes.data ?? []).map(rowToApi),
@@ -976,9 +1013,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: original } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .select("id, status, attempted_claim_ids")
       .eq("id", parsed.data.id)
@@ -1077,9 +1118,13 @@ router.patch(
     if (b.rejectionReason !== undefined)
       update.rejection_reason = b.rejectionReason;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("office_ally_submissions")
       .update(update)
       .eq("id", idParsed.data.id);

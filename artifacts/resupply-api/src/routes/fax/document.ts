@@ -17,7 +17,11 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import PDFDocument from "pdfkit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
+} from "@workspace/resupply-db";
 
 import { renderAppealPdfForLetterId } from "../../lib/billing/appeal-letter-render.js";
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render.js";
@@ -128,7 +132,16 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     }
     const patientId = verified.outreachId.slice(0, sep);
     const paId = verified.outreachId.slice(sep + 1);
-    const result = await buildPaRequestPdf(supabase, patientId, paId);
+    const orgId = await resolveSeedOrgId();
+    if (!orgId) {
+      res.status(404).json({ error: "prior_auth_not_found" });
+      return;
+    }
+    const result = await buildPaRequestPdf(
+      getOrgScopedClient(orgId),
+      patientId,
+      paId,
+    );
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
       return;

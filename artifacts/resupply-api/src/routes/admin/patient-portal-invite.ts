@@ -29,7 +29,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
@@ -153,9 +153,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, email, legal_first_name, portal_auth_user_id")
       .eq("id", patientId)
@@ -182,6 +186,7 @@ router.post(
     // set) block re-invite — the CSR should use Delete+Resend flow.
     if (patient.portal_auth_user_id) {
       const { data: authRow, error: authErr } = await supabase
+        .raw()
         .schema("resupply_auth")
         .from("users")
         .select("email_verified_at")
@@ -235,6 +240,7 @@ router.post(
     // 'email_lower'. We never downgrade an admin/agent role to
     // customer.
     const { data: existingAuth, error: existingAuthErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("id, role, status")
@@ -264,6 +270,7 @@ router.post(
       const nextStatus =
         existingAuth.status === "revoked" ? "invited" : existingAuth.status;
       const { error: updateAuthErr } = await supabase
+        .raw()
         .schema("resupply_auth")
         .from("users")
         .update({
@@ -275,6 +282,7 @@ router.post(
       authUserId = existingAuth.id;
     } else {
       const { data: insertedAuth, error: insertAuthErr } = await supabase
+        .raw()
         .schema("resupply_auth")
         .from("users")
         .insert({
@@ -302,7 +310,6 @@ router.post(
     // could each pass the "claimed by other" check. A migration to an
     // RPC that wraps the transaction is the long-term answer.
     const { data: claimedByOther, error: claimedErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("portal_auth_user_id", authUserId)
@@ -322,7 +329,6 @@ router.post(
     const now = new Date();
     const nowIso = now.toISOString();
     const { error: linkErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .update({
         ...fieldUpdates,
@@ -340,6 +346,7 @@ router.post(
       Date.now() + INVITE_TOKEN_TTL_MS,
     ).toISOString();
     const { error: tokenErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("email_tokens")
       .insert({
@@ -425,9 +432,13 @@ router.post(
     }
     const patientId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, email, legal_first_name, portal_auth_user_id")
       .eq("id", patientId)
@@ -447,6 +458,7 @@ router.post(
     }
 
     const { data: auth, error: authErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("users")
       .select("id, email_lower, email_verified_at")
@@ -472,6 +484,7 @@ router.post(
       Date.now() + INVITE_TOKEN_TTL_MS,
     ).toISOString();
     const { error: tokenErr } = await supabase
+      .raw()
       .schema("resupply_auth")
       .from("email_tokens")
       .insert({
@@ -520,7 +533,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .update({
         portal_invited_at: nowIso,
@@ -568,9 +580,13 @@ router.delete(
     }
     const patientId = idCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, portal_auth_user_id")
       .eq("id", patientId)
@@ -588,11 +604,10 @@ router.delete(
       return;
     }
 
-    await revokeTeamMember(supabase, patient.portal_auth_user_id);
+    await revokeTeamMember(supabase.raw(), patient.portal_auth_user_id);
 
     const nowIso = new Date().toISOString();
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .update({
         portal_auth_user_id: null,

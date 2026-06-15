@@ -33,7 +33,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import {
   THERAPY_REPORT_GROUPINGS,
@@ -115,14 +118,18 @@ router.get(
     }
     const { groupBy, days } = parsed.data;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // 1. Pull the per-night therapy metrics over the window. We select
     //    night_date + source so we can collapse multi-source duplicates
     //    (UNIQUE(patient_id, night_date, source) permits several rows
     //    per patient/night) before any counting.
     const { data: nightData, error: nightErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select(
         "patient_id, night_date, source, usage_minutes, ahi, leak_rate_l_min",
@@ -209,7 +216,7 @@ function unattributedRef(groupBy: TherapyReportGrouping): GroupRef {
  *  "Unattributed" fallback when no provider / device is on file) so the
  *  headline summary and the cohort rows agree on the patient set. */
 async function buildGroupingMap(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: OrgScopedClient,
   groupBy: TherapyReportGrouping,
   patientIds: Set<string>,
 ): Promise<Map<string, GroupRef[]>> {
@@ -231,13 +238,15 @@ async function buildGroupingMap(
     const providerIds = new Set<string>();
     for (const chunk of chunkIds([...patientIds])) {
       const { data: rxData, error: rxErr } = await supabase
-        .schema("resupply")
         .from("prescriptions")
         .select("patient_id, provider_id")
         .not("provider_id", "is", null)
         .in("patient_id", chunk);
       if (rxErr) throw rxErr;
-      for (const r of rxData ?? []) {
+      for (const r of (rxData ?? []) as Array<{
+        patient_id: string;
+        provider_id: string | null;
+      }>) {
         if (!r.provider_id) continue;
         let set = providerIdsByPatient.get(r.patient_id);
         if (!set) {
@@ -252,12 +261,16 @@ async function buildGroupingMap(
     const providerById = new Map<string, GroupRef>();
     for (const chunk of chunkIds([...providerIds])) {
       const { data: provData, error: provErr } = await supabase
-        .schema("resupply")
         .from("providers")
         .select("id, legal_name, npi, practice_name")
         .in("id", chunk);
       if (provErr) throw provErr;
-      for (const p of provData ?? []) {
+      for (const p of (provData ?? []) as Array<{
+        id: string;
+        legal_name: string | null;
+        npi: string | null;
+        practice_name: string | null;
+      }>) {
         const sublabel = [p.npi ? `NPI ${p.npi}` : null, p.practice_name]
           .filter(Boolean)
           .join(" · ");
@@ -285,13 +298,15 @@ async function buildGroupingMap(
   // id-chunks, for the same reason as the provider joins above.
   for (const chunk of chunkIds([...patientIds])) {
     const { data: eqData, error: eqErr } = await supabase
-      .schema("resupply")
       .from("equipment_assets")
       .select("patient_id, manufacturer")
       .in("patient_id", chunk);
     if (eqErr) throw eqErr;
 
-    for (const e of eqData ?? []) {
+    for (const e of (eqData ?? []) as Array<{
+      patient_id: string;
+      manufacturer: string | null;
+    }>) {
       if (!e.manufacturer) continue;
       const label = e.manufacturer.trim();
       if (!label) continue;

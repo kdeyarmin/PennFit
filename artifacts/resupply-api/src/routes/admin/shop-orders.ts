@@ -45,7 +45,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type Database,
   type Json,
   type SavedShippingAddress,
@@ -225,10 +225,12 @@ function rowToOrderRow(row: {
   };
 }
 
-async function loadOrder(orderId: string): Promise<OrderRow | null> {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadOrder(
+  orgId: string,
+  orderId: string,
+): Promise<OrderRow | null> {
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select(ORDER_COLUMNS)
     .eq("id", orderId)
@@ -268,6 +270,7 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
  * must not fail the response because SendGrid is misconfigured.
  */
 async function sendShippingNotificationIfNew(args: {
+  orgId: string;
   orderId: string;
   log:
     | {
@@ -278,8 +281,8 @@ async function sendShippingNotificationIfNew(args: {
 }): Promise<
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
-  const { orderId, log } = args;
-  const supabase = getSupabaseServiceRoleClient();
+  const { orgId, orderId, log } = args;
+  const supabase = getOrgScopedClient(orgId);
 
   // Atomic claim — wins iff shipping_email_sent_at is currently NULL.
   // The route's prior UPDATE has either left the timestamp non-null
@@ -287,7 +290,6 @@ async function sendShippingNotificationIfNew(args: {
   // (first send OR genuine re-ship → claim succeeds → send).
   const claimIso = new Date().toISOString();
   const { data: claimedRow, error: claimErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update({
       shipping_email_sent_at: claimIso,
@@ -318,7 +320,6 @@ async function sendShippingNotificationIfNew(args: {
   // transient failure can never permanently lock out the email.
   const releaseClaim = async (): Promise<void> => {
     const { error: releaseErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         shipping_email_sent_at: null,
@@ -354,7 +355,6 @@ async function sendShippingNotificationIfNew(args: {
     let activeCaregiver: { name: string; email: string } | null = null;
     if (claimedRow.customer_id) {
       const { data: cust, error: custErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select(
           "email_lower, display_name, caregiver_name, caregiver_email, caregiver_consent_at, caregiver_revoked_at",
@@ -574,6 +574,12 @@ router.post(
   // `returns.manage` (admin / supervisor / csr / fulfillment / agent).
   requirePermission("returns.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
@@ -592,7 +598,7 @@ router.post(
     }
     const { carrier, number } = parsed.data;
 
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -647,7 +653,6 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
     // Atomicity note: the original SQL path used a
     //   `CASE WHEN tracking_carrier IS DISTINCT FROM $new
     //         OR tracking_number IS DISTINCT FROM $new
@@ -673,7 +678,6 @@ router.post(
       updatePayload.shipping_email_sent_at = null;
     }
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update(updatePayload)
       .eq("id", orderId)
@@ -705,6 +709,7 @@ router.post(
     // but the email logic re-evaluates against the same row again.
     try {
       await sendShippingNotificationIfNew({
+        orgId,
         orderId,
         log: req.log,
       });
@@ -734,12 +739,18 @@ router.post(
   // Mark delivered — same operational tier as tracking entry.
   requirePermission("returns.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -754,10 +765,8 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         delivered_at: nowIso,
@@ -775,7 +784,7 @@ router.post(
     if (!row) {
       // Either deleted or already delivered by a concurrent request.
       // Re-load to distinguish and return the current state.
-      const current = await loadOrder(orderId);
+      const current = await loadOrder(orgId, orderId);
       if (!current) {
         res.status(404).json({ error: "order_not_found" });
         return;
@@ -824,12 +833,17 @@ router.post(
   "/admin/shop/orders/:orderId/ready-for-pickup",
   requirePermission("returns.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -876,12 +890,11 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     // Idempotent stamp: only set ready_for_pickup_at if it's currently
     // NULL, so an accidental double-click doesn't drift the date.
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ ready_for_pickup_at: nowIso, updated_at: nowIso })
       .eq("id", orderId)
@@ -896,7 +909,11 @@ router.post(
     // Best-effort "ready for pickup" email. The state transition has
     // already succeeded; a SendGrid hiccup must NOT 500 the route.
     try {
-      await sendReadyForPickupNotificationIfNew({ orderId, log: req.log });
+      await sendReadyForPickupNotificationIfNew({
+        orgId,
+        orderId,
+        log: req.log,
+      });
     } catch (emailErr) {
       req.log?.warn?.(
         {
@@ -907,7 +924,7 @@ router.post(
       );
     }
 
-    const current = await loadOrder(orderId);
+    const current = await loadOrder(orgId, orderId);
     res.json({ order: projectOrder(current ?? existing) });
   },
 );
@@ -922,12 +939,17 @@ router.post(
   "/admin/shop/orders/:orderId/picked-up",
   requirePermission("returns.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
       return;
     }
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -946,10 +968,9 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ picked_up_at: nowIso, updated_at: nowIso })
       .eq("id", orderId)
@@ -959,7 +980,7 @@ router.post(
       .maybeSingle();
     if (error) throw error;
     if (!row) {
-      const current = await loadOrder(orderId);
+      const current = await loadOrder(orgId, orderId);
       if (!current) {
         res.status(404).json({ error: "order_not_found" });
         return;
@@ -1001,6 +1022,7 @@ router.post(
  * re-send. Never throws back a hard error that would 500 the route.
  */
 async function sendReadyForPickupNotificationIfNew(args: {
+  orgId: string;
   orderId: string;
   log:
     | {
@@ -1011,12 +1033,11 @@ async function sendReadyForPickupNotificationIfNew(args: {
 }): Promise<
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
-  const { orderId, log } = args;
-  const supabase = getSupabaseServiceRoleClient();
+  const { orgId, orderId, log } = args;
+  const supabase = getOrgScopedClient(orgId);
 
   const claimIso = new Date().toISOString();
   const { data: claimedRow, error: claimErr } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .update({
       ready_for_pickup_email_sent_at: claimIso,
@@ -1036,7 +1057,6 @@ async function sendReadyForPickupNotificationIfNew(args: {
 
   const releaseClaim = async (): Promise<void> => {
     const { error: releaseErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         ready_for_pickup_email_sent_at: null,
@@ -1068,7 +1088,6 @@ async function sendReadyForPickupNotificationIfNew(args: {
     let toEmail: string | null = null;
     if (claimedRow.customer_id) {
       const { data: cust, error: custErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select("email_lower")
         .eq("customer_id", claimedRow.customer_id)
@@ -1154,6 +1173,11 @@ router.patch(
   // matrix so the same CSRs who handle returns can fix bad addresses.
   requirePermission("returns.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
@@ -1179,15 +1203,14 @@ router.patch(
       country: "US",
     };
 
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         // SavedShippingAddress isn't a Json index-signature shape; cast
@@ -1237,6 +1260,11 @@ router.post(
   requirePermission("returns.approve"),
   adminOrderRefundLimiter,
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
       res.status(400).json({ error: "invalid_order_id" });
@@ -1255,7 +1283,7 @@ router.post(
     }
     const { amountCents, reason } = parsed.data;
 
-    const existing = await loadOrder(orderId);
+    const existing = await loadOrder(orgId, orderId);
     if (!existing) {
       res.status(404).json({ error: "order_not_found" });
       return;

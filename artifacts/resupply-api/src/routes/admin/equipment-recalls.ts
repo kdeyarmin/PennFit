@@ -22,10 +22,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runRecallBulkMatch } from "../../lib/equipment/recall-bulk-match";
 import { logger } from "../../lib/logger";
@@ -132,10 +129,14 @@ const patchBody = z
 router.get(
   "/admin/equipment-recalls",
   requirePermission("returns.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .select("*")
       // Active first, then severity (urgent > priority > advisory),
@@ -146,22 +147,24 @@ router.get(
     if (error) throw error;
 
     res.json({
-      recalls: (data ?? []).map((r) => ({
-        id: r.id,
-        recallReference: r.recall_reference,
-        title: r.title,
-        manufacturer: r.manufacturer,
-        modelMatch: r.model_match,
-        serialMatch: r.serial_match as RecallSerialMatch,
-        severity: r.severity,
-        status: r.status,
-        issuedAt: r.issued_at,
-        deadlineAt: r.deadline_at,
-        referenceUrl: r.reference_url,
-        description: r.description,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      })),
+      recalls: (data ?? []).map(
+        (r: Database["resupply"]["Tables"]["equipment_recalls"]["Row"]) => ({
+          id: r.id,
+          recallReference: r.recall_reference,
+          title: r.title,
+          manufacturer: r.manufacturer,
+          modelMatch: r.model_match,
+          serialMatch: r.serial_match as RecallSerialMatch,
+          severity: r.severity,
+          status: r.status,
+          issuedAt: r.issued_at,
+          deadlineAt: r.deadline_at,
+          referenceUrl: r.reference_url,
+          description: r.description,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        }),
+      ),
     });
   },
 );
@@ -183,10 +186,14 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .insert({
         recall_reference: b.recallReference,
@@ -274,9 +281,13 @@ router.patch(
     if (fields.referenceUrl !== undefined)
       updates.reference_url = fields.referenceUrl;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .update(updates)
       .eq("id", params.data.id)
@@ -328,9 +339,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: recall, error: recallErr } = await supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .select("id, manufacturer, model_match, serial_match")
       .eq("id", params.data.id)
@@ -347,7 +362,6 @@ router.get(
     // covers this query. We exclude 'returned' / 'retired' because
     // those devices are already out of service.
     let query = supabase
-      .schema("resupply")
       .from("equipment_assets")
       .select(
         "id, patient_id, manufacturer, model, serial_number, status, dispensed_at",
@@ -365,19 +379,20 @@ router.get(
     const { data: candidates, error: cErr } = await query;
     if (cErr) throw cErr;
 
-    const affected = (candidates ?? []).filter((asset) =>
-      recallMatchesAsset({
-        asset: {
-          manufacturer: asset.manufacturer,
-          model: asset.model,
-          serialNumber: asset.serial_number,
-        },
-        recall: {
-          manufacturer: recall.manufacturer,
-          modelMatch: recall.model_match,
-          serialMatch: recall.serial_match as RecallSerialMatch,
-        },
-      }),
+    const affected = (candidates ?? []).filter(
+      (asset: Database["resupply"]["Tables"]["equipment_assets"]["Row"]) =>
+        recallMatchesAsset({
+          asset: {
+            manufacturer: asset.manufacturer,
+            model: asset.model,
+            serialNumber: asset.serial_number,
+          },
+          recall: {
+            manufacturer: recall.manufacturer,
+            modelMatch: recall.model_match,
+            serialMatch: recall.serial_match as RecallSerialMatch,
+          },
+        }),
     );
 
     await logAudit({
@@ -404,15 +419,17 @@ router.get(
       recallId: recall.id,
       candidatesScanned: candidates?.length ?? 0,
       affectedCount: affected.length,
-      affected: affected.map((a) => ({
-        id: a.id,
-        patientId: a.patient_id,
-        manufacturer: a.manufacturer,
-        model: a.model,
-        serialNumber: a.serial_number,
-        status: a.status,
-        dispensedAt: a.dispensed_at,
-      })),
+      affected: affected.map(
+        (a: Database["resupply"]["Tables"]["equipment_assets"]["Row"]) => ({
+          id: a.id,
+          patientId: a.patient_id,
+          manufacturer: a.manufacturer,
+          model: a.model,
+          serialNumber: a.serial_number,
+          status: a.status,
+          dispensedAt: a.dispensed_at,
+        }),
+      ),
     });
   },
 );
@@ -433,10 +450,15 @@ router.post(
       res.status(404).json({ error: "recall_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let result;
     try {
-      result = await runRecallBulkMatch(supabase, idCheck.data);
+      result = await runRecallBulkMatch(supabase.raw(), idCheck.data);
     } catch (err) {
       if (err instanceof Error && /recall .* not found/.test(err.message)) {
         res.status(404).json({ error: "recall_not_found" });
@@ -480,9 +502,13 @@ router.get(
       res.status(404).json({ error: "recall_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .select(
         "id, asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason, delivery_status, delivery_error_code, created_at",
@@ -495,7 +521,10 @@ router.get(
     // Group counts by status so the SPA can render a summary row
     // without doing the arithmetic itself.
     const counts = (data ?? []).reduce(
-      (acc, r) => {
+      (
+        acc: Record<string, number>,
+        r: Database["resupply"]["Tables"]["recall_notifications"]["Row"],
+      ) => {
         acc[r.status] = (acc[r.status] ?? 0) + 1;
         return acc;
       },
@@ -504,21 +533,23 @@ router.get(
 
     res.json({
       counts,
-      notifications: (data ?? []).map((r) => ({
-        id: r.id,
-        assetId: r.asset_id,
-        patientId: r.patient_id,
-        status: r.status,
-        channel: r.channel,
-        notifiedAt: r.notified_at,
-        failedAt: r.failed_at,
-        failedReason: r.failed_reason,
-        // Twilio carrier-side outcome from the SMS status callback —
-        // null for email sends and pre-callback rows.
-        deliveryStatus: r.delivery_status,
-        deliveryErrorCode: r.delivery_error_code,
-        createdAt: r.created_at,
-      })),
+      notifications: (data ?? []).map(
+        (r: Database["resupply"]["Tables"]["recall_notifications"]["Row"]) => ({
+          id: r.id,
+          assetId: r.asset_id,
+          patientId: r.patient_id,
+          status: r.status,
+          channel: r.channel,
+          notifiedAt: r.notified_at,
+          failedAt: r.failed_at,
+          failedReason: r.failed_reason,
+          // Twilio carrier-side outcome from the SMS status callback —
+          // null for email sends and pre-callback rows.
+          deliveryStatus: r.delivery_status,
+          deliveryErrorCode: r.delivery_error_code,
+          createdAt: r.created_at,
+        }),
+      ),
     });
   },
 );
@@ -578,12 +609,16 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Confirm the recall + asset exist and the asset actually
     // belongs to this recall (preventing accidental log of an
     // action against an unrelated unit).
     const { data: notification, error: notErr } = await supabase
-      .schema("resupply")
       .from("recall_notifications")
       .select("id")
       .eq("recall_id", idCheck.data)
@@ -605,7 +640,6 @@ router.post(
     // the prior one; we keep one final action per (recall, asset)
     // and the audit log records the history.
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("recall_remediation_actions")
       .upsert(
         {
@@ -653,9 +687,13 @@ router.get(
       res.status(404).json({ error: "recall_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("recall_remediation_actions")
       .select(
         "id, recall_id, asset_id, action, evidence_url, notes, performed_by_user_id, performed_at, created_at",
@@ -666,7 +704,10 @@ router.get(
     if (error) throw error;
 
     const counts = (data ?? []).reduce(
-      (acc, r) => {
+      (
+        acc: Record<string, number>,
+        r: Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"],
+      ) => {
         acc[r.action] = (acc[r.action] ?? 0) + 1;
         return acc;
       },
@@ -675,15 +716,19 @@ router.get(
 
     res.json({
       counts,
-      actions: (data ?? []).map((r) => ({
-        id: r.id,
-        assetId: r.asset_id,
-        action: r.action,
-        evidenceUrl: r.evidence_url,
-        notes: r.notes,
-        performedByUserId: r.performed_by_user_id,
-        performedAt: r.performed_at,
-      })),
+      actions: (data ?? []).map(
+        (
+          r: Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"],
+        ) => ({
+          id: r.id,
+          assetId: r.asset_id,
+          action: r.action,
+          evidenceUrl: r.evidence_url,
+          notes: r.notes,
+          performedByUserId: r.performed_by_user_id,
+          performedAt: r.performed_at,
+        }),
+      ),
     });
   },
 );
@@ -700,9 +745,13 @@ router.get(
       res.status(404).json({ error: "recall_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: recall } = await supabase
-      .schema("resupply")
       .from("equipment_recalls")
       .select("id, recall_reference, title")
       .eq("id", idCheck.data)
@@ -714,7 +763,6 @@ router.get(
     }
     const [notifs, remediations, assets] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("recall_notifications")
         .select(
           "asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason",
@@ -722,7 +770,6 @@ router.get(
         .eq("recall_id", idCheck.data)
         .limit(5000),
       supabase
-        .schema("resupply")
         .from("recall_remediation_actions")
         .select("asset_id, action, evidence_url, performed_at")
         .eq("recall_id", idCheck.data)
@@ -733,12 +780,14 @@ router.get(
     ]);
     if (notifs.error) throw notifs.error;
     if (remediations.error) throw remediations.error;
-    const notifList = notifs.data ?? [];
+    const notifList = (notifs.data ??
+      []) as Database["resupply"]["Tables"]["recall_notifications"]["Row"][];
     const remediationByAsset = new Map<
       string,
       { action: string; evidence_url: string | null; performed_at: string }
     >();
-    for (const r of remediations.data ?? []) {
+    for (const r of (remediations.data ??
+      []) as Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"][]) {
       if (!remediationByAsset.has(r.asset_id)) {
         remediationByAsset.set(r.asset_id, {
           action: r.action,
@@ -748,26 +797,34 @@ router.get(
       }
     }
     void assets;
-    const assetIds = Array.from(new Set(notifList.map((n) => n.asset_id)));
+    const assetIds = Array.from(
+      new Set(
+        notifList.map(
+          (n: Database["resupply"]["Tables"]["recall_notifications"]["Row"]) =>
+            n.asset_id,
+        ),
+      ),
+    );
     let assetMeta = new Map<
       string,
       { manufacturer: string; model: string; serial_number: string }
     >();
     if (assetIds.length > 0) {
       const { data: assetData } = await supabase
-        .schema("resupply")
         .from("equipment_assets")
         .select("id, manufacturer, model, serial_number")
         .in("id", assetIds);
       assetMeta = new Map(
-        (assetData ?? []).map((a) => [
-          a.id,
-          {
-            manufacturer: a.manufacturer,
-            model: a.model,
-            serial_number: a.serial_number,
-          },
-        ]),
+        (assetData ?? []).map(
+          (a: Database["resupply"]["Tables"]["equipment_assets"]["Row"]) => [
+            a.id,
+            {
+              manufacturer: a.manufacturer,
+              model: a.model,
+              serial_number: a.serial_number,
+            },
+          ],
+        ),
       );
     }
 

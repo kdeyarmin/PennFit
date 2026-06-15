@@ -37,7 +37,7 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
@@ -89,11 +89,11 @@ const objectStorage = new ObjectStorageService();
  *  when the order doesn't exist (404 surface) so the caller can
  *  fail closed without leaking which IDs are real. */
 async function findOrder(
+  orgId: string,
   orderId: string,
 ): Promise<{ id: string; podObjectKey: string | null } | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, pod_object_key")
     .eq("id", orderId)
@@ -116,9 +116,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, pod_uploaded_at, pod_signed_name")
       .eq("id", idParse.data)
@@ -147,6 +151,11 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const bodyParse = uploadUrlBody.safeParse(req.body);
     if (!bodyParse.success) {
       res.status(400).json({
@@ -171,7 +180,7 @@ router.post(
       return;
     }
 
-    const order = await findOrder(idParse.data);
+    const order = await findOrder(orgId, idParse.data);
     if (!order) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -224,6 +233,11 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const bodyParse = finalizeBody.safeParse(req.body);
     if (!bodyParse.success) {
       res.status(400).json({
@@ -248,7 +262,7 @@ router.post(
       return;
     }
 
-    const order = await findOrder(idParse.data);
+    const order = await findOrder(orgId, idParse.data);
     if (!order) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -346,9 +360,8 @@ router.post(
     // Persist BEFORE the previous-bytes cleanup, so the row points
     // at the new object if cleanup fails (avoids a dangling row).
     const previousObjectKey = order.podObjectKey;
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         pod_object_key: normalizedPath,
@@ -409,7 +422,12 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const order = await findOrder(idParse.data);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const order = await findOrder(orgId, idParse.data);
     if (!order || !order.podObjectKey) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -486,7 +504,12 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const order = await findOrder(idParse.data);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const order = await findOrder(orgId, idParse.data);
     if (!order) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -512,9 +535,8 @@ router.delete(
       }
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { error: clearErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({
         pod_object_key: null,

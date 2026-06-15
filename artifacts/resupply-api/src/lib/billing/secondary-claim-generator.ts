@@ -17,9 +17,9 @@
 // The COB math (`deriveSecondaryCob`) is pure and unit-tested. PHI posture:
 // money + ids only — never patient detail.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
 export interface PrimaryClaimTotals {
   status: string;
@@ -168,7 +168,6 @@ export async function generateSecondaryClaimDraft(
   primaryId: string,
 ): Promise<GenerateSecondaryResult> {
   const primaryRes = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select(SECONDARY_CLAIM_SELECT)
     .eq("id", primaryId)
@@ -194,7 +193,6 @@ export async function generateSecondaryClaimDraft(
 
   // Already generated?
   const dupRes = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .select("id")
     .eq("payer_sequence", "secondary")
@@ -212,7 +210,6 @@ export async function generateSecondaryClaimDraft(
 
   // Resolve the secondary payer name.
   const covRes = await supabase
-    .schema("resupply")
     .from("insurance_coverages")
     .select("payer_name")
     .eq("id", primary.secondary_coverage_id ?? "")
@@ -236,7 +233,6 @@ export async function generateSecondaryClaimDraft(
       (c: string) => `\\${c}`,
     );
     const profRes = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select("id")
       .ilike("display_name", escaped)
@@ -249,7 +245,6 @@ export async function generateSecondaryClaimDraft(
 
   // Create the secondary claim header (snapshot the COB amounts).
   const insRes = await supabase
-    .schema("resupply")
     .from("insurance_claims")
     .insert({
       patient_id: primary.patient_id,
@@ -277,7 +272,6 @@ export async function generateSecondaryClaimDraft(
     // hard failure — the secondary exists either way.
     if (insRes.error?.code === "23505") {
       const winner = await supabase
-        .schema("resupply")
         .from("insurance_claims")
         .select("id")
         .eq("payer_sequence", "secondary")
@@ -294,7 +288,6 @@ export async function generateSecondaryClaimDraft(
 
   // Copy the line items so the secondary is a complete, submittable claim.
   const linesRes = await supabase
-    .schema("resupply")
     .from("insurance_claim_line_items")
     .select("hcpcs_code, modifier, description, quantity, billed_cents")
     .eq("claim_id", primaryId);
@@ -307,20 +300,17 @@ export async function generateSecondaryClaimDraft(
   }
   const lines = (linesRes.data ?? []) as Array<Record<string, unknown>>;
   if (lines.length > 0) {
-    const copyRes = await supabase
-      .schema("resupply")
-      .from("insurance_claim_line_items")
-      .insert(
-        lines.map((l) => ({
-          claim_id: secondaryClaimId,
-          hcpcs_code: String(l.hcpcs_code ?? ""),
-          modifier: (l.modifier as string | null) ?? null,
-          description: (l.description as string | null) ?? null,
-          quantity: typeof l.quantity === "number" ? l.quantity : 1,
-          billed_cents: typeof l.billed_cents === "number" ? l.billed_cents : 0,
-          status: "pending",
-        })) as unknown as Record<string, unknown>[],
-      );
+    const copyRes = await supabase.from("insurance_claim_line_items").insert(
+      lines.map((l) => ({
+        claim_id: secondaryClaimId,
+        hcpcs_code: String(l.hcpcs_code ?? ""),
+        modifier: (l.modifier as string | null) ?? null,
+        description: (l.description as string | null) ?? null,
+        quantity: typeof l.quantity === "number" ? l.quantity : 1,
+        billed_cents: typeof l.billed_cents === "number" ? l.billed_cents : 0,
+        status: "pending",
+      })) as unknown as Record<string, unknown>[],
+    );
     if (copyRes.error) {
       // The header exists; surface the partial failure honestly rather
       // than pretend success.

@@ -24,7 +24,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -84,10 +84,14 @@ router.get(
       return;
     }
     const { stage, source, hotOnly, limit } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     let rowsQuery = supabase
-      .schema("resupply")
       .from("fitter_leads")
       .select(
         "id, email, phone_e164, sms_opt_in, marketing_opt_in, source, journey_stage, recommended_mask_id, recommended_mask_name, recommended_mask_type, first_name, campaign_touch_count, last_campaign_touch_at, next_campaign_touch_at, first_order_id, first_order_placed_at, unsubscribed_at, completed_at, created_at, engagement_score, hot_lead_at, click_count, csr_contacted_at, csr_contacted_by, last_open_at, last_click_at, csr_notes, cold_skipped_at",
@@ -114,7 +118,6 @@ router.get(
     // so all KPI tiles reflect the same source predicate the table uses.
     const countBase = () => {
       const q = supabase
-        .schema("resupply")
         .from("fitter_leads")
         .select("*", { count: "exact", head: true });
       return source !== "all" ? q.eq("source", source) : q;
@@ -217,36 +220,38 @@ router.get(
     );
 
     res.json({
-      rows: (rows ?? []).map((r) => ({
-        id: r.id,
-        email: r.email,
-        phoneE164: r.phone_e164,
-        smsOptIn: r.sms_opt_in,
-        marketingOptIn: r.marketing_opt_in,
-        source: r.source,
-        journeyStage: r.journey_stage,
-        recommendedMaskId: r.recommended_mask_id,
-        recommendedMaskName: r.recommended_mask_name,
-        recommendedMaskType: r.recommended_mask_type,
-        firstName: r.first_name,
-        campaignTouchCount: r.campaign_touch_count ?? 0,
-        lastCampaignTouchAt: r.last_campaign_touch_at,
-        nextCampaignTouchAt: r.next_campaign_touch_at,
-        firstOrderId: r.first_order_id,
-        firstOrderPlacedAt: r.first_order_placed_at,
-        unsubscribedAt: r.unsubscribed_at,
-        completedAt: r.completed_at,
-        createdAt: r.created_at,
-        engagementScore: r.engagement_score ?? 0,
-        hotLeadAt: r.hot_lead_at,
-        clickCount: r.click_count ?? 0,
-        csrContactedAt: r.csr_contacted_at,
-        csrContactedBy: r.csr_contacted_by,
-        lastOpenAt: r.last_open_at,
-        lastClickAt: r.last_click_at,
-        csrNotes: r.csr_notes,
-        coldSkippedAt: r.cold_skipped_at,
-      })),
+      rows: (rows ?? []).map(
+        (r: Database["resupply"]["Tables"]["fitter_leads"]["Row"]) => ({
+          id: r.id,
+          email: r.email,
+          phoneE164: r.phone_e164,
+          smsOptIn: r.sms_opt_in,
+          marketingOptIn: r.marketing_opt_in,
+          source: r.source,
+          journeyStage: r.journey_stage,
+          recommendedMaskId: r.recommended_mask_id,
+          recommendedMaskName: r.recommended_mask_name,
+          recommendedMaskType: r.recommended_mask_type,
+          firstName: r.first_name,
+          campaignTouchCount: r.campaign_touch_count ?? 0,
+          lastCampaignTouchAt: r.last_campaign_touch_at,
+          nextCampaignTouchAt: r.next_campaign_touch_at,
+          firstOrderId: r.first_order_id,
+          firstOrderPlacedAt: r.first_order_placed_at,
+          unsubscribedAt: r.unsubscribed_at,
+          completedAt: r.completed_at,
+          createdAt: r.created_at,
+          engagementScore: r.engagement_score ?? 0,
+          hotLeadAt: r.hot_lead_at,
+          clickCount: r.click_count ?? 0,
+          csrContactedAt: r.csr_contacted_at,
+          csrContactedBy: r.csr_contacted_by,
+          lastOpenAt: r.last_open_at,
+          lastClickAt: r.last_click_at,
+          csrNotes: r.csr_notes,
+          coldSkippedAt: r.cold_skipped_at,
+        }),
+      ),
       counts,
       conversionRate,
       hotLeadsActive,
@@ -266,9 +271,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update({
         journey_stage: "unsubscribed",
@@ -321,9 +330,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update({
         csr_contacted_at: new Date().toISOString(),
@@ -395,9 +408,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("fitter_leads")
       .update({ csr_notes: parse.data.notes })
       .eq("id", idParam)
@@ -434,8 +451,16 @@ router.get(
   "/admin/fitter-leads/metrics",
   requirePermission("conversations.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // fitter_campaign_touch_metrics is a VIEW (not a tenant table) — read
+    // it through the unscoped client.
     const { data: rows, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("fitter_campaign_touch_metrics")
       .select(
@@ -485,8 +510,16 @@ router.get(
   "/admin/fitter-leads/metrics/variants",
   requirePermission("conversations.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // fitter_campaign_touch_variant_metrics is a VIEW (not a tenant table)
+    // — read it through the unscoped client.
     const { data: rows, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("fitter_campaign_touch_variant_metrics")
       .select(
@@ -539,12 +572,16 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Fetch the lead row + its full audit history in parallel.
     const [leadResult, touchesResult, clicksResult] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("fitter_leads")
         .select(
           "id, email, first_name, journey_stage, created_at, completed_at, unsubscribed_at, csr_contacted_at, csr_contacted_by, hot_lead_at, first_order_placed_at, last_open_at, last_click_at, recommended_mask_name, cold_skipped_at",
@@ -552,7 +589,6 @@ router.get(
         .eq("id", idParam)
         .maybeSingle(),
       supabase
-        .schema("resupply")
         .from("fitter_campaign_touches")
         .select(
           "touch_index, channel, status, sent_at, first_opened_at, last_opened_at, open_count, error_message",
@@ -560,7 +596,6 @@ router.get(
         .eq("lead_id", idParam)
         .order("sent_at", { ascending: true }),
       supabase
-        .schema("resupply")
         .from("fitter_campaign_clicks")
         .select("touch_index, link_key, clicked_at")
         .eq("lead_id", idParam)
@@ -571,7 +606,9 @@ router.get(
     if (touchesResult.error) throw touchesResult.error;
     if (clicksResult.error) throw clicksResult.error;
 
-    const lead = leadResult.data;
+    const lead = leadResult.data as
+      | Database["resupply"]["Tables"]["fitter_leads"]["Row"]
+      | null;
     if (!lead) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -600,7 +637,8 @@ router.get(
         detail: lead.recommended_mask_name,
       });
     }
-    for (const t of touchesResult.data ?? []) {
+    for (const t of (touchesResult.data ??
+      []) as Database["resupply"]["Tables"]["fitter_campaign_touches"]["Row"][]) {
       if (t.status === "sent") {
         events.push({
           ts: t.sent_at as string,
@@ -627,7 +665,8 @@ router.get(
         });
       }
     }
-    for (const c of clicksResult.data ?? []) {
+    for (const c of (clicksResult.data ??
+      []) as Database["resupply"]["Tables"]["fitter_campaign_clicks"]["Row"][]) {
       events.push({
         ts: c.clicked_at as string,
         kind: "click",

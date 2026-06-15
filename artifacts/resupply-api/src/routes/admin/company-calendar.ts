@@ -21,10 +21,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { sendAppointmentAssignedEmail } from "../../lib/calendar/appointment-assigned-email";
@@ -170,11 +167,15 @@ router.get(
     const from = parsed.data.from ?? new Date(now - 45 * DAY_MS).toISOString();
     const to = parsed.data.to ?? new Date(now + 45 * DAY_MS).toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Events that OVERLAP the [from, to) window: they start before `to`
     // AND end after `from`.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .select(
         "id, patient_id, event_type, status, starts_at, ends_at, location, notes, created_by_user_id, created_by_email, assigned_to_user_id, assigned_to_email, created_at, updated_at",
@@ -190,19 +191,24 @@ router.get(
     // the repo standard; we don't embed PostgREST relations). Resolving at
     // read time keeps `patients` the single source of truth, so a rename
     // shows up on the calendar immediately.
-    const patientIds = [...new Set(rows.map((r) => r.patient_id))];
+    const patientIds = [
+      ...new Set(rows.map((r: { patient_id: string }) => r.patient_id)),
+    ];
     const patientsById = new Map<
       string,
       { firstName: string; lastName: string }
     >();
     if (patientIds.length > 0) {
       const { data: patients, error: pErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name")
         .in("id", patientIds);
       if (pErr) throw pErr;
-      for (const p of patients ?? []) {
+      for (const p of (patients ?? []) as Array<{
+        id: string;
+        legal_first_name: string;
+        legal_last_name: string;
+      }>) {
         patientsById.set(p.id, {
           firstName: p.legal_first_name,
           lastName: p.legal_last_name,
@@ -211,27 +217,31 @@ router.get(
     }
 
     res.json({
-      events: rows.map((r) => {
-        const pt = patientsById.get(r.patient_id);
-        return {
-          id: r.id,
-          patientId: r.patient_id,
-          patientFirstName: pt?.firstName ?? null,
-          patientLastName: pt?.lastName ?? null,
-          eventType: r.event_type,
-          status: r.status,
-          startsAt: r.starts_at,
-          endsAt: r.ends_at,
-          location: r.location,
-          notes: r.notes,
-          createdByUserId: r.created_by_user_id,
-          createdByEmail: r.created_by_email,
-          assignedToUserId: r.assigned_to_user_id,
-          assignedToEmail: r.assigned_to_email,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        };
-      }),
+      events: rows.map(
+        (
+          r: Database["resupply"]["Tables"]["company_calendar_events"]["Row"],
+        ) => {
+          const pt = patientsById.get(r.patient_id);
+          return {
+            id: r.id,
+            patientId: r.patient_id,
+            patientFirstName: pt?.firstName ?? null,
+            patientLastName: pt?.lastName ?? null,
+            eventType: r.event_type,
+            status: r.status,
+            startsAt: r.starts_at,
+            endsAt: r.ends_at,
+            location: r.location,
+            notes: r.notes,
+            createdByUserId: r.created_by_user_id,
+            createdByEmail: r.created_by_email,
+            assignedToUserId: r.assigned_to_user_id,
+            assignedToEmail: r.assigned_to_email,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          };
+        },
+      ),
     });
   },
 );
@@ -250,9 +260,14 @@ router.get(
   "/admin/company-calendar/assignable-staff",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
-    const staff = await listAssignableStaff(supabase);
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const staff = await listAssignableStaff(supabase.raw());
     res.json({ staff });
   },
 );
@@ -274,7 +289,12 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Validate the assignee (if any) against the effectively-active roster
     // before the insert, so an unknown id is a clean 400 rather than a
@@ -282,7 +302,7 @@ router.post(
     let assignee: AssignableStaff | null = null;
     if (parsed.data.assignedToUserId) {
       assignee = await resolveAssignableStaff(
-        supabase,
+        supabase.raw(),
         parsed.data.assignedToUserId,
       );
       if (!assignee) {
@@ -292,7 +312,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .insert({
         patient_id: parsed.data.patientId,
@@ -344,7 +363,12 @@ router.patch(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Fetch the existing row when we need its prior state: to validate the
     // EFFECTIVE time range on a single-sided edit, and/or to detect whether
@@ -354,16 +378,16 @@ router.patch(
       parsed.data.startsAt != null ||
       parsed.data.endsAt != null ||
       parsed.data.assignedToUserId !== undefined;
-    let existing: {
+    type ExistingCalendarEvent = {
       event_type: string;
       starts_at: string;
       ends_at: string;
       location: string | null;
       assigned_to_user_id: string | null;
-    } | null = null;
+    };
+    let existing: ExistingCalendarEvent | null = null;
     if (needsExisting) {
       const { data, error: fetchErr } = await supabase
-        .schema("resupply")
         .from("company_calendar_events")
         .select("event_type, starts_at, ends_at, location, assigned_to_user_id")
         .eq("id", params.data.id)
@@ -373,7 +397,7 @@ router.patch(
         res.status(404).json({ error: "not_found" });
         return;
       }
-      existing = data;
+      existing = data as unknown as ExistingCalendarEvent;
     }
 
     // Validate the effective time range (incoming side(s) merged with the
@@ -426,7 +450,7 @@ router.patch(
         // left the active roster) and don't re-email.
       } else {
         const assignee = await resolveAssignableStaff(
-          supabase,
+          supabase.raw(),
           parsed.data.assignedToUserId,
         );
         if (!assignee) {
@@ -452,7 +476,6 @@ router.patch(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .update(update)
       .eq("id", params.data.id)
@@ -490,9 +513,13 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("company_calendar_events")
       .delete()
       .eq("id", params.data.id);

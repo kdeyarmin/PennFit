@@ -30,7 +30,8 @@ import { z } from "zod";
 
 import {
   type Database,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -278,10 +279,10 @@ function buildWebhookReference(dbState: Map<string, DbState>) {
   };
 }
 
-async function loadDbState(): Promise<Map<string, DbState>> {
-  const supabase = getSupabaseServiceRoleClient();
+async function loadDbState(
+  supabase: OrgScopedClient,
+): Promise<Map<string, DbState>> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("app_config")
     .select("key, value, updated_by_email, updated_at");
   if (error) throw error;
@@ -303,8 +304,14 @@ router.get(
   "/admin/system/config",
   adminReadRateLimiter,
   requirePermission("system.config.manage"),
-  async (_req, res) => {
-    const dbState = await loadDbState();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const dbState = await loadDbState(supabase);
 
     // Group by category, preserving the catalog's declaration order for
     // both categories and settings within them.
@@ -383,12 +390,16 @@ router.put(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Was there already a value? Drives the "set" vs "updated" wording
     // in the activity feed (no value stored either way).
     const { data: prior, error: priorErr } = await supabase
-      .schema("resupply")
       .from("app_config")
       .select("key")
       .eq("key", key)
@@ -398,7 +409,6 @@ router.put(
 
     const nowIso = new Date().toISOString();
     const { data: updated, error: upErr } = await supabase
-      .schema("resupply")
       .from("app_config")
       .upsert(
         {
@@ -415,7 +425,13 @@ router.put(
     if (upErr) throw upErr;
 
     invalidateAppConfigCache();
-    await writeConfigEvent(key, "set", hadPrevious, req.adminEmail ?? null);
+    await writeConfigEvent(
+      supabase,
+      key,
+      "set",
+      hadPrevious,
+      req.adminEmail ?? null,
+    );
 
     // NB: deliberately NO value in the log line — just the key.
     logger.info(
@@ -457,9 +473,13 @@ router.delete(
     }
     const key = setting.key;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: deleted, error: delErr } = await supabase
-      .schema("resupply")
       .from("app_config")
       .delete()
       .eq("key", key)
@@ -469,7 +489,13 @@ router.delete(
     const removed = (deleted ?? []).length > 0;
     if (removed) {
       invalidateAppConfigCache();
-      await writeConfigEvent(key, "clear", true, req.adminEmail ?? null);
+      await writeConfigEvent(
+        supabase,
+        key,
+        "clear",
+        true,
+        req.adminEmail ?? null,
+      );
       logger.info(
         { event: "app_config_clear", key, operator: req.adminEmail ?? null },
         "system config value cleared",
@@ -508,8 +534,14 @@ router.get(
     const parsed = activityQuerySchema.safeParse(req.query);
     const limit = parsed.success ? parsed.data.limit : ACTIVITY_DEFAULT_LIMIT;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("app_config_events")
       .select("occurred_at, operator_email, key, action, had_previous")
@@ -539,14 +571,15 @@ router.get(
  * row couldn't be written. Never includes the value.
  */
 async function writeConfigEvent(
+  supabase: OrgScopedClient,
   key: string,
   action: "set" | "clear",
   hadPrevious: boolean,
   operatorEmail: string | null,
 ): Promise<void> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase
+      .raw()
       .schema("resupply")
       .from("app_config_events")
       .insert({

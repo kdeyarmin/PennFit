@@ -14,7 +14,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -34,14 +34,18 @@ router.get(
   "/admin/billing/aging-report",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // Pull every open claim (status not in paid/closed). The query is
     // bounded by status; for a DME book of N=10k patients we expect at
     // most a few thousand rows in flight — well under PostgREST's row
     // cap. If we outgrow that we paginate in a future change.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, payer_name, status, total_billed_cents, submitted_at, date_of_service",
@@ -63,7 +67,8 @@ router.get(
       string,
       Record<AgingBucket, { claimCount: number; billedCents: number }>
     >();
-    for (const row of data ?? []) {
+    for (const row of (data ??
+      []) as Database["resupply"]["Tables"]["insurance_claims"]["Row"][]) {
       const baseline = row.submitted_at ?? row.date_of_service;
       if (!baseline) continue;
       const baseMs = new Date(baseline).getTime();
@@ -104,14 +109,18 @@ router.get(
   "/admin/billing/dso-by-payer",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     // DSO requires submitted_at AND paid_at. Pull the last 180 days of
     // paid claims; older data drags the metric without telling us
     // anything actionable.
     const cutoff = new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString();
     const { data, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("payer_name, submitted_at, paid_at, total_paid_cents")
       .eq("status", "paid")
@@ -124,7 +133,8 @@ router.get(
       string,
       { sumDays: number; sumPaidCents: number; count: number }
     >();
-    for (const row of data ?? []) {
+    for (const row of (data ??
+      []) as Database["resupply"]["Tables"]["insurance_claims"]["Row"][]) {
       if (!row.submitted_at || !row.paid_at) continue;
       const days =
         (new Date(row.paid_at).getTime() -
@@ -162,8 +172,13 @@ router.get(
   "/admin/billing/denial-rate",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const cutoff = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
     // Per-payer decision/denial counts are aggregated server-side by the
     // resupply.billing_denial_rate RPC (migration 0164) — Postgres does
@@ -173,6 +188,7 @@ router.get(
     // status IN ('denied','appealed'); the RPC's WHERE clause already
     // restricts to decisioned statuses within the window.
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .rpc("billing_denial_rate", { p_cutoff: cutoff });
     if (error) throw error;

@@ -19,10 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   FEATURE_FLAG_KEYS,
@@ -93,9 +90,17 @@ function rowToApi(r: Row) {
 router.get(
   "/admin/feature-flags",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // feature_flags is the GLOBAL flag catalog (no per-tenant rows) — read
+    // it through the unscoped client so the org filter isn't applied.
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("feature_flags")
       .select(
@@ -134,10 +139,17 @@ router.patch(
     }
 
     const key = paramParsed.data.key as FeatureFlagKey;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Read the prior state so the audit row carries before/after.
+    // feature_flags is the GLOBAL flag catalog — use the unscoped client.
     const { data: priorRow, error: priorErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("feature_flags")
       .select(
@@ -162,6 +174,7 @@ router.patch(
     }
 
     const { data: updated, error: updateErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("feature_flags")
       .update({
@@ -214,6 +227,7 @@ router.patch(
     });
 
     const { error: eventErr } = await supabase
+      .raw()
       .schema("resupply")
       .from("feature_flag_events")
       .insert({
@@ -295,8 +309,15 @@ router.get(
       ? parsedQuery.data.limit
       : ACTIVITY_DEFAULT_LIMIT;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    // feature_flag_events is global (no org_id) — use the unscoped client.
     const { data, error } = await supabase
+      .raw()
       .schema("resupply")
       .from("feature_flag_events")
       .select(
@@ -306,13 +327,15 @@ router.get(
       .limit(limit);
     if (error) throw error;
 
-    const activity: ToggleActivityRow[] = (data ?? []).map((r) => ({
-      occurredAt: r.occurred_at,
-      operatorEmail: r.operator_email ?? null,
-      key: r.key,
-      from: r.previous_enabled,
-      to: r.next_enabled,
-    }));
+    const activity: ToggleActivityRow[] = (data ?? []).map(
+      (r: Database["resupply"]["Tables"]["feature_flag_events"]["Row"]) => ({
+        occurredAt: r.occurred_at,
+        operatorEmail: r.operator_email ?? null,
+        key: r.key,
+        from: r.previous_enabled,
+        to: r.next_enabled,
+      }),
+    );
     res.json({ activity });
   },
 );

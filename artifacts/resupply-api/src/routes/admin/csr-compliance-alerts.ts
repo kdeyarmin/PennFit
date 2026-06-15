@@ -18,7 +18,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CsrComplianceAlertStatus,
   type Database,
 } from "@workspace/resupply-db";
@@ -91,7 +91,12 @@ router.get(
       return;
     }
     const q = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const statuses: CsrComplianceAlertStatus[] = q.status
       ? Array.isArray(q.status)
@@ -108,7 +113,6 @@ router.get(
     const nowIso = new Date().toISOString();
 
     let alertsQuery = supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .select(
         "id, patient_id, journey_id, alert_type, severity, summary, metric_snapshot, status, snoozed_until, resolved_at, resolved_by_email, resolution_note, created_at",
@@ -137,31 +141,33 @@ router.get(
       ).toISOString();
       alertsQuery = alertsQuery.gte("created_at", sinceIso);
     }
-    const { data: alertRows, error: alertErr } = await alertsQuery;
+    const { data: alertRowsRaw, error: alertErr } = await alertsQuery;
     if (alertErr) throw alertErr;
+    const alertRows = (alertRowsRaw ??
+      []) as Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"][];
 
     // Bulk-fetch the joined patient.legal_first_name (was an INNER JOIN).
-    const patientIds = Array.from(
-      new Set((alertRows ?? []).map((r) => r.patient_id)),
-    );
+    const patientIds = Array.from(new Set(alertRows.map((r) => r.patient_id)));
     const patientsRes =
       patientIds.length > 0
         ? await supabase
-            .schema("resupply")
             .from("patients")
             .select("id, legal_first_name")
             .in("id", patientIds)
         : { data: [], error: null as null };
     if (patientsRes.error) throw patientsRes.error;
     const firstNameByPatient = new Map<string, string | null>();
-    for (const p of patientsRes.data ?? []) {
+    for (const p of (patientsRes.data ?? []) as Array<{
+      id: string;
+      legal_first_name: string | null;
+    }>) {
       firstNameByPatient.set(p.id, p.legal_first_name);
     }
 
     // Drop alerts whose patient id didn't resolve (was an INNER JOIN
     // before, so a missing patient row should not appear). Then
     // severity-then-created_at sort (critical > warning > info).
-    const merged = (alertRows ?? [])
+    const merged = alertRows
       .filter((r) => firstNameByPatient.has(r.patient_id))
       .sort((a, b) => {
         const sa = SEVERITY_ORDER[a.severity] ?? 99;
@@ -259,9 +265,13 @@ router.patch(
     }
     const { action, snoozeUntil, note } = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .select("id, patient_id, status")
       .eq("id", alertId)
@@ -300,7 +310,6 @@ router.patch(
     }
 
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .update(updates)
       .eq("id", alertId);
@@ -371,13 +380,17 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { patientId, severity, summary } = parsed.data;
 
     // Patient existence check — unknown UUIDs become a 404 instead of
     // an FK-violation 500.
     const { data: existsRow, error: existsErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -390,7 +403,6 @@ router.post(
     }
 
     const { data: inserted, error: insertErr } = await supabase
-      .schema("resupply")
       .from("csr_compliance_alerts")
       .insert({
         patient_id: patientId,

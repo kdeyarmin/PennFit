@@ -23,7 +23,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 import {
   buildPasBundle,
@@ -59,11 +59,15 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Load the PA row.
     const { data: pa } = await supabase
-      .schema("resupply")
       .from("prior_authorizations")
       .select(
         "id, patient_id, insurance_coverage_id, hcpcs_code, payer_name, status",
@@ -89,14 +93,12 @@ router.post(
     const [{ data: coverage }, { data: patient }, { data: payerProfile }] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("insurance_coverages")
           .select("id, payer_name, member_id, group_number")
           .eq("id", pa.insurance_coverage_id)
           .limit(1)
           .maybeSingle(),
         supabase
-          .schema("resupply")
           .from("patients")
           .select(
             "id, legal_first_name, legal_last_name, date_of_birth, address",
@@ -105,7 +107,6 @@ router.post(
           .limit(1)
           .maybeSingle(),
         supabase
-          .schema("resupply")
           .from("payer_profiles")
           .select("id, payer_legal_name, davinci_pas_endpoint_url, slug")
           .ilike("display_name", pa.payer_name)
@@ -157,7 +158,6 @@ router.post(
 
     // Most-recent prescription gives us a referring provider NPI.
     const { data: rx } = await supabase
-      .schema("resupply")
       .from("prescriptions")
       .select("provider_id")
       .eq("patient_id", patient.id)
@@ -171,7 +171,10 @@ router.post(
       });
       return;
     }
+    // `providers` is a GLOBAL reference table (no org_id column), so it
+    // stays on the unscoped service-role client via `.raw()`.
     const { data: provider } = await supabase
+      .raw()
       .schema("resupply")
       .from("providers")
       .select("npi, legal_name")
@@ -183,7 +186,7 @@ router.post(
       return;
     }
 
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
     if (identity.source === "stub") {
       res.status(409).json({
         error: "no_dme_organization",
@@ -270,7 +273,6 @@ router.post(
         submitted_by_email: req.adminEmail ?? "unknown",
       };
     const { data: subRow, error: insertErr } = await supabase
-      .schema("resupply")
       .from("davinci_pas_submissions")
       .insert(insertRow)
       .select("id")
@@ -357,7 +359,6 @@ router.post(
           outcome.status === "responded" ? new Date().toISOString() : null,
       };
     const { error: subUpdateErr } = await supabase
-      .schema("resupply")
       .from("davinci_pas_submissions")
       .update(update)
       .eq("id", subRow.id);
@@ -385,7 +386,6 @@ router.post(
         paUpdate.submitted_at = new Date().toISOString();
       }
       const { error: paUpdateErr } = await supabase
-        .schema("resupply")
         .from("prior_authorizations")
         .update(paUpdate)
         .eq("id", pa.id);

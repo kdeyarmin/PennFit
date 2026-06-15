@@ -36,6 +36,8 @@
 import {
   type Json,
   getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { analyzeDenial } from "./ai-denial-analyzer";
@@ -414,9 +416,13 @@ export async function runSecondaryClaimPass(
   }
 
   const eligible = filterSecondaryEligible(rows, existing);
+  if (eligible.length === 0) return;
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return;
+  const scoped = getOrgScopedClient(orgId);
   for (const item of eligible) {
     try {
-      const result = await generateSecondaryClaimDraft(supabase, item.claimId);
+      const result = await generateSecondaryClaimDraft(scoped, item.claimId);
       if (result.status === "created") {
         stats.secondaryClaimsDrafted += 1;
         void publishEvent({

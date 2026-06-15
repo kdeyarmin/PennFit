@@ -16,10 +16,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { fetchAudienceCandidates } from "../../lib/bulk-campaigns/fetch-candidates";
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -137,14 +134,18 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Verify the template exists + is active for the channel we're
     // about to send. The send-side worker will re-check at send
     // time too (handles late deactivation), but failing here keeps
     // a CSR from creating a campaign against a typo'd key.
     const { data: tpl, error: tplErr } = await supabase
-      .schema("resupply")
       .from("message_templates")
       .select("template_key, channel, is_active")
       .eq("template_key", b.templateKey)
@@ -207,7 +208,6 @@ router.post(
 
     // ── Persist the campaign + recipients ─────────────────────────
     const { data: campaign, error: campaignErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .insert({
         name: b.name,
@@ -242,7 +242,6 @@ router.post(
           suppression_reason: r.suppressionReason,
         }));
         const { error } = await supabase
-          .schema("resupply")
           .from("bulk_campaign_recipients")
           .insert(slice);
         if (error) throw error;
@@ -284,41 +283,47 @@ router.post(
 router.get(
   "/admin/bulk-campaigns",
   requirePermission("bulk_campaigns.send"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(100);
     if (error) throw error;
     res.json({
-      campaigns: (data ?? []).map((r) => ({
-        id: r.id,
-        name: r.name,
-        description: r.description,
-        audienceKind: r.audience_kind,
-        audiencePayer: r.audience_payer,
-        channel: r.channel,
-        category: r.category,
-        templateKey: r.template_key,
-        throttlePerMinute: r.throttle_per_minute,
-        status: r.status,
-        totalRecipients: r.total_recipients,
-        pendingRecipients:
-          r.total_recipients -
-          r.suppressed_count -
-          r.sent_count -
-          r.failed_count,
-        suppressedCount: r.suppressed_count,
-        sentCount: r.sent_count,
-        failedCount: r.failed_count,
-        createdAt: r.created_at,
-        startedAt: r.started_at,
-        completedAt: r.completed_at,
-        cancelledAt: r.cancelled_at,
-      })),
+      campaigns: (data ?? []).map(
+        (r: Database["resupply"]["Tables"]["bulk_campaigns"]["Row"]) => ({
+          id: r.id,
+          name: r.name,
+          description: r.description,
+          audienceKind: r.audience_kind,
+          audiencePayer: r.audience_payer,
+          channel: r.channel,
+          category: r.category,
+          templateKey: r.template_key,
+          throttlePerMinute: r.throttle_per_minute,
+          status: r.status,
+          totalRecipients: r.total_recipients,
+          pendingRecipients:
+            r.total_recipients -
+            r.suppressed_count -
+            r.sent_count -
+            r.failed_count,
+          suppressedCount: r.suppressed_count,
+          sentCount: r.sent_count,
+          failedCount: r.failed_count,
+          createdAt: r.created_at,
+          startedAt: r.started_at,
+          completedAt: r.completed_at,
+          cancelledAt: r.cancelled_at,
+        }),
+      ),
     });
   },
 );
@@ -332,9 +337,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("*")
       .eq("id", params.data.id)
@@ -350,7 +359,6 @@ router.get(
     // Suppressed-first ordering puts the reasons in front of the
     // CSR (they're what needs explaining).
     const { data: recipients, error: rErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaign_recipients")
       .select(
         "id, recipient_kind, recipient_id, recipient_email, status, suppression_reason",
@@ -381,14 +389,18 @@ router.get(
       startedAt: row.started_at,
       completedAt: row.completed_at,
       cancelledAt: row.cancelled_at,
-      recipients: (recipients ?? []).map((r) => ({
-        id: r.id,
-        recipientKind: r.recipient_kind,
-        recipientId: r.recipient_id,
-        recipientEmail: r.recipient_email,
-        status: r.status,
-        suppressionReason: r.suppression_reason,
-      })),
+      recipients: (recipients ?? []).map(
+        (
+          r: Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"],
+        ) => ({
+          id: r.id,
+          recipientKind: r.recipient_kind,
+          recipientId: r.recipient_id,
+          recipientEmail: r.recipient_email,
+          status: r.status,
+          suppressionReason: r.suppression_reason,
+        }),
+      ),
     });
   },
 );
@@ -467,10 +479,14 @@ function makeTransitionHandler(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: existing, error: getErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("id, status, total_recipients, suppressed_count")
       .eq("id", params.data.id)
@@ -552,7 +568,6 @@ function makeTransitionHandler(
     }
 
     const { data: updated, error: updErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .update(updates)
       .eq("id", params.data.id)
@@ -664,9 +679,13 @@ router.post(
       res.status(404).json({ error: "campaign_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: campaign, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("id, status, audience_kind, audience_payer, category")
       .eq("id", idCheck.data)
@@ -720,7 +739,6 @@ router.post(
     // that's the audit story; the prior recipient rows aren't
     // re-needed.
     const { error: delErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaign_recipients")
       .delete()
       .eq("campaign_id", idCheck.data);
@@ -738,7 +756,6 @@ router.post(
           suppression_reason: r.suppressionReason,
         }));
         const { error } = await supabase
-          .schema("resupply")
           .from("bulk_campaign_recipients")
           .insert(slice);
         if (error) throw error;
@@ -747,7 +764,6 @@ router.post(
 
     // Refresh materialized counters.
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .update({
         total_recipients: resolved.totals.total,
@@ -795,9 +811,13 @@ router.get(
       res.status(404).json({ error: "campaign_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: campaign } = await supabase
-      .schema("resupply")
       .from("bulk_campaigns")
       .select("id, name")
       .eq("id", idCheck.data)
@@ -832,7 +852,6 @@ router.get(
     let offset = 0;
     while (true) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("bulk_campaign_recipients")
         .select(
           "recipient_kind, recipient_id, recipient_email, status, suppression_reason, created_at",

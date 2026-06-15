@@ -35,10 +35,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getSupabaseServiceRoleClient,
-  type Json,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
 import { createSendgridClient } from "@workspace/resupply-email";
 import {
   createTelnyxFaxClient,
@@ -318,10 +315,14 @@ router.get(
       return;
     }
     const { patientId, documentType } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, address",
@@ -337,14 +338,12 @@ router.get(
 
     const [presRes, studyRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("prescriptions")
         .select("item_sku, hcpcs_code, provider_id, status, created_at")
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false })
         .limit(10),
       supabase
-        .schema("resupply")
         .from("sleep_studies")
         .select(
           "diagnosis_icd10, study_date, ahi, rdi, interpreting_provider_id",
@@ -359,7 +358,7 @@ router.get(
 
     const prescriptions = presRes.data ?? [];
     const activePrescriptions = prescriptions.filter(
-      (p) => p.status === "active",
+      (p: { status: string | null }) => p.status === "active",
     );
     const relevantPrescriptions =
       activePrescriptions.length > 0 ? activePrescriptions : prescriptions;
@@ -367,7 +366,9 @@ router.get(
     // when no prescription names one, fall back to the sleep study's
     // interpreting provider so a chart with only a study still prefills.
     const providerId =
-      relevantPrescriptions.find((p) => p.provider_id)?.provider_id ??
+      relevantPrescriptions.find(
+        (p: { provider_id: string | null }) => p.provider_id,
+      )?.provider_id ??
       studyRes.data?.interpreting_provider_id ??
       null;
 
@@ -381,7 +382,10 @@ router.get(
       practice_address: unknown;
     } | null = null;
     if (providerId) {
+      // providers is a global shared directory (keyed by NPI, no
+      // org_id) — use raw().
       const { data, error: provErr } = await supabase
+        .raw()
         .schema("resupply")
         .from("providers")
         .select(
@@ -399,8 +403,9 @@ router.get(
     const patientAddress = formatJsonAddress(patient.address);
     const itemLines = [
       ...new Set(
-        relevantPrescriptions.map((p) =>
-          p.hcpcs_code ? `${p.item_sku} (HCPCS ${p.hcpcs_code})` : p.item_sku,
+        relevantPrescriptions.map(
+          (p: { hcpcs_code: string | null; item_sku: string }) =>
+            p.hcpcs_code ? `${p.item_sku} (HCPCS ${p.hcpcs_code})` : p.item_sku,
         ),
       ),
     ].join("\n");
@@ -492,9 +497,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("manual_documents")
       .select(
         "id, document_type, title, status, patient_id, chart_document_id, " +
@@ -531,10 +540,14 @@ router.post(
     const type = b.documentType as ManualDocumentType;
     const fields = normalizeManualDocumentFields(type, b.fields);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { data: inserted, error } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .insert({
         document_type: type,
@@ -565,7 +578,7 @@ router.post(
     let trackingCode: string | null = null;
     if (getManualDocumentTypeDef(type).requiresSignature) {
       try {
-        const reg = await registerSignatureTracking(supabase, {
+        const reg = await registerSignatureTracking(supabase.raw(), {
           kind: "manual_document",
           documentId: inserted.id,
           title: b.title,
@@ -610,9 +623,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .select(MANUAL_DOCUMENT_ROW_COLUMNS)
       .eq("id", parsed.data.id)
@@ -645,9 +662,13 @@ router.patch(
     }
     const b = parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: loadErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .select("id, document_type")
       .eq("id", idParsed.data.id)
@@ -681,7 +702,6 @@ router.patch(
     }
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update(patch)
       .eq("id", idParsed.data.id);
@@ -719,16 +739,20 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .delete()
       .eq("id", parsed.data.id);
     if (error) throw error;
 
     await markTrackingCanceled(
-      supabase,
+      supabase.raw(),
       "manual_document",
       parsed.data.id,
     ).catch((err) =>
@@ -763,15 +787,20 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await loadManualDocumentRow(supabase, parsed.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await loadManualDocumentRow(supabase.raw(), parsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
     }
     let pdf: Buffer;
     try {
-      pdf = await renderManualDocumentRowToPdf(supabase, row);
+      pdf = await renderManualDocumentRowToPdf(supabase.raw(), row);
     } catch (err) {
       logger.warn({ err }, "manual_document.pdf render failed");
       res.status(500).json({ error: "render_failed" });
@@ -822,8 +851,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await loadManualDocumentRow(supabase, idParsed.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await loadManualDocumentRow(supabase.raw(), idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -834,7 +868,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(supabase, row);
+    const pdf = await renderManualDocumentRowToPdf(supabase.raw(), row);
     const supplier = manualDocumentSupplierName();
     const text = [
       `Please find the attached document from ${supplier}.`,
@@ -872,7 +906,6 @@ router.post(
     // Best-effort stamp — the email already went out, so a failed status
     // write must not 500 (a retry would send a duplicate email).
     const { error: emailStampErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update({
         last_emailed_at: nowIso,
@@ -888,7 +921,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      supabase,
+      supabase.raw(),
       "manual_document",
       row.id,
       "email",
@@ -934,8 +967,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await loadManualDocumentRow(supabase, idParsed.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await loadManualDocumentRow(supabase.raw(), idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -980,7 +1018,6 @@ router.post(
     // Best-effort stamp — the fax was already dispatched, so a failed
     // status write must not 500 (a retry would send a duplicate fax).
     const { error: faxStampErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update({
         last_faxed_at: nowIso,
@@ -995,8 +1032,13 @@ router.post(
       );
     }
 
-    await recordTrackingSent(supabase, "manual_document", row.id, "fax").catch(
-      (err) => logger.warn({ err }, "manual_document.tracking_sent failed"),
+    await recordTrackingSent(
+      supabase.raw(),
+      "manual_document",
+      row.id,
+      "fax",
+    ).catch((err) =>
+      logger.warn({ err }, "manual_document.tracking_sent failed"),
     );
 
     await logAudit({
@@ -1033,8 +1075,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await loadManualDocumentRow(supabase, idParsed.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await loadManualDocumentRow(supabase.raw(), idParsed.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -1047,7 +1094,6 @@ router.post(
 
     // Confirm the chart exists before we render/upload anything.
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", patientId)
@@ -1059,7 +1105,7 @@ router.post(
       return;
     }
 
-    const pdf = await renderManualDocumentRowToPdf(supabase, row);
+    const pdf = await renderManualDocumentRowToPdf(supabase.raw(), row);
 
     // Upload the rendered PDF to private object storage, owned by the
     // patient — same pattern as the inbound-fax / portal-upload paths.
@@ -1097,7 +1143,6 @@ router.post(
     }).toISOString();
 
     const { data: docRow, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .insert({
         patient_id: patientId,
@@ -1116,7 +1161,6 @@ router.post(
     if (insertErr) throw insertErr;
 
     const { error: attachErr } = await supabase
-      .schema("resupply")
       .from("manual_documents")
       .update({
         patient_id: patientId,

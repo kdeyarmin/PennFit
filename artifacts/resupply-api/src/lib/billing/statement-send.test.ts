@@ -13,7 +13,14 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+} from "@workspace/resupply-db";
+
+const TEST_ORG_ID = "00000000-0000-0000-0000-000000000001";
+const orgClient = () =>
+  getOrgScopedClient(TEST_ORG_ID, getSupabaseServiceRoleClient());
 
 import {
   markStatementsMailed,
@@ -156,11 +163,11 @@ describe("sendOneStatement", () => {
       .fn<SendFn>()
       .mockResolvedValue({ kind: "sent", channel: "email" });
 
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+      now: new Date("2026-06-01T17:00:00Z"),
+    });
 
     expect(outcome).toEqual({ kind: "sent", channel: "email" });
     expect(send).toHaveBeenCalledTimes(1);
@@ -174,7 +181,11 @@ describe("sendOneStatement", () => {
       "patient_billing_statements",
       "update",
     )[0] as Record<string, unknown>;
-    expect(claimPayload).toEqual({ delivery_status: "sending" });
+    // The org-scoped facade tags every write with the tenant id.
+    expect(claimPayload).toEqual({
+      delivery_status: "sending",
+      org_id: TEST_ORG_ID,
+    });
     const claimFilters = supabaseMock.filterCalls(
       "patient_billing_statements",
       "update",
@@ -192,11 +203,11 @@ describe("sendOneStatement", () => {
     stageClaim(false); // zero rows back — the concurrent sender won
 
     const send = vi.fn<SendFn>();
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+      now: new Date("2026-06-01T17:00:00Z"),
+    });
 
     expect(outcome).toEqual({
       kind: "skipped",
@@ -216,7 +227,7 @@ describe("sendOneStatement", () => {
 
     const send = vi.fn<SendFn>();
     await expect(
-      sendOneStatement(getSupabaseServiceRoleClient(), "stmt-1", {
+      sendOneStatement(orgClient(), "stmt-1", {
         send,
         cfg: stubCfg(),
         now: new Date("2026-06-01T17:00:00Z"),
@@ -228,11 +239,10 @@ describe("sendOneStatement", () => {
   it("skips a zero-balance statement without sending", async () => {
     stageStatement({ total_patient_responsibility_cents: 0 });
     const send = vi.fn<SendFn>();
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg() },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+    });
     expect(outcome).toEqual({ kind: "skipped", reason: "zero_balance" });
     expect(send).not.toHaveBeenCalled();
   });
@@ -244,11 +254,10 @@ describe("sendOneStatement", () => {
       error: null,
     });
     const send = vi.fn<SendFn>();
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg() },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+    });
     expect(outcome).toEqual({
       kind: "skipped",
       reason: "statement_pdf_missing",
@@ -261,11 +270,11 @@ describe("sendOneStatement", () => {
     stagePatient({ phone_e164: null });
     stageCustomerPrefs({ emailBillingStatements: false });
     const send = vi.fn<SendFn>();
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+      now: new Date("2026-06-01T17:00:00Z"),
+    });
     expect(outcome.kind).toBe("skipped");
     expect(send).not.toHaveBeenCalled();
   });
@@ -282,16 +291,12 @@ describe("sendOneStatement", () => {
 
     const send = vi.fn<SendFn>();
     const signPdfUrl = vi.fn().mockResolvedValue(null);
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      {
-        send,
-        signPdfUrl,
-        cfg: stubCfg(),
-        now: new Date("2026-06-01T17:00:00Z"),
-      },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      signPdfUrl,
+      cfg: stubCfg(),
+      now: new Date("2026-06-01T17:00:00Z"),
+    });
 
     expect(outcome).toEqual({
       kind: "failed",
@@ -306,11 +311,10 @@ describe("sendOneStatement", () => {
     // delivery_method 'mail' → segregated to print/mail; never emailed.
     stageStatement({ delivery_method: "mail" });
     const send = vi.fn<SendFn>();
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg() },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+    });
     expect(outcome).toEqual({ kind: "mail", reason: "mail_preference" });
     expect(send).not.toHaveBeenCalled();
   });
@@ -324,11 +328,10 @@ describe("sendOneStatement", () => {
     const send = vi
       .fn<SendFn>()
       .mockResolvedValue({ kind: "sent", channel: "email" });
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg() },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+    });
     expect(outcome).toEqual({ kind: "sent", channel: "email" });
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]![1]).toBe("email");
@@ -338,11 +341,10 @@ describe("sendOneStatement", () => {
     stageStatement({ delivery_method: "email" });
     stagePatient({ email: null });
     const send = vi.fn<SendFn>();
-    const outcome = await sendOneStatement(
-      getSupabaseServiceRoleClient(),
-      "stmt-1",
-      { send, cfg: stubCfg() },
-    );
+    const outcome = await sendOneStatement(orgClient(), "stmt-1", {
+      send,
+      cfg: stubCfg(),
+    });
     expect(outcome).toEqual({
       kind: "mail",
       reason: "no_email_fallback_mail",
@@ -357,7 +359,7 @@ describe("markStatementsMailed", () => {
       data: [{ id: "stmt-1" }, { id: "stmt-2" }],
       error: null,
     });
-    const marked = await markStatementsMailed(getSupabaseServiceRoleClient(), [
+    const marked = await markStatementsMailed(orgClient(), [
       "stmt-1",
       "stmt-2",
       "stmt-3",
@@ -366,10 +368,7 @@ describe("markStatementsMailed", () => {
   });
 
   it("is a no-op for an empty id list", async () => {
-    const marked = await markStatementsMailed(
-      getSupabaseServiceRoleClient(),
-      [],
-    );
+    const marked = await markStatementsMailed(orgClient(), []);
     expect(marked).toBe(0);
   });
 });
@@ -410,6 +409,7 @@ describe("runStatementBatchSend", () => {
       .mockResolvedValue({ kind: "sent", channel: "email" });
 
     const result = await runStatementBatchSend(
+      TEST_ORG_ID,
       { cap: 50 },
       { send, cfg: stubCfg(), now: new Date("2026-06-01T17:00:00Z") },
     );

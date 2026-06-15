@@ -5,14 +5,14 @@
 // helper to materialize the raw candidate set before handing it
 // to resolveAudience() for opt-out + dedup filtering.
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import type {
   PatientCandidate,
   ShopCustomerCandidate,
 } from "./resolve-audience";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export type AudienceKind =
   | "all_active_shop_customers"
@@ -82,7 +82,6 @@ export async function fetchAudienceCandidates(
     // Mirrors the keyset-paging pattern in worker/jobs/reminders.ts.
     for (let from = 0; ; from += BATCH) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select("customer_id, email_lower, communication_preferences")
         .order("customer_id", { ascending: true })
@@ -104,7 +103,6 @@ export async function fetchAudienceCandidates(
     // silently drop every active patient past the first ~1000.
     for (let from = 0; ; from += BATCH) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, email, status, insurance_payer")
         .eq("status", "active")
@@ -127,7 +125,6 @@ export async function fetchAudienceCandidates(
     // ~1000-row cap and would otherwise be silently truncated.
     for (let from = 0; ; from += BATCH) {
       const { data, error } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, email, status, insurance_payer")
         .eq("status", "active")
@@ -156,7 +153,6 @@ export async function fetchAudienceCandidates(
       const patientIds = new Set<string>();
       for (let from = 0; ; from += BATCH) {
         const { data, error } = await supabase
-          .schema("resupply")
           .from("csr_compliance_alerts")
           .select("patient_id")
           .eq("status", "open")
@@ -174,7 +170,6 @@ export async function fetchAudienceCandidates(
       for (let i = 0; i < ids.length; i += BATCH) {
         const slice = ids.slice(i, i + BATCH);
         const { data, error } = await supabase
-          .schema("resupply")
           .from("patients")
           .select("id, email, status, insurance_payer")
           .in("id", slice);
@@ -194,7 +189,6 @@ export async function fetchAudienceCandidates(
     for (let i = 0; i < shopIds.length; i += BATCH) {
       const slice = shopIds.slice(i, i + BATCH);
       const { data, error } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .select("customer_id, email_lower, communication_preferences")
         .in("customer_id", slice);
@@ -212,7 +206,6 @@ export async function fetchAudienceCandidates(
     for (let i = 0; i < patientIds.length; i += BATCH) {
       const slice = patientIds.slice(i, i + BATCH);
       const { data, error } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id, email, status, insurance_payer")
         .in("id", slice);

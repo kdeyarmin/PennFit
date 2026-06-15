@@ -21,7 +21,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 
 import {
   aggregateComplianceCohorts,
@@ -56,11 +56,15 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("status")
       .gte("created_at", cutoff);
@@ -87,9 +91,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
 
     // These reads are independent of one another, so fan them out
     // concurrently rather than blocking on each in series. (The inbound-
@@ -104,7 +113,6 @@ router.get(
     ] = await Promise.all([
       // Episodes created in the window → confirmation/fulfillment + unique patients.
       supabase
-        .schema("resupply")
         .from("episodes")
         .select("status, patient_id")
         .gte("created_at", cutoff),
@@ -112,7 +120,6 @@ router.get(
       // outreach denominator. episode_id IS NOT NULL excludes in-app
       // shop threads. Capped for safety on very large windows.
       supabase
-        .schema("resupply")
         .from("conversations")
         .select("id")
         .not("episode_id", "is", null)
@@ -120,14 +127,12 @@ router.get(
         .limit(20000),
       // Active-patient count for the orders-per-patient denominator.
       supabase
-        .schema("resupply")
         .from("patients")
         .select("*", { count: "exact", head: true })
         .eq("status", "active"),
       // Fulfillment line items in the window → items per order. Capped for
       // safety on very large windows.
       supabase
-        .schema("resupply")
         .from("fulfillments")
         .select("episode_id")
         .gte("created_at", cutoff)
@@ -136,7 +141,6 @@ router.get(
       // fulfillments bill insurance and carry no cash amount, so AOV is a
       // storefront-cash metric.
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("amount_total_cents")
         .eq("status", "paid")
@@ -149,18 +153,21 @@ router.get(
     if (fulErr) throw fulErr;
     if (ordErr) throw ordErr;
 
-    const episodes: EpisodeKpiRow[] = (episodeRows ?? []).map((r) => ({
-      status: r.status,
-      patientId: r.patient_id,
-    }));
-    const outreachIds = new Set((convRows ?? []).map((r) => r.id));
+    const episodes: EpisodeKpiRow[] = (episodeRows ?? []).map(
+      (r: { status: string; patient_id: string }) => ({
+        status: r.status,
+        patientId: r.patient_id,
+      }),
+    );
+    const outreachIds = new Set(
+      (convRows ?? []).map((r: { id: string }) => r.id),
+    );
 
     // Inbound patient messages in the window → which of those
     // conversations actually got a reply (distinct).
     let respondedCount = 0;
     if (outreachIds.size > 0) {
       const { data: msgRows, error: msgErr } = await supabase
-        .schema("resupply")
         .from("messages")
         .select("conversation_id")
         .eq("direction", "inbound")
@@ -177,12 +184,20 @@ router.get(
     }
 
     const fulfillments = (fulfillmentRows ?? [])
-      .filter((r) => r.episode_id)
-      .map((r) => ({ episodeId: r.episode_id as string }));
+      .filter(
+        (r: Database["resupply"]["Tables"]["fulfillments"]["Row"]) =>
+          r.episode_id,
+      )
+      .map((r: Database["resupply"]["Tables"]["fulfillments"]["Row"]) => ({
+        episodeId: r.episode_id as string,
+      }));
 
     const paidOrderAmountsCents = (orderRows ?? [])
-      .map((r) => r.amount_total_cents)
-      .filter((c): c is number => typeof c === "number");
+      .map(
+        (r: Database["resupply"]["Tables"]["shop_orders"]["Row"]) =>
+          r.amount_total_cents,
+      )
+      .filter((c: unknown): c is number => typeof c === "number");
 
     const result = aggregateResupplyKpis({
       episodes,
@@ -213,9 +228,14 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
 
     // Pull patients onboarded in the window. We don't fetch every
     // patient on file — large practices have tens of thousands of
@@ -224,14 +244,15 @@ router.get(
     // onboarded patients, which is exactly the segment the
     // adherence-trial dashboard is about anyway.
     const { data: patientRows, error: pErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, insurance_payer, created_at")
       .gte("created_at", cutoff)
       .order("created_at", { ascending: true });
     if (pErr) throw pErr;
 
-    const patientIds = (patientRows ?? []).map((r) => r.id);
+    const patientIds = (patientRows ?? []).map(
+      (r: Database["resupply"]["Tables"]["patients"]["Row"]) => r.id,
+    );
     if (patientIds.length === 0) {
       res.json({
         windowDays: days,
@@ -248,7 +269,6 @@ router.get(
     // partition in JS.
     const horizonCutoff = isoDaysAgo(days + 90);
     const { data: nightRows, error: nErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("patient_id, night_date, source, usage_minutes")
       .in("patient_id", patientIds)
@@ -259,7 +279,8 @@ router.get(
       string,
       Array<{ date: string; usageMinutes: number | null }>
     >();
-    for (const row of nightRows ?? []) {
+    for (const row of (nightRows ??
+      []) as Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"][]) {
       const list = nightsByPatient.get(row.patient_id) ?? [];
       list.push({
         date: row.night_date,
@@ -269,21 +290,23 @@ router.get(
     }
 
     const asOfDate = new Date().toISOString().slice(0, 10);
-    const points: PatientCohortPoint[] = (patientRows ?? []).map((patient) => {
-      const nights = nightsByPatient.get(patient.id) ?? [];
-      let qualifies = false;
-      if (nights.length > 0) {
-        const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
-        const anchor = sorted[0]!.date;
-        const result = findBestAdherenceWindow(sorted, anchor, asOfDate);
-        qualifies = result.qualifies;
-      }
-      return {
-        signedUpAt: patient.created_at,
-        qualifies,
-        insurancePayer: patient.insurance_payer,
-      };
-    });
+    const points: PatientCohortPoint[] = (patientRows ?? []).map(
+      (patient: Database["resupply"]["Tables"]["patients"]["Row"]) => {
+        const nights = nightsByPatient.get(patient.id) ?? [];
+        let qualifies = false;
+        if (nights.length > 0) {
+          const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
+          const anchor = sorted[0]!.date;
+          const result = findBestAdherenceWindow(sorted, anchor, asOfDate);
+          qualifies = result.qualifies;
+        }
+        return {
+          signedUpAt: patient.created_at,
+          qualifies,
+          insurancePayer: patient.insurance_payer,
+        };
+      },
+    );
 
     const aggregated = aggregateComplianceCohorts(points);
     res.json({
@@ -311,7 +334,12 @@ router.get(
     const fromIso = from.toISOString();
     const toIso = to.toISOString();
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Per-operator productivity is re-derived from EVENT tables (the
     // same sources as /admin/productivity) now that the historical
@@ -320,7 +348,6 @@ router.get(
     // window; byAction breaks the total down and lastActiveDate is the
     // most recent action timestamp.
     const { data: admins, error: adminsErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id, email_lower")
       .eq("status", "active");
@@ -459,7 +486,7 @@ type CsrActionQuery = {
  * fetch but keeps the timestamp so we can surface "last active".
  */
 async function csrActionRows(
-  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  supabase: ReturnType<typeof getOrgScopedClient>,
   table:
     | "conversations"
     | "shop_returns"
@@ -472,7 +499,6 @@ async function csrActionRows(
 ): Promise<Array<{ id: string; ts: string | null }>> {
   if (adminIds.length === 0) return [];
   const base = supabase
-    .schema("resupply")
     .from(table)
     .select(`${attributionCol}, ${tsCol}`) as unknown as CsrActionQuery;
   const refined = refine(base.in(attributionCol, adminIds));
@@ -519,10 +545,14 @@ router.get(
       return;
     }
     const { stage, limit } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select(
         "id, patient_id, status, created_at, due_at, expires_at, prescription_id",
@@ -535,41 +565,55 @@ router.get(
     // Decorate each row with the patient name + payer so a
     // supervisor can scan the list without opening every row.
     const patientIds = Array.from(
-      new Set((data ?? []).map((r) => r.patient_id)),
+      new Set(
+        (data ?? []).map(
+          (r: Database["resupply"]["Tables"]["episodes"]["Row"]) =>
+            r.patient_id,
+        ),
+      ),
     );
+    type PatientLite = Pick<
+      Database["resupply"]["Tables"]["patients"]["Row"],
+      "id" | "legal_first_name" | "legal_last_name" | "insurance_payer"
+    >;
     const { data: patients, error: pErr } = patientIds.length
       ? await supabase
-          .schema("resupply")
           .from("patients")
           .select("id, legal_first_name, legal_last_name, insurance_payer")
           .in("id", patientIds)
-      : { data: [], error: null };
+      : { data: [] as PatientLite[], error: null };
     if (pErr) throw pErr;
-    const byId = new Map((patients ?? []).map((p) => [p.id, p] as const));
+    const byId = new Map(
+      ((patients ?? []) as PatientLite[]).map(
+        (p: PatientLite) => [p.id, p] as const,
+      ),
+    );
 
     const now = Date.now();
-    const episodes = (data ?? []).map((e) => {
-      const p = byId.get(e.patient_id);
-      const createdAt = e.created_at;
-      const ageDays = Math.floor(
-        (now - new Date(createdAt).getTime()) / 86_400_000,
-      );
-      const patientName = p
-        ? `${p.legal_first_name} ${p.legal_last_name}`.trim()
-        : null;
-      return {
-        id: e.id,
-        patientId: e.patient_id,
-        patientName,
-        insurancePayer: p?.insurance_payer ?? null,
-        status: e.status,
-        createdAt,
-        dueAt: e.due_at,
-        expiresAt: e.expires_at,
-        prescriptionId: e.prescription_id,
-        ageDays,
-      };
-    });
+    const episodes = (data ?? []).map(
+      (e: Database["resupply"]["Tables"]["episodes"]["Row"]) => {
+        const p = byId.get(e.patient_id);
+        const createdAt = e.created_at;
+        const ageDays = Math.floor(
+          (now - new Date(createdAt).getTime()) / 86_400_000,
+        );
+        const patientName = p
+          ? `${p.legal_first_name} ${p.legal_last_name}`.trim()
+          : null;
+        return {
+          id: e.id,
+          patientId: e.patient_id,
+          patientName,
+          insurancePayer: p?.insurance_payer ?? null,
+          status: e.status,
+          createdAt,
+          dueAt: e.due_at,
+          expiresAt: e.expires_at,
+          prescriptionId: e.prescription_id,
+          ageDays,
+        };
+      },
+    );
 
     res.json({ stage, count: episodes.length, episodes });
   },
@@ -593,11 +637,15 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("status")
       .gte("created_at", cutoff);
@@ -644,17 +692,23 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const days = parsed.data.days;
     const cutoff = isoDaysAgo(days);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { data: patientRows, error: pErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, insurance_payer, created_at")
       .gte("created_at", cutoff)
       .order("created_at", { ascending: true });
     if (pErr) throw pErr;
-    const patientIds = (patientRows ?? []).map((r) => r.id);
+    const patientIds = (patientRows ?? []).map(
+      (r: Database["resupply"]["Tables"]["patients"]["Row"]) => r.id,
+    );
 
     const filename = `compliance-cohorts-${days}d-${new Date()
       .toISOString()
@@ -669,7 +723,6 @@ router.get(
     }
     const horizonCutoff = isoDaysAgo(days + 90);
     const { data: nightRows, error: nErr } = await supabase
-      .schema("resupply")
       .from("patient_therapy_nights")
       .select("patient_id, night_date, source, usage_minutes")
       .in("patient_id", patientIds)
@@ -679,30 +732,33 @@ router.get(
       string,
       Array<{ date: string; usageMinutes: number | null }>
     >();
-    for (const row of nightRows ?? []) {
+    for (const row of (nightRows ??
+      []) as Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"][]) {
       const list = nightsByPatient.get(row.patient_id) ?? [];
       list.push({ date: row.night_date, usageMinutes: row.usage_minutes });
       nightsByPatient.set(row.patient_id, list);
     }
     const asOfDate = new Date().toISOString().slice(0, 10);
-    const points: PatientCohortPoint[] = (patientRows ?? []).map((p) => {
-      const nights = nightsByPatient.get(p.id) ?? [];
-      let qualifies = false;
-      if (nights.length > 0) {
-        const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
-        const result = findBestAdherenceWindow(
-          sorted,
-          sorted[0]!.date,
-          asOfDate,
-        );
-        qualifies = result.qualifies;
-      }
-      return {
-        signedUpAt: p.created_at,
-        qualifies,
-        insurancePayer: p.insurance_payer,
-      };
-    });
+    const points: PatientCohortPoint[] = (patientRows ?? []).map(
+      (p: Database["resupply"]["Tables"]["patients"]["Row"]) => {
+        const nights = nightsByPatient.get(p.id) ?? [];
+        let qualifies = false;
+        if (nights.length > 0) {
+          const sorted = [...nights].sort((a, b) => (a.date < b.date ? -1 : 1));
+          const result = findBestAdherenceWindow(
+            sorted,
+            sorted[0]!.date,
+            asOfDate,
+          );
+          qualifies = result.qualifies;
+        }
+        return {
+          signedUpAt: p.created_at,
+          qualifies,
+          insurancePayer: p.insurance_payer,
+        };
+      },
+    );
     const agg = aggregateComplianceCohorts(points);
     for (const b of agg.byMonth) {
       res.write(
@@ -758,15 +814,19 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const { lookbackDays, activeDays, reorderDays } = parsed.data;
     const cutoff = isoDaysAgo(lookbackDays);
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
 
     // Fulfilled episodes only — the real-shipment signal. Capped for
     // safety on a very long lookback; a DME book that exceeds this in a
     // year is a good problem to have and the rates stay representative.
     const { data, error } = await supabase
-      .schema("resupply")
       .from("episodes")
       .select("patient_id, created_at")
       .eq("status", "fulfilled")
@@ -774,10 +834,12 @@ router.get(
       .limit(100000);
     if (error) throw error;
 
-    const episodes: RetentionEpisodeRow[] = (data ?? []).map((r) => ({
-      patientId: r.patient_id,
-      createdAt: r.created_at,
-    }));
+    const episodes: RetentionEpisodeRow[] = (data ?? []).map(
+      (r: Database["resupply"]["Tables"]["episodes"]["Row"]) => ({
+        patientId: r.patient_id,
+        createdAt: r.created_at,
+      }),
+    );
     const result = aggregatePatientRetention({
       episodes,
       nowMs: Date.now(),

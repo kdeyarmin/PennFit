@@ -36,7 +36,7 @@ import { Router, type IRouter } from "express";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 
@@ -59,7 +59,12 @@ router.post(
   requirePermission("conversations.manage"),
   adminRateLimit({ name: "shop_review_requests.send_due", preset: "bulk" }),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const cutoffIso = new Date(
       Date.now() - REVIEW_REQUEST_AGE_DAYS * 24 * 60 * 60 * 1000,
@@ -68,7 +73,6 @@ router.post(
     // Step 1 — pick the eligible candidate ids. Bounded by SCAN_LIMIT
     // so a single invocation can't run away on a backlog.
     const { data: candidates, error: candidatesErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, customer_id")
       .eq("status", "paid")
@@ -79,7 +83,9 @@ router.post(
       .limit(SCAN_LIMIT);
     if (candidatesErr) throw candidatesErr;
 
-    const candidateIds = (candidates ?? []).map((r) => r.id);
+    const candidateIds = (candidates ?? []).map(
+      (r: { id: string; customer_id: string | null }) => r.id,
+    );
     if (candidateIds.length === 0) {
       res.json({
         scanned: 0,
@@ -96,7 +102,6 @@ router.post(
     // stamped these rows will match zero here.
     const nowIso = new Date().toISOString();
     const { data: claimedRows, error: claimErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .update({ review_request_sent_at: nowIso })
       .in("id", candidateIds)
@@ -105,7 +110,13 @@ router.post(
     if (claimErr) throw claimErr;
 
     const claimed = (claimedRows ?? []).filter(
-      (r): r is { id: string; customer_id: string } => r.customer_id !== null,
+      (r: {
+        id: string;
+        customer_id: string | null;
+      }): r is {
+        id: string;
+        customer_id: string;
+      } => r.customer_id !== null,
     );
 
     if (claimed.length === 0) {
@@ -120,39 +131,58 @@ router.post(
     }
 
     // Batch-fetch comm prefs for every claimed user.
-    const userIds = Array.from(new Set(claimed.map((r) => r.customer_id)));
+    const userIds = Array.from(
+      new Set(
+        claimed.map((r: { id: string; customer_id: string }) => r.customer_id),
+      ),
+    );
     const { data: customerRows, error: customersErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("customer_id, email_lower, communication_preferences")
       .in("customer_id", userIds);
     if (customersErr) throw customersErr;
-    const customerMap = new Map(
-      (customerRows ?? []).map((r) => [
-        r.customer_id,
-        {
-          email: r.email_lower,
-          prefs: {
-            ...DEFAULT_COMMUNICATION_PREFERENCES,
-            ...((r.communication_preferences as CommunicationPreferences | null) ??
-              {}),
+    const customerMap = new Map<
+      string,
+      { email: string | null; prefs: CommunicationPreferences }
+    >(
+      (customerRows ?? []).map(
+        (r: {
+          customer_id: string;
+          email_lower: string | null;
+          communication_preferences: unknown;
+        }): [
+          string,
+          { email: string | null; prefs: CommunicationPreferences },
+        ] => [
+          r.customer_id,
+          {
+            email: r.email_lower,
+            prefs: {
+              ...DEFAULT_COMMUNICATION_PREFERENCES,
+              ...((r.communication_preferences as CommunicationPreferences | null) ??
+                {}),
+            },
           },
-        },
-      ]),
+        ],
+      ),
     );
 
     // For each claimed order, look up its first product so we can
     // link the customer somewhere meaningful. One query for the whole
     // batch.
-    const claimedOrderIds = claimed.map((c) => c.id);
+    const claimedOrderIds = claimed.map(
+      (c: { id: string; customer_id: string }) => c.id,
+    );
     const { data: itemRows, error: itemsErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .select("order_id, product_id")
       .in("order_id", claimedOrderIds);
     if (itemsErr) throw itemsErr;
     const firstProductByOrder = new Map<string, string>();
-    for (const it of itemRows ?? []) {
+    for (const it of (itemRows ?? []) as Array<{
+      order_id: string;
+      product_id: string;
+    }>) {
       // First (oldest) line item per order wins. We don't bother
       // sorting since we just need any product to link to.
       if (!firstProductByOrder.has(it.order_id)) {
@@ -172,7 +202,6 @@ router.post(
 
     const unclaim = async (id: string): Promise<void> => {
       const { error: unclaimErr } = await supabase
-        .schema("resupply")
         .from("shop_orders")
         .update({ review_request_sent_at: null })
         .eq("id", id);

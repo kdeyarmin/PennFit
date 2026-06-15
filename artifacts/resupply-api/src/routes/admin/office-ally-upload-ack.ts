@@ -33,7 +33,7 @@ import express, { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { classifyEdiPayload } from "@workspace/resupply-integrations-office-ally";
 
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
@@ -105,7 +105,12 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // We need a clearinghouse to attach the file to. Resolve the
     // active OA config; bail if there's nothing configured (the
@@ -126,7 +131,6 @@ router.post(
     // dispatch; instead return the existing row so the admin sees
     // "already processed".
     const { data: existing } = await supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .select("id, file_kind, dispatch_status, applied_to_submission_id")
       .eq("clearinghouse_id", resolved.row.id)
@@ -149,7 +153,6 @@ router.post(
     const remotePath = `manual:${adminEmail}:${new Date().toISOString()}`;
 
     const { data: row, error: insertErr } = await supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .insert({
         clearinghouse_id: resolved.row.id,
@@ -174,23 +177,22 @@ router.post(
     try {
       switch (kind) {
         case "999":
-          await dispatch999(supabase, row.id, content);
+          await dispatch999(supabase.raw(), row.id, content);
           break;
         case "277ca":
-          await dispatch277ca(supabase, row.id, content);
+          await dispatch277ca(supabase.raw(), row.id, content);
           break;
         case "277":
-          await dispatch277(supabase, row.id, content);
+          await dispatch277(supabase.raw(), row.id, content);
           break;
         case "835":
-          await dispatch835(supabase, row.id, fileName, content);
+          await dispatch835(supabase.raw(), row.id, fileName, content);
           break;
         case "271":
-          await dispatch271(supabase, row.id, content);
+          await dispatch271(supabase.raw(), row.id, content);
           break;
       }
       const { error: dispatchedErr } = await supabase
-        .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
           dispatch_status: "dispatched",
@@ -209,7 +211,6 @@ router.post(
         "office-ally.upload-ack: dispatch failed",
       );
       const { error: failStampErr } = await supabase
-        .schema("resupply")
         .from("clearinghouse_inbound_files")
         .update({
           dispatch_status: "dispatch_failed",

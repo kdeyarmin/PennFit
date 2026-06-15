@@ -21,7 +21,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -436,13 +436,12 @@ export function buildChecklistItems(
 // Each probe is fully wrapped: a database that isn't set up yet (or a
 // transient outage) yields an "unknown" row with a reason, never a 500.
 
-async function probeSchema(): Promise<ProbeResult> {
+async function probeSchema(orgId: string): Promise<ProbeResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     // The same lightweight HEAD count /readyz uses. Success doubles as
     // confirmation the resupply schema is exposed to PostgREST.
     const { error } = await supabase
-      .schema("resupply")
       .from("feature_flags")
       .select("*", { count: "estimated", head: true });
     if (error) {
@@ -464,11 +463,10 @@ async function probeSchema(): Promise<ProbeResult> {
   }
 }
 
-async function probeFirstAdmin(): Promise<ProbeResult> {
+async function probeFirstAdmin(orgId: string): Promise<ProbeResult> {
   try {
-    const supabase = getSupabaseServiceRoleClient();
+    const supabase = getOrgScopedClient(orgId);
     const { count, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("*", { count: "exact", head: true })
       .eq("status", "active")
@@ -502,10 +500,15 @@ router.get(
   "/admin/account-setup",
   adminReadRateLimiter,
   requireAdmin,
-  async (_req, res) => {
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const [schema, admin] = await Promise.all([
-      probeSchema(),
-      probeFirstAdmin(),
+      probeSchema(orgId),
+      probeFirstAdmin(orgId),
     ]);
     const items = buildChecklistItems({
       env: process.env,

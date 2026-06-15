@@ -19,10 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { listOutboundFiles } from "@workspace/resupply-integrations-office-ally";
 
 import { runOfficeAllyInboundPoll } from "../../worker/jobs/office-ally-inbound-poll";
@@ -125,15 +122,19 @@ function rowToApi(r: Row) {
 router.get(
   "/admin/clearinghouse-credentials",
   requirePermission("admin.tools.manage"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("clearinghouse_credentials")
       .select("*")
       .order("display_name", { ascending: true });
     if (error) throw error;
-    res.json({ clearinghouses: (data ?? []).map(rowToApi) });
+    res.json({ clearinghouses: (data ?? []).map((r: Row) => rowToApi(r)) });
   },
 );
 
@@ -146,9 +147,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("clearinghouse_credentials")
       .select("*")
       .eq("id", parsed.data.id)
@@ -158,7 +163,7 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    res.json({ clearinghouse: rowToApi(data) });
+    res.json({ clearinghouse: rowToApi(data as Row) });
   },
 );
 
@@ -182,9 +187,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("clearinghouse_credentials")
       .insert({
         slug: b.slug,
@@ -314,9 +323,13 @@ router.patch(
     // (so a stray "   " can't clobber a real credential).
     if (b.realtimePassword?.trim())
       update.realtime_password = b.realtimePassword.trim();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("clearinghouse_credentials")
       .update(update)
       .eq("id", idParsed.data.id);
@@ -356,9 +369,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row } = await supabase
-      .schema("resupply")
       .from("clearinghouse_credentials")
       .select("*")
       .eq("id", idParsed.data.id)
@@ -446,9 +463,13 @@ router.get(
   "/admin/clearinghouse-inbound-files",
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("clearinghouse_inbound_files")
       .select(
         "id, clearinghouse_id, remote_path, file_name, file_sha256, file_size_bytes, file_kind, parse_summary_json, dispatch_status, applied_to_era_file_id, applied_to_submission_id, error_message, downloaded_at, dispatched_at",
@@ -470,22 +491,26 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
     res.json({
-      files: (data ?? []).map((r) => ({
-        id: r.id,
-        clearinghouseId: r.clearinghouse_id,
-        remotePath: r.remote_path,
-        fileName: r.file_name,
-        fileSha256: r.file_sha256,
-        fileSizeBytes: r.file_size_bytes,
-        fileKind: r.file_kind,
-        parseSummary: r.parse_summary_json,
-        dispatchStatus: r.dispatch_status,
-        appliedToEraFileId: r.applied_to_era_file_id,
-        appliedToSubmissionId: r.applied_to_submission_id,
-        errorMessage: r.error_message,
-        downloadedAt: r.downloaded_at,
-        dispatchedAt: r.dispatched_at,
-      })),
+      files: (data ?? []).map(
+        (
+          r: Database["resupply"]["Tables"]["clearinghouse_inbound_files"]["Row"],
+        ) => ({
+          id: r.id,
+          clearinghouseId: r.clearinghouse_id,
+          remotePath: r.remote_path,
+          fileName: r.file_name,
+          fileSha256: r.file_sha256,
+          fileSizeBytes: r.file_size_bytes,
+          fileKind: r.file_kind,
+          parseSummary: r.parse_summary_json,
+          dispatchStatus: r.dispatch_status,
+          appliedToEraFileId: r.applied_to_era_file_id,
+          appliedToSubmissionId: r.applied_to_submission_id,
+          errorMessage: r.error_message,
+          downloadedAt: r.downloaded_at,
+          dispatchedAt: r.dispatched_at,
+        }),
+      ),
     });
   },
 );

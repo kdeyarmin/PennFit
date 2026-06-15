@@ -25,7 +25,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { maybeAutoAssignConversation } from "../../lib/routing/auto-assign";
 import { scoreCandidates } from "../../lib/routing/skill-score";
@@ -82,9 +82,13 @@ router.patch(
       new Set(parsed.data.skills.map((s) => s.trim().toLowerCase())),
     );
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .update({ skills })
       .eq("id", idCheck.data)
@@ -139,9 +143,13 @@ router.patch(
     const required = Array.from(
       new Set(parsed.data.requiredSkills.map((s) => s.trim().toLowerCase())),
     );
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: updated, error } = await supabase
-      .schema("resupply")
       .from("conversations")
       .update({ required_skills: required })
       .eq("id", idCheck.data)
@@ -168,10 +176,14 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const { data: convo, error: convoErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("id, required_skills")
       .eq("id", idCheck.data)
@@ -185,12 +197,17 @@ router.get(
 
     // Active staff candidates.
     const { data: admins, error: adminErr } = await supabase
-      .schema("resupply")
       .from("admin_users")
       .select("id, display_name, email_lower, role, skills")
       .eq("status", "active");
     if (adminErr) throw adminErr;
-    const adminList = admins ?? [];
+    const adminList = (admins ?? []) as Array<{
+      id: string;
+      display_name: string | null;
+      email_lower: string | null;
+      role: string | null;
+      skills: unknown;
+    }>;
     if (adminList.length === 0) {
       res.json({ candidates: [] });
       return;
@@ -199,14 +216,15 @@ router.get(
 
     // Open-queue depth per admin for load-balancing.
     const { data: openConvos, error: openErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("assigned_admin_user_id")
       .in("assigned_admin_user_id", adminIds)
       .in("status", ["open", "awaiting_admin", "awaiting_patient"]);
     if (openErr) throw openErr;
     const queueSize = new Map<string, number>();
-    for (const r of openConvos ?? []) {
+    for (const r of (openConvos ?? []) as Array<{
+      assigned_admin_user_id: string | null;
+    }>) {
       const id = r.assigned_admin_user_id;
       if (!id) continue;
       queueSize.set(id, (queueSize.get(id) ?? 0) + 1);
@@ -267,8 +285,16 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const result = await maybeAutoAssignConversation(supabase, idCheck.data);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const result = await maybeAutoAssignConversation(
+      supabase.raw(),
+      idCheck.data,
+    );
 
     if (result.assigned) {
       await logAudit({

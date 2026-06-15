@@ -82,16 +82,22 @@ vi.mock("../shop/products", () => ({
 // is modeled.
 const storageUploadMock = vi.fn();
 const storageGetPublicUrlMock = vi.fn();
-vi.mock("@workspace/resupply-db", () => ({
-  getSupabaseServiceRoleClient: () => ({
+vi.mock("@workspace/resupply-db", () => {
+  const storageClient = {
     storage: {
       from: () => ({
         upload: (...a: unknown[]) => storageUploadMock(...a),
         getPublicUrl: (...a: unknown[]) => storageGetPublicUrlMock(...a),
       }),
     },
-  }),
-}));
+  };
+  return {
+    getSupabaseServiceRoleClient: () => storageClient,
+    // The image-upload route reaches storage via the org-scoped facade's
+    // `.raw()` escape hatch (storage is not a tenant-scoped table).
+    getOrgScopedClient: () => ({ raw: () => storageClient }),
+  };
+});
 
 // projectProduct stub — vi.fn() so individual tests can override
 // the result (e.g. return null to simulate a non-catalog product

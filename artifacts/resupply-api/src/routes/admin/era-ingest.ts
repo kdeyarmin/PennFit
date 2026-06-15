@@ -14,7 +14,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import { parse835 } from "@workspace/resupply-integrations-office-ally";
 
 import { reconcileEra } from "../../lib/billing/era-reconciler";
@@ -59,7 +59,12 @@ router.post(
       return;
     }
     const { fileName, payload, matchedSubmissionId } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Dedupe by SHA-256. Office Ally redelivers files on retry; an
     // operator may also re-upload the same file accidentally.
@@ -75,7 +80,6 @@ router.post(
     // era_files row rather than inserting (unique sha index).
     const sha256 = createHash("sha256").update(payload, "utf8").digest("hex");
     const { data: existing, error: existingErr } = await supabase
-      .schema("resupply")
       .from("era_files")
       .select("id, status")
       .eq("file_sha256", sha256)
@@ -112,7 +116,7 @@ router.post(
     // payer — update the catalog".
     const resolvedPayer = await resolvePayerProfileForEra(
       { payerId: parsedEra.payerId, payerName: parsedEra.payerName },
-      { supabase },
+      { supabase: supabase.raw() },
     );
     if (!resolvedPayer) {
       logger.info(
@@ -132,7 +136,6 @@ router.post(
     if (existing) {
       eraFileId = existing.id;
       const { error: refreshErr } = await supabase
-        .schema("resupply")
         .from("era_files")
         .update({
           file_name: fileName,
@@ -144,7 +147,6 @@ router.post(
       if (refreshErr) throw refreshErr;
     } else {
       const { data: row, error: insertErr } = await supabase
-        .schema("resupply")
         .from("era_files")
         .insert({
           file_name: fileName,
@@ -177,7 +179,6 @@ router.post(
     const allMatched = summary.unmatchedClaims === 0;
     const finalStatus = allMatched ? "processed" : "partial";
     const { error: eraUpdateErr } = await supabase
-      .schema("resupply")
       .from("era_files")
       .update({
         claims_paid_count: summary.paidClaims,
@@ -236,9 +237,13 @@ router.post(
 
 // ── LIST ────────────────────────────────────────────────────────────
 router.get("/admin/billing/era-files", requireAdminOnly, async (req, res) => {
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data, error } = await supabase
-    .schema("resupply")
     .from("era_files")
     .select(
       "id, file_name, file_sha256, file_size_bytes, payer_check_number, payer_paid_date, total_paid_cents, claims_paid_count, claims_denied_count, lines_processed_count, matched_submission_id, payer_profile_id, status, rejection_reason, ingested_by_email, ingested_at",
@@ -247,24 +252,26 @@ router.get("/admin/billing/era-files", requireAdminOnly, async (req, res) => {
     .limit(200);
   if (error) throw error;
   res.json({
-    eraFiles: (data ?? []).map((r) => ({
-      id: r.id,
-      fileName: r.file_name,
-      fileSha256: r.file_sha256,
-      fileSizeBytes: r.file_size_bytes,
-      payerCheckNumber: r.payer_check_number,
-      payerPaidDate: r.payer_paid_date,
-      totalPaidCents: r.total_paid_cents,
-      claimsPaidCount: r.claims_paid_count,
-      claimsDeniedCount: r.claims_denied_count,
-      linesProcessedCount: r.lines_processed_count,
-      matchedSubmissionId: r.matched_submission_id,
-      payerProfileId: r.payer_profile_id,
-      status: r.status,
-      rejectionReason: r.rejection_reason,
-      ingestedByEmail: r.ingested_by_email,
-      ingestedAt: r.ingested_at,
-    })),
+    eraFiles: (data ?? []).map(
+      (r: Database["resupply"]["Tables"]["era_files"]["Row"]) => ({
+        id: r.id,
+        fileName: r.file_name,
+        fileSha256: r.file_sha256,
+        fileSizeBytes: r.file_size_bytes,
+        payerCheckNumber: r.payer_check_number,
+        payerPaidDate: r.payer_paid_date,
+        totalPaidCents: r.total_paid_cents,
+        claimsPaidCount: r.claims_paid_count,
+        claimsDeniedCount: r.claims_denied_count,
+        linesProcessedCount: r.lines_processed_count,
+        matchedSubmissionId: r.matched_submission_id,
+        payerProfileId: r.payer_profile_id,
+        status: r.status,
+        rejectionReason: r.rejection_reason,
+        ingestedByEmail: r.ingested_by_email,
+        ingestedAt: r.ingested_at,
+      }),
+    ),
   });
 });
 

@@ -17,7 +17,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   listClaimRequirements,
@@ -162,9 +162,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claim, error: claimErr } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select("id, patient_id")
       .eq("id", claimId.data)
@@ -178,7 +182,6 @@ router.post(
 
     const nowSent = parsed.data.sentVia != null;
     const { data: inserted, error: insErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .insert({
         claim_id: claim.id,
@@ -199,7 +202,7 @@ router.post(
     if (insErr) throw insErr;
 
     const recompute = await recomputeBillHold(claim.id, {
-      supabase,
+      supabase: supabase.raw(),
       actorEmail: req.adminEmail ?? null,
       writeEvent: true,
     });
@@ -274,9 +277,13 @@ router.patch(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: readErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, claim_id, status")
       .eq("id", id.data)
@@ -312,7 +319,6 @@ router.patch(
     if (parsed.data.notes != null) patch.notes = parsed.data.notes;
 
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .update(patch)
       .eq("id", id.data);
@@ -321,7 +327,7 @@ router.patch(
     let billHold = null;
     if (existing.claim_id) {
       billHold = await recomputeBillHold(existing.claim_id, {
-        supabase,
+        supabase: supabase.raw(),
         actorEmail: req.adminEmail ?? null,
         writeEvent: true,
       });
@@ -396,9 +402,13 @@ router.post(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: readErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select("id, status, reminder_count")
       .eq("id", id.data)
@@ -414,7 +424,6 @@ router.post(
       return;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .update({
         reminder_count: (existing.reminder_count ?? 0) + 1,
@@ -450,9 +459,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: fax, error: faxErr } = await supabase
-      .schema("resupply")
       .from("inbound_faxes")
       .select("id, status")
       .eq("id", faxId.data)
@@ -474,7 +487,6 @@ router.post(
       );
       // Mark the fax triaged so it leaves the "new" queue.
       const { error: faxStatusErr } = await supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .update({ status: "triaged" })
         .eq("id", faxId.data);
@@ -505,10 +517,14 @@ router.post(
 router.get(
   "/admin/billing/bill-hold-worklist",
   requirePermission("reports.read"),
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claims, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, patient_id, payer_name, date_of_service, total_billed_cents, bill_hold_reason, bill_hold_updated_at",
@@ -523,9 +539,8 @@ router.get(
       return;
     }
 
-    const claimIds = claimRows.map((c) => c.id);
+    const claimIds = claimRows.map((c: { id: string }) => c.id);
     const { data: reqs, error: reqErr } = await supabase
-      .schema("resupply")
       .from("claim_paperwork_requirements")
       .select(
         "claim_id, label, requirement_type, reminder_count, last_reminded_at",
@@ -549,9 +564,10 @@ router.get(
       outstandingByClaim.set(cid, list);
     }
 
-    const patientIds = [...new Set(claimRows.map((c) => c.patient_id))];
+    const patientIds = [
+      ...new Set(claimRows.map((c: { patient_id: string }) => c.patient_id)),
+    ];
     const { data: patients } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
       .in("id", patientIds);
@@ -565,21 +581,35 @@ router.get(
       );
     }
 
-    const items = claimRows.map((c) => ({
-      claimId: c.id,
-      patientId: c.patient_id,
-      patientName: nameById.get(c.patient_id) ?? "(unknown patient)",
-      payerName: c.payer_name,
-      dateOfService: c.date_of_service,
-      totalBilledCents: c.total_billed_cents,
-      heldSince: c.bill_hold_updated_at,
-      reason: c.bill_hold_reason,
-      outstanding: outstandingByClaim.get(c.id) ?? [],
-    }));
+    const items = claimRows.map(
+      (c: {
+        id: string;
+        patient_id: string;
+        payer_name: string | null;
+        date_of_service: string | null;
+        total_billed_cents: number | null;
+        bill_hold_updated_at: string | null;
+        bill_hold_reason: string | null;
+      }) => ({
+        claimId: c.id,
+        patientId: c.patient_id,
+        patientName: nameById.get(c.patient_id) ?? "(unknown patient)",
+        payerName: c.payer_name,
+        dateOfService: c.date_of_service,
+        totalBilledCents: c.total_billed_cents,
+        heldSince: c.bill_hold_updated_at,
+        reason: c.bill_hold_reason,
+        outstanding: outstandingByClaim.get(c.id) ?? [],
+      }),
+    );
     res.json({
       items,
       count: items.length,
-      totalHeldCents: items.reduce((s, i) => s + (i.totalBilledCents ?? 0), 0),
+      totalHeldCents: items.reduce(
+        (s: number, i: { totalBilledCents: number | null }) =>
+          s + (i.totalBilledCents ?? 0),
+        0,
+      ),
     });
   },
 );

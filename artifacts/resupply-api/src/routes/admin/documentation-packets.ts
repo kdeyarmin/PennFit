@@ -13,7 +13,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -61,9 +61,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("documentation_packets")
       .select("*")
       .eq("patient_id", parsed.data.id)
@@ -98,9 +102,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient } = await supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "legal_first_name, legal_last_name, date_of_birth, insurance_payer",
@@ -112,7 +120,7 @@ router.post(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const identity = await resolveBillingIdentity({ supabase });
+    const identity = await resolveBillingIdentity({ supabase: supabase.raw() });
     if (identity.source === "stub") {
       res.status(409).json({ error: "no_dme_organization" });
       return;
@@ -123,25 +131,26 @@ router.post(
     // Sleep studies summary.
     if (b.includeSleepStudyIds.length > 0) {
       const { data: studies } = await supabase
-        .schema("resupply")
         .from("sleep_studies")
         .select(
           "id, study_date, study_type, ahi, rdi, lowest_spo2_pct, diagnosis_icd10, facility_name",
         )
         .in("id", b.includeSleepStudyIds)
         .eq("patient_id", idParsed.data.id);
+      const studyRows = (studies ??
+        []) as Database["resupply"]["Tables"]["sleep_studies"]["Row"][];
       sections.push({
         title: "Sleep Study Records",
         paragraphs: [
-          `The following sleep studies are included with this packet (${studies?.length ?? 0} record${
-            (studies?.length ?? 0) === 1 ? "" : "s"
+          `The following sleep studies are included with this packet (${studyRows.length} record${
+            studyRows.length === 1 ? "" : "s"
           }).`,
         ],
-        bullets: (studies ?? []).map(
+        bullets: studyRows.map(
           (s) =>
             `${s.study_date} — ${s.study_type.toUpperCase()} ${s.facility_name ?? ""}: AHI ${s.ahi}${s.rdi ? `, RDI ${s.rdi}` : ""}${s.lowest_spo2_pct ? `, low SpO2 ${s.lowest_spo2_pct}%` : ""} (${s.diagnosis_icd10 ?? "no dx"})`,
         ),
-        attachments: (studies ?? []).map((s) => ({
+        attachments: studyRows.map((s) => ({
           name: `Sleep study ${s.study_date}`,
           objectKey: null,
         })),
@@ -151,17 +160,18 @@ router.post(
     // Prescription summary.
     if (b.includePrescriptionIds.length > 0) {
       const { data: rxs } = await supabase
-        .schema("resupply")
         .from("prescriptions")
         .select(
           "id, hcpcs_code, item_sku, valid_from, valid_until, status, provider_id",
         )
         .in("id", b.includePrescriptionIds)
         .eq("patient_id", idParsed.data.id);
+      const rxRows = (rxs ??
+        []) as Database["resupply"]["Tables"]["prescriptions"]["Row"][];
       sections.push({
         title: "Prescriptions",
-        paragraphs: [`Active prescriptions on file (${rxs?.length ?? 0}).`],
-        bullets: (rxs ?? []).map(
+        paragraphs: [`Active prescriptions on file (${rxRows.length}).`],
+        bullets: rxRows.map(
           (r) =>
             `${r.hcpcs_code ?? r.item_sku} — valid ${r.valid_from}${r.valid_until ? ` – ${r.valid_until}` : ""} (${r.status})`,
         ),
@@ -176,13 +186,16 @@ router.post(
         .toISOString()
         .slice(0, 10);
       const { data: nights } = await supabase
-        .schema("resupply")
         .from("patient_therapy_nights")
         .select("usage_minutes, night_date")
         .eq("patient_id", idParsed.data.id)
         .gte("night_date", since)
         .limit(180);
-      const withData = (nights ?? []).filter((n) => n.usage_minutes !== null);
+      const nightRows = (nights ?? []) as Array<{
+        usage_minutes: number | null;
+        night_date: string;
+      }>;
+      const withData = nightRows.filter((n) => n.usage_minutes !== null);
       const compliantNights = withData.filter(
         (n) => (n.usage_minutes ?? 0) >= 240,
       ).length;
@@ -211,15 +224,16 @@ router.post(
     // DWO summary.
     if (b.includeDwoDocumentIds.length > 0) {
       const { data: dwos } = await supabase
-        .schema("resupply")
         .from("dwo_documents")
         .select("id, hcpcs_family, form_type, signed_on, expires_on")
         .in("id", b.includeDwoDocumentIds)
         .eq("patient_id", idParsed.data.id);
+      const dwoRows = (dwos ??
+        []) as Database["resupply"]["Tables"]["dwo_documents"]["Row"][];
       sections.push({
         title: "DWO / CMN Documents",
-        paragraphs: [`DWO / CMN documents on file (${dwos?.length ?? 0}).`],
-        bullets: (dwos ?? []).map(
+        paragraphs: [`DWO / CMN documents on file (${dwoRows.length}).`],
+        bullets: dwoRows.map(
           (d) =>
             `${d.form_type.toUpperCase()} for ${d.hcpcs_family} — signed ${d.signed_on}, expires ${d.expires_on}`,
         ),
@@ -274,7 +288,6 @@ router.post(
         generated_by_email: req.adminEmail ?? "unknown",
       };
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("documentation_packets")
       .insert(insertRow)
       .select("id")

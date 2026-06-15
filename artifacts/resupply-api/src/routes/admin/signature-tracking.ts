@@ -46,7 +46,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -108,10 +108,15 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { status, ...rest } = parsed.data;
     const result = await listOutstandingSignatures(
-      supabase,
+      supabase.raw(),
       status === "unsent"
         ? { ...rest, status: "awaiting_signature", dispatched: false }
         : { ...rest, status },
@@ -135,8 +140,13 @@ router.get(
       res.status(400).json({ error: "invalid_query" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await lookupTrackingByCode(supabase, parsed.data.code);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await lookupTrackingByCode(supabase.raw(), parsed.data.code);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -159,8 +169,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await getTrackingById(supabase, params.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await getTrackingById(supabase.raw(), params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -174,7 +189,7 @@ router.post(
 
     // Mark returned and advance the source document (a prescription
     // packet still open is stamped signed so the two views agree).
-    await markReturnedAndCascade(supabase, row).catch((err) => {
+    await markReturnedAndCascade(supabase.raw(), row).catch((err) => {
       logger.warn(
         { err, document_id: row.documentId },
         "signature_tracking.mark_returned cascade failed",
@@ -227,8 +242,13 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await getTrackingById(supabase, params.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await getTrackingById(supabase.raw(), params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -243,7 +263,7 @@ router.post(
     }
 
     await recordTrackingSent(
-      supabase,
+      supabase.raw(),
       row.documentKind,
       row.documentId,
       "hand_delivery",
@@ -286,13 +306,22 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const row = await getTrackingById(supabase, params.data.id);
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
+    const row = await getTrackingById(supabase.raw(), params.data.id);
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    await markTrackingCanceled(supabase, row.documentKind, row.documentId);
+    await markTrackingCanceled(
+      supabase.raw(),
+      row.documentKind,
+      row.documentId,
+    );
 
     await logAudit({
       action: "signature_tracking.canceled",

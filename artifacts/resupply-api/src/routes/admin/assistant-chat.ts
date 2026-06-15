@@ -31,7 +31,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
@@ -309,7 +309,12 @@ router.post(
     };
     const systemPrompt = buildAdminAssistantSystemPrompt(ctx);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const toolCtx: AdminAssistantToolContext = {
       supabase,
       suggestingAdminEmail: req.adminEmail ?? null,

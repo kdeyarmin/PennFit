@@ -19,7 +19,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { seedDefaultRequirementsForClaim } from "../../lib/billing/bill-hold";
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -128,9 +128,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: patient, error: patientErr } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", idCheck.data)
@@ -148,7 +152,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .insert({
         patient_id: idCheck.data,
@@ -176,12 +179,11 @@ router.post(
     if (await isFeatureEnabled("billing.bill_hold")) {
       try {
         await seedDefaultRequirementsForClaim(newId, {
-          supabase,
+          supabase: supabase.raw(),
           createdByEmail: req.adminEmail ?? null,
         });
       } catch (err) {
         const { error: holdErr } = await supabase
-          .schema("resupply")
           .from("insurance_claims")
           .update({
             bill_hold: true,

@@ -24,7 +24,7 @@ import PDFDocument from "pdfkit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { getDocumentSupplierName } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
@@ -59,21 +59,24 @@ router.get(
     }
     const { id: patientId, rxId } = params.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Fetch patient + Rx in parallel; provider + most-recent
     // sleep-study come on a second pass once we have the Rx's
     // provider_id.
     const [patientRes, rxRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("patients")
         .select("id, legal_first_name, legal_last_name, date_of_birth, address")
         .eq("id", patientId)
         .limit(1)
         .maybeSingle(),
       supabase
-        .schema("resupply")
         .from("prescriptions")
         .select(
           "id, patient_id, provider_id, item_sku, hcpcs_code, cadence_days, valid_from, valid_until, details",
@@ -108,7 +111,6 @@ router.get(
 
     const [providerRes, latestStudyRes] = await Promise.all([
       supabase
-        .schema("resupply")
         .from("providers")
         .select(
           "id, npi, legal_name, practice_name, practice_address, phone_e164, fax_e164",
@@ -121,7 +123,6 @@ router.get(
       // require it on the form per the 2020 rule, but Medicare
       // auditors expect it in the record.
       supabase
-        .schema("resupply")
         .from("sleep_studies")
         .select("diagnosis_icd10")
         .eq("patient_id", patientId)

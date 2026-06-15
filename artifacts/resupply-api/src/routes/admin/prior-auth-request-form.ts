@@ -28,7 +28,7 @@ import {
   createTelnyxFaxClient,
   TelnyxApiError,
 } from "@workspace/resupply-telecom";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render";
 import { signPaRequestFaxToken } from "../../lib/fax-document-token";
@@ -55,7 +55,12 @@ router.get(
       return;
     }
     const { id: patientId, paId } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     const result = await buildPaRequestPdf(supabase, patientId, paId);
     if (!result) {
@@ -126,7 +131,12 @@ router.post(
       return;
     }
     const { id: patientId, paId } = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Render once now so we (a) confirm the PA exists/belongs to the
     // patient and (b) resolve the payer's default fax number. The bytes

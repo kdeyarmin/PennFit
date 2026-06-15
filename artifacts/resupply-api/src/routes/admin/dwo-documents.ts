@@ -4,10 +4,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   renderDwoPdf,
@@ -67,9 +64,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("dwo_documents")
       .select("*")
       .eq("patient_id", parsed.data.patientId)
@@ -83,7 +84,12 @@ router.get(
   "/admin/dwo-documents/expiring",
   requirePermission("patients.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const days = Number.parseInt(
       typeof req.query.days === "string" ? req.query.days : "60",
       10,
@@ -95,7 +101,6 @@ router.get(
       .slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
     const { data } = await supabase
-      .schema("resupply")
       .from("dwo_documents")
       .select("*")
       .gte("expires_on", today)
@@ -120,9 +125,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: dwoErr } = await supabase
-      .schema("resupply")
       .from("dwo_documents")
       .select(
         "id, patient_id, hcpcs_family, form_type, signing_provider_id, signed_on, expires_on, notes",
@@ -139,14 +148,16 @@ router.get(
     const [{ data: patient, error: patientErr }, providerRes] =
       await Promise.all([
         supabase
-          .schema("resupply")
           .from("patients")
           .select("legal_first_name, legal_last_name, date_of_birth, address")
           .eq("id", row.patient_id)
           .limit(1)
           .maybeSingle(),
+        // `providers` is a GLOBAL reference table (no org_id column), so
+        // it stays on the unscoped service-role client via `.raw()`.
         row.signing_provider_id
           ? supabase
+              .raw()
               .schema("resupply")
               .from("providers")
               .select("legal_name, npi, practice_name, phone_e164, fax_e164")
@@ -240,9 +251,13 @@ router.post(
       return;
     }
     const b = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("dwo_documents")
       .insert({
         patient_id: b.patientId,
@@ -288,9 +303,13 @@ router.delete(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error: delErr } = await supabase
-      .schema("resupply")
       .from("dwo_documents")
       .delete()
       .eq("id", idParsed.data.id);
