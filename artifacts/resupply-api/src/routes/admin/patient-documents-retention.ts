@@ -16,7 +16,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { bucketRetention } from "../../lib/patient-documents/retention";
@@ -64,14 +64,18 @@ router.get(
       return;
     }
     const wantBucket = parsed.data.bucket;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Pull a bounded page. The retention queue is supposed to be
     // small (rows accumulate slowly; a deploy-day's worth fits in
     // a few hundred). Hard cap to keep the response bounded even
     // pathologically.
     let query = supabase
-      .schema("resupply")
       .from("patient_documents")
       .select(
         "id, patient_id, document_type, filename, content_type, size_bytes, retention_until_at, legal_hold, retention_marked_at, destroyed_at, destroyed_by_admin_id, created_at",
@@ -106,7 +110,11 @@ router.get(
     if (error) throw error;
 
     const asOfDate = new Date();
-    const rows = (data ?? []).map((r) => ({
+    const rows = (
+      (data ?? []) as Array<
+        Database["resupply"]["Tables"]["patient_documents"]["Row"]
+      >
+    ).map((r) => ({
       id: r.id,
       patientId: r.patient_id,
       documentType: r.document_type,
@@ -171,9 +179,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: prior, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select("id, legal_hold, destroyed_at, patient_id")
       .eq("id", params.data.id)
@@ -192,7 +204,6 @@ router.post(
       return;
     }
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .update({ legal_hold: parsed.data.hold })
       .eq("id", params.data.id);
@@ -254,9 +265,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: prior, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .select(
         "id, patient_id, document_type, legal_hold, destroyed_at, object_key, retention_marked_at, retention_until_at",
@@ -298,7 +313,6 @@ router.post(
 
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .update({
         destroyed_at: nowIso,

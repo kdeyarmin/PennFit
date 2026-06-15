@@ -31,7 +31,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { runSmartTriggerEvaluator } from "../../lib/smart-triggers/evaluator";
 import { runSmartTriggerSendDue } from "../../lib/smart-triggers/dispatcher";
@@ -188,9 +188,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .select("id, patient_id, kind, dismissed_at")
       .eq("id", id)
@@ -209,7 +213,6 @@ router.post(
     const now = new Date();
     const nowIso = now.toISOString();
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .update({
         dismissed_at: nowIso,
@@ -273,9 +276,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .select("id, patient_id, kind, dismissed_at")
       .eq("id", id)
@@ -298,7 +305,6 @@ router.post(
       now.getTime() + bodyParsed.data.days * 24 * 60 * 60 * 1000,
     ).toISOString();
     const { error: updateErr } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .update({
         snoozed_until: snoozedUntil,
@@ -360,9 +366,13 @@ router.get(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patient_smart_trigger_events")
       .select(
         "id, kind, detected_at, window_start_date, window_end_date, sent_at, dismissed_at, dismissed_by_email, dismissed_reason, created_at",
@@ -372,7 +382,11 @@ router.get(
       .limit(50);
     if (error) throw error;
     res.json({
-      events: (data ?? []).map((r) => ({
+      events: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         kind: r.kind,
         // PostgREST returns timestamps as ISO strings already, and date
