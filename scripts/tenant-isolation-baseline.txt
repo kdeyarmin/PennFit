@@ -94,7 +94,6 @@ artifacts/resupply-api/src/routes/admin/account-setup.ts
 artifacts/resupply-api/src/routes/admin/acquisition-funnel.ts
 artifacts/resupply-api/src/routes/admin/adherence-predictions.ts
 artifacts/resupply-api/src/routes/admin/alert-message-overrides.ts
-artifacts/resupply-api/src/routes/admin/alerts.ts
 artifacts/resupply-api/src/routes/admin/analytics-channel-engagement.ts
 artifacts/resupply-api/src/routes/admin/analytics-margin.ts
 artifacts/resupply-api/src/routes/admin/analytics-outreach-attribution.ts
@@ -109,11 +108,9 @@ artifacts/resupply-api/src/routes/admin/billing-statement-send.ts
 artifacts/resupply-api/src/routes/admin/billing-statements.ts
 artifacts/resupply-api/src/routes/admin/bulk-campaigns.ts
 artifacts/resupply-api/src/routes/admin/business-targets.ts
-artifacts/resupply-api/src/routes/admin/capped-rental-cycles.ts
 artifacts/resupply-api/src/routes/admin/cases.ts
 artifacts/resupply-api/src/routes/admin/claim-appeals.ts
 artifacts/resupply-api/src/routes/admin/claim-paperwork.ts
-artifacts/resupply-api/src/routes/admin/claim-templates.ts
 artifacts/resupply-api/src/routes/admin/clearinghouse-credentials.ts
 artifacts/resupply-api/src/routes/admin/click-to-dial.ts
 artifacts/resupply-api/src/routes/admin/cmn-documents.ts
