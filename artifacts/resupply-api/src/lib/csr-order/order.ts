@@ -12,10 +12,7 @@
 
 import { randomInt } from "node:crypto";
 
-import {
-  getSupabaseServiceRoleClient,
-  type Json,
-} from "@workspace/resupply-db";
+import { type Json, type OrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
@@ -32,7 +29,7 @@ import {
 } from "../patient-packet/templates";
 import { signCsrOrderToken } from "./token";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export const DEFAULT_CSR_ORDER_TTL_DAYS = 30;
 
@@ -186,7 +183,6 @@ export async function lookupPaymentState(
     return { status: "not_started", paidAt: null, shopOrderId: null };
   }
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, status, paid_at")
     .eq("stripe_session_id", stripeSessionId)
@@ -211,7 +207,6 @@ export async function lookupPaymentStates(
   const map = new Map<string, CsrOrderPaymentState>();
   if (stripeSessionIds.length === 0) return map;
   const { data, error } = await supabase
-    .schema("resupply")
     .from("shop_orders")
     .select("id, stripe_session_id, status, paid_at")
     .in("stripe_session_id", stripeSessionIds);

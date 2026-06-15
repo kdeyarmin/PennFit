@@ -26,7 +26,7 @@
 
 import { z } from "zod";
 
-import type { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import {
   buildDeliveryDetailSections,
@@ -37,7 +37,7 @@ import {
   type PacketDocumentSection,
 } from "./templates";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 // ── Merge tokens ──────────────────────────────────────────────────
 
@@ -227,13 +227,14 @@ export async function loadTemplateOverrides(
   supabase: SupabaseClient,
 ): Promise<Map<string, TemplateOverrideRow>> {
   const { data, error } = await supabase
-    .schema("resupply")
     .from("patient_packet_template_overrides")
     .select(
       "document_key, title, sections, revision, updated_by_email, updated_at",
     );
   if (error) throw error;
-  return new Map((data ?? []).map((r) => [r.document_key, r]));
+  return new Map(
+    ((data ?? []) as TemplateOverrideRow[]).map((r) => [r.document_key, r]),
+  );
 }
 
 export interface EffectiveTemplateContent {

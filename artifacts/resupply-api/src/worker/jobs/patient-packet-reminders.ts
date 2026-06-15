@@ -189,7 +189,7 @@ export async function runPatientPacketReminderSweep(): Promise<SweepStats> {
     let smsSent = false;
     try {
       const res = await deliverPacketLink({
-        supabase: supabase.raw(),
+        supabase,
         recipientName: c.recipient_name,
         link,
         email: c.recipient_email,

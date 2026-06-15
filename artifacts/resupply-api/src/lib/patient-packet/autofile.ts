@@ -19,7 +19,7 @@
 //     ids + flags only.
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import type { OrgScopedClient } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
@@ -30,7 +30,7 @@ import {
 import { computeRetentionUntilAt } from "../patient-documents/retention";
 import { buildSignedPacketPdf } from "./signed-pdf";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 /** The chart tag the filed packet carries (a valid chart-document-types
  *  value; the packet is a bundle of signed consents/agreements). */
@@ -66,7 +66,6 @@ export async function autofileSignedPacketPdf(
 
     // Idempotency + eligibility gate before any rendering work.
     const { data: gate, error: gateErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .select("id, patient_id, status, chart_document_id")
       .eq("id", packetId)
@@ -113,7 +112,6 @@ export async function autofileSignedPacketPdf(
     }).toISOString();
 
     const { data: docRow, error: insertErr } = await supabase
-      .schema("resupply")
       .from("patient_documents")
       .insert({
         patient_id: gate.patient_id,
@@ -134,7 +132,6 @@ export async function autofileSignedPacketPdf(
     // concurrent double-fire insert at most one stamp; a lost race
     // leaves an extra (harmless, identical) chart copy.
     const { error: stampErr } = await supabase
-      .schema("resupply")
       .from("patient_packets")
       .update({
         chart_document_id: docRow.id,

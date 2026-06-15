@@ -154,7 +154,7 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
 
   // resolveCompanyProfile is a shared helper not in this wave's list —
   // pass the unscoped client (recipe-2 §B).
-  const company = await resolveCompanyProfile(supabase.raw());
+  const company = await resolveCompanyProfile(supabase);
 
   // First view? Stamp it (best-effort; never blocks the read).
   if (packet.status === "sent") {
@@ -425,7 +425,7 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   // object storage.
   // autofileSignedPacketPdf is a shared helper not in this wave's list —
   // pass the unscoped client (recipe-2 §B).
-  void autofileSignedPacketPdf(supabase.raw(), packet.id);
+  void autofileSignedPacketPdf(supabase, packet.id);
 
   res.json({ status: "completed", completedAt: nowIso });
 });

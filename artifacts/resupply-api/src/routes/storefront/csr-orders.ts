@@ -147,11 +147,8 @@ router.get("/csr-orders/view", viewLimiter, async (req, res) => {
   }
   const order = resolved.order;
 
-  const company = await resolveCompanyProfile(supabase.raw());
-  const payment = await lookupPaymentState(
-    supabase.raw(),
-    order.stripe_session_id,
-  );
+  const company = await resolveCompanyProfile(supabase);
+  const payment = await lookupPaymentState(supabase, order.stripe_session_id);
 
   // First view? Stamp it (best-effort; never blocks the read).
   if (order.status === "sent") {
@@ -351,10 +348,7 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     return;
   }
 
-  const payment = await lookupPaymentState(
-    supabase.raw(),
-    order.stripe_session_id,
-  );
+  const payment = await lookupPaymentState(supabase, order.stripe_session_id);
   if (payment.status === "paid" || payment.status === "refunded") {
     res.status(409).json({ error: "already_paid" });
     return;

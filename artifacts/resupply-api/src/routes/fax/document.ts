@@ -61,7 +61,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // org (single-tenant posture) and degrade to the route's existing
   // 404 when it can't be resolved — never 500 a signed-link fetch.
   const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  if (!orgId || !orgId.trim()) {
     res.status(404).json({ error: "not_found" });
     return;
   }
@@ -71,10 +71,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // row) instead of the physician cover letter. Same signed-URL posture;
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
-    const result = await renderAppealPdfForLetterId(
-      orgId,
-      verified.outreachId,
-    );
+    const result = await renderAppealPdfForLetterId(orgId, verified.outreachId);
     if (!result.ok) {
       const status = result.reason === "no_dme_organization" ? 409 : 404;
       res.status(status).json({ error: result.reason });
@@ -94,10 +91,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // routes/admin/manual-documents.ts). Same signed-URL posture; no PHI
   // in the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document") {
-    const pdf = await renderManualDocumentForFax(
-      supabase.raw(),
-      verified.outreachId,
-    );
+    const pdf = await renderManualDocumentForFax(supabase, verified.outreachId);
     if (!pdf) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -114,7 +108,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // the URL, and the PDF bytes are never logged.
   if (verified.kind === "manual_document_packet") {
     const pdf = await renderManualDocumentPacketForFax(
-      supabase.raw(),
+      supabase,
       verified.outreachId,
     );
     if (!pdf) {

@@ -13,8 +13,8 @@
 
 import {
   escapePostgRESTFilterValue,
-  getSupabaseServiceRoleClient,
   type Json,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
@@ -40,7 +40,7 @@ import {
 } from "./templates";
 import { signPatientPacketToken } from "../patient-packet-token";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export const DEFAULT_PACKET_TTL_DAYS = 30;
 
@@ -171,7 +171,6 @@ export async function createAndSendPatientPacket(
   }
 
   const { data: patient, error: patientErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name, email, phone_e164")
     .eq("id", patientId)
@@ -363,7 +362,6 @@ export async function resolvePatientByContact(
 
   if (contact.emailLower) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
       .ilike("email", escapePostgRESTFilterValue(contact.emailLower))
@@ -373,7 +371,6 @@ export async function resolvePatientByContact(
   }
   if (contact.phoneE164) {
     const { data, error } = await supabase
-      .schema("resupply")
       .from("patients")
       .select("id, legal_first_name, legal_last_name")
       .eq("phone_e164", contact.phoneE164)
@@ -405,7 +402,6 @@ export async function resolvePatientByContact(
       }
 
       const { data: verify, error: verifyErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id")
         .eq("id", patientId)
@@ -437,7 +433,6 @@ async function resolvePatientViaCustomerEmail(
   emailLower: string,
 ): Promise<{ patientId: string; name: string } | null> {
   const { data: customers, error: custErr } = await supabase
-    .schema("resupply")
     .from("shop_customers")
     .select("auth_user_id")
     .eq("email_lower", emailLower)
@@ -450,7 +445,6 @@ async function resolvePatientViaCustomerEmail(
   if (!authUserId) return null;
 
   const { data: patients, error: patErr } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, legal_first_name, legal_last_name")
     .eq("portal_auth_user_id", authUserId)
@@ -584,7 +578,6 @@ async function buildAndDeliverPacket(
   );
 
   const { data: packet, error: insertErr } = await supabase
-    .schema("resupply")
     .from("patient_packets")
     .insert({
       patient_id: input.patientId,
@@ -630,7 +623,6 @@ async function buildAndDeliverPacket(
     };
   });
   const { error: docsErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .insert(docRows);
   if (docsErr) throw docsErr;
@@ -683,13 +675,16 @@ export async function reconcilePacketDocuments(
   orderedKeys: string[],
 ): Promise<void> {
   const { data: existing, error: existErr } = await supabase
-    .schema("resupply")
     .from("patient_packet_documents")
     .select("document_key")
     .eq("packet_id", packetId);
   if (existErr) throw existErr;
 
-  const existingKeys = new Set((existing ?? []).map((d) => d.document_key));
+  const existingKeys = new Set(
+    ((existing ?? []) as Array<{ document_key: string }>).map(
+      (d) => d.document_key,
+    ),
+  );
   const nextKeys = new Set(orderedKeys);
 
   const toRemove = [...existingKeys].filter((k) => !nextKeys.has(k));
@@ -697,7 +692,6 @@ export async function reconcilePacketDocuments(
 
   if (toRemove.length > 0) {
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .delete()
       .eq("packet_id", packetId)
@@ -724,7 +718,6 @@ export async function reconcilePacketDocuments(
       };
     });
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .insert(addRows);
     if (error) throw error;
@@ -736,7 +729,6 @@ export async function reconcilePacketDocuments(
     const key = orderedKeys[i]!;
     if (!existingKeys.has(key)) continue; // freshly inserted with correct order
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .update({ sort_order: i })
       .eq("packet_id", packetId)
@@ -765,7 +757,6 @@ export async function applyPacketDocumentOverrides(
       override,
     );
     const { error } = await supabase
-      .schema("resupply")
       .from("patient_packet_documents")
       .update(snapshot)
       .eq("packet_id", packetId)
