@@ -64,7 +64,8 @@ import { z } from "zod";
 
 import {
   escapePostgRESTContainsPattern,
-  getSupabaseServiceRoleClient,
+  type Database,
+  getOrgScopedClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -146,7 +147,12 @@ router.get(
     const { q, page, pageSize, sortBy, order, subscription, awaitingReply } =
       parsed.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // ── Phase 1: pull the candidate customer set ────────────────────
     // PostgREST has neither CTEs nor GROUP BY, so the rollups
@@ -178,7 +184,6 @@ router.get(
     let readCursor: string | null = null;
     for (;;) {
       let customersQuery = supabase
-        .schema("resupply")
         .from("shop_customers")
         .select(
           "customer_id, display_name, email_lower, stripe_customer_id, created_at",
@@ -247,7 +252,6 @@ router.get(
       let ordersCursor: string | null = null;
       for (;;) {
         let ordersQuery = supabase
-          .schema("resupply")
           .from("shop_orders")
           .select(
             "id, customer_id, amount_total_cents, paid_at, status, created_at",
@@ -267,13 +271,11 @@ router.get(
       }
       const [activeSubsRes, awaitingReplyRes] = await Promise.all([
         supabase
-          .schema("resupply")
           .from("shop_subscriptions")
           .select("customer_id")
           .eq("status", "active")
           .in("customer_id", chunk),
         supabase
-          .schema("resupply")
           .from("conversations")
           .select("customer_id")
           .eq("channel", "in_app")
@@ -458,7 +460,12 @@ router.get(
       return;
     }
     const userId = parsed.data;
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // Six independent reads (the seventh stat-rollup is computed
     // JS-side from the orders/reviews data we already pull).
@@ -474,7 +481,6 @@ router.get(
     ] = await Promise.all([
       // 1. Customer mirror row (may be missing for guest-only users).
       supabase
-        .schema("resupply")
         .from("shop_customers")
         .select(
           "customer_id, display_name, email_lower, stripe_customer_id, shipping_address_json, default_payment_method_brand, default_payment_method_last4, default_payment_method_exp_month, default_payment_method_exp_year, cpap_device_json, physician_info_json, facial_measurements_json, created_at, updated_at, auth_user_id",
@@ -485,7 +491,6 @@ router.get(
       // 2. Recent orders (cap 25). Item count is computed below from a
       //    bulk shop_order_items fetch keyed on the page's order ids.
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select(
           "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, created_at, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, shipping_address_json",
@@ -495,7 +500,6 @@ router.get(
         .limit(25),
       // 3. Subscriptions (typically 0–2 per customer; no LIMIT needed).
       supabase
-        .schema("resupply")
         .from("shop_subscriptions")
         .select(
           "id, stripe_subscription_id, stripe_customer_id, status, items, current_period_end, cancel_at_period_end, canceled_at, initial_amount_total_cents, created_at, updated_at",
@@ -504,7 +508,6 @@ router.get(
         .order("created_at", { ascending: false }),
       // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
       supabase
-        .schema("resupply")
         .from("shop_abandoned_carts")
         .select(
           "id, items, subtotal_cents, currency, updated_at, reminded_at, recovered_at, cleared_at, created_at",
@@ -514,7 +517,6 @@ router.get(
         .maybeSingle(),
       // 5. Reviews (typically a handful; cap at 100 for safety).
       supabase
-        .schema("resupply")
         .from("shop_reviews")
         .select(
           "id, product_id, rating, title, body, status, moderation_note, moderated_at, created_at, updated_at",
@@ -526,7 +528,6 @@ router.get(
       //    message stats are computed JS-side from a follow-up
       //    messages fetch keyed on the conversation id below.
       supabase
-        .schema("resupply")
         .from("conversations")
         .select("id, status, last_message_at, created_at")
         .eq("customer_id", userId)
@@ -542,7 +543,6 @@ router.get(
       //     1000 orders is implausible for a DME shop; if that ever
       //     changes this needs the directory route's paging loop.
       supabase
-        .schema("resupply")
         .from("shop_orders")
         .select("amount_total_cents, paid_at, status, created_at")
         .eq("customer_id", userId)
@@ -551,7 +551,6 @@ router.get(
       // 7b. Pending reviews count (single head-only query — project a
       // single column since head:true discards the row data anyway).
       supabase
-        .schema("resupply")
         .from("shop_reviews")
         .select("id", { count: "exact", head: true })
         .eq("customer_id", userId)
@@ -567,7 +566,9 @@ router.get(
     if (statsPendingReviewsRes.error) throw statsPendingReviewsRes.error;
 
     const customerRow = customerRes.data ?? null;
-    const orderRows = ordersRes.data ?? [];
+    const orderRows = (ordersRes.data ?? []) as Array<
+      Database["resupply"]["Tables"]["shop_orders"]["Row"]
+    >;
 
     // True 404 — neither a customer record nor any orders.
     if (!customerRow && orderRows.length === 0) {
@@ -588,7 +589,6 @@ router.get(
     let linkedPatientId: string | null = null;
     if (customerRow?.auth_user_id) {
       const { data: linkedPatient, error: linkedPatientErr } = await supabase
-        .schema("resupply")
         .from("patients")
         .select("id")
         .eq("portal_auth_user_id", customerRow.auth_user_id)
@@ -604,7 +604,6 @@ router.get(
     const itemCountByOrder = new Map<string, number>();
     if (orderIds.length > 0) {
       const { data: itemRows, error: itemsErr } = await supabase
-        .schema("resupply")
         .from("shop_order_items")
         .select("order_id, quantity")
         .in("order_id", orderIds);
@@ -629,7 +628,6 @@ router.get(
     } | null = null;
     if (inAppRow) {
       const { data: msgRows, error: msgErr } = await supabase
-        .schema("resupply")
         .from("messages")
         .select("direction, created_at")
         .eq("conversation_id", inAppRow.id);
@@ -776,19 +774,21 @@ router.get(
         shippingAddress: o.shipping_address_json ?? null,
         itemCount: itemCountByOrder.get(o.id) ?? 0,
       })),
-      subscriptions: (subsRes.data ?? []).map((s) => ({
-        id: s.id,
-        stripeSubscriptionId: s.stripe_subscription_id,
-        stripeCustomerId: s.stripe_customer_id,
-        status: s.status,
-        items: s.items ?? [],
-        currentPeriodEnd: s.current_period_end,
-        cancelAtPeriodEnd: s.cancel_at_period_end,
-        canceledAt: s.canceled_at,
-        initialAmountTotalCents: s.initial_amount_total_cents,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at,
-      })),
+      subscriptions: (subsRes.data ?? []).map(
+        (s: Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]) => ({
+          id: s.id,
+          stripeSubscriptionId: s.stripe_subscription_id,
+          stripeCustomerId: s.stripe_customer_id,
+          status: s.status,
+          items: s.items ?? [],
+          currentPeriodEnd: s.current_period_end,
+          cancelAtPeriodEnd: s.cancel_at_period_end,
+          canceledAt: s.canceled_at,
+          initialAmountTotalCents: s.initial_amount_total_cents,
+          createdAt: s.created_at,
+          updatedAt: s.updated_at,
+        }),
+      ),
       abandonedCart: cart
         ? {
             id: cart.id,
@@ -802,18 +802,20 @@ router.get(
             createdAt: cart.created_at,
           }
         : null,
-      reviews: (reviewsRes.data ?? []).map((r) => ({
-        id: r.id,
-        productId: r.product_id,
-        rating: r.rating,
-        title: r.title,
-        body: r.body,
-        status: r.status,
-        moderationNote: r.moderation_note,
-        moderatedAt: r.moderated_at,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      })),
+      reviews: (reviewsRes.data ?? []).map(
+        (r: Database["resupply"]["Tables"]["shop_reviews"]["Row"]) => ({
+          id: r.id,
+          productId: r.product_id,
+          rating: r.rating,
+          title: r.title,
+          body: r.body,
+          status: r.status,
+          moderationNote: r.moderation_note,
+          moderatedAt: r.moderated_at,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        }),
+      ),
       stats: {
         ordersCount,
         lifetimeValueCents,
@@ -893,12 +895,16 @@ router.post(
     }
     const { sourceOrderId } = bodyCheck.data;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // 1. Look up the source order. Must belong to this userId AND
     //    be paid AND not refunded.
     const { data: order, error: orderErr } = await supabase
-      .schema("resupply")
       .from("shop_orders")
       .select("id, status, paid_at, customer_id")
       .eq("id", sourceOrderId)
@@ -929,12 +935,16 @@ router.post(
     //    everything and filter JS-side (line-item count is bounded
     //    per order).
     const { data: rawItems, error: itemsErr } = await supabase
-      .schema("resupply")
       .from("shop_order_items")
       .select("price_id, quantity")
       .eq("order_id", sourceOrderId);
     if (itemsErr) throw itemsErr;
-    const items = (rawItems ?? []).filter(
+    const items = (
+      (rawItems ?? []) as Array<{
+        price_id: string | null;
+        quantity: number | null;
+      }>
+    ).filter(
       (it): it is { price_id: string; quantity: number } =>
         typeof it.price_id === "string" &&
         it.price_id.length > 0 &&
@@ -951,7 +961,6 @@ router.post(
     //    (preferred — keeps Stripe analytics linked) and
     //    `customer_email` (fallback for guest-checkout-only ids).
     const { data: customerLookup, error: customerLookupErr } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select("email_lower, stripe_customer_id")
       .eq("customer_id", userId)

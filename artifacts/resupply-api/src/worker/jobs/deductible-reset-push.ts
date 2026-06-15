@@ -40,7 +40,8 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
   type Json,
-  getSupabaseServiceRoleClient,
+  getOrgScopedClient,
+  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { sendDeductibleResetEmail } from "../../lib/order-emails/send-deductible-reset-email";
@@ -110,7 +111,9 @@ export async function runDeductibleResetPush(
   }
 
   const currentYear = now.getUTCFullYear();
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return stats;
+  const supabase = getOrgScopedClient(orgId);
   const activitySince = isoDaysAgo(now, ACTIVE_LOOKBACK_DAYS);
 
   // Keyset-paged candidate walk. Skipped rows (opted-out customers,
@@ -130,7 +133,6 @@ export async function runDeductibleResetPush(
     scannedTotal < MAX_SCANNED_PER_RUN
   ) {
     let pageQuery = supabase
-      .schema("resupply")
       .from("shop_customers")
       .select(
         "customer_id, email_lower, display_name, communication_preferences, deductible_reset_year",
@@ -150,9 +152,11 @@ export async function runDeductibleResetPush(
     scannedTotal += candidates.length;
     lastCustomerId = candidates[candidates.length - 1]!.customer_id;
 
-    const rows: CustomerCandidate[] = candidates.filter(
-      (r): r is CustomerCandidate => typeof r.email_lower === "string",
-    );
+    const rows: CustomerCandidate[] = (
+      candidates as Array<
+        Omit<CustomerCandidate, "email_lower"> & { email_lower: string | null }
+      >
+    ).filter((r): r is CustomerCandidate => typeof r.email_lower === "string");
 
     // Batch the active-customer gate for THIS page. The prior
     // per-customer existence query was an N+1 — one serial round-trip
@@ -166,6 +170,7 @@ export async function runDeductibleResetPush(
     for (let i = 0; i < candidateIds.length; i += 500) {
       const idChunk = candidateIds.slice(i, i + 500);
       const { data: paidRows, error: paidErr } = await supabase
+        .raw()
         .schema("resupply")
         .rpc("shop_customers_last_paid_at", { p_customer_ids: idChunk });
       if (paidErr) throw paidErr;
@@ -203,7 +208,6 @@ export async function runDeductibleResetPush(
       // when the stored value is still null or last year's, so a race
       // against another worker resolves cleanly.
       const { data: claimed, error: claimErr } = await supabase
-        .schema("resupply")
         .from("shop_customers")
         .update({ deductible_reset_year: currentYear })
         .eq("customer_id", row.customer_id)
@@ -227,7 +231,6 @@ export async function runDeductibleResetPush(
       const firstName = (row.display_name ?? "").split(" ")[0]?.trim() || null;
       const releaseClaim = async (): Promise<void> => {
         const { error: releaseErr } = await supabase
-          .schema("resupply")
           .from("shop_customers")
           .update({ deductible_reset_year: row.deductible_reset_year })
           .eq("customer_id", row.customer_id);

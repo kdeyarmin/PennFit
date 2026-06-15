@@ -17,10 +17,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import {
-  getSupabaseServiceRoleClient,
-  type Database,
-} from "@workspace/resupply-db";
+import { getOrgScopedClient, type Database } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { logger } from "../../lib/logger";
@@ -87,10 +84,15 @@ router.post(
     }
     const force = req.query.force === "1";
     const adminId = req.adminUserId!;
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
-    const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
+    const { data: row, error: lookupErr } = await db
       .from("conversations")
       .select("id, assigned_admin_user_id, status, priority")
       .eq("id", id)
@@ -134,11 +136,7 @@ router.post(
     // the explicit takeover gate). Two CSRs racing to claim the same
     // unassigned conversation no longer both succeed — the loser sees
     // zero rows updated and gets the 409 below.
-    let updateBuilder = supabase
-      .schema("resupply")
-      .from("conversations")
-      .update(updates)
-      .eq("id", id);
+    let updateBuilder = db.from("conversations").update(updates).eq("id", id);
     if (!force) {
       if (row.assigned_admin_user_id === null) {
         updateBuilder = updateBuilder.is("assigned_admin_user_id", null);
@@ -201,9 +199,14 @@ router.post(
     }
     const adminId = req.adminUserId!;
     const adminRole = req.adminRole;
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: row, error: lookupErr } = await db
       .from("conversations")
       .select("assigned_admin_user_id")
       .eq("id", id)
@@ -226,8 +229,7 @@ router.post(
       });
       return;
     }
-    const { error: updateErr } = await supabase
-      .schema("resupply")
+    const { error: updateErr } = await db
       .from("conversations")
       .update({
         assigned_admin_user_id: null,
@@ -279,14 +281,19 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
 
     // Active-admin check: surface a clean 404 for typos or for users
     // who were suspended. Without this guard the FK violation below
     // becomes a 500 in the response and the admin sees an opaque
     // error instead of "no such user".
-    const { data: assignee, error: assigneeErr } = await supabase
-      .schema("resupply")
+    const { data: assignee, error: assigneeErr } = await db
       .from("admin_users")
       .select("id, status")
       .eq("id", parsed.data.userId)
@@ -300,8 +307,7 @@ router.post(
 
     // Capture the previous assignee for the audit envelope. One extra
     // round-trip is cheap on this rarely-called admin-only route.
-    const { data: prior } = await supabase
-      .schema("resupply")
+    const { data: prior } = await db
       .from("conversations")
       .select("assigned_admin_user_id")
       .eq("id", id)
@@ -309,8 +315,7 @@ router.post(
       .maybeSingle();
 
     const nowIso = new Date().toISOString();
-    const { data: updated, error } = await supabase
-      .schema("resupply")
+    const { data: updated, error } = await db
       .from("conversations")
       .update({
         assigned_admin_user_id: parsed.data.userId,
@@ -364,9 +369,14 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: row, error: lookupErr } = await db
       .from("conversations")
       .select("status, assigned_at")
       .eq("id", id)
@@ -385,8 +395,7 @@ router.post(
       row.status,
       baseline,
     );
-    const { error: updateErr } = await supabase
-      .schema("resupply")
+    const { error: updateErr } = await db
       .from("conversations")
       .update({
         priority: parsed.data.priority,
@@ -421,13 +430,18 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
     // The original used a raw `CASE WHEN priority IN ('low','normal') THEN
     // 'high' ELSE priority END` to bump priority without downgrading
     // urgent threads. PostgREST has no SQL CASE, so we read-then-write:
     // fetch the current priority, decide JS-side, then update.
-    const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
+    const { data: row, error: lookupErr } = await db
       .from("conversations")
       .select("priority")
       .eq("id", id)
@@ -444,8 +458,7 @@ router.post(
         ? "high"
         : currentPriority;
     const nowIso = new Date().toISOString();
-    const { data: updated, error: updateErr } = await supabase
-      .schema("resupply")
+    const { data: updated, error: updateErr } = await db
       .from("conversations")
       .update({
         escalated_at: nowIso,
@@ -493,9 +506,14 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: updated, error } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: updated, error } = await db
       .from("conversations")
       .update({
         escalated_at: null,
@@ -574,9 +592,14 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
-    const { data: row, error: lookupErr } = await supabase
-      .schema("resupply")
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const db = getOrgScopedClient(orgId);
+    const { data: row, error: lookupErr } = await db
       .from("conversations")
       .select("status, channel, priority")
       .eq("id", id)
@@ -613,8 +636,7 @@ router.post(
     // (1h SLA) that was closed and reopened would otherwise silently
     // downgrade to normal (8h SLA), losing patient queue priority.
     const existingPriority = (row.priority as ConversationPriority) ?? "normal";
-    const { error: updateErr } = await supabase
-      .schema("resupply")
+    const { error: updateErr } = await db
       .from("conversations")
       .update({
         status: nextStatus,

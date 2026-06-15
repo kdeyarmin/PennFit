@@ -54,6 +54,7 @@ import busboy from "busboy";
 
 import {
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
@@ -431,6 +432,8 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       body,
       direction: "inbound",
       messageAt: inboundAt,
+      // Inbound webhook (no auth tenant context): seed-org bridge.
+      orgId: (await resolveSeedOrgId()) ?? undefined,
     },
     req.log,
   );
@@ -749,6 +752,8 @@ async function attemptEmailAutoReply(
     body: drafted.reply,
     direction: "outbound",
     messageAt: sentAt,
+    // Inbound webhook (no auth tenant context): seed-org bridge.
+    orgId: (await resolveSeedOrgId()) ?? undefined,
   });
 
   await safeAudit({

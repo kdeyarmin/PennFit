@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -54,9 +54,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("conversation_coaching_notes")
       .select(
         "id, conversation_id, target_user_id, author_user_id, kind, body, created_at, updated_at",
@@ -66,7 +70,11 @@ router.get(
       .limit(50);
     if (error) throw error;
     res.json({
-      notes: (data ?? []).map((r) => ({
+      notes: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["conversation_coaching_notes"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         conversationId: r.conversation_id,
         targetUserId: r.target_user_id,
@@ -116,9 +124,13 @@ router.post(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: convo, error: convoErr } = await supabase
-      .schema("resupply")
       .from("conversations")
       .select("id")
       .eq("id", params.data.id)
@@ -131,7 +143,6 @@ router.post(
     }
 
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("conversation_coaching_notes")
       .insert({
         conversation_id: params.data.id,
@@ -193,9 +204,13 @@ router.get(
       return;
     }
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("conversation_coaching_notes")
       .select(
         "id, conversation_id, target_user_id, author_user_id, kind, body, created_at, updated_at",
@@ -205,8 +220,12 @@ router.get(
       .limit(100);
     if (error) throw error;
 
-    const counts = (data ?? []).reduce(
-      (acc, r) => {
+    const counts = (
+      (data ?? []) as Array<
+        Database["resupply"]["Tables"]["conversation_coaching_notes"]["Row"]
+      >
+    ).reduce(
+      (acc: Record<string, number>, r) => {
         acc[r.kind] = (acc[r.kind] ?? 0) + 1;
         return acc;
       },
@@ -215,7 +234,11 @@ router.get(
 
     res.json({
       counts,
-      notes: (data ?? []).map((r) => ({
+      notes: (
+        (data ?? []) as Array<
+          Database["resupply"]["Tables"]["conversation_coaching_notes"]["Row"]
+        >
+      ).map((r) => ({
         id: r.id,
         conversationId: r.conversation_id,
         authorUserId: r.author_user_id,

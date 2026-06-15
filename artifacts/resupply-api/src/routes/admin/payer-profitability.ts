@@ -14,7 +14,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePermission } from "../../middlewares/requireAdmin";
@@ -170,9 +170,13 @@ router.get(
       .toISOString()
       .slice(0, 10);
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: claims, error } = await supabase
-      .schema("resupply")
       .from("insurance_claims")
       .select(
         "id, payer_name, payer_profile_id, status, total_billed_cents, total_allowed_cents, total_paid_cents",
@@ -194,7 +198,6 @@ router.get(
     const claimHasCost = new Set<string>();
     if (claimIds.length > 0) {
       const { data: lines, error: linesErr } = await supabase
-        .schema("resupply")
         .from("insurance_claim_line_items")
         .select("claim_id, quantity, unit_cost_cents")
         .in("claim_id", claimIds)

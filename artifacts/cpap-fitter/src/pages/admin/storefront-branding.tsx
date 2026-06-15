@@ -78,6 +78,32 @@ function StatusBadge({
   );
 }
 
+function TlsBadge({
+  status,
+}: {
+  status: "none" | "pending" | "active" | "failed";
+}) {
+  const map = {
+    none: {
+      label: "Not started",
+      color: "hsl(var(--ink-3))",
+      bg: "hsl(var(--line))",
+    },
+    pending: { label: "Issuing certificate…", color: "#b45309", bg: "#fef3c7" },
+    active: { label: "HTTPS live", color: "#15803d", bg: "#dcfce7" },
+    failed: { label: "Needs attention", color: "#b91c1c", bg: "#fee2e2" },
+  } as const;
+  const s = map[status];
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+      style={{ color: s.color, background: s.bg }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
 export function AdminStorefrontBrandingPage() {
   const queryClient = useQueryClient();
   const { data, isPending, isError, error, refetch } = useQuery({
@@ -452,6 +478,58 @@ export function AdminStorefrontBrandingPage() {
                 </span>
               )}
             </div>
+          </div>
+        )}
+
+        {/* TLS provisioning (Cloudflare for SaaS) — only when automation is
+            on and the domain is verified. Otherwise HTTPS is the documented
+            operator step. */}
+        {domain.tls?.automation && domain.status === "verified" && (
+          <div
+            className="mt-4 border-t pt-4"
+            style={{ borderColor: "hsl(var(--line))" }}
+          >
+            <div className="flex items-center gap-3">
+              <p
+                className="text-sm font-medium"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                HTTPS certificate
+              </p>
+              <TlsBadge status={domain.tls.status} />
+            </div>
+            {domain.tls.status === "active" ? (
+              <p
+                className="mt-1 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Your domain is live over HTTPS — certificates renew
+                automatically.
+              </p>
+            ) : domain.tls.status === "failed" ? (
+              <p className="mt-1 text-xs" style={{ color: "#b45309" }}>
+                Certificate issuance didn't complete. Double-check your DNS
+                records and click <strong>Verify domain</strong> again.
+              </p>
+            ) : (
+              <>
+                <p
+                  className="mt-1 mb-2 text-xs"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {domain.tls.validation
+                    ? "Add the record below to finish issuing your certificate, then refresh this page."
+                    : "We're issuing your certificate — this usually takes a few minutes. Refresh this page to check."}
+                </p>
+                {domain.tls.validation && (
+                  <>
+                    <DnsRow label="Type" value="TXT" />
+                    <DnsRow label="Name" value={domain.tls.validation.name} />
+                    <DnsRow label="Value" value={domain.tls.validation.value} />
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
       </Card>

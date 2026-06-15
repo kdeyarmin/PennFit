@@ -22,6 +22,7 @@ import { z } from "zod";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
+  getOrgScopedClient,
   getSupabaseServiceRoleClient,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
@@ -95,15 +96,21 @@ router.post(
     const { id: conversationId } = idParsed.data;
     const { body } = bodyParsed.data;
 
+    // Fail closed: never widen to all tenants on a missing orgId.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+
     // Branch by channel BEFORE we read the messaging-config envvars.
     // In-app threads don't need Twilio/SendGrid to be configured for
     // the message itself to land — the message is just a DB row. We
     // do try to send a notification email afterwards (best-effort),
     // but a missing SENDGRID_API_KEY is not fatal for in-app — the
     // customer will see the message next time they sign in.
-    const earlySupabase = getSupabaseServiceRoleClient();
-    const { data: channelRow, error: channelErr } = await earlySupabase
-      .schema("resupply")
+    const earlyDb = getOrgScopedClient(orgId);
+    const { data: channelRow, error: channelErr } = await earlyDb
       .from("conversations")
       .select("channel")
       .eq("id", conversationId)
@@ -144,6 +151,7 @@ router.post(
     try {
       outcome = await replyInConversation({
         supabase: getSupabaseServiceRoleClient(),
+        orgId,
         smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
         emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
         conversationId,

@@ -13,7 +13,7 @@
 import { Router, type IRouter } from "express";
 import rateLimit from "express-rate-limit";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { logger } from "../../lib/logger";
@@ -107,41 +107,41 @@ router.get(
   "/admin/work-items",
   adminWorkItemsRateLimiter,
   requireAdmin,
-  async (_req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+  async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
 
     const results = await Promise.all([
       supabase
-        .schema("resupply")
         .from("conversations")
         .select("id, created_at")
         .eq("status", "awaiting_admin")
         .order("created_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
       supabase
-        .schema("resupply")
         .from("shop_returns")
         .select("id, created_at")
         .in("status", ["requested", "shipped_back", "received"])
         .order("created_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
       supabase
-        .schema("resupply")
         .from("shop_reviews")
         .select("id, created_at")
         .eq("status", "pending")
         .order("created_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
       supabase
-        .schema("resupply")
         .from("patient_documents")
         .select("id, created_at")
         .is("reviewed_at", null)
         .order("created_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
       supabase
-        .schema("resupply")
         .from("shop_customer_followups")
         .select("id, created_at, due_at")
         .is("completed_at", null)
@@ -149,7 +149,6 @@ router.get(
         .order("due_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
       supabase
-        .schema("resupply")
         .from("patient_followups")
         .select("id, created_at, due_at")
         .is("completed_at", null)
@@ -157,7 +156,6 @@ router.get(
         .order("due_at", { ascending: true })
         .limit(PER_SOURCE_LIMIT),
       supabase
-        .schema("resupply")
         .from("inbound_faxes")
         .select("id, created_at")
         .eq("status", "new")
@@ -166,7 +164,6 @@ router.get(
       // Outstanding required signed paperwork holding a claim from billing.
       // These are the "chase the doc" tasks the team works to release holds.
       supabase
-        .schema("resupply")
         .from("claim_paperwork_requirements")
         .select("id, created_at")
         .eq("status", "outstanding")

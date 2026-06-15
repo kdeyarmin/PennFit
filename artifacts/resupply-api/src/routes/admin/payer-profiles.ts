@@ -18,10 +18,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { safeCsvCell } from "../../lib/safe-csv-cell";
@@ -244,9 +241,13 @@ router.get(
   "/admin/payer-profiles",
   requirePermission("reports.read"),
   async (req, res) => {
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(FULL_SELECT)
       .order("display_name", { ascending: true })
@@ -305,9 +306,13 @@ router.get(
   requirePermission("reports.read"),
   async (req, res) => {
     const includeNonElectronic = req.query.includeNonElectronic === "true";
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     let query = supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(FULL_SELECT)
       .eq("is_active", true)
@@ -342,9 +347,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .select(FULL_SELECT)
       .eq("id", parsed.data.id)
@@ -389,9 +398,13 @@ router.post(
       });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .insert({
         slug: b.slug,
@@ -544,9 +557,13 @@ router.patch(
     update.requirements_last_verified_at = new Date().toISOString();
     update.requirements_last_verified_by = req.adminEmail ?? null;
 
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("payer_profiles")
       .update(update)
       .eq("id", idParsed.data.id);

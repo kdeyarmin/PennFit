@@ -10,10 +10,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  type Database,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -66,9 +63,13 @@ router.patch(
       membership_renews_at: b.renewsAt ?? null,
       membership_stripe_subscription_id: b.stripeSubscriptionId ?? null,
     };
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .update(update)
       .eq("customer_id", idParsed.data.customerId);
@@ -98,9 +99,13 @@ router.get(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data } = await supabase
-      .schema("resupply")
       .from("shop_customers")
       .select(
         "customer_id, membership_tier, membership_started_at, membership_renews_at, membership_stripe_subscription_id",

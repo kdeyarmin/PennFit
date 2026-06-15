@@ -35,6 +35,7 @@ import type { WebSocket } from "ws";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
@@ -1082,6 +1083,8 @@ async function persistTranscript(
     body: turn.text,
     direction,
     messageAt: sentAt,
+    // Voice WS (no auth tenant context): seed-org bridge.
+    orgId: (await resolveSeedOrgId()) ?? undefined,
   });
 }
 

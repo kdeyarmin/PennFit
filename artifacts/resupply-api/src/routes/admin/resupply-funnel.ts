@@ -13,7 +13,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 
@@ -51,14 +51,18 @@ router.get(
     const to = parsed.data.to ?? new Date().toISOString();
     const from =
       parsed.data.from ?? new Date(Date.now() - 30 * 86400_000).toISOString();
-    const supabase = getSupabaseServiceRoleClient();
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const supabase = getOrgScopedClient(orgId);
 
     // One head-count query per status. Cheaper and safer than
     // pulling every row into memory for a busy DME.
     const counts: Partial<Record<EpisodeStatus, number>> = {};
     for (const s of STATUSES) {
       const { count, error } = await supabase
-        .schema("resupply")
         .from("episodes")
         .select("*", { count: "exact", head: true })
         .eq("status", s)

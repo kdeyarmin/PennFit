@@ -47,6 +47,7 @@ import { Router, type IRouter } from "express";
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
   tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
@@ -639,6 +640,8 @@ router.post(
         body: parsed.Body,
         direction: "inbound",
         messageAt: inboundAt,
+        // Inbound webhook (no auth tenant context): seed-org bridge.
+        orgId: (await resolveSeedOrgId()) ?? undefined,
       },
       req.log,
     );
@@ -849,6 +852,8 @@ router.post(
         body: twimlBody,
         direction: "outbound",
         messageAt: replyAt,
+        // Inbound webhook (no auth tenant context): seed-org bridge.
+        orgId: (await resolveSeedOrgId()) ?? undefined,
       },
       req.log,
     );
