@@ -43,33 +43,74 @@ numbers, and would never have its background jobs run**.
 
 ---
 
+## Implementation progress (this branch, 2026-06-15)
+
+Work landed on `claude/multitenant-migration-plan-alh7jy` so far:
+
+- **G0 — audited** (see below). Corrected the coverage numbers; classified
+  the 59 non-`org_id` tables; identified the genuine scope-candidates.
+- **G1 — core landed.** `resolveOrgIdByHost()` (verified-custom-domain →
+  `org_id`, fail-soft to seed, cached) + a shared `requestHost()` helper;
+  `requireSignedIn` / `attachSignedIn` now resolve the tenant **by host**
+  instead of always the seed org; `POST /api/orders` mirrors to the
+  host-resolved tenant. 6 resolver unit tests; single-tenant behavior
+  unchanged. **Remaining:** the HMAC signed-link storefront flows
+  (`reminders.ts`, `csr-orders.ts`, `patient-packets.ts`) should derive
+  `org_id` from the **token-referenced record**, not the host — a distinct
+  sub-task (they're seed-correct for single-tenant today).
+- **G2 — foundation + first cron landed.** `listActiveOrgIds()` (db
+  package) and `forEachActiveOrg()` (worker lib, per-tenant error
+  isolation), both unit-tested; the conversation orphan-assignee sweep is
+  converted as the proven template. **Remaining:** the other recurring
+  crons. Each needs a per-job global-vs-tenant judgment (several sweeps
+  legitimately stay single-client because they prune **global** tables),
+  and the patient-SMS/billing crons must be done with the Node-24
+  worker integration suite gating each — per the cutover playbook.
+
+The full `resupply-api` suite (5502 tests) and the tenant-isolation guard
+(baseline 0) stay green throughout.
+
 ## The load-bearing gaps (must-fix before a 2nd tenant goes live)
 
 These are the items that make the difference between "isolation-ready" and
 "actually serves tenant #2." They are ordered by how badly they block a
 real second customer.
 
-### G0. Confirm `org_id` coverage is complete — **correctness audit**
+### G0. Confirm `org_id` coverage is complete — **correctness audit** ✅ *audited*
 
-Of ~213 tables, **37 carry `org_id`**; the rest are *intended* to be global
-reference data (products, HCPCS/payer catalogs), FK-inherited children, or
-retired/no-op stubs. The chokepoint only auto-scopes tables it filters by
-`org_id` — a **tenant-scoped** table that lacks the column and is queried
-directly via `.from()` would silently read across tenants. The `NOT NULL`
-guard (`0351`) and CI isolation guard only cover tables that already have
-`org_id`, so they cannot catch a *missing-column* gap.
+**Audited 2026-06-15.** Of 212 `resupply` tables, **153 carry `org_id`**
+and **59 do not**. (An earlier inventory said only 37 — it missed
+migrations `0341`/`0342`, which scoped the long tail; several "candidates"
+it flagged — `locations`, `outreach_playbooks`, `webhook_subscriptions`,
+`gl_account_mappings` — in fact **already have** `org_id`.) The chokepoint
+auto-appends `.eq("org_id", …)`, so a table *without* the column queried
+via `.from()` would **error** — meaning the 59 are already, by
+construction, reached via `.raw()` as deliberately-global. The audit
+classified the 59:
 
-**Work (verification, mostly):**
-1. Enumerate every table without `org_id` and classify each:
-   (a) legitimately global reference, (b) FK-inherited *and* never queried
-   directly without joining its org-scoped parent, or (c) a genuine gap.
-2. Add `org_id` to any (c) tables. Candidates the inventory flagged to
-   check first: `locations`, `control_number_counters` (EDI sequences must
-   not collide across tenants), `outreach_playbooks`, `webhook_subscriptions`,
-   `education_videos`, `provider_portal_accounts`, `gl_account_mappings`.
-3. **Do not** add `org_id` to the retired HIPAA/DMEPOS/ACHC compliance
-   tables or `audit_log` — that machinery was retired (migration 0156) and
-   is a no-op stub per the hard rules; scoping it would be wasted work.
+- **Retired no-op stubs (do NOT scope)** — the migration-0156 compliance
+  tables (`accreditation_*`, `business_associate_agreements`, `hipaa_*`,
+  `oig_leie_*`, `patient_grievances`, `patient_rights_requests`,
+  `staff_training_records`, `quality_improvement_*`, …) and `audit_log`.
+- **Legitimately global** — reference catalogs (`hcpcs_codes`,
+  `denial_codes`, `product_hcpcs_map`, `sku_hcpcs_map`), infra
+  (`idempotency_keys`, `worker_dedup_keys`, `worker_run_summary`,
+  `fhir_jwt_jti_seen`, `inbound_webhooks`, `stripe_webhook_events`), and
+  the directory itself (`organizations`, `ehr_fhir_tenants`).
+- **Genuine candidates to scope (Phase 2 / G12 work)** —
+  `control_number_counters` (EDI sequences must not collide across
+  tenants), `object_storage_acls` (PHI attachment access), the
+  `inbound_referral_*` pipeline, `appointment_requests`, the analytics
+  rollups (`metrics_daily`, `therapy_fleet_daily_metrics`,
+  `payer_estimate_stats`, `metric_alerts`, `metric_thresholds`),
+  `providers` / `provider_portal_accounts` / `providers_pecos_status`,
+  `product_costs`, `education_videos`.
+
+**Remaining work:** add `org_id` (a `035x` migration) to the genuine
+candidates and cut over their (mostly `.raw()`) callsites. Most are not
+on a tenant-serving hot path today (billing EDI, analytics, provider
+networks), so they're sequenced with the Phase 2 / metering work, not the
+G1/G2 blockers.
 
 ### G1. Public storefront + customer portal data is pinned to the seed org — **blocker**
 
