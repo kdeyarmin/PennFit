@@ -55,9 +55,10 @@
 import type PgBoss from "pg-boss";
 
 import { logAuditBestEffort } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 
 const SWEEP_JOB = "prior-auth.expiry-sweep";
@@ -112,19 +113,10 @@ function addDays(base: Date, days: number): Date {
  * @returns The populated `ExpirySweepStats` containing counts of expired records, total heads-up alerts queued, and per-window counts for 30, 14, and 7 day windows.
  * @throws If the initial query for overdue prior authorizations fails.
  */
-export async function runPriorAuthExpirySweep(
+export async function runPriorAuthExpirySweepForOrg(
+  orgId: string,
   today: Date = new Date(),
 ): Promise<ExpirySweepStats> {
-  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
-  // seed org. Becomes a per-org loop when a 2nd tenant lands.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: SWEEP_JOB },
-      "prior-auth.expiry-sweep: could not resolve seed org — skipping",
-    );
-    return { expired: 0, headsUpQueued: 0, windows: { 30: 0, 14: 0, 7: 0 } };
-  }
   const supabase = getOrgScopedClient(orgId);
   const todayIso = isoDate(today);
 
@@ -361,6 +353,35 @@ export async function runPriorAuthExpirySweep(
     }
   }
 
+  return stats;
+}
+
+/**
+ * Run the expiry sweep for EVERY active tenant. `prior_authorizations`
+ * and `csr_compliance_alerts` are tenant-scoped, so the sweep fans out
+ * via `forEachActiveOrg` (per-tenant error isolation) and sums the
+ * counts. Single-tenant behavior is byte-identical to the old seed-org
+ * sweep.
+ */
+export async function runPriorAuthExpirySweep(
+  today: Date = new Date(),
+): Promise<ExpirySweepStats> {
+  const stats: ExpirySweepStats = {
+    expired: 0,
+    headsUpQueued: 0,
+    windows: { 30: 0, 14: 0, 7: 0 },
+  };
+  await forEachActiveOrg(
+    async (orgId) => {
+      const s = await runPriorAuthExpirySweepForOrg(orgId, today);
+      stats.expired += s.expired;
+      stats.headsUpQueued += s.headsUpQueued;
+      stats.windows[30] += s.windows[30];
+      stats.windows[14] += s.windows[14];
+      stats.windows[7] += s.windows[7];
+    },
+    { jobName: SWEEP_JOB },
+  );
   return stats;
 }
 

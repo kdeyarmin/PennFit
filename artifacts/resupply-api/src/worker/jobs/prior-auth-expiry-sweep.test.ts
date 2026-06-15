@@ -29,10 +29,14 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAuditBestEffort: (...a: unknown[]) => logAuditBestEffortMock(...a),
 }));
 
-import { runPriorAuthExpirySweep } from "./prior-auth-expiry-sweep";
+import {
+  runPriorAuthExpirySweep,
+  runPriorAuthExpirySweepForOrg,
+} from "./prior-auth-expiry-sweep";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
+const TEST_ORG = "00000000-0000-4000-8000-000000000000";
 const PA_ID_1 = "11111111-1111-4111-8111-111111111111";
 const PA_ID_2 = "22222222-2222-4222-8222-222222222222";
 const PATIENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -75,7 +79,10 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    const stats = await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    const stats = await runPriorAuthExpirySweepForOrg(
+      TEST_ORG,
+      todayUtc("2026-05-18"),
+    );
     expect(stats.expired).toBe(0);
     expect(stats.headsUpQueued).toBe(0);
     expect(stats.windows).toEqual({ 7: 0, 14: 0, 30: 0 });
@@ -101,7 +108,10 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    const stats = await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    const stats = await runPriorAuthExpirySweepForOrg(
+      TEST_ORG,
+      todayUtc("2026-05-18"),
+    );
     expect(stats.expired).toBe(1);
     expect(getSupabaseCallCount("prior_authorizations", "update")).toBe(1);
     expect(getSupabaseCallCount("csr_compliance_alerts", "insert")).toBe(1);
@@ -124,7 +134,7 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    await runPriorAuthExpirySweepForOrg(TEST_ORG, todayUtc("2026-05-18"));
 
     const payloads = getSupabaseWritePayloads("prior_authorizations", "update");
     expect(payloads).toHaveLength(1);
@@ -147,7 +157,7 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    await runPriorAuthExpirySweepForOrg(TEST_ORG, todayUtc("2026-05-18"));
 
     const alertPayloads = getSupabaseWritePayloads(
       "csr_compliance_alerts",
@@ -175,7 +185,7 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    await runPriorAuthExpirySweepForOrg(TEST_ORG, todayUtc("2026-05-18"));
 
     expect(logAuditBestEffortMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -216,7 +226,10 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    const stats = await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    const stats = await runPriorAuthExpirySweepForOrg(
+      TEST_ORG,
+      todayUtc("2026-05-18"),
+    );
     expect(stats.expired).toBe(2);
     expect(logAuditBestEffortMock).toHaveBeenCalledTimes(2);
   });
@@ -245,7 +258,10 @@ describe("runPriorAuthExpirySweep — expire step", () => {
       stageSupabaseResponse("prior_authorizations", "select", { data: [] });
     }
 
-    const stats = await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    const stats = await runPriorAuthExpirySweepForOrg(
+      TEST_ORG,
+      todayUtc("2026-05-18"),
+    );
     // Only the second PA counted (first was skipped after update failure).
     expect(stats.expired).toBe(1);
   });
@@ -256,7 +272,7 @@ describe("runPriorAuthExpirySweep — expire step", () => {
     });
 
     await expect(
-      runPriorAuthExpirySweep(todayUtc("2026-05-18")),
+      runPriorAuthExpirySweepForOrg(TEST_ORG, todayUtc("2026-05-18")),
     ).rejects.toBeTruthy();
   });
 });
@@ -285,7 +301,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     // 7-day window → nothing
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     expect(stats.headsUpQueued).toBe(1);
     expect(stats.windows[30]).toBe(1);
     expect(stats.windows[14]).toBe(0);
@@ -305,7 +321,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
     stageSupabaseResponse("prior_authorizations", "select", { data: [] }); // 7-day
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     expect(stats.windows[14]).toBe(1);
     expect(stats.headsUpQueued).toBe(1);
   });
@@ -323,7 +339,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     expect(stats.windows[7]).toBe(1);
     expect(stats.headsUpQueued).toBe(1);
   });
@@ -346,7 +362,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     // 7-day → nothing
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
 
-    await runPriorAuthExpirySweep(today);
+    await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
 
     const alertPayloads = getSupabaseWritePayloads(
       "csr_compliance_alerts",
@@ -369,7 +385,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
 
-    await runPriorAuthExpirySweep(today);
+    await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
 
     const alertPayloads = getSupabaseWritePayloads(
       "csr_compliance_alerts",
@@ -393,7 +409,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
 
-    await runPriorAuthExpirySweep(today);
+    await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
 
     const alertPayloads = getSupabaseWritePayloads(
       "csr_compliance_alerts",
@@ -420,7 +436,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
       data: [{ id: "existing-alert-id" }],
     });
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     // No new alert was inserted.
     expect(stats.headsUpQueued).toBe(0);
     expect(getSupabaseCallCount("csr_compliance_alerts", "insert")).toBe(0);
@@ -442,7 +458,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     // 7-day → nothing
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     // The 30-day window was skipped, but 14-day still ran.
     expect(stats.windows[14]).toBe(1);
     expect(stats.headsUpQueued).toBe(1);
@@ -470,7 +486,7 @@ describe("runPriorAuthExpirySweep — heads-up windows", () => {
     stageSupabaseResponse("csr_compliance_alerts", "select", { data: [] });
     stageSupabaseResponse("csr_compliance_alerts", "insert", { error: null });
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     expect(stats.headsUpQueued).toBe(3);
     expect(stats.windows[30]).toBe(1);
     expect(stats.windows[14]).toBe(1);
@@ -509,12 +525,51 @@ describe("runPriorAuthExpirySweep — combined expired + heads-up", () => {
     // 7-day → nothing
     stageSupabaseResponse("prior_authorizations", "select", { data: [] });
 
-    const stats = await runPriorAuthExpirySweep(today);
+    const stats = await runPriorAuthExpirySweepForOrg(TEST_ORG, today);
     expect(stats.expired).toBe(1);
     expect(stats.headsUpQueued).toBe(1);
     // Audit was called once for the expired PA.
     expect(logAuditBestEffortMock).toHaveBeenCalledTimes(1);
     // Two CSR alert inserts: one expired, one heads-up.
     expect(getSupabaseCallCount("csr_compliance_alerts", "insert")).toBe(2);
+  });
+});
+
+describe("runPriorAuthExpirySweep — multi-tenant fan-out", () => {
+  beforeEach(() => {
+    supabaseMock.reset();
+    logAuditBestEffortMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("runs the sweep once per active tenant and sums the counts", async () => {
+    // listActiveOrgIds() reads the organizations directory via the mock.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Two tenants × four prior_authorizations selects each (expire +
+    // 30/14/7 heads-up windows), all empty → zero work, no throw.
+    for (let i = 0; i < 8; i++) {
+      stageSupabaseResponse("prior_authorizations", "select", { data: [] });
+    }
+
+    const stats = await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    expect(stats).toEqual({
+      expired: 0,
+      headsUpQueued: 0,
+      windows: { 30: 0, 14: 0, 7: 0 },
+    });
+    // Confirms the per-org sweep ran for both tenants (4 selects each).
+    expect(getSupabaseCallCount("prior_authorizations", "select")).toBe(8);
+  });
+
+  it("returns zero counts when there are no active tenants", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runPriorAuthExpirySweep(todayUtc("2026-05-18"));
+    expect(stats).toEqual({
+      expired: 0,
+      headsUpQueued: 0,
+      windows: { 30: 0, 14: 0, 7: 0 },
+    });
+    expect(getSupabaseCallCount("prior_authorizations", "select")).toBe(0);
   });
 });

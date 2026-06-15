@@ -10,10 +10,12 @@ const supabaseMock = installSupabaseMock();
 import {
   planSlaEscalations,
   runSlaEscalationSweep,
+  runSlaEscalationSweepForOrg,
   type SlaConversationRow,
 } from "./sla-escalation-sweep";
 
 const NOW = Date.parse("2026-06-03T12:00:00.000Z");
+const TEST_ORG = "00000000-0000-4000-8000-000000000000";
 
 function row(over: Partial<SlaConversationRow>): SlaConversationRow {
   return {
@@ -100,7 +102,7 @@ describe("runSlaEscalationSweep", () => {
     stageSupabaseResponse("conversations", "update", { data: [{ id: "a" }] });
     stageSupabaseResponse("conversations", "update", { data: [{ id: "b" }] });
 
-    const stats = await runSlaEscalationSweep();
+    const stats = await runSlaEscalationSweepForOrg(TEST_ORG);
     expect(stats.scanned).toBe(2);
     expect(stats.escalated).toBe(2);
     expect(stats.critical).toBe(2); // both are way past 60 min overdue
@@ -111,8 +113,40 @@ describe("runSlaEscalationSweep", () => {
       data: [row({ id: "raced", sla_due_at: "2020-01-01T00:00:00.000Z" })],
     });
     stageSupabaseResponse("conversations", "update", { data: [] }); // raced away
-    const stats = await runSlaEscalationSweep();
+    const stats = await runSlaEscalationSweepForOrg(TEST_ORG);
     expect(stats.scanned).toBe(1);
     expect(stats.escalated).toBe(0);
+  });
+});
+
+describe("runSlaEscalationSweep — multi-tenant fan-out", () => {
+  it("runs the sweep once per active tenant and sums the counts", async () => {
+    // listActiveOrgIds() reads the organizations directory via the mock.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // Tenant A: one breached conversation that escalates.
+    stageSupabaseResponse("conversations", "select", {
+      data: [row({ id: "a", sla_due_at: "2020-01-01T00:00:00.000Z" })],
+    });
+    stageSupabaseResponse("conversations", "update", { data: [{ id: "a" }] });
+    // Tenant B: nothing breached.
+    stageSupabaseResponse("conversations", "select", { data: [] });
+
+    const stats = await runSlaEscalationSweep();
+    expect(stats.scanned).toBe(1);
+    expect(stats.escalated).toBe(1);
+    expect(stats.critical).toBe(1);
+  });
+
+  it("returns zero counts when there are no active tenants", async () => {
+    stageSupabaseResponse("organizations", "select", { data: [] });
+    const stats = await runSlaEscalationSweep();
+    expect(stats).toEqual({
+      scanned: 0,
+      escalated: 0,
+      warning: 0,
+      critical: 0,
+    });
   });
 });
