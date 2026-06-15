@@ -95,8 +95,7 @@ async function prescriptionRequestAutoDraftForOrg(
     throw error;
   }
   if (!candidates || candidates.length === 0) return;
-  stats.scanned = candidates.length;
-
+  stats.scanned += candidates.length;
   // Resolve existing-packet cooldown in one query rather than N+1.
   const typedCandidates = candidates as Array<{
     id: string;
