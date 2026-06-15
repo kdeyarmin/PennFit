@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
 # Negative-test harness for check-tenant-isolation.sh (invoked via its
-# --self-test flag). Proves the ratchet actually FAILS on a new direct
-# callsite and on a stale baseline entry — so the gate can never silently
-# decay into a vacuous pass (the failure mode the sibling architecture
-# checker's self-test also guards against).
+# --self-test flag). Proves the plain gate actually FAILS on a direct
+# callsite and that the reviewed exemptions (tests, the db package, the
+# tenant resolver, the global-table reader) never count as offenders — so
+# the gate can never silently decay into a vacuous pass (the failure mode
+# the sibling architecture checker's self-test also guards against).
 #
-# Strategy: build a throwaway fixture tree with a known offender file and
-# a matching baseline, point the real checker at it via TENANT_CHECK_ROOT
-# + TENANT_BASELINE_FILE, and assert the exit codes for clean / new /
-# stale states.
+# Strategy: build a throwaway fixture tree and point the real checker at
+# it via TENANT_CHECK_ROOT, then assert the exit codes for clean / dirty
+# states.
 
 set -euo pipefail
 
@@ -24,26 +24,26 @@ FIX="$(mktemp -d)"
 trap 'rm -rf "$FIX"' EXIT
 
 mkdir -p "$FIX/artifacts/resupply-api/src/routes" \
-  "$FIX/lib/resupply-db/src" \
-  "$FIX/scripts"
+  "$FIX/artifacts/resupply-api/src/middlewares" \
+  "$FIX/artifacts/resupply-api/src/lib/billing" \
+  "$FIX/lib/resupply-db/src"
 
-OFFENDER="artifacts/resupply-api/src/routes/alpha.ts"
-EXEMPT_TEST="artifacts/resupply-api/src/routes/alpha.test.ts"
-
-# A genuine offender (direct call) that the baseline will sanction.
-printf 'const c = getSupabaseServiceRoleClient();\n' >"$FIX/$OFFENDER"
-# An exempt test file with a call — must never count as an offender.
-printf 'const c = getSupabaseServiceRoleClient();\n' >"$FIX/$EXEMPT_TEST"
-# The db package owns the client — must be exempt even though it calls it.
+# Exempt callers — each calls the raw client but must NEVER be flagged:
+#   * a test file (tests construct clients directly)
+#   * the db package (owns the client + the wrapper)
+#   * requireAdmin (the tenant resolver, runs before org context exists)
+#   * identity-resolver (reads the global dme_organization singleton)
+printf 'const c = getSupabaseServiceRoleClient();\n' \
+  >"$FIX/artifacts/resupply-api/src/routes/alpha.test.ts"
 printf 'export const x = getSupabaseServiceRoleClient();\n' \
   >"$FIX/lib/resupply-db/src/supabase-client.ts"
-
-BASELINE="$FIX/scripts/tenant-isolation-baseline.txt"
+printf 'const c = getSupabaseServiceRoleClient();\n' \
+  >"$FIX/artifacts/resupply-api/src/middlewares/requireAdmin.ts"
+printf 'const c = getSupabaseServiceRoleClient();\n' \
+  >"$FIX/artifacts/resupply-api/src/lib/billing/identity-resolver.ts"
 
 run() {
-  # Run the checker against the fixture tree + fixture baseline.
-  TENANT_CHECK_ROOT="$FIX" TENANT_BASELINE_FILE="$BASELINE" \
-    bash "$SCRIPT" "$@"
+  TENANT_CHECK_ROOT="$FIX" bash "$SCRIPT" "$@"
 }
 
 pass=0
@@ -58,65 +58,40 @@ check() { # check <desc> <expected-exit> <actual-exit>
   fi
 }
 
-# 1. Generate the baseline from the current tree (sanctions the offender).
-run --update >/dev/null 2>&1 || true
-if grep -q "$OFFENDER" "$BASELINE"; then
-  echo "  ok: --update recorded the offender in the baseline"
-  pass=$((pass + 1))
-else
-  echo "  FAIL: --update did not record the offender" >&2
-  fail=$((fail + 1))
-fi
-if grep -q "$EXEMPT_TEST" "$BASELINE"; then
-  echo "  FAIL: exempt test file leaked into the baseline" >&2
-  fail=$((fail + 1))
-else
-  echo "  ok: exempt test file stayed out of the baseline"
-  pass=$((pass + 1))
-fi
-
-# 2. Clean state: offenders == baseline → pass.
 set +e
-run >/dev/null 2>&1
-check "clean tree (offenders match baseline) passes" 0 $?
 
-# 3. New violation: add an offender not in the baseline → fail.
+# 1. Clean tree: only exempt callers present → pass.
+run >/dev/null 2>&1
+check "clean tree (only exempt callers) passes" 0 $?
+
+# 2. A real offender (an ordinary route) → hard fail.
 printf 'const c = getSupabaseServiceRoleClient();\n' \
   >"$FIX/artifacts/resupply-api/src/routes/beta.ts"
 run >/dev/null 2>&1
-check "new direct callsite (not in baseline) fails" 1 $?
+check "direct callsite in a route fails" 1 $?
 
-# 4. Re-baseline, then make a baseline entry stale (cut the file over).
-#    Stale entries are a NON-FATAL notice — they must not break the build
-#    (an unrelated cutover landing on main shouldn't redden open PRs).
-run --update >/dev/null 2>&1
+# 3. The failure output must name the offender (not an exempt file).
+out="$(run 2>&1)"
+if grep -q "routes/beta.ts" <<<"$out"; then
+  echo "  ok: violation output names the offending file"
+  pass=$((pass + 1))
+else
+  echo "  FAIL: violation output did not name the offender" >&2
+  fail=$((fail + 1))
+fi
+
+# 4. Cut the offender over to the chokepoint → back to a clean pass.
 printf 'const c = getOrgScopedClient(orgId);\n' \
   >"$FIX/artifacts/resupply-api/src/routes/beta.ts"
 run >/dev/null 2>&1
-check "stale baseline entry (file cut over) is non-fatal" 0 $?
+check "offender cut over to getOrgScopedClient passes" 0 $?
 
-# 5. A NEW violation must still fail even when a stale entry is present —
-#    the stale notice must never mask a real regression.
-printf 'const c = getSupabaseServiceRoleClient();\n' \
+# 5. A bare import (no call) must NOT count as an offender.
+printf 'import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";\n' \
   >"$FIX/artifacts/resupply-api/src/routes/gamma.ts"
 run >/dev/null 2>&1
-check "new violation fails even alongside a stale entry" 1 $?
+check "bare import (no call) does not fail" 0 $?
 
-# 6. Lock-in: once the baseline is EMPTY (cutover complete), --update is
-#    removal-only — it must REFUSE to add a new offender back rather than
-#    laundering it onto the baseline to dodge the guard.
-printf '# header only, no entries\n' >"$BASELINE"
-printf 'const c = getSupabaseServiceRoleClient();\n' \
-  >"$FIX/artifacts/resupply-api/src/routes/delta.ts"
-run --update >/dev/null 2>&1
-check "empty baseline: --update refuses to re-add a new offender" 1 $?
-if grep -q "delta.ts" "$BASELINE"; then
-  echo "  FAIL: removal-only --update still wrote the offender to the baseline" >&2
-  fail=$((fail + 1))
-else
-  echo "  ok: removal-only --update left the empty baseline untouched"
-  pass=$((pass + 1))
-fi
 set -e
 
 echo "check-tenant-isolation self-test: ${pass} passed, ${fail} failed."
