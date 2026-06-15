@@ -66,8 +66,15 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   // row) instead of the physician cover letter. Same signed-URL posture;
   // no PHI in the URL, and the PDF bytes are never logged.
   if (verified.kind === "appeal_letter") {
+    // Public token route (no request tenant); scope the appeal render to
+    // the seed org (single-tenant bridge).
+    const appealOrgId = await resolveSeedOrgId();
+    if (!appealOrgId) {
+      res.status(404).json({ error: "appeal_letter_not_found" });
+      return;
+    }
     const result = await renderAppealPdfForLetterId(
-      supabase,
+      appealOrgId,
       verified.outreachId,
     );
     if (!result.ok) {
