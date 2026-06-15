@@ -17,7 +17,7 @@
 
 import { Router, type IRouter } from "express";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   articlesForStage,
@@ -29,12 +29,12 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 const router: IRouter = Router();
 
 async function resolveSinglePatientByEmail(
+  orgId: string,
   customerEmail: string,
 ): Promise<{ id: string; createdAt: string } | null> {
-  const supabase = getSupabaseServiceRoleClient();
+  const supabase = getOrgScopedClient(orgId);
   const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
   const { data: rows, error } = await supabase
-    .schema("resupply")
     .from("patients")
     .select("id, created_at")
     .ilike("email", escaped)
@@ -60,7 +60,18 @@ router.get("/shop/me/education-feed", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const patient = await resolveSinglePatientByEmail(customerEmail);
+  const orgIdForLookup = req.orgId;
+
+  if (!orgIdForLookup) {
+    res.status(500).json({ error: "tenant_context_missing" });
+
+    return;
+  }
+
+  const patient = await resolveSinglePatientByEmail(
+    orgIdForLookup,
+    customerEmail,
+  );
   if (!patient) {
     res.json({
       patientLinked: false,
@@ -72,9 +83,13 @@ router.get("/shop/me/education-feed", requireSignedIn, async (req, res) => {
   }
 
   // Earliest therapy night = therapy start.
-  const supabase = getSupabaseServiceRoleClient();
+  const orgId = req.orgId;
+  if (!orgId) {
+    res.status(500).json({ error: "tenant_context_missing" });
+    return;
+  }
+  const supabase = getOrgScopedClient(orgId);
   const { data: firstNight, error } = await supabase
-    .schema("resupply")
     .from("patient_therapy_nights")
     .select("night_date")
     .eq("patient_id", patient.id)
