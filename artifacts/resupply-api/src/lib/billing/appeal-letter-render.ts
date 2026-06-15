@@ -11,9 +11,6 @@ import { renderAppealPdf } from "./appeal-pdf";
 import { resolveBillingIdentity } from "./identity-resolver";
 import { parsePayerAddressLines } from "./payer-address";
 
-import type { OrgScopedClient } from "@workspace/resupply-db";
-type SupabaseClient = OrgScopedClient;
-
 export type AppealRenderResult =
   | { ok: true; pdf: Buffer; claimId: string; patientId: string }
   | {
