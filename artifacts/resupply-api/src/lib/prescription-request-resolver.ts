@@ -19,10 +19,10 @@ import { getTrackingCodeForDocument } from "./signature-tracking/service";
 import {
   getOrgScopedClient,
   resolveSeedOrgId,
-  type getSupabaseServiceRoleClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
+type SupabaseClient = OrgScopedClient;
 
 export type ResolveOutcome =
   | { kind: "ok"; inputs: PrescriptionRequestInputs }
@@ -34,7 +34,6 @@ export async function resolvePrescriptionRequestInputs(
   packetId: string,
 ): Promise<ResolveOutcome> {
   const { data: packet } = await supabase
-    .schema("resupply")
     .from("prescription_request_packets")
     .select(
       "id, patient_id, provider_id, hcpcs_items_json, icd10_codes_json, device_settings_json, length_of_need_months, return_fax_e164, return_email, clinical_notes, created_at",
@@ -57,7 +56,6 @@ export async function resolvePrescriptionRequestInputs(
     trackingCode,
   ] = await Promise.all([
     supabase
-      .schema("resupply")
       .from("patients")
       .select(
         "legal_first_name, legal_last_name, date_of_birth, address, phone_e164",
@@ -67,6 +65,7 @@ export async function resolvePrescriptionRequestInputs(
       .maybeSingle(),
     packet.provider_id
       ? supabase
+          .raw()
           .schema("resupply")
           .from("providers")
           .select("legal_name, npi, practice_name, fax_e164")
@@ -79,7 +78,6 @@ export async function resolvePrescriptionRequestInputs(
     // coverage first. Missing coverage is non-fatal — the PDF just
     // omits the Insurance section.
     supabase
-      .schema("resupply")
       .from("insurance_coverages")
       .select("payer_name, member_id, plan_name, rank")
       .eq("patient_id", packet.patient_id)
