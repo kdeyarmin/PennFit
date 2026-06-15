@@ -10,8 +10,8 @@ where **Phase 0 is complete and merged**.
 
 This document reviews the **entire app as it stands today** and enumerates
 the work still required to turn CareMetric Breathe from an
-*isolation-ready single-tenant deployment* into an *operationally
-multi-tenant SaaS* that can serve a second DME company end-to-end.
+_isolation-ready single-tenant deployment_ into an _operationally
+multi-tenant SaaS_ that can serve a second DME company end-to-end.
 
 ---
 
@@ -76,14 +76,14 @@ These are the items that make the difference between "isolation-ready" and
 "actually serves tenant #2." They are ordered by how badly they block a
 real second customer.
 
-### G0. Confirm `org_id` coverage is complete — **correctness audit** ✅ *audited*
+### G0. Confirm `org_id` coverage is complete — **correctness audit** ✅ _audited_
 
 **Audited 2026-06-15.** Of 212 `resupply` tables, **153 carry `org_id`**
 and **59 do not**. (An earlier inventory said only 37 — it missed
 migrations `0341`/`0342`, which scoped the long tail; several "candidates"
 it flagged — `locations`, `outreach_playbooks`, `webhook_subscriptions`,
 `gl_account_mappings` — in fact **already have** `org_id`.) The chokepoint
-auto-appends `.eq("org_id", …)`, so a table *without* the column queried
+auto-appends `.eq("org_id", …)`, so a table _without_ the column queried
 via `.from()` would **error** — meaning the 59 are already, by
 construction, reached via `.raw()` as deliberately-global. The audit
 classified the 59:
@@ -119,7 +119,7 @@ tenant with `resolveSeedOrgId()`, not by host:
 
 - `artifacts/resupply-api/src/middlewares/requireSignedIn.ts:152` —
   `req.orgId = (await resolveSeedOrgId())` with the comment
-  *"Single-tenant today → the seed org; later reads shop_customers.org_id."*
+  _"Single-tenant today → the seed org; later reads shop_customers.org_id."_
 - `routes/storefront/{orders,reminders,csr-orders,...}.ts` all call
   `resolveSeedOrgId()` directly.
 
@@ -128,6 +128,7 @@ A second tenant's storefront would render their logo over PennPaps'
 catalog, customers, and orders.
 
 **Work:**
+
 1. Add `resolveOrgIdByHost(host)` next to `resolveBrandingByHost` (reuse
    the same verified-`custom_domain` → `organizations.id` lookup + cache)
    in `lib/tenant-branding.ts` / a new `lib/tenant-context.ts`.
@@ -145,7 +146,7 @@ catalog, customers, and orders.
 
 ### G2. Scheduled worker jobs only process the seed org — **blocker**
 
-The cutover scoped *job bodies* correctly, but the *schedulers* resolve a
+The cutover scoped _job bodies_ correctly, but the _schedulers_ resolve a
 single org. e.g. `worker/jobs/reminders.ts:428,916` →
 `const orgId = await resolveSeedOrgId()`. The nightly/periodic crons
 (reminders, cart-abandonment, recall, bill-hold sweep, eligibility
@@ -153,6 +154,7 @@ re-verify, claims autosubmit, therapy nightly sync, PHI sweep, onboarding
 check-ins…) therefore **never run for any tenant but PennPaps**.
 
 **Work:**
+
 1. Add a `listActiveOrgIds()` helper (`organizations WHERE status='active'`).
 2. Convert each recurring cron from "do work for seed org" to "enqueue one
    per-org job item per active org" — the per-item handler already takes an
@@ -181,12 +183,12 @@ email** (`lapsed-customer-winback`, `quarterly-therapy-summary`,
 `lifecycle-touchpoints`, `therapy-milestones`) so they move to
 SUITE-GATED.
 
-| Disposition | Crons | Action |
-| ----------- | ----- | ------ |
-| **DONE** — converted on this branch | `conversation-orphan-assignee-sweep`, `prior-auth-expiry-sweep`, `sla-escalation-sweep`, `asset-recovery-auto-populate`, `patient-documents-retention-sweep`, `therapy-integrations-nightly-sync`, `bill-hold-sweep`, `dwo-expiry-sweep`, `coaching-plan-progress`, `prescription-request-auto-draft`, `fitter-conversion-attribution` | ✅ fan-out + tests landed. |
-| **FAN-OUT remaining** — tenant-scoped, internal-only | `prescription-attachment-sweep` (multi-phase, mixed global `worker_run_summary` + tenant tables — convert per phase, keep the liveness write single-client) | Extract `…ForOrg(orgId)` per phase, fan out the tenant phases. |
-| **SUITE-GATED FAN-OUT** — tenant-scoped but **sends SMS/email or charges cards**; needs the Node-24 worker integration suite, and `reminders`/`bulk-campaign-tick` also need pg-boss payload `org_id` threading | `reminders`, `reminder-escalation`, `recall-notifications-send`, `cart-abandonment-scan`, `eligibility-reverify-batch`, `low-stock-alerts`, `maintenance-nudges`, `video-visit-reminders`, `therapy-fleet-alerts-scan`, `shop-order-delivery-followup`, `lapsed-customer-winback`, `quarterly-therapy-summary`, `lifecycle-touchpoints`, `therapy-milestones`, `fitter-lead-first-day-nudge`, `fitter-lead-reengage`, `fitter-supply-campaign`, `outreach-playbook-tick`, `patient-packet-reminders`, `patient-autopay-charge`, `payment-plan-autocharge`, `bulk-campaign-tick`, `office-ally-inbound-poll`, `pacware-ready-to-sync-digest` | Same fan-out, but verify per tenant under the DB-backed suite; thread `org_id` through any enqueue→process payloads. |
-| **KEEP GLOBAL** — sweeps a **global** table (no `org_id`); must stay single-client (do *not* fan out) | `idempotency-keys-prune`, `webhook-dispatcher`, `pecos-sync`, `metrics-snapshot`, `metric-alerts-evaluator`, `metric-alerts-notify`, `therapy-fleet-daily-snapshot`, `owner-digest`, `failed-order-emails-digest`, `invite-password-expiry-notify` | Leave as-is; add a one-line "global sweep — single client by design" comment. Several become FAN-OUT only **after** G12 scopes their rollup tables. |
+| Disposition                                                                                                                                                                                                     | Crons                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Action                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DONE** — converted on this branch                                                                                                                                                                             | `conversation-orphan-assignee-sweep`, `prior-auth-expiry-sweep`, `sla-escalation-sweep`, `asset-recovery-auto-populate`, `patient-documents-retention-sweep`, `therapy-integrations-nightly-sync`, `bill-hold-sweep`, `dwo-expiry-sweep`, `coaching-plan-progress`, `prescription-request-auto-draft`, `fitter-conversion-attribution`                                                                                                                                                                                                                                                                                                      | ✅ fan-out + tests landed.                                                                                                                          |
+| **FAN-OUT remaining** — tenant-scoped, internal-only                                                                                                                                                            | `prescription-attachment-sweep` (multi-phase, mixed global `worker_run_summary` + tenant tables — convert per phase, keep the liveness write single-client)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Extract `…ForOrg(orgId)` per phase, fan out the tenant phases.                                                                                      |
+| **SUITE-GATED FAN-OUT** — tenant-scoped but **sends SMS/email or charges cards**; needs the Node-24 worker integration suite, and `reminders`/`bulk-campaign-tick` also need pg-boss payload `org_id` threading | `reminders`, `reminder-escalation`, `recall-notifications-send`, `cart-abandonment-scan`, `eligibility-reverify-batch`, `low-stock-alerts`, `maintenance-nudges`, `video-visit-reminders`, `therapy-fleet-alerts-scan`, `shop-order-delivery-followup`, `lapsed-customer-winback`, `quarterly-therapy-summary`, `lifecycle-touchpoints`, `therapy-milestones`, `fitter-lead-first-day-nudge`, `fitter-lead-reengage`, `fitter-supply-campaign`, `outreach-playbook-tick`, `patient-packet-reminders`, `patient-autopay-charge`, `payment-plan-autocharge`, `bulk-campaign-tick`, `office-ally-inbound-poll`, `pacware-ready-to-sync-digest` | Same fan-out, but verify per tenant under the DB-backed suite; thread `org_id` through any enqueue→process payloads.                                |
+| **KEEP GLOBAL** — sweeps a **global** table (no `org_id`); must stay single-client (do _not_ fan out)                                                                                                           | `idempotency-keys-prune`, `webhook-dispatcher`, `pecos-sync`, `metrics-snapshot`, `metric-alerts-evaluator`, `metric-alerts-notify`, `therapy-fleet-daily-snapshot`, `owner-digest`, `failed-order-emails-digest`, `invite-password-expiry-notify`                                                                                                                                                                                                                                                                                                                                                                                          | Leave as-is; add a one-line "global sweep — single client by design" comment. Several become FAN-OUT only **after** G12 scopes their rollup tables. |
 
 ### G3. `app_config` is still a global singleton — **blocker for credentials**
 
@@ -194,10 +196,11 @@ SUITE-GATED.
 (`lib/app-config/{store,catalog}.ts`) treats it as a **single global row
 per key** and folds values into `process.env` at boot. So every tenant
 shares one `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `AIRVIEW_CLIENT_ID`,
-assistant names, etc. (Assistant *names* are per-tenant only by accident
+assistant names, etc. (Assistant _names_ are per-tenant only by accident
 of the seed having a row.)
 
 **Work:**
+
 1. Re-key `app_config` to `(org_id, key)` like feature flags (`0350` is the
    template), with seed-org fallback for unset (org, key) rows.
 2. Split the catalog into **platform-global** keys (infra: Supabase, link
@@ -218,6 +221,7 @@ operation; there is no UI to manage tenants, see platform-wide usage, or
 impersonate for support.
 
 **Work:**
+
 1. Add a `platform_admin` (super-admin) capability — either a new role on
    `auth.users` or a separate `platform_admins` table — explicitly **not**
    scoped to one org.
@@ -250,7 +254,7 @@ Seed catalog/products become per-tenant.
 
 The **"one From address" hard rule** (`info@pennpaps.com`, enforced in
 `createSendgridClient()` + `preflight:prod`) must become **one From address
-*per tenant***. This is a deliberate, documented relaxation of a current
+_per tenant_**. This is a deliberate, documented relaxation of a current
 hard rule — CLAUDE.md and the preflight check must be updated in lockstep.
 
 **Work:** add `from_email` / `from_name` (+ sending-domain/subuser state) to
@@ -304,7 +308,7 @@ Respect the **hard rule**: re-point only the **raw** `--background` /
 ## Phase 0 commercial — usage metering
 
 - **G12. Per-org usage metering.** The strategy doc calls for building
-  `org_id`-scoped usage metering *in Phase 0 so billing isn't retrofitted*
+  `org_id`-scoped usage metering _in Phase 0 so billing isn't retrofitted_
   — this was **not** built. Add a metering table (active patients / messages
   / orders per org per period) and a rollup the platform console reads.
   Needed before per-active-patient pricing.
@@ -316,28 +320,28 @@ Respect the **hard rule**: re-point only the **raw** `--background` /
   `ehr_fhir_tenants` machinery (no merge).
 - **G15.** Optional shared SSO.
 
-## Compliance / business (parallel, gates *signing* tenants)
+## Compliance / business (parallel, gates _signing_ tenants)
 
 - **G16.** You become a **Business Associate** to every tenant. The in-app
   HIPAA machinery was deliberately retired; hosting other companies' PHI
   brings it back as a **business/legal** workstream: a **BAA per tenant** and
   realistically **SOC 2**. The RLS backstop (`0348`) is already the evidence
-  artifact reviewers expect. This gates *signing*, not *code*.
+  artifact reviewers expect. This gates _signing_, not _code_.
 
 ---
 
 ## Suggested sequencing
 
-| Order | Item | Why first |
-| ----- | ---- | --------- |
-| 0 | **G0** `org_id` coverage audit | Cheap, and it confirms the isolation guarantee has no missing-column holes before tenant #2. |
-| 1 | **G1** storefront/customer host→org + **G2** worker fan-out | Without these a 2nd tenant cannot transact or be served at all. Highest blast radius. |
-| 2 | **G3** per-tenant `app_config` | Unblocks per-tenant credentials that G5–G8 depend on. |
-| 3 | **G4** platform super-admin console + impersonation | Operate/support tenants without SQL. |
-| 4 | **G5–G8** Stripe Connect, email, telecom, payer creds | Per-tenant money/comms identity. Can parallelize across the four. |
-| 5 | **G12** usage metering, **G10** subdomains, **G9** admin theme | Commercial + polish. |
-| 6 | **G16** BAA/SOC 2 (start in parallel — long lead) | Gates signing, not shipping. |
-| 7 | **G13–G15** CareMetric cross-linking | Loosely coupled; do when EMR integration is prioritized. |
+| Order | Item                                                           | Why first                                                                                    |
+| ----- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 0     | **G0** `org_id` coverage audit                                 | Cheap, and it confirms the isolation guarantee has no missing-column holes before tenant #2. |
+| 1     | **G1** storefront/customer host→org + **G2** worker fan-out    | Without these a 2nd tenant cannot transact or be served at all. Highest blast radius.        |
+| 2     | **G3** per-tenant `app_config`                                 | Unblocks per-tenant credentials that G5–G8 depend on.                                        |
+| 3     | **G4** platform super-admin console + impersonation            | Operate/support tenants without SQL.                                                         |
+| 4     | **G5–G8** Stripe Connect, email, telecom, payer creds          | Per-tenant money/comms identity. Can parallelize across the four.                            |
+| 5     | **G12** usage metering, **G10** subdomains, **G9** admin theme | Commercial + polish.                                                                         |
+| 6     | **G16** BAA/SOC 2 (start in parallel — long lead)              | Gates signing, not shipping.                                                                 |
+| 7     | **G13–G15** CareMetric cross-linking                           | Loosely coupled; do when EMR integration is prioritized.                                     |
 
 Items 1–4 are the real "make it multitenant" tail; everything Phase 0
 guaranteed (isolation safety) is already in place, so each of these is an

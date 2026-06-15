@@ -11,7 +11,7 @@ import { FALLBACK_COMPANY, type CompanyProfile } from "./templates";
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 
 export async function resolveCompanyProfile(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
 ): Promise<CompanyProfile> {
   try {
     const identity = await resolveBillingIdentity({});

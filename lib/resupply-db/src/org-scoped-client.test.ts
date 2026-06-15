@@ -175,10 +175,10 @@ describe("getOrgScopedClient", () => {
 
 // A minimal directory-read fake: `.schema().from().select().eq()` resolves
 // to the staged `{ data, error }` envelope (PostgREST select-many shape).
-function makeDirectoryClient(result: {
-  data?: unknown;
-  error?: unknown;
-}): { client: ResupplySupabaseClient; lastEq?: { column: string; value: unknown } } {
+function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
+  client: ResupplySupabaseClient;
+  lastEq?: { column: string; value: unknown };
+} {
   const state: { lastEq?: { column: string; value: unknown } } = {};
   const builder = {
     select() {
@@ -194,7 +194,12 @@ function makeDirectoryClient(result: {
       return { from: () => builder };
     },
   } as unknown as ResupplySupabaseClient;
-  return { client, get lastEq() { return state.lastEq; } };
+  return {
+    client,
+    get lastEq() {
+      return state.lastEq;
+    },
+  };
 }
 
 describe("listActiveOrgIds", () => {

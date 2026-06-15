@@ -28,7 +28,6 @@ import {
   createTelnyxFaxClient,
   TelnyxApiError,
 } from "@workspace/resupply-telecom";
-import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render";
 import { signPaRequestFaxToken } from "../../lib/fax-document-token";
@@ -60,8 +59,6 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-
     const result = await buildPaRequestPdf(orgId, patientId, paId);
     if (!result) {
       res.status(404).json({ error: "prior_auth_not_found" });
@@ -136,8 +133,6 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
-
     // Render once now so we (a) confirm the PA exists/belongs to the
     // patient and (b) resolve the payer's default fax number. The bytes
     // are discarded — Telnyx re-fetches via the signed URL — but rendering
