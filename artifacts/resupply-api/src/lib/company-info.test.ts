@@ -10,7 +10,7 @@
 //   5. applyCompanyIdentityToText rewrites the historical hardcoded
 //      strings only once the DB row exists.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import {
   installSupabaseMock,
@@ -19,14 +19,26 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// Mock the per-tenant app_config reader so the org-aware branding helpers
+// can be driven deterministically (the real reader does two concurrent
+// app_config lookups whose mock-queue order isn't guaranteed).
+const getTenantConfigValueMock = vi.hoisted(() =>
+  vi.fn(async (_orgId: string, _key: string): Promise<string | null> => null),
+);
+vi.mock("./app-config/store.js", () => ({
+  getTenantConfigValue: getTenantConfigValueMock,
+}));
+
 import {
   __resetCompanyInfoForTests,
   applyCompanyIdentityToText,
   applyCompanyInfoToEnv,
   applyPlatformBranding,
+  applyPlatformBrandingForOrg,
   formatPhoneForDisplay,
   getCompanyInfo,
   PLATFORM_NAME,
+  resolveAssistantNamesForOrg,
 } from "./company-info";
 
 const ORG_ROW = {
@@ -53,6 +65,8 @@ const ORG_ROW = {
 beforeEach(() => {
   supabaseMock.reset();
   __resetCompanyInfoForTests();
+  getTenantConfigValueMock.mockReset();
+  getTenantConfigValueMock.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -101,6 +115,72 @@ describe("assistant names + platform branding", () => {
     // PennBot / PennPilot are unchanged (the tenant's configured names);
     // only the platform codename resolves to CareMetric Breathe.
     expect(out).toBe(`Ask PennBot or PennPilot about ${PLATFORM_NAME}.`);
+  });
+});
+
+describe("per-tenant assistant branding (G3)", () => {
+  it("resolveAssistantNamesForOrg defaults to the platform names when the tenant has no rows", async () => {
+    getTenantConfigValueMock.mockResolvedValue(null);
+    const names = await resolveAssistantNamesForOrg("org-acme");
+    expect(names).toEqual({
+      assistantStorefrontName: "CareMetric Assistant",
+      assistantAdminName: "CareMetric Copilot",
+    });
+  });
+
+  it("resolveAssistantNamesForOrg reads the tenant's configured names", async () => {
+    getTenantConfigValueMock.mockImplementation(async (_orgId, key) =>
+      key === "RESUPPLY_ASSISTANT_STOREFRONT_NAME"
+        ? "Acme Assistant"
+        : key === "RESUPPLY_ASSISTANT_ADMIN_NAME"
+          ? "Acme Copilot"
+          : null,
+    );
+    const names = await resolveAssistantNamesForOrg("org-acme");
+    expect(names).toEqual({
+      assistantStorefrontName: "Acme Assistant",
+      assistantAdminName: "Acme Copilot",
+    });
+    // It reads the two tenant-scoped catalog keys for THIS org.
+    expect(getTenantConfigValueMock).toHaveBeenCalledWith(
+      "org-acme",
+      "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
+    );
+    expect(getTenantConfigValueMock).toHaveBeenCalledWith(
+      "org-acme",
+      "RESUPPLY_ASSISTANT_ADMIN_NAME",
+    );
+  });
+
+  it("applyPlatformBrandingForOrg maps the Penn* tokens to the tenant's configured names", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo(); // warm the sync company-info cache
+    getTenantConfigValueMock.mockImplementation(async (_orgId, key) =>
+      key === "RESUPPLY_ASSISTANT_STOREFRONT_NAME"
+        ? "Acme Assistant"
+        : key === "RESUPPLY_ASSISTANT_ADMIN_NAME"
+          ? "Acme Copilot"
+          : null,
+    );
+    const out = await applyPlatformBrandingForOrg(
+      "PennFit ships PennBot on the storefront and PennPilot in the console.",
+      "org-acme",
+    );
+    expect(out).toBe(
+      `${PLATFORM_NAME} ships Acme Assistant on the storefront and Acme Copilot in the console.`,
+    );
+  });
+
+  it("applyPlatformBrandingForOrg degrades to the seed/default branding when orgId is absent", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: null });
+    await getCompanyInfo();
+    const out = await applyPlatformBrandingForOrg(
+      "Ask PennBot about PennFit.",
+      undefined,
+    );
+    // No orgId → synchronous seed-scoped branding (CareMetric defaults).
+    expect(out).toBe(`Ask CareMetric Assistant about ${PLATFORM_NAME}.`);
+    expect(getTenantConfigValueMock).not.toHaveBeenCalled();
   });
 });
 

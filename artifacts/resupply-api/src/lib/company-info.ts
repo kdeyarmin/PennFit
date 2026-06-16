@@ -23,6 +23,7 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+import { getTenantConfigValue } from "./app-config/store.js";
 
 /**
  * The platform/parent-company brand. PennFit is the codename of this
@@ -378,6 +379,51 @@ export function applyPlatformBranding(
   if (info.assistantAdminName && info.assistantAdminName !== "PennPilot")
     out = out.split("PennPilot").join(info.assistantAdminName);
   return out;
+}
+
+/**
+ * Resolve the two assistant display names for a SPECIFIC tenant. The
+ * per-tenant counterpart of `resolveAssistantNames()` (which reads the seed
+ * value folded into `process.env` at boot): this reads the tenant-scoped
+ * `RESUPPLY_ASSISTANT_*` app_config keys via `getTenantConfigValue`, which
+ * falls back to the seed org's value (the platform default) when the tenant
+ * has no row, then to the CareMetric defaults when neither is set.
+ *
+ * Fail-soft: `getTenantConfigValue` never throws, so a flaky lookup degrades
+ * to the platform defaults. Single-tenant: the seed org's row is the only
+ * one, so this returns exactly what `resolveAssistantNames()` does.
+ */
+export async function resolveAssistantNamesForOrg(orgId: string): Promise<{
+  assistantStorefrontName: string;
+  assistantAdminName: string;
+}> {
+  const [storefront, admin] = await Promise.all([
+    getTenantConfigValue(orgId, "RESUPPLY_ASSISTANT_STOREFRONT_NAME"),
+    getTenantConfigValue(orgId, "RESUPPLY_ASSISTANT_ADMIN_NAME"),
+  ]);
+  return {
+    assistantStorefrontName:
+      trimmed(storefront) || DEFAULT_STOREFRONT_ASSISTANT_NAME,
+    assistantAdminName: trimmed(admin) || DEFAULT_ADMIN_ASSISTANT_NAME,
+  };
+}
+
+/**
+ * `applyPlatformBranding`, but resolving the assistant names for a SPECIFIC
+ * tenant rather than the process-global (seed) names. Use this on
+ * per-request surfaces that know their `orgId` (storefront chatbot, admin
+ * assistant) so a second tenant's configured assistant names appear in
+ * machine-generated text. When `orgId` is absent it degrades to the
+ * synchronous, seed-scoped `applyPlatformBranding` — so single-tenant and
+ * host-unresolved requests are unchanged.
+ */
+export async function applyPlatformBrandingForOrg(
+  text: string,
+  orgId: string | null | undefined,
+): Promise<string> {
+  if (!text || !orgId) return applyPlatformBranding(text);
+  const names = await resolveAssistantNamesForOrg(orgId);
+  return applyPlatformBranding(text, { ...getCompanyInfoSync(), ...names });
 }
 
 // What SENDGRID_FROM_NAME / RESUPPLY_PRACTICE_NAME looked like before
