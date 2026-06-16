@@ -89,6 +89,16 @@ describe("stripeAccountRequestOptions", () => {
     state.responses = [{ data: { stripe_account_id: null }, error: null }];
     expect(await stripeAccountRequestOptions(ORG)).toEqual({});
   });
+
+  it("yields {} for an undefined orgId without querying", async () => {
+    expect(await stripeAccountRequestOptions(undefined)).toEqual({});
+    expect(state.calls).toHaveLength(0);
+  });
+
+  it("yields {} for a blank / whitespace orgId without querying", async () => {
+    expect(await stripeAccountRequestOptions("   ")).toEqual({});
+    expect(state.calls).toHaveLength(0);
+  });
 });
 
 describe("resolveOrgIdByConnectedAccount", () => {

@@ -42,7 +42,6 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
-import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
@@ -140,11 +139,6 @@ router.post(
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
-      return;
-    }
     const customerId: string = req.userCustomerId;
 
     // Resolve email + display name for Stripe Customer creation.
@@ -177,6 +171,11 @@ router.post(
         return;
       }
 
+      const orgId = req.orgId;
+      if (!orgId) {
+        res.status(500).json({ error: "tenant_context_missing" });
+        return;
+      }
       const supabase = getOrgScopedClient(orgId);
       const { data: owned, error: ownedErr } = await supabase
         .from("shop_orders")
@@ -335,10 +334,6 @@ router.post(
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
 
-    // Stripe Connect (G5): route to the tenant's connected account when it
-    // has one; NULL account → `{}` → platform account (unchanged).
-    const connectOptions = await stripeAccountRequestOptions(orgId);
-
     // Stripe permits mixed recurring + one-time line items in
     // subscription mode (the one-time SKU is charged on the first
     // invoice and not renewed). Reorder baskets are always one-time
@@ -403,7 +398,7 @@ router.post(
               },
             },
           },
-          { idempotencyKey, ...connectOptions },
+          { idempotencyKey },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -421,7 +416,7 @@ router.post(
               setup_future_usage: "off_session",
             },
           },
-          { idempotencyKey, ...connectOptions },
+          { idempotencyKey },
         );
       }
     } catch (err) {
@@ -454,6 +449,11 @@ router.post(
     // customer_id is still unset OR already equals this caller —
     // i.e. either we're claiming an unowned row OR we're idempotently
     // re-stamping our own.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const { error: insertErr } = await supabase.from("shop_orders").upsert(

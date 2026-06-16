@@ -116,7 +116,11 @@ export async function getConnectedAccountId(
 export async function stripeAccountRequestOptions(
   orgId: string | undefined,
 ): Promise<Stripe.RequestOptions> {
-  if (!orgId) return {};
+  // Treat a blank / whitespace-only orgId the same as missing tenant
+  // context (org ids are non-empty after trimming, per getOrgScopedClient)
+  // so we skip a pointless directory lookup and don't cache under an
+  // invalid key.
+  if (!orgId || !orgId.trim()) return {};
   const accountId = await getConnectedAccountId(orgId);
   return accountId ? { stripeAccount: accountId } : {};
 }
