@@ -5,7 +5,7 @@
 // the called number belongs to. The platform `TWILIO_ACCOUNT_SID` /
 // `TWILIO_AUTH_TOKEN` stay the API credential; the per-tenant
 // `organizations.sms_from_number` / `voice_from_number` /
-// `twilio_messaging_service_sid` (migration 0362) select the sender.
+// `twilio_messaging_service_sid` (migration 0364) select the sender.
 //
 // Two directions:
 //   * OUTBOUND — `resolveTenantSmsFrom(orgId)` / `resolveTenantVoiceFrom(orgId)`
@@ -139,8 +139,9 @@ async function loadTelecomRow(orgId: string): Promise<TelecomRow> {
 export async function resolveTenantSmsFrom(
   orgId: string | undefined,
 ): Promise<TenantSmsFrom> {
-  if (!orgId || !orgId.trim()) return {};
-  const row = await loadTelecomRow(orgId);
+  const tenantOrgId = orgId?.trim();
+  if (!tenantOrgId) return {};
+  const row = await loadTelecomRow(tenantOrgId);
   const out: TenantSmsFrom = {};
   if (row.smsFromNumber) out.from = row.smsFromNumber;
   if (row.messagingServiceSid)
@@ -155,8 +156,9 @@ export async function resolveTenantSmsFrom(
 export async function resolveTenantVoiceFrom(
   orgId: string | undefined,
 ): Promise<string | null> {
-  if (!orgId || !orgId.trim()) return null;
-  const row = await loadTelecomRow(orgId);
+  const tenantOrgId = orgId?.trim();
+  if (!tenantOrgId) return null;
+  const row = await loadTelecomRow(tenantOrgId);
   return row.voiceFromNumber;
 }
 
