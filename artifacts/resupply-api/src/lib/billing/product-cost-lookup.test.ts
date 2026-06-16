@@ -22,6 +22,8 @@ import {
 } from "./product-cost-lookup";
 
 // product_costs is per-tenant (mig 0357); the lookup takes the caller's org.
+const ORG = "00000000-0000-4000-8000-000000000000";
+
 beforeEach(() => {
   supabaseMock.reset();
 });
