@@ -1947,8 +1947,14 @@ function MfaEnforcementBanner() {
  * Persistent banner shown across the admin console when a PLATFORM admin
  * is acting AS a tenant (G4 impersonation). It's a high-contrast warning
  * strip with a "Stop impersonating" control that revokes the act-as-tenant
- * session and returns the operator to the platform console. Rendered only
- * when `/me` reports `impersonation: true`.
+ * session. Rendered only when `/me` reports `impersonation: true`.
+ *
+ * Stop semantics (v1): starting impersonation OVERWRITES the single
+ * pf_session cookie with the act-as session (the #999 design), so a
+ * successful stop clears that cookie and signs the operator out. We send
+ * them to /admin/sign-in — re-signing in returns them to the platform
+ * console. (A future enhancement could give impersonation its own cookie
+ * so the platform session survives; tracked as a #999 follow-up.)
  */
 function ImpersonationBanner() {
   const stop = useStopImpersonation();
@@ -1961,16 +1967,21 @@ function ImpersonationBanner() {
       <span className="flex items-center gap-2">
         <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
         You are operating this tenant as a platform admin (impersonation).
+        Stopping signs you out — sign back in to return to the platform console.
+        {stop.isError ? " Couldn't stop — try again." : null}
       </span>
       <button
         type="button"
         disabled={stop.isPending}
         onClick={() => {
           stop.mutate(undefined, {
-            // Stop succeeded (or the cookie was already gone): the session
-            // was cleared server-side, so send the operator back to the
-            // platform console with a full reload to drop cached queries.
-            onSuccess: () => window.location.assign("/platform"),
+            // Navigate away ONLY on success. The stop endpoint clears the
+            // session cookie server-side and returns 200 even on the
+            // already-stopped no-op path, so a failure here means the
+            // request never landed and the operator is STILL impersonating
+            // — staying put (and surfacing the error) keeps the banner
+            // honest. On success the cookie is gone, so route to sign-in.
+            onSuccess: () => window.location.assign("/admin/sign-in"),
           });
         }}
         className="inline-flex items-center rounded-md border border-white/70 px-3 py-1 text-xs font-semibold hover:bg-white/10 disabled:opacity-60"
