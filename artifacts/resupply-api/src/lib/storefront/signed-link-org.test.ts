@@ -38,6 +38,14 @@ describe("resolveOrgIdForSignedRecord", () => {
     expect(orgId).toBe(TENANT_B);
   });
 
+  it("resolves a reminder conversation's tenant from its record's org_id", async () => {
+    stageSupabaseResponse("conversations", "select", {
+      data: { org_id: TENANT_B },
+    });
+    const orgId = await resolveOrgIdForSignedRecord("conversations", "conv-1");
+    expect(orgId).toBe(TENANT_B);
+  });
+
   it("falls back to the seed org when the record is missing", async () => {
     stageSupabaseResponse("csr_order_requests", "select", { data: null });
     const orgId = await resolveOrgIdForSignedRecord(

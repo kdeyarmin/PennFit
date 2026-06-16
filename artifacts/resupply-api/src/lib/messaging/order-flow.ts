@@ -113,12 +113,16 @@ export type PlaceOrderResult =
 
 export interface PlaceOrderInput {
   conversationId: string;
+  /** Tenant the conversation belongs to. Defaults to the seed org
+   *  (single-tenant bridge) for the SMS/voice callers that have no
+   *  request tenant; the email-link route passes the conversation's org. */
+  orgId?: string;
 }
 
 export async function placeResupplyOrderForConversation(
   input: PlaceOrderInput,
 ): Promise<PlaceOrderResult> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = input.orgId ?? (await resolveSeedOrgId());
   if (!orgId) return { status: "conversation_not_found" };
   const supabase = getOrgScopedClient(orgId);
 
@@ -705,8 +709,11 @@ async function raiseUsageReviewAlert(
  * resupply phone would still receive shop-side SMS if the storefront
  * later uses a different Messaging Service.
  */
-export async function pausePatient(patientId: string): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+export async function pausePatient(
+  patientId: string,
+  orgIdInput?: string,
+): Promise<void> {
+  const orgId = orgIdInput ?? (await resolveSeedOrgId());
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
@@ -765,8 +772,11 @@ export async function pausePatient(patientId: string): Promise<void> {
  * paused) returns cleanly so the caller can still send the canonical
  * opt-in confirmation reply.
  */
-export async function reactivatePatient(patientId: string): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+export async function reactivatePatient(
+  patientId: string,
+  orgIdInput?: string,
+): Promise<void> {
+  const orgId = orgIdInput ?? (await resolveSeedOrgId());
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
