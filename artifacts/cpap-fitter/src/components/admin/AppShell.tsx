@@ -1970,7 +1970,7 @@ function ImpersonationBanner() {
             // Stop succeeded (or the cookie was already gone): the session
             // was cleared server-side, so send the operator back to the
             // platform console with a full reload to drop cached queries.
-            onSettled: () => window.location.assign("/platform"),
+            onSuccess: () => window.location.assign("/platform"),
           });
         }}
         className="inline-flex items-center rounded-md border border-white/70 px-3 py-1 text-xs font-semibold hover:bg-white/10 disabled:opacity-60"
