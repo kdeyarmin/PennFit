@@ -2271,6 +2271,9 @@ export interface Database {
           stripe_account_id: string | null;
           from_email: string | null;
           from_name: string | null;
+          sms_from_number: string | null;
+          voice_from_number: string | null;
+          twilio_messaging_service_sid: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
