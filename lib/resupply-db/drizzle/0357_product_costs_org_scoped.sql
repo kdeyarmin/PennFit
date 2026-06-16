@@ -49,7 +49,7 @@ ALTER TABLE "resupply"."product_costs"
   ADD CONSTRAINT "product_costs_pkey" PRIMARY KEY ("org_id", "sku");
 --> statement-breakpoint
 -- Defense-in-depth RLS (mirrors 0348). product_costs already has RLS
--- ENABLED (0170); this adds the per-tenant policy keyed on the
+-- ENABLED (0193_cost_capture); this adds the per-tenant policy keyed on the
 -- app.current_org_id GUC. service_role (the runtime path) bypasses it.
 DROP POLICY IF EXISTS "org_isolation" ON "resupply"."product_costs";
 --> statement-breakpoint
