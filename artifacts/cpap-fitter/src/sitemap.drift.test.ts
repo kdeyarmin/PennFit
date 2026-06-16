@@ -41,6 +41,7 @@ const ORIGIN_URL = new URL(ORIGIN);
 // the test so the author makes a conscious indexability decision.
 const EXCLUDED_PREFIXES = [
   "/admin",
+  "/platform", // platform super-admin console (G4) — gated, never indexed
   "/provider",
   "/resupply", // legacy redirect namespace
   "/account",

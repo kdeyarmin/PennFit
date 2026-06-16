@@ -89,7 +89,10 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useDashboardIdentity } from "@/lib/admin/identity";
-import { useGetAdminMe } from "@workspace/api-client-react/admin";
+import {
+  useGetAdminMe,
+  useStopImpersonation,
+} from "@workspace/api-client-react/admin";
 import { getMfaStatus } from "@/lib/admin/mfa-api";
 
 // Client-side nav-visibility token (NOT a server permission) gating the
@@ -1940,6 +1943,44 @@ function MfaEnforcementBanner() {
   );
 }
 
+/**
+ * Persistent banner shown across the admin console when a PLATFORM admin
+ * is acting AS a tenant (G4 impersonation). It's a high-contrast warning
+ * strip with a "Stop impersonating" control that revokes the act-as-tenant
+ * session and returns the operator to the platform console. Rendered only
+ * when `/me` reports `impersonation: true`.
+ */
+function ImpersonationBanner() {
+  const stop = useStopImpersonation();
+  return (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 px-4 py-2 text-sm font-semibold text-white"
+      style={{ backgroundColor: "hsl(354 70% 42%)" }}
+    >
+      <span className="flex items-center gap-2">
+        <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+        You are operating this tenant as a platform admin (impersonation).
+      </span>
+      <button
+        type="button"
+        disabled={stop.isPending}
+        onClick={() => {
+          stop.mutate(undefined, {
+            // Stop succeeded (or the cookie was already gone): the session
+            // was cleared server-side, so send the operator back to the
+            // platform console with a full reload to drop cached queries.
+            onSettled: () => window.location.assign("/platform"),
+          });
+        }}
+        className="inline-flex items-center rounded-md border border-white/70 px-3 py-1 text-xs font-semibold hover:bg-white/10 disabled:opacity-60"
+      >
+        {stop.isPending ? "Stopping…" : "Stop impersonating"}
+      </button>
+    </div>
+  );
+}
+
 export function AppShell({
   adminEmail,
   adminRole = "admin",
@@ -2061,6 +2102,7 @@ export function AppShell({
   return (
     <RoleProvider role={adminRole}>
       <div className="admin-root min-h-screen flex flex-col">
+        {adminMe?.impersonation ? <ImpersonationBanner /> : null}
         <BrandHeader
           rightSlot={
             adminEmail ? (

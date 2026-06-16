@@ -78,6 +78,13 @@ router.get("/me", adminReadRateLimiter, requireAdmin, async (req, res) => {
     // this value.
     locationId: req.adminLocationId ?? null,
     multiLocationEnabled,
+    // Platform-admin impersonation (G4). True when this admin session is a
+    // platform super-admin acting AS a tenant; `orgId` is then the
+    // impersonated tenant. The SPA reads this to render the persistent
+    // "you are impersonating — stop" banner. NULL/false for every normal
+    // tenant-admin session.
+    impersonation: req.impersonation === true,
+    impersonatedOrgId: req.impersonation === true ? (req.orgId ?? null) : null,
   });
 });
 
