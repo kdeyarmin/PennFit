@@ -54,7 +54,12 @@ beforeEach(() => {
 
 describe("getConnectedAccountId", () => {
   it("returns the connected account id when set", async () => {
-    state.responses = [{ data: { stripe_account_id: ACCT }, error: null }];
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+    ];
     expect(await getConnectedAccountId(ORG)).toBe(ACCT);
     expect(state.calls[0]).toMatchObject({ column: "id", value: ORG });
   });
@@ -64,8 +69,23 @@ describe("getConnectedAccountId", () => {
     expect(await getConnectedAccountId(ORG)).toBeNull();
   });
 
+  it("returns null when the account exists but charges aren't enabled yet (G5 onboarding gate)", async () => {
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: false },
+        error: null,
+      },
+    ];
+    expect(await getConnectedAccountId(ORG)).toBeNull();
+  });
+
   it("caches the result (no second query within the TTL)", async () => {
-    state.responses = [{ data: { stripe_account_id: ACCT }, error: null }];
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+    ];
     await getConnectedAccountId(ORG);
     await getConnectedAccountId(ORG);
     expect(state.calls).toHaveLength(1);
@@ -79,7 +99,12 @@ describe("getConnectedAccountId", () => {
 
 describe("stripeAccountRequestOptions", () => {
   it("yields { stripeAccount } for a connected tenant", async () => {
-    state.responses = [{ data: { stripe_account_id: ACCT }, error: null }];
+    state.responses = [
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+    ];
     expect(await stripeAccountRequestOptions(ORG)).toEqual({
       stripeAccount: ACCT,
     });
@@ -120,8 +145,14 @@ describe("resolveOrgIdByConnectedAccount", () => {
 describe("invalidateStripeConnectCache", () => {
   it("forces a re-query after invalidation", async () => {
     state.responses = [
-      { data: { stripe_account_id: ACCT }, error: null },
-      { data: { stripe_account_id: ACCT }, error: null },
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
+      {
+        data: { stripe_account_id: ACCT, stripe_charges_enabled: true },
+        error: null,
+      },
     ];
     await getConnectedAccountId(ORG);
     invalidateStripeConnectCache();

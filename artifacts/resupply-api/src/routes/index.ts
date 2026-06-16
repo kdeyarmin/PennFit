@@ -174,6 +174,7 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import stripeConnectRouter from "./admin/stripe-connect.js";
 import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
@@ -577,6 +578,7 @@ router.use(priorAuthRequestFormRouter);
 router.use(billingBenchmarksRouter);
 // /admin/billing/batch-submit-office-ally — multi-claim 837P batch.
 router.use(billingBatchSubmitRouter);
+router.use(stripeConnectRouter);
 // /admin/billing/auto-submit/* — staged-approval auto-submission: the
 // "ready to transmit" worklist (preflight-clean + active eligibility),
 // automation status, and the operator approve-and-submit action.
