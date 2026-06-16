@@ -3,7 +3,7 @@
 // The gate is mocked (its own behavior is covered by
 // requirePlatformAdmin-in-house.test.ts); this asserts the handler echoes
 // the resolved platform admin's identity on success and that the gate's
-// 401/403 pass through.
+// 401 pass through.
 
 import express, { type Express } from "express";
 import request from "supertest";
