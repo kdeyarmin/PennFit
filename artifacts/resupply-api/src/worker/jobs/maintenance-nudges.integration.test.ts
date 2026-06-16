@@ -111,10 +111,12 @@ describeIfDb("maintenance-nudges fan-out (live db)", () => {
     );
     // One completion of a DAILY task, 5 days ago → overdue today. This makes
     // the patient "engaged" (has a completion) AND nudge-worthy (overdue).
+    // `source` must satisfy patient_maintenance_log_source_enum (mig 0088):
+    // one of patient_portal | csr_proxy | system.
     await pool.query(
       `INSERT INTO resupply.patient_maintenance_log
          (org_id, patient_id, task_key, completed_at, source)
-       VALUES ($1, $2, $3, $4, 'test')`,
+       VALUES ($1, $2, $3, $4, 'patient_portal')`,
       [
         orgId,
         patientId,
