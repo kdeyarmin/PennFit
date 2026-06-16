@@ -49,10 +49,10 @@ import type PgBoss from "pg-boss";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { sendDeliveryFollowupEmail } from "../../lib/order-emails/send-delivery-followup-email";
 import { sendCaregiverNotificationEmail } from "../../lib/order-emails/send-caregiver-notification-email";
 import { sendPushToCustomer } from "../../lib/web-push";
@@ -151,21 +151,40 @@ async function resolveRecipient(
 }
 
 /**
- * Exported for testability. Pure DB + send work, no clock dependency
- * other than `now` parameter for the window.
+ * Exported for testability. Fans out across every ACTIVE tenant —
+ * `shop_orders` / `shop_customers` are org-scoped, so each tenant is
+ * swept on its own org-scoped client and a follow-up only ever reaches a
+ * shopper in that order's own org. Per-tenant failure isolation keeps one
+ * tenant's bad row from aborting the rest; the accumulated stats are
+ * summed across tenants. Single-tenant: `listActiveOrgIds()` returns just
+ * the seed org, so this is exactly the prior one-tenant sweep.
  */
 export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return { considered: 0, sent: 0, skipped: 0, failed: 0 };
-  }
-  const supabase = getOrgScopedClient(orgId);
   const stats: FollowupSweepStats = {
     considered: 0,
     sent: 0,
     skipped: 0,
     failed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await deliveryFollowupSweepForOrg(orgId, stats);
+    },
+    { jobName: FOLLOWUP_JOB },
+  );
+  return stats;
+}
+
+/**
+ * Run the delivery follow-up sweep for a SINGLE tenant, accumulating into
+ * the shared `stats`. The atomic claim and the 500-row cap both apply per
+ * tenant.
+ */
+async function deliveryFollowupSweepForOrg(
+  orgId: string,
+  stats: FollowupSweepStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const upper = isoDaysAgo(MIN_DAYS_SINCE_DELIVERY);
   const lower = isoDaysAgo(MAX_DAYS_SINCE_DELIVERY);
@@ -182,7 +201,7 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
     .limit(500);
   if (error) throw error;
 
-  stats.considered = (candidates ?? []).length;
+  stats.considered += (candidates ?? []).length;
 
   for (const candidate of candidates ?? []) {
     // 1. Atomic claim — wins iff still null. Concurrent runs lose.
@@ -376,8 +395,6 @@ export async function runDeliveryFollowupSweep(): Promise<FollowupSweepStats> {
       }
     }
   }
-
-  return stats;
 }
 
 export async function registerShopOrderDeliveryFollowupJob(

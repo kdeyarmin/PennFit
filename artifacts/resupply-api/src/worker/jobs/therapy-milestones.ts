@@ -45,12 +45,12 @@ import type PgBoss from "pg-boss";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -222,9 +222,28 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
     sendSkipped: 0,
     sendFailed: 0,
   };
-  // Single-tenant bridge: resolve the seed org for this system cron.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
+  await forEachActiveOrg(
+    async (orgId) => {
+      await therapyMilestonesSweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the milestone evaluate + send phases for a SINGLE tenant,
+ * accumulating into the shared `stats`. `patient_therapy_nights`,
+ * `patient_milestones`, and `patients` are org-scoped, so each tenant is
+ * swept on its own org-scoped client and a celebration only ever reaches a
+ * patient in their own org. Per-tenant failure isolation keeps one tenant's
+ * error from aborting the rest. Single-tenant: `listActiveOrgIds()` returns
+ * just the seed org, so this is exactly the prior one-tenant sweep.
+ */
+async function therapyMilestonesSweepForOrg(
+  orgId: string,
+  stats: MilestoneStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   // ── EVALUATE ────────────────────────────────────────────────────
@@ -264,7 +283,7 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
   }
 
   const uniquePatientIds = Array.from(patientIdSet);
-  stats.patientsScanned = uniquePatientIds.length;
+  stats.patientsScanned += uniquePatientIds.length;
 
   // Batch the existing-milestone lookup instead of one query per patient.
   // The prior per-patient `.eq("patient_id", …)` read was an N+1 that grew
@@ -632,8 +651,6 @@ export async function runTherapyMilestones(): Promise<MilestoneStats> {
       );
     }
   }
-
-  return stats;
 }
 
 export async function registerTherapyMilestonesJob(
