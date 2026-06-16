@@ -21,13 +21,16 @@ import {
   type CostSnapshotTarget,
 } from "./product-cost-lookup";
 
+// product_costs is per-tenant (mig 0356); the lookup takes the caller's org.
+const ORG = "00000000-0000-4000-8000-000000000000";
+
 beforeEach(() => {
   supabaseMock.reset();
 });
 
 describe("fetchUnitCostsBySku", () => {
   it("returns an empty map and skips the DB when no usable SKUs", async () => {
-    const out = await fetchUnitCostsBySku([null, undefined, ""]);
+    const out = await fetchUnitCostsBySku([null, undefined, ""], ORG);
     expect(out.size).toBe(0);
     expect(getSupabaseCallCount("product_costs", "select")).toBe(0);
   });
@@ -39,7 +42,10 @@ describe("fetchUnitCostsBySku", () => {
         { sku: "CUSHION", unit_cost_cents: 1850, cost_source: "manual" },
       ],
     });
-    const out = await fetchUnitCostsBySku(["MASK", "MASK", "CUSHION", null]);
+    const out = await fetchUnitCostsBySku(
+      ["MASK", "MASK", "CUSHION", null],
+      ORG,
+    );
     expect(getSupabaseCallCount("product_costs", "select")).toBe(1);
     expect(out.get("MASK")).toEqual({
       unitCostCents: 4200,
@@ -56,7 +62,7 @@ describe("fetchUnitCostsBySku", () => {
     stageSupabaseResponse("product_costs", "select", {
       data: [{ sku: "MASK", unit_cost_cents: 4200, cost_source: "invoice" }],
     });
-    const out = await fetchUnitCostsBySku(["MASK", "TUBING"]);
+    const out = await fetchUnitCostsBySku(["MASK", "TUBING"], ORG);
     expect(out.has("MASK")).toBe(true);
     expect(out.has("TUBING")).toBe(false);
   });
@@ -68,7 +74,7 @@ describe("fetchUnitCostsBySku", () => {
         { sku: "CUSHION", unit_cost_cents: 1850, cost_source: "manual" },
       ],
     });
-    const out = await fetchUnitCostsBySku(["MASK", "CUSHION"]);
+    const out = await fetchUnitCostsBySku(["MASK", "CUSHION"], ORG);
     expect(out.has("MASK")).toBe(false);
     expect(out.get("CUSHION")?.unitCostCents).toBe(1850);
   });
@@ -77,7 +83,7 @@ describe("fetchUnitCostsBySku", () => {
     stageSupabaseResponse("product_costs", "select", {
       data: [{ sku: "MASK", unit_cost_cents: 4200, cost_source: null }],
     });
-    const out = await fetchUnitCostsBySku(["MASK"]);
+    const out = await fetchUnitCostsBySku(["MASK"], ORG);
     expect(out.get("MASK")).toEqual({
       unitCostCents: 4200,
       costSource: "manual",
@@ -89,7 +95,7 @@ describe("fetchUnitCostsBySku", () => {
       error: { message: "boom" },
     });
     const warn = vi.fn();
-    const out = await fetchUnitCostsBySku(["MASK"], { warn });
+    const out = await fetchUnitCostsBySku(["MASK"], ORG, { warn });
     expect(out.size).toBe(0);
     expect(warn).toHaveBeenCalledTimes(1);
   });
@@ -99,7 +105,7 @@ describe("fetchUnitCostsBySku", () => {
       throws: new Error("network down"),
     });
     const warn = vi.fn();
-    const out = await fetchUnitCostsBySku(["MASK"], { warn });
+    const out = await fetchUnitCostsBySku(["MASK"], ORG, { warn });
     expect(out.size).toBe(0);
     expect(warn).toHaveBeenCalledTimes(1);
   });

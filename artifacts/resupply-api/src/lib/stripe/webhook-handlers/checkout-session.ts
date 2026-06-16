@@ -355,13 +355,8 @@ export async function upsertOrderItemsFromSession(
     return emailItems;
   }
 
-  // Stamp the per-unit COGS snapshot (migration 0193) so a later cost
-  // change never rewrites this order's margin. Fail-soft:
-  // fetchUnitCostsBySku returns an empty map on any error, leaving cost
-  // null ("unknown") — it must never block the order-items write.
-  const costBySku = await fetchUnitCostsBySku(rowSkus, log);
-  stampUnitCostSnapshots(rows, rowSkus, costBySku, paidAtIso);
-
+  // Resolve the tenant first: both the COGS snapshot lookup (product_costs
+  // is per-tenant since 0357) and the order-items mirror below scope to it.
   const orgId = await resolveSeedOrgId();
   if (!orgId) {
     // Tenant context missing — the parent order is already paid; skip
@@ -374,6 +369,14 @@ export async function upsertOrderItemsFromSession(
     );
     return emailItems;
   }
+
+  // Stamp the per-unit COGS snapshot (migration 0193) so a later cost
+  // change never rewrites this order's margin. Fail-soft:
+  // fetchUnitCostsBySku returns an empty map on any error, leaving cost
+  // null ("unknown") — it must never block the order-items write.
+  const costBySku = await fetchUnitCostsBySku(rowSkus, orgId, log);
+  stampUnitCostSnapshots(rows, rowSkus, costBySku, paidAtIso);
+
   const supabase = getOrgScopedClient(orgId);
   // ON CONFLICT DO NOTHING for the (stripe_session_id, product_id,
   // price_id) UNIQUE — supabase-js exposes this as upsert with
