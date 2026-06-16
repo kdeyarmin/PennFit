@@ -1,4 +1,4 @@
--- 0357_platform_billing_packages — CareMetric Breathe package catalog,
+-- 0362_platform_billing_packages — CareMetric Breathe package catalog,
 -- tenant billing assignments, and tenant usage tracking.
 --
 -- ADDITIVE / idempotent. These tables are global platform-operator data:
@@ -180,7 +180,7 @@ ON CONFLICT ("code") DO UPDATE SET
 --> statement-breakpoint
 
 INSERT INTO "resupply"."tenant_billing_subscriptions" ("org_id", "plan_id", "status", "notes", "updated_by_email")
-SELECT o."id", p."id", 'active', 'Seeded default package assignment', 'migration:0357'
+SELECT o."id", p."id", 'active', 'Seeded default package assignment', 'migration:0362'
 FROM "resupply"."organizations" o
 JOIN "resupply"."billing_plans" p ON p."code" = 'launch'
 WHERE NOT EXISTS (
