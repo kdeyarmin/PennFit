@@ -147,3 +147,7 @@ overrides:
   # prototype pollution (patch bypass for null-prototype objects). Pin the
   # @sendgrid/client transitive to the patched version.
   "axios@<1.16.1": ^1.16.1
+  # @babel/core <=7.29.0 is vulnerable to arbitrary file read via
+  # sourceMappingURL comment (GHSA). Pin the eslint-plugin-react-hooks
+  # transitive to the patched version.
+  "@babel/core@<7.29.6": ^7.29.6
