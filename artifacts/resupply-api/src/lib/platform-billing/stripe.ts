@@ -446,11 +446,12 @@ export async function handlePlatformTenantStripeEvent(
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
-  const subRef = invoice.parent?.subscription_details?.subscription;
+  const legacySub = (invoice as any).subscription;
+  const subRef = invoice.parent?.subscription_details?.subscription ?? legacySub;
   const subscriptionId =
     typeof subRef === "string" ? subRef : (subRef?.id ?? null);
   if (!subscriptionId) return false;
-  await raw
+  const { error } = await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
     .update({
@@ -459,6 +460,16 @@ export async function handlePlatformTenantStripeEvent(
       stripe_last_synced_at: new Date().toISOString(),
     })
     .eq("stripe_subscription_id", subscriptionId);
+  if (error) {
+    logger.error(
+      {
+        event: "platform_billing_stripe_invoice_webhook_update_failed",
+        err: error,
+        stripeSubscriptionId: subscriptionId,
+      },
+      "platform billing Stripe invoice webhook update failed",
+    );
+  }
   logger.info(
     {
       event: "platform_billing_stripe_invoice_synced",
