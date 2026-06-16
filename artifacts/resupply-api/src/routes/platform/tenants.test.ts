@@ -241,3 +241,105 @@ describe("GET /platform/tenants/:id/usage", () => {
     });
   });
 });
+
+describe("POST /platform/tenants (create)", () => {
+  it("401s when the caller is not a platform admin", async () => {
+    const res = await request(makeApp())
+      .post("/platform/tenants")
+      .send({ slug: "acme-dme", name: "Acme DME" });
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on an invalid slug", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp())
+      .post("/platform/tenants")
+      .send({ slug: "Not A Slug", name: "Acme DME" });
+    expect(res.status).toBe(400);
+  });
+
+  it("creates the org shell and provisions feature flags (201)", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "insert", {
+      data: {
+        id: TENANT_ID,
+        slug: "acme-dme",
+        name: "Acme DME",
+        storefront_name: null,
+        status: "active",
+        custom_domain: null,
+        custom_domain_status: "none",
+        created_at: "2026-06-16T00:00:00Z",
+      },
+    });
+    // Feature-flag provisioning: read seed flags, then upsert into the new org.
+    stageSupabaseResponse("feature_flags", "select", {
+      data: [
+        {
+          key: "admin.assistant",
+          enabled: true,
+          description: null,
+          category: null,
+        },
+        {
+          key: "email.auto_reply",
+          enabled: false,
+          description: null,
+          category: null,
+        },
+      ],
+    });
+    stageSupabaseResponse("feature_flags", "upsert", { error: null });
+
+    const res = await request(makeApp())
+      .post("/platform/tenants")
+      .send({ slug: "acme-dme", name: "Acme DME" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.tenant).toMatchObject({
+      slug: "acme-dme",
+      status: "active",
+    });
+    expect(res.body.flagsProvisioned).toBe(2);
+    // The flags were upserted onto the NEW org id.
+    const upserts = supabaseMock.writePayloads("feature_flags", "upsert");
+    expect((upserts[0] as Array<{ org_id: string }>)[0].org_id).toBe(TENANT_ID);
+  });
+
+  it("409s when the slug already exists", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "insert", {
+      error: { code: "23505", message: "duplicate key" },
+    });
+    const res = await request(makeApp())
+      .post("/platform/tenants")
+      .send({ slug: "acme-dme", name: "Acme DME" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("slug_already_exists");
+  });
+
+  it("still 201s when feature-flag provisioning fails (best-effort)", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "insert", {
+      data: {
+        id: TENANT_ID,
+        slug: "acme-dme",
+        name: "Acme DME",
+        storefront_name: null,
+        status: "active",
+        custom_domain: null,
+        custom_domain_status: "none",
+        created_at: "2026-06-16T00:00:00Z",
+      },
+    });
+    // Seed-flag read throws → provisioning fails, but the org create stands.
+    stageSupabaseResponse("feature_flags", "select", {
+      error: { message: "boom" },
+    });
+    const res = await request(makeApp())
+      .post("/platform/tenants")
+      .send({ slug: "acme-dme", name: "Acme DME" });
+    expect(res.status).toBe(201);
+    expect(res.body.flagsProvisioned).toBe(0);
+  });
+});
