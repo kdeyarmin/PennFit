@@ -51,11 +51,16 @@ router.get(
   adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   async (req, res) => {
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const parsed = readyQuery.safeParse(req.query);
     const maxClaims = parsed.success ? parsed.data.maxClaims : undefined;
     const readiness = await selectSubmissionReadyClaims({
       maxClaims: maxClaims ?? 100,
-      orgId: req.orgId,
+      orgId,
     });
     res.json(readiness);
   },
@@ -111,6 +116,13 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
+    // Fail closed: an operator submit must run for the caller's tenant, not
+    // silently default to the seed org.
+    const orgId = req.orgId;
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
     const result = await runAutoSubmitBatch({
       approvedClaimIds: parsed.data.claimIds,
       maxClaims: parsed.data.maxClaims,
@@ -119,7 +131,7 @@ router.post(
       triggeredBy: "operator",
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-      orgId: req.orgId,
+      orgId,
     });
 
     await logAudit({
