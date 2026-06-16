@@ -70,12 +70,13 @@ describe("resolveTenantSender", () => {
     });
   });
 
-  it("omits fromName when only from_email is set", async () => {
+  it("pins an empty fromName when from_email is set without from_name (suppresses the platform display name)", async () => {
     state.responses = [
       { data: { from_email: "hi@acme.com", from_name: null }, error: null },
     ];
     expect(await resolveTenantSender(ORG)).toEqual({
       fromEmail: "hi@acme.com",
+      fromName: "",
     });
   });
 
