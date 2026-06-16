@@ -139,8 +139,9 @@ async function loadTelecomRow(orgId: string): Promise<TelecomRow> {
 export async function resolveTenantSmsFrom(
   orgId: string | undefined,
 ): Promise<TenantSmsFrom> {
-  if (!orgId || !orgId.trim()) return {};
-  const row = await loadTelecomRow(orgId);
+  const tenantOrgId = orgId?.trim();
+  if (!tenantOrgId) return {};
+  const row = await loadTelecomRow(tenantOrgId);
   const out: TenantSmsFrom = {};
   if (row.smsFromNumber) out.from = row.smsFromNumber;
   if (row.messagingServiceSid)
