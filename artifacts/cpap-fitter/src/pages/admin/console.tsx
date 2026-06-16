@@ -493,6 +493,16 @@ const AdminBillingHubPage = lazyWithRetry(() =>
     default: m.AdminBillingHubPage,
   })),
 );
+const AdminBillingPackagePage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-billing-package").then((m) => ({
+    default: m.AdminBillingPackagePage,
+  })),
+);
+const AdminPlatformBillingPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-platform-billing").then((m) => ({
+    default: m.AdminPlatformBillingPage,
+  })),
+);
 const AdminBillingAiQueuePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-ai-queue").then((m) => ({
     default: m.AdminBillingAiQueuePage,
@@ -763,6 +773,10 @@ function AdminConsole() {
               <Redirect to="/admin" replace />
             </Route>
             <Route path="/admin/billing" component={AdminBillingHubPage} />
+            <Route
+              path="/admin/billing/package"
+              component={AdminBillingPackagePage}
+            />
             <Route
               path="/admin/billing/ai-queue"
               component={AdminBillingAiQueuePage}
@@ -1149,6 +1163,10 @@ function AdminConsole() {
             <Route
               path="/admin/connection-tests"
               component={AdminConnectionTestsPage}
+            />
+            <Route
+              path="/admin/platform-billing"
+              component={AdminPlatformBillingPage}
             />
             <Route
               path="/admin/bot-playground"
