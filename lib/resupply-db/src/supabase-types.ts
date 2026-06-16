@@ -348,7 +348,7 @@ export interface Database {
       };
       // Migration 0193: current unit cost (COGS) per shop SKU. Source for
       // Atomic EDI ISA13 control-number counter (mig 0308). Per-tenant
-      // since 0359: PK (org_id, pool). Reserved via a CAS in
+      // since 0361: PK (org_id, pool). Reserved via a CAS in
       // lib/billing/isa13-counter.ts.
       control_number_counters: {
         Row: {

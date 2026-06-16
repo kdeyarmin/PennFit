@@ -564,7 +564,7 @@ export async function executeOfficeAllyBatchSubmit(
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
   // only as the per-tenant fallback; see lib/billing/isa13-counter.
-  // control_number_counters is per-tenant (mig 0359): each tenant is a
+  // control_number_counters is per-tenant (mig 0361): each tenant is a
   // distinct EDI submitter, so the ISA13 sequence is reserved against THIS
   // tenant's counter via the org-scoped client.
   const reservedIsa = await reserveIsa13Value(supabase);

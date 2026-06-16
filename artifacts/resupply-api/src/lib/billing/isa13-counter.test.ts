@@ -1,4 +1,4 @@
-// reserveIsa13Value — per-tenant atomic ISA13 reservation (mig 0359).
+// reserveIsa13Value — per-tenant atomic ISA13 reservation (mig 0361).
 //
 // Pins the CAS contract the EDI submission path relies on:
 //   * the read AND the compare-and-set update are scoped to the caller's

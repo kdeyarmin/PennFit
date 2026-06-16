@@ -1,4 +1,4 @@
--- 0359_control_number_counters_org_scoped — multi-tenant: scope the EDI
+-- 0361_control_number_counters_org_scoped — multi-tenant: scope the EDI
 -- ISA13 control-number counter per tenant.
 --
 -- WHY (EDI correctness — this is a real collision bug for tenant #2)

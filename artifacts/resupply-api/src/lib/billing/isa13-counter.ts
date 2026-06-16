@@ -14,7 +14,7 @@
 // This helper CAS-increments the TENANT'S counter row BEFORE anything is
 // built or uploaded: read the current value, UPDATE ... WHERE value =
 // <seen>; at most one concurrent caller matches, losers re-read and
-// retry. Per-tenant since migration 0359 (PK (org_id, pool)): the caller
+// retry. Per-tenant since migration 0361 (PK (org_id, pool)): the caller
 // passes its org-scoped client and the facade constrains every read/CAS to
 // that tenant's counter, so two tenants (distinct EDI submitters) never
 // draw from the same ISA13 sequence.
