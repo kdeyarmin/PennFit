@@ -46,6 +46,7 @@ import {
 
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import { requirePermission } from "../../middlewares/requireAdmin.js";
 
@@ -133,6 +134,7 @@ interface DispatchResult {
  */
 async function dispatchFax(
   supabase: OrgScopedClient,
+  orgId: string,
   outreachId: string,
   to: string,
 ): Promise<DispatchResult> {
@@ -221,6 +223,15 @@ async function dispatchFax(
     );
   }
 
+  // Telnyx accepted a fax transmission — meter one billable fax event for
+  // the tenant (G12). Fire-and-forget + fail-soft; covers both the initial
+  // dispatch and the retry route, which both run through here.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "faxEvents",
+    source: "physician_fax_outreach.dispatch",
+  });
+
   return { status: "sent", provider: "telnyx", vendorRef: result.id };
 }
 
@@ -298,7 +309,12 @@ router.post(
       throw new Error("physician_fax_outreach insert returned no rows");
     const id = inserted.id;
 
-    const dispatch = await dispatchFax(supabase, id, data.physicianFaxE164);
+    const dispatch = await dispatchFax(
+      supabase,
+      orgId,
+      id,
+      data.physicianFaxE164,
+    );
 
     await logAudit({
       action: "physician_fax_outreach.created",
@@ -415,6 +431,7 @@ router.post(
 
     const dispatch = await dispatchFax(
       supabase,
+      orgId,
       row.id,
       row.physician_fax_e164,
     );
