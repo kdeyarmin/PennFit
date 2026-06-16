@@ -141,6 +141,8 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
         revokedAt: null,
         ip: input.ip,
         userAgentHash: input.userAgentHash,
+        impersonatedOrgId: input.impersonatedOrgId ?? null,
+        impersonatorUserId: input.impersonatorUserId ?? null,
       };
       sessions.set(session.id, session);
       sessionsByHash.set(input.tokenHash.toString("hex"), session);

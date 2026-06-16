@@ -25,6 +25,10 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import {
+  adminReadRateLimiter,
+  adminWriteRateLimiter,
+} from "../../middlewares/admin-rate-limit";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import {
@@ -216,6 +220,7 @@ function requireOrgId(req: { orgId?: string }, res: Response): string | null {
 // ── GET — current brand + domain config ─────────────────────────────
 router.get(
   "/admin/storefront-branding",
+  adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -246,6 +251,7 @@ const putBody = z
 
 router.put(
   "/admin/storefront-branding",
+  adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -337,6 +343,7 @@ function sniffImage(buf: Buffer): string | null {
 
 router.post(
   "/admin/storefront-branding/logo",
+  adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -438,6 +445,7 @@ router.post(
 // ── DELETE /logo — revert to the bundled default logo ───────────────
 router.delete(
   "/admin/storefront-branding/logo",
+  adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -484,6 +492,7 @@ const domainBody = z.object({ domain: z.string().trim().max(255) }).strict();
 
 router.post(
   "/admin/storefront-branding/domain",
+  adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -560,6 +569,7 @@ router.post(
 // ── POST /domain/verify — run the DNS TXT ownership check ────────────
 router.post(
   "/admin/storefront-branding/domain/verify",
+  adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -658,6 +668,7 @@ router.post(
 // ── DELETE /domain — unbind the custom domain ───────────────────────
 router.delete(
   "/admin/storefront-branding/domain",
+  adminWriteRateLimiter,
   requirePermission("admin.tools.manage"),
   rateLimit({
     windowMs: 60 * 60 * 1000,

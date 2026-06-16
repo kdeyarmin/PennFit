@@ -373,7 +373,10 @@ export async function runSecondaryClaimPass(
   // Opt-in: auto-drafting claims is a billing action, so it stays behind
   // a flag that's seeded OFF. When disabled the biller still uses the
   // manual COB worklist (/admin/billing/secondary-eligible).
-  if (!(await isFeatureEnabled("billing.auto_secondary_claims"))) return;
+  if (
+    !(await isFeatureEnabled("billing.auto_secondary_claims", supabase.orgId))
+  )
+    return;
 
   // Paid primaries that carry a secondary coverage — the COB candidates.
   // `filterSecondaryEligible` re-checks balance/sequence and drops any

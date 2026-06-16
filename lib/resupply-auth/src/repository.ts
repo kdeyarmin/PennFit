@@ -58,6 +58,15 @@ export interface AuthSession {
   revokedAt: Date | null;
   ip: string | null;
   userAgentHash: Buffer | null;
+  /**
+   * Platform-admin impersonation (G4). When non-null, this session is a
+   * platform super-admin acting AS the tenant `impersonatedOrgId`; the
+   * admin gate binds the request to that org instead of the session
+   * owner's own tenant. NULL for every normal session.
+   */
+  impersonatedOrgId: string | null;
+  /** The platform admin's `auth.users.id` behind an impersonation session. */
+  impersonatorUserId: string | null;
 }
 
 export interface AuthEmailTokenRow {
@@ -107,6 +116,9 @@ export interface AuthRepository {
     expiresAt: Date;
     ip: string | null;
     userAgentHash: Buffer | null;
+    /** Set both to mint a platform-admin impersonation session (G4). */
+    impersonatedOrgId?: string | null;
+    impersonatorUserId?: string | null;
   }): Promise<AuthSession>;
   revokeSession(sessionId: string, at: Date): Promise<void>;
   revokeAllUserSessions(userId: string, at: Date): Promise<void>;

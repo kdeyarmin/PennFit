@@ -84,6 +84,19 @@ function makeApp(): Express {
       adminGranularRole: req.adminGranularRole,
     });
   });
+  // Separate route that surfaces the tenant + impersonation context for
+  // the G4 impersonation tests (kept off /protected so its exact-shape
+  // assertions stay intact).
+  app.get("/imp-protected", limiter, requireAdmin, (req, res) => {
+    res.json({
+      ok: true,
+      adminRole: req.adminRole,
+      adminGranularRole: req.adminGranularRole,
+      orgId: req.orgId ?? null,
+      impersonation: req.impersonation ?? false,
+      impersonatorUserId: req.impersonatorUserId ?? null,
+    });
+  });
   app.get("/admin-only", limiter, requireAdminOnly, (req, res) => {
     res.json({ ok: true, adminRole: req.adminRole });
   });
@@ -128,6 +141,8 @@ async function seedSignedInUser(
     status?: "active" | "locked" | "revoked" | "invited";
     expiresAt?: Date;
     revokedAt?: Date | null;
+    impersonatedOrgId?: string | null;
+    impersonatorUserId?: string | null;
   },
 ): Promise<{ cookie: string }> {
   // Plant the user directly via the repo's escape hatch — bypassing
@@ -166,6 +181,8 @@ async function seedSignedInUser(
     expiresAt: opts.expiresAt ?? new Date(Date.now() + 60_000),
     ip: null,
     userAgentHash: null,
+    impersonatedOrgId: opts.impersonatedOrgId ?? null,
+    impersonatorUserId: opts.impersonatorUserId ?? null,
   });
   if (opts.revokedAt) {
     await repo.revokeSession(session.id, opts.revokedAt);
@@ -500,6 +517,58 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       const res = await request(makeApp()).post("/protected");
 
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("platform-admin impersonation (G4)", () => {
+    const TARGET_ORG = "22222222-2222-4222-8222-222222222222";
+
+    it("binds the request to the impersonated org with full admin access", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      // An admin_users lookup MUST NOT happen on the impersonation path —
+      // make it throw to prove the branch returns before reaching it.
+      mockAdminUsersLookup = "throw";
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_platform",
+        email: "ops@cmbreathe.example",
+        role: "admin",
+        impersonatedOrgId: TARGET_ORG,
+        impersonatorUserId: "u_platform",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      // Bound to the TARGET org (not the impersonator's own / seed org).
+      expect(res.body.orgId).toBe(TARGET_ORG);
+      // Full tenant-admin access (DB role 'admin' → super_admin effective).
+      expect(res.body.adminRole).toBe("admin");
+      expect(res.body.adminGranularRole).toBe("admin");
+      // Flagged + attributable.
+      expect(res.body.impersonation).toBe(true);
+      expect(res.body.impersonatorUserId).toBe("u_platform");
+    });
+
+    it("normal (non-impersonation) sessions are unaffected", async () => {
+      const { deps, repo } = await buildDepsWithRepo();
+      mockDeps = deps;
+      mockAdminUsersLookup = { data: null, error: null };
+      const { cookie } = await seedSignedInUser(repo, {
+        id: "u_admin",
+        email: "csr@penn.example",
+        role: "admin",
+      });
+
+      const res = await request(makeApp())
+        .get("/imp-protected")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.impersonation).toBe(false);
+      expect(res.body.impersonatorUserId).toBeNull();
     });
   });
 });

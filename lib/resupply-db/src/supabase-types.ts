@@ -5644,6 +5644,9 @@ export interface Database {
           revoked_at: string | null;
           ip: string | null;
           user_agent_hash: string | null;
+          // Platform-admin act-as-tenant impersonation (migration 0356).
+          impersonated_org_id: string | null;
+          impersonator_user_id: string | null;
         };
         Insert: {
           id?: string;
@@ -5655,6 +5658,8 @@ export interface Database {
           revoked_at?: string | null;
           ip?: string | null;
           user_agent_hash?: string | null;
+          impersonated_org_id?: string | null;
+          impersonator_user_id?: string | null;
         };
         Update: Partial<
           Database["resupply_auth"]["Tables"]["sessions"]["Insert"]
