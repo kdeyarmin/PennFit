@@ -22,6 +22,7 @@ import {
 import {
   getAgreementStatus,
   getPendingAgreementTypes,
+  invalidatePendingAgreementsCache,
 } from "../../lib/agreements/status";
 import { logger } from "../../lib/logger";
 import {
@@ -117,6 +118,11 @@ router.post(
     }).catch((err) => {
       logger.warn({ err }, "agreements: accept audit write failed");
     });
+
+    // Clear the server-side gate cache so the just-signed agreement
+    // unblocks this tenant's admin API on the very next request (rather
+    // than after the ~10s TTL).
+    invalidatePendingAgreementsCache(orgId);
 
     const pending = await getPendingAgreementTypes(orgId);
     res.json({ ok: true, pending, allSigned: pending.length === 0 });

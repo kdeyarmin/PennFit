@@ -40,6 +40,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
+import { hasPendingAgreements } from "../lib/agreements/status";
 import { logger } from "../lib/logger";
 import { enforceCsrfForAuthedMutation } from "./csrf";
 
@@ -303,6 +304,34 @@ export async function requireAdmin(
       { event: "resupply_admin_org_resolve_failed", adminUserId: admin.userId },
       "requireAdmin: could not resolve tenant org_id (attached none)",
     );
+  }
+
+  // Onboarding agreements gate (G16). A tenant that hasn't signed the
+  // required agreements (BAA + platform terms) is blocked from the admin
+  // API itself — not just the SPA — so the compliance gate can't be
+  // bypassed by calling endpoints directly with a valid session. The
+  // endpoints needed to SEE and COMPLETE signing are allowlisted, and
+  // platform-admin act-as-tenant sessions are exempt (support staff must
+  // reach an unsigned tenant to help them). Fail-closed on a lookup error,
+  // matching the /me `pendingAgreements` posture. Skipped entirely when no
+  // org could be resolved (single-tenant boot before the seed is cached) —
+  // there's nothing to gate on.
+  if (req.orgId && req.impersonation !== true) {
+    const path = req.originalUrl.split("?")[0] ?? "";
+    const isAgreementsEndpoint = path.includes("/admin/agreements");
+    const isIdentityEndpoint = path.endsWith("/me");
+    if (
+      !isAgreementsEndpoint &&
+      !isIdentityEndpoint &&
+      (await hasPendingAgreements(req.orgId))
+    ) {
+      res.status(403).json({
+        error: "agreements_required",
+        message:
+          "Your organization must accept the required agreements before using the console.",
+      });
+      return;
+    }
   }
   next();
 }
