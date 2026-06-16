@@ -34,6 +34,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { applyPlatformBrandingForOrg } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
@@ -350,6 +351,13 @@ router.post(
     if (selection.provider === "anthropic") {
       const client = getAnthropicClient();
       if (client) {
+        // A model-backed turn — meter one AI text interaction (G12).
+        // Fire-and-forget + fail-soft: never blocks or fails the reply.
+        void recordTenantUsage({
+          orgId,
+          metricKey: "aiTextInteractionsPerMonth",
+          source: "admin.assistant",
+        });
         return streaming
           ? handleAnthropicStreaming(
               res,
@@ -386,6 +394,13 @@ router.post(
       return;
     }
 
+    // OpenAI-backed turn — meter one AI text interaction (G12), same
+    // posture as the Anthropic branch above.
+    void recordTenantUsage({
+      orgId,
+      metricKey: "aiTextInteractionsPerMonth",
+      source: "admin.assistant",
+    });
     return streaming
       ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
       : handleJson(res, initial, apiKey, toolCtx, messages.length);
