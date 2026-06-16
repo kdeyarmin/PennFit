@@ -22,6 +22,7 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { recordTenantUsage } from "../../lib/metering/usage";
 import {
   parseCallDuration,
   recordVoiceCallEvent,
@@ -162,6 +163,17 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
           "status-callback: audit failed",
         );
       }
+
+      // One completed voice call — metered by whichever path FIRST closes
+      // the conversation (this status-callback or ws-handler's
+      // finalizeConversation). The firstTerminalClose guard makes that
+      // exactly-once across both paths (G12 aiVoiceEvents). Fire-and-forget
+      // + fail-soft.
+      void recordTenantUsage({
+        orgId,
+        metricKey: "aiVoiceEvents",
+        source: "voice.call.completed",
+      });
     }
   }
 

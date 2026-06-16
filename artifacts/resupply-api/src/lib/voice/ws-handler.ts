@@ -73,6 +73,7 @@ import {
 
 import { getAnthropicClient } from "../llm-provider";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import type { PendingSessionEntry } from "./pending-sessions";
 import { routeVoiceHandoffToCsrQueue } from "./post-call-handoff";
 import {
@@ -1151,10 +1152,17 @@ async function finalizeConversation(
   reason: string,
 ): Promise<void> {
   const nowIso = new Date().toISOString();
-  const { error } = await supabase
+  // Close-winner guard. The Twilio status-callback ALSO closes this
+  // conversation and meters the call, so we only count aiVoiceEvents when
+  // THIS path actually flips open→closed (.neq + .select tells us if we
+  // won the race) — exactly one of the two paths wins per call, so the
+  // metric isn't double-counted (G12; see docs/multi-tenant-g12-...).
+  const { data: flipped, error } = await supabase
     .from("conversations")
     .update({ status: "closed", updated_at: nowIso })
-    .eq("id", conversationId);
+    .eq("id", conversationId)
+    .neq("status", "closed")
+    .select("id");
   if (error) throw error;
 
   await logAudit({
@@ -1167,6 +1175,15 @@ async function finalizeConversation(
       prompt_version: PROMPT_VERSION,
     },
   });
+
+  if (flipped && flipped.length > 0) {
+    // One completed voice call. Fire-and-forget + fail-soft.
+    void recordTenantUsage({
+      orgId: supabase.orgId,
+      metricKey: "aiVoiceEvents",
+      source: "voice.call.completed",
+    });
+  }
 }
 
 /**
