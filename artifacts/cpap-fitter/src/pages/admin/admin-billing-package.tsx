@@ -103,10 +103,10 @@ export function AdminBillingPackagePage() {
             </div>
           </div>
           <div>
-            <div className="text-slate-500">Billing period ends</div>
-            <div className="font-medium text-slate-900">
               {sub?.currentPeriodEnd
-                ? new Date(sub.currentPeriodEnd).toLocaleDateString()
+                ? new Date(sub.currentPeriodEnd).toLocaleDateString(undefined, {
+                    timeZone: "America/New_York",
+                  })
                 : "—"}
             </div>
           </div>
