@@ -21,6 +21,7 @@ export type SignedLinkTable =
   | "patient_packets"
   | "conversations"
   | "fitter_invites"
+  | "fitter_leads"
   | "shop_orders";
 
 export async function resolveOrgIdForSignedRecord(
