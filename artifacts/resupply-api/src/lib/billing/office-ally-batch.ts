@@ -202,6 +202,7 @@ async function findEligibilityBlocksForSubmit(input: {
 
   const refreshEnabled = await isFeatureEnabled(
     "billing.eligibility_precheck_refresh",
+    input.orgId,
   );
   const clearinghouse = refreshEnabled
     ? await resolveClearinghouse({ orgId: input.orgId })
@@ -324,7 +325,7 @@ export async function executeOfficeAllyBatchSubmit(
   // bill_hold flag) so a drifted cache can't let an under-documented claim
   // out the door. Feature-flagged so it can be turned off whole-cloth, and
   // inert for any claim that has no requirements tracked against it.
-  if (await isFeatureEnabled("billing.bill_hold")) {
+  if (await isFeatureEnabled("billing.bill_hold", orgId)) {
     // bill-hold reads/writes go through the same org-scoped chokepoint.
     const billHold = supabase;
     const uninitialized = await findUninitializedBillHoldClaims(
@@ -433,9 +434,10 @@ export async function executeOfficeAllyBatchSubmit(
   // fresh (real-time 270) instead of failing open — deduped per coverage
   // and capped per batch so a large batch can't fan out into a slow
   // synchronous request.
-  if (await isFeatureEnabled("billing.eligibility_precheck")) {
+  if (await isFeatureEnabled("billing.eligibility_precheck", orgId)) {
     const refreshEnabled = await isFeatureEnabled(
       "billing.eligibility_precheck_refresh",
+      orgId,
     );
     const realtimeAvailable = refreshEnabled
       ? !!(await resolveClearinghouse({ orgId })).realtimeConfig
@@ -986,7 +988,7 @@ export async function buildOneDetail(
   // referring loop, not a replacement.
   const orderingProvider: ProviderRef | null =
     referringProvider &&
-    (await isFeatureEnabled("billing.line_ordering_provider"))
+    (await isFeatureEnabled("billing.line_ordering_provider", supabase.orgId))
       ? {
           npi: referringProvider.npi,
           firstName: splitFirstName(referringProvider.legal_name),

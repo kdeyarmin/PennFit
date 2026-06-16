@@ -134,26 +134,14 @@ export async function runSmartTriggerSendDue(
   channel: "email" | "sms",
   actor: DispatcherActor,
   renderers: SmartTriggerRenderers,
+  // The tenant whose flags + events this run operates on. The admin
+  // "Run now" route passes req.orgId; the worker cron passes none and
+  // falls back to the seed org (single-tenant-correct).
+  orgIdInput?: string,
 ): Promise<DispatcherOutcome> {
-  // Control Center feature gate. When the smart-trigger dispatcher
-  // is disabled we report `not_configured` so the existing admin /
-  // worker callers that already treat "vendor not wired" as a
-  // benign no-op continue to work without a new code path. The
-  // per-channel SMS / email flags also gate the underlying send
-  // step below; this top-level gate avoids the candidate scan
-  // entirely when neither channel can send.
-  const triggerEnabled = await isFeatureEnabled("smart_triggers.dispatcher");
-  if (!triggerEnabled) {
-    return { status: "not_configured", channel };
-  }
-  if (channel === "email" && !(await isFeatureEnabled("email.reminders"))) {
-    return { status: "not_configured", channel };
-  }
-  if (channel === "sms" && !(await isFeatureEnabled("sms.reminders"))) {
-    return { status: "not_configured", channel };
-  }
-
-  const orgId = await resolveSeedOrgId();
+  // Resolve the tenant up front so the Control Center gates below honor
+  // the caller's org rather than always reading the seed tenant.
+  const orgId = orgIdInput ?? (await resolveSeedOrgId());
   if (!orgId) {
     // Tenant context missing — no events to sweep. Return the same
     // "ok, did nothing" shape a zero-candidate run produces.
@@ -167,6 +155,31 @@ export async function runSmartTriggerSendDue(
       remaining: 0,
     };
   }
+
+  // Control Center feature gate. When the smart-trigger dispatcher
+  // is disabled we report `not_configured` so the existing admin /
+  // worker callers that already treat "vendor not wired" as a
+  // benign no-op continue to work without a new code path. The
+  // per-channel SMS / email flags also gate the underlying send
+  // step below; this top-level gate avoids the candidate scan
+  // entirely when neither channel can send.
+  const triggerEnabled = await isFeatureEnabled(
+    "smart_triggers.dispatcher",
+    orgId,
+  );
+  if (!triggerEnabled) {
+    return { status: "not_configured", channel };
+  }
+  if (
+    channel === "email" &&
+    !(await isFeatureEnabled("email.reminders", orgId))
+  ) {
+    return { status: "not_configured", channel };
+  }
+  if (channel === "sms" && !(await isFeatureEnabled("sms.reminders", orgId))) {
+    return { status: "not_configured", channel };
+  }
+
   const supabase = getOrgScopedClient(orgId);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;

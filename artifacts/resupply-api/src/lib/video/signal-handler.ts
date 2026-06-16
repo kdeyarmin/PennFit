@@ -76,6 +76,10 @@ function safeClose(ws: SignalPeer, code: number, reason: string): void {
 
 interface VisitRow {
   id: string;
+  /** The tenant the visit belongs to — drives the feature gate and every
+   *  row update below so a non-seed tenant's telehealth toggle and writes
+   *  target ITS org, not the seed org. */
+  org_id: string;
   status: string;
   link_version: number;
   started_at: string | null;
@@ -84,18 +88,29 @@ interface VisitRow {
 }
 
 async function loadVisit(visitId: string): Promise<VisitRow | null> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) throw new Error("tenant context missing");
-  const supabase = getOrgScopedClient(orgId);
+  const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) throw new Error("tenant context missing");
+  // GLOBAL lookup by the visit's unguessable UUID — the WS token's HMAC
+  // already proves provenance, so we resolve the visit (and thus its
+  // tenant) across all orgs rather than assuming the seed org. `.raw()`
+  // reaches past the org-scoped chokepoint exactly like the host→org
+  // directory lookup in tenant-branding.ts; the seed client is just the
+  // handle used to issue it.
+  const supabase = getOrgScopedClient(seedOrgId);
   const { data, error } = await supabase
+    .raw()
+    .schema("resupply")
     .from("video_visits")
     .select(
-      "id, status, link_version, started_at, staff_joined_at, patient_joined_at",
+      "id, org_id, status, link_version, started_at, staff_joined_at, patient_joined_at",
     )
     .eq("id", visitId)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  if (!data) return null;
+  // org_id is nullable in the schema; a legacy unbacked row falls back to
+  // the seed org so behavior is single-tenant-identical.
+  return { ...data, org_id: data.org_id ?? seedOrgId } as VisitRow;
 }
 
 /** Fire-and-forget row update; a DB hiccup must never drop the call. */
@@ -103,14 +118,14 @@ function updateVisit(
   visitId: string,
   patch: Record<string, string>,
   event: string,
+  orgId: string,
 ): void {
-  // Sync fire-and-forget: resolve the tenant inside the detached async
-  // path (resolveSeedOrgId is async; this function stays void/non-awaited).
+  // Sync fire-and-forget: the write runs in a detached async path so this
+  // function stays void/non-awaited. The tenant is the visit's own org
+  // (resolved once at load time), not the seed org.
   void (async () => {
     let supabase: OrgScopedClient;
     try {
-      const orgId = await resolveSeedOrgId();
-      if (!orgId) throw new Error("tenant context missing");
       supabase = getOrgScopedClient(orgId);
     } catch (err) {
       logger.warn(
@@ -149,7 +164,7 @@ function stampJoin(role: VideoRole, visit: VisitRow): void {
     patch.patient_joined_at = now;
   }
   if (Object.keys(patch).length > 0) {
-    updateVisit(visit.id, patch, "video.visit.join_stamp");
+    updateVisit(visit.id, patch, "video.visit.join_stamp", visit.org_id);
   }
 }
 
@@ -157,11 +172,6 @@ export async function handleVideoSignalConnection(
   ws: WebSocket,
   claims: VideoWsClaims,
 ): Promise<void> {
-  if (!(await isFeatureEnabled("telehealth.video"))) {
-    safeClose(ws, 4403, "feature-disabled");
-    return;
-  }
-
   let visit: VisitRow | null;
   try {
     visit = await loadVisit(claims.visitId);
@@ -185,6 +195,14 @@ export async function handleVideoSignalConnection(
     visit.status === "completed"
   ) {
     safeClose(ws, 4401, "visit-unavailable");
+    return;
+  }
+
+  // Control Center gate, evaluated against the VISIT's tenant (resolved
+  // above) rather than the seed org, so a tenant that turns telehealth
+  // off closes its own visits while others stay live.
+  if (!(await isFeatureEnabled("telehealth.video", visit.org_id))) {
+    safeClose(ws, 4403, "feature-disabled");
     return;
   }
 
@@ -262,6 +280,7 @@ export async function handleVideoSignalConnection(
           visitId,
           { status: "completed", ended_at: new Date().toISOString() },
           "video.visit.completed",
+          visit.org_id,
         );
         if (peer) safeClose(peer, 1000, "ended");
       }

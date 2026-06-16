@@ -130,6 +130,9 @@ router.post(
         userAgent: req.get("user-agent") ?? null,
       },
       { subjectForKind, textBody, htmlBody, smsBody, pushBody },
+      // Honor the admin's tenant so a per-tenant Control Center toggle
+      // gates this manual "Run now" (the worker cron stays seed-scoped).
+      req.orgId,
     );
 
     if (outcome.status === "not_configured") {
