@@ -899,6 +899,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/billing/config",
             hint: "Payer profiles, fee schedules, modifier rules, denial codes, claim templates",
           },
+          {
+            href: "/admin/billing/package",
+            label: "Package & usage",
+            icon: CircleDollarSign,
+            matchPrefix: "/admin/billing/package",
+            hint: "Current CareMetric package, add-ons, and monthly usage",
+          },
         ],
       },
     ],
@@ -1232,6 +1239,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/connection-tests",
             requiredPermission: "system.config.manage",
             hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
+          },
+          {
+            href: "/admin/platform-billing",
+            label: "Platform billing",
+            icon: CircleDollarSign,
+            matchPrefix: "/admin/platform-billing",
+            requiredPermission: "system.config.manage",
+            hint: "Super-admin tenant packages, add-ons, pricing overrides, and usage tracking",
           },
           {
             href: "/admin/control-center",

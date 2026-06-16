@@ -347,6 +347,27 @@ export interface Database {
         Relationships: [];
       };
       // Migration 0193: current unit cost (COGS) per shop SKU. Source for
+      // Atomic EDI ISA13 control-number counter (mig 0308). Per-tenant
+      // since 0361: PK (org_id, pool). Reserved via a CAS in
+      // lib/billing/isa13-counter.ts.
+      control_number_counters: {
+        Row: {
+          org_id: string | null;
+          pool: string;
+          value: number;
+          updated_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          pool: string;
+          value: number;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["control_number_counters"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
       product_costs: {
@@ -2268,6 +2289,9 @@ export interface Database {
           custom_domain_verified_at: string | null;
           custom_domain_tls: "none" | "pending" | "active" | "failed";
           custom_domain_cf_hostname_id: string | null;
+          stripe_account_id: string | null;
+          from_email: string | null;
+          from_name: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
