@@ -198,6 +198,12 @@ async function main(): Promise<void> {
   const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
   const token = issueToken();
   const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+  // Re-running the bootstrap must not leave earlier links valid.
+  await repo.expireUnconsumedEmailTokens({
+    userId,
+    purpose: "password_reset",
+    at: new Date(),
+  });
   await repo.insertEmailToken({
     tokenHash: token.hash,
     userId,

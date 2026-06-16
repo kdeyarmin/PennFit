@@ -89,6 +89,23 @@ export interface Database {
         >;
         Relationships: [];
       };
+      newsletter_subscribers: {
+        Row: {
+          id: string;
+          email: string;
+          source: string | null;
+          created_at: string;
+          updated_at: string;
+          unsubscribed_at: string | null;
+        };
+        Insert: Partial<
+          Database["public"]["Tables"]["newsletter_subscribers"]["Row"]
+        >;
+        Update: Partial<
+          Database["public"]["Tables"]["newsletter_subscribers"]["Row"]
+        >;
+        Relationships: [];
+      };
       orders: {
         Row: {
           id: string;

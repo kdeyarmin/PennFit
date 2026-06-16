@@ -8,6 +8,7 @@ import trackOrderRouter from "./track-order.js";
 import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
+import newsletterRouter from "./newsletter.js";
 import patientPacketsRouter from "./patient-packets.js";
 import csrOrdersRouter from "./csr-orders.js";
 import chatRouter from "./chat.js";
@@ -35,6 +36,9 @@ router.use(trackOrderRouter);
 router.use(adminRouter);
 router.use(usageEventsRouter);
 router.use(remindersRouter);
+// /api/newsletter/subscribe — anonymous marketing email capture.
+// Mounted before attachSignedIn; rate-limited per-IP in app.ts.
+router.use(newsletterRouter);
 // /api/patient-packets/view + /sign — public e-signature flow for the
 // new-patient document packet. Token-gated (HMAC); no login. Mounted
 // before attachSignedIn so it stays unauthenticated.
@@ -76,8 +80,5 @@ router.use(meBillingRouter);
 // recent parsed 270/271 on file. Falls back to the static
 // payer-average table when unavailable.
 router.use(meInsuranceEstimateRouter);
-// /api/me/rights-requests + /api/me/disclosures — HIPAA
-// §164.522/524/526/528 rights submission + the §164.528 accounting
-// of disclosures (non-TPO entries from patient_disclosure_log).
 
 export default router;

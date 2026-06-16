@@ -104,6 +104,9 @@ export async function resolveSmsRecipientForShopOrder(
   // Escape LIKE metacharacters so an email containing `_` or
   // `%` doesn't cross-match other patients' phone numbers.
   const escapedEmail = email.replace(/[\\%_]/g, (c) => `\\${c}`);
+  // Require EXACTLY one match. Two patients sharing an email is a data
+  // ambiguity we must not resolve arbitrarily — picking limit(1) could
+  // text the wrong patient's phone. Skip silently (email-only) instead.
   const { data: patients } = await supabase
     .from("patients")
     .select("phone_e164, legal_first_name, timezone, address")
