@@ -68,15 +68,6 @@ function priceMetadata(kind: "plan" | "addon", code: string) {
   };
 }
 
-interface BillingCatalogRow {
-  id: string;
-  code: string;
-  name: string;
-  description?: string | null;
-  stripe_product_id?: string | null;
-  stripe_price_id?: string | null;
-}
-
 async function ensureRecurringPrice(args: {
   stripe: Stripe;
   raw: RawClient;
@@ -445,6 +436,8 @@ export async function handlePlatformTenantStripeEvent(
       !sub.metadata.org_id
     )
       return false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const subAny = sub as any;
     const { error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
@@ -452,12 +445,8 @@ export async function handlePlatformTenantStripeEvent(
         stripe_subscription_id: sub.id,
         stripe_status: sub.status,
         stripe_last_synced_at: new Date().toISOString(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        current_period_start: asStripeTimestamp(
-          (sub as any).current_period_start,
-        ),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        current_period_end: asStripeTimestamp((sub as any).current_period_end),
+        current_period_start: asStripeTimestamp(subAny.current_period_start),
+        current_period_end: asStripeTimestamp(subAny.current_period_end),
       })
       .eq("org_id", sub.metadata.org_id)
       .in("status", ["active", "trialing", "past_due"]);
