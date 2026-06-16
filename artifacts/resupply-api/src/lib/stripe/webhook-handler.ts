@@ -52,6 +52,7 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
+import { handlePlatformTenantStripeEvent } from "../platform-billing/stripe";
 import { getBoss } from "../../worker/index.js";
 import { PAYMENT_FAILED_ALERT_JOB } from "../../worker/jobs/payment-failed-alert.js";
 import { getStripeClient, readStripeConfigOrNull } from "./config";
@@ -442,6 +443,7 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
+        if (await handlePlatformTenantStripeEvent(event)) break;
         // Subscribe & Save mirror — see webhook-handlers/subscription.ts
         // for the upsert + last_stripe_event_at ordering guard.
         await handleSubscriptionEvent(event, log);
@@ -497,7 +499,12 @@ export const stripeWebhookHandler: RequestHandler = async (
         await handlePaymentMethodDetached(event, log);
         break;
       }
+      case "invoice.paid": {
+        await handlePlatformTenantStripeEvent(event);
+        break;
+      }
       case "invoice.payment_failed": {
+        if (await handlePlatformTenantStripeEvent(event)) break;
         // Subscribe & Save renewal payment failed. The companion
         // `customer.subscription.updated` event (delivered alongside)
         // already moves shop_subscriptions.status to `past_due`, so
