@@ -60,7 +60,10 @@ export function invalidateTenantSenderCache(): void {
 export async function resolveTenantSender(
   orgId: string | undefined,
 ): Promise<TenantSender> {
-  if (!orgId) return {};
+  // Treat a blank / whitespace-only orgId the same as missing tenant
+  // context (org ids are non-empty after trimming, per getOrgScopedClient)
+  // so we skip a pointless lookup and don't cache under an invalid key.
+  if (!orgId || !orgId.trim()) return {};
   const now = Date.now();
   const cached = cache.get(orgId);
   if (cached && cached.expiresAt > now) return cached.value;

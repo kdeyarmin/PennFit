@@ -52,6 +52,11 @@ describe("resolveTenantSender", () => {
     expect(state.calls).toBe(0);
   });
 
+  it("returns {} for a blank / whitespace orgId without querying", async () => {
+    expect(await resolveTenantSender("   ")).toEqual({});
+    expect(state.calls).toBe(0);
+  });
+
   it("returns the tenant's from_email + from_name when set", async () => {
     state.responses = [
       {
