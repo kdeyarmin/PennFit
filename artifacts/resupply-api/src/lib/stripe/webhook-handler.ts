@@ -49,7 +49,10 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
-import { resolveOrgIdByConnectedAccount } from "./connect";
+import {
+  resolveOrgIdByConnectedAccount,
+  setChargesEnabledByAccount,
+} from "./connect";
 import { enterWebhookOrg, resolveWebhookOrgId } from "./webhook-org-context";
 
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
@@ -514,6 +517,20 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "payment_method.detached": {
         // Saved-card hygiene — see webhook-handlers/payment-method.ts.
         await handlePaymentMethodDetached(event, log);
+        break;
+      }
+      case "account.updated": {
+        // G5 Connect onboarding: a tenant's connected account changed.
+        // Platform-billing gets first dibs (its own Connect surface); else
+        // flip our routing gate to match Stripe's charges_enabled so a
+        // tenant's storefront charges start flowing the moment onboarding
+        // completes (and stop if Stripe ever disables the account).
+        if (await handlePlatformTenantStripeEvent(event)) break;
+        const account = event.data.object as Stripe.Account;
+        await setChargesEnabledByAccount(
+          account.id,
+          account.charges_enabled === true,
+        );
         break;
       }
       case "invoice.paid": {

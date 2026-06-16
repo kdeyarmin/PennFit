@@ -2290,6 +2290,7 @@ export interface Database {
           custom_domain_tls: "none" | "pending" | "active" | "failed";
           custom_domain_cf_hostname_id: string | null;
           stripe_account_id: string | null;
+          stripe_charges_enabled: boolean;
           from_email: string | null;
           from_name: string | null;
           sms_from_number: string | null;
