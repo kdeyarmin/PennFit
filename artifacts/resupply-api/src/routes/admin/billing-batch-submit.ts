@@ -54,7 +54,7 @@ router.post(
 
     // Fail closed: a missing tenant context must NOT fall back to the seed
     // org's clearinghouse (the cross-tenant bug this PR fixes).
-    const orgId = req.orgId;
+    const orgId = req.orgId?.trim();
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;

@@ -51,7 +51,7 @@ router.get(
   adminReadRateLimiter,
   requirePermission("admin.tools.manage"),
   async (req, res) => {
-    const orgId = req.orgId;
+    const orgId = req.orgId?.trim();
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
@@ -117,8 +117,9 @@ router.post(
       return;
     }
     // Fail closed: an operator submit must run for the caller's tenant, not
-    // silently default to the seed org.
-    const orgId = req.orgId;
+    // silently default to the seed org. Trim so a whitespace orgId (truthy)
+    // can't slip past the guard.
+    const orgId = req.orgId?.trim();
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;

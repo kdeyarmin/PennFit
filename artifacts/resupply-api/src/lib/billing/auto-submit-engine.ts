@@ -236,7 +236,13 @@ export async function selectSubmissionReadyClaims(
   if (opts.supabase) {
     supabase = opts.supabase;
   } else {
-    const orgId = opts.orgId?.trim() || (await resolveSeedOrgId());
+    // Distinguish "no orgId supplied" (the cron path → seed org) from
+    // "orgId supplied but blank" (an upstream bug → fail closed, NOT a
+    // silent seed fallback that could leak cross-tenant). Only an
+    // UNDEFINED orgId defaults to seed.
+    const trimmedOrgId = opts.orgId?.trim();
+    const orgId =
+      opts.orgId === undefined ? await resolveSeedOrgId() : trimmedOrgId;
     if (!orgId) {
       return {
         groups: [],
