@@ -142,3 +142,21 @@ describe("runReminderEscalationScan — paginated reads (no ~1000-row truncation
     expect(SRC).toContain(".range(from, from + PAGE_SIZE - 1)");
   });
 });
+
+// Multi-tenant: the escalation sweep must fan out across every active
+// tenant and gate on the PER-TENANT dispatcher flag, never the single seed
+// org. A behavioural test would need to mock listActiveOrgIds + a paged
+// Supabase client + pg-boss; pin the cutover invariants cheaply via source,
+// like the pagination guard above.
+describe("runReminderEscalationScan — per-tenant fan-out", () => {
+  it("fans out across active tenants instead of resolving the seed org", () => {
+    expect(SRC).toContain("forEachActiveOrg(");
+    expect(SRC).not.toContain("resolveSeedOrgId");
+  });
+
+  it("checks the dispatcher flag against the per-tenant orgId", () => {
+    expect(SRC).toContain(
+      'isFeatureEnabled("reminder_escalation.dispatcher", orgId)',
+    );
+  });
+});
