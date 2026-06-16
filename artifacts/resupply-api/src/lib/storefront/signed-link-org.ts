@@ -15,7 +15,10 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 /** Org-scoped tables a public signed link can reference. */
-export type SignedLinkTable = "csr_order_requests" | "patient_packets";
+export type SignedLinkTable =
+  | "csr_order_requests"
+  | "patient_packets"
+  | "conversations";
 
 export async function resolveOrgIdForSignedRecord(
   table: SignedLinkTable,

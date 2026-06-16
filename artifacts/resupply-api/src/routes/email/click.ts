@@ -28,7 +28,7 @@
 import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import {
   renderClickConfirmation,
   renderClickError,
@@ -37,6 +37,7 @@ import {
 } from "@workspace/resupply-messaging";
 
 import { logger } from "../../lib/logger";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import {
   pausePatient,
@@ -123,10 +124,14 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
   const verified = extractVerifiedToken(req, res, cfg.practiceName);
   if (!verified) return;
 
-  // Public signed-link route: there is no req.orgId. Resolve the seed
-  // org (single-tenant posture) and degrade to the route's existing
-  // generic error page when it can't be resolved — never 500 here.
-  const orgId = await resolveSeedOrgId();
+  // Public signed-link route: there is no req.orgId. The HMAC token is the
+  // authorization, so derive the conversation's tenant from its record so a
+  // tenant-B reminder link lands in tenant B. Degrade to the route's
+  // existing generic error page when it can't be resolved — never 500.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "conversations",
+    verified.conversationId,
+  );
   if (!orgId) {
     res
       .status(400)
@@ -237,9 +242,14 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
 
   const { conversationId, action } = verified;
 
-  // Public signed-link route: no req.orgId. Resolve the seed org and
-  // degrade to the generic error page when it can't be resolved.
-  const orgId = await resolveSeedOrgId();
+  // Public signed-link route: no req.orgId. Derive the conversation's
+  // tenant from its record (the HMAC token is the authorization) so the
+  // action lands in the right tenant; degrade to the generic error page
+  // when it can't be resolved.
+  const orgId = await resolveOrgIdForSignedRecord(
+    "conversations",
+    conversationId,
+  );
   if (!orgId) {
     res
       .status(400)
@@ -300,6 +310,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
       case "confirm": {
         const result = await placeResupplyOrderForConversation({
           conversationId,
+          orgId,
         });
         if (result.status === "ok" || result.status === "already_confirmed") {
           const { error: closeErr } = await supabase
@@ -536,7 +547,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
         return;
       }
       case "stop": {
-        await pausePatient(conv.patient_id);
+        await pausePatient(conv.patient_id, orgId);
         const { error: stopErr } = await supabase
           .from("conversations")
           .update({
