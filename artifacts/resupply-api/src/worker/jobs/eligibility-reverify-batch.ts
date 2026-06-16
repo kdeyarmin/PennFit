@@ -16,11 +16,11 @@
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { runEligibilityReverificationBatch } from "../../lib/billing/eligibility-batch.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -39,40 +39,39 @@ export async function registerEligibilityReverifyBatchJob(
     VENDOR_SEND_QUEUE_OPTS,
   );
   await boss.work(ELIGIBILITY_REVERIFY_BATCH_JOB, async () => {
-    // Runtime kill switch (admin Control Center). The env cron controls
-    // scheduling; this flag pauses the unattended 270s without a deploy.
-    // The operator "Run batch now" route calls the run core directly and
-    // is intentionally not gated here.
-    if (!(await isFeatureEnabled("eligibility.auto_reverify"))) {
-      logger.info(
-        { queue: ELIGIBILITY_REVERIFY_BATCH_JOB },
-        "eligibility reverify-batch: feature flag off — skipping",
-      );
-      return;
-    }
-    // Single-tenant bridge: no per-tenant job payload yet, so sweep the
-    // one seed org. Becomes a per-org loop when a 2nd tenant lands.
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) {
-      logger.warn(
-        { queue: ELIGIBILITY_REVERIFY_BATCH_JOB },
-        "eligibility reverify batch: could not resolve seed org — skipping",
-      );
-      return;
-    }
-    const result = await runEligibilityReverificationBatch({ orgId });
-    await logAudit({
-      action: "billing.eligibility.reverify_batch.completed",
-      adminEmail: SYSTEM_ACTOR_EMAIL,
-      adminUserId: null,
-      targetTable: null,
-      targetId: null,
-      metadata: { ...result, trigger: "cron" },
-      ip: null,
-      userAgent: null,
-    }).catch((err) => {
-      logger.warn({ err }, "reverify-batch completion audit failed");
-    });
+    // Fan out across every active tenant. The run core is per-org and the
+    // dispatcher flag is per-tenant (feature_flags is (org_id, key)), so
+    // each tenant is swept on its own org and one tenant's opt-out — or
+    // failure — never affects another. The operator "Run batch now" route
+    // calls the run core directly and is intentionally not gated here.
+    await forEachActiveOrg(
+      async (orgId) => {
+        // Runtime kill switch (admin Control Center), per tenant. The env
+        // cron controls scheduling; this flag pauses the unattended 270s
+        // without a deploy.
+        if (!(await isFeatureEnabled("eligibility.auto_reverify", orgId))) {
+          logger.info(
+            { queue: ELIGIBILITY_REVERIFY_BATCH_JOB, org_id: orgId },
+            "eligibility reverify-batch: feature flag off — skipping tenant",
+          );
+          return;
+        }
+        const result = await runEligibilityReverificationBatch({ orgId });
+        await logAudit({
+          action: "billing.eligibility.reverify_batch.completed",
+          adminEmail: SYSTEM_ACTOR_EMAIL,
+          adminUserId: null,
+          targetTable: null,
+          targetId: null,
+          metadata: { ...result, trigger: "cron", org_id: orgId },
+          ip: null,
+          userAgent: null,
+        }).catch((err) => {
+          logger.warn({ err }, "reverify-batch completion audit failed");
+        });
+      },
+      { jobName: ELIGIBILITY_REVERIFY_BATCH_JOB },
+    );
   });
 
   const cron = process.env.ELIGIBILITY_REVERIFY_CRON?.trim();
