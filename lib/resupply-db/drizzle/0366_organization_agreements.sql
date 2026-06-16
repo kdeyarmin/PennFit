@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS "resupply"."organization_agreements" (
   "agreement_type" text NOT NULL,
   "version" text NOT NULL,
   "accepted_at" timestamptz NOT NULL DEFAULT now(),
-  "accepted_by_user_id" text,
+  -- uuid to match the repo-wide `*_by_user_id uuid` convention (the
+  -- accepting admin's auth.users id).
+  "accepted_by_user_id" uuid,
   "accepted_by_email" text,
   "signatory_name" text,
   "accepted_ip" text,

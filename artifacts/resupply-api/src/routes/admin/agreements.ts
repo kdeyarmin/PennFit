@@ -106,7 +106,10 @@ router.post(
       action: "tenant.agreement.accepted",
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
-      targetTable: "organization_agreements",
+      // The org is the audited subject (a tenant-level acceptance), so
+      // targetTable/targetId both identify the organization — rather than
+      // naming the agreements table while pointing targetId at an org id.
+      targetTable: "organizations",
       targetId: orgId,
       metadata: { type, version, signatoryName },
       ip: req.ip ?? null,
