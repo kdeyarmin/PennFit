@@ -118,6 +118,13 @@ configured, NODE_ENV=development) returns `admin`.
   impersonation?: boolean;
   /** The tenant org id being impersonated, when `impersonation` is true. */
   impersonatedOrgId?: string | null;
+  /**
+   * Onboarding agreements (G16) this tenant hasn't yet signed at the
+   * current version — e.g. `["platform_terms","baa"]`. The SPA blocks the
+   * admin console with an accept screen until this is empty. Absent/empty
+   * means everything required is signed.
+   */
+  pendingAgreements?: ("baa" | "platform_terms")[];
 }
 
 /**

@@ -54,6 +54,15 @@ import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
 // both are small + load-bearing for error paths.
 import { DashboardPage } from "@/pages/admin/dashboard";
 
+// Onboarding agreements gate (G16). Lazy so its agreement template text
+// rides the admin chunk and never the storefront bundle. Rendered in place
+// of the AppShell + routes whenever /me reports unsigned agreements.
+const AgreementsGate = lazyWithRetry(() =>
+  import("@/pages/admin/agreements-gate").then((m) => ({
+    default: m.AgreementsGate,
+  })),
+);
+
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
@@ -749,6 +758,25 @@ function AdminConsole() {
       <AppShell>
         <Spinner label="Confirming admin access…" />
       </AppShell>
+    );
+  }
+
+  // Onboarding agreements gate (G16). A tenant that hasn't signed the
+  // required agreements (BAA + platform terms) at their current version is
+  // blocked from the entire console until they do — the server fails this
+  // closed (an unresolved tenant context reports every agreement pending),
+  // so this also covers the can't-prove-acceptance case.
+  if ((data?.pendingAgreements?.length ?? 0) > 0) {
+    return (
+      <Suspense
+        fallback={
+          <div className="admin-root min-h-screen flex items-center justify-center">
+            <Spinner label="Loading agreements…" />
+          </div>
+        }
+      >
+        <AgreementsGate />
+      </Suspense>
     );
   }
 

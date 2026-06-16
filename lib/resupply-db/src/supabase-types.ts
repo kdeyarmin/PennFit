@@ -2301,6 +2301,26 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Relationships: [];
       };
+      organization_agreements: {
+        Row: {
+          id: string;
+          org_id: string;
+          agreement_type: "baa" | "platform_terms";
+          version: string;
+          accepted_at: string;
+          accepted_by_user_id: string | null;
+          accepted_by_email: string | null;
+          signatory_name: string | null;
+          accepted_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["organization_agreements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["organization_agreements"]["Row"]
+        >;
+        Relationships: [];
+      };
       gl_account_mappings: {
         Row: {
           org_id: string | null;
