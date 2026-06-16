@@ -80,6 +80,15 @@ declare global {
        * Declared once here; `requireSignedIn` sets it without redeclaring.
        */
       orgId?: string;
+      /**
+       * True when the request runs under platform-admin act-as-tenant
+       * impersonation (G4). Handlers/audit can branch on this; mutations
+       * still run (full read/write), but downstream audit rows should
+       * record `impersonatorUserId` so the action stays attributable.
+       */
+      impersonation?: boolean;
+      /** Platform admin's auth.users.id when `impersonation` is true. */
+      impersonatorUserId?: string | null;
     }
   }
 }
@@ -103,6 +112,10 @@ interface ResolvedAdmin {
    *  legacy rows not yet backfilled; the middleware falls back to the
    *  seed org so single-tenant behavior is unchanged. */
   orgId: string | null;
+  /** True when this is a platform-admin act-as-tenant session (G4). */
+  impersonation?: boolean;
+  /** The platform admin's auth.users.id behind an impersonation session. */
+  impersonatorUserId?: string | null;
 }
 
 /**
@@ -136,6 +149,29 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     }
     if (user.role !== "admin" && user.role !== "agent") {
       return null;
+    }
+
+    // ── Platform-admin act-as-tenant impersonation (G4) ───────────────
+    // An impersonation session carries the target tenant on the session
+    // row (mintable ONLY by the platform-gated POST /platform/tenants/
+    // :id/impersonate). When present we bind the request to THAT org with
+    // full tenant-admin access — and DON'T run the admin_users lookup,
+    // because the platform admin has no admin_users row in the target
+    // tenant (their own row would resolve the wrong org). The DB role
+    // 'admin' maps to the `super_admin` effective role (all permissions),
+    // matching the full-read/write support contract. `impersonatorUserId`
+    // makes every downstream action attributable to the real human.
+    if (session.impersonatedOrgId) {
+      return {
+        email: user.emailLower,
+        userId: user.id,
+        role: "admin",
+        granularRole: "admin",
+        locationId: null,
+        orgId: session.impersonatedOrgId,
+        impersonation: true,
+        impersonatorUserId: session.impersonatorUserId,
+      };
     }
 
     // Look up the granular role from admin_users.
@@ -247,6 +283,10 @@ export async function requireAdmin(
   req.adminRole = admin.role;
   req.adminGranularRole = admin.granularRole;
   req.adminLocationId = admin.locationId;
+  if (admin.impersonation) {
+    req.impersonation = true;
+    req.impersonatorUserId = admin.impersonatorUserId ?? null;
+  }
   // Multi-tenant Phase 0: attach the tenant context. Prefer the
   // per-user admin_users.org_id (backfilled in migration 0330); fall
   // back to the seed org for legacy rows not yet backfilled so

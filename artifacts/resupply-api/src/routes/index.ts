@@ -203,6 +203,7 @@ import emailRouter from "./email/index.js";
 import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
+import platformImpersonationRouter from "./platform/impersonation.js";
 import platformTenantsRouter from "./platform/tenants.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
@@ -224,6 +225,7 @@ router.use(meRouter);
 // Platform super-admin (G4): cross-tenant operator surface, gated by
 // requirePlatformAdmin (the tier above a tenant admin).
 router.use(platformTenantsRouter);
+router.use(platformImpersonationRouter);
 // Public shop routes (no auth) — patient-facing cash-pay catalog,
 // Stripe Hosted Checkout, and order summary lookup. Mounted before
 // the admin-gated routes so the literal /shop/* paths can never be
