@@ -1,7 +1,11 @@
 import type Stripe from "stripe";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import {
@@ -13,6 +17,48 @@ import {
 const PLATFORM_BILLING_SCOPE = "platform_tenant";
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
+type OrganizationRow = Database["resupply"]["Tables"]["organizations"]["Row"];
+
+interface SyncableCatalogRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+}
+
+interface BillingPlanRow extends SyncableCatalogRow {
+  monthly_price_cents: number | null;
+}
+
+interface BillingAddonRow extends SyncableCatalogRow {
+  recurring_price_cents: number | null;
+}
+
+interface TenantBillingSubscriptionRow {
+  id: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  custom_monthly_price_cents: number | null;
+  billing_plans: BillingPlanRow;
+}
+
+interface TenantBillingAddonRow {
+  quantity: number;
+  custom_recurring_price_cents: number | null;
+  billing_addons: BillingAddonRow;
+}
+
+type StripeSubscriptionSnapshot = Stripe.Subscription & {
+  latest_invoice?: unknown;
+  current_period_start?: number | null;
+  current_period_end?: number | null;
+};
+
+type StripeInvoiceWithLegacySubscription = Stripe.Invoice & {
+  subscription?: string | { id?: string | null } | null;
+};
 
 export interface PlatformStripeSyncResult {
   stripeConfigured: boolean;
@@ -63,7 +109,7 @@ async function ensureRecurringPrice(args: {
   raw: RawClient;
   table: "billing_plans" | "billing_addons";
   kind: "plan" | "addon";
-  row: any;
+  row: SyncableCatalogRow;
   amountCents: number | null;
 }): Promise<string | null> {
   if (!args.amountCents || args.amountCents <= 0)
@@ -151,7 +197,7 @@ async function tenantRow(raw: RawClient, orgId: string) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("tenant_not_found");
-  return data;
+  return data as OrganizationRow;
 }
 
 async function activeSubscription(raw: RawClient, orgId: string) {
@@ -165,7 +211,7 @@ async function activeSubscription(raw: RawClient, orgId: string) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("subscription_not_found");
-  return data;
+  return data as TenantBillingSubscriptionRow;
 }
 
 async function activeAddons(raw: RawClient, orgId: string) {
@@ -176,7 +222,7 @@ async function activeAddons(raw: RawClient, orgId: string) {
     .eq("org_id", orgId)
     .eq("status", "active");
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as TenantBillingAddonRow[];
 }
 
 export async function ensureTenantStripeCustomer(args: {
@@ -225,7 +271,7 @@ export async function ensureTenantStripeCustomer(args: {
   return { stripeConfigured: true, customerId: customer.id };
 }
 
-function subscriptionStatus(sub: any): string | null {
+function subscriptionStatus(sub: { status?: unknown }): string | null {
   return typeof sub.status === "string" ? sub.status : null;
 }
 
@@ -270,22 +316,52 @@ export async function syncTenantStripeSubscription(args: {
       });
   if (!planAmount || planAmount <= 0) throw new Error("plan_not_billable");
 
-  const items: any[] = [
-    planPriceId
-      ? { price: planPriceId, quantity: 1 }
-      : {
-          price_data: {
-            product_data: {
-              name: `${plan.name} custom monthly`,
-              metadata: priceMetadata("plan", plan.code),
-            },
-            currency: "usd",
-            unit_amount: planAmount,
-            recurring: { interval: "month" },
-          },
-          quantity: 1,
+  const createItems: Stripe.SubscriptionCreateParams.Item[] = [];
+  const updateItems: Stripe.SubscriptionUpdateParams.Item[] = [];
+  const pushItem = (args: {
+    priceId: string | null;
+    quantity: number;
+    name: string;
+    metadata: ReturnType<typeof priceMetadata>;
+    unitAmount: number;
+  }) => {
+    if (args.priceId) {
+      createItems.push({ price: args.priceId, quantity: args.quantity });
+      updateItems.push({ price: args.priceId, quantity: args.quantity });
+      return;
+    }
+    createItems.push({
+      price_data: {
+        product_data: {
+          name: args.name,
+          metadata: args.metadata,
         },
-  ];
+        currency: "usd",
+        unit_amount: args.unitAmount,
+        recurring: { interval: "month" },
+      },
+      quantity: args.quantity,
+    } as unknown as Stripe.SubscriptionCreateParams.Item);
+    updateItems.push({
+      price_data: {
+        product_data: {
+          name: args.name,
+          metadata: args.metadata,
+        },
+        currency: "usd",
+        unit_amount: args.unitAmount,
+        recurring: { interval: "month" },
+      },
+      quantity: args.quantity,
+    } as unknown as Stripe.SubscriptionUpdateParams.Item);
+  };
+  pushItem({
+    priceId: planPriceId,
+    quantity: 1,
+    name: `${plan.name} custom monthly`,
+    metadata: priceMetadata("plan", plan.code),
+    unitAmount: planAmount,
+  });
 
   for (const tenantAddon of addons) {
     const addon = tenantAddon.billing_addons;
@@ -303,22 +379,13 @@ export async function syncTenantStripeSubscription(args: {
           row: addon,
           amountCents: cents(addon.recurring_price_cents),
         });
-    items.push(
-      priceId
-        ? { price: priceId, quantity: tenantAddon.quantity }
-        : {
-            price_data: {
-              product_data: {
-                name: `${addon.name} custom monthly`,
-                metadata: priceMetadata("addon", addon.code),
-              },
-              currency: "usd",
-              unit_amount: amount,
-              recurring: { interval: "month" },
-            },
-            quantity: tenantAddon.quantity,
-          },
-    );
+    pushItem({
+      priceId,
+      quantity: tenantAddon.quantity,
+      name: `${addon.name} custom monthly`,
+      metadata: priceMetadata("addon", addon.code),
+      unitAmount: amount,
+    });
   }
 
   const metadata = {
@@ -339,22 +406,23 @@ export async function syncTenantStripeSubscription(args: {
     }));
     stripeSub = await stripe.subscriptions.update(sub.stripe_subscription_id, {
       metadata,
-      items: [...deletedItems, ...items],
+      items: [...deletedItems, ...updateItems],
       proration_behavior: "create_prorations",
       expand: ["latest_invoice"],
-    } as any);
+    });
   } else {
     stripeSub = await stripe.subscriptions.create({
       customer: customer.id,
-      items,
+      items: createItems,
       metadata,
       collection_method: "send_invoice",
       days_until_due: 15,
       expand: ["latest_invoice"],
-    } as any);
+    });
   }
 
-  const latestInvoice = invoiceStatus((stripeSub as any).latest_invoice);
+  const stripeSubSnapshot = stripeSub as StripeSubscriptionSnapshot;
+  const latestInvoice = invoiceStatus(stripeSubSnapshot.latest_invoice);
   await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
@@ -364,10 +432,10 @@ export async function syncTenantStripeSubscription(args: {
       stripe_status: subscriptionStatus(stripeSub),
       stripe_last_synced_at: new Date().toISOString(),
       current_period_start: asStripeTimestamp(
-        (stripeSub as any).current_period_start,
+        stripeSubSnapshot.current_period_start,
       ),
       current_period_end: asStripeTimestamp(
-        (stripeSub as any).current_period_end,
+        stripeSubSnapshot.current_period_end,
       ),
       last_invoice_id: latestInvoice.id,
       last_invoice_status: latestInvoice.status,
@@ -426,9 +494,11 @@ export async function handlePlatformTenantStripeEvent(
         stripe_status: sub.status,
         stripe_last_synced_at: new Date().toISOString(),
         current_period_start: asStripeTimestamp(
-          (sub as any).current_period_start,
+          (sub as StripeSubscriptionSnapshot).current_period_start,
         ),
-        current_period_end: asStripeTimestamp((sub as any).current_period_end),
+        current_period_end: asStripeTimestamp(
+          (sub as StripeSubscriptionSnapshot).current_period_end,
+        ),
       })
       .eq("org_id", sub.metadata.org_id)
       .in("status", ["active", "trialing", "past_due"]);
@@ -446,8 +516,10 @@ export async function handlePlatformTenantStripeEvent(
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
-  const legacySub = (invoice as any).subscription;
-  const subRef = invoice.parent?.subscription_details?.subscription ?? legacySub;
+  const legacySub = (invoice as StripeInvoiceWithLegacySubscription)
+    .subscription;
+  const subRef =
+    invoice.parent?.subscription_details?.subscription ?? legacySub;
   const subscriptionId =
     typeof subRef === "string" ? subRef : (subRef?.id ?? null);
   if (!subscriptionId) return false;

@@ -2,7 +2,12 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type Database,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -46,6 +51,73 @@ const usageEventBody = z.object({
 });
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
+type OrgScopedSelectQuery = ReturnType<
+  ReturnType<OrgScopedClient["from"]>["select"]
+>;
+type CountableOrgTable =
+  | "patients"
+  | "admin_users"
+  | "locations"
+  | "shop_orders"
+  | "shop_subscriptions";
+type OrganizationSummaryRow = Pick<
+  Database["resupply"]["Tables"]["organizations"]["Row"],
+  "id" | "slug" | "name" | "storefront_name" | "status"
+>;
+
+interface JsonResponseWriter {
+  status(code: number): JsonResponseWriter;
+  json(body: unknown): JsonResponseWriter;
+}
+
+interface QuantityQueryResult {
+  data: Array<{ quantity: number | null }> | null;
+  error: unknown | null;
+}
+
+interface BillingPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  monthly_price_cents: number | null;
+  onboarding_fee_cents: number | null;
+  is_public: boolean;
+  is_custom: boolean;
+  sort_order: number;
+  allowances: Record<string, unknown> | null;
+  features: unknown[] | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_synced_at: string | null;
+}
+
+interface BillingAddonRow {
+  id: string;
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  recurring_price_cents: number | null;
+  one_time_min_cents: number | null;
+  one_time_max_cents: number | null;
+  unit_label: string | null;
+  usage_metric: string | null;
+  pass_through_note: string | null;
+  is_active: boolean;
+  sort_order: number;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_synced_at: string | null;
+}
+
+interface TenantBillingAddonRow {
+  id: string;
+  quantity: number;
+  custom_recurring_price_cents: number | null;
+  notes: string | null;
+  billing_addons: BillingAddonRow;
+}
 
 async function rawClient(): Promise<RawClient | null> {
   const seedOrgId = await resolveSeedOrgId();
@@ -54,11 +126,11 @@ async function rawClient(): Promise<RawClient | null> {
 
 async function countTable(
   orgId: string,
-  table: string,
+  table: CountableOrgTable,
   from?: string,
-  extra?: (q: any) => any,
+  extra?: (q: OrgScopedSelectQuery) => OrgScopedSelectQuery,
 ): Promise<number> {
-  let q: any = getOrgScopedClient(orgId)
+  let q: OrgScopedSelectQuery = getOrgScopedClient(orgId)
     .from(table)
     .select("*", { count: "exact", head: true });
   if (from) q = q.gte("created_at", from);
@@ -129,12 +201,9 @@ async function currentUsage(orgId: string) {
       .gte("occurred_at", from),
   ]);
 
-  function sumRows(result: any): number {
+  function sumRows(result: QuantityQueryResult): number {
     if (result.error) throw result.error;
-    return ((result.data ?? []) as Array<{ quantity: number | null }>).reduce(
-      (sum, r) => sum + (r.quantity ?? 0),
-      0,
-    );
+    return (result.data ?? []).reduce((sum, r) => sum + (r.quantity ?? 0), 0);
   }
 
   return {
@@ -154,7 +223,7 @@ async function currentUsage(orgId: string) {
   };
 }
 
-function mapPlan(row: any) {
+function mapPlan(row: BillingPlanRow) {
   return {
     id: row.id,
     code: row.code,
@@ -173,7 +242,7 @@ function mapPlan(row: any) {
   };
 }
 
-function mapAddon(row: any) {
+function mapAddon(row: BillingAddonRow) {
   return {
     id: row.id,
     code: row.code,
@@ -194,7 +263,7 @@ function mapAddon(row: any) {
   };
 }
 
-async function catalog(res: Response, raw: RawClient): Promise<void> {
+async function catalog(res: JsonResponseWriter, raw: RawClient): Promise<void> {
   const [plans, addons] = await Promise.all([
     raw
       .schema("resupply")
@@ -224,7 +293,10 @@ async function catalog(res: Response, raw: RawClient): Promise<void> {
   });
 }
 
-async function tenantBilling(orgId: string, res: Response): Promise<void> {
+async function tenantBilling(
+  orgId: string,
+  res: JsonResponseWriter,
+): Promise<void> {
   const raw = await rawClient();
   if (!raw) {
     res.status(503).json({ error: "tenant_directory_unavailable" });
@@ -278,7 +350,7 @@ async function tenantBilling(orgId: string, res: Response): Promise<void> {
   res.json({
     tenantId: orgId,
     subscription,
-    addons: (addons.data ?? []).map((a: any) => ({
+    addons: ((addons.data ?? []) as TenantBillingAddonRow[]).map((a) => ({
       id: a.id,
       quantity: a.quantity,
       customRecurringPriceCents: a.custom_recurring_price_cents,
@@ -379,8 +451,11 @@ router.get(
       return;
     }
     const tenants = await Promise.all(
-      (orgs ?? []).map(async (o: any) => {
-        const capture: any = {
+      ((orgs ?? []) as OrganizationSummaryRow[]).map(async (o) => {
+        const capture: JsonResponseWriter & {
+          body?: unknown;
+          statusCode: number;
+        } = {
           body: undefined,
           statusCode: 200,
           status(code: number) {
@@ -392,7 +467,7 @@ router.get(
             return this;
           },
         };
-        await tenantBilling(o.id, capture as Response);
+        await tenantBilling(o.id, capture);
         return {
           id: o.id,
           slug: o.slug,
