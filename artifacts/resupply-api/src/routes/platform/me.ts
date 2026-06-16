@@ -22,8 +22,12 @@ router.get(
   adminReadRateLimiter,
   requirePlatformAdmin,
   (req, res) => {
+    if (!req.platformAdminUserId) {
+      res.status(500).json({ error: "platform_admin_context_missing" });
+      return;
+    }
     res.json({
-      userId: req.platformAdminUserId ?? "",
+      userId: req.platformAdminUserId,
       email: req.platformAdminEmail ?? null,
     });
   },
