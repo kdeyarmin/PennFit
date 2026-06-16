@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SQL = readFileSync(
-  path.join(__dirname, "../drizzle/0358_platform_billing_stripe.sql"),
+  path.join(__dirname, "../drizzle/0363_platform_billing_stripe.sql"),
   "utf8",
 );
 
-describe("0358 platform billing Stripe migration", () => {
+describe("0363 platform billing Stripe migration", () => {
   it("adds Stripe catalog and tenant subscription linkage columns", () => {
     expect(SQL).toContain('"stripe_product_id"');
     expect(SQL).toContain('"stripe_price_id"');
