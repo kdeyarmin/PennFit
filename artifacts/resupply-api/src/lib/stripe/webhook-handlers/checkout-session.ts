@@ -24,11 +24,12 @@ import type Stripe from "stripe";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Database,
   type Json,
 } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
+
+import { resolveWebhookOrgId } from "../webhook-org-context";
 
 import { getStripeClient, type StripeConfig } from "../config";
 import { readDefaultPaymentMethod } from "../customer";
@@ -96,7 +97,7 @@ export async function authorizePaymentPlanAutopay(
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.info?.(
       { planId },
@@ -129,7 +130,7 @@ export async function markPaid(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<PaidOrderRow | null> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — same non-throwing null outcome the
     // function uses when the upsert returns no row.
@@ -357,7 +358,7 @@ export async function upsertOrderItemsFromSession(
 
   // Resolve the tenant first: both the COGS snapshot lookup (product_costs
   // is per-tenant since 0357) and the order-items mirror below scope to it.
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — the parent order is already paid; skip
     // the items mirror and return the email items built above (the
@@ -425,7 +426,7 @@ export async function syncCustomerAfterCheckout(
       : (session.customer?.id ?? null);
   if (!customerId || !stripeCustomerId) return;
 
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.info?.(
       { customerId },
@@ -548,7 +549,7 @@ export async function markCartRecovered(
 ): Promise<void> {
   const customerId = readCustomerIdFromMetadata(session.metadata);
   if (!customerId) return;
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.info?.(
       { customerId },
@@ -588,7 +589,7 @@ export async function markStatus(
       }
     | undefined,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.warn?.(
       { sessionId, attemptedStatus: status },
