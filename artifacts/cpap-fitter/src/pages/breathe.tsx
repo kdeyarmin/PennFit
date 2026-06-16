@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "wouter";
+import { Lock } from "lucide-react";
 import {
   Activity,
   ArrowRight,
@@ -791,6 +793,16 @@ function Footer() {
         <div className="bx-brand-sub">
           © {new Date().getFullYear()} CareMetric.ai
         </div>
+      </div>
+      <div className="bx-footer-admin">
+        <Link
+          href="/platform"
+          className="bx-footer-admin-link"
+          data-testid="breathe-super-admin-login"
+        >
+          <Lock size={13} aria-hidden="true" />
+          Super admin login
+        </Link>
       </div>
     </footer>
   );
