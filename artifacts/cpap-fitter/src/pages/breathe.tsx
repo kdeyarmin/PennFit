@@ -802,7 +802,6 @@ function Footer() {
         >
           <Lock size={13} aria-hidden="true" />
           Super admin login
-        </Link>
       </div>
     </footer>
   );
