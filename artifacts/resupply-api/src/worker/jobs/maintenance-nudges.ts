@@ -23,7 +23,7 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   MAINTENANCE_CATALOG,
@@ -31,6 +31,7 @@ import {
   type MaintenanceTask,
 } from "../../lib/patient-maintenance/catalog";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -146,11 +147,8 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Run a single sweep. Exported for tests. */
-export async function runMaintenanceNudgeSweep(
-  cfg: MessagingConfig = readNudgeMessagingConfig(),
-): Promise<NudgeStats> {
-  const stats: NudgeStats = {
+function emptyNudgeStats(): NudgeStats {
+  return {
     scanned: 0,
     emailed: 0,
     skippedQuiet: 0,
@@ -158,24 +156,24 @@ export async function runMaintenanceNudgeSweep(
     skippedNoContact: 0,
     errors: 0,
   };
-  if (!cfg.sendgridApiKey || !cfg.sendgridFromName || !cfg.publicBaseUrl) {
-    logger.warn(
-      { event: "patient-maintenance.weekly-nudge.skipped_no_config" },
-      "maintenance-nudge: skipping run, messaging config incomplete",
-    );
-    return stats;
-  }
+}
 
-  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
-  // seed org. Becomes a per-org loop when a 2nd tenant lands.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: NUDGE_JOB },
-      "maintenance-nudge: could not resolve seed org — skipping",
-    );
-    return stats;
-  }
+/**
+ * Run the weekly hygiene nudge for a SINGLE tenant, returning this tenant's
+ * tally. Extracted so the cron can fan out across every active tenant —
+ * `patients` and `patient_maintenance_*` are tenant-scoped, so each tenant
+ * must be swept on its own org-scoped client (a patient is only ever
+ * nudged for tasks/contacts in their own org). The SendGrid client and the
+ * as-of clock are built once per run and threaded in. The per-tenant send
+ * cap (BATCH_SIZE) and scan ceiling apply PER tenant.
+ */
+async function maintenanceNudgeSweepForOrg(
+  orgId: string,
+  cfg: MessagingConfig,
+  sendgrid: ReturnType<typeof createSendgridClient>,
+  asOfDate: Date,
+): Promise<NudgeStats> {
+  const stats = emptyNudgeStats();
   const supabase = getOrgScopedClient(orgId);
 
   // Eligible patients: anyone with an email AND at least one
@@ -210,13 +208,6 @@ export async function runMaintenanceNudgeSweep(
     recentlyNudgedIds.size > 0 && recentlyNudgedIds.size <= 5000
       ? `(${Array.from(recentlyNudgedIds).join(",")})`
       : null;
-
-  const sendgrid = createSendgridClient({
-    apiKey: cfg.sendgridApiKey,
-    fromEmail: cfg.sendgridFromEmail,
-    fromName: cfg.sendgridFromName,
-  });
-  const asOfDate = new Date();
 
   // Keyset-paged candidate walk — see the SCAN_PAGE comment up top for
   // why a single LIMIT slate starved everything behind the skip cohort.
@@ -391,6 +382,54 @@ export async function runMaintenanceNudgeSweep(
       stats.emailed += 1;
     }
   }
+
+  return stats;
+}
+
+/**
+ * Run the weekly hygiene nudge for EVERY active tenant. Builds the SendGrid
+ * client + as-of clock once, then fans out across active tenants with
+ * per-tenant failure isolation (forEachActiveOrg), aggregating each
+ * tenant's tally. A patient is only ever nudged on their own org's
+ * client, so one tenant's roster can never reach another tenant's patients.
+ * Exported for tests.
+ */
+export async function runMaintenanceNudgeSweep(
+  cfg: MessagingConfig = readNudgeMessagingConfig(),
+): Promise<NudgeStats> {
+  const stats = emptyNudgeStats();
+  if (!cfg.sendgridApiKey || !cfg.sendgridFromName || !cfg.publicBaseUrl) {
+    logger.warn(
+      { event: "patient-maintenance.weekly-nudge.skipped_no_config" },
+      "maintenance-nudge: skipping run, messaging config incomplete",
+    );
+    return stats;
+  }
+
+  const sendgrid = createSendgridClient({
+    apiKey: cfg.sendgridApiKey,
+    fromEmail: cfg.sendgridFromEmail,
+    fromName: cfg.sendgridFromName,
+  });
+  const asOfDate = new Date();
+
+  await forEachActiveOrg(
+    async (orgId) => {
+      const orgStats = await maintenanceNudgeSweepForOrg(
+        orgId,
+        cfg,
+        sendgrid,
+        asOfDate,
+      );
+      stats.scanned += orgStats.scanned;
+      stats.emailed += orgStats.emailed;
+      stats.skippedQuiet += orgStats.skippedQuiet;
+      stats.skippedNoOverdue += orgStats.skippedNoOverdue;
+      stats.skippedNoContact += orgStats.skippedNoContact;
+      stats.errors += orgStats.errors;
+    },
+    { jobName: NUDGE_JOB },
+  );
 
   return stats;
 }
