@@ -107,10 +107,16 @@ export async function getConnectedAccountId(
  * has a connected account, otherwise an empty object (platform account).
  * Pass as the SECOND argument to `stripe.checkout.sessions.create(...)` /
  * `stripe.paymentIntents.create(...)`.
+ *
+ * Accepts `undefined` (the type of `req.orgId` before a tenant is
+ * resolved) and treats a missing tenant context the same as "no connected
+ * account" → the platform account. Fail-soft: never routes money to the
+ * wrong account on a missing/unknown org.
  */
 export async function stripeAccountRequestOptions(
-  orgId: string,
+  orgId: string | undefined,
 ): Promise<Stripe.RequestOptions> {
+  if (!orgId) return {};
   const accountId = await getConnectedAccountId(orgId);
   return accountId ? { stripeAccount: accountId } : {};
 }
