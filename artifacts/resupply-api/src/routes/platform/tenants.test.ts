@@ -99,3 +99,99 @@ describe("GET /platform/tenants", () => {
     expect(res.status).toBe(500);
   });
 });
+
+const TENANT_ID = "11111111-1111-4111-8111-111111111111";
+
+describe("POST /platform/tenants/:id/suspend", () => {
+  it("401s when the caller is not a platform admin", async () => {
+    const res = await request(makeApp()).post(
+      `/platform/tenants/${TENANT_ID}/suspend`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a non-uuid id", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp()).post(
+      "/platform/tenants/not-a-uuid/suspend",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("suspends a non-seed tenant", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    // Read (slug = acme, not the seed) then the status update.
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID, slug: "acme-dme", status: "active" },
+    });
+    stageSupabaseResponse("organizations", "update", {
+      data: {
+        id: TENANT_ID,
+        slug: "acme-dme",
+        name: "Acme DME",
+        storefront_name: "AcmeSleep",
+        status: "suspended",
+        custom_domain: null,
+        custom_domain_status: "none",
+        created_at: "2026-02-01T00:00:00Z",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/platform/tenants/${TENANT_ID}/suspend`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.tenant).toMatchObject({
+      id: TENANT_ID,
+      status: "suspended",
+    });
+  });
+
+  it("refuses to suspend the seed tenant (400)", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID, slug: "penn-home-medical", status: "active" },
+    });
+    const res = await request(makeApp()).post(
+      `/platform/tenants/${TENANT_ID}/suspend`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("cannot_suspend_seed_tenant");
+    // No status update should have been issued.
+    expect(supabaseMock.callCount("organizations", "update")).toBe(0);
+  });
+
+  it("404s when the tenant id does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).post(
+      `/platform/tenants/${TENANT_ID}/suspend`,
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /platform/tenants/:id/reactivate", () => {
+  it("reactivates a suspended tenant (and may target the seed org)", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID, slug: "acme-dme", status: "suspended" },
+    });
+    stageSupabaseResponse("organizations", "update", {
+      data: {
+        id: TENANT_ID,
+        slug: "acme-dme",
+        name: "Acme DME",
+        storefront_name: "AcmeSleep",
+        status: "active",
+        custom_domain: null,
+        custom_domain_status: "none",
+        created_at: "2026-02-01T00:00:00Z",
+      },
+    });
+    const res = await request(makeApp()).post(
+      `/platform/tenants/${TENANT_ID}/reactivate`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.tenant).toMatchObject({ status: "active" });
+  });
+});
