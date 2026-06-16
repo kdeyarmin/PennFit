@@ -236,7 +236,13 @@ export async function selectSubmissionReadyClaims(
   if (opts.supabase) {
     supabase = opts.supabase;
   } else {
-    const orgId = opts.orgId ?? (await resolveSeedOrgId());
+    // Distinguish "no orgId supplied" (the cron path → seed org) from
+    // "orgId supplied but blank" (an upstream bug → fail closed, NOT a
+    // silent seed fallback that could leak cross-tenant). Only an
+    // UNDEFINED orgId defaults to seed.
+    const trimmedOrgId = opts.orgId?.trim();
+    const orgId =
+      opts.orgId === undefined ? await resolveSeedOrgId() : trimmedOrgId;
     if (!orgId) {
       return {
         groups: [],
@@ -555,14 +561,17 @@ export async function runAutoSubmitBatch(
   // Operator-approval path: evaluate EXACTLY the approved claims (scoped
   // by id) so a claim the operator picked is never silently dropped by
   // the per-run cap that bounds the unattended "submit all" scan.
+  // Only include `orgId` when it's actually set, so the cron path's opts
+  // shape stays `{ claimIds, maxClaims }` (no `orgId: undefined` key).
+  const orgIdOpt = opts.orgId ? { orgId: opts.orgId } : {};
   const readiness = await select(
     approvedClaimIds
       ? {
           claimIds: approvedClaimIds,
           maxClaims: approvedClaimIds.length,
-          orgId: opts.orgId,
+          ...orgIdOpt,
         }
-      : { maxClaims, orgId: opts.orgId },
+      : { maxClaims, ...orgIdOpt },
   );
   const readyById = new Map<string, ReadyClaim>();
   for (const g of readiness.groups) {
