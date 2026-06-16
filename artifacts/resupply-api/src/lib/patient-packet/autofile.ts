@@ -57,7 +57,12 @@ export async function autofileSignedPacketPdf(
   packetId: string,
 ): Promise<AutofileResult> {
   try {
-    if (!(await isFeatureEnabled("patient_packets.autofile_signed_pdf"))) {
+    if (
+      !(await isFeatureEnabled(
+        "patient_packets.autofile_signed_pdf",
+        supabase.orgId,
+      ))
+    ) {
       return { filed: false, reason: "flag_off" };
     }
     if (!process.env.SUPABASE_STORAGE_BUCKET_PRIVATE?.trim()) {
