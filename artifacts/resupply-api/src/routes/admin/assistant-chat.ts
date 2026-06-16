@@ -34,7 +34,7 @@ import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
-import { applyPlatformBranding } from "../../lib/company-info.js";
+import { applyPlatformBrandingForOrg } from "../../lib/company-info.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   buildAdminAssistantSystemPrompt,
@@ -269,8 +269,9 @@ router.post(
 
     // Control Center feature gate — operators can turn PennPilot off.
     if (!(await isFeatureEnabled("admin.assistant", req.orgId))) {
-      const offlineMessage = applyPlatformBranding(
+      const offlineMessage = await applyPlatformBrandingForOrg(
         "PennPilot is currently turned off. You can re-enable it from Control Center (/admin/control-center).",
+        req.orgId,
       );
       if (streaming) {
         startSseHeaders(res);
@@ -295,13 +296,19 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
+          text: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
         res.json({
-          reply: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
+          reply: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
           offline: true,
         });
       }
@@ -312,18 +319,19 @@ router.post(
       adminEmail: req.adminEmail ?? null,
       adminRole: req.adminRole ?? null,
     };
-    const systemPrompt = applyPlatformBranding(
-      buildAdminAssistantSystemPrompt(ctx),
-    );
-
     const orgId = req.orgId;
     if (!orgId) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
+    const systemPrompt = await applyPlatformBrandingForOrg(
+      buildAdminAssistantSystemPrompt(ctx),
+      orgId,
+    );
     const supabase = getOrgScopedClient(orgId);
     const toolCtx: AdminAssistantToolContext = {
       supabase,
+      orgId,
       suggestingAdminEmail: req.adminEmail ?? null,
       suggestingAdminRole: req.adminRole ?? null,
     };
@@ -359,13 +367,19 @@ router.post(
         startSseHeaders(res);
         writeSseEvent(res, {
           type: "chunk",
-          text: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
+          text: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
         });
         writeSseEvent(res, { type: "done", offline: true });
         res.end();
       } else {
         res.json({
-          reply: applyPlatformBranding(ADMIN_OFFLINE_FALLBACK_REPLY),
+          reply: await applyPlatformBrandingForOrg(
+            ADMIN_OFFLINE_FALLBACK_REPLY,
+            req.orgId,
+          ),
           offline: true,
         });
       }

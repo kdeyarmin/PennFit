@@ -64,7 +64,7 @@ import { z } from "zod";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import {
   applyCompanyIdentityToText,
-  applyPlatformBranding,
+  applyPlatformBrandingForOrg,
 } from "../../lib/company-info.js";
 import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
@@ -270,10 +270,11 @@ function startSseHeaders(res: Response): void {
  */
 function buildInitialMessages(
   userTurns: z.infer<typeof chatBodySchema>["messages"],
+  systemPrompt: string,
 ): { messages: OpenAiMessage[]; redactionCounts: Record<string, number> } {
   const aggregateCounts: Record<string, number> = {};
   const messages: OpenAiMessage[] = [
-    { role: "system", content: applyPlatformBranding(getSystemPrompt()) },
+    { role: "system", content: systemPrompt },
     ...userTurns.map((m): OpenAiMessage => {
       // Defense-in-depth: scrub user-supplied messages of obvious
       // PII (phone, email, SSN, DOB, long member-id digit runs)
@@ -431,13 +432,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       startSseHeaders(res);
       writeSseEvent(res, {
         type: "chunk",
-        text: applyPlatformBranding(offlineFallbackReply()),
+        text: await applyPlatformBrandingForOrg(offlineFallbackReply(), orgId),
       });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
       res.json({
-        reply: applyPlatformBranding(offlineFallbackReply()),
+        reply: await applyPlatformBrandingForOrg(offlineFallbackReply(), orgId),
         offline: true,
       });
     }
@@ -466,7 +467,17 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     return;
   }
 
-  const { messages: initial, redactionCounts } = buildInitialMessages(messages);
+  // Brand the system prompt with THIS tenant's assistant names (PennBot →
+  // the storefront-assistant name configured for orgId), falling back to
+  // the seed/default names when the host didn't resolve to a tenant.
+  const systemPrompt = await applyPlatformBrandingForOrg(
+    getSystemPrompt(),
+    orgId,
+  );
+  const { messages: initial, redactionCounts } = buildInitialMessages(
+    messages,
+    systemPrompt,
+  );
   if (Object.keys(redactionCounts).length > 0) {
     logger.info(
       {
@@ -516,13 +527,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
       startSseHeaders(res);
       writeSseEvent(res, {
         type: "chunk",
-        text: applyPlatformBranding(offlineFallbackReply()),
+        text: await applyPlatformBrandingForOrg(offlineFallbackReply(), orgId),
       });
       writeSseEvent(res, { type: "done", offline: true });
       res.end();
     } else {
       res.json({
-        reply: applyPlatformBranding(offlineFallbackReply()),
+        reply: await applyPlatformBrandingForOrg(offlineFallbackReply(), orgId),
         offline: true,
       });
     }
