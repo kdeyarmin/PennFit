@@ -321,7 +321,7 @@ export async function buildClaimFromFulfillment(
   //     unknown cost leaves the line's cost null — must never block
   //     claim building.
   if (line && fulfillment.item_sku) {
-    const costBySku = await fetchUnitCostsBySku([fulfillment.item_sku]);
+    const costBySku = await fetchUnitCostsBySku([fulfillment.item_sku], orgId);
     const cost = costBySku.get(fulfillment.item_sku);
     if (cost) {
       line.unitCostCents = cost.unitCostCents;

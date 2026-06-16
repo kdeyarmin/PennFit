@@ -64,9 +64,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId).raw();
+    const supabase = getOrgScopedClient(orgId);
     const { data: rows, error } = await supabase
-      .schema("resupply")
       .from("product_costs")
       .select(
         "sku, unit_cost_cents, currency, cost_source, effective_from, notes, updated_at",
@@ -87,7 +86,17 @@ router.get(
     );
 
     res.json({
-      costs: (rows ?? []).map((r) => ({
+      costs: (
+        (rows ?? []) as Array<{
+          sku: string;
+          unit_cost_cents: number;
+          currency: string;
+          cost_source: string;
+          effective_from: string;
+          notes: string | null;
+          updated_at: string;
+        }>
+      ).map((r) => ({
         sku: r.sku,
         unitCostCents: r.unit_cost_cents,
         currency: r.currency,
@@ -130,11 +139,10 @@ router.put(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId).raw();
+    const supabase = getOrgScopedClient(orgId);
     const nowIso = new Date().toISOString();
     const resolvedSource = costSource ?? "manual";
     const { data: row, error } = await supabase
-      .schema("resupply")
       .from("product_costs")
       .upsert(
         {
@@ -146,7 +154,9 @@ router.put(
           effective_from: nowIso,
           updated_at: nowIso,
         },
-        { onConflict: "sku" },
+        // Composite PK since 0357: one cost per tenant per SKU. The facade
+        // injects org_id into the row; conflict-target must include it.
+        { onConflict: "org_id,sku" },
       )
       .select(
         "sku, unit_cost_cents, currency, cost_source, effective_from, updated_at",
