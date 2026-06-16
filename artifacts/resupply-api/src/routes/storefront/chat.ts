@@ -69,6 +69,8 @@ import {
 import { logger } from "../../lib/logger.js";
 import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
+import { requestHost } from "../../lib/request-host.js";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
   buildChatSystemPrompt,
@@ -396,7 +398,13 @@ router.post("/chat", chatRateLimit, async (req, res) => {
   // we surface a single-message "offline" response. The shape
   // matches the existing unconfigured-LLM branch below so the
   // widget doesn't have to special-case anything.
-  if (!(await isFeatureEnabled("storefront.chatbot", req.orgId))) {
+  //
+  // Public route — no auth middleware populates req.orgId, so resolve the
+  // tenant from the request host so a tenant's storefront.chatbot toggle
+  // gates THIS storefront.
+  const orgId =
+    req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+  if (!(await isFeatureEnabled("storefront.chatbot", orgId))) {
     const offlineMessage =
       "The PennPaps chat assistant is currently offline. Please reach us by phone or email — we'll respond as soon as we can.";
     if (streaming) {

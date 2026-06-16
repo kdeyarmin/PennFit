@@ -18,6 +18,8 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import {
@@ -286,9 +288,16 @@ router.get("/shop/products", async (req, res) => {
   // enforce the same gate server-side. The `config !== null &&`
   // short-circuit skips the flag lookup in preview mode, where
   // purchasing is off regardless of the flag.
+  // Public route — no auth middleware populates req.orgId, so resolve the
+  // tenant from the request host so a tenant's storefront.checkout toggle
+  // gates THIS storefront. The `config !== null &&` short-circuit still
+  // skips both the host resolve and the flag lookup in preview mode.
   const purchasingEnabled =
     config !== null &&
-    (await isFeatureEnabled("storefront.checkout", req.orgId));
+    (await isFeatureEnabled(
+      "storefront.checkout",
+      req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined,
+    ));
 
   res.json({
     previewMode,
