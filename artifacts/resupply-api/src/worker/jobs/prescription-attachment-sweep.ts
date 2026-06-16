@@ -368,7 +368,14 @@ export function buildProductionSweepDeps(
     loadReferencedKeys: async () => {
       const orgId = await resolveSeedOrgId();
       if (!orgId) return new Set<string>();
-      const supabase = getOrgScopedClient(orgId);
+      // GLOBAL read (multi-tenant correctness): the storage bucket is
+      // shared across ALL tenants, so an attachment is an orphan only if
+      // NO tenant references it. We therefore read the referenced keys
+      // across every tenant via `.raw()` (unscoped) — a seed-org-scoped
+      // `.from()` would miss another tenant's references and delete their
+      // PHI attachment. Reading only the key columns (never content) for
+      // a global-bucket janitor is a legitimate platform operation.
+      const raw = getOrgScopedClient(orgId).raw();
       // Two SELECTs (one per writer) instead of a single UNION SQL —
       // PostgREST has no UNION, the result Set is built in one place
       // (here), and the queries fan out cleanly. Cost is identical in
@@ -386,7 +393,8 @@ export function buildProductionSweepDeps(
       const PAGE_SIZE = 1000;
       const set = new Set<string>();
       for (let from = 0; ; from += PAGE_SIZE) {
-        const { data, error } = await supabase
+        const { data, error } = await raw
+          .schema("resupply")
           .from("prescriptions")
           .select("id, attachment_object_key")
           .not("attachment_object_key", "is", null)
@@ -400,7 +408,8 @@ export function buildProductionSweepDeps(
         if (data.length < PAGE_SIZE) break;
       }
       for (let from = 0; ; from += PAGE_SIZE) {
-        const { data, error } = await supabase
+        const { data, error } = await raw
+          .schema("resupply")
           .from("message_attachments")
           .select("id, object_key")
           .order("id", { ascending: true })
@@ -420,16 +429,21 @@ export function buildProductionSweepDeps(
       // referenced, so report "still referenced" to BLOCK the delete
       // (never vaporise bytes we can't verify).
       if (!orgId) return true;
-      const supabase = getOrgScopedClient(orgId);
+      // GLOBAL recheck (see loadReferencedKeys): any tenant referencing
+      // the key blocks the delete, so probe across ALL tenants via
+      // `.raw()` rather than the seed-scoped facade.
+      const raw = getOrgScopedClient(orgId).raw();
       // Pre-delete recheck — same widening as loadReferencedKeys:
       // either writer claiming the key counts as "still referenced".
       // Two head:true count probes in parallel.
       const [presRes, msgRes] = await Promise.all([
-        supabase
+        raw
+          .schema("resupply")
           .from("prescriptions")
           .select("*", { count: "exact", head: true })
           .eq("attachment_object_key", attachmentKey),
-        supabase
+        raw
+          .schema("resupply")
           .from("message_attachments")
           .select("*", { count: "exact", head: true })
           .eq("object_key", attachmentKey),
