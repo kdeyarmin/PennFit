@@ -30,7 +30,6 @@ import {
   type OrgScopedClient,
   DEFAULT_COMMUNICATION_PREFERENCES,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   type SendActor,
@@ -46,6 +45,7 @@ import {
 import { claimDedupKey } from "../../lib/dedup-keys.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -193,13 +193,30 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
     eligible: 0,
     messaged: 0,
   };
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return result;
+  // Fan out across every active tenant — the adherence RPC, patients, and
+  // shop_customers are all org-scoped, and the auto-outreach / sms.reminders
+  // flags are resolved per tenant, so a tenant only texts its own patients
+  // and only when it has enabled outreach. Per-tenant failure isolation;
+  // results summed. Single-tenant: listActiveOrgIds() returns just the seed
+  // org, so this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await setupDeadlineOutreachForOrg(orgId, result);
+    },
+    { jobName: SETUP_DEADLINE_OUTREACH_JOB },
+  );
+  return result;
+}
+
+async function setupDeadlineOutreachForOrg(
+  orgId: string,
+  result: SetupDeadlineOutreachResult,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   const outreachOn =
-    (await isFeatureEnabled("therapy_fleet.auto_outreach")) &&
-    (await isFeatureEnabled("sms.reminders"));
+    (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
+    (await isFeatureEnabled("sms.reminders", orgId));
   const cfg = outreachOn ? readSmsConfig() : null;
 
   const setups = await supabase
@@ -214,7 +231,7 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
     days_remaining?: unknown;
     nights_needed?: unknown;
   }>;
-  result.inWindow = rows.length;
+  result.inWindow += rows.length;
 
   // Compute the message plan for each patient (pure). This also lets the
   // job report `eligible` even when outreach is off (visibility for the
@@ -232,8 +249,9 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
     );
     if (body) planned.push({ patientId: r.patient_id, body });
   }
-  result.eligible = planned.length;
+  result.eligible += planned.length;
 
+  let messagedThisOrg = 0;
   if (outreachOn && cfg) {
     const seen = new Set<string>();
     for (const p of planned) {
@@ -245,15 +263,22 @@ export async function runSetupDeadlineOutreach(): Promise<SetupDeadlineOutreachR
         p.patientId,
         p.body,
       );
-      if (sent) result.messaged += 1;
+      if (sent) messagedThisOrg += 1;
     }
   }
+  result.messaged += messagedThisOrg;
 
   logger.info(
-    { queue: SETUP_DEADLINE_OUTREACH_JOB, ...result, outreachOn },
-    "therapy setup-deadline outreach complete",
+    {
+      queue: SETUP_DEADLINE_OUTREACH_JOB,
+      orgId,
+      inWindow: rows.length,
+      eligible: planned.length,
+      messaged: messagedThisOrg,
+      outreachOn,
+    },
+    "therapy setup-deadline outreach complete (tenant)",
   );
-  return result;
 }
 
 // Returns true iff a message was actually dispatched. Mirrors
