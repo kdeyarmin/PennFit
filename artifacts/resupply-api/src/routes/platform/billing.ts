@@ -42,7 +42,9 @@ const addonBody = z.object({
 });
 const usageEventBody = z.object({
   tenantId: z.string().uuid().optional(),
-  metricKey: z.string().regex(/^[a-z0-9_.]+$/),
+  // Allows the camelCase console metric keys (e.g. aiTextInteractionsPerMonth)
+  // as well as snake_case — matches the widened DB CHECK (migration 0367).
+  metricKey: z.string().regex(/^[A-Za-z0-9_.]+$/),
   quantity: z.number().int().min(0).max(1_000_000).default(1),
   source: z.string().max(120).default("manual"),
   occurredAt: z.string().datetime().optional(),
@@ -153,6 +155,7 @@ async function currentUsage(orgId: string) {
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
   const from = monthStart.toISOString();
+  const monthDate = from.slice(0, 10); // 'YYYY-MM-01' — the rollup `month` key
   const db = getOrgScopedClient(orgId);
   const raw = db.raw().schema("resupply");
 
@@ -162,11 +165,7 @@ async function currentUsage(orgId: string) {
     locations,
     ordersThisMonth,
     activeSubscriptions,
-    outboundEvents,
-    aiEvents,
-    billingEvents,
-    faxEvents,
-    voiceEvents,
+    rollups,
   ] = await Promise.all([
     countTable(orgId, "patients"),
     countTable(orgId, "admin_users", undefined, {
@@ -177,45 +176,26 @@ async function currentUsage(orgId: string) {
     countTable(orgId, "shop_subscriptions", undefined, {
       in: [["status", ["active", "trialing"]]],
     }),
+    // Event-based metrics read from the monthly rollup — one row per
+    // (org, month, metric_key), maintained by increment_tenant_usage_rollup
+    // (migration 0367). At most a handful of rows per org/month, so no
+    // page-cap/aggregation hazard.
     raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
+      .from("tenant_usage_monthly_rollups")
+      .select("metric_key, quantity")
       .eq("org_id", orgId)
-      .eq("metric_key", "outboundMessagesPerMonth")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "aiTextInteractionsPerMonth")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "billingTransactionsPerMonth")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "faxEvents")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "aiVoiceEvents")
-      .gte("occurred_at", from),
+      .eq("month", monthDate),
   ]);
 
-  function sumRows(result: {
-    data: Array<{ quantity: number | null }> | null;
-    error: unknown;
-  }): number {
-    if (result.error) throw result.error;
-    return (result.data ?? []).reduce((sum, r) => sum + (r.quantity ?? 0), 0);
+  if (rollups.error) throw rollups.error;
+  const usageByMetric = new Map<string, number>();
+  for (const r of (rollups.data ?? []) as Array<{
+    metric_key: string;
+    quantity: number | null;
+  }>) {
+    usageByMetric.set(r.metric_key, r.quantity ?? 0);
   }
+  const metered = (key: string): number => usageByMetric.get(key) ?? 0;
 
   return {
     month: from.slice(0, 7),
@@ -225,11 +205,11 @@ async function currentUsage(orgId: string) {
       locations,
       ordersPerMonth: ordersThisMonth,
       activeSubscriptions,
-      outboundMessagesPerMonth: sumRows(outboundEvents),
-      aiTextInteractionsPerMonth: sumRows(aiEvents),
-      billingTransactionsPerMonth: sumRows(billingEvents),
-      faxEvents: sumRows(faxEvents),
-      aiVoiceEvents: sumRows(voiceEvents),
+      outboundMessagesPerMonth: metered("outboundMessagesPerMonth"),
+      aiTextInteractionsPerMonth: metered("aiTextInteractionsPerMonth"),
+      billingTransactionsPerMonth: metered("billingTransactionsPerMonth"),
+      faxEvents: metered("faxEvents"),
+      aiVoiceEvents: metered("aiVoiceEvents"),
     },
   };
 }
@@ -421,6 +401,14 @@ router.post(
       res.status(500).json({ error: "usage_event_failed" });
       return;
     }
+    // Mirror the event into the monthly rollup that currentUsage() reads,
+    // so an operator-entered datapoint shows up in the billing console.
+    await raw.schema("resupply").rpc("increment_tenant_usage_rollup", {
+      p_org_id: req.orgId,
+      p_metric_key: parsed.data.metricKey,
+      p_quantity: parsed.data.quantity,
+      p_occurred_at: parsed.data.occurredAt ?? new Date().toISOString(),
+    });
     res.status(201).json({ id: data.id });
   },
 );
@@ -796,6 +784,13 @@ router.post(
       res.status(500).json({ error: "usage_event_failed" });
       return;
     }
+    // Mirror the event into the monthly rollup that currentUsage() reads.
+    await raw.schema("resupply").rpc("increment_tenant_usage_rollup", {
+      p_org_id: parsed.data.tenantId,
+      p_metric_key: parsed.data.metricKey,
+      p_quantity: parsed.data.quantity,
+      p_occurred_at: parsed.data.occurredAt ?? new Date().toISOString(),
+    });
     res.status(201).json({ id: data.id });
   },
 );

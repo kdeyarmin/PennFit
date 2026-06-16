@@ -1,14 +1,21 @@
 // Per-tenant usage metering emitter (G12).
 //
-// Records billable usage as `resupply.tenant_usage_events` rows. The
-// platform billing console aggregates these per month — `currentUsage()`
-// in routes/platform/billing.ts sums them by `metric_key` over the current
-// period and compares against the tenant's plan allowances. Before this
-// emitter, those event-based metrics (AI interactions, outbound messages,
-// billing transactions, fax/voice) could only be entered by hand via the
-// operator POST endpoints, so a tenant's metered usage always read as
-// zero. This is the automatic emitter wired into the request paths that
+// Records billable usage that the platform billing console reads
+// (`currentUsage()` in routes/platform/billing.ts) and compares against
+// the tenant's plan allowances. Before this emitter, those event-based
+// metrics (AI interactions, outbound messages, billing transactions,
+// fax/voice) had no automatic writer, so a tenant's metered usage always
+// read as zero. This is the emitter wired into the request paths that
 // actually generate the usage.
+//
+// Storage model: usage accrues into `resupply.tenant_usage_monthly_rollups`
+// — one row per (org, month, metric_key), incremented atomically via the
+// `increment_tenant_usage_rollup` RPC (migration 0367). We deliberately do
+// NOT write per-turn `tenant_usage_events` rows here: that table's
+// `metric_key` CHECK forbids the camelCase metric keys the billing console
+// uses (so every insert would fail the constraint), and summing per-event
+// rows on read would silently undercount once a tenant exceeds PostgREST's
+// `max_rows` page cap. A single rollup row per metric sidesteps both.
 //
 // Posture — fire-and-forget + fail-soft. Metering is a BILLING signal, not
 // an access gate, so it must NEVER throw, block, or measurably slow a user
@@ -17,11 +24,6 @@
 // checks, which fail CLOSED — here a failure fails OPEN, because
 // over-blocking a paying user to protect a usage counter is the wrong
 // trade.)
-//
-// `tenant_usage_events` is not in the generated Supabase types (it's
-// platform-operator data, queried via `.raw()` everywhere), so this writes
-// through the same `.raw().schema("resupply")` path the billing route uses
-// and stamps `org_id` explicitly.
 
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
@@ -59,13 +61,16 @@ function normalizeQuantity(q: number | undefined): number {
 }
 
 /**
- * Record one usage event for a tenant. Fire-and-forget and fail-soft: it
+ * Record tenant usage by atomically incrementing the current month's
+ * rollup for `(orgId, metricKey)`. Fire-and-forget and fail-soft: it
  * resolves to `void` on success OR on any failure (missing org, DB error)
  * — it never throws and never rejects, so a hot-path caller can
  * `void recordTenantUsage(...)` without a try/catch and without awaiting.
  *
  * No-ops (records nothing) when the tenant context is absent or the
- * effective quantity is zero — neither carries a billing signal.
+ * effective quantity is zero — neither carries a billing signal. The
+ * `source`/`metadata` inputs are accepted for callsite clarity; the rollup
+ * stores only the running per-metric total.
  */
 export async function recordTenantUsage(
   input: RecordTenantUsageInput,
@@ -78,14 +83,10 @@ export async function recordTenantUsage(
     const { error } = await getOrgScopedClient(orgId)
       .raw()
       .schema("resupply")
-      .from("tenant_usage_events")
-      .insert({
-        org_id: orgId,
-        metric_key: input.metricKey,
-        quantity,
-        source: input.source ?? "system",
-        occurred_at: new Date().toISOString(),
-        metadata: input.metadata ?? {},
+      .rpc("increment_tenant_usage_rollup", {
+        p_org_id: orgId,
+        p_metric_key: input.metricKey,
+        p_quantity: quantity,
       });
     if (error) throw error;
   } catch (err) {
@@ -96,7 +97,7 @@ export async function recordTenantUsage(
         orgId,
         err: err instanceof Error ? err : new Error(String(err)),
       },
-      "tenant usage metering insert failed (ignored)",
+      "tenant usage metering rollup increment failed (ignored)",
     );
   }
 }

@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { state } = vi.hoisted(() => ({
   state: {
+    // Each captured call is the RPC params object the emitter passed.
     inserted: [] as Array<Record<string, unknown>>,
     insertError: null as unknown,
     throwOnInsert: false,
@@ -14,13 +15,11 @@ vi.mock("@workspace/resupply-db", () => ({
   getOrgScopedClient: (orgId: string) => ({
     raw: () => ({
       schema: () => ({
-        from: () => ({
-          insert: async (row: Record<string, unknown>) => {
-            if (state.throwOnInsert) throw new Error("connection reset");
-            state.inserted.push({ ...row, __orgArg: orgId });
-            return { error: state.insertError };
-          },
-        }),
+        rpc: async (fn: string, params: Record<string, unknown>) => {
+          if (state.throwOnInsert) throw new Error("connection reset");
+          state.inserted.push({ ...params, __fn: fn, __orgArg: orgId });
+          return { error: state.insertError };
+        },
       }),
     }),
   }),
@@ -40,7 +39,7 @@ beforeEach(() => {
 });
 
 describe("recordTenantUsage", () => {
-  it("inserts a usage event with org_id, metric_key, quantity, and source", async () => {
+  it("increments the rollup with org_id, metric_key, and quantity", async () => {
     await recordTenantUsage({
       orgId: "org-1",
       metricKey: "aiTextInteractionsPerMonth",
@@ -48,23 +47,20 @@ describe("recordTenantUsage", () => {
     });
     expect(state.inserted).toHaveLength(1);
     expect(state.inserted[0]).toMatchObject({
-      org_id: "org-1",
-      metric_key: "aiTextInteractionsPerMonth",
-      quantity: 1,
-      source: "storefront.chat",
+      __fn: "increment_tenant_usage_rollup",
+      p_org_id: "org-1",
+      p_metric_key: "aiTextInteractionsPerMonth",
+      p_quantity: 1,
     });
-    // occurred_at + metadata defaults are present.
-    expect(typeof state.inserted[0].occurred_at).toBe("string");
-    expect(state.inserted[0].metadata).toEqual({});
   });
 
-  it("defaults source to 'system' and respects an explicit quantity", async () => {
+  it("respects an explicit quantity", async () => {
     await recordTenantUsage({
       orgId: "org-2",
       metricKey: "outboundMessagesPerMonth",
       quantity: 5,
     });
-    expect(state.inserted[0]).toMatchObject({ source: "system", quantity: 5 });
+    expect(state.inserted[0]).toMatchObject({ p_quantity: 5 });
   });
 
   it("trims the orgId before stamping it", async () => {
@@ -72,7 +68,7 @@ describe("recordTenantUsage", () => {
       orgId: "  org-3  ",
       metricKey: "faxEvents",
     });
-    expect(state.inserted[0].org_id).toBe("org-3");
+    expect(state.inserted[0].p_org_id).toBe("org-3");
   });
 
   it("is a no-op when orgId is missing or blank", async () => {
@@ -107,7 +103,7 @@ describe("recordTenantUsage", () => {
       metricKey: "billingTransactionsPerMonth",
       quantity: 2.9,
     });
-    expect(state.inserted[0].quantity).toBe(2);
+    expect(state.inserted[0].p_quantity).toBe(2);
   });
 
   it("never throws when the insert returns an error (fail-soft)", async () => {
