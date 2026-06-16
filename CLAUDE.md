@@ -234,9 +234,23 @@ correctness, not style:
   explicit "no longer tracked" notice; new readers must NOT add
   `.from("audit_log")` calls. The `/readyz` DB probe was moved off
   `audit_log` onto `feature_flags`.
-- **One From address.** Every outbound email funnels through
-  `lib/resupply-email`'s `createSendgridClient()`; `SENDGRID_FROM_EMAIL`
-  is `info@pennpaps.com`. Don't bypass the shared client.
+- **One From address per tenant — still through the shared client.**
+  Every outbound email funnels through `lib/resupply-email`'s
+  `createSendgridClient()`; don't bypass it. The platform default From is
+  `SENDGRID_FROM_EMAIL` (`info@pennpaps.com`, the seed tenant's address +
+  the fallback for any tenant without its own). **G6 (Phase 2)** relaxed
+  the historical "one global From" rule to **per-tenant**: a tenant's
+  `organizations.from_email` / `from_name` (migration 0359) override the
+  default. Resolve a tenant's sender with `resolveTenantSender(orgId)` /
+  `createTenantSendgridClient(orgId)`
+  (`artifacts/resupply-api/src/lib/email/tenant-sender.ts`) at any callsite
+  that knows its `orgId` — these still go through `createSendgridClient()`
+  (which already accepts `fromEmail`/`fromName`). A NULL `from_email`
+  leaves the platform default in place, so single-tenant is unchanged.
+  Deliverability still requires the tenant's sending **domain** to be
+  authenticated in SendGrid (SPF/DKIM) — storing an unauthenticated
+  `from_email` sends but lands in spam, so enabling a tenant sender is
+  gated on domain auth out of band.
 - **Admin theme stays scoped.** Admin tokens (`--penn-navy`, etc.) live
   in `src/admin.css` under `.admin-root`. Every admin surface must wrap
   its outer `<div>` with `className="admin-root"` so it doesn't clobber
