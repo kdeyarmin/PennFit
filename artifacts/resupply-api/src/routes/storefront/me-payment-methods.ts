@@ -216,6 +216,7 @@ router.post(
     let stripeCustomerId: string;
     try {
       const mapping = await getOrCreateStripeCustomer(config, {
+        orgId: req.orgId,
         customerId,
         email: req.shopCustomerEmail ?? link.customerEmail,
         displayName: req.shopCustomerDisplayName ?? null,

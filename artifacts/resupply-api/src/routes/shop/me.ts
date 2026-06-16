@@ -49,6 +49,7 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   const { email, displayName } = await readCustomerProfile(req);
 
   const row = await ensureShopCustomerRow({
+    orgId: req.orgId,
     customerId: req.userCustomerId,
     email,
     displayName,
@@ -150,6 +151,7 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
 
   // Make sure the row exists (first-time PUT before any GET).
   await ensureShopCustomerRow({
+    orgId: req.orgId,
     customerId: req.userCustomerId!,
     email: null,
   });

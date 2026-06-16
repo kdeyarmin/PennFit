@@ -339,7 +339,10 @@ describe("PUT /admin/system/config/:key", () => {
     });
     expect(JSON.stringify(res.body)).not.toContain("sk-live-abcd9999");
 
-    // The upsert payload carried the actor + value.
+    // The upsert payload carried the actor + value, and — post-0352 —
+    // the org-scoped facade stamped the admin's tenant onto the row, so
+    // the write lands on the caller's own (org_id, key) and not a shared
+    // global row.
     const upserts = supabaseMock.writePayloads("app_config", "upsert");
     expect(upserts).toHaveLength(1);
     expect(upserts[0]).toMatchObject({
@@ -347,8 +350,9 @@ describe("PUT /admin/system/config/:key", () => {
       value: "sk-live-abcd9999",
       updated_by_email: "owner@example.com",
     });
+    expect((upserts[0] as Record<string, unknown>).org_id).toBeTruthy();
 
-    // An app_config_events row was written (value-free).
+    // An app_config_events row was written (value-free), also tenant-scoped.
     const events = supabaseMock.writePayloads("app_config_events", "insert");
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -357,6 +361,7 @@ describe("PUT /admin/system/config/:key", () => {
       had_previous: false,
       operator_email: "owner@example.com",
     });
+    expect((events[0] as Record<string, unknown>).org_id).toBeTruthy();
   });
 });
 

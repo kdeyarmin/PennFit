@@ -572,7 +572,19 @@ function deriveMfaChallengeKey(): Buffer | undefined {
  */
 function makeCustomerIdResolver(): CustomerIdResolver {
   return async (input) => {
-    const supabase = await getScopedClient();
+    // Look up / create the customer's shop_customers row in the tenant
+    // that owns the request host. Fall back to the seed org when the
+    // caller didn't supply one (single-tenant, or a degraded host→org
+    // resolution) so behavior is unchanged there. `shop_customers` is a
+    // tenant table, so the org-scoped facade auto-filters reads and
+    // stamps org_id onto the insert below.
+    const orgId = input.orgId ?? (await resolveSeedOrgId());
+    if (!orgId) {
+      throw new Error(
+        "customerIdResolver: tenant context missing (no orgId / seed org).",
+      );
+    }
+    const supabase = getOrgScopedClient(orgId);
     const { data: existing, error: existingErr } = await supabase
       .from("shop_customers")
       .select("customer_id, display_name, email_lower")
