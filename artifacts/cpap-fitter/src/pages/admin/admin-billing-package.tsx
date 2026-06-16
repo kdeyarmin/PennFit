@@ -111,12 +111,11 @@ export function AdminBillingPackagePage() {
             </div>
           </div>
           <div>
-            <div className="text-slate-500">Last synced</div>
-            <div className="font-medium text-slate-900">
               {sub?.stripeLastSyncedAt
-                ? new Date(sub.stripeLastSyncedAt).toLocaleDateString()
+                ? new Date(sub.stripeLastSyncedAt).toLocaleDateString(undefined, {
+                    timeZone: "America/New_York",
+                  })
                 : "—"}
-            </div>
           </div>
         </div>
       </Card>
