@@ -131,6 +131,7 @@ import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
 import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
+import faxSettingsRouter from "./admin/fax-settings.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -344,6 +345,9 @@ router.use(smartTriggersRouter);
 // TELNYX_API_KEY / TELNYX_FAX_CONNECTION_ID / TELNYX_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
+// /admin/organization/fax-settings — view / auto-provision (Telnyx) /
+// manually set a tenant's own fax number (migration 0368).
+router.use(faxSettingsRouter);
 // /admin/(patients/:id)/prescription-requests — physician-faxable
 // pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.

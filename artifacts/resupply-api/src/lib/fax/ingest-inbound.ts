@@ -33,6 +33,7 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { autoMatchInboundFaxToPaperwork } from "../billing/bill-hold";
 import { isFeatureEnabled } from "../feature-flags";
+import { resolveOrgIdByFaxNumber } from "../messaging/tenant-telecom";
 import { ObjectStorageService } from "../object-storage/objectStorage";
 import { openReferralReviewForFax } from "../referral-review/open-for-fax";
 
@@ -139,7 +140,14 @@ export async function ingestInboundFax(
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<IngestInboundFaxOutcome> {
-  const orgId = await resolveSeedOrgId();
+  // Route the inbound fax to the tenant that owns the called number
+  // (migration 0368). Unknown / unprovisioned numbers fall back to the
+  // seed tenant — the historical single-tenant behavior. Fails soft, so a
+  // routing-lookup blip lands the fax in the seed queue rather than losing
+  // it.
+  const orgId =
+    (await resolveOrgIdByFaxNumber(input.toE164 ?? undefined)) ??
+    (await resolveSeedOrgId());
   if (!orgId) {
     logger.warn(
       { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
@@ -192,7 +200,7 @@ export async function ingestInboundFax(
   rowId = insertRes.data.id;
 
   // Step 2: try to download the media bytes. Best-effort.
-  const media = await tryPersistMedia(input, rowId, logger, storageImpl);
+  const media = await tryPersistMedia(input, rowId, orgId, logger, storageImpl);
 
   // Step 3: barcode auto-file (opt-in). When `fax.auto_file_signed` is on
   // and this is a signed copy of a document we sent out, read the printed
@@ -316,6 +324,7 @@ const MEDIA_NOT_PERSISTED: PersistMediaResult = {
 async function tryPersistMedia(
   input: IngestInboundFaxInput,
   rowId: string,
+  orgId: string,
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<PersistMediaResult> {
@@ -499,16 +508,9 @@ async function tryPersistMedia(
     return MEDIA_NOT_PERSISTED;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { fax_id_first8: input.telnyxFaxId.slice(0, 8) },
-      "fax_inbound_tenant_context_missing",
-    );
-    // The uploaded bytes are now an orphan the storage sweep reaps;
-    // signal not-persisted exactly like a patch failure below.
-    return MEDIA_NOT_PERSISTED;
-  }
+  // Patch the SAME tenant's row the insert went to (passed in), not a
+  // re-resolved seed org — otherwise a fax routed to a non-seed tenant
+  // would patch the wrong org's table and lose its media key.
   const supabase = getOrgScopedClient(orgId);
   const { error: patchErr } = await supabase
     .from("inbound_faxes")
