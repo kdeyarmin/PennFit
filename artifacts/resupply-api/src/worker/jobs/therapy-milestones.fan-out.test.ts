@@ -47,4 +47,53 @@ describe("runTherapyMilestones — multi-tenant fan-out", () => {
     expect(stats).toEqual(ZERO);
     expect(getSupabaseCallCount("patient_therapy_nights", "select")).toBe(0);
   });
+
+  it("SUMS patientsScanned across tenants (does not overwrite per tenant)", async () => {
+    // Regression guard: the per-tenant body accumulates into the shared
+    // stats, so patientsScanned must use += not =. Each tenant's activity
+    // scan returns one distinct patient that ALREADY holds all milestone
+    // kinds — so the body skips the per-patient night reads (which would
+    // otherwise consume the next tenant's staged scan data from the shared
+    // mock queue) and inserts/sends nothing. The total scanned must be 2,
+    // not 1 (the last tenant's count overwriting the first).
+    const allKinds = (pid: string) => ({
+      data: [
+        { patient_id: pid, milestone_kind: "100_nights" },
+        { patient_id: pid, milestone_kind: "365_nights" },
+        { patient_id: pid, milestone_kind: "first_adherence_month" },
+      ],
+    });
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-a" }, { id: "org-b" }],
+    });
+    // org-a: activity scan → existing-milestones (all kinds) → pending send
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "pa" }],
+    });
+    stageSupabaseResponse(
+      "patient_therapy_milestones",
+      "select",
+      allKinds("pa"),
+    );
+    stageSupabaseResponse("patient_therapy_milestones", "select", { data: [] });
+    // org-b: same shape
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "pb" }],
+    });
+    stageSupabaseResponse(
+      "patient_therapy_milestones",
+      "select",
+      allKinds("pb"),
+    );
+    stageSupabaseResponse("patient_therapy_milestones", "select", { data: [] });
+
+    const stats = await runTherapyMilestones();
+    expect(stats.patientsScanned).toBe(2);
+    expect(stats.sent).toBe(0);
+    expect(stats.inserted).toEqual({
+      "100_nights": 0,
+      "365_nights": 0,
+      first_adherence_month: 0,
+    });
+  });
 });

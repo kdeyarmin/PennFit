@@ -283,7 +283,7 @@ async function therapyMilestonesSweepForOrg(
   }
 
   const uniquePatientIds = Array.from(patientIdSet);
-  stats.patientsScanned = uniquePatientIds.length;
+  stats.patientsScanned += uniquePatientIds.length;
 
   // Batch the existing-milestone lookup instead of one query per patient.
   // The prior per-patient `.eq("patient_id", …)` read was an N+1 that grew
