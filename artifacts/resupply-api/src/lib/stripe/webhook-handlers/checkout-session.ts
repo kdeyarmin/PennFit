@@ -436,7 +436,7 @@ export async function syncCustomerAfterCheckout(
   }
   const supabase = getOrgScopedClient(orgId);
 
-  const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
+  const dpm = await readDefaultPaymentMethod(config, stripeCustomerId, orgId);
   const shippingAddress = extractShippingAddressFromSession(session);
   // Stripe collects the phone at Checkout (phone_number_collection); it
   // arrives on the completed session's customer_details. Persist it so an
