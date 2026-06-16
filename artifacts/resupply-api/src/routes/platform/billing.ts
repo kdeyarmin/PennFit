@@ -51,6 +51,78 @@ const usageEventBody = z.object({
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
 
+/** Equality / membership filters applied on top of a count query.
+ *  Passing filter specs as data (rather than a builder callback) keeps
+ *  `countTable` free of an explicitly-`any` builder parameter. */
+interface CountFilters {
+  eq?: Array<[column: string, value: string]>;
+  in?: Array<[column: string, values: string[]]>;
+}
+
+/** Billing-plan catalog row, narrowed to the fields the API surfaces.
+ *  Billing tables aren't in the generated Database types, so rows arrive
+ *  untyped from the service-role client. */
+interface BillingPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  monthly_price_cents: number | null;
+  onboarding_fee_cents: number | null;
+  is_public: boolean | null;
+  is_custom: boolean | null;
+  sort_order: number | null;
+  allowances: Record<string, unknown> | null;
+  features: string[] | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_synced_at: string | null;
+}
+
+interface BillingAddonRow {
+  id: string;
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  recurring_price_cents: number | null;
+  one_time_min_cents: number | null;
+  one_time_max_cents: number | null;
+  unit_label: string | null;
+  usage_metric: string | null;
+  pass_through_note: string | null;
+  is_active: boolean | null;
+  sort_order: number | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_synced_at: string | null;
+}
+
+interface TenantAddonRow {
+  id: string;
+  quantity: number;
+  custom_recurring_price_cents: number | null;
+  notes: string | null;
+  billing_addons: BillingAddonRow;
+}
+
+interface OrgDirectoryRow {
+  id: string;
+  slug: string;
+  name: string | null;
+  storefront_name: string | null;
+  status: string;
+}
+
+/** A minimal Express-Response stand-in so `tenantBilling` can be reused
+ *  to capture each tenant's billing payload in the platform list view. */
+interface CaptureResponse {
+  body: unknown;
+  statusCode: number;
+  status(code: number): CaptureResponse;
+  json(body: unknown): CaptureResponse;
+}
+
 async function rawClient(): Promise<RawClient | null> {
   const seedOrgId = await resolveSeedOrgId();
   return seedOrgId ? getOrgScopedClient(seedOrgId).raw() : null;
@@ -60,13 +132,17 @@ async function countTable(
   orgId: string,
   table: ResupplyTable,
   from?: string,
-  extra?: (q: any) => any,
+  filters?: CountFilters,
 ): Promise<number> {
-  let q: any = getOrgScopedClient(orgId)
+  // The org-scoped facade's query builder is typed `any` at the source
+  // (org-scoped-client.ts), so `q` is inferred as `any` here — there is
+  // no explicit `any` annotation to flag.
+  let q = getOrgScopedClient(orgId)
     .from(table)
     .select("*", { count: "exact", head: true });
   if (from) q = q.gte("created_at", from);
-  if (extra) q = extra(q);
+  for (const [column, value] of filters?.eq ?? []) q = q.eq(column, value);
+  for (const [column, values] of filters?.in ?? []) q = q.in(column, values);
   const { count, error } = await q;
   if (error) throw error;
   return count ?? 0;
@@ -93,14 +169,14 @@ async function currentUsage(orgId: string) {
     voiceEvents,
   ] = await Promise.all([
     countTable(orgId, "patients"),
-    countTable(orgId, "admin_users", undefined, (q) =>
-      q.eq("status", "active"),
-    ),
-    countTable(orgId, "locations", undefined, (q) => q.eq("status", "active")),
+    countTable(orgId, "admin_users", undefined, {
+      eq: [["status", "active"]],
+    }),
+    countTable(orgId, "locations", undefined, { eq: [["status", "active"]] }),
     countTable(orgId, "shop_orders", from),
-    countTable(orgId, "shop_subscriptions", undefined, (q) =>
-      q.in("status", ["active", "trialing"]),
-    ),
+    countTable(orgId, "shop_subscriptions", undefined, {
+      in: [["status", ["active", "trialing"]]],
+    }),
     raw
       .from("tenant_usage_events")
       .select("quantity", { count: "exact" })
@@ -133,12 +209,12 @@ async function currentUsage(orgId: string) {
       .gte("occurred_at", from),
   ]);
 
-  function sumRows(result: any): number {
+  function sumRows(result: {
+    data: Array<{ quantity: number | null }> | null;
+    error: unknown;
+  }): number {
     if (result.error) throw result.error;
-    return ((result.data ?? []) as Array<{ quantity: number | null }>).reduce(
-      (sum, r) => sum + (r.quantity ?? 0),
-      0,
-    );
+    return (result.data ?? []).reduce((sum, r) => sum + (r.quantity ?? 0), 0);
   }
 
   return {
@@ -158,7 +234,7 @@ async function currentUsage(orgId: string) {
   };
 }
 
-function mapPlan(row: any) {
+function mapPlan(row: BillingPlanRow) {
   return {
     id: row.id,
     code: row.code,
@@ -177,7 +253,7 @@ function mapPlan(row: any) {
   };
 }
 
-function mapAddon(row: any) {
+function mapAddon(row: BillingAddonRow) {
   return {
     id: row.id,
     code: row.code,
@@ -282,7 +358,7 @@ async function tenantBilling(orgId: string, res: Response): Promise<void> {
   res.json({
     tenantId: orgId,
     subscription,
-    addons: (addons.data ?? []).map((a: any) => ({
+    addons: ((addons.data ?? []) as TenantAddonRow[]).map((a) => ({
       id: a.id,
       quantity: a.quantity,
       customRecurringPriceCents: a.custom_recurring_price_cents,
@@ -383,8 +459,8 @@ router.get(
       return;
     }
     const tenants = await Promise.all(
-      (orgs ?? []).map(async (o: any) => {
-        const capture: any = {
+      ((orgs ?? []) as OrgDirectoryRow[]).map(async (o) => {
+        const capture: CaptureResponse = {
           body: undefined,
           statusCode: 200,
           status(code: number) {
@@ -396,7 +472,7 @@ router.get(
             return this;
           },
         };
-        await tenantBilling(o.id, capture as Response);
+        await tenantBilling(o.id, capture as unknown as Response);
         return {
           id: o.id,
           slug: o.slug,
