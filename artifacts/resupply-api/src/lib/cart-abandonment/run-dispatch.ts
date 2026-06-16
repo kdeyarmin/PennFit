@@ -114,7 +114,7 @@ export async function runCartAbandonmentDispatch(opts: {
   // dispatcher from /admin/control-center without a deploy. Returns
   // the same zeroed stats envelope as a no-eligible-rows scan, so
   // the admin "Run now" button surfaces "0 sent" instead of an error.
-  if (!(await isFeatureEnabled("cart_abandonment.dispatcher"))) {
+  if (!(await isFeatureEnabled("cart_abandonment.dispatcher", opts.orgId))) {
     opts.log?.warn?.(
       { event: "cart_abandonment_dispatch_skipped_feature_disabled" },
       "cart-abandonment dispatcher skipped — feature flag disabled",
