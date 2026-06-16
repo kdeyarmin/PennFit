@@ -58,7 +58,7 @@ async function rawClient(): Promise<RawClient | null> {
 
 async function countTable(
   orgId: string,
-  table: string,
+  table: ResupplyTable,
   from?: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extra?: (q: any) => any,
