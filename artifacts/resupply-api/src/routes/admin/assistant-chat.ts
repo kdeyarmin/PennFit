@@ -331,6 +331,7 @@ router.post(
     const supabase = getOrgScopedClient(orgId);
     const toolCtx: AdminAssistantToolContext = {
       supabase,
+      orgId,
       suggestingAdminEmail: req.adminEmail ?? null,
       suggestingAdminRole: req.adminRole ?? null,
     };

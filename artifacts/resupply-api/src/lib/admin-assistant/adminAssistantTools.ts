@@ -38,7 +38,7 @@ import type { OrgScopedClient } from "@workspace/resupply-db";
 import { logger } from "../logger.js";
 import {
   applyCompanyIdentityToText,
-  applyPlatformBranding,
+  applyPlatformBrandingForOrg,
 } from "../company-info.js";
 
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
@@ -49,6 +49,10 @@ type SupabaseClient = OrgScopedClient;
 /** Per-request context the route hands to the tool dispatcher. */
 export interface AdminAssistantToolContext {
   supabase: SupabaseClient;
+  /** The tenant whose console the suggestion was filed from. Brands the
+   *  outbound email's PennPilot token with that tenant's admin-assistant
+   *  name. */
+  orgId: string;
   /** Email of the operator filing the suggestion (used as Reply-To). */
   suggestingAdminEmail: string | null;
   /** Coarse role of the operator filing the suggestion. */
@@ -165,11 +169,12 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function buildSuggestionEmail(
+async function buildSuggestionEmail(
   args: z.infer<typeof suggestFeatureArgsSchema>,
   fromAdmin: string | null,
   fromRole: string | null,
-): { subject: string; text: string; html: string } {
+  orgId: string,
+): Promise<{ subject: string; text: string; html: string }> {
   const area = args.area ?? "(unspecified)";
   const priority = args.priority ?? "(unset)";
   const submittedBy = fromAdmin
@@ -218,9 +223,13 @@ function buildSuggestionEmail(
   // admin-assistant name, PennFit → CareMetric Breathe) and the tenant's
   // own brand (PennPaps → saved company name). No-ops for the Penn Home
   // Medical Supply tenant, whose configured names are the originals.
-  const brand = (s: string): string =>
-    applyCompanyIdentityToText(applyPlatformBranding(s));
-  return { subject: brand(subject), text: brand(text), html: brand(html) };
+  const brand = async (s: string): Promise<string> =>
+    applyCompanyIdentityToText(await applyPlatformBrandingForOrg(s, orgId));
+  return {
+    subject: await brand(subject),
+    text: await brand(text),
+    html: await brand(html),
+  };
 }
 
 /**
@@ -288,10 +297,11 @@ export async function executeAdminAssistantTool(
     throw err;
   }
 
-  const { subject, text, html } = buildSuggestionEmail(
+  const { subject, text, html } = await buildSuggestionEmail(
     args,
     ctx.suggestingAdminEmail,
     ctx.suggestingAdminRole,
+    ctx.orgId,
   );
 
   // Reply-To the submitting admin (when known) so the owner can reply
