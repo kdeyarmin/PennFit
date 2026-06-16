@@ -22,7 +22,12 @@ export type SignedLinkTable =
   | "conversations"
   | "fitter_invites"
   | "fitter_leads"
-  | "shop_orders";
+  | "shop_orders"
+  | "claim_appeal_letters"
+  | "manual_documents"
+  | "manual_document_packets"
+  | "prior_authorizations"
+  | "physician_fax_outreach";
 
 export async function resolveOrgIdForSignedRecord(
   table: SignedLinkTable,
