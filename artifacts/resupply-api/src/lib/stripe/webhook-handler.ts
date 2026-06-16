@@ -49,6 +49,9 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import { resolveOrgIdByConnectedAccount } from "./connect";
+import { enterWebhookOrg, resolveWebhookOrgId } from "./webhook-org-context";
+
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
@@ -275,6 +278,20 @@ export const stripeWebhookHandler: RequestHandler = async (
     res.status(500).json({ error: "dedup_unavailable" });
     return;
   }
+
+  // Resolve which tenant this event belongs to ONCE, then bind it for the
+  // whole handler tree (G5 Connect routing). A Connect event carries
+  // `account` (the connected account) → reverse-map to its org; a platform
+  // event (no account) → the seed org. Handlers read this via
+  // resolveWebhookOrgId(). With no connected accounts configured,
+  // event.account is always absent, so this resolves to the seed org
+  // exactly as before.
+  let webhookOrgId = await resolveSeedOrgId();
+  if (event.account) {
+    webhookOrgId =
+      (await resolveOrgIdByConnectedAccount(event.account)) ?? webhookOrgId;
+  }
+  if (webhookOrgId) enterWebhookOrg(webhookOrgId);
 
   try {
     switch (event.type) {
@@ -694,7 +711,7 @@ async function markStatusByPaymentIntent(
       | undefined;
   },
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — treat like an unknown payment_intent
     // (skip the refund mirror; same non-throwing "nothing to do" path).
@@ -869,7 +886,7 @@ export async function sendOrderConfirmationIfFirst(args: {
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
   const { session, paidOrderId, items, log } = args;
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — skip the send (same non-throwing "skip"
     // outcome used when the row is missing or already sent).

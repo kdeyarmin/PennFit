@@ -8,7 +8,9 @@
 
 import type Stripe from "stripe";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
+
+import { resolveWebhookOrgId } from "../webhook-org-context";
 
 /**
  * Handle payment_method.detached: clear the stored default-PM pointer
@@ -28,7 +30,7 @@ export async function handlePaymentMethodDetached(
 ): Promise<void> {
   const pm = event.data.object as Stripe.PaymentMethod;
   if (typeof pm.id === "string") {
-    const orgId = await resolveSeedOrgId();
+    const orgId = await resolveWebhookOrgId();
     if (!orgId) {
       log?.warn?.(
         { paymentMethodId: pm.id },
