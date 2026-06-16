@@ -1,4 +1,4 @@
--- 0359_org_email_sender — per-tenant outbound email From identity (G6).
+-- 0360_org_email_sender — per-tenant outbound email From identity (G6).
 --
 -- Phase 2 relaxes the "one From address" invariant (info@pennpaps.com,
 -- ADR 016/018) into "one From address PER TENANT". Every email still

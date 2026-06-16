@@ -240,7 +240,7 @@ correctness, not style:
   `SENDGRID_FROM_EMAIL` (`info@pennpaps.com`, the seed tenant's address +
   the fallback for any tenant without its own). **G6 (Phase 2)** relaxed
   the historical "one global From" rule to **per-tenant**: a tenant's
-  `organizations.from_email` / `from_name` (migration 0359) override the
+  `organizations.from_email` / `from_name` (migration 0360) override the
   default. Resolve a tenant's sender with `resolveTenantSender(orgId)` /
   `createTenantSendgridClient(orgId)`
   (`artifacts/resupply-api/src/lib/email/tenant-sender.ts`) at any callsite

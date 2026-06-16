@@ -3,7 +3,7 @@
 // Phase 2 lets each tenant send under THEIR OWN From identity while every
 // email still funnels through the shared `createSendgridClient()` (ADR
 // 016/018 — the "one From address" rule, relaxed to "one From PER
-// TENANT"). A tenant's `from_email` / `from_name` (migration 0359)
+// TENANT"). A tenant's `from_email` / `from_name` (migration 0360)
 // override the platform default (`SENDGRID_FROM_EMAIL` →
 // `info@pennpaps.com`); NULL columns leave the platform default in place,
 // so single-tenant behavior is unchanged.
