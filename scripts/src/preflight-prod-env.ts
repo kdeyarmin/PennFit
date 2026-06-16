@@ -607,8 +607,11 @@ function runChecks(): void {
     }
   }
 
-  // CLAUDE.md "One From address" invariant: SENDGRID_FROM_EMAIL must
-  // be info@pennpaps.com in production.
+  // CLAUDE.md "One From address PER TENANT" rule (G6): SENDGRID_FROM_EMAIL
+  // is the PLATFORM DEFAULT From — used by the seed tenant and as the
+  // fallback for any tenant without its own `organizations.from_email`.
+  // It must still be info@pennpaps.com in production; per-tenant senders
+  // are stored in org data, not this env var.
   if (prodMode) {
     expectExactly("SENDGRID_FROM_EMAIL", "info@pennpaps.com");
   } else {
