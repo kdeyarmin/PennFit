@@ -439,7 +439,7 @@ router.put(
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
-    await raw
+    const { error: cancelErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
       .update({
@@ -449,6 +449,10 @@ router.put(
       })
       .eq("org_id", param.data.id)
       .in("status", ["active", "trialing", "past_due"]);
+    if (cancelErr) {
+      res.status(500).json({ error: "subscription_update_failed" });
+      return;
+    }
     const { error: insErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
