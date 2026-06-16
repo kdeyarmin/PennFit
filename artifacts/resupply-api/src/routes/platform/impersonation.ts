@@ -169,6 +169,7 @@ router.post(
 
 router.post(
   "/platform/impersonation/stop",
+  adminWriteRateLimiter,
   async (req: Request, res: Response): Promise<void> => {
     // Self-service: resolve the CURRENT session from the cookie and, when
     // it's an impersonation session, revoke it + clear the cookie. No
