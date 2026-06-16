@@ -447,7 +447,8 @@ export async function handlePlatformTenantStripeEvent(
   }
   const invoice = event.data.object as Stripe.Invoice;
   const legacySub = (invoice as any).subscription;
-  const subRef = invoice.parent?.subscription_details?.subscription ?? legacySub;
+  const subRef =
+    invoice.parent?.subscription_details?.subscription ?? legacySub;
   const subscriptionId =
     typeof subRef === "string" ? subRef : (subRef?.id ?? null);
   if (!subscriptionId) return false;

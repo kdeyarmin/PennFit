@@ -2,7 +2,11 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type ResupplyTable,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -54,7 +58,7 @@ async function rawClient(): Promise<RawClient | null> {
 
 async function countTable(
   orgId: string,
-  table: string,
+  table: ResupplyTable,
   from?: string,
   extra?: (q: any) => any,
 ): Promise<number> {

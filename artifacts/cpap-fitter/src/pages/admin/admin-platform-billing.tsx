@@ -248,7 +248,9 @@ function TenantEditor({
               {tenant.billing.subscription?.currentPeriodEnd
                 ? ` · Renews ${new Date(
                     tenant.billing.subscription.currentPeriodEnd,
-                  ).toLocaleDateString(undefined, { timeZone: "America/New_York" })}`
+                  ).toLocaleDateString(undefined, {
+                    timeZone: "America/New_York",
+                  })}`
                 : ""}
             </div>
           </div>
