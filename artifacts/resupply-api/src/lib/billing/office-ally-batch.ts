@@ -49,6 +49,7 @@ import {
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
 
 // Org-scoped chokepoint client. Helpers below auto-scope their reads/
@@ -752,6 +753,19 @@ export async function executeOfficeAllyBatchSubmit(
   }).catch((err) => {
     logger.warn({ err }, "insurance_claim.batch_submit audit write failed");
   });
+
+  // Meter the transmitted claims as billing transactions (G12) — one per
+  // claim in the 837P, only when the interchange actually uploaded. Covers
+  // the manual batch-submit route AND the auto-submit cron, which both run
+  // through here. Fire-and-forget + fail-soft.
+  if (submission.upload.ok) {
+    void recordTenantUsage({
+      orgId,
+      metricKey: "billingTransactionsPerMonth",
+      quantity: claims.length,
+      source: "claim.batch_submit",
+    });
+  }
 
   return {
     ok: true,

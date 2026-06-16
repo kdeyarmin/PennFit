@@ -45,6 +45,7 @@ import {
 
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
 import {
   eligibilityCompletedEvent,
@@ -272,6 +273,12 @@ export async function verifyEligibility(
         { event: "eligibility.realtime.resolved", latencyMs },
         "verifyEligibility: real-time 271 resolved",
       );
+      // A real-time 270/271 transaction completed — meter it (G12).
+      void recordTenantUsage({
+        orgId,
+        metricKey: "billingTransactionsPerMonth",
+        source: "eligibility.verify.realtime",
+      });
       return {
         eligibilityCheckId: rtInserted.id,
         isaControlNumber: built.interchangeControlNumber,
@@ -317,6 +324,13 @@ export async function verifyEligibility(
       { kind: upload.kind, message: upload.message },
       "verifyEligibility: upload failed",
     );
+  } else {
+    // A 270 was transmitted over SFTP — meter one billing transaction (G12).
+    void recordTenantUsage({
+      orgId,
+      metricKey: "billingTransactionsPerMonth",
+      source: "eligibility.verify.sftp",
+    });
   }
   return {
     eligibilityCheckId: inserted.id,
