@@ -14,6 +14,16 @@ const PLATFORM_BILLING_SCOPE = "platform_tenant";
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
 
+/** Minimal shape of a billing_plans or billing_addons DB row used by sync. */
+interface BillingCatalogRow {
+  id: string;
+  name: string;
+  description?: string | null;
+  code: string;
+  stripe_price_id?: string | null;
+  stripe_product_id?: string | null;
+}
+
 export interface PlatformStripeSyncResult {
   stripeConfigured: boolean;
   customerId?: string;
@@ -63,7 +73,7 @@ async function ensureRecurringPrice(args: {
   raw: RawClient;
   table: "billing_plans" | "billing_addons";
   kind: "plan" | "addon";
-  row: any;
+  row: BillingCatalogRow;
   amountCents: number | null;
 }): Promise<string | null> {
   if (!args.amountCents || args.amountCents <= 0)
