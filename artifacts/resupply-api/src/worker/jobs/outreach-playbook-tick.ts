@@ -41,7 +41,6 @@ import type PgBoss from "pg-boss";
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   getOrgScopedClient,
-  resolveSeedOrgId,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 import {
@@ -62,6 +61,7 @@ import {
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   renderPlaybookBody,
   stepDueAt,
@@ -167,17 +167,18 @@ function parsePrefs(raw: unknown): CommunicationPreferences {
 
 /** Best-effort step-log write. The UNIQUE (run_id, step_index)
  *  constraint absorbs lost-race duplicates (23505 is expected then). */
-async function recordStep(opts: {
-  runId: string;
-  stepIndex: number;
-  channel: PlaybookChannel;
-  status: "sent" | "failed" | "skipped" | "call_due";
-  detail?: string | null;
-  callScript?: string | null;
-}): Promise<void> {
+async function recordStep(
+  orgId: string,
+  opts: {
+    runId: string;
+    stepIndex: number;
+    channel: PlaybookChannel;
+    status: "sent" | "failed" | "skipped" | "call_due";
+    detail?: string | null;
+    callScript?: string | null;
+  },
+): Promise<void> {
   try {
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) return;
     const supabase = getOrgScopedClient(orgId);
     const { error } = await supabase
       .raw()
@@ -225,14 +226,33 @@ export async function runOutreachPlaybookSweep(
     errors: 0,
     flagDisabled: false,
   };
+  // Fan out across every active tenant — outreach_playbook_runs / _step_log
+  // are org-scoped (the `.raw()` reads/writes filter by org_id explicitly),
+  // and the dispatcher flag resolves per tenant. Per-tenant failure
+  // isolation; results summed. Single-tenant: listActiveOrgIds() returns just
+  // the seed org, so this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await outreachPlaybookSweepForOrg(orgId, now, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
 
-  if (!(await isFeatureEnabled("outreach_playbooks.dispatcher"))) {
+async function outreachPlaybookSweepForOrg(
+  orgId: string,
+  now: Date,
+  stats: PlaybookTickStats,
+): Promise<void> {
+  // Per-tenant runtime kill switch (Control Center). `flagDisabled` is an
+  // informational OR across tenants — true if any active tenant had the
+  // dispatcher paused this tick.
+  if (!(await isFeatureEnabled("outreach_playbooks.dispatcher", orgId))) {
     stats.flagDisabled = true;
-    return stats;
+    return;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
   const supabase = getOrgScopedClient(orgId);
   const nowIso = now.toISOString();
 
@@ -248,7 +268,7 @@ export async function runOutreachPlaybookSweep(
     .limit(BATCH_SIZE);
   if (runsErr) throw runsErr;
   const runRows = (runs ?? []) as RunRow[];
-  if (runRows.length === 0) return stats;
+  if (runRows.length === 0) return;
 
   // Steps for every playbook in the batch, one query.
   const playbookIds = [...new Set(runRows.map((r) => r.playbook_id))];
@@ -346,7 +366,7 @@ export async function runOutreachPlaybookSweep(
         stats.errors += 1;
       } else {
         stats.cancelledRuns += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: run.next_step_index,
           channel: step.channel,
@@ -452,7 +472,7 @@ export async function runOutreachPlaybookSweep(
 
     try {
       if (step.channel === "call") {
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "call",
@@ -466,7 +486,7 @@ export async function runOutreachPlaybookSweep(
       if (step.channel === "sms") {
         if (!cfg.sms) {
           stats.skipped += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -477,7 +497,7 @@ export async function runOutreachPlaybookSweep(
         }
         if (!shouldSendSms(prefs, "transactional", now)) {
           stats.skipped += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -495,7 +515,7 @@ export async function runOutreachPlaybookSweep(
         });
         if (outcome.status === "ok") {
           stats.smsSent += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -503,7 +523,7 @@ export async function runOutreachPlaybookSweep(
           });
         } else {
           stats.errors += 1;
-          await recordStep({
+          await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
             channel: "sms",
@@ -517,7 +537,7 @@ export async function runOutreachPlaybookSweep(
       // email
       if (!cfg.email || !cfg.hmacKeyReady) {
         stats.skipped += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -528,7 +548,7 @@ export async function runOutreachPlaybookSweep(
       }
       if (!shouldSendEmail(prefs, "resupplyReminder", now)) {
         stats.skipped += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -550,7 +570,7 @@ export async function runOutreachPlaybookSweep(
       });
       if (outcome.status === "ok") {
         stats.emailsSent += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -558,7 +578,7 @@ export async function runOutreachPlaybookSweep(
         });
       } else {
         stats.errors += 1;
-        await recordStep({
+        await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
           channel: "email",
@@ -580,7 +600,7 @@ export async function runOutreachPlaybookSweep(
         },
         "outreach-playbooks: step send threw",
       );
-      await recordStep({
+      await recordStep(orgId, {
         runId: run.id,
         stepIndex: step.step_index,
         channel: step.channel,
@@ -589,8 +609,6 @@ export async function runOutreachPlaybookSweep(
       });
     }
   }
-
-  return stats;
 }
 
 export async function registerOutreachPlaybookTickJob(
