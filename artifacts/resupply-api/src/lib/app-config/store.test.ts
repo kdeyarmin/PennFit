@@ -18,13 +18,18 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
-import { APP_CONFIG_KEYS } from "./catalog";
+import { APP_CONFIG_KEYS, appConfigScopeOf } from "./catalog";
 import {
   __resetAppConfigCacheForTests,
   applyAppConfigOverlayToEnv,
   getEffectiveEnv,
+  getTenantConfigValue,
   maskSecretHint,
 } from "./store";
+
+// The supabase mock stubs resolveSeedOrgId() to this fixed org.
+const SEED_ORG = "00000000-0000-4000-8000-000000000000";
+const TENANT_ORG = "11111111-1111-4111-8111-111111111111";
 
 beforeEach(() => {
   supabaseMock.reset();
@@ -135,6 +140,80 @@ describe("applyAppConfigOverlayToEnv", () => {
     const result = await applyAppConfigOverlayToEnv();
     expect(result.applied).toBe(0);
     expect(process.env.DEEPGRAM_API_KEY).toBeUndefined();
+  });
+});
+
+describe("getTenantConfigValue", () => {
+  it("returns the tenant's own value when its (org_id, key) row exists", async () => {
+    stageSupabaseResponse("app_config", "select", {
+      data: { value: "AcmeBot" },
+    });
+    const v = await getTenantConfigValue(
+      TENANT_ORG,
+      "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
+    );
+    expect(v).toBe("AcmeBot");
+  });
+
+  it("falls back to the seed org's value when the tenant has no row", async () => {
+    // Tenant read → no row; seed read → the platform default value.
+    stageSupabaseResponse("app_config", "select", { data: null });
+    stageSupabaseResponse("app_config", "select", {
+      data: { value: "PennBot" },
+    });
+    const v = await getTenantConfigValue(
+      TENANT_ORG,
+      "RESUPPLY_ASSISTANT_STOREFRONT_NAME",
+    );
+    expect(v).toBe("PennBot");
+  });
+
+  it("returns null when neither the tenant nor the seed org has a row", async () => {
+    stageSupabaseResponse("app_config", "select", { data: null });
+    stageSupabaseResponse("app_config", "select", { data: null });
+    const v = await getTenantConfigValue(
+      TENANT_ORG,
+      "RESUPPLY_ASSISTANT_ADMIN_NAME",
+    );
+    expect(v).toBeNull();
+  });
+
+  it("does not double-read when the org IS the seed org", async () => {
+    stageSupabaseResponse("app_config", "select", { data: null });
+    const v = await getTenantConfigValue(
+      SEED_ORG,
+      "RESUPPLY_ASSISTANT_ADMIN_NAME",
+    );
+    // Only one read (no seed fallback, since org === seed) → null, no throw
+    // from a missing second staged response.
+    expect(v).toBeNull();
+  });
+
+  it("degrades to null (never throws) on a DB error", async () => {
+    stageSupabaseResponse("app_config", "select", {
+      error: { message: "boom" },
+    });
+    // Error path falls back to a seed read; stage that as a miss.
+    stageSupabaseResponse("app_config", "select", { data: null });
+    const v = await getTenantConfigValue(
+      TENANT_ORG,
+      "RESUPPLY_ASSISTANT_ADMIN_NAME",
+    );
+    expect(v).toBeNull();
+  });
+});
+
+describe("appConfigScopeOf", () => {
+  it("tags the assistant-name keys as tenant-overridable", () => {
+    expect(appConfigScopeOf("RESUPPLY_ASSISTANT_STOREFRONT_NAME")).toBe(
+      "tenant",
+    );
+    expect(appConfigScopeOf("RESUPPLY_ASSISTANT_ADMIN_NAME")).toBe("tenant");
+  });
+
+  it("defaults vendor credentials + unknown keys to platform scope", () => {
+    expect(appConfigScopeOf("OPENAI_API_KEY")).toBe("platform");
+    expect(appConfigScopeOf("NOT_A_REAL_KEY")).toBe("platform");
   });
 });
 

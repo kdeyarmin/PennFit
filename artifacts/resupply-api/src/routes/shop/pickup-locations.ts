@@ -15,6 +15,8 @@ import { Router, type IRouter } from "express";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { listActivePickupLocations } from "../../lib/pickup/locations";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
@@ -29,7 +31,13 @@ router.get(
   "/shop/pickup-locations",
   pickupLocationsLimiter,
   async (req, res) => {
-    if (!(await isFeatureEnabled("storefront.pickup", req.orgId))) {
+    // Public route — no auth middleware populates req.orgId, so resolve
+    // the tenant from the request host (verified custom domain → that
+    // org; platform host / miss → seed org) before reading the flag, so
+    // a tenant's storefront.pickup toggle gates THIS storefront.
+    const orgId =
+      req.orgId ?? (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+    if (!(await isFeatureEnabled("storefront.pickup", orgId))) {
       res.json({ enabled: false, locations: [] });
       return;
     }

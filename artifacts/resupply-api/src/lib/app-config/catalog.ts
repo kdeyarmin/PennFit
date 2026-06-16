@@ -39,6 +39,20 @@
  */
 export type AppConfigApplyMode = "live" | "restart";
 
+/**
+ * Whether a setting is the same for the whole platform or can differ per
+ * tenant.
+ *   * "platform" (default) — infra / vendor credentials the PLATFORM
+ *     operator provides (Supabase, OpenAI, Stripe platform keys, …).
+ *     Folded into `process.env` once at boot from the seed org's row.
+ *   * "tenant" — a value a tenant owner can set for THEIR org (e.g. the
+ *     in-app assistant display names). Stored per `(org_id, key)` (the
+ *     0352 re-key) and read per-request via `getTenantConfigValue(orgId,
+ *     key)`, which falls back to the seed org's value (the platform
+ *     default) when the tenant has no row.
+ */
+export type AppConfigScope = "platform" | "tenant";
+
 export interface AppConfigSetting {
   /** Literal env-var name; also the resupply.app_config primary key. */
   key: string;
@@ -55,6 +69,11 @@ export interface AppConfigSetting {
   secret: boolean;
   /** When a saved value takes effect — drives the "Live"/"On restart" badge. */
   applyMode: AppConfigApplyMode;
+  /**
+   * Platform-wide vs per-tenant. Defaults to "platform" when omitted —
+   * use `appConfigScopeOf(key)` to read it with the default applied.
+   */
+  scope?: AppConfigScope;
   /** One-line help shown under the field. */
   description: string;
   /** Optional format hint for the input. */
@@ -87,6 +106,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_BRANDING,
     secret: false,
     applyMode: "restart",
+    scope: "tenant",
     description:
       "Display name for the customer-facing chat assistant on the storefront. Leave blank for the CareMetric default (“CareMetric Assistant”).",
     placeholder: "CareMetric Assistant",
@@ -97,6 +117,7 @@ export const APP_CONFIG_CATALOG: readonly AppConfigSetting[] = [
     category: CATEGORY_BRANDING,
     secret: false,
     applyMode: "restart",
+    scope: "tenant",
     description:
       "Display name for the in-app admin-console assistant (tech support + program manager). Leave blank for the CareMetric default (“CareMetric Copilot”).",
     placeholder: "CareMetric Copilot",
@@ -517,6 +538,19 @@ export const APP_CONFIG_KEYS: readonly string[] = APP_CONFIG_CATALOG.map(
 export function getAppConfigSetting(key: string): AppConfigSetting | undefined {
   return CATALOG_BY_KEY.get(key);
 }
+
+/**
+ * The scope of a catalog key, defaulting to "platform" for any key whose
+ * entry omits `scope` (and for unknown keys). Use this everywhere instead
+ * of reading `.scope` directly so the default is applied consistently.
+ */
+export function appConfigScopeOf(key: string): AppConfigScope {
+  return CATALOG_BY_KEY.get(key)?.scope ?? "platform";
+}
+
+/** Keys a tenant owner can override for their own org (scope = "tenant"). */
+export const TENANT_SCOPED_APP_CONFIG_KEYS: readonly string[] =
+  APP_CONFIG_CATALOG.filter((s) => s.scope === "tenant").map((s) => s.key);
 
 /** True iff `key` is a writable catalog setting. */
 export function isAppConfigKey(key: string): boolean {
