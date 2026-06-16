@@ -17,7 +17,9 @@ import {
 const supabaseMock = installSupabaseMock();
 
 const resolveOrgIdByHostMock = vi.hoisted(() =>
-  vi.fn(async () => "org-from-host"),
+  // Typed string | null so the no-tenant case can resolve null directly
+  // (the route's resolveOrgIdByHost returns string | null).
+  vi.fn<() => Promise<string | null>>(async () => "org-from-host"),
 );
 vi.mock("../../lib/tenant-branding", () => ({
   resolveOrgIdByHost: resolveOrgIdByHostMock,
@@ -85,7 +87,7 @@ describe("GET /shop/education-videos", () => {
   });
 
   it("returns an empty library when no tenant resolves", async () => {
-    resolveOrgIdByHostMock.mockResolvedValue(null as unknown as string);
+    resolveOrgIdByHostMock.mockResolvedValue(null);
     const res = await request(makeApp()).get("/shop/education-videos");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ groups: [] });
