@@ -54,14 +54,13 @@ import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
 // both are small + load-bearing for error paths.
 import { DashboardPage } from "@/pages/admin/dashboard";
 
-// Onboarding agreements gate (G16). Lazy so its agreement template text
-// rides the admin chunk and never the storefront bundle. Rendered in place
-// of the AppShell + routes whenever /me reports unsigned agreements.
-const AgreementsGate = lazyWithRetry(() =>
-  import("@/pages/admin/agreements-gate").then((m) => ({
-    default: m.AgreementsGate,
-  })),
-);
+// Onboarding agreements gate (G16). Eager (like DashboardPage / the error
+// pages) so it needs no Suspense boundary of its own — it renders in place
+// of the AppShell + routes whenever /me reports unsigned agreements, before
+// the per-page Suspense exists. Its template text already rides the admin
+// chunk (console.tsx is only ever in that chunk), never the storefront
+// bundle.
+import { AgreementsGate } from "@/pages/admin/agreements-gate";
 
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
@@ -767,17 +766,7 @@ function AdminConsole() {
   // closed (an unresolved tenant context reports every agreement pending),
   // so this also covers the can't-prove-acceptance case.
   if ((data?.pendingAgreements?.length ?? 0) > 0) {
-    return (
-      <Suspense
-        fallback={
-          <div className="admin-root min-h-screen flex items-center justify-center">
-            <Spinner label="Loading agreements…" />
-          </div>
-        }
-      >
-        <AgreementsGate />
-      </Suspense>
-    );
+    return <AgreementsGate />;
   }
 
   return (
