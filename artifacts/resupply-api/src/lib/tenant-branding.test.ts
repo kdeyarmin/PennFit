@@ -1,7 +1,7 @@
 // tenant-branding resolver: "which tenant brand does THIS host get?".
 //
 //   1. A verified custom domain resolves to that tenant's brand.
-//   2. An unknown / unverified host falls back to the seed tenant brand.
+//   2. An unknown / unverified host falls back to the platform brand.
 //   3. A DB error degrades to the bundled DEFAULT_BRANDING (fail-soft).
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -16,6 +16,8 @@ const supabaseMock = installSupabaseMock();
 import {
   __resetTenantBrandingForTests,
   DEFAULT_BRANDING,
+  isVerifiedCustomDomainOrigin,
+  refreshVerifiedCustomDomains,
   resolveBrandingByHost,
 } from "./tenant-branding";
 
@@ -84,5 +86,28 @@ describe("resolveBrandingByHost", () => {
     // response". The cached hit returns the same value.
     const second = await resolveBrandingByHost("pennpaps.com");
     expect(second).toEqual(first);
+  });
+});
+
+describe("isVerifiedCustomDomainOrigin", () => {
+  it("normalizes www origins when checking verified tenant domains", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ custom_domain: "pennpaps.com" }],
+    });
+
+    await refreshVerifiedCustomDomains();
+
+    expect(isVerifiedCustomDomainOrigin("https://pennpaps.com")).toBe(true);
+    expect(isVerifiedCustomDomainOrigin("https://www.pennpaps.com")).toBe(true);
+  });
+
+  it("does not allow the platform domain through the tenant dynamic CORS path", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ custom_domain: "pennpaps.com" }],
+    });
+
+    await refreshVerifiedCustomDomains();
+
+    expect(isVerifiedCustomDomainOrigin("https://cmbreathe.com")).toBe(false);
   });
 });

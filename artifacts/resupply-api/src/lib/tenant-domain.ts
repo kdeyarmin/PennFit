@@ -63,7 +63,7 @@ export function normalizeCustomDomain(raw: string): string | null {
   // Don't let a tenant claim the platform's own hostnames.
   if (value === "localhost" || value.endsWith(".localhost")) return null;
   if (value.endsWith(".up.railway.app")) return null;
-  if (value === "cmbreathe.com" || value === "www.cmbreathe.com") return null;
+  if (value === "cmbreathe.com") return null;
 
   return value;
 }
