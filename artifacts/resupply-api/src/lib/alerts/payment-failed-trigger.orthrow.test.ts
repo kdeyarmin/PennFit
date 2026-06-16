@@ -33,6 +33,8 @@ function stageResolvableChain() {
   stageSupabaseResponse("shop_customers", "select", {
     data: { email_lower: "pat@example.com" },
   });
+  // The trigger uses .limit(2) (exactly-one ambiguity guard), so the
+  // staged response must be an array, not a maybeSingle object.
   stageSupabaseResponse("patients", "select", { data: [{ id: "p_1" }] });
 }
 

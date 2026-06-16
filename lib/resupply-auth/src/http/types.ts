@@ -84,6 +84,14 @@ export type CustomerIdResolver = (input: {
   authUserId: string;
   emailLower: string;
   displayName: string | null;
+  /**
+   * Tenant the request operates on (resolved from the request host by the
+   * caller). The resolver looks up / creates the customer's
+   * `shop_customers` row in THIS tenant. Optional for back-compat: when
+   * omitted, the resolver falls back to the seed org (single-tenant
+   * behavior, and a safe degrade if host→org resolution was unavailable).
+   */
+  orgId?: string;
 }) => Promise<{
   /** Value to put in `req.userCustomerId` after resolution. */
   customerKey: string;

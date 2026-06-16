@@ -124,6 +124,18 @@ export interface AuthRepository {
     expiresAt: Date;
   }): Promise<void>;
   /**
+   * Expire every still-valid (unconsumed, unexpired) email token a
+   * user holds for one purpose. Called right before issuing a fresh
+   * token so repeat forgot-password / re-send-verification requests
+   * don't leave a stack of concurrently valid links in old emails —
+   * only the most recently issued link works.
+   */
+  expireUnconsumedEmailTokens(input: {
+    userId: string;
+    purpose: EmailTokenPurpose;
+    at: Date;
+  }): Promise<void>;
+  /**
    * Atomically consume an email token: returns the row if it was
    * still valid (unconsumed AND not expired) at the time of the
    * call AND matched the expected purpose AND marks it consumed,

@@ -31,7 +31,7 @@ import {
   getOrgScopedClient,
   resolveSeedOrgId,
   type Database,
-  type ResupplySupabaseClient,
+  type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { getStripeClient, type StripeConfig } from "./config";
@@ -51,30 +51,32 @@ export interface CustomerMapping {
 export async function getOrCreateStripeCustomer(
   config: StripeConfig,
   args: {
+    /** Tenant the request operates on (req.orgId). Falls back to the seed
+     *  org when omitted — single-tenant behavior, and a safe degrade. */
+    orgId?: string;
     customerId: string;
     email: string | null;
     displayName?: string | null;
   },
 ): Promise<CustomerMapping> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = args.orgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     throw new Error(
-      "getOrCreateStripeCustomer: tenant context missing (no seed org).",
+      "getOrCreateStripeCustomer: tenant context missing (no orgId / seed org).",
     );
   }
   const supabase = getOrgScopedClient(orgId);
-  const raw = supabase.raw();
   const stripe = getStripeClient(config);
 
   // Step 1: ensure a local row exists. The PUT /shop/me path also
   // creates this; we re-create on demand so checkout flows that
   // skip the account page still work.
-  const existing = await readRow(raw, args.customerId);
-  let row: ShopCustomerRow = existing ?? (await insertRow(raw, args));
+  const existing = await readRow(supabase, args.customerId);
+  let row: ShopCustomerRow = existing ?? (await insertRow(supabase, args));
 
   // Refresh cached email if the auth provider's primary changed since row creation.
   if (args.email && args.email.toLowerCase() !== row.email_lower) {
-    row = await updateEmail(raw, args.customerId, args.email);
+    row = await updateEmail(supabase, args.customerId, args.email);
   }
 
   if (row.stripe_customer_id) {
@@ -119,7 +121,7 @@ export async function getOrCreateStripeCustomer(
   } catch {
     /* fall through to re-read */
   }
-  const refreshed = await readRow(raw, args.customerId);
+  const refreshed = await readRow(supabase, args.customerId);
   if (refreshed?.stripe_customer_id) {
     return { stripeCustomerId: refreshed.stripe_customer_id, row: refreshed };
   }
@@ -134,14 +136,15 @@ export async function getOrCreateStripeCustomer(
 /** Read-only lookup. Returns null if no row exists yet. */
 export async function readShopCustomer(
   customerId: string,
+  orgId?: string,
 ): Promise<ShopCustomerRow | null> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
+  const oid = orgId ?? (await resolveSeedOrgId());
+  if (!oid) {
     // Tenant context missing — treat as "no row" (same null outcome
     // readRow returns when no shop_customers row exists).
     return null;
   }
-  return readRow(getOrgScopedClient(orgId).raw(), customerId);
+  return readRow(getOrgScopedClient(oid), customerId);
 }
 
 /**
@@ -150,17 +153,20 @@ export async function readShopCustomer(
  * PUT calls don't have to handle the missing-row case.
  */
 export async function ensureShopCustomerRow(args: {
+  /** Tenant the request operates on (req.orgId). Falls back to the seed
+   *  org when omitted — single-tenant behavior, and a safe degrade. */
+  orgId?: string;
   customerId: string;
   email: string | null;
   displayName?: string | null;
 }): Promise<ShopCustomerRow> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = args.orgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     throw new Error(
-      "ensureShopCustomerRow: tenant context missing (no seed org).",
+      "ensureShopCustomerRow: tenant context missing (no orgId / seed org).",
     );
   }
-  const supabase = getOrgScopedClient(orgId).raw();
+  const supabase = getOrgScopedClient(orgId);
   const existing = await readRow(supabase, args.customerId);
   if (existing) {
     if (args.email && args.email.toLowerCase() !== existing.email_lower) {
@@ -171,23 +177,28 @@ export async function ensureShopCustomerRow(args: {
   return insertRow(supabase, args);
 }
 
+// These helpers go through the ORG-SCOPED facade (`db.from(...)`), not
+// `.raw()`: `shop_customers` is a tenant table with a NOT NULL `org_id`,
+// so reads must filter by tenant and the insert MUST carry `org_id`
+// (the facade injects it). Using `.raw()` here would both leak across
+// tenants and fail the NOT NULL constraint on insert.
+
 async function readRow(
-  supabase: ResupplySupabaseClient,
+  db: OrgScopedClient,
   customerId: string,
 ): Promise<ShopCustomerRow | null> {
-  const { data, error } = await supabase
-    .schema("resupply")
+  const { data, error } = await db
     .from("shop_customers")
     .select("*")
     .eq("customer_id", customerId)
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data ?? null;
+  return (data as ShopCustomerRow | null) ?? null;
 }
 
 async function insertRow(
-  supabase: ResupplySupabaseClient,
+  db: OrgScopedClient,
   args: {
     customerId: string;
     email: string | null;
@@ -197,9 +208,8 @@ async function insertRow(
   // The original SQL path used INSERT … ON CONFLICT
   // (customer_id) DO NOTHING RETURNING. PostgREST has no DO
   // NOTHING; we INSERT and treat 23505 as the "sibling beat us"
-  // path, then re-read.
-  const { data: inserted, error: insertErr } = await supabase
-    .schema("resupply")
+  // path, then re-read. `org_id` is injected by the scoped facade.
+  const { data: inserted, error: insertErr } = await db
     .from("shop_customers")
     .insert({
       customer_id: args.customerId,
@@ -216,9 +226,9 @@ async function insertRow(
       throw insertErr;
     }
   } else if (inserted) {
-    return inserted;
+    return inserted as ShopCustomerRow;
   }
-  const refreshed = await readRow(supabase, args.customerId);
+  const refreshed = await readRow(db, args.customerId);
   if (!refreshed) {
     throw new Error(
       `shop_customers row vanished after upsert for customer_id=${args.customerId}`,
@@ -228,12 +238,11 @@ async function insertRow(
 }
 
 async function updateEmail(
-  supabase: ResupplySupabaseClient,
+  db: OrgScopedClient,
   customerId: string,
   email: string,
 ): Promise<ShopCustomerRow> {
-  const { data: updated, error } = await supabase
-    .schema("resupply")
+  const { data: updated, error } = await db
     .from("shop_customers")
     .update({
       email_lower: email.toLowerCase(),
@@ -249,7 +258,7 @@ async function updateEmail(
       `shop_customers update returned no rows for customer_id=${customerId}`,
     );
   }
-  return updated;
+  return updated as ShopCustomerRow;
 }
 
 /**

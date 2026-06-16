@@ -86,6 +86,7 @@ router.post(
       // requires one; getOrCreateStripeCustomer is idempotent and
       // safe under concurrent calls.
       const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
+        orgId: req.orgId,
         customerId,
         email,
         displayName,

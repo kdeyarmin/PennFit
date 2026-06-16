@@ -15,10 +15,10 @@ type NewsletterSignupProps = {
 /**
  * Email capture block for the resource library. Visually consistent with the
  * brand pages — gold-haloed icon, glass-panel surface, navy CTA. Validates
- * email shape client-side, then posts to /api/newsletter/subscribe in a
- * fire-and-forget way; on a 200 OK we toast confirmation and swap the form
- * for a success state. If the endpoint isn't wired up yet (404), we still
- * show success — list-building is best-effort marketing, not transactional.
+ * email shape client-side, then posts to /api/newsletter/subscribe; on a
+ * 200 OK we toast confirmation and swap the form for a success state. On
+ * failure we keep the form and toast an honest error — silently faking
+ * success would drop the address on the floor.
  */
 export function NewsletterSignup({
   title = "New articles in your inbox.",
@@ -36,21 +36,25 @@ export function NewsletterSignup({
     if (!isValid || submitting) return;
     setSubmitting(true);
     try {
-      // Best-effort POST. If the endpoint isn't in place yet, swallow
-      // the network error — this is marketing collection, not the
-      // patient's actual signup. Server-side wire-up follows.
-      await fetch("/api/newsletter/subscribe", {
+      const res = await fetch("/api/newsletter/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, source: "learn-newsletter" }),
-      }).catch(() => undefined);
-    } finally {
-      setSubmitting(false);
+      });
+      if (!res.ok) throw new Error(`subscribe failed (${res.status})`);
       setSubmitted(true);
       toast({
         title: "Thanks — you're on the list.",
         description: "Watch for the first article in your inbox soon.",
       });
+    } catch {
+      toast({
+        title: "Couldn't save your signup.",
+        description: "Something went wrong on our end — please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
     }
   }
 

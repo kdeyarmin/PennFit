@@ -104,7 +104,7 @@ router.post(
     // the gate on POST /shop/checkout so express checkout can't bypass
     // a paused storefront. Existing subscriptions and orders are
     // managed through their own routes and stay available.
-    if (!(await isFeatureEnabled("storefront.checkout"))) {
+    if (!(await isFeatureEnabled("storefront.checkout", req.orgId))) {
       res.status(503).json({
         error: "checkout_disabled",
         message:
@@ -287,6 +287,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
+      orgId: req.orgId,
       customerId: customerId,
       email,
       displayName,

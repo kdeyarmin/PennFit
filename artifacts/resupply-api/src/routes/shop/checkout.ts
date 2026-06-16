@@ -130,7 +130,7 @@ router.post(
     // from the UI (e.g. during an outage or inventory freeze) without
     // a deploy; existing orders and webhooks keep flowing because the
     // gate is only on this create-session endpoint.
-    if (!(await isFeatureEnabled("storefront.checkout"))) {
+    if (!(await isFeatureEnabled("storefront.checkout", req.orgId))) {
       res.status(503).json({
         error: "checkout_disabled",
         message:
@@ -190,7 +190,7 @@ router.post(
         });
         return;
       }
-      if (!(await isFeatureEnabled("storefront.pickup"))) {
+      if (!(await isFeatureEnabled("storefront.pickup", req.orgId))) {
         res.status(400).json({
           error: "pickup_unavailable",
           message: "In-store pickup isn't available right now.",
@@ -282,6 +282,7 @@ router.post(
         const profile = await readCustomerProfile(req);
         customerEmail = profile.email;
         const mapping = await getOrCreateStripeCustomer(config, {
+          orgId: req.orgId,
           customerId: req.userCustomerId,
           email: customerEmail,
           displayName: profile.displayName,

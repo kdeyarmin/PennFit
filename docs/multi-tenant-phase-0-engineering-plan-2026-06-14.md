@@ -189,7 +189,7 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
 
 ## Workstream E — CI isolation guard (make the invariant enforceable)
 
-### E1. New check script — DONE (ratchet mode)
+### E1. Check script — DONE (plain gate; ratchet retired in PR 0.8)
 
 - **File:** `scripts/check-tenant-isolation.sh`, in the spirit of the
   existing `scripts/check-resupply-architecture.sh` /
@@ -198,24 +198,26 @@ One migration per domain batch, each: `ADD COLUMN org_id uuid` (nullable) →
   reviewed allowlist) calls `getSupabaseServiceRoleClient()` directly instead
   of `getOrgScopedClient()` — the same pattern Rule 7 uses to forbid raw `pg`
   outside `lib/resupply-db`.
-- **Ratchet, not big-bang.** Because ~390 files are still on the raw client
-  mid-cutover, the guard runs against a committed baseline
-  (`scripts/tenant-isolation-baseline.txt`). It **hard-fails on a new**
-  offending file not in the baseline (the load-bearing protection), and
-  emits a **non-fatal notice for a stale** baseline entry (a file already
-  cut over or deleted). Stale is deliberately non-fatal: the cutover lands
-  on `main` continuously and independently of any open PR, so a hard
-  stale-fail would redden every in-flight PR the moment an unrelated
-  cutover merged — and a stale entry never weakens isolation. The baseline
-  only shrinks via `--update` (cutover PRs prune it). When it is empty the
-  machinery is retired and the guard becomes a plain "no direct callsites"
-  check — the PR 0.8 gate.
+- **Now a plain gate.** The guard launched in ratchet mode against a
+  committed baseline (`scripts/tenant-isolation-baseline.txt`) while ~390
+  files were still on the raw client mid-cutover — hard-failing on a _new_
+  offender while tolerating the shrinking known set. The per-domain `org_id`
+  cutover is now **complete**: the baseline reached empty, so **PR 0.8**
+  retired the baseline machinery (and deleted the baseline file). The guard
+  is a flat check — **any** direct `getSupabaseServiceRoleClient()` callsite
+  in application code hard-fails; there is no baseline to launder a new
+  caller onto. The reviewed global/auth exemptions (the migrator + client
+  owner `lib/resupply-db`, tests, `scripts/`, the tenant resolver
+  `middlewares/requireAdmin`, and the global `dme_organization` reader
+  `lib/billing/identity-resolver`) live in the script's `EXCLUDES`; adding
+  to that allowlist is a deliberate, reviewed change.
 - **Wired in:** the CHECKS list in `scripts/run-resupply-checks.mjs` (so it
   runs under `pnpm verify`) and a dedicated `Tenant isolation guard` step in
   `.github/workflows/ci.yml` (self-test + check), alongside the other
   `check-*` self-tests. A fixture-driven `--self-test`
-  (`check-tenant-isolation.sh.test`) proves the ratchet catches new/stale
-  violations so the gate can't decay into a vacuous pass.
+  (`check-tenant-isolation.sh.test`) proves the gate catches a real direct
+  callsite (and that the exemptions / bare imports don't count) so it can't
+  decay into a vacuous pass.
 
 ### E2. Cross-tenant leakage test
 

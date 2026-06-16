@@ -127,7 +127,7 @@ const updateBody = z
 
 router.get("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
-  await ensureShopCustomerRow({ customerId, email: null });
+  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
   const orgId = req.orgId;
   if (!orgId) {
     res.status(500).json({ error: "tenant_context_missing" });
@@ -160,7 +160,7 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     return;
   }
   const customerId = req.userCustomerId!;
-  await ensureShopCustomerRow({ customerId, email: null });
+  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
 
   const orgId = req.orgId;
   if (!orgId) {
