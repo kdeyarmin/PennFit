@@ -21,7 +21,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { parseProductCostCsv } from "./product-cost-csv";
 
@@ -66,25 +66,31 @@ if (dryRun) {
   process.exit(errors.length > 0 ? 1 : 0);
 }
 
-const supabase = getSupabaseServiceRoleClient();
+// product_costs is per-tenant since migration 0357 (composite PK
+// (org_id, sku)). This operator bulk-load seeds the SEED tenant's cost
+// sheet; the org-scoped client injects org_id and the conflict target
+// must include it. Onboarding a second tenant's costs is a future
+// per-tenant flag on this script.
+const seedOrgId = await resolveSeedOrgId();
+if (!seedOrgId) {
+  fail("could not resolve the seed org — is the organizations table seeded?");
+}
+const supabase = getOrgScopedClient(seedOrgId);
 const nowIso = new Date().toISOString();
 let written = 0;
 for (const r of rows) {
-  const { error } = await supabase
-    .schema("resupply")
-    .from("product_costs")
-    .upsert(
-      {
-        sku: r.sku,
-        unit_cost_cents: r.unitCostCents,
-        currency: "usd",
-        cost_source: r.costSource,
-        notes: r.notes,
-        effective_from: nowIso,
-        updated_at: nowIso,
-      },
-      { onConflict: "sku" },
-    );
+  const { error } = await supabase.from("product_costs").upsert(
+    {
+      sku: r.sku,
+      unit_cost_cents: r.unitCostCents,
+      currency: "usd",
+      cost_source: r.costSource,
+      notes: r.notes,
+      effective_from: nowIso,
+      updated_at: nowIso,
+    },
+    { onConflict: "org_id,sku" },
+  );
   if (error) {
     process.stderr.write(
       `[seed:product-costs] upsert failed for ${r.sku}: ${error.message}\n`,
