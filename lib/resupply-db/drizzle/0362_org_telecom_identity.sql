@@ -35,7 +35,7 @@ ALTER TABLE "resupply"."organizations"
 
 CREATE UNIQUE INDEX IF NOT EXISTS "organizations_sms_from_number_key"
   ON "resupply"."organizations" ("sms_from_number")
-  WHERE "sms_from_number" IS NOT NULL;
+  WHERE "sms_from_number" IS NOT NULL AND btrim("sms_from_number") <> '';
 --> statement-breakpoint
 
 CREATE UNIQUE INDEX IF NOT EXISTS "organizations_voice_from_number_key"
