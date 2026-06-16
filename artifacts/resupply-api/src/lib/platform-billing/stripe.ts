@@ -58,12 +58,24 @@ function priceMetadata(kind: "plan" | "addon", code: string) {
   };
 }
 
+/** A billing_plans / billing_addons catalog row, narrowed to the fields
+ *  the Stripe sync touches. Rows arrive untyped from the service-role
+ *  client (the billing tables aren't in the generated Database types). */
+interface CatalogRow {
+  id: string;
+  name: string;
+  description?: string | null;
+  code: string;
+  stripe_price_id?: string | null;
+  stripe_product_id?: string | null;
+}
+
 async function ensureRecurringPrice(args: {
   stripe: Stripe;
   raw: RawClient;
   table: "billing_plans" | "billing_addons";
   kind: "plan" | "addon";
-  row: any;
+  row: CatalogRow;
   amountCents: number | null;
 }): Promise<string | null> {
   if (!args.amountCents || args.amountCents <= 0)
@@ -225,8 +237,36 @@ export async function ensureTenantStripeCustomer(args: {
   return { stripeConfigured: true, customerId: customer.id };
 }
 
-function subscriptionStatus(sub: any): string | null {
-  return typeof sub.status === "string" ? sub.status : null;
+/** Recent Stripe API versions expose the billing period on subscription
+ *  items rather than the subscription itself, so the SDK's
+ *  `Stripe.Subscription` type no longer declares these top-level fields
+ *  even though they're still present on the wire. Narrow to read them
+ *  without reaching for `any`. */
+type SubscriptionPeriods = {
+  current_period_start?: number | null;
+  current_period_end?: number | null;
+};
+
+/** The subscription line items this module builds: either a reference to
+ *  an existing recurring price, or an inline `price_data` with
+ *  `product_data`. The latter shape isn't modeled by the Stripe SDK's
+ *  subscription-item `PriceData` type (it expects an existing `product`),
+ *  so the call sites cast through `unknown` to the SDK param type rather
+ *  than reach for `any`. */
+type SubscriptionItemInput =
+  | { price: string; quantity: number }
+  | {
+      price_data: {
+        product_data: { name: string; metadata: Record<string, string> };
+        currency: string;
+        unit_amount: number;
+        recurring: { interval: "month" };
+      };
+      quantity: number;
+    };
+
+function subscriptionStatus(sub: Stripe.Subscription): string | null {
+  return sub.status ?? null;
 }
 
 export async function syncTenantStripeSubscription(args: {
@@ -270,7 +310,7 @@ export async function syncTenantStripeSubscription(args: {
       });
   if (!planAmount || planAmount <= 0) throw new Error("plan_not_billable");
 
-  const items: any[] = [
+  const items: SubscriptionItemInput[] = [
     planPriceId
       ? { price: planPriceId, quantity: 1 }
       : {
@@ -339,22 +379,27 @@ export async function syncTenantStripeSubscription(args: {
     }));
     stripeSub = await stripe.subscriptions.update(sub.stripe_subscription_id, {
       metadata,
-      items: [...deletedItems, ...items],
+      items: [
+        ...deletedItems,
+        ...items,
+      ] as unknown as Stripe.SubscriptionUpdateParams.Item[],
       proration_behavior: "create_prorations",
       expand: ["latest_invoice"],
-    } as any);
+    });
   } else {
     stripeSub = await stripe.subscriptions.create({
       customer: customer.id,
-      items,
+      items: items as unknown as Stripe.SubscriptionCreateParams.Item[],
       metadata,
       collection_method: "send_invoice",
       days_until_due: 15,
       expand: ["latest_invoice"],
-    } as any);
+    });
   }
 
-  const latestInvoice = invoiceStatus((stripeSub as any).latest_invoice);
+  const latestInvoice = invoiceStatus(stripeSub.latest_invoice);
+  const stripeSubPeriods = stripeSub as Stripe.Subscription &
+    SubscriptionPeriods;
   await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
@@ -364,10 +409,10 @@ export async function syncTenantStripeSubscription(args: {
       stripe_status: subscriptionStatus(stripeSub),
       stripe_last_synced_at: new Date().toISOString(),
       current_period_start: asStripeTimestamp(
-        (stripeSub as any).current_period_start,
+        stripeSubPeriods.current_period_start,
       ),
       current_period_end: asStripeTimestamp(
-        (stripeSub as any).current_period_end,
+        stripeSubPeriods.current_period_end,
       ),
       last_invoice_id: latestInvoice.id,
       last_invoice_status: latestInvoice.status,
@@ -418,6 +463,7 @@ export async function handlePlatformTenantStripeEvent(
       !sub.metadata.org_id
     )
       return false;
+    const subPeriods = sub as Stripe.Subscription & SubscriptionPeriods;
     const { error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
@@ -426,9 +472,9 @@ export async function handlePlatformTenantStripeEvent(
         stripe_status: sub.status,
         stripe_last_synced_at: new Date().toISOString(),
         current_period_start: asStripeTimestamp(
-          (sub as any).current_period_start,
+          subPeriods.current_period_start,
         ),
-        current_period_end: asStripeTimestamp((sub as any).current_period_end),
+        current_period_end: asStripeTimestamp(subPeriods.current_period_end),
       })
       .eq("org_id", sub.metadata.org_id)
       .in("status", ["active", "trialing", "past_due"]);
@@ -446,7 +492,11 @@ export async function handlePlatformTenantStripeEvent(
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
-  const legacySub = (invoice as any).subscription;
+  const legacySub = (
+    invoice as Stripe.Invoice & {
+      subscription?: string | Stripe.Subscription | null;
+    }
+  ).subscription;
   const subRef =
     invoice.parent?.subscription_details?.subscription ?? legacySub;
   const subscriptionId =
