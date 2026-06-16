@@ -248,10 +248,18 @@ router.post(
 
     const stripe = getStripeClient(config);
 
+    // attachSignedIn allows guest checkout, so req.orgId may be unset;
+    // fall back to the seed tenant (single-tenant bridge) for guests.
+    const orgId = req.orgId ?? (await resolveSeedOrgId());
+    if (!orgId) {
+      res.status(503).json({ error: "tenant_unavailable" });
+      return;
+    }
+
     // Stripe Connect (G5): route the Checkout session to the tenant's
     // connected account when it has one. NULL account → `{}` → the
     // platform account, exactly as before (single-tenant unchanged).
-    const connectOptions = await stripeAccountRequestOptions(req.orgId);
+    const connectOptions = await stripeAccountRequestOptions(orgId);
 
     // Catalog guard: every price in the cart must belong to the approved
     // shop catalog and respect stock/type constraints. The sibling
@@ -448,13 +456,6 @@ router.post(
     // initial insert; later lifecycle transitions own the row. Mirrors
     // the quick-checkout mirror-upsert. (`status` is the source of truth
     // here; we deliberately do not re-touch `updated_at` on conflict.)
-    // attachSignedIn allows guest checkout, so req.orgId may be unset;
-    // fall back to the seed tenant (single-tenant bridge) for guests.
-    const orgId = req.orgId ?? (await resolveSeedOrgId());
-    if (!orgId) {
-      res.status(503).json({ error: "tenant_unavailable" });
-      return;
-    }
     const supabase = getOrgScopedClient(orgId);
     const { error: upsertErr } = await supabase.from("shop_orders").upsert(
       {
