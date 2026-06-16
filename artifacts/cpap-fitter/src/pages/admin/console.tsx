@@ -54,6 +54,14 @@ import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
 // both are small + load-bearing for error paths.
 import { DashboardPage } from "@/pages/admin/dashboard";
 
+// Onboarding agreements gate (G16). Eager (like DashboardPage / the error
+// pages) so it needs no Suspense boundary of its own — it renders in place
+// of the AppShell + routes whenever /me reports unsigned agreements, before
+// the per-page Suspense exists. Its template text already rides the admin
+// chunk (console.tsx is only ever in that chunk), never the storefront
+// bundle.
+import { AgreementsGate } from "@/pages/admin/agreements-gate";
+
 const PatientsPage = lazyWithRetry(() =>
   import("@/pages/admin/patients").then((m) => ({ default: m.PatientsPage })),
 );
@@ -750,6 +758,15 @@ function AdminConsole() {
         <Spinner label="Confirming admin access…" />
       </AppShell>
     );
+  }
+
+  // Onboarding agreements gate (G16). A tenant that hasn't signed the
+  // required agreements (BAA + platform terms) at their current version is
+  // blocked from the entire console until they do — the server fails this
+  // closed (an unresolved tenant context reports every agreement pending),
+  // so this also covers the can't-prove-acceptance case.
+  if ((data?.pendingAgreements?.length ?? 0) > 0) {
+    return <AgreementsGate />;
   }
 
   return (
