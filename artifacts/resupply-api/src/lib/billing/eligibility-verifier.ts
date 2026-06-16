@@ -166,11 +166,12 @@ export async function verifyEligibility(
 
   // Allocate monotonic control numbers vs. the office_ally_submissions
   // ISA13 history. Eligibility and claim ISA13s share the same pool.
-  // Atomic reservation first (counter table, migration 0308) — unique
-  // by construction across BOTH the claims and eligibility pools and
-  // race-free under concurrency. The legacy MAX-read below survives
-  // only as the pre-migration fallback; see lib/billing/isa13-counter.
-  const reservedIsa = await reserveIsa13Value(supabase.raw());
+  // Atomic reservation first (counter table, migration 0308) — race-free
+  // under concurrency and, since migration 0359, scoped to THIS tenant's
+  // counter (each tenant is a distinct EDI submitter) via the org-scoped
+  // client. The legacy org-scoped MAX-read below survives only as the
+  // per-tenant fallback; see lib/billing/isa13-counter.
+  const reservedIsa = await reserveIsa13Value(supabase);
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());

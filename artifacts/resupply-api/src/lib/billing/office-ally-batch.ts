@@ -563,11 +563,11 @@ export async function executeOfficeAllyBatchSubmit(
   // Atomic reservation first (counter table, migration 0308) — unique
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
-  // only as the pre-migration fallback; see lib/billing/isa13-counter.
-  // control_number_counters is a global (non-tenant) table — the ISA13
-  // sequence is shared across the platform, so it is reserved via the
-  // unscoped service client.
-  const reservedIsa = await reserveIsa13Value(supabase.raw());
+  // only as the per-tenant fallback; see lib/billing/isa13-counter.
+  // control_number_counters is per-tenant (mig 0359): each tenant is a
+  // distinct EDI submitter, so the ISA13 sequence is reserved against THIS
+  // tenant's counter via the org-scoped client.
+  const reservedIsa = await reserveIsa13Value(supabase);
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());
