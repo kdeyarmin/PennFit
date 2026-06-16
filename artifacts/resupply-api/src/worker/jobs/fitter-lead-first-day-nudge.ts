@@ -49,7 +49,6 @@ import type PgBoss from "pg-boss";
 import {
   escapePostgRESTFilterValue,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -63,6 +62,7 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -197,8 +197,30 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
     errors: 0,
   };
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
+  // Fan out across every active tenant — fitter_leads is org-scoped, so each
+  // tenant is swept on its own client and a nudge only reaches a lead in its
+  // own org. The dispatcher feature flag is resolved per tenant inside the
+  // per-org body. Per-tenant failure isolation; results summed. Single-tenant:
+  // listActiveOrgIds() returns just the seed org, so this is exactly the prior
+  // one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await firstDayNudgeSweepForOrg(orgId, stats);
+    },
+    { jobName: NUDGE_JOB },
+  );
+  return stats;
+}
+
+async function firstDayNudgeSweepForOrg(
+  orgId: string,
+  stats: FirstDayNudgeStats,
+): Promise<void> {
+  // Per-tenant runtime kill switch (admin Control Center): a tenant that
+  // hasn't enabled the dispatcher is skipped without touching its leads.
+  if (!(await isFeatureEnabled("fitter_first_day_nudge.dispatcher", orgId))) {
+    return;
+  }
   const supabase = getOrgScopedClient(orgId);
   const now = Date.now();
   const youngerThan = new Date(now - MIN_AGE_MS).toISOString();
@@ -233,7 +255,7 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
   ).filter(
     (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
-  if (candidates.length === 0) return stats;
+  if (candidates.length === 0) return;
 
   // Bulk check converted leads — same shape as the 3-30d worker. ILIKE
   // chunked so the URI stays under the 8KB PostgREST default limit
@@ -394,8 +416,6 @@ export async function runFirstDayNudgeSweep(): Promise<FirstDayNudgeStats> {
       }
     }
   }
-
-  return stats;
 }
 
 export async function registerFitterLeadFirstDayNudgeJob(
@@ -425,15 +445,9 @@ export async function registerFitterLeadFirstDayNudgeJob(
   await createQueueWithDlq(boss, NUDGE_JOB, VENDOR_SEND_QUEUE_OPTS);
   await boss.work(NUDGE_JOB, async () => {
     try {
-      // Runtime kill switch (admin Control Center). The env var gates
-      // registration; this flag pauses the sweep without changing env.
-      if (!(await isFeatureEnabled("fitter_first_day_nudge.dispatcher"))) {
-        logger.info(
-          { event: "fitter-lead.first-day-nudge.flag_off" },
-          "fitter-lead.first-day-nudge: feature flag off — skipping",
-        );
-        return;
-      }
+      // The env var gates registration (platform kill switch); the
+      // per-tenant `fitter_first_day_nudge.dispatcher` flag is now resolved
+      // per org inside the fan-out, so each tenant pauses independently.
       const stats = await runFirstDayNudgeSweep();
       logger.info(
         { event: "fitter-lead.first-day-nudge.completed", ...stats },
