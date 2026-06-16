@@ -14,6 +14,7 @@ import { Router, type IRouter } from "express";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
@@ -31,6 +32,7 @@ interface OrgRow {
 
 router.get(
   "/platform/tenants",
+  adminReadRateLimiter,
   requirePlatformAdmin,
   async (_req, res): Promise<void> => {
     // The `organizations` directory is GLOBAL (it IS the tenant list), so

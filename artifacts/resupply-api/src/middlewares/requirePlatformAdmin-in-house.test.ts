@@ -8,6 +8,7 @@
 //   * fail-closed (401) when the platform_admins lookup errors.
 
 import express, { type Express } from "express";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -61,7 +62,16 @@ import { requirePlatformAdmin } from "./requirePlatformAdmin";
 
 function makeApp(): Express {
   const app = express();
-  app.get("/platform/protected", requirePlatformAdmin, (req, res) => {
+  // A limiter on the test fixture mirrors the production route (and keeps
+  // the CodeQL "authorization without rate limiting" rule satisfied for
+  // this throwaway test handler). High cap so it never trips in tests.
+  const limiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 1_000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.get("/platform/protected", limiter, requirePlatformAdmin, (req, res) => {
     res.json({ ok: true, platformAdminUserId: req.platformAdminUserId });
   });
   return app;
