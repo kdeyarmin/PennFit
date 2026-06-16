@@ -64,6 +64,11 @@ router.get(
       },
       stripe: {
         configured: !!env.STRIPE_SECRET_KEY,
+        // STRIPE_WEBHOOK_SIGNING_SECRET is the variable the runtime
+        // verifier actually reads (lib/stripe/config.ts). The legacy
+        // STRIPE_WEBHOOK_SECRET name is a known alias-confusion trap —
+        // preflight:prod flags it — so reporting it here showed
+        // "not configured" while webhooks worked (and vice versa).
         webhookSigningConfigured: !!env.STRIPE_WEBHOOK_SIGNING_SECRET,
       },
       openai: {

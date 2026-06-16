@@ -141,6 +141,8 @@ router.get(
   requireProviderMfaEnrolled,
   async (req, res) => {
     const account = req.providerAccount!;
+    // 400 on garbage rather than silently coercing it to "pending" —
+    // a typo'd filter returning the wrong queue is confusing to debug.
     const statusFilter = z
       .enum(["pending", "signed", "declined", "all"])
       .catch("pending")

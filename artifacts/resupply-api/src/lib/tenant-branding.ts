@@ -9,11 +9,11 @@
 //   * A request whose Host matches a VERIFIED custom domain resolves to
 //     that tenant's branding.
 //   * Everything else (the platform host, an unverified/none domain, any
-//     miss or error) resolves to the SEED tenant's branding — i.e. the
-//     site looks exactly as it does today.
+//     miss or error) resolves to the platform brand. PennPaps is reached
+//     through the seed tenant's verified pennpaps.com custom domain.
 //
 // Posture mirrors lib/company-info.ts:
-//   * Fail-soft — a Supabase error/timeout degrades to the seed/default
+//   * Fail-soft — a Supabase error/timeout degrades to the platform
 //     brand; this must never take the public storefront down.
 //   * Cached for a short TTL so the unauthenticated, per-page branding
 //     fetch adds no meaningful DB load.
@@ -34,16 +34,16 @@ export interface StorefrontBranding {
   logoUrl: string | null;
 }
 
-// Historical PennPaps identity — byte-identical to what the SPA shipped
-// hardcoded, so an unseeded / unmatched host renders exactly as before.
+// Platform identity for hosts that are not a verified tenant custom
+// domain. PennPaps is now tenant-specific and resolves via the seed
+// organization's verified `pennpaps.com` custom domain.
 export const DEFAULT_BRANDING: StorefrontBranding = {
-  storefrontName: "PennPaps",
-  legalName: "Penn Home Medical Supply",
-  tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
+  storefrontName: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
+  tagline: "The CPAP resupply platform for modern DME teams.",
   logoUrl: null,
 };
 
-const SEED_ORG_SLUG = "penn-home-medical";
 const CACHE_TTL_MS = 60_000;
 const LOOKUP_TIMEOUT_MS = 1_500;
 const VERIFIED_DOMAINS_TTL_MS = 60_000;
@@ -93,7 +93,7 @@ async function withTimeout<T>(p: PromiseLike<T>): Promise<T> {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Branding cache, keyed by normalized host ("" = seed/default).
+// Branding cache, keyed by normalized host ("" = platform/default).
 // ────────────────────────────────────────────────────────────────────
 
 interface CacheEntry {
@@ -103,34 +103,14 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-async function loadSeedBranding(): Promise<StorefrontBranding> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) throw new Error("tenant context missing");
-  // The `organizations` directory is the GLOBAL tenant table (keyed by
-  // id = the tenant); reach it via `.raw()` so the org-scoped facade
-  // doesn't wrongly append an org_id filter.
-  const supabase = getOrgScopedClient(orgId);
-  const { data, error } = await withTimeout(
-    supabase
-      .raw()
-      .schema("resupply")
-      .from("organizations")
-      .select("name, storefront_name, tagline, logo_url")
-      .eq("slug", SEED_ORG_SLUG)
-      .limit(1)
-      .maybeSingle(),
-  );
-  if (error) throw error;
-  return mapBranding(data);
-}
-
 async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
   const normalized = normalizeCustomDomain(host);
-  if (!normalized) return loadSeedBranding();
+  if (!normalized) return DEFAULT_BRANDING;
 
   const orgId = await resolveSeedOrgId();
   if (!orgId) throw new Error("tenant context missing");
-  // GLOBAL `organizations` directory — reach via `.raw()` (see loadSeedBranding).
+  // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+  // facade does not append an org_id filter to the tenant directory.
   const supabase = getOrgScopedClient(orgId);
   const { data, error } = await withTimeout(
     supabase
@@ -145,14 +125,14 @@ async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
       .maybeSingle(),
   );
   if (error) throw error;
-  // No verified tenant on this host → the default site (seed brand).
-  if (!data) return loadSeedBranding();
+  // No verified tenant on this host → the platform site.
+  if (!data) return DEFAULT_BRANDING;
   return mapBranding(data);
 }
 
 /**
  * The effective storefront branding for a request host. Cached ~60s per
- * host; never throws (any failure degrades to the seed/default brand).
+ * host; never throws (any failure degrades to the platform/default brand).
  */
 export async function resolveBrandingByHost(
   host: string | undefined,
@@ -164,7 +144,7 @@ export async function resolveBrandingByHost(
 
   let branding: StorefrontBranding;
   try {
-    branding = key ? await loadBrandingForHost(key) : await loadSeedBranding();
+    branding = key ? await loadBrandingForHost(key) : DEFAULT_BRANDING;
   } catch (err) {
     const normalized =
       err instanceof Error ? err : new Error(String(err ?? "unknown"));
@@ -293,7 +273,8 @@ async function reloadVerifiedDomains(): Promise<void> {
   try {
     const orgId = await resolveSeedOrgId();
     if (!orgId) throw new Error("tenant context missing");
-    // GLOBAL `organizations` directory — reach via `.raw()` (see loadSeedBranding).
+    // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+    // facade does not append an org_id filter to the tenant directory.
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await withTimeout(
       supabase

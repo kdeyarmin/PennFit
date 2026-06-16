@@ -396,7 +396,7 @@ export async function replyInConversation(
   // the projection routes through getOrgScopedClient(orgId) internally.
   await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
-    body,
+    body: conv.channel === "sms" ? smsBody : body,
     direction: "outbound",
     messageAt: sentAt,
     orgId,

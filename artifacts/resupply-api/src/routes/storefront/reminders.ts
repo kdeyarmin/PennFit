@@ -375,10 +375,22 @@ router.get("/reminders/manage", attachSignedIn, async (req, res) => {
 
 // ---------- PATCH /reminders/manage[?token=...] ----------
 // Auth: token in query OR signed-in session. See resolveManageLookup.
+// CSRF: the capability-token path has no cookie-replay surface. CSRF is
+// enforced only when the session identity is actually in use — i.e., no
+// valid manage token in the query AND attachSignedIn resolved a customer.
+// The SPA fetch helpers already attach X-PF-CSRF on every state-changing
+// request, so legitimate session-based callers are unaffected.
 router.patch(
   "/reminders/manage",
   attachSignedIn,
-  requireCsrfWhenSession,
+  (req, res, next) => {
+    const tokenOk = GetReminderSubscriptionQueryParams.safeParse(
+      req.query,
+    ).success;
+    if (tokenOk) return next();
+    if (!req.userCustomerId) return next();
+    return requireCsrfWhenSession(req, res, next);
+  },
   async (req, res) => {
     const lookup = resolveManageLookup(req);
     if (!lookup.ok) {
@@ -436,10 +448,19 @@ router.patch(
 
 // ---------- POST /reminders/manage/unsubscribe[?token=...] ----------
 // Auth: token in query OR signed-in session. See resolveManageLookup.
+// CSRF: same posture as PATCH /reminders/manage above — enforce only when
+// the session identity is actually in use (no valid token + customer resolved).
 router.post(
   "/reminders/manage/unsubscribe",
   attachSignedIn,
-  requireCsrfWhenSession,
+  (req, res, next) => {
+    const tokenOk = GetReminderSubscriptionQueryParams.safeParse(
+      req.query,
+    ).success;
+    if (tokenOk) return next();
+    if (!req.userCustomerId) return next();
+    return requireCsrfWhenSession(req, res, next);
+  },
   async (req, res) => {
     const lookup = resolveManageLookup(req);
     if (!lookup.ok) {

@@ -120,7 +120,9 @@ export async function dispatchPaymentFailedAlertOrThrow(
     return;
   }
 
-  // Email → patients.id (case-insensitive).
+  // Email → patients.id (case-insensitive). Require EXACTLY one match:
+  // when two patients share an email, resolving arbitrarily could send
+  // a payment-failed alert to the wrong patient. Skip + log instead.
   const { data: patients, error: pErr } = await supabase
     .from("patients")
     .select("id")

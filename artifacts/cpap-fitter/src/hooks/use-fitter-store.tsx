@@ -241,6 +241,7 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     setEmailConsentState(false);
     setInviteTokenState(null);
     try {
+      sessionStorage.removeItem("fitter_measurements");
       sessionStorage.removeItem("fitter_answers");
       sessionStorage.removeItem("fitter_chosen_mask");
       sessionStorage.removeItem("fitter_email");
