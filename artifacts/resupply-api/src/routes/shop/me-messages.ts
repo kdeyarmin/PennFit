@@ -64,7 +64,7 @@ router.get("/shop/me/messages", requireSignedIn, async (req, res) => {
   const supabase = getOrgScopedClient(orgId);
   // Make sure the row exists so future PUT /shop/me writes don't fail
   // on a fresh account that has only ever messaged.
-  await ensureShopCustomerRow({ customerId, email: null });
+  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
   const result = await fetchInAppThread({
     supabase: supabase.raw(),
     customerId,
@@ -86,7 +86,7 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    await ensureShopCustomerRow({ customerId, email: null });
+    await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
     const count = await fetchInAppUnreadCount({
       supabase: supabase.raw(),
       customerId,
@@ -111,7 +111,7 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    await ensureShopCustomerRow({ customerId, email: null });
+    await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
     const updated = await markInAppThreadRead({
       supabase: supabase.raw(),
       customerId,
@@ -139,7 +139,7 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
     return;
   }
   const supabase = getOrgScopedClient(orgId);
-  await ensureShopCustomerRow({ customerId, email: null });
+  await ensureShopCustomerRow({ orgId: req.orgId, customerId, email: null });
 
   const result = await appendCustomerMessage({
     supabase: supabase.raw(),

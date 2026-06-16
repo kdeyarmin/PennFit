@@ -203,6 +203,7 @@ router.post(
         // upsert helper the rest of the shop surface uses so we
         // share the email/displayName invariants.
         await ensureShopCustomerRow({
+          orgId: orgId ?? undefined,
           customerId: req.userCustomerId,
           email: order.patient.email ?? null,
           displayName:
