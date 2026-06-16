@@ -188,7 +188,7 @@ export async function placeResupplyOrderForConversation(
   // a legitimate reorder on our own eligibility bug. The guard runs
   // before the atomic claim so a blocked episode is left untouched
   // (stays pending) for the CSR to work.
-  if (await isFeatureEnabled("resupply.entitlement_enforcement")) {
+  if (await isFeatureEnabled("resupply.entitlement_enforcement", orgId)) {
     try {
       const entitlement = await resolveSkuEntitlement(supabase.raw(), {
         patientId: episode.patient_id,
@@ -231,7 +231,7 @@ export async function placeResupplyOrderForConversation(
   // reorder on our own eligibility plumbing. Runs before the atomic
   // claim so a blocked episode is left untouched (stays pending) for
   // the CSR to work, exactly like the entitlement guard above.
-  if (await isFeatureEnabled("resupply.eligibility_enforcement")) {
+  if (await isFeatureEnabled("resupply.eligibility_enforcement", orgId)) {
     try {
       const block = await consultCoverageEligibility(
         supabase,
@@ -269,7 +269,7 @@ export async function placeResupplyOrderForConversation(
   // error allows the confirmation through. Runs before the atomic
   // claim so a held episode stays pending for the CSR, exactly like
   // the two guards above.
-  if (await isFeatureEnabled("resupply.usage_compliance_check")) {
+  if (await isFeatureEnabled("resupply.usage_compliance_check", orgId)) {
     try {
       const usage = await consultRecentTherapyUsage(
         supabase,
