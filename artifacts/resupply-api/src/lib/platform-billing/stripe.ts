@@ -58,12 +58,21 @@ function priceMetadata(kind: "plan" | "addon", code: string) {
   };
 }
 
+interface BillingCatalogRow {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+}
+
 async function ensureRecurringPrice(args: {
   stripe: Stripe;
   raw: RawClient;
   table: "billing_plans" | "billing_addons";
   kind: "plan" | "addon";
-  row: any;
+  row: BillingCatalogRow;
   amountCents: number | null;
 }): Promise<string | null> {
   if (!args.amountCents || args.amountCents <= 0)
@@ -225,7 +234,7 @@ export async function ensureTenantStripeCustomer(args: {
   return { stripeConfigured: true, customerId: customer.id };
 }
 
-function subscriptionStatus(sub: any): string | null {
+function subscriptionStatus(sub: { status?: unknown }): string | null {
   return typeof sub.status === "string" ? sub.status : null;
 }
 
@@ -270,6 +279,7 @@ export async function syncTenantStripeSubscription(args: {
       });
   if (!planAmount || planAmount <= 0) throw new Error("plan_not_billable");
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items: any[] = [
     planPriceId
       ? { price: planPriceId, quantity: 1 }
@@ -342,6 +352,7 @@ export async function syncTenantStripeSubscription(args: {
       items: [...deletedItems, ...items],
       proration_behavior: "create_prorations",
       expand: ["latest_invoice"],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
   } else {
     stripeSub = await stripe.subscriptions.create({
@@ -351,10 +362,14 @@ export async function syncTenantStripeSubscription(args: {
       collection_method: "send_invoice",
       days_until_due: 15,
       expand: ["latest_invoice"],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
   }
 
-  const latestInvoice = invoiceStatus((stripeSub as any).latest_invoice);
+  const latestInvoice = invoiceStatus(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (stripeSub as any).latest_invoice,
+  );
   await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
@@ -364,9 +379,11 @@ export async function syncTenantStripeSubscription(args: {
       stripe_status: subscriptionStatus(stripeSub),
       stripe_last_synced_at: new Date().toISOString(),
       current_period_start: asStripeTimestamp(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (stripeSub as any).current_period_start,
       ),
       current_period_end: asStripeTimestamp(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (stripeSub as any).current_period_end,
       ),
       last_invoice_id: latestInvoice.id,
@@ -425,9 +442,11 @@ export async function handlePlatformTenantStripeEvent(
         stripe_subscription_id: sub.id,
         stripe_status: sub.status,
         stripe_last_synced_at: new Date().toISOString(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         current_period_start: asStripeTimestamp(
           (sub as any).current_period_start,
         ),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         current_period_end: asStripeTimestamp((sub as any).current_period_end),
       })
       .eq("org_id", sub.metadata.org_id)
@@ -446,8 +465,10 @@ export async function handlePlatformTenantStripeEvent(
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const legacySub = (invoice as any).subscription;
-  const subRef = invoice.parent?.subscription_details?.subscription ?? legacySub;
+  const subRef =
+    invoice.parent?.subscription_details?.subscription ?? legacySub;
   const subscriptionId =
     typeof subRef === "string" ? subRef : (subRef?.id ?? null);
   if (!subscriptionId) return false;

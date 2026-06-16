@@ -2,7 +2,11 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type ResupplyTable,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -56,10 +60,12 @@ async function countTable(
   orgId: string,
   table: string,
   from?: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extra?: (q: any) => any,
 ): Promise<number> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = getOrgScopedClient(orgId)
-    .from(table)
+    .from(table as ResupplyTable)
     .select("*", { count: "exact", head: true });
   if (from) q = q.gte("created_at", from);
   if (extra) q = extra(q);
@@ -129,7 +135,10 @@ async function currentUsage(orgId: string) {
       .gte("occurred_at", from),
   ]);
 
-  function sumRows(result: any): number {
+  function sumRows(result: {
+    error: unknown;
+    data: Array<{ quantity: number | null }> | null;
+  }): number {
     if (result.error) throw result.error;
     return ((result.data ?? []) as Array<{ quantity: number | null }>).reduce(
       (sum, r) => sum + (r.quantity ?? 0),
@@ -154,7 +163,43 @@ async function currentUsage(orgId: string) {
   };
 }
 
-function mapPlan(row: any) {
+interface BillingPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  monthly_price_cents?: number | null;
+  onboarding_fee_cents?: number | null;
+  is_public?: boolean;
+  is_custom?: boolean;
+  sort_order?: number;
+  allowances?: Record<string, unknown> | null;
+  features?: unknown[] | null;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+  stripe_synced_at?: string | null;
+}
+
+interface BillingAddonRow {
+  id: string;
+  code: string;
+  name: string;
+  category?: string | null;
+  description?: string | null;
+  recurring_price_cents?: number | null;
+  one_time_min_cents?: number | null;
+  one_time_max_cents?: number | null;
+  unit_label?: string | null;
+  usage_metric?: string | null;
+  pass_through_note?: string | null;
+  is_active?: boolean;
+  sort_order?: number;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+  stripe_synced_at?: string | null;
+}
+
+function mapPlan(row: BillingPlanRow) {
   return {
     id: row.id,
     code: row.code,
@@ -173,7 +218,7 @@ function mapPlan(row: any) {
   };
 }
 
-function mapAddon(row: any) {
+function mapAddon(row: BillingAddonRow) {
   return {
     id: row.id,
     code: row.code,
@@ -278,13 +323,21 @@ async function tenantBilling(orgId: string, res: Response): Promise<void> {
   res.json({
     tenantId: orgId,
     subscription,
-    addons: (addons.data ?? []).map((a: any) => ({
-      id: a.id,
-      quantity: a.quantity,
-      customRecurringPriceCents: a.custom_recurring_price_cents,
-      notes: a.notes ?? "",
-      addon: mapAddon(a.billing_addons),
-    })),
+    addons: (addons.data ?? []).map(
+      (a: {
+        id: string;
+        quantity: number;
+        custom_recurring_price_cents?: number | null;
+        notes?: string | null;
+        billing_addons: BillingAddonRow;
+      }) => ({
+        id: a.id,
+        quantity: a.quantity,
+        customRecurringPriceCents: a.custom_recurring_price_cents,
+        notes: a.notes ?? "",
+        addon: mapAddon(a.billing_addons),
+      }),
+    ),
     usage,
   });
 }
@@ -379,29 +432,43 @@ router.get(
       return;
     }
     const tenants = await Promise.all(
-      (orgs ?? []).map(async (o: any) => {
-        const capture: any = {
-          body: undefined,
-          statusCode: 200,
-          status(code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json(body: unknown) {
-            this.body = body;
-            return this;
-          },
-        };
-        await tenantBilling(o.id, capture as Response);
-        return {
-          id: o.id,
-          slug: o.slug,
-          name: o.name,
-          storefrontName: o.storefront_name,
-          status: o.status,
-          billing: capture.body,
-        };
-      }),
+      (orgs ?? []).map(
+        async (o: {
+          id: string;
+          slug: string;
+          name: string;
+          storefront_name: string | null;
+          status: string;
+        }) => {
+          interface CaptureMock {
+            body: unknown;
+            statusCode: number;
+            status(code: number): this;
+            json(body: unknown): this;
+          }
+          const capture: CaptureMock = {
+            body: undefined,
+            statusCode: 200,
+            status(code: number) {
+              this.statusCode = code;
+              return this;
+            },
+            json(body: unknown) {
+              this.body = body;
+              return this;
+            },
+          };
+          await tenantBilling(o.id, capture as unknown as Response);
+          return {
+            id: o.id,
+            slug: o.slug,
+            name: o.name,
+            storefrontName: o.storefront_name,
+            status: o.status,
+            billing: capture.body,
+          };
+        },
+      ),
     );
     res.json({ tenants });
   },
