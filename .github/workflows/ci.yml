@@ -352,7 +352,8 @@ jobs:
             vitest run \
               src/worker/jobs/invite-password-expiry-notify.integration.test.ts \
               src/worker/jobs/maintenance-nudges.integration.test.ts \
-              src/worker/jobs/video-visit-reminders.integration.test.ts
+              src/worker/jobs/video-visit-reminders.integration.test.ts \
+              src/worker/jobs/recall-notifications-send.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)

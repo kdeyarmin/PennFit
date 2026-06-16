@@ -38,10 +38,11 @@ import {
   createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
 } from "@workspace/resupply-email";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -291,16 +292,30 @@ async function runRecallSendSweepInner(
   cfg: MessagingConfig,
 ): Promise<SweepStats> {
   const stats: SweepStats = { attempted: 0, sent: 0, failed: 0, skipped: 0 };
-  // Single-tenant bridge: no per-tenant job payload yet, so sweep the one
-  // seed org. Becomes a per-org loop when a 2nd tenant lands.
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    logger.warn(
-      { queue: SEND_JOB },
-      "recall-notifications.send: could not resolve seed org — skipping",
-    );
-    return stats;
-  }
+  // Fan out across every active tenant — recall_notifications,
+  // equipment_recalls, and patients are tenant-scoped, so each tenant is
+  // swept on its own org-scoped client and a recall notice only ever
+  // reaches a patient in the recall's own org. Per-tenant failure isolation
+  // keeps one tenant's bad row from aborting the rest.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await recallSendSweepForOrg(orgId, cfg, stats);
+    },
+    { jobName: SEND_JOB },
+  );
+  return stats;
+}
+
+/**
+ * Run the recall-notification send sweep for a SINGLE tenant, accumulating
+ * into the shared `stats`. The per-row claim (queued → sending → terminal)
+ * and the BATCH_SIZE cap both apply per tenant.
+ */
+async function recallSendSweepForOrg(
+  orgId: string,
+  cfg: MessagingConfig,
+  stats: SweepStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   // Phase 0 — reclaim orphaned claims. A worker that flipped a row to
@@ -338,7 +353,7 @@ async function runRecallSendSweepInner(
     asset_id: string;
     patient_id: string;
   }>;
-  if (rows.length === 0) return stats;
+  if (rows.length === 0) return;
 
   const recallIds = Array.from(new Set(rows.map((r) => r.recall_id)));
   const patientIds = Array.from(new Set(rows.map((r) => r.patient_id)));
@@ -522,8 +537,6 @@ async function runRecallSendSweepInner(
       stats.skipped += 1;
     }
   }
-
-  return stats;
 }
 
 export async function registerRecallNotificationSendJob(
