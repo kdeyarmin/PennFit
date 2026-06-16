@@ -21,7 +21,10 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
-import { normalizeCustomDomain } from "./tenant-domain";
+import {
+  extractTenantSubdomainLabel,
+  normalizeCustomDomain,
+} from "./tenant-domain";
 
 export interface StorefrontBranding {
   /** Short customer-facing brand shown in the header/hero (e.g. "PennPaps"). */
@@ -112,12 +115,15 @@ async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
   // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
   // facade does not append an org_id filter to the tenant directory.
   const supabase = getOrgScopedClient(orgId);
+  const brandingCols = "name, storefront_name, tagline, logo_url";
+
+  // 1. A verified custom domain wins.
   const { data, error } = await withTimeout(
     supabase
       .raw()
       .schema("resupply")
       .from("organizations")
-      .select("name, storefront_name, tagline, logo_url")
+      .select(brandingCols)
       .eq("custom_domain", normalized)
       .eq("custom_domain_status", "verified")
       .eq("status", "active")
@@ -125,9 +131,30 @@ async function loadBrandingForHost(host: string): Promise<StorefrontBranding> {
       .maybeSingle(),
   );
   if (error) throw error;
-  // No verified tenant on this host → the platform site.
-  if (!data) return DEFAULT_BRANDING;
-  return mapBranding(data);
+  if (data) return mapBranding(data);
+
+  // 2. Platform subdomain (`<slug>.<base>`, G10) → tenant by slug. The
+  // zero-DNS-setup default: an active tenant served at its slug subdomain
+  // gets its own brand without binding a custom domain.
+  const slug = extractTenantSubdomainLabel(host);
+  if (slug) {
+    const { data: bySlug, error: slugErr } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select(brandingCols)
+        .eq("slug", slug)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (slugErr) throw slugErr;
+    if (bySlug) return mapBranding(bySlug);
+  }
+
+  // No tenant on this host → the platform site.
+  return DEFAULT_BRANDING;
 }
 
 /**
@@ -201,6 +228,8 @@ async function loadOrgIdForHost(host: string): Promise<string | null> {
   // GLOBAL `organizations` directory — reach via `.raw()` (see
   // loadSeedBranding) so the org-scoped facade doesn't append a filter.
   const supabase = getOrgScopedClient(seedOrgId);
+
+  // 1. A verified custom domain wins.
   const { data, error } = await withTimeout(
     supabase
       .raw()
@@ -214,8 +243,28 @@ async function loadOrgIdForHost(host: string): Promise<string | null> {
       .maybeSingle(),
   );
   if (error) throw error;
+  if (data?.id) return data.id;
+
+  // 2. Platform subdomain (`<slug>.<base>`, G10) → tenant by slug.
+  const slug = extractTenantSubdomainLabel(host);
+  if (slug) {
+    const { data: bySlug, error: slugErr } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("slug", slug)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (slugErr) throw slugErr;
+    if (bySlug?.id) return bySlug.id;
+  }
+
   // No verified tenant on this host → the default site (seed org).
-  return data?.id ?? seedOrgId;
+  return seedOrgId;
 }
 
 /**
