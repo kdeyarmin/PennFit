@@ -23,12 +23,12 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Database,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { autofileSignedPacketPdf } from "../../lib/patient-packet/autofile";
 import { resolveCompanyProfile } from "../../lib/patient-packet/company";
 import { renderPacketDocumentSections } from "../../lib/patient-packet/content";
@@ -76,13 +76,17 @@ type ResolvedPacket = {
   delivery_details: DeliveryDetails | null;
 };
 
-// Verify a token against a freshly-loaded packet row. Returns the
-// packet when the link is valid + open, or an error code to surface.
-async function resolveOpenPacket(
-  supabase: OrgScopedClient,
-  token: string,
-): Promise<
-  | { ok: true; packet: ResolvedPacket }
+// Verify a token against a freshly-loaded packet row. The signed token is
+// the authorization, so we resolve the packet's TENANT from its record
+// (so a tenant-B link lands in tenant B) and scope every read/write to it.
+// Returns the packet + its org-scoped client, or an error code to surface.
+async function resolveOpenPacket(token: string): Promise<
+  | {
+      ok: true;
+      packet: ResolvedPacket;
+      supabase: OrgScopedClient;
+      orgId: string;
+    }
   | {
       ok: false;
       code: "invalid" | "not_found" | "expired" | "voided" | "completed";
@@ -90,6 +94,13 @@ async function resolveOpenPacket(
 > {
   const verified = verifyPatientPacketToken(token);
   if (!verified.valid) return { ok: false, code: "invalid" };
+
+  const orgId = await resolveOrgIdForSignedRecord(
+    "patient_packets",
+    verified.packetId,
+  );
+  if (!orgId) return { ok: false, code: "not_found" };
+  const supabase = getOrgScopedClient(orgId);
 
   const { data: packet, error } = await supabase
     .from("patient_packets")
@@ -110,7 +121,12 @@ async function resolveOpenPacket(
   if (packet.expires_at && new Date(packet.expires_at).getTime() < Date.now()) {
     return { ok: false, code: "expired" };
   }
-  return { ok: true, packet: packet as unknown as ResolvedPacket };
+  return {
+    ok: true,
+    packet: packet as unknown as ResolvedPacket,
+    supabase,
+    orgId,
+  };
 }
 
 // ── GET /patient-packets/view ─────────────────────────────────────
@@ -120,16 +136,11 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
     res.status(400).json({ error: "missing_token" });
     return;
   }
-  // Public token-gated route (pattern 3): no req.orgId. Resolve the seed
-  // org for the scoped client; degrade to the existing not_found path on
-  // a miss rather than 500 (the token is the auth, not a session).
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
-  const resolved = await resolveOpenPacket(supabase, token);
+  // Public token-gated route (pattern 3): no req.orgId. The token resolver
+  // derives the packet's tenant from its record and returns an org-scoped
+  // client; a missing record degrades to not_found (the token is the auth,
+  // not a session).
+  const resolved = await resolveOpenPacket(token);
   if (!resolved.ok) {
     // Completed is a friendly terminal state, not an error for the UI.
     if (resolved.code === "completed") {
@@ -142,6 +153,7 @@ router.get("/patient-packets/view", viewLimiter, async (req, res) => {
     return;
   }
   const packet = resolved.packet;
+  const supabase = resolved.supabase;
 
   const { data: docs, error: docsErr } = await supabase
     .from("patient_packet_documents")
@@ -279,16 +291,11 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
   }
   const b = parsed.data;
 
-  // Public token-gated route (pattern 3): no req.orgId. Resolve the seed
-  // org for the scoped client; degrade to the existing not_found path on
-  // a miss (the token is the auth, not a session).
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const supabase = getOrgScopedClient(orgId);
-  const resolved = await resolveOpenPacket(supabase, b.token);
+  // Public token-gated route (pattern 3): no req.orgId. The token resolver
+  // derives the packet's tenant from its record and returns an org-scoped
+  // client; a missing record degrades to not_found (the token is the auth,
+  // not a session).
+  const resolved = await resolveOpenPacket(b.token);
   if (!resolved.ok) {
     if (resolved.code === "completed") {
       res.status(409).json({ error: "already_completed" });
@@ -300,6 +307,7 @@ router.post("/patient-packets/sign", signLimiter, async (req, res) => {
     return;
   }
   const packet = resolved.packet;
+  const supabase = resolved.supabase;
 
   // Every document in the packet must be acknowledged before signing.
   const { data: docs, error: docsErr } = await supabase

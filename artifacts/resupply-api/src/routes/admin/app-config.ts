@@ -418,7 +418,10 @@ router.put(
           updated_by_email: req.adminEmail ?? null,
           updated_at: nowIso,
         },
-        { onConflict: "key" },
+        // (org_id, key) is the PK after migration 0352; the facade injects
+        // org_id into the payload above, so the upsert conflict-targets the
+        // caller's own tenant row.
+        { onConflict: "org_id,key" },
       )
       .select("key, value, updated_by_email, updated_at")
       .single();
@@ -540,16 +543,23 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+    // Per-tenant activity: the scoped facade auto-filters by org_id, so a
+    // tenant admin only sees its OWN config-change history.
     const { data, error } = await supabase
-      .raw()
-      .schema("resupply")
       .from("app_config_events")
       .select("occurred_at, operator_email, key, action, had_previous")
       .order("occurred_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
 
-    const activity = (data ?? []).map((r) => {
+    type ActivityRow = {
+      occurred_at: string;
+      operator_email: string | null;
+      key: string;
+      action: string;
+      had_previous: boolean;
+    };
+    const activity = ((data ?? []) as ActivityRow[]).map((r) => {
       const setting = getAppConfigSetting(r.key);
       return {
         occurredAt: r.occurred_at,
@@ -578,16 +588,14 @@ async function writeConfigEvent(
   operatorEmail: string | null,
 ): Promise<void> {
   try {
-    const { error } = await supabase
-      .raw()
-      .schema("resupply")
-      .from("app_config_events")
-      .insert({
-        key,
-        action,
-        had_previous: hadPrevious,
-        operator_email: operatorEmail,
-      });
+    // Scoped insert: the facade stamps org_id so the activity row is
+    // attributed to the writing admin's tenant.
+    const { error } = await supabase.from("app_config_events").insert({
+      key,
+      action,
+      had_previous: hadPrevious,
+      operator_email: operatorEmail,
+    });
     if (error) throw error;
   } catch (err) {
     logger.warn(
