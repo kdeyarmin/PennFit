@@ -4918,6 +4918,7 @@ export interface Database {
       // Migration 0205 (RT #25): short-video education library.
       education_videos: {
         Row: {
+          org_id: string | null;
           id: string;
           title: string;
           topic:

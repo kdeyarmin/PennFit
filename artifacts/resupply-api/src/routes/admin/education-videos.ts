@@ -72,9 +72,8 @@ router.get(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId).raw();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("education_videos")
       .select("*")
       .order("sort_order", { ascending: true })
@@ -103,9 +102,8 @@ router.post(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId).raw();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("education_videos")
       .insert({
         title: b.title,
@@ -161,9 +159,8 @@ router.patch(
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId).raw();
+    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
-      .schema("resupply")
       .from("education_videos")
       .update(update as never)
       .eq("id", idOk.data)
