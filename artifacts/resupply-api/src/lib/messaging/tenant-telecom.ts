@@ -156,8 +156,9 @@ export async function resolveTenantSmsFrom(
 export async function resolveTenantVoiceFrom(
   orgId: string | undefined,
 ): Promise<string | null> {
-  if (!orgId || !orgId.trim()) return null;
-  const row = await loadTelecomRow(orgId);
+  const tenantOrgId = orgId?.trim();
+  if (!tenantOrgId) return null;
+  const row = await loadTelecomRow(tenantOrgId);
   return row.voiceFromNumber;
 }
 
