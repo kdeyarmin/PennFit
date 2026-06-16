@@ -418,7 +418,7 @@ export async function handlePlatformTenantStripeEvent(
       !sub.metadata.org_id
     )
       return false;
-    await raw
+    const { error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
       .update({
@@ -431,7 +431,18 @@ export async function handlePlatformTenantStripeEvent(
         current_period_end: asStripeTimestamp((sub as any).current_period_end),
       })
       .eq("org_id", sub.metadata.org_id)
-      .eq("stripe_subscription_id", sub.id);
+      .in("status", ["active", "trialing", "past_due"]);
+    if (error) {
+      logger.error(
+        {
+          event: "platform_billing_stripe_subscription_webhook_update_failed",
+          err: error,
+          orgId: sub.metadata.org_id,
+          stripeSubscriptionId: sub.id,
+        },
+        "platform billing Stripe subscription webhook update failed",
+      );
+    }
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
