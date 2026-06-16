@@ -38,12 +38,12 @@ import type PgBoss from "pg-boss";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org";
 import { createQueueWithDlq, CRON_SCAN_QUEUE_OPTS } from "../lib/queue-options";
 import { SEND_EMAIL_JOB, SEND_SMS_JOB } from "./reminders.js";
 
@@ -151,13 +151,35 @@ export async function runReminderEscalationScan(
     enqueuedEmail: 0,
     csrAlerts: 0,
   };
-  if (!(await isFeatureEnabled("reminder_escalation.dispatcher"))) {
-    result.skipped = true;
-    return result;
+  // Fan out across every active tenant. Episodes, reminder conversations,
+  // and the CSR no_response alerts are all tenant-scoped, and
+  // reminder_escalation.dispatcher is a PER-TENANT flag, so each org is
+  // swept on its own org-scoped client and an escalation never crosses
+  // tenants. Per-tenant failures are isolated by forEachActiveOrg.
+  const fan = await forEachActiveOrg(
+    (orgId) => escalationScanForOrg(orgId, boss, now, result),
+    { jobName: ESCALATION_JOB },
+  );
+  // Preserve the "did nothing" signal for the no-active-tenant tick.
+  if (fan.total === 0) result.skipped = true;
+  return result;
+}
+
+/**
+ * Run the escalation sweep for a SINGLE tenant, accumulating into the
+ * shared `result`. The dispatcher flag is checked per-tenant, so one
+ * tenant's opt-out never sweeps another's episodes.
+ */
+async function escalationScanForOrg(
+  orgId: string,
+  boss: Pick<PgBoss, "send">,
+  now: Date,
+  result: EscalationRunResult,
+): Promise<void> {
+  if (!(await isFeatureEnabled("reminder_escalation.dispatcher", orgId))) {
+    return;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return result;
   const supabase = getOrgScopedClient(orgId);
   const horizonIso = new Date(
     now.getTime() - (ESCALATION_MAX_DAYS + 2) * DAY_MS,
@@ -184,7 +206,7 @@ export async function runReminderEscalationScan(
     for (const r of data) episodes.push({ id: r.id, patientId: r.patient_id });
     if (data.length < PAGE_SIZE) break;
   }
-  if (episodes.length === 0) return result;
+  if (episodes.length === 0) return;
 
   // Reminder conversations for THOSE episodes. Fetch by the bounded
   // episode-id set (chunk the IN list ~200 ids, page within each chunk)
@@ -252,14 +274,15 @@ export async function runReminderEscalationScan(
   logger.info(
     {
       event: "reminders.escalation.completed",
+      org_id: orgId,
       episodes: episodes.length,
+      // Cumulative across tenants swept so far this tick.
       enqueued_sms: result.enqueuedSms,
       enqueued_email: result.enqueuedEmail,
       csr_alerts: result.csrAlerts,
     },
-    "reminders.escalation-scan: completed",
+    "reminders.escalation-scan: completed for tenant",
   );
-  return result;
 }
 
 async function raiseUnresponsiveAlert(
