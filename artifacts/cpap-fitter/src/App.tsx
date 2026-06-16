@@ -491,6 +491,14 @@ const AdminConsoleRoute = lazyWithRetry(() =>
   import("@/pages/admin/console").then((m) => ({ default: m.ConsoleRoute })),
 );
 
+// Gated platform super-admin console (G4) — the cross-tenant operator
+// surface, its own lazy chunk loaded only at /platform/*.
+const PlatformConsoleRoute = lazyWithRetry(() =>
+  import("@/pages/platform/console").then((m) => ({
+    default: m.PlatformConsoleRoute,
+  })),
+);
+
 // Provider e-signature portal — its own on-demand chunk (sign-in, MFA
 // enrollment, document queue, signing). Gated internally against
 // /api/provider/me; not part of the admin or storefront bundles.
@@ -1164,6 +1172,15 @@ function TopRouter() {
         <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
         <Route path="/admin" component={AdminConsoleRoute} />
         <Route path="/admin/*" component={AdminConsoleRoute} />
+
+        {/*
+          Platform super-admin console (G4). Cross-tenant operator surface
+          gated by /resupply-api/platform/me (platform_admins membership).
+          Platform admins sign in through the shared /admin/sign-in flow,
+          so no separate auth pages are needed here.
+        */}
+        <Route path="/platform" component={PlatformConsoleRoute} />
+        <Route path="/platform/*" component={PlatformConsoleRoute} />
 
         {/*
           Provider e-signature portal. Self-contained surface where

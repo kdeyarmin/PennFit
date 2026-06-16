@@ -108,6 +108,16 @@ configured, NODE_ENV=development) returns `admin`.
    * pickers, patients-list branch filter) and behaves single-branch.
    */
   multiLocationEnabled?: boolean;
+  /**
+   * Platform-admin impersonation (G4). True when this admin session is a
+   * platform super-admin acting AS a tenant (`impersonatedOrgId` is then
+   * the tenant being operated). The SPA reads this to render the
+   * persistent "you are impersonating — stop" banner. False/absent for
+   * every normal tenant-admin session.
+   */
+  impersonation?: boolean;
+  /** The tenant org id being impersonated, when `impersonation` is true. */
+  impersonatedOrgId?: string | null;
 }
 
 /**
