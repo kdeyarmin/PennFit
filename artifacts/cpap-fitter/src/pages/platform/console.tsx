@@ -458,9 +458,11 @@ function PlatformConsole() {
   if (isError) {
     const status = error instanceof ApiError ? error.status : 0;
     const reason: "not-configured" | "transient" | "not-authorized" =
-      status === 0 || (status >= 500 && status < 600)
-        ? "transient"
-        : "not-authorized";
+      status === 503
+        ? "not-configured"
+        : status === 0 || (status >= 500 && status < 600)
+          ? "transient"
+          : "not-authorized";
     return <NotAuthorizedPage reason={reason} />;
   }
 
