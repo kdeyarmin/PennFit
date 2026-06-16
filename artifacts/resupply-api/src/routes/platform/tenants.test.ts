@@ -195,3 +195,49 @@ describe("POST /platform/tenants/:id/reactivate", () => {
     expect(res.body.tenant).toMatchObject({ status: "active" });
   });
 });
+
+describe("GET /platform/tenants/:id/usage", () => {
+  it("401s when the caller is not a platform admin", async () => {
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/usage`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a non-uuid id", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    const res = await request(makeApp()).get(
+      "/platform/tenants/not-a-uuid/usage",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the tenant does not exist", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/usage`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns per-tenant headline counts", async () => {
+    mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
+    // Existence check, then one count per table (count-only head queries).
+    stageSupabaseResponse("organizations", "select", {
+      data: { id: TENANT_ID },
+    });
+    stageSupabaseResponse("patients", "select", { count: 12, data: null });
+    stageSupabaseResponse("shop_orders", "select", { count: 5, data: null });
+    stageSupabaseResponse("conversations", "select", { count: 3, data: null });
+
+    const res = await request(makeApp()).get(
+      `/platform/tenants/${TENANT_ID}/usage`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      tenantId: TENANT_ID,
+      usage: { patients: 12, orders: 5, conversations: 3 },
+    });
+  });
+});

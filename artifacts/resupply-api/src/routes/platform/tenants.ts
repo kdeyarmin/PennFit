@@ -31,8 +31,8 @@ import {
 import { logger } from "../../lib/logger";
 import { invalidateBrandingCache } from "../../lib/tenant-branding";
 import {
-  adminRateLimit,
   adminReadRateLimiter,
+  adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
@@ -196,16 +196,87 @@ async function setTenantStatus(
 
 router.post(
   "/platform/tenants/:id/suspend",
-  adminRateLimit({ name: "platform.tenant_suspend", preset: "mutation" }),
+  adminWriteRateLimiter,
   requirePlatformAdmin,
   (req, res) => setTenantStatus(req, res, "suspended"),
 );
 
 router.post(
   "/platform/tenants/:id/reactivate",
-  adminRateLimit({ name: "platform.tenant_reactivate", preset: "mutation" }),
+  adminWriteRateLimiter,
   requirePlatformAdmin,
   (req, res) => setTenantStatus(req, res, "active"),
+);
+
+// Tenant-scoped tables we surface a headline count for. Each is counted
+// through the org-scoped facade for the TARGET tenant (the facade appends
+// `.eq("org_id", :id)`), so the numbers are genuinely per-tenant.
+const USAGE_COUNTS = [
+  ["patients", "patients"],
+  ["orders", "shop_orders"],
+  ["conversations", "conversations"],
+] as const;
+
+router.get(
+  "/platform/tenants/:id/usage",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (req, res): Promise<void> => {
+    const parsed = tenantIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const id = parsed.data.id;
+
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    // Confirm the tenant exists (404 a bad id) via the global directory.
+    const { data: org, error: orgErr } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("id")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (orgErr) {
+      logger.error(
+        { event: "platform_tenant_usage_read_failed", err: orgErr },
+        "platform: tenant usage org read failed",
+      );
+      res.status(500).json({ error: "tenant_read_failed" });
+      return;
+    }
+    if (!org) {
+      res.status(404).json({ error: "tenant_not_found" });
+      return;
+    }
+
+    // Per-tenant counts via the scoped facade for the TARGET org.
+    const db = getOrgScopedClient(id);
+    try {
+      const entries = await Promise.all(
+        USAGE_COUNTS.map(async ([label, table]) => {
+          const { count, error } = await db
+            .from(table)
+            .select("*", { count: "exact", head: true });
+          if (error) throw error;
+          return [label, count ?? 0] as const;
+        }),
+      );
+      res.json({ tenantId: id, usage: Object.fromEntries(entries) });
+    } catch (err) {
+      logger.error(
+        { event: "platform_tenant_usage_count_failed", err },
+        "platform: tenant usage count failed",
+      );
+      res.status(500).json({ error: "usage_query_failed" });
+    }
+  },
 );
 
 export default router;
