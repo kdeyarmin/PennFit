@@ -186,6 +186,13 @@ export function groupReadyClaims(claims: ReadyClaim[]): ReadyGroup[] {
 export interface SelectReadyOpts {
   /** Cap the number of ready claims returned (preflight is run up to this). */
   maxClaims?: number;
+  /**
+   * Tenant whose draft claims to scan. Defaults to the seed org (the cron
+   * path, until the worker fans out per tenant); request handlers pass the
+   * caller's `req.orgId` so claims are selected from the RIGHT tenant.
+   * Ignored when an explicit `supabase` client is injected (tests).
+   */
+  orgId?: string;
   /** Cap the draft-claim scan window. */
   scanCap?: number;
   /** Override eligibility freshness window (days). */
@@ -229,7 +236,7 @@ export async function selectSubmissionReadyClaims(
   if (opts.supabase) {
     supabase = opts.supabase;
   } else {
-    const orgId = await resolveSeedOrgId();
+    const orgId = opts.orgId ?? (await resolveSeedOrgId());
     if (!orgId) {
       return {
         groups: [],
@@ -488,6 +495,13 @@ export interface RunAutoSubmitOpts {
   triggeredBy: "operator" | "cron";
   ip?: string | null;
   userAgent?: string | null;
+  /**
+   * Tenant to select + submit claims for. Defaults to the seed org (the
+   * cron path); the operator route passes `req.orgId`. Threaded into both
+   * the claim selection and the 837P batch submit so a tenant admin's run
+   * never touches another tenant's claims or clearinghouse.
+   */
+  orgId?: string;
 }
 
 export interface AutoSubmitRunResult {
@@ -543,8 +557,12 @@ export async function runAutoSubmitBatch(
   // the per-run cap that bounds the unattended "submit all" scan.
   const readiness = await select(
     approvedClaimIds
-      ? { claimIds: approvedClaimIds, maxClaims: approvedClaimIds.length }
-      : { maxClaims },
+      ? {
+          claimIds: approvedClaimIds,
+          maxClaims: approvedClaimIds.length,
+          orgId: opts.orgId,
+        }
+      : { maxClaims, orgId: opts.orgId },
   );
   const readyById = new Map<string, ReadyClaim>();
   for (const g of readiness.groups) {
@@ -576,6 +594,7 @@ export async function runAutoSubmitBatch(
       adminUserId: opts.submittedByUserId ?? null,
       ip: opts.ip ?? null,
       userAgent: opts.userAgent ?? null,
+      orgId: opts.orgId,
     });
     if (result.ok) {
       submissions.push({
