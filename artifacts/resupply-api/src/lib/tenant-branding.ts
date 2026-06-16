@@ -288,7 +288,7 @@ async function reloadVerifiedDomains(): Promise<void> {
     if (error) throw error;
     const next = new Set<string>();
     for (const row of data ?? []) {
-      const d = trimmed(row.custom_domain);
+      const d = normalizeCustomDomain(trimmed(row.custom_domain));
       if (d) next.add(d);
     }
     verifiedDomains = next;
@@ -325,11 +325,12 @@ export function isVerifiedCustomDomainOrigin(origin: string): boolean {
   if (Date.now() >= verifiedDomainsExpiresAt) kickVerifiedDomainsRefresh();
   let host: string;
   try {
-    host = new URL(origin).hostname.toLowerCase();
+    host = new URL(origin).hostname;
   } catch {
     return false;
   }
-  return verifiedDomains.has(host);
+  const normalized = normalizeCustomDomain(host);
+  return normalized ? verifiedDomains.has(normalized) : false;
 }
 
 /** Force-refresh the verified-domain set (call after a domain verifies). */

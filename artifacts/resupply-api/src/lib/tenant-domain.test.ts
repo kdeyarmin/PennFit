@@ -74,6 +74,7 @@ describe("buildDomainInstructions", () => {
   });
 
   it("builds the default CNAME target, TXT name under the verify label, and embeds the token", () => {
+    delete process.env.PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET;
     delete process.env.RAILWAY_PUBLIC_DOMAIN;
     const ins = buildDomainInstructions("shop.acme.com", "tok123");
     expect(ins.cnameTarget).toBe("cmbreathe.com");

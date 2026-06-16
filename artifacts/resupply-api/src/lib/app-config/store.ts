@@ -221,9 +221,100 @@ export function maskSecretHint(value: string): string {
   return `••••${value.slice(-4)}`;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Per-tenant config reader (the request-scoped counterpart of the boot
+// overlay). The overlay above folds the SEED org's rows into process.env
+// at boot — i.e. the PLATFORM defaults. This reader resolves a
+// `scope: "tenant"` key for a SPECIFIC org, falling back to the seed
+// org's value when the tenant has no row. It is the app_config analogue
+// of `isFeatureEnabled(key, orgId)` and the sanctioned path for a
+// per-request consumer (e.g. the per-tenant assistant display names) to
+// read a tenant-overridable value.
+// ────────────────────────────────────────────────────────────────────
+
+interface TenantConfigEntry {
+  value: string | null;
+  expiresAt: number;
+}
+
+// Keyed by `${orgId} ${key}`. NUL separator can't appear in a uuid
+// or an env-var name, so it's an unambiguous composite key.
+const tenantConfigCache = new Map<string, TenantConfigEntry>();
+
+async function readAppConfigValue(
+  orgId: string,
+  key: string,
+): Promise<string | null> {
+  const supabase = getOrgScopedClient(orgId);
+  const { data, error } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", key)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const value = (data as { value?: string } | null)?.value;
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * Resolve a tenant-overridable config value for `orgId`, falling back to
+ * the seed org (the platform default) when the tenant has no row, and to
+ * `null` when neither has one. Cached per (org, key) for a short TTL.
+ *
+ * Fail-soft: any DB error degrades to the seed-org value, then `null` —
+ * it never throws, so a flaky lookup can't break a request path.
+ */
+export async function getTenantConfigValue(
+  orgId: string,
+  key: string,
+): Promise<string | null> {
+  const cacheKey = `${orgId} ${key}`;
+  const now = Date.now();
+  const hit = tenantConfigCache.get(cacheKey);
+  if (hit && hit.expiresAt > now) return hit.value;
+
+  let value: string | null;
+  try {
+    value = await readAppConfigValue(orgId, key);
+    if (value === null) {
+      // No tenant row → fall back to the seed org's platform default.
+      const seedOrgId = await resolveSeedOrgId();
+      if (seedOrgId && seedOrgId !== orgId) {
+        value = await readAppConfigValue(seedOrgId, key);
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "tenant_config_read_failed",
+        key,
+        err: err instanceof Error ? err : new Error(String(err)),
+      },
+      "per-tenant app_config read failed; degrading to seed/default",
+    );
+    // Best-effort seed fallback on error.
+    try {
+      const seedOrgId = await resolveSeedOrgId();
+      value = seedOrgId ? await readAppConfigValue(seedOrgId, key) : null;
+    } catch {
+      value = null;
+    }
+  }
+
+  tenantConfigCache.set(cacheKey, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
+}
+
+/** Drop the per-tenant config cache (call after an admin save). */
+export function invalidateTenantConfigCache(): void {
+  tenantConfigCache.clear();
+}
+
 /** Test-only: clear the module cache between cases. */
 export function __resetAppConfigCacheForTests(): void {
   cache = null;
+  tenantConfigCache.clear();
 }
 
 // Re-export the catalog key list for callers that only need the closed
