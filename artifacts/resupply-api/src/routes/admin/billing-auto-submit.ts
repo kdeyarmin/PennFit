@@ -55,6 +55,7 @@ router.get(
     const maxClaims = parsed.success ? parsed.data.maxClaims : undefined;
     const readiness = await selectSubmissionReadyClaims({
       maxClaims: maxClaims ?? 100,
+      orgId: req.orgId,
     });
     res.json(readiness);
   },
@@ -118,6 +119,7 @@ router.post(
       triggeredBy: "operator",
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
+      orgId: req.orgId,
     });
 
     await logAudit({
