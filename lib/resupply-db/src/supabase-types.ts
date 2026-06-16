@@ -351,6 +351,7 @@ export interface Database {
       // surface (computeMargin / aggregateMargin in resupply-domain).
       product_costs: {
         Row: {
+          org_id: string | null;
           sku: string;
           unit_cost_cents: number;
           currency: string;
@@ -361,6 +362,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
+          org_id?: string;
           sku: string;
           unit_cost_cents: number;
           currency?: string;
@@ -4915,6 +4917,7 @@ export interface Database {
       // Migration 0205 (RT #25): short-video education library.
       education_videos: {
         Row: {
+          org_id: string | null;
           id: string;
           title: string;
           topic:

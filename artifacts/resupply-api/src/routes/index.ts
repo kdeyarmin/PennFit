@@ -204,6 +204,7 @@ import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
 import platformImpersonationRouter from "./platform/impersonation.js";
+import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
 import platformBillingRouter from "./platform/billing.js";
 import patientsRouter from "./patients/index.js";
@@ -225,6 +226,7 @@ router.use(healthRouter);
 router.use(meRouter);
 // Platform super-admin (G4): cross-tenant operator surface, gated by
 // requirePlatformAdmin (the tier above a tenant admin).
+router.use(platformMeRouter);
 router.use(platformTenantsRouter);
 router.use(platformBillingRouter);
 router.use(platformImpersonationRouter);

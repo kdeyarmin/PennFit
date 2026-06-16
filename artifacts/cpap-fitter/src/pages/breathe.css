@@ -1038,6 +1038,33 @@
   max-width: 420px;
   line-height: 1.6;
 }
+.bx-footer-admin {
+  border-top: 1px solid var(--bx-line);
+  margin-top: 36px;
+  padding-top: 24px;
+  text-align: center;
+}
+.bx-footer-admin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--bx-text-faint);
+  text-decoration: none;
+  padding: 7px 14px;
+  border: 1px solid var(--bx-line);
+  border-radius: 999px;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+.bx-footer-admin-link:hover {
+  color: var(--bx-text);
+  border-color: var(--bx-line-strong, var(--bx-line));
+  background: rgba(255, 255, 255, 0.04);
+}
 
 /* ───────────────────────── Reveal animation ───────────────────────── */
 .bx-reveal {
