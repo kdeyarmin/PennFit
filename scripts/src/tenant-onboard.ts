@@ -18,7 +18,19 @@
 //   SUPABASE_URL=https://... SUPABASE_SERVICE_ROLE_KEY=... \
 //   pnpm --filter @workspace/scripts tenant:onboard \
 //     --org-slug=acme-dme --org-name="ACME DME Inc." \
-//     --admin-email=alice@acme.example [--storefront-name="AcmeSleep"]
+//     --admin-email=alice@acme.example [--storefront-name="AcmeSleep"] \
+//     [--provision-fax [--fax-area-code=215]] | [--fax-number=+12155551212]
+//
+// Fax number (migration 0368 — per-tenant fax identity):
+//   * --provision-fax        auto-orders a fax-capable DID from Telnyx
+//                            (needs TELNYX_API_KEY + TELNYX_FAX_CONNECTION_ID)
+//                            and attaches it to the fax Application, so the
+//                            tenant's inbound/outbound faxes use their own
+//                            number. Optional --fax-area-code keeps it local.
+//   * --fax-number=<E.164>   sets a ported / pre-existing DID directly.
+//   Omit both to onboard without a fax number (add one later from the admin
+//   Settings → Fax number page). Provisioning is fail-soft: an error here is
+//   reported but does NOT fail the rest of onboarding.
 //
 // Idempotent & safe to re-run:
 //   * Organization: reused when the slug already exists (reported), else
@@ -51,6 +63,10 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import {
+  createTelnyxNumberClient,
+  TelnyxConfigError,
+} from "@workspace/resupply-telecom";
 
 interface ParsedArgs {
   orgSlug: string;
@@ -63,11 +79,19 @@ interface ParsedArgs {
   productName: string;
   publicBaseUrl: string;
   uiPathPrefix: string;
+  /** Auto-order a fax-capable DID from Telnyx for the new tenant. */
+  provisionFax: boolean;
+  /** Optional US area code to keep the auto-provisioned fax number local. */
+  faxAreaCode: string | null;
+  /** A ported / pre-existing fax DID to set manually (no Telnyx call). */
+  faxNumber: string | null;
 }
 
 // Mirrors the DB CHECK on organizations.slug
 // (0331_organizations_tenant.sql): a URL-safe lowercase label.
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const E164_RE = /^\+[1-9]\d{6,14}$/;
+const AREA_CODE_RE = /^\d{3}$/;
 
 function fail(message: string, code = 1): never {
   process.stderr.write(`[tenant:onboard] ${message}\n`);
@@ -109,6 +133,27 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   const storefrontName = (args.get("storefront-name") ?? "").trim() || null;
+
+  const faxNumber = (args.get("fax-number") ?? "").trim() || null;
+  if (faxNumber && !E164_RE.test(faxNumber)) {
+    fail(
+      `--fax-number must be E.164 (e.g. +12155551212). Got: '${faxNumber}'.`,
+    );
+  }
+  const faxAreaCode = (args.get("fax-area-code") ?? "").trim() || null;
+  if (faxAreaCode && !AREA_CODE_RE.test(faxAreaCode)) {
+    fail(
+      `--fax-area-code must be a 3-digit US area code. Got: '${faxAreaCode}'.`,
+    );
+  }
+  const provisionFax = flags.has("provision-fax");
+  if (provisionFax && faxNumber) {
+    fail(
+      "Pass either --provision-fax (auto-order a number) OR --fax-number=<E.164> " +
+        "(set a ported/existing number) — not both.",
+    );
+  }
+
   const productName = args.get("product") ?? storefrontName ?? orgName;
   const publicBaseUrl = (
     args.get("base-url") ??
@@ -131,7 +176,116 @@ function parseArgs(argv: string[]): ParsedArgs {
     productName,
     publicBaseUrl,
     uiPathPrefix,
+    provisionFax,
+    faxAreaCode,
+    faxNumber,
   };
+}
+
+/**
+ * Provision (or set) the tenant's own fax number — the companion to the
+ * per-tenant SMS / voice identity (migration 0364), now for fax (0368).
+ *
+ *   * `--fax-number=<E.164>` sets a ported / pre-existing DID directly (no
+ *     vendor call).
+ *   * `--provision-fax` auto-orders a fax-capable DID from Telnyx (Twilio
+ *     retired Programmable Fax) and attaches it to the fax Application, so
+ *     inbound faxes route to this tenant and outbound faxes send from it.
+ *
+ * Idempotent: a tenant that already has a fax number is left untouched.
+ * Fail-soft: a provisioning error is REPORTED but does NOT fail onboarding
+ * — the tenant is already stood up, and the number can be added later from
+ * the admin "Fax number" settings page or by re-running with the flag.
+ */
+async function provisionTenantFax(
+  supabase: OnboardClient,
+  orgId: string,
+  a: ParsedArgs,
+): Promise<string> {
+  if (!a.provisionFax && !a.faxNumber) {
+    return "skipped (pass --provision-fax or --fax-number to set one)";
+  }
+
+  // Don't re-provision a tenant that already has a fax number.
+  const { data: org, error: readErr } = await supabase
+    .schema("resupply")
+    .from("organizations")
+    .select("fax_from_number")
+    .eq("id", orgId)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (org?.fax_from_number) {
+    return `existing (${org.fax_from_number}) — left unchanged`;
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // Manual: a ported / pre-existing DID. No vendor call.
+  if (a.faxNumber) {
+    const { error } = await supabase
+      .schema("resupply")
+      .from("organizations")
+      .update({
+        fax_from_number: a.faxNumber,
+        fax_telnyx_order_id: null,
+        fax_provisioned_at: nowIso,
+      })
+      .eq("id", orgId);
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return `FAILED — ${a.faxNumber} is already assigned to another tenant`;
+      }
+      throw error;
+    }
+    return `${a.faxNumber} (set manually)`;
+  }
+
+  // Auto-provision from Telnyx.
+  if (
+    !process.env.TELNYX_API_KEY?.trim() ||
+    !process.env.TELNYX_FAX_CONNECTION_ID?.trim()
+  ) {
+    return (
+      "FAILED — TELNYX_API_KEY and TELNYX_FAX_CONNECTION_ID must be set to " +
+      "auto-provision; tenant onboarded WITHOUT a fax number (set one later)"
+    );
+  }
+
+  let result: { phoneNumber: string; orderId: string; status: string };
+  try {
+    const client = createTelnyxNumberClient();
+    result = await client.provisionFaxNumber({
+      areaCode: a.faxAreaCode ?? undefined,
+      customerReference: `org:${a.orgSlug}`,
+    });
+  } catch (err) {
+    if (err instanceof TelnyxConfigError) {
+      return "FAILED — Telnyx not configured; tenant onboarded WITHOUT a fax number";
+    }
+    return `FAILED — ${
+      err instanceof Error ? err.message : "Telnyx provisioning error"
+    }; tenant onboarded WITHOUT a fax number`;
+  }
+
+  const { error: updErr } = await supabase
+    .schema("resupply")
+    .from("organizations")
+    .update({
+      fax_from_number: result.phoneNumber,
+      fax_telnyx_order_id: result.orderId,
+      fax_provisioned_at: nowIso,
+    })
+    .eq("id", orgId);
+  if (updErr) {
+    // The number was bought but the write failed — surface the order id so
+    // the operator can reconcile rather than orphaning a paid-for number.
+    return (
+      `FAILED to persist — number ${result.phoneNumber} was ORDERED ` +
+      `(telnyx_order_id=${result.orderId}) but the DB write failed: ` +
+      `${updErr.message}. Reconcile by hand.`
+    );
+  }
+  return `${result.phoneNumber} (provisioned via Telnyx, order=${result.orderId}, status=${result.status})`;
 }
 
 type OnboardClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -384,6 +538,9 @@ async function main(): Promise<void> {
     if (error) throw error;
   }
 
+  // ── 4. Fax number: auto-provision (Telnyx) or set manually. ────────
+  const faxResult = await provisionTenantFax(supabase, orgId, a);
+
   // ── Summary. ───────────────────────────────────────────────────────
   process.stdout.write(
     `\n[tenant:onboard] Tenant '${a.orgSlug}' ready.\n` +
@@ -395,7 +552,8 @@ async function main(): Promise<void> {
           : `${flagsResult.provisioned} provisioned from seed catalog`
       }\n` +
       `  admin auth user   = ${emailLower} (${userAction}) role=admin\n` +
-      `  admin_users row   = role=admin status=active org_id=${orgId} [${adminAction}]\n`,
+      `  admin_users row   = role=admin status=active org_id=${orgId} [${adminAction}]\n` +
+      `  fax number        = ${faxResult}\n`,
   );
   if (issuedLink) {
     process.stdout.write(

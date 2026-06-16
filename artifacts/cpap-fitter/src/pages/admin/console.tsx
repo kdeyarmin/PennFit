@@ -616,6 +616,11 @@ const AdminStorefrontBrandingPage = lazyWithRetry(() =>
     default: m.AdminStorefrontBrandingPage,
   })),
 );
+const AdminFaxSettingsPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-fax-settings").then((m) => ({
+    default: m.AdminFaxSettingsPage,
+  })),
+);
 const AdminBillingConfigClearinghousePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-config-clearinghouse").then((m) => ({
     default: m.AdminBillingConfigClearinghousePage,
@@ -881,6 +886,10 @@ function AdminConsole() {
             <Route
               path="/admin/storefront-branding"
               component={AdminStorefrontBrandingPage}
+            />
+            <Route
+              path="/admin/fax-settings"
+              component={AdminFaxSettingsPage}
             />
             <Route
               path="/admin/billing/config/clearinghouse"

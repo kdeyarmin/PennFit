@@ -17,6 +17,7 @@ import {
 import {
   LayoutDashboard,
   Store,
+  Printer,
   Inbox,
   MessageSquareText,
   ListChecks,
@@ -1172,6 +1173,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             icon: Store,
             matchPrefix: "/admin/storefront-branding",
             hint: "Your storefront name, tagline, and logo — plus wiring up your own custom domain",
+          },
+          {
+            href: "/admin/fax-settings",
+            label: "Fax number",
+            icon: Printer,
+            matchPrefix: "/admin/fax-settings",
+            hint: "Your practice's own fax number for inbound and outbound faxes",
           },
           {
             href: "/admin/closures",
