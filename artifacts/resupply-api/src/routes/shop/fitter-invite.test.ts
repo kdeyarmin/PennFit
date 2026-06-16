@@ -10,7 +10,7 @@
 //     * invalid token → 401
 //     * invalid body → 400
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -22,8 +22,17 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// The route resolves its tenant from the token's invite via this helper
+// (covered by signed-link-org.test). Stub it to the seed org so these
+// tests exercise the route itself, not the cross-tenant lookup.
+const SEED_ORG = "00000000-0000-4000-8000-000000000000";
+vi.mock("../../lib/storefront/signed-link-org", () => ({
+  resolveOrgIdForSignedRecord: vi.fn(async () => SEED_ORG),
+}));
+
 import fitterInviteRouter from "./fitter-invite";
 import { signFitterInviteToken } from "../../lib/fitter-invite-token";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 const INVITE_ID = "33333333-3333-4333-8333-333333333333";
 const PATIENT_ID = "44444444-4444-4444-8444-444444444444";
@@ -78,6 +87,11 @@ describe("GET /shop/fitter-invite/resolve", () => {
       email: "p@example.com",
       name: "Pat Q",
     });
+    // The tenant was resolved from the token's invite, not a fixed seed.
+    expect(vi.mocked(resolveOrgIdForSignedRecord)).toHaveBeenCalledWith(
+      "fitter_invites",
+      INVITE_ID,
+    );
   });
 
   it("returns valid:false for a bad signature", async () => {
