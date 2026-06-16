@@ -1,4 +1,4 @@
--- 0361_org_telecom_identity — per-tenant Twilio sending identity (G7).
+-- 0362_org_telecom_identity — per-tenant Twilio sending identity (G7).
 --
 -- Phase 2 relaxes the single-Twilio-identity invariant: today every SMS
 -- and call goes out from the one platform `TWILIO_PHONE_NUMBER` /
