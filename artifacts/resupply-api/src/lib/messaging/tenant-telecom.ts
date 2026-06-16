@@ -5,7 +5,7 @@
 // the called number belongs to. The platform `TWILIO_ACCOUNT_SID` /
 // `TWILIO_AUTH_TOKEN` stay the API credential; the per-tenant
 // `organizations.sms_from_number` / `voice_from_number` /
-// `twilio_messaging_service_sid` (migration 0362) select the sender.
+// `twilio_messaging_service_sid` (migration 0364) select the sender.
 //
 // Two directions:
 //   * OUTBOUND — `resolveTenantSmsFrom(orgId)` / `resolveTenantVoiceFrom(orgId)`
