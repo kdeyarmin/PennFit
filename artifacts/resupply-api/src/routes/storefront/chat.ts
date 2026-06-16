@@ -71,6 +71,7 @@ import { withRetry } from "../../lib/with-retry.js";
 import { getLlmBreaker } from "../../lib/llm-circuit-breaker.js";
 import { requestHost } from "../../lib/request-host.js";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding.js";
+import { recordTenantUsage } from "../../lib/metering/usage.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
   buildChatSystemPrompt,
@@ -474,6 +475,16 @@ router.post("/chat", chatRateLimit, async (req, res) => {
     getSystemPrompt(),
     orgId,
   );
+
+  // Past every offline/feature/budget gate — this turn WILL hit a model,
+  // so meter it as one AI text interaction for the host tenant (G12).
+  // Fire-and-forget + fail-soft: never blocks or fails the chat reply.
+  void recordTenantUsage({
+    orgId,
+    metricKey: "aiTextInteractionsPerMonth",
+    source: "storefront.chat",
+  });
+
   const { messages: initial, redactionCounts } = buildInitialMessages(
     messages,
     systemPrompt,
