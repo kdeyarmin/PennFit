@@ -351,7 +351,8 @@ jobs:
           pnpm --filter @workspace/resupply-api exec \
             vitest run \
               src/worker/jobs/invite-password-expiry-notify.integration.test.ts \
-              src/worker/jobs/maintenance-nudges.integration.test.ts
+              src/worker/jobs/maintenance-nudges.integration.test.ts \
+              src/worker/jobs/video-visit-reminders.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)
