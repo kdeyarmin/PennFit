@@ -274,11 +274,12 @@ Today Stripe is single-account (`STRIPE_SECRET_KEY`, one set of products in
 
 **Work:** Stripe **Connect**. Store `stripe_account_id` on
 `organizations`; route Checkout/PaymentIntents with `stripeAccount`;
-optional `application_fee` for platform revenue share; per-account webhook
-routing (resolve `org_id` from the Connect account id). Seed
-catalog/products become per-tenant.
+optional application fee (`application_fee_amount`) for platform revenue
+share; per-account webhook routing (resolve `org_id` from the Connect
+account id). Seed catalog/products become per-tenant.
 
-**Slice 1 (done, migration 0359 + `lib/stripe/connect.ts`):** the routing
+**Slice 1 (done, migration 0359 +
+`artifacts/resupply-api/src/lib/stripe/connect.ts`):** the routing
 substrate. `stripe_account_id` column (nullable, inert), the outbound
 `stripeAccountRequestOptions(orgId)` resolver and the inbound
 `resolveOrgIdByConnectedAccount(accountId)` reverse-lookup for webhooks.
@@ -288,7 +289,7 @@ A tenant only switches onto Connect once an operator populates the column.
 onboarding flow that actually populates `stripe_account_id` uses Stripe
 **Express** connected accounts (not Standard): the platform owns the
 onboarding UX via hosted **Account Links**, keeps dashboard/branding under
-the platform, and can attach `application_fee` for revenue share — the
+the platform, and can attach an application fee for revenue share — the
 right fit for DME tenants who shouldn't manage a full Standard Stripe
 dashboard. Build: create the Express account, generate an Account Link for
 the tenant admin, persist the returned `acct_…` on populate (calling
