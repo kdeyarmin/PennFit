@@ -2,7 +2,7 @@
 //
 // Phase 2 routes each tenant's charges to THEIR OWN Stripe account. The
 // platform `STRIPE_SECRET_KEY` stays the API credential; the connected
-// account id (`organizations.stripe_account_id`, migration 0358) selects
+// account id (`organizations.stripe_account_id`, migration 0359) selects
 // whose books a Checkout session / PaymentIntent lands in, via the Stripe
 // SDK's per-request `{ stripeAccount }` option (the `Stripe-Account`
 // header).

@@ -1,4 +1,4 @@
--- 0358_org_stripe_connect — per-tenant Stripe Connect account id (G5).
+-- 0359_org_stripe_connect — per-tenant Stripe Connect account id (G5).
 --
 -- Phase 2 begins relaxing the single-Stripe-account invariant: today every
 -- charge runs through the one platform `STRIPE_SECRET_KEY`. For SaaS, each
