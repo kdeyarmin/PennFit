@@ -103,6 +103,8 @@ export function AdminBillingPackagePage() {
             </div>
           </div>
           <div>
+            <div className="text-slate-500">Billing period ends</div>
+            <div className="font-medium text-slate-900">
               {sub?.currentPeriodEnd
                 ? new Date(sub.currentPeriodEnd).toLocaleDateString(undefined, {
                     timeZone: "America/New_York",
@@ -111,11 +113,17 @@ export function AdminBillingPackagePage() {
             </div>
           </div>
           <div>
+            <div className="text-slate-500">Last synced</div>
+            <div className="font-medium text-slate-900">
               {sub?.stripeLastSyncedAt
-                ? new Date(sub.stripeLastSyncedAt).toLocaleDateString(undefined, {
-                    timeZone: "America/New_York",
-                  })
+                ? new Date(sub.stripeLastSyncedAt).toLocaleDateString(
+                    undefined,
+                    {
+                      timeZone: "America/New_York",
+                    },
+                  )
                 : "—"}
+            </div>
           </div>
         </div>
       </Card>
