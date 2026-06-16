@@ -42,6 +42,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { isFeatureEnabled } from "../../lib/feature-flags";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
@@ -334,6 +335,10 @@ router.post(
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
 
+    // Stripe Connect (G5): route to the tenant's connected account when it
+    // has one; NULL account → `{}` → platform account (unchanged).
+    const connectOptions = await stripeAccountRequestOptions(req.orgId);
+
     // Stripe permits mixed recurring + one-time line items in
     // subscription mode (the one-time SKU is charged on the first
     // invoice and not renewed). Reorder baskets are always one-time
@@ -398,7 +403,7 @@ router.post(
               },
             },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -416,7 +421,7 @@ router.post(
               setup_future_usage: "off_session",
             },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       }
     } catch (err) {
