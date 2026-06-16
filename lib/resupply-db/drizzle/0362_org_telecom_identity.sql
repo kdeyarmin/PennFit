@@ -40,4 +40,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS "organizations_sms_from_number_key"
 
 CREATE UNIQUE INDEX IF NOT EXISTS "organizations_voice_from_number_key"
   ON "resupply"."organizations" ("voice_from_number")
-  WHERE "voice_from_number" IS NOT NULL;
+  WHERE "voice_from_number" IS NOT NULL AND btrim("voice_from_number") <> '';
