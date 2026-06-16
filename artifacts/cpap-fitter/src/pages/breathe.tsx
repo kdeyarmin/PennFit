@@ -796,11 +796,11 @@ function Footer() {
       </div>
       <div className="bx-footer-admin">
         <Link
-          href="/admin/sign-in"
+          href="/platform"
           className="bx-footer-admin-link"
           data-testid="breathe-super-admin-login"
         >
-          <Lock size={13} />
+          <Lock size={13} aria-hidden="true" />
           Super admin login
         </Link>
       </div>
