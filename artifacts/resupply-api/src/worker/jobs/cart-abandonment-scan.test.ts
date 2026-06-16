@@ -11,8 +11,10 @@
 //     SendGrid keys doesn't start nudging real abandoned carts.
 //   * When enabled, registration calls boss.createQueue / .work /
 //     .schedule on the canonical queue name + cron expression.
-//   * The handler invokes runCartAbandonmentDispatch and logs the
-//     stats envelope it gets back.
+//   * The handler fans out across active tenants (one dispatch per
+//     active org), aggregates the per-tenant stats, isolates a single
+//     tenant's failure, and only rethrows if tenant enumeration itself
+//     fails (the pg-boss retry signal).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -30,13 +32,16 @@ vi.mock("../../lib/cart-abandonment/run-dispatch", () => ({
   runCartAbandonmentDispatch: runDispatchMock,
 }));
 
-// The handler resolves the seed org (single-tenant bridge) before
-// dispatching; stub it so the cron contract tests don't hit a real DB.
-const resolveSeedOrgIdMock = vi.hoisted(() => vi.fn(async () => "org-1"));
+// The handler fans out across active tenants (forEachActiveOrg →
+// listActiveOrgIds) before dispatching per tenant; stub the tenant
+// enumeration so the cron contract tests don't hit a real DB.
+const listActiveOrgIdsMock = vi.hoisted(() =>
+  vi.fn(async () => ["org-1"] as string[]),
+);
 vi.mock("@workspace/resupply-db", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@workspace/resupply-db")>();
-  return { ...actual, resolveSeedOrgId: resolveSeedOrgIdMock };
+  return { ...actual, listActiveOrgIds: listActiveOrgIdsMock };
 });
 
 // Capture log calls so we can assert info/error were called with the
@@ -82,6 +87,8 @@ beforeEach(() => {
     skippedOptOut: 0,
     sendgridConfigured: true,
   });
+  listActiveOrgIdsMock.mockClear();
+  listActiveOrgIdsMock.mockResolvedValue(["org-1"]);
   logCalls.info.mockClear();
   logCalls.error.mockClear();
   logCalls.warn.mockClear();
@@ -143,7 +150,7 @@ describe("cart-abandonment.scan — feature-flag gating", () => {
 });
 
 describe("cart-abandonment.scan — handler behaviour", () => {
-  it("invokes the dispatcher and logs the stats envelope", async () => {
+  it("dispatches once for the single active tenant and logs the aggregate envelope", async () => {
     process.env.RESUPPLY_CART_ABANDONMENT_CRON_ENABLED = "1";
     const boss = makeBoss();
     runDispatchMock.mockResolvedValueOnce({
@@ -165,9 +172,15 @@ describe("cart-abandonment.scan — handler behaviour", () => {
     await handler();
 
     expect(runDispatchMock).toHaveBeenCalledTimes(1);
+    expect(runDispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1" }),
+    );
     expect(logCalls.info).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "cart-abandonment.scan.completed",
+        tenants: 1,
+        succeeded: 1,
+        failedOrgIds: [],
         scanned: 5,
         sent: 3,
         skippedFailed: 1,
@@ -178,15 +191,105 @@ describe("cart-abandonment.scan — handler behaviour", () => {
     expect(logCalls.error).not.toHaveBeenCalled();
   });
 
-  it("rethrows after logging when the dispatcher fails (pg-boss retry signal)", async () => {
+  it("fans out once per active tenant and sums their stats", async () => {
     process.env.RESUPPLY_CART_ABANDONMENT_CRON_ENABLED = "1";
+    listActiveOrgIdsMock.mockResolvedValueOnce(["org-1", "org-2"]);
     const boss = makeBoss();
-    runDispatchMock.mockRejectedValueOnce(new Error("DB down"));
+    runDispatchMock
+      .mockResolvedValueOnce({
+        scanned: 4,
+        sent: 2,
+        skippedNoConfig: 0,
+        skippedFailed: 1,
+        skippedOptOut: 1,
+        sendgridConfigured: true,
+      })
+      .mockResolvedValueOnce({
+        scanned: 3,
+        sent: 3,
+        skippedNoConfig: 0,
+        skippedFailed: 0,
+        skippedOptOut: 0,
+        sendgridConfigured: true,
+      });
     await registerCartAbandonmentJob(boss as never);
 
     const handler = boss.work.mock.calls[0][1] as () => Promise<void>;
-    await expect(handler()).rejects.toThrow("DB down");
+    await handler();
+
+    expect(runDispatchMock).toHaveBeenCalledTimes(2);
+    expect(runDispatchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ orgId: "org-1" }),
+    );
+    expect(runDispatchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ orgId: "org-2" }),
+    );
+    expect(logCalls.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "cart-abandonment.scan.completed",
+        tenants: 2,
+        succeeded: 2,
+        failedOrgIds: [],
+        scanned: 7,
+        sent: 5,
+        skippedFailed: 1,
+        skippedOptOut: 1,
+      }),
+      expect.stringContaining("completed"),
+    );
+    expect(logCalls.error).not.toHaveBeenCalled();
+  });
+
+  it("isolates a single tenant's dispatch failure (continues + tallies, does NOT rethrow)", async () => {
+    process.env.RESUPPLY_CART_ABANDONMENT_CRON_ENABLED = "1";
+    listActiveOrgIdsMock.mockResolvedValueOnce(["org-1", "org-2"]);
+    const boss = makeBoss();
+    runDispatchMock
+      .mockRejectedValueOnce(new Error("org-1 DB down"))
+      .mockResolvedValueOnce({
+        scanned: 2,
+        sent: 2,
+        skippedNoConfig: 0,
+        skippedFailed: 0,
+        skippedOptOut: 0,
+        sendgridConfigured: true,
+      });
+    await registerCartAbandonmentJob(boss as never);
+
+    const handler = boss.work.mock.calls[0][1] as () => Promise<void>;
+    // The healthy tenant still ran; the bad one was isolated.
+    await expect(handler()).resolves.toBeUndefined();
+
+    expect(runDispatchMock).toHaveBeenCalledTimes(2);
+    // forEachActiveOrg logs the per-tenant failure.
     expect(logCalls.error).toHaveBeenCalled();
+    expect(logCalls.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "cart-abandonment.scan.completed",
+        tenants: 2,
+        succeeded: 1,
+        failedOrgIds: ["org-1"],
+        // Only the healthy tenant's stats land in the aggregate.
+        scanned: 2,
+        sent: 2,
+      }),
+      expect.stringContaining("completed"),
+    );
+  });
+
+  it("rethrows after logging when tenant enumeration fails (pg-boss retry signal)", async () => {
+    process.env.RESUPPLY_CART_ABANDONMENT_CRON_ENABLED = "1";
+    listActiveOrgIdsMock.mockRejectedValueOnce(new Error("orgs query down"));
+    const boss = makeBoss();
+    await registerCartAbandonmentJob(boss as never);
+
+    const handler = boss.work.mock.calls[0][1] as () => Promise<void>;
+    await expect(handler()).rejects.toThrow("orgs query down");
+    expect(logCalls.error).toHaveBeenCalled();
+    // No tenant was dispatched — enumeration failed first.
+    expect(runDispatchMock).not.toHaveBeenCalled();
   });
 });
 
