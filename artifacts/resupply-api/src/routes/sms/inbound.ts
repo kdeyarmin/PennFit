@@ -64,6 +64,7 @@ import {
 } from "@workspace/resupply-messaging";
 
 import { logger } from "../../lib/logger";
+import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
 import { createAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -267,9 +268,14 @@ router.post(
       res.status(200).type("text/xml").send("<Response/>");
       return;
     }
-    // Webhook: no req.orgId. Resolve the seed tenant once for the main DB
-    // work below; on miss ACK 200 (empty TwiML) so Twilio stops retrying.
-    const orgId = await resolveSeedOrgId();
+    // Webhook: no req.orgId. Route by the CALLED number (Twilio `To`) to
+    // the tenant that owns it (G7), falling back to the seed org when the
+    // number isn't registered to any tenant. On miss ACK 200 (empty TwiML)
+    // so Twilio stops retrying. With no per-tenant numbers configured this
+    // always resolves to the seed org, unchanged.
+    const orgId =
+      (await resolveOrgIdByCalledNumber(parsed.To)) ??
+      (await resolveSeedOrgId());
     if (!orgId) {
       res.status(200).type("text/xml").send("<Response/>");
       return;
