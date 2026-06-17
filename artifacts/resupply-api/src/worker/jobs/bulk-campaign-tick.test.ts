@@ -723,12 +723,16 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
       unknown[],
     ];
     expect(sql).toContain("suppressed_count");
-    // params = [sent, failed, suppressedAtSend, campaignId]
-    expect(params).toHaveLength(4);
+    // The raw UPDATE is tenant-scoped: WHERE id = $4 AND org_id = $5.
+    expect(sql).toContain("org_id = $5");
+    // params = [sent, failed, suppressedAtSend, campaignId, orgId]
+    expect(params).toHaveLength(5);
     // suppressedAtSend should be 1
     expect(params[2]).toBe(1);
     // sent should be 0
     expect(params[0]).toBe(0);
+    // orgId falls back to the seed org for a payload without one.
+    expect(params[4]).toBe("00000000-0000-4000-8000-000000000000");
   });
 
   it("includes suppressed_count = 0 in pool.query only if sent or failed > 0 (no call when all zero)", async () => {
@@ -806,6 +810,30 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
       unknown[],
     ];
     expect(params[3]).toBe("camp-1");
+  });
+
+  it("threads the payload's tenant org_id into the counter UPDATE", async () => {
+    // A campaign owned by a NON-seed tenant: the orgId from the enqueue
+    // payload must scope the raw counter UPDATE (WHERE org_id = $5), not the
+    // seed-org fallback.
+    stageSingleRecipientTick({
+      campaign: { category: "service" },
+      patientPrefs: { emailResupplyReminders: false },
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1", orgId: "11111111-1111-4111-8111-111111111111" },
+      testLog as never,
+    );
+
+    const [sql, params] = poolQueryMock.mock.calls[0] as unknown as [
+      string,
+      unknown[],
+    ];
+    expect(sql).toContain("org_id = $5");
+    expect(params[3]).toBe("camp-1");
+    expect(params[4]).toBe("11111111-1111-4111-8111-111111111111");
   });
 });
 
