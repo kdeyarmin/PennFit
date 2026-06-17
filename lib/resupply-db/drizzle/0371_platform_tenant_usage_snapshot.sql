@@ -1,4 +1,4 @@
--- 0369_platform_tenant_usage_snapshot
+-- 0371_platform_tenant_usage_snapshot
 -- Batch usage snapshot for /platform/billing/tenants so platform operators
 -- can fetch all tenant usage in one DB round-trip (instead of per-tenant N+1).
 

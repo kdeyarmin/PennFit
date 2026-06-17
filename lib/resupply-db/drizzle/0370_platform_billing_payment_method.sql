@@ -1,4 +1,4 @@
--- 0359_platform_billing_payment_method — Tenant Stripe payment method readiness.
+-- 0370_platform_billing_payment_method — Tenant Stripe payment method readiness.
 --
 -- Checkout setup sessions and Billing Portal updates happen on Stripe-hosted
 -- pages. Mirror the default payment method summary onto the active tenant

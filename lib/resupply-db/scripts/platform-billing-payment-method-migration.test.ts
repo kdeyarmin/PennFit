@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SQL = readFileSync(
   path.resolve(
     __dirname,
-    "../drizzle/0359_platform_billing_payment_method.sql",
+    "../drizzle/0370_platform_billing_payment_method.sql",
   ),
   "utf8",
 );
