@@ -2296,6 +2296,9 @@ export interface Database {
           sms_from_number: string | null;
           voice_from_number: string | null;
           twilio_messaging_service_sid: string | null;
+          fax_from_number: string | null;
+          fax_telnyx_order_id: string | null;
+          fax_provisioned_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;

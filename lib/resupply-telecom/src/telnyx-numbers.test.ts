@@ -16,7 +16,9 @@ import { TelnyxApiError, TelnyxConfigError } from "./telnyx-fax";
 import {
   createTelnyxNumberClient,
   type AvailableFaxNumber,
+  type NumbersHttpDelete,
   type NumbersHttpGet,
+  type NumbersHttpLookup,
   type NumbersHttpPost,
   type OrderNumberResult,
 } from "./telnyx-numbers";
@@ -44,9 +46,36 @@ describe("createTelnyxNumberClient — config validation", () => {
     expect(() => createTelnyxNumberClient()).toThrow(TelnyxConfigError);
   });
 
-  it("throws TelnyxConfigError when TELNYX_FAX_CONNECTION_ID is missing", () => {
+  it("does NOT require TELNYX_FAX_CONNECTION_ID at construction (search/release need only the key)", async () => {
     process.env.TELNYX_API_KEY = "KEYenv";
-    expect(() => createTelnyxNumberClient()).toThrow(TelnyxConfigError);
+    const client = createTelnyxNumberClient({
+      httpGet: async () => [],
+      httpLookup: async () => null,
+      httpDelete: async () => true,
+    });
+    await expect(client.searchAvailableFaxNumbers()).resolves.toEqual([]);
+    await expect(client.releaseFaxNumber("+12155550000")).resolves.toEqual({
+      released: false,
+      phoneNumberId: null,
+    });
+  });
+
+  it("ordering throws TelnyxConfigError when TELNYX_FAX_CONNECTION_ID is missing", async () => {
+    process.env.TELNYX_API_KEY = "KEYenv";
+    const client = createTelnyxNumberClient({
+      httpGet: async () => [{ phoneNumber: "+12155551212", features: ["fax"] }],
+      httpPost: async () => ({
+        orderId: "x",
+        phoneNumber: "x",
+        status: "pending",
+      }),
+    });
+    await expect(
+      client.orderNumber({ phoneNumber: "+12155551212" }),
+    ).rejects.toBeInstanceOf(TelnyxConfigError);
+    await expect(client.provisionFaxNumber()).rejects.toBeInstanceOf(
+      TelnyxConfigError,
+    );
   });
 
   it("reads credentials from env when options are not supplied", async () => {
@@ -154,6 +183,60 @@ describe("provisionFaxNumber", () => {
   });
 });
 
+describe("releaseFaxNumber", () => {
+  it("looks the number up by E.164 then deletes it by id", async () => {
+    const lookupUrls: string[] = [];
+    const deleteUrls: string[] = [];
+    const httpLookup: NumbersHttpLookup = vi.fn(async (url) => {
+      lookupUrls.push(url);
+      return "num-123";
+    });
+    const httpDelete: NumbersHttpDelete = vi.fn(async (url) => {
+      deleteUrls.push(url);
+      return true;
+    });
+    const client = createTelnyxNumberClient({
+      ...BASE_CREDS,
+      httpLookup,
+      httpDelete,
+    });
+    const result = await client.releaseFaxNumber("+12155551212");
+    expect(result).toEqual({ released: true, phoneNumberId: "num-123" });
+    expect(decodeURIComponent(lookupUrls[0]!)).toContain(
+      "filter[phone_number]=+12155551212",
+    );
+    expect(deleteUrls[0]).toBe(
+      "https://api.telnyx.com/v2/phone_numbers/num-123",
+    );
+  });
+
+  it("is idempotent when the number is not on the account", async () => {
+    const httpLookup: NumbersHttpLookup = vi.fn(async () => null);
+    const httpDelete: NumbersHttpDelete = vi.fn(async () => true);
+    const client = createTelnyxNumberClient({
+      ...BASE_CREDS,
+      httpLookup,
+      httpDelete,
+    });
+    const result = await client.releaseFaxNumber("+12155550000");
+    expect(result).toEqual({ released: false, phoneNumberId: null });
+    expect(httpDelete).not.toHaveBeenCalled();
+  });
+
+  it("reports released=false when the DELETE 404s (already gone)", async () => {
+    const httpLookup: NumbersHttpLookup = vi.fn(async () => "num-7");
+    const httpDelete: NumbersHttpDelete = vi.fn(async () => false);
+    const client = createTelnyxNumberClient({
+      ...BASE_CREDS,
+      httpLookup,
+      httpDelete,
+    });
+    const result = await client.releaseFaxNumber("+12155550000");
+    expect(result).toEqual({ released: false, phoneNumberId: "num-7" });
+    expect(httpDelete).toHaveBeenCalledOnce();
+  });
+});
+
 describe("default fetch path", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -228,5 +311,46 @@ describe("default fetch path", () => {
       code: "10015",
       message: "no inventory",
     });
+  });
+
+  it("releaseFaxNumber parses lookup id then DELETEs (2xx → released)", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        calls.push(method);
+        if (method === "GET") {
+          return new Response(JSON.stringify({ data: [{ id: "num-9" }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(null, { status: 204 });
+      }),
+    );
+    const client = createTelnyxNumberClient(BASE_CREDS);
+    const result = await client.releaseFaxNumber("+12155551212");
+    expect(result).toEqual({ released: true, phoneNumberId: "num-9" });
+    expect(calls).toEqual(["GET", "DELETE"]);
+  });
+
+  it("releaseFaxNumber reports released=false when the DELETE 404s", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method === "GET") {
+          return new Response(JSON.stringify({ data: [{ id: "num-9" }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+    const client = createTelnyxNumberClient(BASE_CREDS);
+    const result = await client.releaseFaxNumber("+12155551212");
+    expect(result).toEqual({ released: false, phoneNumberId: "num-9" });
   });
 });

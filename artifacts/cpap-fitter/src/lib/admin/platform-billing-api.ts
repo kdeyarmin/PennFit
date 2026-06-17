@@ -94,6 +94,10 @@ export interface PlatformTenantBillingRow {
   name: string | null;
   storefrontName: string | null;
   status: string;
+  /** The tenant's provisioned fax number (E.164), or null when none. */
+  faxNumber: string | null;
+  /** When the fax number was attached (ISO), or null. */
+  faxProvisionedAt: string | null;
   billing: TenantBilling;
 }
 

@@ -13,11 +13,13 @@
 // `--provision-fax` flag, or the admin "Provision fax number" button).
 //
 // Environment:
-//   - TELNYX_API_KEY            — required. Bearer key (Keys & Credentials).
-//   - TELNYX_FAX_CONNECTION_ID  — required. The Fax Application
-//                                 ("connection") the ordered number is
-//                                 attached to, so inbound faxes hit our
-//                                 webhook and outbound faxes send from it.
+//   - TELNYX_API_KEY            — required for every operation. Bearer key
+//                                 (Keys & Credentials).
+//   - TELNYX_FAX_CONNECTION_ID  — required only to ORDER a number. The Fax
+//                                 Application ("connection") the ordered
+//                                 number is attached to, so inbound faxes
+//                                 hit our webhook and outbound faxes send
+//                                 from it. Search/release need only the key.
 //
 // Architecture: this package MUST NOT import @workspace/resupply-db (Rule
 // 10). Persisting the provisioned number onto `organizations.fax_from_number`
@@ -32,6 +34,7 @@ import { TelnyxApiError, TelnyxConfigError } from "./telnyx-fax";
 const AVAILABLE_NUMBERS_URL =
   "https://api.telnyx.com/v2/available_phone_numbers";
 const NUMBER_ORDERS_URL = "https://api.telnyx.com/v2/number_orders";
+const PHONE_NUMBERS_URL = "https://api.telnyx.com/v2/phone_numbers";
 
 /** A fax-capable DID returned by the availability search. */
 export interface AvailableFaxNumber {
@@ -77,6 +80,17 @@ export interface ProvisionFaxNumberInput {
 
 export type ProvisionFaxNumberResult = OrderNumberResult;
 
+export interface ReleaseFaxNumberResult {
+  /**
+   * True when this call actually deleted the number; false when it was
+   * already gone — either not on the account at lookup time, or the DELETE
+   * returned 404. Either way the number is no longer ours.
+   */
+  released: boolean;
+  /** The Telnyx phone-number record id that was released, when known. */
+  phoneNumberId: string | null;
+}
+
 export interface TelnyxNumberClient {
   /** Search Telnyx for fax-capable numbers matching the filters. */
   searchAvailableFaxNumbers(
@@ -91,6 +105,13 @@ export interface TelnyxNumberClient {
   provisionFaxNumber(
     input?: ProvisionFaxNumberInput,
   ): Promise<ProvisionFaxNumberResult>;
+  /**
+   * Release (delete) a number back to Telnyx by its E.164 — used when a
+   * tenant offboards so we stop paying for the DID. Idempotent: a number
+   * that isn't on the account returns `{ released: false }` rather than
+   * throwing, so a re-run after a partial failure is safe.
+   */
+  releaseFaxNumber(phoneNumber: string): Promise<ReleaseFaxNumberResult>;
 }
 
 /** Test-only seams: replace the HTTP calls without touching global fetch. */
@@ -103,6 +124,19 @@ export type NumbersHttpPost = (
   apiKey: string,
   body: Record<string, unknown>,
 ) => Promise<OrderNumberResult>;
+/** Look up a Telnyx phone-number record id by E.164; null when not found. */
+export type NumbersHttpLookup = (
+  url: string,
+  apiKey: string,
+) => Promise<string | null>;
+/**
+ * DELETE a Telnyx phone-number record by id. Resolves `true` when the
+ * record was actually deleted, `false` when it was already gone (404).
+ */
+export type NumbersHttpDelete = (
+  url: string,
+  apiKey: string,
+) => Promise<boolean>;
 
 export interface CreateTelnyxNumberClientOptions {
   apiKey?: string;
@@ -110,6 +144,8 @@ export interface CreateTelnyxNumberClientOptions {
   /** Test-only seams. Production callers leave undefined. */
   httpGet?: NumbersHttpGet;
   httpPost?: NumbersHttpPost;
+  httpLookup?: NumbersHttpLookup;
+  httpDelete?: NumbersHttpDelete;
 }
 
 /**
@@ -130,14 +166,16 @@ export function createTelnyxNumberClient(
       "TELNYX_API_KEY is not set — refusing to construct Telnyx number client.",
     );
   }
-  if (!connectionId) {
-    throw new TelnyxConfigError(
-      "TELNYX_FAX_CONNECTION_ID is not set — refusing to construct Telnyx number client.",
-    );
-  }
+  // NOTE: connectionId is required only to ORDER a number (it attaches the
+  // DID to the fax Application). Searching and RELEASING need just the API
+  // key, so we don't demand it at construction — that would orphan a
+  // billable DID on offboard in an API-key-only environment. orderNumber()
+  // throws if it's missing.
 
   const httpGet = opts.httpGet ?? defaultHttpGet;
   const httpPost = opts.httpPost ?? defaultHttpPost;
+  const httpLookup = opts.httpLookup ?? defaultHttpLookup;
+  const httpDelete = opts.httpDelete ?? defaultHttpDelete;
 
   async function searchAvailableFaxNumbers(
     input: SearchFaxNumbersInput = {},
@@ -158,6 +196,11 @@ export function createTelnyxNumberClient(
   async function orderNumber(
     input: OrderNumberInput,
   ): Promise<OrderNumberResult> {
+    if (!connectionId) {
+      throw new TelnyxConfigError(
+        "TELNYX_FAX_CONNECTION_ID is not set — required to order/attach a fax number.",
+      );
+    }
     const body: Record<string, unknown> = {
       phone_numbers: [{ phone_number: input.phoneNumber }],
       // Attach to the fax Application so inbound faxes reach our webhook
@@ -195,7 +238,31 @@ export function createTelnyxNumberClient(
     });
   }
 
-  return { searchAvailableFaxNumbers, orderNumber, provisionFaxNumber };
+  async function releaseFaxNumber(
+    phoneNumber: string,
+  ): Promise<ReleaseFaxNumberResult> {
+    const lookupUrl = `${PHONE_NUMBERS_URL}?filter[phone_number]=${encodeURIComponent(
+      phoneNumber,
+    )}`;
+    const phoneNumberId = await wrapApi(() => httpLookup(lookupUrl, apiKey!));
+    if (!phoneNumberId) {
+      // Not on the account (already released, or never ours) — idempotent.
+      return { released: false, phoneNumberId: null };
+    }
+    // `deleted` is false when the DELETE 404s (the record vanished between
+    // lookup and delete) — still no-longer-ours, but not a delete WE made.
+    const deleted = await wrapApi(() =>
+      httpDelete(`${PHONE_NUMBERS_URL}/${phoneNumberId}`, apiKey!),
+    );
+    return { released: deleted, phoneNumberId };
+  }
+
+  return {
+    searchAvailableFaxNumbers,
+    orderNumber,
+    provisionFaxNumber,
+    releaseFaxNumber,
+  };
 }
 
 /** Normalize unknown throws into TelnyxApiError so callers get one shape. */
@@ -361,4 +428,67 @@ async function defaultHttpPost(
     status:
       typeof d["status"] === "string" ? (d["status"] as string) : "pending",
   };
+}
+
+async function defaultHttpLookup(
+  url: string,
+  apiKey: string,
+): Promise<string | null> {
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+  });
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    throw new TelnyxApiError(
+      `Telnyx number lookup: non-JSON response (HTTP ${res.status})`,
+      res.status,
+    );
+  }
+  const p = parsed as Record<string, unknown>;
+  if (!res.ok) {
+    const { message, code } = firstErrorMessage(
+      p,
+      res.status,
+      "Telnyx number lookup error",
+    );
+    throw new TelnyxApiError(message, res.status, code);
+  }
+  const data = Array.isArray(p["data"])
+    ? (p["data"] as Array<Record<string, unknown>>)
+    : [];
+  const id = data[0]?.["id"];
+  return typeof id === "string" ? id : null;
+}
+
+async function defaultHttpDelete(
+  url: string,
+  apiKey: string,
+): Promise<boolean> {
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+  });
+  // 200/202/204 mean we deleted it. A 404 means it was already gone — an
+  // idempotent no-op, reported as `false` so the caller can tell the two
+  // apart.
+  if (res.ok) return true;
+  if (res.status === 404) return false;
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    throw new TelnyxApiError(
+      `Telnyx number delete: non-JSON error (HTTP ${res.status})`,
+      res.status,
+    );
+  }
+  const { message, code } = firstErrorMessage(
+    parsed as Record<string, unknown>,
+    res.status,
+    "Telnyx number delete error",
+  );
+  throw new TelnyxApiError(message, res.status, code);
 }

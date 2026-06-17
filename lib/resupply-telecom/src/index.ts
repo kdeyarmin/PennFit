@@ -110,8 +110,11 @@ export {
   type OrderNumberResult,
   type ProvisionFaxNumberInput,
   type ProvisionFaxNumberResult,
+  type ReleaseFaxNumberResult,
   type NumbersHttpGet,
   type NumbersHttpPost,
+  type NumbersHttpLookup,
+  type NumbersHttpDelete,
 } from "./telnyx-numbers";
 
 export {
