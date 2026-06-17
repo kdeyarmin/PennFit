@@ -196,6 +196,27 @@ export async function setConnectedAccountId(
 }
 
 /**
+ * Detach a tenant from its connected account (G5 disconnect): clears
+ * `stripe_account_id` AND resets `stripe_charges_enabled` to false, so the
+ * resolver immediately routes the tenant's charges back to the platform
+ * account. Invalidates the caches. NOTE: this only drops PennFit's pointer
+ * — it does NOT delete the Stripe Express account itself (the platform
+ * can't, and shouldn't, silently delete a tenant's account). Re-running
+ * onboarding `start` after a disconnect mints a NEW Express account.
+ */
+export async function clearConnectedAccountId(orgId: string): Promise<void> {
+  const raw = await rawOrgClient();
+  if (!raw) throw new Error("stripe-connect: tenant directory unavailable");
+  const { error } = await raw
+    .schema("resupply")
+    .from("organizations")
+    .update({ stripe_account_id: null, stripe_charges_enabled: false })
+    .eq("id", orgId);
+  if (error) throw error;
+  invalidateStripeConnectCache();
+}
+
+/**
  * Flip a tenant's `stripe_charges_enabled` to match Stripe's
  * `account.updated` report (G5). Resolves the org by connected account id;
  * a no-op when no tenant is bound to it. Invalidates the caches so the

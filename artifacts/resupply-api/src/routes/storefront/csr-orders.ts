@@ -47,6 +47,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 
 const router: IRouter = Router();
@@ -351,6 +352,12 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
   }
 
   const stripe = getStripeClient(config);
+  // Route this tenant's charge to its connected Stripe account when one is
+  // live (G5). Empty `{}` for the seed/unconnected tenant → platform
+  // account, unchanged. The SAME options must scope the session-reuse
+  // retrieve below, or a connected-account session would 404 on the
+  // platform key and get needlessly re-minted.
+  const connectOptions = await stripeAccountRequestOptions(resolved.orgId);
 
   // Reuse an in-flight session when it's still open — a double-click
   // (or a back-button return) lands on the same Stripe page instead of
@@ -359,6 +366,8 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
     try {
       const existing = await stripe.checkout.sessions.retrieve(
         order.stripe_session_id,
+        undefined,
+        connectOptions,
       );
       if (existing.payment_status === "paid") {
         res.status(409).json({ error: "already_paid" });
@@ -390,30 +399,35 @@ router.post("/csr-orders/checkout", mutateLimiter, async (req, res) => {
 
   let session;
   try {
-    session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      ...(order.customer_email ? { customer_email: order.customer_email } : {}),
-      // Free-form CSR pricing: ad-hoc price_data per line (these are
-      // not catalog SKUs — the CSR set the description + amount).
-      line_items: items.map((it) => ({
-        price_data: {
-          currency: order.currency,
-          product_data: { name: it.description.slice(0, 250) },
-          unit_amount: it.unitAmountCents,
+    session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        ...(order.customer_email
+          ? { customer_email: order.customer_email }
+          : {}),
+        // Free-form CSR pricing: ad-hoc price_data per line (these are
+        // not catalog SKUs — the CSR set the description + amount).
+        line_items: items.map((it) => ({
+          price_data: {
+            currency: order.currency,
+            product_data: { name: it.description.slice(0, 250) },
+            unit_amount: it.unitAmountCents,
+          },
+          quantity: it.quantity,
+        })),
+        success_url: `${returnBase}&checkout=success`,
+        cancel_url: `${returnBase}&checkout=cancel`,
+        shipping_address_collection: { allowed_countries: ["US"] },
+        phone_number_collection: { enabled: true },
+        metadata: {
+          source: "pennfit-csr-order",
+          csr_order_request_id: order.id,
+          order_reference: order.order_reference,
         },
-        quantity: it.quantity,
-      })),
-      success_url: `${returnBase}&checkout=success`,
-      cancel_url: `${returnBase}&checkout=cancel`,
-      shipping_address_collection: { allowed_countries: ["US"] },
-      phone_number_collection: { enabled: true },
-      metadata: {
-        source: "pennfit-csr-order",
-        csr_order_request_id: order.id,
-        order_reference: order.order_reference,
+        automatic_tax: { enabled: false },
       },
-      automatic_tax: { enabled: false },
-    });
+      connectOptions,
+    );
   } catch (err) {
     req.log?.error(
       { ...stripeErrLogFields(err), orderRequestId: order.id },

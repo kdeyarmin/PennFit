@@ -335,6 +335,7 @@ router.post(
       successUrl: `${base}/account/billing?paid=1`,
       cancelUrl: `${base}/account/billing?cancelled=1`,
       initiatorEmail: req.adminEmail ?? "unknown",
+      orgId,
     });
     if ("error" in session) {
       const status =

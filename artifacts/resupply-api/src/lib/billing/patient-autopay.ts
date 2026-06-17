@@ -120,6 +120,14 @@ export async function createAutopaySetupSession(
   let session: Stripe.Checkout.Session;
   try {
     const stripe = getStripeClient(config);
+    // G5 NOTE: deliberately NOT routed to a connected account. This is a
+    // `setup`-mode session that saves a card; the later off-session charge
+    // runs in worker/jobs/patient-autopay-charge.ts, which is still
+    // seed-pinned (resolveSeedOrgId → platform account). A SetupIntent's
+    // PaymentMethod is account-scoped, so saving it on a connected account
+    // here while charging on the platform account there would fail. Move
+    // this and that worker onto the connected account together, once the
+    // autopay-charge job is fanned out per tenant (G2).
     session = await stripe.checkout.sessions.create({
       mode: "setup",
       payment_method_types: ["card"],

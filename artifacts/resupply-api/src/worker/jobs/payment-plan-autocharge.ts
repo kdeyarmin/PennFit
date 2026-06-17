@@ -55,6 +55,13 @@ export const PAYMENT_PLAN_AUTOCHARGE_JOB = "billing.payment-plan-autocharge";
 function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
   return async (req) => {
     try {
+      // G5 NOTE: stays on the platform account — this job is seed-pinned
+      // (resolveSeedOrgId, below). When fanned out per tenant (G2), thread
+      // the tenant orgId into `req` and pass
+      // `await stripeAccountRequestOptions(orgId)` here, routing it onto the
+      // same connected account as the paired payment-plan `setup` capture
+      // (routes/admin/payment-plans.ts) — a saved PaymentMethod is
+      // account-scoped.
       const pi = await stripe.paymentIntents.create(
         {
           amount: req.amountCents,

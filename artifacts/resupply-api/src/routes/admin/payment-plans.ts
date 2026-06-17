@@ -525,6 +525,13 @@ router.post(
     const stripe = getStripeClient(config);
     // Reuse the plan's customer if one was already minted; otherwise let
     // Checkout create one (customer_creation='always' in setup mode).
+    //
+    // G5 NOTE: deliberately NOT routed to a connected account. `setup`-mode
+    // saves a card that the off-session worker (payment-plan-autocharge.ts,
+    // still seed-pinned → platform account) later charges. The saved
+    // PaymentMethod is account-scoped, so the setup and the charge must run
+    // on the same account — move both onto the connected account together
+    // when that worker is fanned out per tenant (G2).
     let session;
     try {
       session = await stripe.checkout.sessions.create(

@@ -996,6 +996,12 @@ router.post(
       // typical interval where a CSR might legitimately re-issue
       // because the original link expired or was lost.
       const idempotencyKey = `admin-reorder-${userId}-${sourceOrderId}`;
+      // G5 NOTE: deliberately NOT routed to a connected account yet. This
+      // session can attach an existing `customer` id (below), and a Stripe
+      // Customer is account-scoped — a platform-account customer id passed
+      // to a connected-account session 404s. Routing this safely needs the
+      // customer's account provenance resolved first; tracked with the
+      // broader billing-multi-tenancy work, not this G5 onboarding slice.
       session = await stripe.checkout.sessions.create(
         {
           mode: "payment",
