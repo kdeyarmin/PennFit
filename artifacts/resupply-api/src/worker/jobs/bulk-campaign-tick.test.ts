@@ -835,6 +835,31 @@ describe("processTick — suppressedAtSend counter and pool.query", () => {
     expect(params[3]).toBe("camp-1");
     expect(params[4]).toBe("11111111-1111-4111-8111-111111111111");
   });
+
+  it("resolves a non-seed owner from the campaign row for an org-less tick", async () => {
+    // A pre-deploy tick carries no orgId. The campaign row's own org_id must
+    // scope the work (and the counter UPDATE) — NOT the seed fallback — so a
+    // non-seed campaign isn't read as "missing" and stranded in 'sending'.
+    stageSingleRecipientTick({
+      campaign: {
+        category: "service",
+        org_id: "22222222-2222-4222-8222-222222222222",
+      },
+      patientPrefs: { emailResupplyReminders: false },
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" }, // org-less (legacy) payload
+      testLog as never,
+    );
+
+    const [, params] = poolQueryMock.mock.calls[0] as unknown as [
+      string,
+      unknown[],
+    ];
+    expect(params[4]).toBe("22222222-2222-4222-8222-222222222222");
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
