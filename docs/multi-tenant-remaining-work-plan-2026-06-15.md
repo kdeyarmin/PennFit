@@ -70,12 +70,23 @@ Work landed on `claude/multitenant-migration-plan-alh7jy` so far:
 The full `resupply-api` suite (5500+ tests) and the tenant-isolation guard
 (baseline 0) stay green throughout.
 
-## Status refresh — 2026-06-16
+## Status refresh — 2026-06-17
 
-The gap list below was written on 2026-06-15; much of it has since shipped
-or is in review. **This section is the current source of truth**; the
+The gap list below was written on 2026-06-15; nearly all of it has since
+shipped and merged. **This section is the current source of truth**; the
 detailed per-gap prose further down is kept for context but is no longer
 the live status.
+
+**What changed since the 2026-06-16 refresh:** G10 (subdomain routing),
+G12 (per-org usage metering), and G16 (BAA gate) have all **merged to
+`main`** — they were "in review" on 2026-06-16. G12 in particular is now
+**complete across all five metrics** (see its row). G9 (per-tenant brand
+**colors**) has been **decided as a non-goal** by product: the platform
+keeps a consistent admin/storefront theme across tenants on purpose, so
+only logo/name/tagline stay per-tenant. A `tenant:offboard` CLI also
+landed alongside `tenant:onboard`. Net result: every load-bearing and
+commercial gap (G0–G8, G10, G12, G16) is done; only optional/later items
+(G11, G13–G15) and the cron-fan-out session's SUITE-GATED tail remain.
 
 | Gap         | What it is                                   | Status (2026-06-16)                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ----------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -88,17 +99,19 @@ the live status.
 | **G6**      | Per-tenant email From                        | **Done & merged** (`organizations.from_email`/`from_name`, 0360; `resolveTenantSender`).                                                                                                                                                                                                                                                                                                                                                   |
 | **G7**      | Per-tenant telecom                           | **Done & merged** (inbound SMS/voice routed to the tenant by called number, #1022).                                                                                                                                                                                                                                                                                                                                                        |
 | **G8**      | Per-tenant payer creds                       | **Done** (org-scoped clearinghouse creds, fail-closed reads).                                                                                                                                                                                                                                                                                                                                                                              |
-| **G9**      | Admin/storefront theme from org branding     | **Not built.** Logo/name/tagline are per-tenant; brand **colors** are not (no columns yet). Cosmetic; needs a migration + branding UI + theming wiring. The one remaining real feature.                                                                                                                                                                                                                                                    |
-| **G10**     | Subdomain routing (`<slug>.<base>`)          | **In review — PR #1027.** `extractTenantSubdomainLabel` + slug resolution in both host resolvers + CORS; `PLATFORM_SUBDOMAIN_BASES`. No migration (`organizations.slug` already exists).                                                                                                                                                                                                                                                   |
+| **G9**      | Admin/storefront theme from org branding     | **Non-goal (product decision, 2026-06-17).** Logo/name/tagline stay per-tenant; brand **colors** deliberately do **not** vary — the platform keeps a consistent theme across tenants. No per-tenant color columns/UI will be built. (Was previously "the one remaining real feature.")                                                                                                                                                       |
+| **G10**     | Subdomain routing (`<slug>.<base>`)          | **Done & merged (#1027).** `extractTenantSubdomainLabel` + slug resolution in both host resolvers + CORS; `PLATFORM_SUBDOMAIN_BASES`. No migration (`organizations.slug` already exists).                                                                                                                                                                                                                                                  |
 | **G11**     | Self-serve onboarding                        | Not built (optional; `tenant:onboard` CLI + G4 console cover operations).                                                                                                                                                                                                                                                                                                                                                                  |
-| **G12**     | Per-org usage metering                       | **In review — PR #1025.** Emitter writes `tenant_usage_monthly_rollups` via an atomic-increment RPC (migration 0367); the platform billing console reads the rollup. AI-text interactions wired; outbound/billing/fax/voice metric wire-ups are the follow-up.                                                                                                                                                                             |
+| **G12**     | Per-org usage metering                       | **Done & merged — all five metrics.** Emitter writes `tenant_usage_monthly_rollups` via an atomic-increment RPC (migration 0367); the platform billing console reads the rollup (#1025). All metrics now wired: `aiTextInteractionsPerMonth`, `billingTransactionsPerMonth`, `faxEvents`, `aiVoiceEvents`, and `outboundMessagesPerMonth` — the last via a shared `recordOutboundMessageUsage` helper across every patient-facing sender, on confirmed delivery, internal ops/auth mail excluded (#1038, #1046, #1049, #1052).                                                                              |
 | **G13–G15** | CareMetric cross-linking                     | Not started (later/optional).                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **G16**     | BAA per tenant (SOC 2 out of band)           | **In review — PR #1023.** `organization_agreements` (0366) + onboarding gate; enforced **server-side** in `requireAdmin` (not just the SPA). SOC 2 remains a business workstream.                                                                                                                                                                                                                                                          |
+| **G16**     | BAA per tenant (SOC 2 out of band)           | **Done & merged (#1023).** `organization_agreements` (0366) + onboarding gate; enforced **server-side** in `requireAdmin` (not just the SPA). SOC 2 remains a business workstream.                                                                                                                                                                                                                                                         |
 
-**Net:** the load-bearing tail (G1–G8 + G0) is complete; G10/G12/G16 are in
-open PRs; the only untouched items are G9 (cosmetic), G11/G13–G15
-(optional/later), and the G1 signed-link + G2 SUITE-GATED remainders that
-belong to the reminders/cron-fan-out workstream.
+**Net:** the load-bearing tail (G0–G8) **and** the commercial/routing layer
+(G10, G12, G16) are all **complete and merged**. G9 is a **product non-goal**
+(consistent theme by design). The only open items are G11 and G13–G15
+(optional/later) and the G2 SUITE-GATED cron remainder owned by the
+cron-fan-out workstream. There is no remaining code work required to make a
+second tenant transactable, served, billed, and metered.
 
 ## The load-bearing gaps (must-fix before a 2nd tenant goes live)
 
@@ -361,13 +374,16 @@ is per-tenant. Mostly verification + closing any remaining seed-pinned reads.
 
 ## Phase 1 finish — branding polish
 
-### G9. Admin theme driven by org branding
+### G9. Admin theme driven by org branding — **non-goal (product decision, 2026-06-17)**
 
-Admin tokens (`--penn-navy`, etc.) are hardcoded in `src/admin.css` under
-`.admin-root`. Drive them from the tenant's branding (logo already is).
-Respect the **hard rule**: re-point only the **raw** `--background` /
-`--foreground` vars under `.admin-root`, never add a global `@theme` block
-(see `admin.scope.test.ts`). Lower priority — cosmetic, not a blocker.
+**Decision:** brand **colors** will not be per-tenant. The platform keeps a
+single consistent admin/storefront theme across all tenants on purpose;
+only logo, name, and tagline are tenant-specific. The original idea —
+driving the admin tokens (`--penn-navy`, etc., in `src/admin.css` under
+`.admin-root`) from per-tenant branding — is **shelved, not deferred**. If
+this is ever revisited, the **hard rule** still stands: re-point only the
+**raw** `--background` / `--foreground` vars under `.admin-root`, never add
+a global `@theme` block (see `admin.scope.test.ts`).
 
 ---
 
