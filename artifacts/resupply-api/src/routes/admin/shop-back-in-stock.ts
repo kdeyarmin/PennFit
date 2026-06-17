@@ -29,6 +29,7 @@ import {
 import { projectProduct } from "../../lib/stripe/products-meta";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 
 const router: IRouter = Router();
 
@@ -243,9 +244,12 @@ router.post(
       return;
     }
 
+    // Point the email link at the tenant's own verified custom domain
+    // when it has one (seed → pennpaps.com via the env fallback).
     const baseUrl =
-      process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-      "https://pennpaps.com";
+      (await resolveTenantBaseUrl(req.orgId)) ??
+      (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
+        "https://pennpaps.com");
 
     const result = await dispatchBackInStockForProduct({
       productId,
@@ -253,6 +257,7 @@ router.post(
       productImageUrl,
       productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
       priceLabel,
+      orgId: req.orgId,
     });
 
     req.log?.info?.(

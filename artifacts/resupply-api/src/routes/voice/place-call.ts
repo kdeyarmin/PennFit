@@ -39,6 +39,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { resolveTenantVoiceFrom } from "../../lib/messaging/tenant-telecom";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -178,6 +179,7 @@ router.post(
       conversationId,
       patientId,
       episodeId,
+      orgId,
     });
 
     const baseUrl = config.publicBaseUrl;
@@ -188,6 +190,11 @@ router.post(
       conversationId,
     )}`;
 
+    // Place the call from the tenant's own voice caller-id when it has
+    // one (G7), else the platform default. Fails soft to the default.
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config.twilioPhoneNumber;
+
     let callSid: string;
     try {
       const twilio = createTwilioClient({
@@ -196,7 +203,7 @@ router.post(
       });
       const result = await twilio.placeCall({
         to: patient.phone_e164,
-        from: config.twilioPhoneNumber,
+        from: callerId,
         url: twimlUrl,
         statusCallbackUrl,
       });

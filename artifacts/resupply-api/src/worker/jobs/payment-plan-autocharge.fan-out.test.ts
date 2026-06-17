@@ -31,11 +31,18 @@ vi.mock("../../lib/stripe/connect.js", () => ({
   stripeAccountRequestOptions: vi.fn(async () => connectAcctOpts.value),
 }));
 
+// Per-tenant feature gate — default ON so the fan-out tests run as before.
+const autochargeFlag = vi.hoisted(() => ({ value: true }));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => autochargeFlag.value),
+}));
+
 import { runPaymentPlanAutocharge } from "./payment-plan-autocharge";
 
 beforeEach(() => {
   supabaseMock.reset();
   connectAcctOpts.value = {};
+  autochargeFlag.value = true;
   piCreate.mockReset();
   stageSupabaseResponse("organizations", "select", {
     data: [{ id: "00000000-0000-4000-8000-000000000001" }],
@@ -55,6 +62,28 @@ describe("runPaymentPlanAutocharge — multi-tenant fan-out", () => {
     expect(stats.charged).toBe(0);
     expect(stats.plansConsidered).toBe(0);
     expect(getSupabaseCallCount("patient_payment_plans", "select")).toBe(2);
+    expect(piCreate).not.toHaveBeenCalled();
+  });
+
+  it("skips an org whose own billing.payment_plan_autocharge flag is off", async () => {
+    // Regression: the tick used to gate on ONE global flag read, letting the
+    // seed tenant's "on" authorize charges for every active tenant. Per-org
+    // gating: an org with the flag off never even scans its plans.
+    autochargeFlag.value = false;
+    stageSupabaseResponse("patient_payment_plans", "select", {
+      data: [
+        {
+          id: "plan-1",
+          patient_id: "pat-1",
+          autopay_status: "authorized",
+          stripe_customer_id: "cus_1",
+          stripe_payment_method_id: "pm_1",
+        },
+      ],
+    });
+    const stats = await runPaymentPlanAutocharge();
+    expect(stats.charged).toBe(0);
+    expect(getSupabaseCallCount("patient_payment_plans", "select")).toBe(0);
     expect(piCreate).not.toHaveBeenCalled();
   });
 

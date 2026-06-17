@@ -80,6 +80,9 @@ export interface Database {
           last_sent_at: string | null;
           created_at: string;
           updated_at: string;
+          // Owning tenant (migration 0378). Nullable for back-compat with
+          // pre-0378 rows until backfilled to the seed org.
+          org_id: string | null;
         };
         Insert: Partial<
           Database["public"]["Tables"]["reminder_subscriptions"]["Row"]
@@ -2293,6 +2296,9 @@ export interface Database {
           stripe_charges_enabled: boolean;
           from_email: string | null;
           from_name: string | null;
+          // Per-tenant internal notification recipients (migration 0379).
+          fulfillment_email: string | null;
+          lead_notification_email: string | null;
           sms_from_number: string | null;
           voice_from_number: string | null;
           twilio_messaging_service_sid: string | null;

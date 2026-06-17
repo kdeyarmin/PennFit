@@ -41,6 +41,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
@@ -230,7 +231,10 @@ router.post(
       }
     }
 
-    const result = await sendOrderToPenn(order, { orderReference });
+    const result = await sendOrderToPenn(order, {
+      orderReference,
+      orgId: orgId ?? undefined,
+    });
 
     // Update DB row with delivery status (best-effort; do not surface errors
     // to the patient if this update fails)
@@ -291,7 +295,11 @@ router.post(
       const physicianName = order.prescription?.physicianName;
       if (!phone || !physicianName) return;
       try {
-        const sms = createTwilioSmsClient();
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const sms = createTwilioSmsClient(
+          await resolveTenantSmsClientOptions(orgId ?? undefined),
+        );
         // Keep the body under 160 GSM-7 characters so it ships as a
         // single segment. The order reference doubles as a per-message
         // search anchor if the patient texts back asking about it.
@@ -331,6 +339,8 @@ router.post(
           orderReference: result.orderReference,
           maskName: order.chosenMask.name,
           maskManufacturer: order.chosenMask.manufacturer ?? null,
+          // Send under the tenant's own From identity when configured (G6).
+          orgId: orgId ?? undefined,
         });
         if (!confirmResult.configured) {
           logger.info(

@@ -63,6 +63,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
@@ -278,6 +279,7 @@ async function deliveryFollowupSweepForOrg(
         stripeSessionId: claimed.stripe_session_id,
         firstName: recipient.firstName,
         orderId: claimed.id,
+        orgId,
       });
       if (!result.configured) {
         await releaseClaim();
@@ -357,7 +359,11 @@ async function deliveryFollowupSweepForOrg(
           "shop-order.delivery-followup: sms skipped (outside send window)",
         );
       } else if (smsRecipient) {
-        const smsClient = createTwilioSmsClient();
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const smsClient = createTwilioSmsClient(
+          await resolveTenantSmsClientOptions(orgId),
+        );
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
           : "PennPaps";
@@ -398,6 +404,7 @@ async function deliveryFollowupSweepForOrg(
           caregiverName: recipient.caregiver.name,
           patientFirstName: recipient.firstName,
           kind: "delivered",
+          orgId,
         });
         if (cgResult.delivered) {
           recordOutboundMessageUsage({

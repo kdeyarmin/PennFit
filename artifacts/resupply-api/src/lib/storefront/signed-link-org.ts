@@ -23,6 +23,8 @@ export type SignedLinkTable =
   | "fitter_invites"
   | "fitter_leads"
   | "shop_orders"
+  | "video_visits"
+  | "prescription_request_packets"
   | "claim_appeal_letters"
   | "manual_documents"
   | "manual_document_packets"

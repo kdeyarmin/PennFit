@@ -16,11 +16,13 @@
 // keep the body soft — no upsell, no discount code, no resupply
 // reminder. The point is the relationship signal, not the next sale.
 
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -37,6 +39,13 @@ export interface SendLifecycleTouchpointEmailInput {
    */
   yearsOnTherapy?: number;
   baseUrlOverride?: string;
+  /**
+   * Tenant the patient belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the email is sent under it (G6) and
+   * the copy carries the tenant's storefront brand; otherwise the platform
+   * default From/brand is used. Omit / undefined leaves it unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendLifecycleTouchpointEmailResult {
@@ -73,10 +82,11 @@ interface Copy {
 function copyFor(
   kind: LifecycleKind,
   yearsOnTherapy: number | undefined,
+  brandName: string,
 ): Copy {
   if (kind === "birthday") {
     return {
-      subject: "Happy birthday from PennPaps",
+      subject: `Happy birthday from ${brandName}`,
       headline: "Happy birthday",
       body:
         "From the team that takes care of your sleep supplies — happy birthday. " +
@@ -107,7 +117,9 @@ export async function sendLifecycleTouchpointEmail(
 ): Promise<SendLifecycleTouchpointEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
@@ -115,8 +127,18 @@ export async function sendLifecycleTouchpointEmail(
     throw err;
   }
 
-  const c = copyFor(input.kind, input.yearsOnTherapy);
-  const base = publicBaseUrl(input.baseUrlOverride);
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+
+  const c = copyFor(input.kind, input.yearsOnTherapy, brandName);
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const prefsUrl = `${base}/account#comm-prefs`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
@@ -127,7 +149,7 @@ export async function sendLifecycleTouchpointEmail(
     "",
     c.body,
     "",
-    "—The PennPaps team",
+    `—The ${brandName} team`,
     "",
     `Manage these emails: ${prefsUrl}`,
   ].join("\n");
@@ -148,7 +170,7 @@ export async function sendLifecycleTouchpointEmail(
           </p>
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The PennPaps team &nbsp;&middot;&nbsp;
+          The ${escapeHtml(brandName)} team &nbsp;&middot;&nbsp;
           <a href="${escapeHtml(prefsUrl)}" style="color:#0f1d3a;text-decoration:none;">Manage these emails</a>
         </td></tr>
       </table>

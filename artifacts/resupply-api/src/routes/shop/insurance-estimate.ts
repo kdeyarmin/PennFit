@@ -32,6 +32,8 @@ import {
 } from "../../lib/insurance-estimates/data";
 import { recordFitterLead } from "../../lib/fitter-lead-record";
 import { sendInsuranceEstimateEmail } from "../../lib/order-emails/send-insurance-estimate-email";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
+import { requestHost } from "../../lib/request-host";
 
 const router: IRouter = Router();
 
@@ -200,6 +202,12 @@ router.post("/shop/insurance-estimates", async (req, res) => {
     "shop/insurance-estimates: submission processed",
   );
 
+  // Public route (no auth middleware populates req.orgId): resolve the
+  // tenant from the request host so the estimate email sends under that
+  // tenant's From identity and brand (G6). Custom domain → that org;
+  // platform host / miss → seed org (single-tenant unchanged).
+  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+
   // Fire-and-forget the estimate email so SendGrid latency doesn't
   // hold the response. The patient sees the inline range result
   // card on the page instantly; the email arrives a beat later
@@ -210,6 +218,7 @@ router.post("/shop/insurance-estimates", async (req, res) => {
         toEmail: data.email,
         estimate,
         zip: data.zip ?? null,
+        orgId,
       });
       if (!result.configured) {
         req.log?.info?.(

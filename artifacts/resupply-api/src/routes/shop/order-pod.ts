@@ -20,6 +20,8 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 
 const SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]{20,}$/;
 
@@ -32,7 +34,11 @@ router.get("/shop/orders/:sessionId/pod", async (req, res) => {
     res.status(400).json({ error: "invalid_session_id" });
     return;
   }
-  const orgId = await resolveSeedOrgId();
+  // Public route (opaque session id is the access token) — no auth
+  // middleware populates req.orgId, so resolve the tenant from the request
+  // host (custom domain → that org; platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

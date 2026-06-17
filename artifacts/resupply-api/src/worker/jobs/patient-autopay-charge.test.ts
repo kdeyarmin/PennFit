@@ -27,12 +27,20 @@ vi.mock("../../lib/stripe/connect.js", () => ({
   stripeAccountRequestOptions: vi.fn(async () => connectAcctOpts.value),
 }));
 
+// Per-tenant feature gate — default ON so the charge-path tests below run as
+// before. Flipped to OFF in the dedicated gating test.
+const autopayFlag = vi.hoisted(() => ({ value: true }));
+vi.mock("../../lib/feature-flags", () => ({
+  isFeatureEnabled: vi.fn(async () => autopayFlag.value),
+}));
+
 import type { OffSessionCharger } from "../../lib/billing/payment-plan-autocharge.js";
 import { runPatientAutopayCharge } from "./patient-autopay-charge";
 
 beforeEach(() => {
   supabaseMock.reset();
   connectAcctOpts.value = {};
+  autopayFlag.value = true;
   // The sweep fans out across active tenants (forEachActiveOrg →
   // listActiveOrgIds reads `organizations`); stage a single active org.
   stageSupabaseResponse("organizations", "select", {
@@ -116,6 +124,26 @@ describe("runPatientAutopayCharge — per-authorization claim", () => {
       verb: "is",
       args: ["last_charge_attempt_at", null],
     });
+  });
+
+  it("skips an org whose own billing.patient_autopay flag is off (no cross-tenant authorize)", async () => {
+    // Regression: the tick used to gate on ONE global flag read, so the seed
+    // tenant's "on" authorized off-session charges for every active tenant.
+    // With per-org gating, an org whose flag is off charges nothing even
+    // though its authorizations would otherwise be chargeable.
+    autopayFlag.value = false;
+    stageAuthorizationScan();
+    stageOpenBalance();
+    const charger = vi.fn<OffSessionCharger>().mockResolvedValue({
+      outcome: "succeeded",
+      paymentIntentId: "pi_1",
+    });
+
+    const stats = await runPatientAutopayCharge({ charger });
+
+    expect(charger).not.toHaveBeenCalled();
+    expect(stats.charged).toBe(0);
+    expect(stats.authorizationsConsidered).toBe(0);
   });
 
   it("CASes against the exact scanned timestamp when one exists", async () => {

@@ -589,6 +589,7 @@ async function therapyMilestonesSweepForOrg(
         firstName: patient.legal_first_name,
         kind: claimed.milestone_kind as MilestoneKind,
         metrics: { totalNights, adherencePct },
+        orgId,
       });
       if (!result.configured) {
         await releaseClaim();

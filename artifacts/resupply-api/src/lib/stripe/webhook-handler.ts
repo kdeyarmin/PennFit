@@ -1014,6 +1014,8 @@ export async function sendOrderConfirmationIfFirst(args: {
       shippingAddress:
         (claimed.shipping_address_json as unknown as SavedShippingAddress | null) ??
         null,
+      // Send under the tenant's own From identity when configured (G6).
+      orgId,
     });
 
     if (!result.configured) {

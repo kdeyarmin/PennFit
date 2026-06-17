@@ -49,8 +49,13 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { isOutsideSmsSendWindow } from "./comm-prefs";
+import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import { isFeatureEnabled } from "./feature-flags";
 import { logger } from "./logger";
+import {
+  resolveTenantSmsClientOptions,
+  resolveTenantVoiceFrom,
+} from "./messaging/tenant-telecom";
 import { withRetry } from "./with-retry";
 
 export interface CheckinActor {
@@ -70,6 +75,15 @@ export interface DispatchOptions {
   actor: CheckinActor;
   /** Optional override for the public base URL the voice TwiML lives on. */
   publicBaseUrl?: string;
+  /**
+   * Tenant to sweep. The daily cron fans out across every active tenant
+   * (worker/jobs/onboarding-checkins.ts) and ALWAYS passes an explicit
+   * orgId. Left optional only for the admin "Run now" route, which has no
+   * tenant context and falls back to the seed org for back-compat. Also
+   * keys the single-flight guard so two different tenants never collapse
+   * into one in-flight run.
+   */
+  orgId?: string;
 }
 
 export interface DispatchSummary {
@@ -125,24 +139,49 @@ const ALL_CHANNELS: CheckinAttemptChannel[] = ["email", "sms", "voice"];
 // after a crash between the vendor send and the stamp write; those
 // remain bounded by the per-row `.is(dayN_sent_at, null)` stamp and are
 // tracked as a follow-up (a claim-before-send reorder).
-let inFlightDispatch: Promise<DispatchSummary> | null = null;
+// Keyed by tenant so a multi-tenant fan-out (one in-flight run per org)
+// doesn't collapse into a single shared promise — org-B's call must not
+// receive org-A's result. Callers with no orgId (admin "Run now" pre-
+// fan-out) share the "__seed__" key, preserving the original single-flight
+// behaviour for that path.
+const inFlightDispatch = new Map<string, Promise<DispatchSummary>>();
 
 export function dispatchDueCheckins(
   opts: DispatchOptions,
 ): Promise<DispatchSummary> {
-  if (inFlightDispatch) return inFlightDispatch;
+  const key = opts.orgId ?? "__seed__";
+  const existing = inFlightDispatch.get(key);
+  if (existing) return existing;
   const run = runDueCheckins(opts).finally(() => {
-    inFlightDispatch = null;
+    inFlightDispatch.delete(key);
   });
-  inFlightDispatch = run;
+  inFlightDispatch.set(key, run);
   return run;
 }
 
 async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
-  // Control Center feature gate. Returns the same zeroed envelope as
-  // a no-active-journeys scan so the admin "send-due" route and the
-  // cron worker both see "nothing to do" instead of an error.
-  if (!(await isFeatureEnabled("patient_onboarding.dispatcher"))) {
+  // Resolve the tenant for the file-local worker pattern. The cron passes
+  // an explicit orgId (multi-tenant fan-out); the admin "Run now" route
+  // passes none and falls back to the seed org. An injected client (test
+  // seam) is bound to the scoped facade so the body uniformly uses `.from()`.
+  // A missing org degrades to the same zeroed envelope the feature-gate-off
+  // branch returns ("nothing to do").
+  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  if (!orgId) {
+    return {
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      completedJourneys: 0,
+      remaining: 0,
+    };
+  }
+
+  // Control Center feature gate, per tenant. Returns the same zeroed
+  // envelope as a no-active-journeys scan so the admin "send-due" route
+  // and the cron worker both see "nothing to do" instead of an error.
+  if (!(await isFeatureEnabled("patient_onboarding.dispatcher", orgId))) {
     return {
       attempted: 0,
       delivered: 0,
@@ -155,21 +194,6 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
 
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
-  // Resolve the tenant for the file-local worker pattern. An injected
-  // client (test seam) is bound to the scoped facade so the body
-  // uniformly uses `.from()`. A missing org degrades to the same zeroed
-  // envelope the feature-gate-off branch returns ("nothing to do").
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return {
-      attempted: 0,
-      delivered: 0,
-      failed: 0,
-      skippedNoContact: 0,
-      completedJourneys: 0,
-      remaining: 0,
-    };
-  }
   const supabase = getOrgScopedClient(orgId, opts.supabase);
 
   // PostgREST has no JOIN. Fetch active journeys + every patient we
@@ -282,7 +306,7 @@ async function runDueCheckins(opts: DispatchOptions): Promise<DispatchSummary> {
   // Build clients lazily — a missing vendor secret should NOT block
   // attempts on other channels. We track availability so the per-row
   // loop emits `skipped_not_configured` rather than throwing.
-  const clients = buildClients(opts.publicBaseUrl);
+  const clients = await buildClients(orgId, opts.publicBaseUrl);
 
   let attempted = 0;
   let delivered = 0;
@@ -764,10 +788,17 @@ interface BuiltClients {
   } | null;
 }
 
-function buildClients(publicBaseUrlOverride?: string): BuiltClients {
+async function buildClients(
+  orgId: string,
+  publicBaseUrlOverride?: string,
+): Promise<BuiltClients> {
   let sg: BuiltClients["sg"] = null;
   try {
-    sg = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default otherwise. The day-copy body
+    // builders are intentionally left brand-literal as-is (out of scope
+    // for the email-client swap).
+    sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (!(err instanceof EmailConfigError)) {
       logger.warn({ err }, "sendgrid client construction failed");
@@ -779,14 +810,28 @@ function buildClients(publicBaseUrlOverride?: string): BuiltClients {
   const authToken = process.env["TWILIO_AUTH_TOKEN"];
   const phoneNumber = process.env["TWILIO_PHONE_NUMBER"];
   const messagingServiceSid = process.env["TWILIO_MESSAGING_SERVICE_SID"];
-  if (accountSid && authToken && (phoneNumber || messagingServiceSid)) {
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform env default otherwise.
+  const tenantSms = await resolveTenantSmsClientOptions(orgId);
+  // A tenant can be routable via its own DB sender even when the platform env
+  // has no default from-number/Messaging Service — consider both. (Account
+  // creds stay platform-level: per-tenant Twilio subaccounts aren't built yet.)
+  if (
+    accountSid &&
+    authToken &&
+    (phoneNumber ||
+      messagingServiceSid ||
+      tenantSms.from ||
+      tenantSms.messagingServiceSid)
+  ) {
     try {
       sms = {
         client: createTwilioSmsClient({
           accountSid,
           authToken,
-          from: phoneNumber,
-          messagingServiceSid,
+          from: tenantSms.from ?? phoneNumber,
+          messagingServiceSid:
+            tenantSms.messagingServiceSid ?? messagingServiceSid,
         }),
       };
     } catch (err) {
@@ -803,11 +848,14 @@ function buildClients(publicBaseUrlOverride?: string): BuiltClients {
     (process.env["RAILWAY_PUBLIC_DOMAIN"]
       ? `https://${process.env["RAILWAY_PUBLIC_DOMAIN"]}`
       : "");
-  if (accountSid && authToken && phoneNumber && publicBaseUrl) {
+  // Call from the tenant's own voice caller-id when it has one (G7),
+  // else the platform default.
+  const tenantVoiceFrom = (await resolveTenantVoiceFrom(orgId)) ?? phoneNumber;
+  if (accountSid && authToken && tenantVoiceFrom && publicBaseUrl) {
     try {
       voice = {
         client: createTwilioClient({ accountSid, authToken }),
-        from: phoneNumber,
+        from: tenantVoiceFrom,
         publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
       };
     } catch (err) {

@@ -227,6 +227,7 @@ router.post(
         to: email,
         productName,
         productUrl,
+        orgId,
       });
 
       if (result.sent) {

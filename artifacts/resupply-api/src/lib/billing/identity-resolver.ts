@@ -15,7 +15,6 @@
 import {
   type Database,
   getOrgScopedClient,
-  getSupabaseServiceRoleClient,
   type OrgScopedClient,
   resolveSeedOrgId,
 } from "@workspace/resupply-db";
@@ -29,7 +28,6 @@ import {
 
 import { logger } from "../logger";
 
-type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
 type OrgRow = Database["resupply"]["Tables"]["dme_organization"]["Row"];
 type ClearinghouseRow =
   Database["resupply"]["Tables"]["clearinghouse_credentials"]["Row"];
@@ -69,12 +67,23 @@ export async function resolveBillingIdentity(
 ): Promise<ResolvedBillingIdentity> {
   const env = opts.env ?? process.env;
   const clearinghouseSlug = opts.clearinghouseSlug ?? "office_ally";
-  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  const seedOrgId = await resolveSeedOrgId();
+  const orgId = opts.orgId ?? seedOrgId;
   const scoped = orgId ? getOrgScopedClient(orgId) : null;
+  // The OFFICE_ALLY_* / billing env vars carry the PLATFORM (seed) tenant's
+  // identity. They must NEVER stand in for a DIFFERENT tenant — otherwise a
+  // second tenant's 837P would be built under the seed NPI/PTAN. So the env
+  // fallback below is gated to the seed org; a non-seed tenant with no DB
+  // identity of its own fails closed to a STUB the submit path refuses.
+  // "No org resolved at all" (orgId null — local dev / no tenant directory)
+  // counts as seed: there is no specific tenant to mis-bill. A CONCRETE
+  // non-seed org never gets the env fallback, even if the seed lookup fails.
+  const isSeedOrg = !orgId || (!!seedOrgId && orgId === seedOrgId);
 
-  // 1. Try the DB. dme_organization is global (no org_id); the
-  //    clearinghouse credentials are tenant-scoped.
-  const org = await loadOrganization(getSupabaseServiceRoleClient());
+  // 1. Try the DB. Both dme_organization and clearinghouse_credentials are
+  //    org-scoped: read each through the tenant-scoped client so tenant #2
+  //    bills under ITS OWN identity, never the seed singleton.
+  const org = scoped ? await loadOrganization(scoped) : null;
   const ch = scoped ? await loadClearinghouse(scoped, clearinghouseSlug) : null;
 
   if (org && ch) {
@@ -92,9 +101,9 @@ export async function resolveBillingIdentity(
     };
   }
 
-  // 2. Fall back to env (legacy path).
-  const envBilling = envBillingProvider(env);
-  const envSubmitter = envSubmitter_(env);
+  // 2. Fall back to env (legacy path) — SEED ORG ONLY (see isSeedOrg above).
+  const envBilling = isSeedOrg ? envBillingProvider(env) : null;
+  const envSubmitter = isSeedOrg ? envSubmitter_(env) : null;
   if (envBilling && envSubmitter) {
     return {
       source: "env",
@@ -135,12 +144,25 @@ export async function resolveClearinghouse(
 ): Promise<ResolvedClearinghouse> {
   const env = opts.env ?? process.env;
   const slug = opts.slug ?? "office_ally";
-  const orgId = opts.orgId ?? (await resolveSeedOrgId());
+  const seedOrgId = await resolveSeedOrgId();
+  const orgId = opts.orgId ?? seedOrgId;
   const scoped = orgId ? getOrgScopedClient(orgId) : null;
+  // The OFFICE_ALLY_* SFTP env vars are the seed tenant's transport — never
+  // upload a different tenant's 837P over them. A non-seed tenant without its
+  // own clearinghouse_credentials row fails closed to a STUB (no transport).
+  // orgId null (dev / no tenant directory) counts as seed; a concrete
+  // non-seed org never gets the env transport.
+  const isSeedOrg = !orgId || (!!seedOrgId && orgId === seedOrgId);
   const row = scoped ? await loadClearinghouse(scoped, slug) : null;
   // Real-time config is independent of the SFTP path — compute it once
   // from (row, env) and surface it in every branch.
-  const realtimeConfig = buildRealtimeConfig(row, env);
+  // Gate the env to the seed org here too: when a non-seed tenant has no DB
+  // row, buildRealtimeConfig would otherwise fall back to the seed's
+  // OFFICE_ALLY_REALTIME_* env and route that tenant's 270 eligibility
+  // requests through the SEED tenant's Office Ally realtime credentials. A
+  // non-seed tenant must supply its own realtime creds in its row, or get no
+  // realtime (fail closed) — matching the SFTP/billing-identity gate above.
+  const realtimeConfig = buildRealtimeConfig(row, isSeedOrg ? env : {});
   if (row) {
     return {
       source: "db",
@@ -163,8 +185,9 @@ export async function resolveClearinghouse(
       },
     };
   }
-  // Env fallback for the SFTP path.
+  // Env fallback for the SFTP path — SEED ORG ONLY (see isSeedOrg above).
   if (
+    isSeedOrg &&
     env.OFFICE_ALLY_USERNAME &&
     env.OFFICE_ALLY_PRIVATE_KEY_PATH &&
     env.OFFICE_ALLY_KNOWN_HOSTS_PATH
@@ -246,15 +269,18 @@ function buildRealtimeConfig(
 // ── Loaders ─────────────────────────────────────────────────────────
 
 async function loadOrganization(
-  supabase: SupabaseClient,
+  supabase: OrgScopedClient,
 ): Promise<OrgRow | null> {
+  // Org-scoped: the facade auto-appends `.eq("org_id", <tenant>)`, so this
+  // reads the CALLER's billing identity, not the global singleton. The seed
+  // tenant's row (org_id backfilled in migration 0331) reads exactly as
+  // before; a non-seed tenant reads its own row or none.
   const { data, error } = await supabase
-    .schema("resupply")
     .from("dme_organization")
     .select(
       "id, singleton, legal_name, dba_name, tax_id, organizational_npi, taxonomy_code, medicare_ptan, physical_address_line1, physical_address_line2, physical_city, physical_state, physical_zip, mailing_address_line1, mailing_address_line2, mailing_city, mailing_state, mailing_zip, pay_to_address_line1, pay_to_address_line2, pay_to_city, pay_to_state, pay_to_zip, phone_e164, fax_e164, billing_email, general_email, support_email, support_phone_e164, support_hours_text, website_url, accreditation_body, accreditation_number, accreditation_expires_on, state_license_number, state_license_state, state_license_expires_on, liability_carrier, liability_policy_number, liability_expires_on, surety_bond_carrier, surety_bond_amount_cents, surety_bond_expires_on, authorized_signer_name, authorized_signer_title, authorized_signer_signature_object_key, notes, org_id, created_at, updated_at",
     )
-    .eq("singleton", true)
+    .order("singleton", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) {

@@ -46,6 +46,7 @@ import { claimDedupKey } from "../../lib/dedup-keys.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -218,7 +219,10 @@ async function setupDeadlineOutreachForOrg(
   const outreachOn =
     (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
     (await isFeatureEnabled("sms.reminders", orgId));
-  const cfg = outreachOn ? readSmsConfig() : null;
+  const baseCfg = outreachOn ? readSmsConfig() : null;
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise.
+  const cfg = baseCfg ? await applyTenantSmsFrom(orgId, baseCfg) : null;
 
   const setups = await supabase
     .raw()

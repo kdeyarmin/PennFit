@@ -26,16 +26,16 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import { logger } from "../../lib/logger";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import {
   FITTER_INVITE_TTL_MS,
   signFitterInviteToken,
@@ -79,18 +79,26 @@ function publicBaseUrl(): string {
   ).replace(/\/$/, "");
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default otherwise.
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -105,33 +113,38 @@ const inviteLinkFor = (token: string) =>
  *  can still hand the staff member a copy-able link. */
 async function deliverInvite(opts: {
   channel: "email" | "sms";
+  orgId: string;
   email: string | null;
   phone: string | null;
   name: string | null;
   link: string;
 }): Promise<{ delivered: boolean; reason?: string }> {
   const greeting = opts.name ? opts.name.split(/\s+/)[0] : "there";
+  // Brand the invite with the tenant's own storefront name (G6). For the
+  // seed tenant this resolves to "PennPaps", so single-tenant copy is
+  // unchanged; another tenant's invite carries ITS brand.
+  const brandName = (await resolveBrandingByOrgId(opts.orgId)).storefrontName;
   try {
     if (opts.channel === "email") {
       if (!opts.email) return { delivered: false, reason: "no_email" };
-      const sendgrid = tryCreateSendgrid();
+      const sendgrid = await tryCreateSendgrid(opts.orgId);
       if (!sendgrid) return { delivered: false, reason: "no_email_config" };
       await sendgrid.sendEmail({
         to: opts.email,
         // No PHI in the subject line — provider subjects aren't encrypted.
-        subject: "Find your best CPAP mask fit with PennPaps",
-        html: renderInviteEmailHtml(greeting, opts.link),
-        text: renderInviteEmailText(greeting, opts.link),
+        subject: `Find your best CPAP mask fit with ${brandName.replace(/[\r\n]/g, "")}`,
+        html: renderInviteEmailHtml(greeting, opts.link, brandName),
+        text: renderInviteEmailText(greeting, opts.link, brandName),
       });
       return { delivered: true };
     }
     // SMS
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
-    const twilio = tryCreateTwilioSms();
+    const twilio = await tryCreateTwilioSms(opts.orgId);
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     await twilio.sendSms({
       to: opts.phone,
-      body: `Hi ${greeting}, PennPaps invites you to find your best CPAP mask fit — it takes about 2 minutes on your phone: ${opts.link}`,
+      body: `Hi ${greeting}, ${brandName} invites you to find your best CPAP mask fit — it takes about 2 minutes on your phone: ${opts.link}`,
     });
     return { delivered: true };
   } catch (err) {
@@ -143,10 +156,14 @@ async function deliverInvite(opts: {
   }
 }
 
-function renderInviteEmailHtml(greeting: string, link: string): string {
+function renderInviteEmailHtml(
+  greeting: string,
+  link: string,
+  brandName: string,
+): string {
   return `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.5">
   <p>Hi ${escapeHtml(greeting)},</p>
-  <p>Your care team at <strong>PennPaps</strong> invites you to use our AI mask
+  <p>Your care team at <strong>${escapeHtml(brandName)}</strong> invites you to use our AI mask
   fitter to find the CPAP mask that fits you best. It takes about two minutes
   and runs entirely on your own phone or computer.</p>
   <p style="margin:24px 0">
@@ -157,15 +174,19 @@ function renderInviteEmailHtml(greeting: string, link: string): string {
   follow up on your fit.</p>
   <p style="font-size:13px;color:#6b7280">If the button doesn't work, copy and
   paste this link:<br>${escapeHtml(link)}</p>
-  <p>— The PennPaps team</p>
+  <p>— The ${escapeHtml(brandName)} team</p>
   </body></html>`;
 }
 
-function renderInviteEmailText(greeting: string, link: string): string {
+function renderInviteEmailText(
+  greeting: string,
+  link: string,
+  brandName: string,
+): string {
   return [
     `Hi ${greeting},`,
     "",
-    "Your care team at PennPaps invites you to use our AI mask fitter to find",
+    `Your care team at ${brandName} invites you to use our AI mask fitter to find`,
     "the CPAP mask that fits you best. It takes about two minutes and runs",
     "entirely on your own phone or computer.",
     "",
@@ -174,7 +195,7 @@ function renderInviteEmailText(greeting: string, link: string): string {
     "Your camera images never leave your device — only the numeric measurements",
     "are shared with our team so we can follow up on your fit.",
     "",
-    "— The PennPaps team",
+    `— The ${brandName} team`,
   ].join("\n");
 }
 
@@ -309,6 +330,7 @@ router.post(
     const link = inviteLinkFor(token);
     const delivery = await deliverInvite({
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       name: recipientName,
@@ -798,6 +820,7 @@ router.post(
     const link = inviteLinkFor(token);
     const delivery = await deliverInvite({
       channel: invite.channel,
+      orgId,
       email: invite.recipient_email,
       phone: invite.recipient_phone_e164,
       name: invite.recipient_name,

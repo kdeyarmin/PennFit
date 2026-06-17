@@ -23,11 +23,13 @@
 // Best-effort: a SendGrid outage must not 500 the event POST. The
 // route catches and logs.
 
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -48,6 +50,14 @@ export interface SendEobExplainerEmailInput {
   };
   denialReason?: string | null;
   baseUrlOverride?: string;
+  /**
+   * Tenant the patient/claim belongs to. When set and the tenant has its
+   * own From identity (migration 0360), the email is sent under it (G6)
+   * and the copy carries the tenant's storefront brand; otherwise the
+   * platform default From/brand is used. Omit / undefined leaves it
+   * unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendEobExplainerEmailResult {
@@ -101,7 +111,9 @@ export async function sendEobExplainerEmail(
 ): Promise<SendEobExplainerEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
@@ -109,7 +121,17 @@ export async function sendEobExplainerEmail(
     throw err;
   }
 
-  const base = publicBaseUrl(input.baseUrlOverride);
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const accountUrl = `${base}/account`;
   const supportUrl = `${base}/account#chat`;
   const greeting = input.firstName
@@ -156,7 +178,7 @@ export async function sendEobExplainerEmail(
     "",
     `View on your account: ${accountUrl}`,
     "",
-    "—The PennPaps billing team",
+    `—The ${brandName} billing team`,
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
@@ -199,7 +221,7 @@ export async function sendEobExplainerEmail(
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
           <a href="${escapeHtml(accountUrl)}" style="color:#0f1d3a;text-decoration:none;">View on your account</a> &nbsp;·&nbsp;
-          The PennPaps billing team
+          The ${escapeHtml(brandName)} billing team
         </td></tr>
       </table>
     </td></tr>

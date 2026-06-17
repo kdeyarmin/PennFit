@@ -30,6 +30,15 @@ export interface PendingSessionEntry {
   conversationId: string;
   patientId: string;
   episodeId: string;
+  /**
+   * The tenant this call belongs to. Set by the route that registers the
+   * session (place-call, inbound-reorder) so the voice WS bridge persists
+   * + sends under the RIGHT tenant — including the tenant's own outbound
+   * voice/SMS caller-id (G7). Optional: when unset (or for legacy entries
+   * mid-deploy) the ws-handler falls back to the seed org, which is
+   * single-tenant-correct.
+   */
+  orgId?: string;
   /** Captured from Twilio's call-create response, set after dial. */
   twilioCallSid?: string;
   /**
@@ -121,6 +130,7 @@ export class PendingSessions {
     conversationId: string;
     patientId: string;
     episodeId: string;
+    orgId?: string;
     callContext?: string;
     greeting?: string;
     diagnostic?: boolean;
@@ -134,6 +144,7 @@ export class PendingSessions {
       conversationId: args.conversationId,
       patientId: args.patientId,
       episodeId: args.episodeId,
+      ...(args.orgId ? { orgId: args.orgId } : {}),
       ...(args.callContext ? { callContext: args.callContext } : {}),
       ...(args.greeting ? { greeting: args.greeting } : {}),
       ...(args.diagnostic ? { diagnostic: true } : {}),

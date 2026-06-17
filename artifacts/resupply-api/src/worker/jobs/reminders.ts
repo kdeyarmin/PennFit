@@ -85,6 +85,8 @@ import {
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender.js";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
@@ -968,7 +970,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       outcome = await sendReminderSms({
         supabase: supabase.raw(),
         orgId,
-        cfg: cfg.sms,
+        // Send under the tenant's own number / Messaging Service when it
+        // has one; falls back to the platform default otherwise (G7).
+        cfg: await applyTenantSmsFrom(orgId, cfg.sms),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         actor,
@@ -1058,7 +1062,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       outcome = await sendReminderEmail({
         supabase: supabase.raw(),
         orgId,
-        cfg: cfg.email,
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
         actor,

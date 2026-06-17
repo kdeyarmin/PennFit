@@ -37,6 +37,7 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
   TwilioApiError,
@@ -51,6 +52,7 @@ import {
 import { isInDndWindow, isOutsideSmsSendWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
@@ -187,7 +189,9 @@ export async function runSmartTriggerSendDue(
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
   if (channel === "email") {
     try {
-      sg = createSendgridClient();
+      // Send under the tenant's own From identity when configured (G6);
+      // falls back to the platform default otherwise.
+      sg = await createTenantSendgridClient(orgId);
     } catch (err) {
       if (err instanceof EmailConfigError) {
         return { status: "not_configured", channel };
@@ -196,7 +200,9 @@ export async function runSmartTriggerSendDue(
     }
   } else {
     try {
-      sms = createTwilioSmsClient();
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform env default otherwise.
+      sms = createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
     } catch (err) {
       if (err instanceof TwilioConfigError) {
         return { status: "not_configured", channel };

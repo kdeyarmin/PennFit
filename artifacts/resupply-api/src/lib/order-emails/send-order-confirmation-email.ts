@@ -35,16 +35,17 @@
 //                order detail page on the customer success page,
 //                support footer.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { withMetrics } from "../observability";
 import { withRetry } from "../with-retry.js";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -83,6 +84,13 @@ export interface SendOrderConfirmationEmailInput {
    * deploys still resolve to production.
    */
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the confirmation is sent under it
+   * (G6); otherwise the platform default From is used. Omit / undefined
+   * leaves the platform default unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendOrderConfirmationEmailResult {
@@ -158,7 +166,9 @@ export async function sendOrderConfirmationEmail(
 
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       // Fail-open here (return configured: false) — the webhook
@@ -170,14 +180,28 @@ export async function sendOrderConfirmationEmail(
     throw err;
   }
 
-  const subject = "Your PennPaps order is confirmed";
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's order email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+  const subject = `Your ${brandName} order is confirmed`;
 
-  const orderUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
-  const browseUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop`;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when the caller didn't pass an explicit override; the seed
+  // tenant falls through to the platform env/default, so single-tenant is
+  // unchanged. Resolved once per send.
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
+  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  const browseUrl = `${base}/shop`;
 
   // ---------- text body ----------
   const textLines: string[] = [
-    "Thanks for your order at PennPaps. Your payment was received and we're getting it ready to ship.",
+    `Thanks for your order at ${brandName}. Your payment was received and we're getting it ready to ship.`,
     "",
   ];
   if (items.length > 0) {
@@ -251,7 +275,7 @@ export async function sendOrderConfirmationEmail(
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
           <tr>
             <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
               <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Your order is confirmed</div>
             </td>
           </tr>

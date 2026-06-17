@@ -22,11 +22,14 @@
 // branch without try/catch. NEVER throws — a SendGrid 5xx must not
 // block the lifecycle transition that already succeeded in the DB.
 
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+  type StorefrontBranding,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -51,6 +54,13 @@ export interface SendReturnStatusEmailInput {
   returnLabelUrl?: string | null;
   /** Optional override for the public base URL. */
   baseUrlOverride?: string;
+  /**
+   * Tenant the return belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the email is sent under it (G6); the
+   * body/subject also carry the tenant's brand. Omit / undefined leaves the
+   * platform default From and the seed tenant's brand ("PennPaps") in place.
+   */
+  orgId?: string;
 }
 
 export interface SendReturnStatusEmailResult {
@@ -97,9 +107,10 @@ function lastChars(id: string, n: number): string {
 function buildApprovedBody(
   input: SendReturnStatusEmailInput,
   myReturnsUrl: string,
+  brand: StorefrontBranding,
 ): { subject: string; html: string; text: string } {
   const orderTail = lastChars(input.stripeSessionId, 8);
-  const subject = "Your PennPaps return is approved";
+  const subject = `Your ${brand.storefrontName} return is approved`;
 
   // Carrier + tracking + label panel are conditional — staff sometimes
   // approves a return without issuing a label (e.g. exchange where the
@@ -149,7 +160,7 @@ function buildApprovedBody(
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;"><tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
       <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-        <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+        <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brand.storefrontName)}</div>
         <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Your return is approved</div>
       </td></tr>
       <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
@@ -160,7 +171,7 @@ function buildApprovedBody(
       ${noShipmentBlock}
       <tr><td style="padding-top:24px;"><a href="${escapeHtml(myReturnsUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">View all your returns</a></td></tr>
       <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-        You're receiving this because you opened a return request at PennPaps. Reply to this email and our team will help.
+        You're receiving this because you opened a return request at ${escapeHtml(brand.storefrontName)}. Reply to this email and our team will help.
       </td></tr>
     </table>
   </td></tr></table></body></html>`;
@@ -171,19 +182,20 @@ function buildApprovedBody(
 function buildRefundedBody(
   input: SendReturnStatusEmailInput,
   myReturnsUrl: string,
+  brand: StorefrontBranding,
 ): { subject: string; html: string; text: string } {
   const cents = input.refundCents ?? 0;
   const currency = (input.currency ?? "usd").toLowerCase();
   const amount = formatMoney(cents, currency);
   const orderTail = lastChars(input.stripeSessionId, 8);
-  const subject = "Your PennPaps refund is on the way";
+  const subject = `Your ${brand.storefrontName} refund is on the way`;
 
   const text = [
     `We've issued your refund of ${amount}.`,
     "",
     `Order: ...${orderTail}`,
     "",
-    "Refunds typically take 5-10 business days to land back on the card you paid with. The amount will appear on your statement under PennPaps.",
+    `Refunds typically take 5-10 business days to land back on the card you paid with. The amount will appear on your statement under ${brand.storefrontName}.`,
     "",
     `See all your returns: ${myReturnsUrl}`,
   ].join("\n");
@@ -193,14 +205,14 @@ function buildRefundedBody(
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;"><tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
       <tr><td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-        <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+        <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brand.storefrontName)}</div>
         <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Refund issued</div>
       </td></tr>
       <tr><td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
         We've issued your refund of <strong>${escapeHtml(amount)}</strong> on order <strong>&hellip;${escapeHtml(orderTail)}</strong>.
       </td></tr>
       <tr><td style="padding-top:16px;color:#555;font-size:14px;line-height:1.5;">
-        Refunds typically take <strong>5-10 business days</strong> to land back on the card you paid with. The amount will appear on your statement under <strong>PennPaps</strong>.
+        Refunds typically take <strong>5-10 business days</strong> to land back on the card you paid with. The amount will appear on your statement under <strong>${escapeHtml(brand.storefrontName)}</strong>.
       </td></tr>
       <tr><td style="padding-top:24px;"><a href="${escapeHtml(myReturnsUrl)}" style="color:#7a5d00;font-size:13px;text-decoration:underline;">View all your returns</a></td></tr>
       <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
@@ -217,7 +229,9 @@ export async function sendReturnStatusEmail(
 ): Promise<SendReturnStatusEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6); falls
+    // back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };
@@ -229,11 +243,19 @@ export async function sendReturnStatusEmail(
     };
   }
 
-  const myReturnsUrl = `${publicBaseUrl(input.baseUrlOverride)}/account/returns`;
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps", so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+
+  const myReturnsUrl = `${publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  )}/account/returns`;
   const body =
     input.kind === "approved"
-      ? buildApprovedBody(input, myReturnsUrl)
-      : buildRefundedBody(input, myReturnsUrl);
+      ? buildApprovedBody(input, myReturnsUrl, brand)
+      : buildRefundedBody(input, myReturnsUrl, brand);
 
   try {
     const { messageId } = await client.sendEmail({

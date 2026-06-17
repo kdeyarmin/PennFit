@@ -185,6 +185,152 @@ export async function resolveBrandingByHost(
   return branding;
 }
 
+// Branding cache keyed by org_id (separate from the host cache above). Used by
+// callsites that already know their tenant — e.g. order-confirmation emails
+// fired from a Stripe webhook, which have an org_id but no request host.
+const orgBrandingCache = new Map<string, CacheEntry>();
+
+async function loadBrandingForOrgId(
+  orgId: string,
+): Promise<StorefrontBranding> {
+  const supabase = getOrgScopedClient(orgId);
+  // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+  // facade does not append an org_id filter to the tenant directory, then
+  // select this specific org by id.
+  const { data, error } = await withTimeout(
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("name, storefront_name, tagline, logo_url")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle(),
+  );
+  if (error) throw error;
+  return mapBranding(data);
+}
+
+/**
+ * The effective storefront branding for a known tenant `orgId`. Cached ~60s
+ * per org; never throws (any failure degrades to the platform/default brand).
+ * For the seed tenant this returns its stored brand (e.g. "PennPaps"), so
+ * single-tenant copy is unchanged.
+ */
+export async function resolveBrandingByOrgId(
+  orgId: string | undefined,
+): Promise<StorefrontBranding> {
+  const key = orgId?.trim();
+  if (!key) return DEFAULT_BRANDING;
+  const now = Date.now();
+  const hit = orgBrandingCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.branding;
+
+  let branding: StorefrontBranding;
+  try {
+    branding = await loadBrandingForOrgId(key);
+  } catch (err) {
+    const normalized =
+      err instanceof Error ? err : new Error(String(err ?? "unknown"));
+    logger.warn(
+      { event: "tenant_branding_load_failed", err: normalized },
+      "tenant branding load by org failed; falling back to default brand",
+    );
+    branding = DEFAULT_BRANDING;
+  }
+  orgBrandingCache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
+  return branding;
+}
+
+/**
+ * Resolve a tenant's per-tenant INTERNAL notification recipient (migration
+ * 0379): `fulfillment_email` (fitter-flow order notifications) or
+ * `lead_notification_email` (insurance-lead notifications). Returns the
+ * column value, or null when unset / no org / on any error — callers fall
+ * back to the platform env default so single-tenant is unchanged.
+ */
+export async function resolveOrgNotificationEmail(
+  orgId: string | undefined,
+  column: "fulfillment_email" | "lead_notification_email",
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  try {
+    const supabase = getOrgScopedClient(id);
+    // GLOBAL `organizations` directory — `.raw()` so the facade doesn't
+    // re-append an org filter; select this org by id.
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select(column)
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (error) return null;
+    const value = (data as Record<string, unknown> | null)?.[column];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Tenant base-URL cache (origin string), keyed by org_id. Patient-facing email
+// links are built from this; it changes only on a custom-domain bind/unbind.
+const orgBaseUrlCache = new Map<
+  string,
+  { value: string | null; expiresAt: number }
+>();
+
+/**
+ * The public origin (e.g. `https://acme.example`) for a tenant's own storefront
+ * links, taken from its VERIFIED custom domain. Returns null when the tenant
+ * has no verified domain (or no org / on error) — callers fall back to the
+ * platform `SHOP_PUBLIC_BASE_URL` env / default, so single-tenant is unchanged
+ * (the seed org's verified `pennpaps.com` resolves to `https://pennpaps.com`).
+ * Cached ~60s per org.
+ */
+export async function resolveTenantBaseUrl(
+  orgId: string | undefined,
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  const now = Date.now();
+  const hit = orgBaseUrlCache.get(id);
+  if (hit && hit.expiresAt > now) return hit.value;
+
+  let value: string | null = null;
+  try {
+    const supabase = getOrgScopedClient(id);
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("custom_domain, custom_domain_status")
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (!error) {
+      const row = data as {
+        custom_domain: string | null;
+        custom_domain_status: string | null;
+      } | null;
+      const domain = trimmed(row?.custom_domain);
+      if (domain && row?.custom_domain_status === "verified") {
+        value = `https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+      }
+    }
+  } catch {
+    value = null;
+  }
+  orgBaseUrlCache.set(id, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
+}
+
 /**
  * Drop the branding cache so an admin save is visible on the next read.
  * Also drops the host→org cache: every branding/custom-domain mutation
@@ -194,6 +340,8 @@ export async function resolveBrandingByHost(
 export function invalidateBrandingCache(): void {
   cache.clear();
   orgIdCache.clear();
+  orgBrandingCache.clear();
+  orgBaseUrlCache.clear();
 }
 
 // ────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import {
 } from "@workspace/resupply-reminders";
 
 import { logger } from "../../lib/logger";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
@@ -75,13 +76,15 @@ router.post(
         // in this wave's file list; it's typed for the raw service-role
         // client. Pass the unscoped client (`.raw()`) per cutover §B.
         supabase: supabase.raw(),
-        cfg: {
+        // Send under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        cfg: await applyTenantEmailSender(orgId, {
           sendgridApiKey: cfg.email.sendgridApiKey,
           sendgridFromEmail: cfg.email.sendgridFromEmail,
           sendgridFromName: cfg.email.sendgridFromName,
           publicBaseUrl: cfg.email.publicBaseUrl,
           practiceName: cfg.practiceName,
-        },
+        }),
         patientId,
         episodeId,
         actor: {

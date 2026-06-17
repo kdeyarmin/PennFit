@@ -27,13 +27,15 @@
 //                customer reassurance — there's no opt-out wiring in
 //                v1; one nudge per cart-event is the entire policy).
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import type { ShopAbandonedCartItem } from "@workspace/resupply-db";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -49,6 +51,13 @@ export interface SendCartAbandonmentEmailInput {
    * production.
    */
   baseUrlOverride?: string;
+  /**
+   * Tenant the cart belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the nudge is sent under it (G6);
+   * otherwise the platform default From is used. Omit / undefined leaves
+   * the platform default unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendCartAbandonmentEmailResult {
@@ -101,7 +110,9 @@ export async function sendCartAbandonmentEmail(
 
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       // Fail-open here (return configured: false) — the dispatcher
@@ -113,15 +124,26 @@ export async function sendCartAbandonmentEmail(
     throw err;
   }
 
-  const itemCount = items.reduce((sum, it) => sum + it.quantity, 0);
-  const subject = `You left ${itemCount} item${itemCount === 1 ? "" : "s"} in your PennPaps cart`;
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's cart nudge carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
 
-  const cartUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/cart?resume=1`;
-  const browseUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop`;
+  const itemCount = items.reduce((sum, it) => sum + it.quantity, 0);
+  const subject = `You left ${itemCount} item${itemCount === 1 ? "" : "s"} in your ${brandName} cart`;
+
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
+  const cartUrl = `${base}/shop/cart?resume=1`;
+  const browseUrl = `${base}/shop`;
 
   // Plain-text body — many corporate filters drop HTML-only mail.
   const textLines: string[] = [
-    `You still have ${itemCount} item${itemCount === 1 ? "" : "s"} waiting in your cart at PennPaps.`,
+    `You still have ${itemCount} item${itemCount === 1 ? "" : "s"} waiting in your cart at ${brandName}.`,
     "",
   ];
   for (const it of items) {
@@ -139,7 +161,7 @@ export async function sendCartAbandonmentEmail(
   textLines.push(`Browse the shop: ${browseUrl}`);
   textLines.push("");
   textLines.push(
-    "You're receiving this because you started a checkout at PennPaps. " +
+    `You're receiving this because you started a checkout at ${brandName}. ` +
       "We send one of these per cart at most.",
   );
   const text = textLines.join("\n");
@@ -174,13 +196,13 @@ export async function sendCartAbandonmentEmail(
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
           <tr>
             <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
               <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">You left items in your cart</div>
             </td>
           </tr>
           <tr>
             <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              You started a checkout at PennPaps but didn't finish. Your cart is still saved &mdash; pick up right where you left off.
+              You started a checkout at ${escapeHtml(brandName)} but didn't finish. Your cart is still saved &mdash; pick up right where you left off.
             </td>
           </tr>
           <tr>
@@ -206,7 +228,7 @@ export async function sendCartAbandonmentEmail(
           </tr>
           <tr>
             <td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-              You're receiving this because you started a checkout at PennPaps. We send one of these per cart at most.
+              You're receiving this because you started a checkout at ${escapeHtml(brandName)}. We send one of these per cart at most.
             </td>
           </tr>
         </table>

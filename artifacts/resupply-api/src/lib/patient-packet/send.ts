@@ -17,11 +17,12 @@ import {
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 import { normalizeE164 } from "@workspace/resupply-domain";
-import { createSendgridClient } from "@workspace/resupply-email";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "./company";
 import {
@@ -803,7 +804,7 @@ export async function deliverPacketLink(
       // so an unconfigured provider or a vendor reject surfaces as a throw.
       // That keeps emailSent — and the usage metering below — gated on a
       // genuinely accepted send, never an over-count during a config gap.
-      const client = createSendgridClient();
+      const client = await createTenantSendgridClient(input.supabase.orgId);
       await client.sendEmail({
         to: input.email,
         subject: input.reminder
@@ -840,6 +841,7 @@ export async function deliverPacketLink(
   let smsSent = false;
   if (wantSms && input.phone) {
     smsSent = await sendPacketSms(
+      input.supabase.orgId,
       company,
       input.phone,
       input.link,
@@ -857,7 +859,8 @@ export async function deliverPacketLink(
   return { emailSent, smsSent };
 }
 
-function sendPacketSms(
+async function sendPacketSms(
+  orgId: string,
   company: CompanyProfile,
   phoneE164: string,
   link: string,
@@ -867,9 +870,23 @@ function sendPacketSms(
   const authToken = process.env.TWILIO_AUTH_TOKEN ?? null;
   const from = process.env.TWILIO_PHONE_NUMBER ?? null;
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
-  if (!accountSid || !authToken || !(from || messagingServiceSid)) {
+  // Send under the tenant's own number / Messaging Service when it has one
+  // (G7); falls back to the platform env default otherwise. Resolved before
+  // the guard so a tenant routable via its DB sender still sends even when the
+  // platform env has no default from-number/Messaging Service.
+  const tenantSms = await resolveTenantSmsClientOptions(orgId);
+  if (
+    !accountSid ||
+    !authToken ||
+    !(
+      from ||
+      messagingServiceSid ||
+      tenantSms.from ||
+      tenantSms.messagingServiceSid
+    )
+  ) {
     // SMS not configured (dev / preview). Graceful no-op.
-    return Promise.resolve(false);
+    return false;
   }
   const body =
     `${company.legalName}: please review & sign your new patient documents here: ${link}` +
@@ -877,8 +894,9 @@ function sendPacketSms(
   const client = createTwilioSmsClient({
     accountSid,
     authToken,
-    from: from ?? undefined,
-    messagingServiceSid: messagingServiceSid ?? undefined,
+    from: tenantSms.from ?? from ?? undefined,
+    messagingServiceSid:
+      tenantSms.messagingServiceSid ?? messagingServiceSid ?? undefined,
   });
   return client
     .sendSms({ to: phoneE164, body: body.slice(0, 480) })
