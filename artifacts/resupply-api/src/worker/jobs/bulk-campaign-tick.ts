@@ -79,11 +79,11 @@ const PENDING_STATUSES = ["pending", "retry_pending"] as const;
 export interface BulkCampaignTickPayload {
   campaignId: string;
   /**
-   * Tenant that owns the campaign. Threaded through the tick chain so each
-   * tick reads/sends the campaign + recipients on its own org-scoped client
-   * — a non-seed tenant's campaign would otherwise never send (the worker
-   * read the seed org). Optional + seed fallback keeps any in-flight
-   * pre-upgrade payload (no orgId) working single-tenant-correct.
+   * The tenant that owns this campaign. Threaded through the enqueue→tick
+   * chain so the tick operates on the RIGHT tenant's data (a campaign belongs
+   * to one org). Optional for back-compat: a tick enqueued before this deploy
+   * carries no orgId and the worker falls back to the seed org — which is
+   * single-tenant-correct (every campaign was the seed tenant's).
    */
   orgId?: string;
 }
@@ -142,9 +142,10 @@ export async function processTick(
   payload: BulkCampaignTickPayload,
   log: typeof logger,
 ): Promise<void> {
-  // Tenant comes from the tick payload (threaded from the start route through
-  // every re-enqueue). Fall back to the seed org for any pre-upgrade payload
-  // still in the queue — single-tenant-correct. Treat a blank id as absent.
+  // Operate on the campaign's OWN tenant. The orgId is threaded through the
+  // enqueue→tick payload; a tick enqueued before this deploy carries none, so
+  // fall back to the seed org (single-tenant-correct). A blank/whitespace
+  // payload orgId is treated as absent so the seed fallback still applies.
   const orgId = payload.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) {
     log.warn(
@@ -243,7 +244,7 @@ export async function processTick(
     // No more pending. Only finalize if nothing is mid-flight either —
     // a non-stale 'sending' row (in-flight or not-yet-reclaimed orphan)
     // means the campaign isn't actually done.
-    await finalizeOrReschedule(boss, supabase, campaign.id, orgId, log);
+    await finalizeOrReschedule(boss, supabase, campaign.id, log, orgId);
     return;
   }
 
@@ -582,13 +583,17 @@ export async function processTick(
     // them as one number; the per-recipient `suppression_reason` on
     // bulk_campaign_recipients distinguishes them when investigators
     // need to know.
+    // Raw `pg` bypasses the org-scoped facade, so the tenant predicate is
+    // EXPLICIT here (the no-direct-pg-without-org_id invariant). The campaign
+    // id is the PK so `WHERE id` already targets one row; `AND org_id` keeps
+    // this raw write tenant-scoped like every facade write in this tick.
     const result = await pool.query(
       `UPDATE resupply.bulk_campaigns
        SET sent_count = sent_count + $1,
            failed_count = failed_count + $2,
            suppressed_count = suppressed_count + $3
-       WHERE id = $4`,
-      [sent, failed, suppressedAtSend, campaign.id],
+       WHERE id = $4 AND org_id = $5`,
+      [sent, failed, suppressedAtSend, campaign.id, orgId],
     );
     if (result.rowCount === 0) {
       log.warn(
@@ -642,7 +647,7 @@ export async function processTick(
     return;
   }
 
-  await finalizeOrReschedule(boss, supabase, campaign.id, orgId, log);
+  await finalizeOrReschedule(boss, supabase, campaign.id, log, orgId);
 }
 
 /**
@@ -665,8 +670,8 @@ async function finalizeOrReschedule(
   boss: PgBoss,
   supabase: OrgScopedClient,
   campaignId: string,
-  orgId: string,
   log: typeof logger,
+  orgId: string,
 ): Promise<void> {
   const { count: remaining, error } = await supabase
     .from("bulk_campaign_recipients")

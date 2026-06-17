@@ -584,7 +584,7 @@ function makeTransitionHandler(
 
     if (plan.sideEffect) {
       try {
-        await plan.sideEffect(params.data.id, req.orgId);
+        await plan.sideEffect(params.data.id, orgId);
       } catch (err) {
         logger.error(
           {
