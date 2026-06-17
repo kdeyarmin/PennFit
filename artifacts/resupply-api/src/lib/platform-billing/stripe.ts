@@ -676,7 +676,7 @@ export async function handlePlatformTenantStripeEvent(
   const subscriptionId =
     typeof subRef === "string" ? subRef : (subRef?.id ?? null);
   if (!subscriptionId) return false;
-  await raw
+  const { data, error } = await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
     .update({
@@ -684,7 +684,10 @@ export async function handlePlatformTenantStripeEvent(
       last_invoice_status: invoice.status,
       stripe_last_synced_at: new Date().toISOString(),
     })
-    .eq("stripe_subscription_id", subscriptionId);
+    .eq("stripe_subscription_id", subscriptionId)
+    .select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) return false;
   logger.info(
     {
       event: "platform_billing_stripe_invoice_synced",
@@ -693,4 +696,3 @@ export async function handlePlatformTenantStripeEvent(
     "platform billing Stripe invoice synced",
   );
   return true;
-}
