@@ -181,22 +181,15 @@ export async function ingestInboundFax(
   if (insertRes.error) {
     const code = (insertRes.error as { code?: string }).code;
     if (code === "23505") {
-      // Unique violation — a duplicate of an already-recorded fax. Look up
-      // the existing row id and exit; we trust the prior attempt's
-      // media-download outcome rather than re-running it.
-      //
-      // Match on EITHER key: during the expand cutover (migration 0369), a
-      // fax recorded by the PRIOR release has twilio_fax_sid set but
-      // provider_fax_id still NULL, so a duplicate delivered to the new
-      // release trips the legacy twilio_fax_sid unique index — a
-      // provider_fax_id-only lookup would miss that row and wrongly report
-      // `errored`. (telnyxFaxId is the value written to both columns.)
+      // Unique violation on provider_fax_id — a duplicate of an
+      // already-recorded fax (Telnyx retry). Look up the existing row id and
+      // exit; we trust the prior attempt's media-download outcome rather
+      // than re-running it. (The legacy twilio_fax_sid column + its index
+      // were dropped in migration 0371, so provider_fax_id is the only key.)
       const existing = await supabase
         .from("inbound_faxes")
         .select("id")
-        .or(
-          `provider_fax_id.eq.${input.telnyxFaxId},twilio_fax_sid.eq.${input.telnyxFaxId}`,
-        )
+        .eq("provider_fax_id", input.telnyxFaxId)
         .limit(1)
         .maybeSingle();
       if (existing.data) {

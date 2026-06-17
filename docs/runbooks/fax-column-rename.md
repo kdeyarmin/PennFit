@@ -35,61 +35,65 @@ After this release the app reads only `provider_fax_id`; the trigger +
 `twilio_fax_sid` are kept **solely** so a rollback to the prior release is
 safe.
 
-## Phase 2 — CONTRACT (do later, in TWO separate deploys)
+## Phase 2 — CONTRACT (do later, in THREE separate deploys)
 
-`twilio_fax_sid` is still `NOT NULL` after Phase 1, and Railway's
-`preDeployCommand` runs migrations **while the previous release is still
-serving traffic**. That forces the contract into two ordered deploys —
-collapsing them (or stopping the legacy write before the column is
-nullable, or dropping the column in the same deploy that stops writing it)
-makes the previous release's inserts fail mid-cutover.
+Railway's `preDeployCommand` runs migrations **while the previous release is
+still serving traffic**, so every contract step must be safe against the
+release one version behind it. That means: don't drop `NOT NULL`/`column`
+in the same deploy that stops _writing_ it, AND don't drop the column in the
+same deploy that stops _reading_ it (the legacy unique-violation fallback
+`SELECT`). Each "stop using it" must go fully live before the matching DB
+change. That yields three ordered deploys.
 
 Only start after Phase 1 is deployed and verified (every row has a non-NULL
 `provider_fax_id`; no rollback to a pre-0369 release is contemplated):
 
-### Deploy 2a — make the legacy column optional, stop writing it
+### Deploy 2a — make the column optional + stop WRITING it
 
-Ship **together** (the migration only relaxes a constraint, so the still-
-running Phase 1 release — which writes a non-NULL value — keeps working,
-and the new release — which omits it — works because the column is now
-nullable):
+Migration + app ship together (the migration only relaxes a constraint, so
+the still-running Phase 1 release — which writes a non-NULL value — keeps
+working, and the new release — which omits it — works because the column is
+now nullable):
 
-1. Migration (next free prefix), making the legacy column writable-by-absence:
-
-   ```sql
-   ALTER TABLE "resupply"."inbound_faxes"
-     ALTER COLUMN "twilio_fax_sid" DROP NOT NULL;
-   ```
-
+1. Migration `0370`: `ALTER COLUMN "twilio_fax_sid" DROP NOT NULL`.
 2. App: drop `twilio_fax_sid: input.telnyxFaxId,` from the
-   `ingest-inbound.ts` insert (leave `provider_fax_id`). Keep the dual-key
-   `.or(...)` conflict lookup for now (it is harmless and still covers any
-   pre-2a rows).
+   `ingest-inbound.ts` insert (leave `provider_fax_id`). **Keep** the
+   dual-key `.or(...)` conflict lookup — the prior (0369) release still
+   relies on the column existing.
 
-### Deploy 2b — drop the column (a later deploy)
+### Deploy 2b — stop READING it (app-only, no migration)
 
-Once 2a is live and no release writes `twilio_fax_sid` any more:
+Once 2a is live. App-only so that, when 2c later drops the column, the
+previous (2a) release — which still `SELECT`s `twilio_fax_sid` in its
+`.or(...)` fallback — is gone:
 
-1. Remove `twilio_fax_sid` from `inbound_faxes.Row` in
-   `lib/resupply-db/src/supabase-types.ts`, and simplify the
-   `ingest-inbound.ts` conflict lookup back to `provider_fax_id` only.
-2. Migration — drop the sync trigger + function (they reference the legacy
-   column) before dropping the column itself:
+1. Simplify the `ingest-inbound.ts` 23505 conflict lookup back to
+   `provider_fax_id` only (drop the `.or(...twilio_fax_sid...)`).
+2. Remove `twilio_fax_sid` from `inbound_faxes.Row` in
+   `lib/resupply-db/src/supabase-types.ts`.
 
-   ```sql
-   -- CONTRACT: run ONLY after 2a is live and no release writes the column.
-   DROP TRIGGER IF EXISTS "inbound_faxes_sync_provider_fax_id_trg"
-     ON "resupply"."inbound_faxes";
-   --> statement-breakpoint
-   DROP FUNCTION IF EXISTS "resupply"."inbound_faxes_sync_provider_fax_id"();
-   --> statement-breakpoint
-   DROP INDEX IF EXISTS "resupply"."inbound_faxes_twilio_fax_sid_unique";
-   --> statement-breakpoint
-   ALTER TABLE "resupply"."inbound_faxes"
-     DROP COLUMN IF EXISTS "twilio_fax_sid";
-   ```
+No DB change in this deploy — the column still exists, just unused.
 
-Verify the backfill is complete before dropping:
+### Deploy 2c — drop the column (migration)
+
+Once 2b is live and **no running release writes, reads, or references**
+`twilio_fax_sid`. Drop the 0369 sync trigger + function (they reference the
+column) before the column:
+
+```sql
+-- CONTRACT: run ONLY after 2b is live (no release references the column).
+DROP TRIGGER IF EXISTS "inbound_faxes_sync_provider_fax_id_trg"
+  ON "resupply"."inbound_faxes";
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "resupply"."inbound_faxes_sync_provider_fax_id"();
+--> statement-breakpoint
+DROP INDEX IF EXISTS "resupply"."inbound_faxes_twilio_fax_sid_unique";
+--> statement-breakpoint
+ALTER TABLE "resupply"."inbound_faxes"
+  DROP COLUMN IF EXISTS "twilio_fax_sid";
+```
+
+Verify the new key is complete before dropping:
 
 ```sql
 SELECT count(*) FROM resupply.inbound_faxes WHERE provider_fax_id IS NULL;
