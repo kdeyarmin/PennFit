@@ -37,6 +37,7 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
   TwilioApiError,
@@ -188,7 +189,9 @@ export async function runSmartTriggerSendDue(
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
   if (channel === "email") {
     try {
-      sg = createSendgridClient();
+      // Send under the tenant's own From identity when configured (G6);
+      // falls back to the platform default otherwise.
+      sg = await createTenantSendgridClient(orgId);
     } catch (err) {
       if (err instanceof EmailConfigError) {
         return { status: "not_configured", channel };
