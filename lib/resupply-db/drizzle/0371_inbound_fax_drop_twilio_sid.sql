@@ -9,8 +9,13 @@
 -- twilio_fax_sid, so dropping it is now safe.
 --
 -- ⚠️  Run ONLY after step 2a (migration 0370 + the app release that stopped
--- writing twilio_fax_sid) is live in production, i.e. NO running release
--- writes the column any more. Confirm the new key is complete first:
+-- writing twilio_fax_sid) is live in production. Railway runs this migration
+-- during preDeploy WHILE the previous release is still serving traffic, so
+-- the bar is that NO running release writes, reads, or otherwise references
+-- the column — any lingering SELECT/INSERT that names it starts erroring the
+-- instant this runs. (As of step 2a no app code references twilio_fax_sid;
+-- all readers moved to provider_fax_id back in the 0369 EXPAND phase.)
+-- Confirm the new key is complete first:
 --     SELECT count(*) FROM resupply.inbound_faxes WHERE provider_fax_id IS NULL;
 --     -- expect 0
 --
