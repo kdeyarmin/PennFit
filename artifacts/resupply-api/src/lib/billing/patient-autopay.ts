@@ -32,6 +32,8 @@ import {
   readStripeConfigOrNull,
   type StripeConfig,
 } from "../stripe/config";
+import { stripeAccountRequestOptions } from "../stripe/connect";
+import { resolveWebhookOrgId } from "../stripe/webhook-org-context";
 
 const PURPOSE = "patient_autopay_setup" as const;
 
@@ -86,6 +88,14 @@ export interface CreateAutopaySetupSessionInput {
   shopCustomerId: string;
   /** A Stripe Customer the PM attaches to (mint via getOrCreateStripeCustomer). */
   stripeCustomerId: string;
+  /**
+   * Tenant the setup runs for (the caller's req.orgId). The session is
+   * created ON this tenant's connected account (G5) so the saved card +
+   * customer live on the SAME account the autocharge worker later debits —
+   * a saved PaymentMethod is account-scoped. Undefined / not-onboarded →
+   * the platform account, unchanged.
+   */
+  orgId: string | undefined;
   successUrl: string;
   cancelUrl: string;
   /** Whether to flip autopay ON the moment the card is saved. */
@@ -120,25 +130,28 @@ export async function createAutopaySetupSession(
   let session: Stripe.Checkout.Session;
   try {
     const stripe = getStripeClient(config);
-    // G5 NOTE: deliberately NOT routed to a connected account. This is a
-    // `setup`-mode session that saves a card; the later off-session charge
-    // runs in worker/jobs/patient-autopay-charge.ts, which is still
-    // seed-pinned (resolveSeedOrgId → platform account). A SetupIntent's
-    // PaymentMethod is account-scoped, so saving it on a connected account
-    // here while charging on the platform account there would fail. Move
-    // this and that worker onto the connected account together, once the
-    // autopay-charge job is fanned out per tenant (G2).
-    session = await stripe.checkout.sessions.create({
-      mode: "setup",
-      payment_method_types: ["card"],
-      customer: input.stripeCustomerId,
-      success_url: input.successUrl,
-      cancel_url: input.cancelUrl,
-      metadata,
-      setup_intent_data: {
-        metadata: { patient_id: input.patientId, purpose: PURPOSE },
+    // Route the setup session to the tenant's connected account (G5) so the
+    // saved card + customer live on the SAME account the autopay-charge
+    // worker debits (a SetupIntent's PaymentMethod is account-scoped). The
+    // worker (worker/jobs/patient-autopay-charge.ts) and the webhook that
+    // stores the PM (recordAutopayAuthorization, below) route to the same
+    // account. Empty for the platform account (seed / not-onboarded),
+    // unchanged.
+    const accountOptions = await stripeAccountRequestOptions(input.orgId);
+    session = await stripe.checkout.sessions.create(
+      {
+        mode: "setup",
+        payment_method_types: ["card"],
+        customer: input.stripeCustomerId,
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        metadata,
+        setup_intent_data: {
+          metadata: { patient_id: input.patientId, purpose: PURPOSE },
+        },
       },
-    });
+      accountOptions,
+    );
   } catch (err) {
     // Log the Error object so pino's serializer redacts message/stack.
     logger.warn({ err }, "patient-autopay: setup session create failed");
@@ -169,6 +182,20 @@ export async function recordAutopayAuthorization(
       ? session.customer
       : (session.customer?.id ?? null);
 
+  // Resolve the webhook's tenant FIRST — for a connected-account setup the
+  // SetupIntent / customer / PM live ON that account, so we must retrieve
+  // them with its `{ stripeAccount }` (G5). The event carries the account
+  // context (resolveWebhookOrgId → the event.account tenant). Switched from
+  // resolveSeedOrgId so a non-seed tenant's autopay setup records under the
+  // correct org. Empty options for the platform account, unchanged.
+  const orgId = await resolveWebhookOrgId();
+  if (!orgId) {
+    throw new Error(
+      "patient-autopay: tenant context missing (webhook org unresolved)",
+    );
+  }
+  const accountOptions = await stripeAccountRequestOptions(orgId);
+
   const stripe = getStripeClient(config);
   const setupIntentId =
     typeof session.setup_intent === "string"
@@ -176,7 +203,11 @@ export async function recordAutopayAuthorization(
       : (session.setup_intent?.id ?? null);
   let paymentMethodId: string | null = null;
   if (setupIntentId) {
-    const si = await stripe.setupIntents.retrieve(setupIntentId);
+    const si = await stripe.setupIntents.retrieve(
+      setupIntentId,
+      undefined,
+      accountOptions,
+    );
     paymentMethodId =
       typeof si.payment_method === "string"
         ? si.payment_method
@@ -207,7 +238,11 @@ export async function recordAutopayAuthorization(
     expYear: null,
   };
   try {
-    const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+    const pm = await stripe.paymentMethods.retrieve(
+      paymentMethodId,
+      undefined,
+      accountOptions,
+    );
     if (pm.card) {
       card = {
         brand: pm.card.brand ?? null,
@@ -227,12 +262,8 @@ export async function recordAutopayAuthorization(
   const wantsAutopay = session.metadata?.enable_autopay === "1";
   const shopCustomerId = session.metadata?.shop_customer_id ?? null;
   const initiatorEmail = session.metadata?.initiator_email ?? null;
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    throw new Error(
-      "patient-autopay: tenant context missing (seed org unresolved)",
-    );
-  }
+  // orgId resolved above (resolveWebhookOrgId) — the same tenant the
+  // SetupIntent/PM were retrieved from.
   const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
 

@@ -232,6 +232,9 @@ router.post(
       patientId: link.patientId,
       shopCustomerId: customerId,
       stripeCustomerId,
+      // Same tenant used to mint the Stripe customer above, so the setup
+      // session lands on the account where that customer lives (G5).
+      orgId: req.orgId,
       successUrl,
       cancelUrl,
       enableAutopay: parsed.data.enableAutopay,
