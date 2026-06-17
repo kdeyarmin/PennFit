@@ -78,6 +78,14 @@ const PENDING_STATUSES = ["pending", "retry_pending"] as const;
 
 export interface BulkCampaignTickPayload {
   campaignId: string;
+  /**
+   * The tenant that owns this campaign. Threaded through the enqueue→tick
+   * chain so the tick operates on the RIGHT tenant's data (a campaign belongs
+   * to one org). Optional for back-compat: a tick enqueued before this deploy
+   * carries no orgId and the worker falls back to the seed org — which is
+   * single-tenant-correct (every campaign was the seed tenant's).
+   */
+  orgId?: string;
 }
 
 type CampaignRow = Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
@@ -134,11 +142,15 @@ export async function processTick(
   payload: BulkCampaignTickPayload,
   log: typeof logger,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  // Operate on the campaign's OWN tenant. The orgId is threaded through the
+  // enqueue→tick payload; a tick enqueued before this deploy carries none, so
+  // fall back to the seed org (single-tenant-correct). A blank/whitespace
+  // payload orgId is treated as absent so the seed fallback still applies.
+  const orgId = payload.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) {
     log.warn(
       { campaignId: payload.campaignId },
-      "bulk_campaigns.tick: no seed org resolved — skipping tick",
+      "bulk_campaigns.tick: no org resolved — skipping tick",
     );
     return;
   }
@@ -232,7 +244,7 @@ export async function processTick(
     // No more pending. Only finalize if nothing is mid-flight either —
     // a non-stale 'sending' row (in-flight or not-yet-reclaimed orphan)
     // means the campaign isn't actually done.
-    await finalizeOrReschedule(boss, supabase, campaign.id, log);
+    await finalizeOrReschedule(boss, supabase, campaign.id, log, orgId);
     return;
   }
 
@@ -284,7 +296,7 @@ export async function processTick(
       { campaignId: campaign.id },
       "bulk_campaigns.tick: race lost on claim, deferring",
     );
-    await enqueueNextTick(boss, campaign.id);
+    await enqueueNextTick(boss, campaign.id, orgId);
     return;
   }
 
@@ -571,13 +583,17 @@ export async function processTick(
     // them as one number; the per-recipient `suppression_reason` on
     // bulk_campaign_recipients distinguishes them when investigators
     // need to know.
+    // Raw `pg` bypasses the org-scoped facade, so the tenant predicate is
+    // EXPLICIT here (the no-direct-pg-without-org_id invariant). The campaign
+    // id is the PK so `WHERE id` already targets one row; `AND org_id` keeps
+    // this raw write tenant-scoped like every facade write in this tick.
     const result = await pool.query(
       `UPDATE resupply.bulk_campaigns
        SET sent_count = sent_count + $1,
            failed_count = failed_count + $2,
            suppressed_count = suppressed_count + $3
-       WHERE id = $4`,
-      [sent, failed, suppressedAtSend, campaign.id],
+       WHERE id = $4 AND org_id = $5`,
+      [sent, failed, suppressedAtSend, campaign.id, orgId],
     );
     if (result.rowCount === 0) {
       log.warn(
@@ -631,7 +647,7 @@ export async function processTick(
     return;
   }
 
-  await finalizeOrReschedule(boss, supabase, campaign.id, log);
+  await finalizeOrReschedule(boss, supabase, campaign.id, log, orgId);
 }
 
 /**
@@ -655,6 +671,7 @@ async function finalizeOrReschedule(
   supabase: OrgScopedClient,
   campaignId: string,
   log: typeof logger,
+  orgId: string,
 ): Promise<void> {
   const { count: remaining, error } = await supabase
     .from("bulk_campaign_recipients")
@@ -667,7 +684,7 @@ async function finalizeOrReschedule(
       { err: error, campaignId },
       "bulk_campaigns.tick: remaining-work count failed — rescheduling",
     );
-    await enqueueNextTick(boss, campaignId);
+    await enqueueNextTick(boss, campaignId, orgId);
     return;
   }
   if (!remaining || remaining === 0) {
@@ -682,7 +699,7 @@ async function finalizeOrReschedule(
         { campaignId },
         "bulk_campaigns.tick: campaign finalize failed — rescheduling",
       );
-      await enqueueNextTick(boss, campaignId);
+      await enqueueNextTick(boss, campaignId, orgId);
       return;
     }
     log.info(
@@ -691,7 +708,7 @@ async function finalizeOrReschedule(
     );
     return;
   }
-  await enqueueNextTick(boss, campaignId);
+  await enqueueNextTick(boss, campaignId, orgId);
 }
 
 /**
@@ -800,10 +817,11 @@ async function markCampaignSent(
 export async function enqueueNextTick(
   boss: PgBoss,
   campaignId: string,
+  orgId?: string,
 ): Promise<void> {
   await boss.send(
     BULK_CAMPAIGN_TICK_JOB,
-    { campaignId },
+    { campaignId, orgId },
     { startAfter: TICK_INTERVAL_SECONDS },
   );
 }
@@ -813,8 +831,9 @@ export async function enqueueNextTick(
 export async function enqueueImmediateTick(
   boss: PgBoss,
   campaignId: string,
+  orgId?: string,
 ): Promise<void> {
-  await boss.send(BULK_CAMPAIGN_TICK_JOB, { campaignId });
+  await boss.send(BULK_CAMPAIGN_TICK_JOB, { campaignId, orgId });
 }
 
 // Silence unused-import lint when CampaignRow isn't referenced
