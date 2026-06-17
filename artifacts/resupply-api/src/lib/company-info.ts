@@ -114,7 +114,12 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-let cache: CacheEntry | null = null;
+// Company identity is per-tenant (dme_organization carries org_id). Cache by
+// org so a tenant's documents/statements show ITS company, not the seed's.
+// The no-orgId / seed path uses the SEED_CACHE_KEY entry, which the boot
+// hydration + periodic re-apply keep warm for the synchronous accessors.
+const SEED_CACHE_KEY = "__seed__";
+const cacheByOrg = new Map<string, CacheEntry>();
 
 /** "+18144710627" → "(814) 471-0627"; non-NANP numbers pass through. */
 export function formatPhoneForDisplay(e164: string): string {
@@ -177,14 +182,15 @@ class CompanyInfoLookupTimeout extends Error {
   }
 }
 
-async function loadFromDb(): Promise<CompanyInfo | null> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return null;
+async function loadFromDb(orgId: string): Promise<CompanyInfo | null> {
   const supabase = getOrgScopedClient(orgId);
+  // Org-scoped: the facade appends `.eq("org_id", orgId)`, so this reads the
+  // caller's company identity (one row per org, migration 0375). The legacy
+  // `.eq("singleton", true)` filter is dropped — it would exclude a non-seed
+  // tenant's row and is redundant now that org_id selects the right row.
   const lookup = supabase
     .from("dme_organization")
     .select("*")
-    .eq("singleton", true)
     .limit(1)
     .maybeSingle();
 
@@ -243,12 +249,17 @@ async function loadFromDb(): Promise<CompanyInfo | null> {
  * The effective company identity. Cached for ~30s; DB wins over env;
  * never throws (any failure degrades to env + historical defaults).
  */
-export async function getCompanyInfo(): Promise<CompanyInfo> {
+export async function getCompanyInfo(orgId?: string): Promise<CompanyInfo> {
   const now = Date.now();
-  if (cache && cache.expiresAt > now) return cache.info;
+  const key = orgId?.trim() || SEED_CACHE_KEY;
+  const hit = cacheByOrg.get(key);
+  if (hit && hit.expiresAt > now) return hit.info;
   let info: CompanyInfo;
   try {
-    info = (await loadFromDb()) ?? envFallbackInfo();
+    const effectiveOrgId = orgId?.trim() || (await resolveSeedOrgId());
+    info = effectiveOrgId
+      ? ((await loadFromDb(effectiveOrgId)) ?? envFallbackInfo())
+      : envFallbackInfo();
   } catch (err) {
     const normalized =
       err instanceof Error
@@ -260,13 +271,13 @@ export async function getCompanyInfo(): Promise<CompanyInfo> {
     );
     info = envFallbackInfo();
   }
-  cache = { info, expiresAt: now + CACHE_TTL_MS };
+  cacheByOrg.set(key, { info, expiresAt: now + CACHE_TTL_MS });
   return info;
 }
 
-/** Drop the cache so an admin save is visible on the next read. */
+/** Drop every cached org so an admin save is visible on the next read. */
 export function invalidateCompanyInfoCache(): void {
-  cache = null;
+  cacheByOrg.clear();
 }
 
 /**
@@ -277,7 +288,10 @@ export function invalidateCompanyInfoCache(): void {
  * early boot) degrades to env + historical defaults.
  */
 export function getCompanyInfoSync(): CompanyInfo {
-  return cache?.info ?? envFallbackInfo();
+  // The seed/default entry — kept warm by boot hydration + the periodic
+  // re-apply. Per-tenant sync identity isn't available (no DB round-trip);
+  // callers that need a specific tenant must use the async getCompanyInfo(orgId).
+  return cacheByOrg.get(SEED_CACHE_KEY)?.info ?? envFallbackInfo();
 }
 
 /**
@@ -286,8 +300,8 @@ export function getCompanyInfoSync(): CompanyInfo {
  * sign-offs. Always the registered legal name ("Penn Home Medical
  * Supply"), never the online-storefront brand ("PennPaps").
  */
-export async function getDocumentSupplierName(): Promise<string> {
-  return (await getCompanyInfo()).legalName;
+export async function getDocumentSupplierName(orgId?: string): Promise<string> {
+  return (await getCompanyInfo(orgId)).legalName;
 }
 
 /** Synchronous variant for non-async contexts (warm cache or fallback). */
@@ -458,5 +472,5 @@ export async function applyCompanyInfoToEnv(): Promise<{
 
 /** Test-only: reset module state between cases. */
 export function __resetCompanyInfoForTests(): void {
-  cache = null;
+  cacheByOrg.clear();
 }

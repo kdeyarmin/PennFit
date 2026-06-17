@@ -23,7 +23,7 @@ import type Stripe from "stripe";
 import { getStripeClient, readStripeConfigOrNull } from "../stripe/config";
 import { stripeAccountRequestOptions } from "../stripe/connect";
 import { stripeErrLogFields } from "../stripe/err-log-fields";
-import { getDocumentSupplierNameSync } from "../company-info";
+import { getDocumentSupplierName } from "../company-info";
 import { logger } from "../logger";
 
 type SupabaseClient = ReturnType<typeof getSupabaseServiceRoleClient>;
@@ -389,7 +389,7 @@ export async function createPaymentCheckoutSession(
               currency: "usd",
               unit_amount: totalCents,
               product_data: {
-                name: `Patient balance — ${getDocumentSupplierNameSync()}`,
+                name: `Patient balance — ${await getDocumentSupplierName(input.orgId)}`,
               },
             },
           },
@@ -572,7 +572,7 @@ export async function createAdhocPaymentCheckoutSession(
   const label =
     input.description && input.description.trim().length > 0
       ? input.description.trim().slice(0, 200)
-      : `Payment to ${getDocumentSupplierNameSync()}`;
+      : `Payment to ${await getDocumentSupplierName(input.orgId)}`;
 
   let session: Stripe.Checkout.Session;
   try {

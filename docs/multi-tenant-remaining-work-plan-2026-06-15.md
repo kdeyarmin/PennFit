@@ -149,10 +149,18 @@ claims.
 
 **Still open after this branch (tracked):** the full per-tenant conversion of
 the remaining ~55 email senders and remaining outbound-SMS callsites lacking
-an in-scope `orgId`; the G8 read-only singleton consumers (company-info
-display, dispense-readiness, GFE issuer block) which read the seed row for a
-non-seed tenant (display gap, not mis-billing); and the G1
-`reminder_subscriptions` global-table resolution. The order-confirmation brand
+an in-scope `orgId`; and the G1 `reminder_subscriptions` global-table
+resolution. The G8 read-only singleton consumers are now **addressed**:
+`company-info` is org-aware (`getCompanyInfo(orgId)` / `getDocumentSupplierName(orgId)`
+with a per-org cache; the seed/sync path is unchanged), and the patient-facing
+DME document callers thread their `orgId` (PA requests, CMN/DWO/SWO,
+prescription requests, compliance attestations, patient-payment descriptors);
+`dispense-readiness` reads org-scoped (the redundant `singleton` filter is
+gone); and the GFE issuer block was already org-scoped via the
+`resolveBillingIdentity` fix. _Remaining within G8:_ `statement-send`'s
+`practiceName` comes from a sync env-config builder with no `orgId` (still the
+seed/platform default — no regression; a deeper async threading job). The
+order-confirmation brand
 string is now **addressed** — both order-confirmation emails resolve the
 tenant's storefront name via `resolveBrandingByOrgId(orgId)` (seed → "PennPaps",
 unchanged; a second tenant → its own brand). The G16
