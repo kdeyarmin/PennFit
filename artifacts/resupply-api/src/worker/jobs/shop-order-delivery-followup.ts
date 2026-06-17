@@ -389,17 +389,23 @@ async function deliveryFollowupSweepForOrg(
     //    stamp — the primary delivery is the canonical record.
     if (recipient.caregiver) {
       try {
-        await sendCaregiverNotificationEmail({
+        // sendCaregiverNotificationEmail returns { configured, delivered }
+        // instead of throwing on a provider reject, so meter only when the
+        // provider actually accepted the caregiver email — a rejected or
+        // unconfigured send must not count toward outboundMessagesPerMonth.
+        const cgResult = await sendCaregiverNotificationEmail({
           toEmail: recipient.caregiver.email,
           caregiverName: recipient.caregiver.name,
           patientFirstName: recipient.firstName,
           kind: "delivered",
         });
-        recordOutboundMessageUsage({
-          orgId,
-          channel: "email",
-          source: "shop_order_delivery_followup.caregiver_email",
-        });
+        if (cgResult.delivered) {
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "email",
+            source: "shop_order_delivery_followup.caregiver_email",
+          });
+        }
       } catch (cgErr) {
         logger.warn(
           {
