@@ -59,7 +59,7 @@ export interface TodayDocument {
 
 export interface TodayInboundFax {
   id: string;
-  twilio_fax_sid: string;
+  provider_fax_id: string;
   from_e164: string | null;
   num_pages: number | null;
   received_at: string;

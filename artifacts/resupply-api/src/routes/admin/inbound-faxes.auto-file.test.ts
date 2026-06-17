@@ -132,7 +132,7 @@ describe("POST /admin/inbound-faxes/:id/auto-file", () => {
         media_object_key: "obj/key",
         media_content_type: "application/pdf",
         auto_file_status: null,
-        twilio_fax_sid: "FX1",
+        provider_fax_id: "FX1",
       },
     });
     autoFileMock.mockResolvedValue({
@@ -164,7 +164,7 @@ describe("POST /admin/inbound-faxes/:id/auto-file", () => {
         media_object_key: "obj/key",
         media_content_type: "application/pdf",
         auto_file_status: null,
-        twilio_fax_sid: "FX2",
+        provider_fax_id: "FX2",
       },
     });
     autoFileMock.mockResolvedValue({
@@ -187,7 +187,7 @@ describe("POST /admin/inbound-faxes/:id/auto-file", () => {
         media_object_key: "obj/key",
         media_content_type: null,
         auto_file_status: null,
-        twilio_fax_sid: "FX3",
+        provider_fax_id: "FX3",
       },
     });
     autoFileMock.mockResolvedValue({

@@ -101,7 +101,7 @@ interface DocumentRow {
 
 interface InboundFaxRow {
   id: string;
-  twilio_fax_sid: string;
+  provider_fax_id: string;
   from_e164: string | null;
   num_pages: number | null;
   received_at: string;
@@ -217,7 +217,7 @@ router.get(
         .limit(PER_QUEUE_LIMIT),
       supabase
         .from("inbound_faxes")
-        .select("id, twilio_fax_sid, from_e164, num_pages, received_at")
+        .select("id, provider_fax_id, from_e164, num_pages, received_at")
         .eq("status", "new")
         .order("received_at", { ascending: true })
         .limit(PER_QUEUE_LIMIT),

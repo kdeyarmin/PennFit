@@ -223,4 +223,18 @@ describe("runPatientAutopayCharge — per-authorization claim", () => {
       expect.objectContaining({ accountOptions: {} }),
     );
   });
+
+  it("re-throws after fan-out when a tenant fails (prompt pg-boss retry)", async () => {
+    // Money-path retry safety: a per-tenant throw (here, an authorization-scan
+    // DB error standing in for a post-charge persistence failure) is caught by
+    // forEachActiveOrg, so the wrapper must re-surface it so pg-boss retries
+    // promptly. beforeEach already staged one active org.
+    stageSupabaseResponse("patient_autopay_authorizations", "select", {
+      error: { message: "db down" },
+    });
+    const charger = vi.fn<OffSessionCharger>();
+    await expect(runPatientAutopayCharge({ charger })).rejects.toThrow(
+      /tenant\(s\) failed/,
+    );
+  });
 });
