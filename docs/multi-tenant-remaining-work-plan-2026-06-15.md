@@ -152,9 +152,12 @@ the remaining ~55 email senders and remaining outbound-SMS callsites lacking
 an in-scope `orgId`; the G8 read-only singleton consumers (company-info
 display, dispense-readiness, GFE issuer block) which read the seed row for a
 non-seed tenant (display gap, not mis-billing); the order-confirmation brand
-string; the G1 `reminder_subscriptions` global-table resolution; and the G16
-seed-org BAA grandfather row (deploying the gate locks out the existing admin
-until they re-sign — needs an idempotent acceptance seed). **The
+string; and the G1 `reminder_subscriptions` global-table resolution. The G16
+seed-org BAA grandfather row is now **addressed** (migration 0376 seeds the
+seed org's `baa` + `platform_terms` acceptances at the current versions,
+`ON CONFLICT DO NOTHING`, so deploying the gate no longer locks the existing
+admin out; new tenants still sign via the UI, and a future version bump still
+re-prompts). **The
 billing-identity change (item 2) is unit-tested but should be
 integration-verified against a real PostgREST/DB before a second tenant
 transmits live claims.**
