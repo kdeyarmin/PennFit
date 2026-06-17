@@ -39,6 +39,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { sendPushToCustomer } from "../../lib/web-push";
 import {
@@ -157,7 +158,12 @@ router.post(
         // and scopes internally via getOrgScopedClient(orgId, supabase).
         supabase: earlyDb.raw(),
         orgId,
-        smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
+        // Reply SMS under the tenant's own number / Messaging Service when
+        // configured (G7); falls back to the platform default otherwise.
+        smsCfg: await applyTenantSmsFrom(orgId, {
+          ...cfg.sms,
+          practiceName: cfg.practiceName,
+        }),
         // Reply under the tenant's own From identity when configured (G6);
         // falls back to the platform default when it isn't.
         emailCfg: await applyTenantEmailSender(orgId, {
