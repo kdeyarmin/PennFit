@@ -27,7 +27,7 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 cd "$PROJECT_DIR"
 
-# Toolchain reconciliation. This repo pins Node 24 + pnpm@11.6.0 (engines /
+# Toolchain reconciliation. This repo pins Node 24 + pnpm@11.7.0 (engines /
 # packageManager in package.json), but the remote web image's default `node`
 # on PATH is v22 (/opt/node22/bin) and its system pnpm is 10.x. Node 24 is
 # NOT baked into the base image — but it IS installable at session start via
@@ -80,7 +80,7 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
       [ -x "$NODE24_BIN/$b" ] && ln -sf "$NODE24_BIN/$b" "$LOCAL_BIN/$b"
     done
     # corepack pnpm shim → resolves the pnpm version from the
-    # packageManager pin in package.json at run time (currently 11.7.0).
+    # packageManager pin in package.json at run time.
     "$NODE24_BIN/corepack" enable --install-directory "$LOCAL_BIN" pnpm >/dev/null 2>&1 || true
     node_upgraded=true
   fi
@@ -98,7 +98,7 @@ else
   export npm_config_engine_strict=false
 fi
 
-# Prefer corepack (gets pnpm 11.6.0 from the packageManager pin); fall
+# Prefer corepack (gets the pinned pnpm from the packageManager field); fall
 # back to a bare pnpm if corepack is somehow unavailable.
 if corepack --version >/dev/null 2>&1; then
   PNPM=(corepack pnpm)
