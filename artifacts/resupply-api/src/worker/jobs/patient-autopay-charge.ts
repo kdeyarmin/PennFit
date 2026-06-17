@@ -64,6 +64,13 @@ type Allocation = CreateCheckoutSessionInput["allocations"][number];
 function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
   return async (req) => {
     try {
+      // G5 NOTE: this off-session charge stays on the platform account
+      // because the job is seed-pinned (resolveSeedOrgId, below). When the
+      // autopay sweep is fanned out per tenant (G2), thread the tenant
+      // orgId into `req` and pass `await stripeAccountRequestOptions(orgId)`
+      // here — and route the paired card-capture (lib/billing/
+      // patient-autopay.ts `setup` session) onto the same account, since a
+      // saved PaymentMethod is account-scoped.
       const pi = await stripe.paymentIntents.create(
         {
           amount: req.amountCents,

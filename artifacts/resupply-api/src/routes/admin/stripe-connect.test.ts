@@ -20,6 +20,11 @@ const { mockAdmin, state } = vi.hoisted(() => ({
     } | null,
     createdAccounts: 0,
     boundAccountId: null as string | null,
+    // Stripe's reported charges_enabled for accounts.retrieve (/refresh).
+    retrieveChargesEnabled: false,
+    // Last value written by setChargesEnabledByAccount + whether cleared.
+    chargesEnabledWrites: [] as boolean[],
+    cleared: false,
   },
 }));
 
@@ -68,6 +73,10 @@ vi.mock("../../lib/stripe/config", () => ({
         state.createdAccounts += 1;
         return { id: "acct_new123" };
       },
+      retrieve: async () => ({
+        id: state.orgRow?.stripe_account_id ?? "acct_unknown",
+        charges_enabled: state.retrieveChargesEnabled,
+      }),
     },
     accountLinks: {
       create: async () => ({ url: "https://connect.stripe.com/onboard/abc" }),
@@ -78,6 +87,12 @@ vi.mock("../../lib/stripe/config", () => ({
 vi.mock("../../lib/stripe/connect", () => ({
   setConnectedAccountId: async (_orgId: string, accountId: string) => {
     state.boundAccountId = accountId;
+  },
+  setChargesEnabledByAccount: async (_accountId: string, enabled: boolean) => {
+    state.chargesEnabledWrites.push(enabled);
+  },
+  clearConnectedAccountId: async () => {
+    state.cleared = true;
   },
 }));
 
@@ -105,6 +120,9 @@ beforeEach(() => {
   };
   state.createdAccounts = 0;
   state.boundAccountId = null;
+  state.retrieveChargesEnabled = false;
+  state.chargesEnabledWrites = [];
+  state.cleared = false;
 });
 
 describe("GET /admin/billing/stripe-connect/status", () => {
@@ -167,5 +185,74 @@ describe("POST /admin/billing/stripe-connect/start", () => {
     expect(res.status).toBe(200);
     expect(res.body.accountId).toBe("acct_existing");
     expect(state.createdAccounts).toBe(0);
+  });
+});
+
+describe("POST /admin/billing/stripe-connect/refresh", () => {
+  it("409s when the tenant has no connected account", async () => {
+    const res = await request(makeApp()).post(
+      "/admin/billing/stripe-connect/refresh",
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("not_connected");
+  });
+
+  it("reconciles charges_enabled from Stripe and persists it", async () => {
+    state.orgRow = {
+      stripe_account_id: "acct_live",
+      stripe_charges_enabled: false,
+    };
+    state.retrieveChargesEnabled = true; // Stripe now reports enabled
+    const res = await request(makeApp()).post(
+      "/admin/billing/stripe-connect/refresh",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      connected: true,
+      chargesEnabled: true,
+      accountId: "acct_live",
+    });
+    // The reconciled value was written back through the resolver helper.
+    expect(state.chargesEnabledWrites).toEqual([true]);
+  });
+
+  it("reports still-disabled when Stripe hasn't enabled charges", async () => {
+    state.orgRow = {
+      stripe_account_id: "acct_live",
+      stripe_charges_enabled: false,
+    };
+    state.retrieveChargesEnabled = false;
+    const res = await request(makeApp()).post(
+      "/admin/billing/stripe-connect/refresh",
+    );
+    expect(res.body.chargesEnabled).toBe(false);
+    expect(state.chargesEnabledWrites).toEqual([false]);
+  });
+});
+
+describe("POST /admin/billing/stripe-connect/disconnect", () => {
+  it("clears the connected account and routes back to platform", async () => {
+    state.orgRow = {
+      stripe_account_id: "acct_live",
+      stripe_charges_enabled: true,
+    };
+    const res = await request(makeApp()).post(
+      "/admin/billing/stripe-connect/disconnect",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      connected: false,
+      chargesEnabled: false,
+      accountId: null,
+    });
+    expect(state.cleared).toBe(true);
+  });
+
+  it("401s when unauthenticated", async () => {
+    mockAdmin.current = null;
+    const res = await request(makeApp()).post(
+      "/admin/billing/stripe-connect/disconnect",
+    );
+    expect(res.status).toBe(401);
   });
 });

@@ -29,7 +29,11 @@ import {
   readStripeConfigOrNull,
   SHOP_UNAVAILABLE_BODY,
 } from "../../lib/stripe/config";
-import { setConnectedAccountId } from "../../lib/stripe/connect";
+import {
+  clearConnectedAccountId,
+  setChargesEnabledByAccount,
+  setConnectedAccountId,
+} from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import {
   adminReadRateLimiter,
@@ -142,6 +146,95 @@ router.post(
       );
       res.status(502).json({ error: "stripe_connect_start_failed" });
     }
+  },
+);
+
+// POST /admin/billing/stripe-connect/refresh — reconcile `charges_enabled`
+// straight from Stripe (`accounts.retrieve`). The webhook (`account.updated`)
+// is the primary path that flips the gate, but it only fires on a *change*;
+// if the signing secret is unset, or an event was missed, a tenant can be
+// stuck "connected, not enabled". This is the operator-pull recovery so the
+// status never depends solely on webhook delivery.
+router.post(
+  "/admin/billing/stripe-connect/refresh",
+  adminWriteRateLimiter,
+  requirePermission("system.config.manage"),
+  async (req, res) => {
+    const orgId = req.orgId?.trim();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json(SHOP_UNAVAILABLE_BODY);
+      return;
+    }
+    const row = await readOrgStripe(orgId);
+    if (!row?.stripe_account_id) {
+      res.status(409).json({ error: "not_connected" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+    try {
+      const account = await stripe.accounts.retrieve(row.stripe_account_id);
+      const chargesEnabled = account.charges_enabled === true;
+      // Persist + invalidate the routing cache (fails soft internally).
+      await setChargesEnabledByAccount(row.stripe_account_id, chargesEnabled);
+      res.json({
+        connected: true,
+        chargesEnabled,
+        accountId: row.stripe_account_id,
+      });
+    } catch (err) {
+      logger.warn(
+        { ...stripeErrLogFields(err) },
+        "stripe-connect: status refresh failed",
+      );
+      res.status(502).json({ error: "stripe_connect_refresh_failed" });
+    }
+  },
+);
+
+// POST /admin/billing/stripe-connect/disconnect — detach the tenant from
+// its connected account. Routes charges back to the platform account
+// immediately. Does NOT delete the Stripe account itself (see
+// clearConnectedAccountId); a later `start` mints a fresh Express account.
+router.post(
+  "/admin/billing/stripe-connect/disconnect",
+  adminWriteRateLimiter,
+  requirePermission("system.config.manage"),
+  async (req, res) => {
+    const orgId = req.orgId?.trim();
+    if (!orgId) {
+      res.status(500).json({ error: "tenant_context_missing" });
+      return;
+    }
+    const row = await readOrgStripe(orgId);
+    const priorAccountId = row?.stripe_account_id ?? null;
+    try {
+      await clearConnectedAccountId(orgId);
+    } catch (err) {
+      logger.warn(
+        { ...stripeErrLogFields(err) },
+        "stripe-connect: disconnect failed",
+      );
+      res.status(502).json({ error: "stripe_connect_disconnect_failed" });
+      return;
+    }
+    await logAudit({
+      action: "billing.stripe_connect.disconnected",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "organizations",
+      targetId: orgId,
+      metadata: { priorAccountId },
+      ip: req.ip ?? null,
+      userAgent: null,
+    }).catch((err) => {
+      logger.warn({ err }, "stripe-connect: disconnect audit failed");
+    });
+    res.json({ connected: false, chargesEnabled: false, accountId: null });
   },
 );
 
