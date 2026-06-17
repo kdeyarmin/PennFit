@@ -40,8 +40,8 @@ import {
 } from "../../lib/app-config/views";
 import { logger } from "../../lib/logger";
 import {
-  adminRateLimit,
   adminReadRateLimiter,
+  adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
@@ -114,8 +114,8 @@ const putBody = z
 // ── PUT /platform/config/:key ───────────────────────────────────────
 router.put(
   "/platform/config/:key",
+  adminWriteRateLimiter,
   requirePlatformAdmin,
-  adminRateLimit({ name: "platform_config.set", preset: "sensitive" }),
   async (req, res) => {
     const keyParsed = keyParamSchema.safeParse(req.params);
     const setting = keyParsed.success
@@ -207,8 +207,8 @@ router.put(
 // ── DELETE /platform/config/:key ────────────────────────────────────
 router.delete(
   "/platform/config/:key",
+  adminWriteRateLimiter,
   requirePlatformAdmin,
-  adminRateLimit({ name: "platform_config.clear", preset: "sensitive" }),
   async (req, res) => {
     const keyParsed = keyParamSchema.safeParse(req.params);
     const setting = keyParsed.success
