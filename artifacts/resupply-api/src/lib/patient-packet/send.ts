@@ -870,16 +870,27 @@ async function sendPacketSms(
   const authToken = process.env.TWILIO_AUTH_TOKEN ?? null;
   const from = process.env.TWILIO_PHONE_NUMBER ?? null;
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
-  if (!accountSid || !authToken || !(from || messagingServiceSid)) {
+  // Send under the tenant's own number / Messaging Service when it has one
+  // (G7); falls back to the platform env default otherwise. Resolved before
+  // the guard so a tenant routable via its DB sender still sends even when the
+  // platform env has no default from-number/Messaging Service.
+  const tenantSms = await resolveTenantSmsClientOptions(orgId);
+  if (
+    !accountSid ||
+    !authToken ||
+    !(
+      from ||
+      messagingServiceSid ||
+      tenantSms.from ||
+      tenantSms.messagingServiceSid
+    )
+  ) {
     // SMS not configured (dev / preview). Graceful no-op.
     return false;
   }
   const body =
     `${company.legalName}: please review & sign your new patient documents here: ${link}` +
     ` Reply STOP to opt out.`;
-  // Send under the tenant's own number / Messaging Service when it has
-  // one (G7); falls back to the platform env default otherwise.
-  const tenantSms = await resolveTenantSmsClientOptions(orgId);
   const client = createTwilioSmsClient({
     accountSid,
     authToken,

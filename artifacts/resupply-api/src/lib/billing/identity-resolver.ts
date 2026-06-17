@@ -156,7 +156,13 @@ export async function resolveClearinghouse(
   const row = scoped ? await loadClearinghouse(scoped, slug) : null;
   // Real-time config is independent of the SFTP path — compute it once
   // from (row, env) and surface it in every branch.
-  const realtimeConfig = buildRealtimeConfig(row, env);
+  // Gate the env to the seed org here too: when a non-seed tenant has no DB
+  // row, buildRealtimeConfig would otherwise fall back to the seed's
+  // OFFICE_ALLY_REALTIME_* env and route that tenant's 270 eligibility
+  // requests through the SEED tenant's Office Ally realtime credentials. A
+  // non-seed tenant must supply its own realtime creds in its row, or get no
+  // realtime (fail closed) — matching the SFTP/billing-identity gate above.
+  const realtimeConfig = buildRealtimeConfig(row, isSeedOrg ? env : {});
   if (row) {
     return {
       source: "db",

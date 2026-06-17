@@ -808,7 +808,17 @@ async function buildClients(
   // Send under the tenant's own number / Messaging Service when it has
   // one (G7); falls back to the platform env default otherwise.
   const tenantSms = await resolveTenantSmsClientOptions(orgId);
-  if (accountSid && authToken && (tenantSms.from || tenantSms.messagingServiceSid || phoneNumber || messagingServiceSid)) {
+  // A tenant can be routable via its own DB sender even when the platform env
+  // has no default from-number/Messaging Service — consider both. (Account
+  // creds stay platform-level: per-tenant Twilio subaccounts aren't built yet.)
+  if (
+    accountSid &&
+    authToken &&
+    (phoneNumber ||
+      messagingServiceSid ||
+      tenantSms.from ||
+      tenantSms.messagingServiceSid)
+  ) {
     try {
       sms = {
         client: createTwilioSmsClient({

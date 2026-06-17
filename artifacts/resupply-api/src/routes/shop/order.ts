@@ -22,6 +22,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 
 const SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]{20,}$/;
@@ -72,11 +73,18 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   }
 
   const stripe = getStripeClient(config);
+  // Retrieve on the tenant's connected account when it has one: the session
+  // was created with stripeAccountRequestOptions(orgId) in checkout, so a
+  // platform-account retrieve would 404 for a Connect tenant. Empty for the
+  // seed / platform-account tenant (unchanged).
+  const accountOptions = await stripeAccountRequestOptions(orgId);
   let session;
   try {
-    session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["line_items.data.price.product"],
-    });
+    session = await stripe.checkout.sessions.retrieve(
+      sessionId,
+      { expand: ["line_items.data.price.product"] },
+      accountOptions,
+    );
   } catch (err) {
     req.log?.warn(
       { ...stripeErrLogFields(err) },

@@ -313,17 +313,24 @@ export async function deliverCsrOrderInvite(input: {
     const from = process.env.TWILIO_PHONE_NUMBER ?? null;
     const messagingServiceSid =
       process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
-    if (accountSid && authToken && (from || messagingServiceSid)) {
+    // Send under the tenant's own number / Messaging Service when it has one
+    // (G7); falls back to the platform env default otherwise. Resolved before
+    // the guard so a tenant routable via its DB sender still sends even when
+    // the platform env has no default from-number/Messaging Service.
+    const tenantSms = await resolveTenantSmsClientOptions(input.supabase.orgId);
+    if (
+      accountSid &&
+      authToken &&
+      (from ||
+        messagingServiceSid ||
+        tenantSms.from ||
+        tenantSms.messagingServiceSid)
+    ) {
       const body =
         `${company.legalName}: your order ${input.orderReference} (${amount}) is ready. ` +
         `Review${input.hasDocuments ? ", sign" : ""} & pay securely here: ${input.link}` +
         ` Reply STOP to opt out.`;
       try {
-        // Send under the tenant's own number / Messaging Service when it
-        // has one (G7); falls back to the platform env default otherwise.
-        const tenantSms = await resolveTenantSmsClientOptions(
-          input.supabase.orgId,
-        );
         const client = createTwilioSmsClient({
           accountSid,
           authToken,
