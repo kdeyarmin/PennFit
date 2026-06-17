@@ -85,6 +85,7 @@ import {
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -245,6 +246,14 @@ export interface ScanJobData {
 export interface SendJobData {
   patientId: string;
   episodeId: string;
+  /**
+   * The tenant this reminder belongs to. Stamped by the per-tenant scan
+   * fan-out so the send worker claims its dedup key + reads on the RIGHT
+   * tenant's org-scoped client. Optional for back-compat: a job enqueued by
+   * the pre-fan-out scheduler (still in flight across a deploy) carries no
+   * orgId, and the worker falls back to the seed org — single-tenant-correct.
+   */
+  orgId?: string;
 }
 
 interface ScanRow {
@@ -423,10 +432,12 @@ export const __testing = {
  * SQL filter.
  */
 export async function scanForDueReminders(
+  orgId: string,
   asOf: Date = new Date(),
 ): Promise<ScanRow[]> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return [];
+  // Empty / whitespace orgId → no tenant to scan (return empty rather than
+  // letting getOrgScopedClient throw on a blank id).
+  if (!orgId || !orgId.trim()) return [];
   const supabase = getOrgScopedClient(orgId);
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
   const quietCutoffIso = quietCutoff.toISOString();
@@ -880,22 +891,35 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       const data = jobs[0]?.data ?? {};
       const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
-      const rows = await scanForDueReminders(asOf);
-      logger.info(
-        { count: rows.length },
-        "reminders.scan: enqueueing per-patient send jobs",
+      // Fan out the scan across EVERY active tenant. Each tenant's due
+      // reminders are scanned on its own org-scoped client, and every
+      // enqueued send carries its `orgId` so the send worker claims the
+      // dedup key + reads on the right tenant. Per-tenant failure isolation
+      // means one tenant's scan error can't drop another tenant's reminders.
+      let enqueued = 0;
+      await forEachActiveOrg(
+        async (orgId) => {
+          const rows = await scanForDueReminders(orgId, asOf);
+          for (const row of rows) {
+            const send: SendJobData = {
+              patientId: row.patientId,
+              episodeId: row.episodeId,
+              orgId,
+            };
+            if (row.channel === "sms") {
+              await boss.send(SEND_SMS_JOB, send);
+            } else {
+              await boss.send(SEND_EMAIL_JOB, send);
+            }
+            enqueued += 1;
+          }
+        },
+        { jobName: SCAN_JOB },
       );
-      for (const row of rows) {
-        const send: SendJobData = {
-          patientId: row.patientId,
-          episodeId: row.episodeId,
-        };
-        if (row.channel === "sms") {
-          await boss.send(SEND_SMS_JOB, send);
-        } else {
-          await boss.send(SEND_EMAIL_JOB, send);
-        }
-      }
+      logger.info(
+        { count: enqueued },
+        "reminders.scan: enqueued per-patient send jobs across active tenants",
+      );
     } catch (err) {
       logger.error({ err }, "reminders.scan: job failed");
       throw err;
@@ -913,11 +937,15 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-sms: no seed org resolved — skipping",
+        "reminders.send-sms: no org resolved — skipping",
       );
       return;
     }
@@ -938,6 +966,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderSms({
         supabase: supabase.raw(),
+        orgId,
         cfg: cfg.sms,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
@@ -991,11 +1020,15 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       );
       return;
     }
-    const orgId = await resolveSeedOrgId();
+    // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-email: no seed org resolved — skipping",
+        "reminders.send-email: no org resolved — skipping",
       );
       return;
     }
@@ -1015,6 +1048,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderEmail({
         supabase: supabase.raw(),
+        orgId,
         cfg: cfg.email,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,

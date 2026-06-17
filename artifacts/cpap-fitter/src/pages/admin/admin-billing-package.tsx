@@ -1,11 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
-  createTenantStripePortalSession,
   fetchTenantBilling,
   formatMoney,
 } from "@/lib/admin/platform-billing-api";
@@ -24,20 +22,6 @@ const LABELS: Record<string, string> = {
 };
 
 export function AdminBillingPackagePage() {
-  const [portalError, setPortalError] = useState<string | null>(null);
-  const portal = useMutation({
-    mutationFn: () => createTenantStripePortalSession(),
-    onSuccess: ({ url }) => {
-      if (url) window.location.assign(url);
-    },
-    onError: (err) => {
-      setPortalError(
-        err instanceof Error
-          ? err.message
-          : "Could not open Stripe billing portal.",
-      );
-    },
-  });
   const q = useQuery({
     queryKey: ["tenant-billing-package"],
     queryFn: fetchTenantBilling,
@@ -104,22 +88,7 @@ export function AdminBillingPackagePage() {
         </div>
       </Card>
       <Card className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold text-slate-950">
-            Tenant billing status
-          </h2>
-          <button
-            type="button"
-            onClick={() => portal.mutate()}
-            disabled={portal.isPending || !sub?.stripeCustomerId}
-            className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
-          >
-            {portal.isPending ? "Opening Stripe…" : "Manage billing in Stripe"}
-          </button>
-        </div>
-        {portalError ? (
-          <p className="mt-2 text-sm text-red-600">{portalError}</p>
-        ) : null}
+        <h2 className="font-semibold text-slate-950">Tenant billing status</h2>
         <div className="mt-3 grid gap-3 text-sm md:grid-cols-4">
           <div>
             <div className="text-slate-500">Stripe status</div>
@@ -137,17 +106,23 @@ export function AdminBillingPackagePage() {
             <div className="text-slate-500">Billing period ends</div>
             <div className="font-medium text-slate-900">
               {sub?.currentPeriodEnd
-                ? new Date(sub.currentPeriodEnd).toLocaleDateString()
+                ? new Date(sub.currentPeriodEnd).toLocaleDateString(undefined, {
+                    timeZone: "America/New_York",
+                  })
                 : "—"}
             </div>
           </div>
           <div>
-            <div className="text-slate-500">Payment method</div>
+            <div className="text-slate-500">Last synced</div>
             <div className="font-medium text-slate-900">
-              {sub?.stripePaymentMethodBrand ?? "Not on file"}
-              {sub?.stripePaymentMethodLast4
-                ? ` •••• ${sub.stripePaymentMethodLast4}`
-                : ""}
+              {sub?.stripeLastSyncedAt
+                ? new Date(sub.stripeLastSyncedAt).toLocaleDateString(
+                    undefined,
+                    {
+                      timeZone: "America/New_York",
+                    },
+                  )
+                : "—"}
             </div>
           </div>
         </div>

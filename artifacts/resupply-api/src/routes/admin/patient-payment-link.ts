@@ -28,16 +28,14 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
 import { createAdhocPaymentCheckoutSession } from "../../lib/billing/patient-payment";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { logger } from "../../lib/logger";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
@@ -76,9 +74,13 @@ function publicBaseUrl(): string {
   ).replace(/\/$/, "");
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    // Send from the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't.
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
@@ -164,6 +166,7 @@ function renderPaymentEmailText(
  *  caller can still hand the staff member a copy-able link. */
 async function deliverPaymentLink(opts: {
   channel: "email" | "sms";
+  orgId: string;
   email: string | null;
   phone: string | null;
   firstName: string | null;
@@ -177,7 +180,7 @@ async function deliverPaymentLink(opts: {
   try {
     if (opts.channel === "email") {
       if (!opts.email) return { delivered: false, reason: "no_email" };
-      const sendgrid = tryCreateSendgrid();
+      const sendgrid = await tryCreateSendgrid(opts.orgId);
       if (!sendgrid) return { delivered: false, reason: "no_email_config" };
       await sendgrid.sendEmail({
         to: opts.email,
@@ -332,6 +335,7 @@ router.post(
       successUrl: `${base}/account/billing?paid=1`,
       cancelUrl: `${base}/account/billing?cancelled=1`,
       initiatorEmail: req.adminEmail ?? "unknown",
+      orgId,
     });
     if ("error" in session) {
       const status =
@@ -348,6 +352,7 @@ router.post(
 
     const delivery = await deliverPaymentLink({
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       firstName: patient.legal_first_name ?? null,

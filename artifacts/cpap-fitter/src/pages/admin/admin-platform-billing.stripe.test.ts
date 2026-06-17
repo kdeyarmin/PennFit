@@ -14,9 +14,6 @@ describe("AdminPlatformBillingPage Stripe controls", () => {
     expect(SRC).toContain("Sync catalog to Stripe");
     expect(SRC).toContain("Create Stripe customer");
     expect(SRC).toContain("Sync subscription");
-    expect(SRC).toContain("Payment setup link");
-    expect(SRC).toContain("Open billing portal");
-    expect(SRC).toContain("Refresh payment method");
   });
 
   it("shows tenant Stripe status and invoice state", () => {
@@ -24,6 +21,5 @@ describe("AdminPlatformBillingPage Stripe controls", () => {
     expect(SRC).toContain("stripeStatus");
     expect(SRC).toContain("lastInvoiceStatus");
     expect(SRC).toContain("currentPeriodEnd");
-    expect(SRC).toContain("stripePaymentMethodLast4");
   });
 });

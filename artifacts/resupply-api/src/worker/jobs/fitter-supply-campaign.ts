@@ -69,7 +69,6 @@ import {
   type Database,
   type OrgScopedClient,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 type FitterLeadsUpdate =
@@ -86,6 +85,7 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -888,23 +888,39 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
     errors: 0,
     coldSkipped: 0,
   };
+  // Fan out across every active tenant — fitter_leads is org-scoped, so each
+  // tenant is swept on its own client and a campaign touch only reaches a
+  // lead in its own org. The dispatcher flag is resolved per tenant inside
+  // the per-org body. Per-tenant failure isolation; results summed.
+  // Single-tenant: listActiveOrgIds() returns just the seed org, so this is
+  // exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await fitterSupplyCampaignSweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
 
-  // Runtime feature-flag check. The boot-time RESUPPLY_FITTER_*_ENABLED
-  // env var controls whether the cron is REGISTERED at all; this DB
-  // flag controls whether a REGISTERED cron actually does work. Lets
-  // ops pause the campaign from the Control Center without a deploy.
+async function fitterSupplyCampaignSweepForOrg(
+  orgId: string,
+  stats: SupplyCampaignStats,
+): Promise<void> {
+  // Runtime feature-flag check, per tenant. The boot-time
+  // RESUPPLY_FITTER_*_ENABLED env var controls whether the cron is REGISTERED
+  // at all; this DB flag controls whether a REGISTERED cron does work for
+  // THIS tenant. Lets each tenant pause the campaign from Control Center
+  // without a deploy.
   const flagEnabled = await isFeatureEnabled(
     "fitter_supply_campaign.dispatcher",
+    orgId,
   );
   if (!flagEnabled) {
-    stats.skippedFlagDisabled = 1;
-    return stats;
+    stats.skippedFlagDisabled += 1;
+    return;
   }
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return stats;
-  }
   const supabase = getOrgScopedClient(orgId);
   const nowIso = new Date().toISOString();
 
@@ -933,7 +949,7 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
   const candidates = ((leads ?? []) as Partial<LeadRow>[]).filter(
     (l): l is LeadRow => typeof l.email === "string" && l.email.length > 0,
   );
-  if (candidates.length === 0) return stats;
+  if (candidates.length === 0) return;
 
   const sendgrid = tryCreateSendgrid();
   const twilioSms = tryCreateTwilioSms();
@@ -1372,8 +1388,6 @@ export async function runFitterSupplyCampaignSweep(): Promise<SupplyCampaignStat
       }
     }
   }
-
-  return stats;
 }
 
 /** Best-effort write to fitter_campaign_touches. Audit log only;

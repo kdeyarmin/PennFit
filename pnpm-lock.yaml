@@ -927,6 +927,9 @@ importers:
       '@workspace/resupply-secrets':
         specifier: workspace:*
         version: link:../lib/resupply-secrets
+      '@workspace/resupply-telecom':
+        specifier: workspace:*
+        version: link:../lib/resupply-telecom
       stripe:
         specifier: ^22.1.1
         version: 22.1.1(@types/node@24.13.1)

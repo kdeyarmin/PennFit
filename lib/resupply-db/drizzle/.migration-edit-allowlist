@@ -51,3 +51,16 @@
 # The immutability check sees the old 0345 path as a deletion; allowlist it
 # so this renumber PR passes. Safe to delete this line after this PR merges.
 0345_tenant_storefront_branding.sql
+
+# 2026-06-16 prefix-collision renumber: the platform-billing PR (#1009)
+# took prefixes 0357 / 0358, which already belonged to
+# 0357_product_costs_org_scoped.sql (#1001) and
+# 0358_education_videos_org_scoped.sql — the collision surfaced post-merge
+# (tree-wide). The billing files are renamed to 0362_/0363_ with IDENTICAL
+# content — migrate.mjs dedups by content sha256, so the already-applied
+# hash is unchanged and they are NOT re-applied to production. The
+# immutability check sees the old 0357/0358 paths as deletions; allowlist
+# them so this renumber PR passes. Safe to delete these two lines after
+# this PR merges.
+0357_platform_billing_packages.sql
+0358_platform_billing_stripe.sql

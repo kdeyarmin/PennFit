@@ -5,14 +5,11 @@ import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
-  createTenantStripePortalSession,
-  createTenantStripeSetupSession,
   fetchPlatformBillingCatalog,
   fetchPlatformTenantBilling,
   ensureTenantStripeCustomer,
   formatMoney,
   syncPlatformBillingCatalogToStripe,
-  syncTenantStripePaymentMethod,
   syncTenantStripeSubscription,
   updateTenantAddon,
   updateTenantPlan,
@@ -144,42 +141,6 @@ function TenantEditor({
       );
     },
   });
-  const createStripeSetup = useMutation({
-    mutationFn: () => createTenantStripeSetupSession(tenant.id),
-    onSuccess: ({ url }) => {
-      setMessage("Stripe payment setup link opened.");
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-    },
-    onError: (err) => {
-      setMessage(
-        err instanceof Error ? err.message : "Stripe setup link failed.",
-      );
-    },
-  });
-  const openStripePortal = useMutation({
-    mutationFn: () => createTenantStripePortalSession(tenant.id),
-    onSuccess: ({ url }) => {
-      setMessage("Stripe billing portal opened.");
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-    },
-    onError: (err) => {
-      setMessage(err instanceof Error ? err.message : "Stripe portal failed.");
-    },
-  });
-  const syncStripePaymentMethod = useMutation({
-    mutationFn: () => syncTenantStripePaymentMethod(tenant.id),
-    onSuccess: () => {
-      setMessage("Stripe payment method refreshed.");
-      return qc.invalidateQueries({ queryKey: ["platform-billing"] });
-    },
-    onError: (err) => {
-      setMessage(
-        err instanceof Error
-          ? err.message
-          : "Stripe payment method refresh failed.",
-      );
-    },
-  });
   const syncStripeSubscription = useMutation({
     mutationFn: () => syncTenantStripeSubscription(tenant.id),
     onSuccess: () => {
@@ -247,6 +208,16 @@ function TenantEditor({
             {tenant.slug} · {tenant.status} · usage month{" "}
             {tenant.billing.usage.month}
           </p>
+          <p className="text-sm text-slate-500">
+            Fax:{" "}
+            {tenant.faxNumber ? (
+              <span className="font-medium tabular-nums text-slate-700">
+                {tenant.faxNumber}
+              </span>
+            ) : (
+              <span className="text-slate-400">not provisioned</span>
+            )}
+          </p>
         </div>
         <div className="text-right text-sm">
           <div className="font-semibold text-slate-900">
@@ -287,15 +258,9 @@ function TenantEditor({
               {tenant.billing.subscription?.currentPeriodEnd
                 ? ` · Renews ${new Date(
                     tenant.billing.subscription.currentPeriodEnd,
-                  ).toLocaleDateString()}`
-                : ""}
-            </div>
-            <div className="text-xs text-slate-500">
-              Payment method{" "}
-              {tenant.billing.subscription?.stripePaymentMethodBrand ??
-                "not on file"}
-              {tenant.billing.subscription?.stripePaymentMethodLast4
-                ? ` •••• ${tenant.billing.subscription.stripePaymentMethodLast4}`
+                  ).toLocaleDateString(undefined, {
+                    timeZone: "America/New_York",
+                  })}`
                 : ""}
             </div>
           </div>
@@ -308,29 +273,6 @@ function TenantEditor({
               {createStripeCustomer.isPending
                 ? "Linking…"
                 : "Create Stripe customer"}
-            </button>
-            <button
-              onClick={() => createStripeSetup.mutate()}
-              disabled={createStripeSetup.isPending}
-              className="rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 disabled:opacity-60"
-            >
-              {createStripeSetup.isPending ? "Creating…" : "Payment setup link"}
-            </button>
-            <button
-              onClick={() => openStripePortal.mutate()}
-              disabled={openStripePortal.isPending}
-              className="rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 disabled:opacity-60"
-            >
-              {openStripePortal.isPending ? "Opening…" : "Open billing portal"}
-            </button>
-            <button
-              onClick={() => syncStripePaymentMethod.mutate()}
-              disabled={syncStripePaymentMethod.isPending}
-              className="rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 disabled:opacity-60"
-            >
-              {syncStripePaymentMethod.isPending
-                ? "Refreshing…"
-                : "Refresh payment method"}
             </button>
             <button
               onClick={() => syncStripeSubscription.mutate()}

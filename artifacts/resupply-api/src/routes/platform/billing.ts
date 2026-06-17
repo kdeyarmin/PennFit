@@ -2,15 +2,16 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type ResupplyTable,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
-  createTenantStripeBillingPortalSession,
-  createTenantStripeSetupSession,
   ensureTenantStripeCustomer,
   syncPlatformBillingCatalogToStripe,
-  syncTenantStripePaymentMethod,
   syncTenantStripeSubscription,
 } from "../../lib/platform-billing/stripe";
 import {
@@ -41,7 +42,9 @@ const addonBody = z.object({
 });
 const usageEventBody = z.object({
   tenantId: z.string().uuid().optional(),
-  metricKey: z.string().regex(/^[a-z0-9_.]+$/),
+  // Allows the camelCase console metric keys (e.g. aiTextInteractionsPerMonth)
+  // as well as snake_case — matches the widened DB CHECK (migration 0367).
+  metricKey: z.string().regex(/^[A-Za-z0-9_.]+$/),
   quantity: z.number().int().min(0).max(1_000_000).default(1),
   source: z.string().max(120).default("manual"),
   occurredAt: z.string().datetime().optional(),
@@ -50,6 +53,80 @@ const usageEventBody = z.object({
 
 type RawClient = ReturnType<ReturnType<typeof getOrgScopedClient>["raw"]>;
 
+/** Equality / membership filters applied on top of a count query.
+ *  Passing filter specs as data (rather than a builder callback) keeps
+ *  `countTable` free of an explicitly-`any` builder parameter. */
+interface CountFilters {
+  eq?: Array<[column: string, value: string]>;
+  in?: Array<[column: string, values: string[]]>;
+}
+
+/** Billing-plan catalog row, narrowed to the fields the API surfaces.
+ *  Billing tables aren't in the generated Database types, so rows arrive
+ *  untyped from the service-role client. */
+interface BillingPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  monthly_price_cents: number | null;
+  onboarding_fee_cents: number | null;
+  is_public: boolean | null;
+  is_custom: boolean | null;
+  sort_order: number | null;
+  allowances: Record<string, unknown> | null;
+  features: string[] | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_synced_at: string | null;
+}
+
+interface BillingAddonRow {
+  id: string;
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  recurring_price_cents: number | null;
+  one_time_min_cents: number | null;
+  one_time_max_cents: number | null;
+  unit_label: string | null;
+  usage_metric: string | null;
+  pass_through_note: string | null;
+  is_active: boolean | null;
+  sort_order: number | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_synced_at: string | null;
+}
+
+interface TenantAddonRow {
+  id: string;
+  quantity: number;
+  custom_recurring_price_cents: number | null;
+  notes: string | null;
+  billing_addons: BillingAddonRow;
+}
+
+interface OrgDirectoryRow {
+  id: string;
+  slug: string;
+  name: string | null;
+  storefront_name: string | null;
+  status: string;
+  fax_from_number: string | null;
+  fax_provisioned_at: string | null;
+}
+
+/** A minimal Express-Response stand-in so `tenantBilling` can be reused
+ *  to capture each tenant's billing payload in the platform list view. */
+interface CaptureResponse {
+  body: unknown;
+  statusCode: number;
+  status(code: number): CaptureResponse;
+  json(body: unknown): CaptureResponse;
+}
+
 async function rawClient(): Promise<RawClient | null> {
   const seedOrgId = await resolveSeedOrgId();
   return seedOrgId ? getOrgScopedClient(seedOrgId).raw() : null;
@@ -57,15 +134,19 @@ async function rawClient(): Promise<RawClient | null> {
 
 async function countTable(
   orgId: string,
-  table: string,
+  table: ResupplyTable,
   from?: string,
-  extra?: (q: any) => any,
+  filters?: CountFilters,
 ): Promise<number> {
-  let q: any = getOrgScopedClient(orgId)
+  // The org-scoped facade's query builder is typed `any` at the source
+  // (org-scoped-client.ts), so `q` is inferred as `any` here — there is
+  // no explicit `any` annotation to flag.
+  let q = getOrgScopedClient(orgId)
     .from(table)
     .select("*", { count: "exact", head: true });
   if (from) q = q.gte("created_at", from);
-  if (extra) q = extra(q);
+  for (const [column, value] of filters?.eq ?? []) q = q.eq(column, value);
+  for (const [column, values] of filters?.in ?? []) q = q.in(column, values);
   const { count, error } = await q;
   if (error) throw error;
   return count ?? 0;
@@ -76,6 +157,7 @@ async function currentUsage(orgId: string) {
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
   const from = monthStart.toISOString();
+  const monthDate = from.slice(0, 10); // 'YYYY-MM-01' — the rollup `month` key
   const db = getOrgScopedClient(orgId);
   const raw = db.raw().schema("resupply");
 
@@ -85,58 +167,37 @@ async function currentUsage(orgId: string) {
     locations,
     ordersThisMonth,
     activeSubscriptions,
-    outboundEvents,
-    aiEvents,
-    billingEvents,
-    faxEvents,
-    voiceEvents,
+    rollups,
   ] = await Promise.all([
-    countTable(orgId, "patients", undefined, (q) => q.eq("status", "active")),
-      q.eq("status", "active"),
-    ),
-    countTable(orgId, "locations", undefined, (q) => q.eq("is_active", true)),
-    countTable(orgId, "shop_subscriptions", undefined, (q) =>
-      q.in("status", ["active", "trialing"]),
-    ),
+    countTable(orgId, "patients"),
+    countTable(orgId, "admin_users", undefined, {
+      eq: [["status", "active"]],
+    }),
+    countTable(orgId, "locations", undefined, { eq: [["status", "active"]] }),
+    countTable(orgId, "shop_orders", from),
+    countTable(orgId, "shop_subscriptions", undefined, {
+      in: [["status", ["active", "trialing"]]],
+    }),
+    // Event-based metrics read from the monthly rollup — one row per
+    // (org, month, metric_key), maintained by increment_tenant_usage_rollup
+    // (migration 0367). At most a handful of rows per org/month, so no
+    // page-cap/aggregation hazard.
     raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
+      .from("tenant_usage_monthly_rollups")
+      .select("metric_key, quantity")
       .eq("org_id", orgId)
-      .eq("metric_key", "outboundMessagesPerMonth")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "aiTextInteractionsPerMonth")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "billingTransactionsPerMonth")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "faxEvents")
-      .gte("occurred_at", from),
-    raw
-      .from("tenant_usage_events")
-      .select("quantity", { count: "exact" })
-      .eq("org_id", orgId)
-      .eq("metric_key", "aiVoiceEvents")
-      .gte("occurred_at", from),
+      .eq("month", monthDate),
   ]);
 
-  function sumRows(result: any): number {
-    if (result.error) throw result.error;
-    return ((result.data ?? []) as Array<{ quantity: number | null }>).reduce(
-      (sum, r) => sum + (r.quantity ?? 0),
-      0,
-    );
+  if (rollups.error) throw rollups.error;
+  const usageByMetric = new Map<string, number>();
+  for (const r of (rollups.data ?? []) as Array<{
+    metric_key: string;
+    quantity: number | null;
+  }>) {
+    usageByMetric.set(r.metric_key, r.quantity ?? 0);
   }
+  const metered = (key: string): number => usageByMetric.get(key) ?? 0;
 
   return {
     month: from.slice(0, 7),
@@ -146,16 +207,16 @@ async function currentUsage(orgId: string) {
       locations,
       ordersPerMonth: ordersThisMonth,
       activeSubscriptions,
-      outboundMessagesPerMonth: sumRows(outboundEvents),
-      aiTextInteractionsPerMonth: sumRows(aiEvents),
-      billingTransactionsPerMonth: sumRows(billingEvents),
-      faxEvents: sumRows(faxEvents),
-      aiVoiceEvents: sumRows(voiceEvents),
+      outboundMessagesPerMonth: metered("outboundMessagesPerMonth"),
+      aiTextInteractionsPerMonth: metered("aiTextInteractionsPerMonth"),
+      billingTransactionsPerMonth: metered("billingTransactionsPerMonth"),
+      faxEvents: metered("faxEvents"),
+      aiVoiceEvents: metered("aiVoiceEvents"),
     },
   };
 }
 
-function mapPlan(row: any) {
+function mapPlan(row: BillingPlanRow) {
   return {
     id: row.id,
     code: row.code,
@@ -174,7 +235,7 @@ function mapPlan(row: any) {
   };
 }
 
-function mapAddon(row: any) {
+function mapAddon(row: BillingAddonRow) {
   return {
     id: row.id,
     code: row.code,
@@ -273,20 +334,13 @@ async function tenantBilling(orgId: string, res: Response): Promise<void> {
         currentPeriodEnd: sub.data.current_period_end ?? null,
         lastInvoiceId: sub.data.last_invoice_id ?? null,
         lastInvoiceStatus: sub.data.last_invoice_status ?? null,
-        stripeDefaultPaymentMethodId:
-          sub.data.stripe_default_payment_method_id ?? null,
-        stripePaymentMethodType: sub.data.stripe_payment_method_type ?? null,
-        stripePaymentMethodBrand: sub.data.stripe_payment_method_brand ?? null,
-        stripePaymentMethodLast4: sub.data.stripe_payment_method_last4 ?? null,
-        stripePaymentMethodUpdatedAt:
-          sub.data.stripe_payment_method_updated_at ?? null,
         plan: mapPlan(sub.data.billing_plans),
       }
     : null;
   res.json({
     tenantId: orgId,
     subscription,
-    addons: (addons.data ?? []).map((a: any) => ({
+    addons: ((addons.data ?? []) as TenantAddonRow[]).map((a) => ({
       id: a.id,
       quantity: a.quantity,
       customRecurringPriceCents: a.custom_recurring_price_cents,
@@ -307,36 +361,6 @@ router.get(
       return;
     }
     await tenantBilling(req.orgId, res);
-  },
-);
-
-router.post(
-  "/admin/billing/stripe/portal",
-  adminWriteRateLimiter,
-  requireAdmin,
-  async (req, res): Promise<void> => {
-    if (!req.orgId) {
-      res.status(400).json({ error: "tenant_context_missing" });
-      return;
-    }
-    try {
-      const result = await createTenantStripeBillingPortalSession({
-        orgId: req.orgId,
-        adminEmail: req.adminEmail ?? null,
-        tenantReturn: true,
-      });
-      if (!result.stripeConfigured) {
-        res.status(503).json({ error: "stripe_not_configured" });
-        return;
-      }
-      res.status(201).json({ url: result.url });
-    } catch (err) {
-      logger.error(
-        { event: "tenant_billing_stripe_portal_failed", err },
-        "tenant billing Stripe portal failed",
-      );
-      res.status(500).json({ error: "stripe_portal_failed" });
-    }
   },
 );
 
@@ -379,6 +403,14 @@ router.post(
       res.status(500).json({ error: "usage_event_failed" });
       return;
     }
+    // Mirror the event into the monthly rollup that currentUsage() reads,
+    // so an operator-entered datapoint shows up in the billing console.
+    await raw.schema("resupply").rpc("increment_tenant_usage_rollup", {
+      p_org_id: req.orgId,
+      p_metric_key: parsed.data.metricKey,
+      p_quantity: parsed.data.quantity,
+      p_occurred_at: parsed.data.occurredAt ?? new Date().toISOString(),
+    });
     res.status(201).json({ id: data.id });
   },
 );
@@ -410,15 +442,17 @@ router.get(
     const { data: orgs, error } = await raw
       .schema("resupply")
       .from("organizations")
-      .select("id, slug, name, storefront_name, status")
+      .select(
+        "id, slug, name, storefront_name, status, fax_from_number, fax_provisioned_at",
+      )
       .order("created_at");
     if (error) {
       res.status(500).json({ error: "tenant_list_failed" });
       return;
     }
     const tenants = await Promise.all(
-      (orgs ?? []).map(async (o: any) => {
-        const capture: any = {
+      ((orgs ?? []) as OrgDirectoryRow[]).map(async (o) => {
+        const capture: CaptureResponse = {
           body: undefined,
           statusCode: 200,
           status(code: number) {
@@ -430,13 +464,15 @@ router.get(
             return this;
           },
         };
-        await tenantBilling(o.id, capture as Response);
+        await tenantBilling(o.id, capture as unknown as Response);
         return {
           id: o.id,
           slug: o.slug,
           name: o.name,
           storefrontName: o.storefront_name,
           status: o.status,
+          faxNumber: o.fax_from_number,
+          faxProvisionedAt: o.fax_provisioned_at,
           billing: capture.body,
         };
       }),
@@ -477,7 +513,7 @@ router.put(
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
-    await raw
+    const { error: cancelErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
       .update({
@@ -487,6 +523,10 @@ router.put(
       })
       .eq("org_id", param.data.id)
       .in("status", ["active", "trialing", "past_due"]);
+    if (cancelErr) {
+      res.status(500).json({ error: "subscription_update_failed" });
+      return;
+    }
     const { error: insErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
@@ -714,96 +754,6 @@ router.post(
 );
 
 router.post(
-  "/platform/billing/tenants/:id/stripe/setup-session",
-  adminWriteRateLimiter,
-  requirePlatformAdmin,
-  async (req, res): Promise<void> => {
-    const param = tenantIdParam.safeParse(req.params);
-    if (!param.success) {
-      res.status(400).json({ error: "invalid_tenant_id" });
-      return;
-    }
-    try {
-      const result = await createTenantStripeSetupSession({
-        orgId: param.data.id,
-        adminEmail: req.platformAdminEmail ?? null,
-      });
-      if (!result.stripeConfigured) {
-        res.status(503).json({ error: "stripe_not_configured" });
-        return;
-      }
-      res.status(201).json({ url: result.url });
-    } catch (err) {
-      logger.error(
-        { event: "platform_billing_stripe_setup_session_failed", err },
-        "platform billing Stripe setup session failed",
-      );
-      res.status(500).json({ error: "stripe_setup_session_failed" });
-    }
-  },
-);
-
-router.post(
-  "/platform/billing/tenants/:id/stripe/portal",
-  adminWriteRateLimiter,
-  requirePlatformAdmin,
-  async (req, res): Promise<void> => {
-    const param = tenantIdParam.safeParse(req.params);
-    if (!param.success) {
-      res.status(400).json({ error: "invalid_tenant_id" });
-      return;
-    }
-    try {
-      const result = await createTenantStripeBillingPortalSession({
-        orgId: param.data.id,
-        adminEmail: req.platformAdminEmail ?? null,
-      });
-      if (!result.stripeConfigured) {
-        res.status(503).json({ error: "stripe_not_configured" });
-        return;
-      }
-      res.status(201).json({ url: result.url });
-    } catch (err) {
-      logger.error(
-        { event: "platform_billing_stripe_portal_failed", err },
-        "platform billing Stripe portal failed",
-      );
-      res.status(500).json({ error: "stripe_portal_failed" });
-    }
-  },
-);
-
-router.post(
-  "/platform/billing/tenants/:id/stripe/payment-method/sync",
-  adminWriteRateLimiter,
-  requirePlatformAdmin,
-  async (req, res): Promise<void> => {
-    const param = tenantIdParam.safeParse(req.params);
-    if (!param.success) {
-      res.status(400).json({ error: "invalid_tenant_id" });
-      return;
-    }
-    try {
-      const result = await syncTenantStripePaymentMethod({
-        orgId: param.data.id,
-        adminEmail: req.platformAdminEmail ?? null,
-      });
-      if (!result.stripeConfigured) {
-        res.status(503).json({ error: "stripe_not_configured" });
-        return;
-      }
-      await tenantBilling(param.data.id, res);
-    } catch (err) {
-      logger.error(
-        { event: "platform_billing_stripe_payment_method_sync_failed", err },
-        "platform billing Stripe payment method sync failed",
-      );
-      res.status(500).json({ error: "stripe_payment_method_sync_failed" });
-    }
-  },
-);
-
-router.post(
   "/platform/billing/usage-events",
   adminWriteRateLimiter,
   requirePlatformAdmin,
@@ -840,6 +790,13 @@ router.post(
       res.status(500).json({ error: "usage_event_failed" });
       return;
     }
+    // Mirror the event into the monthly rollup that currentUsage() reads.
+    await raw.schema("resupply").rpc("increment_tenant_usage_rollup", {
+      p_org_id: parsed.data.tenantId,
+      p_metric_key: parsed.data.metricKey,
+      p_quantity: parsed.data.quantity,
+      p_occurred_at: parsed.data.occurredAt ?? new Date().toISOString(),
+    });
     res.status(201).json({ id: data.id });
   },
 );

@@ -49,6 +49,7 @@ import {
 import { isFeatureEnabled } from "../feature-flags";
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
 
 // Org-scoped chokepoint client. Helpers below auto-scope their reads/
@@ -563,11 +564,11 @@ export async function executeOfficeAllyBatchSubmit(
   // Atomic reservation first (counter table, migration 0308) — unique
   // by construction across BOTH the claims and eligibility pools and
   // race-free under concurrency. The legacy MAX-read below survives
-  // only as the pre-migration fallback; see lib/billing/isa13-counter.
-  // control_number_counters is a global (non-tenant) table — the ISA13
-  // sequence is shared across the platform, so it is reserved via the
-  // unscoped service client.
-  const reservedIsa = await reserveIsa13Value(supabase.raw());
+  // only as the per-tenant fallback; see lib/billing/isa13-counter.
+  // control_number_counters is per-tenant (mig 0361): each tenant is a
+  // distinct EDI submitter, so the ISA13 sequence is reserved against THIS
+  // tenant's counter via the org-scoped client.
+  const reservedIsa = await reserveIsa13Value(supabase);
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());
@@ -752,6 +753,19 @@ export async function executeOfficeAllyBatchSubmit(
   }).catch((err) => {
     logger.warn({ err }, "insurance_claim.batch_submit audit write failed");
   });
+
+  // Meter the transmitted claims as billing transactions (G12) — one per
+  // claim in the 837P, only when the interchange actually uploaded. Covers
+  // the manual batch-submit route AND the auto-submit cron, which both run
+  // through here. Fire-and-forget + fail-soft.
+  if (submission.upload.ok) {
+    void recordTenantUsage({
+      orgId,
+      metricKey: "billingTransactionsPerMonth",
+      quantity: claims.length,
+      source: "claim.batch_submit",
+    });
+  }
 
   return {
     ok: true,

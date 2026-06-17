@@ -21,6 +21,7 @@ import {
 import type Stripe from "stripe";
 
 import { getStripeClient, readStripeConfigOrNull } from "../stripe/config";
+import { stripeAccountRequestOptions } from "../stripe/connect";
 import { stripeErrLogFields } from "../stripe/err-log-fields";
 import { getDocumentSupplierNameSync } from "../company-info";
 import { logger } from "../logger";
@@ -41,6 +42,13 @@ export interface CreateIntentInput {
   paymentMethodTypes?: string[];
   /** Caller for the audit trail. */
   initiatorEmail: string;
+  /**
+   * Tenant whose connected Stripe account should collect this charge (G5).
+   * When the org has a connected account with charges enabled, the
+   * PaymentIntent is created ON that account; otherwise it runs on the
+   * platform account (current single-tenant behavior). Undefined → platform.
+   */
+  orgId?: string;
 }
 
 export interface CreateIntentResult {
@@ -164,8 +172,12 @@ export async function createPaymentIntent(
       // PaymentIntent at Stripe. Each fresh row id (= each fresh
       // patient click on "Pay") still produces a new PI -- the row
       // id is generated server-side on insert and is unique per
-      // attempt.
-      { idempotencyKey: `pennpaps-patient-payment-${row.id}` },
+      // attempt. The connect options route the charge to the tenant's
+      // connected account when one is live (G5).
+      {
+        ...(await stripeAccountRequestOptions(input.orgId)),
+        idempotencyKey: `pennpaps-patient-payment-${row.id}`,
+      },
     );
   } catch (err) {
     const { error: failStampErr } = await supabase
@@ -239,6 +251,9 @@ export interface CreateCheckoutSessionInput {
   cancelUrl: string;
   /** Caller for the audit trail. */
   initiatorEmail: string;
+  /** Tenant whose connected Stripe account should collect this charge (G5);
+   *  undefined → platform account. See `CreateIntentInput.orgId`. */
+  orgId?: string;
 }
 
 export interface CreateCheckoutSessionResult {
@@ -403,8 +418,12 @@ export async function createPaymentCheckoutSession(
       // Idempotency-key namespaced to the patient_payment row id so
       // a network retry collapses to one Checkout Session at Stripe.
       // Each fresh row id (= each fresh patient checkout intent)
-      // still produces a new Session.
-      { idempotencyKey: `pennpaps-patient-checkout-${row.id}` },
+      // still produces a new Session. Connect options route the charge
+      // to the tenant's connected account when one is live (G5).
+      {
+        ...(await stripeAccountRequestOptions(input.orgId)),
+        idempotencyKey: `pennpaps-patient-checkout-${row.id}`,
+      },
     );
   } catch (err) {
     const { error: failStampErr } = await supabase
@@ -480,6 +499,9 @@ export interface CreateAdhocCheckoutSessionInput {
   cancelUrl: string;
   /** Caller for the audit/metadata trail (the admin's email). */
   initiatorEmail: string;
+  /** Tenant whose connected Stripe account should collect this charge (G5);
+   *  undefined → platform account. See `CreateIntentInput.orgId`. */
+  orgId?: string;
 }
 
 export interface CreateAdhocCheckoutFailure {
@@ -589,8 +611,12 @@ export async function createAdhocPaymentCheckoutSession(
       // Idempotency-key namespaced to the patient_payment row id so a
       // network retry collapses to one Checkout Session at Stripe. Each
       // fresh row id (= each fresh admin "send link" click) produces a
-      // new Session.
-      { idempotencyKey: `pennpaps-patient-adhoc-${row.id}` },
+      // new Session. Connect options route the charge to the tenant's
+      // connected account when one is live (G5).
+      {
+        ...(await stripeAccountRequestOptions(input.orgId)),
+        idempotencyKey: `pennpaps-patient-adhoc-${row.id}`,
+      },
     );
   } catch (err) {
     const { error: failStampErr } = await supabase

@@ -38,6 +38,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { getActivePickupLocationById } from "../../lib/pickup/locations";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -246,6 +247,9 @@ router.post(
       .digest("hex");
 
     const stripe = getStripeClient(config);
+    // Stripe Connect (G5): route the Checkout session + its Customer to the
+    // tenant's connected account when set; NULL → {} → platform account.
+    const connectOptions = await stripeAccountRequestOptions(req.orgId);
 
     // Catalog guard: every price in the cart must belong to the approved
     // shop catalog and respect stock/type constraints. The sibling
@@ -356,7 +360,7 @@ router.post(
             },
             automatic_tax: { enabled: false },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       } else {
         session = await stripe.checkout.sessions.create(
@@ -407,7 +411,7 @@ router.post(
             // dashboard without code changes.
             automatic_tax: { enabled: false },
           },
-          { idempotencyKey },
+          { idempotencyKey, ...connectOptions },
         );
       }
     } catch (err) {

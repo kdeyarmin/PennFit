@@ -38,6 +38,7 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { resolveCallerByPhone } from "../../lib/voice/resolve-caller";
 import {
@@ -84,6 +85,10 @@ const inboundBody = z.object({
   From: z.string().trim().optional(),
   CallSid: z.string().trim().min(1),
   Caller: z.string().trim().optional(),
+  // The called number (our/tenant number). Twilio sends both `To` and
+  // `Called`; either drives per-tenant routing (G7).
+  To: z.string().trim().optional(),
+  Called: z.string().trim().optional(),
 });
 
 const signatureMiddleware = requireTwilioSignature({
@@ -119,9 +124,14 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   }
   const { From, CallSid } = parsed.data;
 
-  // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to a
-  // clean Hangup so a tenant-context gap never retry-storms Twilio.
-  const orgId = await resolveSeedOrgId();
+  // Webhook: no req.orgId. Route by the CALLED number to the tenant that
+  // owns it (G7), falling back to the seed org when unregistered. On miss
+  // degrade to a clean Hangup so a tenant-context gap never retry-storms
+  // Twilio. With no per-tenant numbers configured this resolves to seed.
+  const calledNumber = parsed.data.Called ?? parsed.data.To;
+  const orgId =
+    (await resolveOrgIdByCalledNumber(calledNumber)) ??
+    (await resolveSeedOrgId());
   if (!orgId) {
     res
       .status(200)

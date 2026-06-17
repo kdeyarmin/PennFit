@@ -49,6 +49,12 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import {
+  resolveOrgIdByConnectedAccount,
+  setChargesEnabledByAccount,
+} from "./connect";
+import { enterWebhookOrg, resolveWebhookOrgId } from "./webhook-org-context";
+
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
@@ -276,12 +282,25 @@ export const stripeWebhookHandler: RequestHandler = async (
     return;
   }
 
+  // Resolve which tenant this event belongs to ONCE, then bind it for the
+  // whole handler tree (G5 Connect routing). A Connect event carries
+  // `account` (the connected account) → reverse-map to its org; a platform
+  // event (no account) → the seed org. Handlers read this via
+  // resolveWebhookOrgId(). With no connected accounts configured,
+  // event.account is always absent, so this resolves to the seed org
+  // exactly as before.
+  let webhookOrgId = await resolveSeedOrgId();
+  if (event.account) {
+    webhookOrgId =
+      (await resolveOrgIdByConnectedAccount(event.account)) ?? webhookOrgId;
+  }
+  if (webhookOrgId) enterWebhookOrg(webhookOrgId);
+
   try {
     switch (event.type) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (await handlePlatformTenantStripeEvent(event)) break;
         // Payment-plan autopay authorization (mode=setup). Capture the
         // mandated payment method and flip the plan to 'authorized'.
         // This is a distinct flow from a paid order — handle and return.
@@ -500,6 +519,20 @@ export const stripeWebhookHandler: RequestHandler = async (
         await handlePaymentMethodDetached(event, log);
         break;
       }
+      case "account.updated": {
+        // G5 Connect onboarding: a tenant's connected account changed.
+        // Platform-billing gets first dibs (its own Connect surface); else
+        // flip our routing gate to match Stripe's charges_enabled so a
+        // tenant's storefront charges start flowing the moment onboarding
+        // completes (and stop if Stripe ever disables the account).
+        if (await handlePlatformTenantStripeEvent(event)) break;
+        const account = event.data.object as Stripe.Account;
+        await setChargesEnabledByAccount(
+          account.id,
+          account.charges_enabled === true,
+        );
+        break;
+      }
       case "invoice.paid": {
         await handlePlatformTenantStripeEvent(event);
         break;
@@ -695,7 +728,7 @@ async function markStatusByPaymentIntent(
       | undefined;
   },
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — treat like an unknown payment_intent
     // (skip the refund mirror; same non-throwing "nothing to do" path).
@@ -870,7 +903,7 @@ export async function sendOrderConfirmationIfFirst(args: {
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
   const { session, paidOrderId, items, log } = args;
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     // Tenant context missing — skip the send (same non-throwing "skip"
     // outcome used when the row is missing or already sent).

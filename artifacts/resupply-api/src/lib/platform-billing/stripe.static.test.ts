@@ -21,21 +21,6 @@ describe("platform billing Stripe service contract", () => {
     expect(SRC).toContain("stripe.subscriptions.update");
   });
 
-  it("creates hosted Stripe setup and portal sessions for tenant billing", () => {
-    expect(SRC).toContain("createTenantStripeSetupSession");
-    expect(SRC).toContain("stripe.checkout.sessions.create");
-    expect(SRC).toContain('mode: "setup"');
-    expect(SRC).toContain("createTenantStripeBillingPortalSession");
-    expect(SRC).toContain("stripe.billingPortal.sessions.create");
-  });
-
-  it("syncs tenant payment method readiness from hosted Stripe setup", () => {
-    expect(SRC).toContain("syncTenantStripePaymentMethod");
-    expect(SRC).toContain("retrievePaymentMethodSummary");
-    expect(SRC).toContain("stripe_default_payment_method_id");
-    expect(SRC).toContain('event.type !== "checkout.session.completed"');
-  });
-
   it("handles subscription and invoice webhook events", () => {
     expect(SRC).toContain("handlePlatformTenantStripeEvent");
     expect(SRC).toContain('event.type !== "invoice.paid"');

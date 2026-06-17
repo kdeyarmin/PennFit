@@ -31,7 +31,6 @@ import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   getOrgScopedClient,
   type OrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   type SendActor,
@@ -46,6 +45,7 @@ import {
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
 import {
   createQueueWithDlq,
@@ -174,9 +174,30 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
     resolved: 0,
     messaged: 0,
   };
+  // Fan out across every active tenant — the worklist/adherence RPCs and
+  // therapy_fleet_alerts are org-scoped (the `.raw()` reads/writes filter by
+  // org_id explicitly), and the auto_outreach / sms.reminders flags resolve
+  // per tenant — so a tenant only alerts/texts its own patients, and only
+  // when it has enabled outreach. Per-tenant failure isolation; results
+  // summed. Single-tenant: listActiveOrgIds() returns just the seed org, so
+  // this is exactly the prior one-tenant sweep.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await therapyFleetAlertsScanForOrg(orgId, result);
+    },
+    { jobName: THERAPY_FLEET_ALERTS_JOB },
+  );
+  logger.info(
+    { queue: THERAPY_FLEET_ALERTS_JOB, ...result },
+    "therapy fleet alerts scan complete",
+  );
+  return result;
+}
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return result;
+async function therapyFleetAlertsScanForOrg(
+  orgId: string,
+  result: AlertsScanResult,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
 
   // ── 1. detect ──────────────────────────────────────────────────
@@ -233,7 +254,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       },
     });
   }
-  result.detected = detected.length;
+  result.detected += detected.length;
 
   const detectedKeys = new Set(
     detected.map((d) => `${d.patientId}|${d.alertType}`),
@@ -325,7 +346,7 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       }
       created += 1;
     }
-    result.created = created;
+    result.created += created;
   }
 
   // Auto-resolve open alerts the patient no longer trips. Chunked:
@@ -361,8 +382,8 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
 
   // ── 3. opt-in patient auto-outreach (flag-gated) ───────────────
   const outreachOn =
-    (await isFeatureEnabled("therapy_fleet.auto_outreach")) &&
-    (await isFeatureEnabled("sms.reminders"));
+    (await isFeatureEnabled("therapy_fleet.auto_outreach", orgId)) &&
+    (await isFeatureEnabled("sms.reminders", orgId));
   const cfg = outreachOn ? readSmsConfig() : null;
   if (outreachOn && cfg) {
     // Only newly-created, patient-appropriate alerts trigger a send.
@@ -399,12 +420,6 @@ export async function runTherapyFleetAlertsScan(): Promise<AlertsScanResult> {
       }
     }
   }
-
-  logger.info(
-    { queue: THERAPY_FLEET_ALERTS_JOB, ...result },
-    "therapy fleet alerts scan complete",
-  );
-  return result;
 }
 
 // Returns true iff a message was actually dispatched. Enforces explicit

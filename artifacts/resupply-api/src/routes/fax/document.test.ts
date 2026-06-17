@@ -77,7 +77,16 @@ vi.mock("../../lib/fax-document-token", () => ({
   verifyFaxDocumentToken: verifyTokenMock,
 }));
 
+// The route resolves its tenant from the token-referenced record via this
+// helper (covered by signed-link-org.test). Stub it to the seed org so
+// these tests exercise the route, not the cross-tenant lookup.
+const SEED_ORG = "00000000-0000-4000-8000-000000000000";
+vi.mock("../../lib/storefront/signed-link-org", () => ({
+  resolveOrgIdForSignedRecord: vi.fn(async () => SEED_ORG),
+}));
+
 import documentRouter from "./document";
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 
 function makeApp(): Express {
   const app = express();
@@ -88,6 +97,7 @@ function makeApp(): Express {
 beforeEach(() => {
   supabaseMock.reset();
   verifyTokenMock.mockClear();
+  vi.mocked(resolveOrgIdForSignedRecord).mockClear();
 });
 
 describe("GET /fax/document/:token", () => {
@@ -128,6 +138,11 @@ describe("GET /fax/document/:token", () => {
     expect(res.headers["content-disposition"]).toContain("cover-letter.pdf");
     // Body starts with PDF magic bytes (from our fake PDFDocument).
     expect(res.body.toString()).toContain("%PDF");
+    // The tenant was resolved from the token's outreach row, not a fixed seed.
+    expect(vi.mocked(resolveOrgIdForSignedRecord)).toHaveBeenCalledWith(
+      "physician_fax_outreach",
+      "out_1",
+    );
   });
 
   it("uses RESUPPLY_PRACTICE_NAME in the PDF (no error thrown)", async () => {

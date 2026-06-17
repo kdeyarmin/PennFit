@@ -24,11 +24,7 @@
 import type PgBoss from "pg-boss";
 import type Stripe from "stripe";
 
-import {
-  type Json,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Json, getOrgScopedClient } from "@workspace/resupply-db";
 
 import {
   markPaymentStatus,
@@ -47,7 +43,9 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config.js";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect.js";
 import { logger } from "../../lib/logger.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -64,6 +62,13 @@ type Allocation = CreateCheckoutSessionInput["allocations"][number];
 function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
   return async (req) => {
     try {
+      // G5 NOTE: this off-session charge stays on the platform account
+      // because the job is seed-pinned (resolveSeedOrgId, below). When the
+      // autopay sweep is fanned out per tenant (G2), thread the tenant
+      // orgId into `req` and pass `await stripeAccountRequestOptions(orgId)`
+      // here — and route the paired card-capture (lib/billing/
+      // patient-autopay.ts `setup` session) onto the same account, since a
+      // saved PaymentMethod is account-scoped.
       const pi = await stripe.paymentIntents.create(
         {
           amount: req.amountCents,
@@ -74,7 +79,10 @@ function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
           confirm: true,
           metadata: req.metadata,
         },
-        { idempotencyKey: req.idempotencyKey },
+        // `accountOptions` carries `{ stripeAccount }` for a tenant on Stripe
+        // Connect, routing the charge to its connected account (where its
+        // customer + PM live). Empty for the platform account (seed tenant).
+        { idempotencyKey: req.idempotencyKey, ...(req.accountOptions ?? {}) },
       );
       if (pi.status === "succeeded") {
         return { outcome: "succeeded", paymentIntentId: pi.id };
@@ -148,9 +156,33 @@ export async function runPatientAutopayCharge(
     }
     charger = buildStripeOffSessionCharger(getStripeClient(config));
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
+  const activeCharger = charger;
+  // Fan out across every active tenant — patient_autopay_authorizations is
+  // org-scoped, and each tenant's off-session charge is routed to ITS OWN
+  // Stripe account (stripeAccountRequestOptions(orgId)) so the stored
+  // customer + payment method resolve on the account they were created on.
+  // Per-tenant failure isolation; results summed. Single-tenant:
+  // listActiveOrgIds() returns just the seed org → empty account options →
+  // the platform account, exactly as before Connect.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await patientAutopayChargeForOrg(orgId, activeCharger, stats);
+    },
+    { jobName: PATIENT_AUTOPAY_CHARGE_JOB },
+  );
+  return stats;
+}
+
+async function patientAutopayChargeForOrg(
+  orgId: string,
+  charger: OffSessionCharger,
+  stats: PatientAutopayRunStats,
+): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
+  // Resolve the tenant's Stripe Connect routing ONCE per tick. Empty for the
+  // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
+  // tenant's connected account has charges_enabled.
+  const accountOptions = await stripeAccountRequestOptions(orgId);
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Keyset-page the enabled authorizations: PostgREST caps each
@@ -191,7 +223,7 @@ export async function runPatientAutopayCharge(
 
   for (const auth of due) {
     try {
-      await chargeOneAuthorization(orgId, auth, charger, stats);
+      await chargeOneAuthorization(orgId, accountOptions, auth, charger, stats);
     } catch (err) {
       // One bad patient must not abort the whole tick.
       stats.failed += 1;
@@ -201,11 +233,11 @@ export async function runPatientAutopayCharge(
       );
     }
   }
-  return stats;
 }
 
 async function chargeOneAuthorization(
   orgId: string,
+  accountOptions: { stripeAccount?: string },
   auth: ChargeableAuthorization,
   charger: OffSessionCharger,
   stats: PatientAutopayRunStats,
@@ -334,6 +366,7 @@ async function chargeOneAuthorization(
       patient_payment_id: payRow.id,
       source: "autopay",
     },
+    accountOptions,
   });
 
   if (result.outcome === "succeeded") {

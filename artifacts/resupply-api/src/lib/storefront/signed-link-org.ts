@@ -1,7 +1,8 @@
 // Resolve the tenant that owns a signed-link record (multi-tenant G1).
 //
 // The public storefront signed-link flows (CSR sign-&-pay orders, patient
-// signature packets) are authorized by an HMAC token that references one
+// signature packets, reminder click-throughs, fitter invites, mask-fit
+// responses) are authorized by an HMAC token that references one
 // org-scoped record. The link carries no host/session tenant, so we resolve
 // the tenant FROM the record: read `org_id` for the token's record id ACROSS
 // tenants via `.raw()` — the one sanctioned cross-scope read — so a tenant-B
@@ -18,7 +19,15 @@ import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 export type SignedLinkTable =
   | "csr_order_requests"
   | "patient_packets"
-  | "conversations";
+  | "conversations"
+  | "fitter_invites"
+  | "fitter_leads"
+  | "shop_orders"
+  | "claim_appeal_letters"
+  | "manual_documents"
+  | "manual_document_packets"
+  | "prior_authorizations"
+  | "physician_fax_outreach";
 
 export async function resolveOrgIdForSignedRecord(
   table: SignedLinkTable,

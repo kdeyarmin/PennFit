@@ -112,6 +112,7 @@ import glAccountMappingsRouter from "./admin/gl-account-mappings.js";
 import reportPresetsRouter from "./admin/report-presets.js";
 import featureFlagsRouter from "./admin/feature-flags.js";
 import appConfigRouter from "./admin/app-config.js";
+import agreementsRouter from "./admin/agreements.js";
 import npsSummaryRouter from "./admin/nps-summary.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import outboundMessagesRouter from "./admin/outbound-messages.js";
@@ -130,6 +131,7 @@ import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import patientIntegrationsRouter from "./admin/patient-integrations.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
 import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
+import faxSettingsRouter from "./admin/fax-settings.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -174,6 +176,7 @@ import davinciPasSubmitRouter from "./admin/davinci-pas-submit.js";
 import priorAuthRequestFormRouter from "./admin/prior-auth-request-form.js";
 import billingBenchmarksRouter from "./admin/billing-benchmarks.js";
 import billingBatchSubmitRouter from "./admin/billing-batch-submit.js";
+import stripeConnectRouter from "./admin/stripe-connect.js";
 import claimPaperworkRouter from "./admin/claim-paperwork.js";
 import billingAutoSubmitRouter from "./admin/billing-auto-submit.js";
 import billingStatementsRouter from "./admin/billing-statements.js";
@@ -204,6 +207,7 @@ import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
 import platformImpersonationRouter from "./platform/impersonation.js";
+import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
 import platformBillingRouter from "./platform/billing.js";
 import patientsRouter from "./patients/index.js";
@@ -225,6 +229,7 @@ router.use(healthRouter);
 router.use(meRouter);
 // Platform super-admin (G4): cross-tenant operator surface, gated by
 // requirePlatformAdmin (the tier above a tenant admin).
+router.use(platformMeRouter);
 router.use(platformTenantsRouter);
 router.use(platformBillingRouter);
 router.use(platformImpersonationRouter);
@@ -340,6 +345,9 @@ router.use(smartTriggersRouter);
 // TELNYX_API_KEY / TELNYX_FAX_CONNECTION_ID / TELNYX_FAX_FROM_NUMBER
 // are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
+// /admin/organization/fax-settings — view / auto-provision (Telnyx) /
+// manually set a tenant's own fax number (migration 0368).
+router.use(faxSettingsRouter);
 // /admin/(patients/:id)/prescription-requests — physician-faxable
 // pre-populated prescriptions. Telnyx dispatch, signed-PDF return,
 // CSR-stamped lifecycle. Renders via lib/prescription-request-pdf.ts.
@@ -575,6 +583,7 @@ router.use(priorAuthRequestFormRouter);
 router.use(billingBenchmarksRouter);
 // /admin/billing/batch-submit-office-ally — multi-claim 837P batch.
 router.use(billingBatchSubmitRouter);
+router.use(stripeConnectRouter);
 // /admin/billing/auto-submit/* — staged-approval auto-submission: the
 // "ready to transmit" worklist (preflight-clean + active eligibility),
 // automation status, and the operator approve-and-submit action.
@@ -994,6 +1003,7 @@ router.use(featureFlagsRouter);
 // enter/rotate integration credentials + platform secrets (migration
 // 0211). super_admin-only (system.config.manage).
 router.use(appConfigRouter);
+router.use(agreementsRouter);
 // /admin/nps/recent — last-N-days NPS rollup for the post-delivery
 // follow-up. Surfaces band counts + canonical NPS score + a comment
 // tail. Powered by shop_order_nps_responses (migration 0127).

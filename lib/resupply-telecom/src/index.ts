@@ -98,6 +98,25 @@ export {
   type FaxHttpSend,
 } from "./telnyx-fax";
 
+// Fax-number PROVISIONING (search + order a fax-capable DID for a new
+// tenant) also goes through Telnyx, for the same reason fax send does.
+export {
+  createTelnyxNumberClient,
+  type TelnyxNumberClient,
+  type CreateTelnyxNumberClientOptions,
+  type AvailableFaxNumber,
+  type SearchFaxNumbersInput,
+  type OrderNumberInput,
+  type OrderNumberResult,
+  type ProvisionFaxNumberInput,
+  type ProvisionFaxNumberResult,
+  type ReleaseFaxNumberResult,
+  type NumbersHttpGet,
+  type NumbersHttpPost,
+  type NumbersHttpLookup,
+  type NumbersHttpDelete,
+} from "./telnyx-numbers";
+
 export {
   validateTelnyxSignature,
   requireTelnyxSignature,

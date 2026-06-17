@@ -15,7 +15,5 @@ describe("AdminBillingPackagePage Stripe status", () => {
     expect(SRC).toContain("Stripe status");
     expect(SRC).toContain("Invoice status");
     expect(SRC).toContain("Billing period ends");
-    expect(SRC).toContain("Manage billing in Stripe");
-    expect(SRC).toContain("Payment method");
   });
 });

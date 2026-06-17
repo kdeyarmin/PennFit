@@ -29,6 +29,7 @@ import {
   isVerifiedCustomDomainOrigin,
   warmVerifiedCustomDomains,
 } from "./lib/tenant-branding";
+import { isPlatformSubdomainOrigin } from "./lib/tenant-domain";
 import { createTrustProxyFn } from "./lib/trusted-proxies";
 import { errorHandler } from "./middlewares/errorHandler";
 import {
@@ -167,7 +168,11 @@ app.use(
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(null, isVerifiedCustomDomainOrigin(origin));
+      if (isVerifiedCustomDomainOrigin(origin)) return cb(null, true);
+      // Platform subdomains (`<slug>.<base>`, G10) are our own hosts —
+      // admit them like the apex so a tenant served at its slug subdomain
+      // can call the API cross-origin without binding a custom domain.
+      return cb(null, isPlatformSubdomainOrigin(origin));
     },
     credentials: true,
   }),

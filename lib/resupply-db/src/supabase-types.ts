@@ -347,10 +347,32 @@ export interface Database {
         Relationships: [];
       };
       // Migration 0193: current unit cost (COGS) per shop SKU. Source for
+      // Atomic EDI ISA13 control-number counter (mig 0308). Per-tenant
+      // since 0361: PK (org_id, pool). Reserved via a CAS in
+      // lib/billing/isa13-counter.ts.
+      control_number_counters: {
+        Row: {
+          org_id: string | null;
+          pool: string;
+          value: number;
+          updated_at: string;
+        };
+        Insert: {
+          org_id?: string;
+          pool: string;
+          value: number;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply"]["Tables"]["control_number_counters"]["Insert"]
+        >;
+        Relationships: [];
+      };
       // the per-transaction cost snapshots + every owner-facing margin
       // surface (computeMargin / aggregateMargin in resupply-domain).
       product_costs: {
         Row: {
+          org_id: string | null;
           sku: string;
           unit_cost_cents: number;
           currency: string;
@@ -361,6 +383,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
+          org_id?: string;
           sku: string;
           unit_cost_cents: number;
           currency?: string;
@@ -2266,9 +2289,39 @@ export interface Database {
           custom_domain_verified_at: string | null;
           custom_domain_tls: "none" | "pending" | "active" | "failed";
           custom_domain_cf_hostname_id: string | null;
+          stripe_account_id: string | null;
+          stripe_charges_enabled: boolean;
+          from_email: string | null;
+          from_name: string | null;
+          sms_from_number: string | null;
+          voice_from_number: string | null;
+          twilio_messaging_service_sid: string | null;
+          fax_from_number: string | null;
+          fax_telnyx_order_id: string | null;
+          fax_provisioned_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
+        Relationships: [];
+      };
+      organization_agreements: {
+        Row: {
+          id: string;
+          org_id: string;
+          agreement_type: "baa" | "platform_terms";
+          version: string;
+          accepted_at: string;
+          accepted_by_user_id: string | null;
+          accepted_by_email: string | null;
+          signatory_name: string | null;
+          accepted_ip: string | null;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["organization_agreements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["organization_agreements"]["Row"]
+        >;
         Relationships: [];
       };
       gl_account_mappings: {
@@ -4915,6 +4968,7 @@ export interface Database {
       // Migration 0205 (RT #25): short-video education library.
       education_videos: {
         Row: {
+          org_id: string | null;
           id: string;
           title: string;
           topic:

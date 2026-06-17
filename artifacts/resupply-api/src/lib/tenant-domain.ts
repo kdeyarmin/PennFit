@@ -68,6 +68,112 @@ export function normalizeCustomDomain(raw: string): string | null {
   return value;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Platform subdomain routing (G10).
+//
+// A zero-DNS-setup onboarding default: a tenant with slug `acme` is served
+// at `acme.<platform-base-domain>` (e.g. `acme.cmbreathe.com`) without the
+// tenant having to bind and verify a custom domain. Custom domains still
+// win when present; this is the cheaper fallback.
+//
+// `organizations.slug` (migration 0331, unique, URL-safe) is the routing
+// key — no new column. The base-domain list is read at CALL time from
+// `PLATFORM_SUBDOMAIN_BASES` (comma-separated) so it can change without a
+// code edit; it defaults to the platform home domain.
+// ────────────────────────────────────────────────────────────────────
+
+/** Labels under a platform base domain that never map to a tenant slug. */
+const RESERVED_SUBDOMAIN_LABELS: ReadonlySet<string> = new Set([
+  "www",
+  "app",
+  "api",
+  "admin",
+  "mail",
+  "smtp",
+  "static",
+  "assets",
+  "cdn",
+  "support",
+  "help",
+  "status",
+  "docs",
+  "blog",
+  "dashboard",
+]);
+
+/** The platform base domains under which `<slug>.<base>` routes to a tenant. */
+export function platformSubdomainBases(): string[] {
+  const raw = (process.env.PLATFORM_SUBDOMAIN_BASES ?? "").trim();
+  const bases = raw
+    ? raw
+        .split(",")
+        .map((d) => d.trim().toLowerCase().replace(/\.$/, ""))
+        .filter((d) => d.length > 0)
+    : ["cmbreathe.com"];
+  return bases;
+}
+
+/**
+ * If `host` is `<label>.<platform-base-domain>` with a single, non-reserved
+ * label shaped like an org slug, return the label (the tenant's slug).
+ * Returns null for the apex itself, a multi-level subdomain, a reserved
+ * label, a malformed label, or any host not under a configured base.
+ *
+ * Input may be a raw Host header; it's lowercased and stripped of scheme /
+ * port / path / trailing dot. (Custom-domain matching happens separately —
+ * a verified custom domain takes priority over subdomain routing.)
+ */
+export function extractTenantSubdomainLabel(
+  host: string | null | undefined,
+): string | null {
+  let value = (host ?? "").trim().toLowerCase();
+  if (!value) return null;
+  if (value.includes("://")) {
+    try {
+      value = new URL(value).hostname;
+    } catch {
+      return null;
+    }
+  }
+  value = value.split("/")[0]!.split("?")[0]!.split(":")[0]!;
+  if (value.endsWith(".")) value = value.slice(0, -1);
+  if (!value) return null;
+
+  for (const base of platformSubdomainBases()) {
+    if (value === base) return null; // apex → platform, not a tenant
+    const suffix = `.${base}`;
+    if (!value.endsWith(suffix)) continue;
+    const label = value.slice(0, -suffix.length);
+    // Only a SINGLE label routes (`a.b.cmbreathe.com` is not a tenant host).
+    if (!label || label.includes(".")) return null;
+    if (RESERVED_SUBDOMAIN_LABELS.has(label)) return null;
+    // Must look like an org slug (mirrors the 0331 slug CHECK).
+    if (label.length > 63) return null;
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(label)) return null;
+    return label;
+  }
+  return null;
+}
+
+/**
+ * True when `origin` is a platform subdomain we serve (`<slug>.<base>`,
+ * G10). Used to admit subdomain origins to CORS alongside verified custom
+ * domains: these are our own hosts (TLS terminated by the platform), so a
+ * cross-origin request from one is trusted exactly like the apex. Returns
+ * false for a non-URL string, the apex, multi-level/reserved hosts, and
+ * anything not under a configured base domain.
+ */
+export function isPlatformSubdomainOrigin(origin: string): boolean {
+  if (!origin) return false;
+  let host: string;
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  return extractTenantSubdomainLabel(host) !== null;
+}
+
 /** Mint a fresh, URL-safe verification token (stored on the org row). */
 export function generateDomainToken(): string {
   return randomBytes(24).toString("base64url");

@@ -45,6 +45,7 @@ import {
 
 import { reserveIsa13Value } from "./isa13-counter";
 import { logger } from "../logger";
+import { recordTenantUsage } from "../metering/usage";
 import { publishEvent } from "../webhooks/publisher";
 import {
   eligibilityCompletedEvent,
@@ -166,11 +167,12 @@ export async function verifyEligibility(
 
   // Allocate monotonic control numbers vs. the office_ally_submissions
   // ISA13 history. Eligibility and claim ISA13s share the same pool.
-  // Atomic reservation first (counter table, migration 0308) — unique
-  // by construction across BOTH the claims and eligibility pools and
-  // race-free under concurrency. The legacy MAX-read below survives
-  // only as the pre-migration fallback; see lib/billing/isa13-counter.
-  const reservedIsa = await reserveIsa13Value(supabase.raw());
+  // Atomic reservation first (counter table, migration 0308) — race-free
+  // under concurrency and, since migration 0361, scoped to THIS tenant's
+  // counter (each tenant is a distinct EDI submitter) via the org-scoped
+  // client. The legacy org-scoped MAX-read below survives only as the
+  // per-tenant fallback; see lib/billing/isa13-counter.
+  const reservedIsa = await reserveIsa13Value(supabase);
   let control: ControlNumbers;
   if (reservedIsa !== null) {
     control = controlNumbersFromValue(reservedIsa, Date.now());
@@ -271,6 +273,12 @@ export async function verifyEligibility(
         { event: "eligibility.realtime.resolved", latencyMs },
         "verifyEligibility: real-time 271 resolved",
       );
+      // A real-time 270/271 transaction completed — meter it (G12).
+      void recordTenantUsage({
+        orgId,
+        metricKey: "billingTransactionsPerMonth",
+        source: "eligibility.verify.realtime",
+      });
       return {
         eligibilityCheckId: rtInserted.id,
         isaControlNumber: built.interchangeControlNumber,
@@ -316,6 +324,13 @@ export async function verifyEligibility(
       { kind: upload.kind, message: upload.message },
       "verifyEligibility: upload failed",
     );
+  } else {
+    // A 270 was transmitted over SFTP — meter one billing transaction (G12).
+    void recordTenantUsage({
+      orgId,
+      metricKey: "billingTransactionsPerMonth",
+      source: "eligibility.verify.sftp",
+    });
   }
   return {
     eligibilityCheckId: inserted.id,

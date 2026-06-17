@@ -19,7 +19,7 @@ env:
   # The pnpm version pinned in root package.json. Mirror it explicitly so
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
-  PNPM_VERSION: "11.6.0"
+  PNPM_VERSION: "11.7.0"
   NODE_VERSION: "24"
 
 jobs:
@@ -354,7 +354,9 @@ jobs:
               src/worker/jobs/maintenance-nudges.integration.test.ts \
               src/worker/jobs/video-visit-reminders.integration.test.ts \
               src/worker/jobs/recall-notifications-send.integration.test.ts \
-              src/worker/jobs/patient-packet-reminders.integration.test.ts
+              src/worker/jobs/patient-packet-reminders.integration.test.ts \
+              src/worker/jobs/pacware-ready-to-sync-digest.integration.test.ts \
+              src/worker/jobs/reminders.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)

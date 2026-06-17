@@ -72,11 +72,6 @@ export interface TenantBilling {
     currentPeriodEnd?: string | null;
     lastInvoiceId?: string | null;
     lastInvoiceStatus?: string | null;
-    stripeDefaultPaymentMethodId?: string | null;
-    stripePaymentMethodType?: string | null;
-    stripePaymentMethodBrand?: string | null;
-    stripePaymentMethodLast4?: string | null;
-    stripePaymentMethodUpdatedAt?: string | null;
     plan: BillingPlan;
   };
   addons: Array<{
@@ -99,6 +94,10 @@ export interface PlatformTenantBillingRow {
   name: string | null;
   storefrontName: string | null;
   status: string;
+  /** The tenant's provisioned fax number (E.164), or null when none. */
+  faxNumber: string | null;
+  /** When the fax number was attached (ISO), or null. */
+  faxProvisionedAt: string | null;
   billing: TenantBilling;
 }
 
@@ -174,38 +173,6 @@ export function syncTenantStripeSubscription(
 ): Promise<TenantBilling> {
   return jsonFetch<TenantBilling>(
     `/platform/billing/tenants/${encodeURIComponent(tenantId)}/stripe/subscription`,
-    { method: "POST" },
-  );
-}
-
-export function createTenantStripeSetupSession(
-  tenantId: string,
-): Promise<{ url: string }> {
-  return jsonFetch<{ url: string }>(
-    `/platform/billing/tenants/${encodeURIComponent(tenantId)}/stripe/setup-session`,
-    { method: "POST" },
-  );
-}
-
-export function createTenantStripePortalSession(
-  tenantId?: string,
-): Promise<{ url: string }> {
-  if (tenantId) {
-    return jsonFetch<{ url: string }>(
-      `/platform/billing/tenants/${encodeURIComponent(tenantId)}/stripe/portal`,
-      { method: "POST" },
-    );
-  }
-  return jsonFetch<{ url: string }>("/admin/billing/stripe/portal", {
-    method: "POST",
-  });
-}
-
-export function syncTenantStripePaymentMethod(
-  tenantId: string,
-): Promise<TenantBilling> {
-  return jsonFetch<TenantBilling>(
-    `/platform/billing/tenants/${encodeURIComponent(tenantId)}/stripe/payment-method/sync`,
     { method: "POST" },
   );
 }

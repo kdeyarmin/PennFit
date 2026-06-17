@@ -40,12 +40,12 @@ import {
   type CommunicationPreferences,
   type Json,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 
 import { sendWinbackEmail } from "../../lib/order-emails/send-winback-email";
 import { shouldSendEmail } from "../../lib/comm-prefs";
 import { logger } from "../../lib/logger";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -117,20 +117,41 @@ async function rollbackWinbackStamp(
 }
 
 /**
- * Exported for testability. Pure DB + send work.
+ * Exported for testability. Fans out across every ACTIVE tenant —
+ * `shop_customers` / `shop_orders` are org-scoped, so each tenant is
+ * swept on its own org-scoped client and a win-back email only ever
+ * reaches a shopper in that customer's own org. Per-tenant failure
+ * isolation keeps one tenant's error from aborting the rest; the stats
+ * are summed across tenants. Single-tenant: `listActiveOrgIds()` returns
+ * just the seed org, so this is exactly the prior one-tenant sweep.
  */
 export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return { candidates: 0, sent: 0, skipped: 0, failed: 0 };
-  }
-  const supabase = getOrgScopedClient(orgId);
   const stats: WinbackStats = {
     candidates: 0,
     sent: 0,
     skipped: 0,
     failed: 0,
   };
+  await forEachActiveOrg(
+    async (orgId) => {
+      await winbackSweepForOrg(orgId, stats);
+    },
+    { jobName: JOB_NAME },
+  );
+  return stats;
+}
+
+/**
+ * Run the win-back sweep for a SINGLE tenant, accumulating into the shared
+ * `stats`. The PER_RUN_MAX send cap and MAX_SCANNED_PER_RUN scan cap are
+ * tracked per tenant (local counters) so a busy tenant can't starve the
+ * others out of their weekly send budget.
+ */
+async function winbackSweepForOrg(
+  orgId: string,
+  stats: WinbackStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
 
   const lapsedThreshold = isoDaysAgo(LAPSED_DAYS);
   const cooldownThreshold = isoDaysAgo(WINBACK_COOLDOWN_DAYS);
@@ -150,7 +171,10 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
   const MAX_SCANNED_PER_RUN = PER_RUN_MAX * 50;
   let lastCustomerId: string | null = null;
   let scanned = 0;
-  pages: while (stats.sent < PER_RUN_MAX && scanned < MAX_SCANNED_PER_RUN) {
+  // Per-tenant send counter — the PER_RUN_MAX budget is each tenant's, not
+  // shared, so one tenant's backlog never starves another's win-backs.
+  let sentThisOrg = 0;
+  pages: while (sentThisOrg < PER_RUN_MAX && scanned < MAX_SCANNED_PER_RUN) {
     let query = supabase
       .from("shop_customers")
       .select(
@@ -175,7 +199,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
     ).filter((r): r is WinbackCandidate => typeof r.email_lower === "string");
 
     for (const row of rows) {
-      if (stats.sent >= PER_RUN_MAX) break pages;
+      if (sentThisOrg >= PER_RUN_MAX) break pages;
       stats.candidates += 1;
 
       const prefs = readPrefs(row.communication_preferences);
@@ -278,6 +302,7 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
           continue;
         }
         stats.sent += 1;
+        sentThisOrg += 1;
       } catch (err) {
         try {
           await rollbackWinbackStamp(
@@ -310,8 +335,6 @@ export async function runLapsedCustomerWinback(): Promise<WinbackStats> {
     // Short page → no more candidates.
     if (candidates.length < PAGE) break;
   }
-
-  return stats;
 }
 
 export async function registerLapsedCustomerWinbackJob(

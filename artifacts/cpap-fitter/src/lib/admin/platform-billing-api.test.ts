@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
-  createTenantStripePortalSession,
-  createTenantStripeSetupSession,
   fetchPlatformBillingCatalog,
   fetchPlatformTenantBilling,
   ensureTenantStripeCustomer,
@@ -12,7 +10,6 @@ import {
   formatMoney,
   recordTenantUsage,
   syncPlatformBillingCatalogToStripe,
-  syncTenantStripePaymentMethod,
   syncTenantStripeSubscription,
   updateTenantAddon,
   updateTenantPlan,
@@ -142,50 +139,6 @@ describe("platform-billing-api", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/resupply-api/platform/billing/tenants/tenant-1/stripe/customer",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  test("createTenantStripeSetupSession posts to the hosted setup endpoint", async () => {
-    fetchMock.mockResolvedValue(
-      okJson({ url: "https://checkout.stripe.com/setup" }),
-    );
-
-    await createTenantStripeSetupSession("tenant-1");
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/resupply-api/platform/billing/tenants/tenant-1/stripe/setup-session",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  test("createTenantStripePortalSession posts to tenant or platform portal endpoint", async () => {
-    fetchMock.mockResolvedValue(
-      okJson({ url: "https://billing.stripe.com/session" }),
-    );
-
-    await createTenantStripePortalSession("tenant-1");
-    await createTenantStripePortalSession();
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "/resupply-api/platform/billing/tenants/tenant-1/stripe/portal",
-      expect.objectContaining({ method: "POST" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "/resupply-api/admin/billing/stripe/portal",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  test("syncTenantStripePaymentMethod posts to the payment method refresh endpoint", async () => {
-    fetchMock.mockResolvedValue(okJson({ tenantId: "tenant-1" }));
-
-    await syncTenantStripePaymentMethod("tenant-1");
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/resupply-api/platform/billing/tenants/tenant-1/stripe/payment-method/sync",
       expect.objectContaining({ method: "POST" }),
     );
   });

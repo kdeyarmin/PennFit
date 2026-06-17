@@ -11,13 +11,13 @@ import type Stripe from "stripe";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type Database,
   type Json,
   type ShopSubscriptionItemSnapshot,
 } from "@workspace/resupply-db";
 
 import { formatIntervalLabel } from "../products-meta";
+import { resolveWebhookOrgId } from "../webhook-org-context";
 import { readCustomerIdFromMetadata } from "./shared";
 
 type ShopSubscriptionUpdate =
@@ -64,7 +64,7 @@ async function upsertSubscription(
       }
     | undefined,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) {
     log?.warn?.(
       {

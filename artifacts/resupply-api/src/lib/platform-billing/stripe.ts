@@ -20,19 +20,6 @@ export interface PlatformStripeSyncResult {
   subscriptionId?: string;
   status?: string | null;
   catalog?: { plans: number; addons: number };
-  paymentMethod?: PlatformTenantPaymentMethodSummary | null;
-}
-
-export interface PlatformTenantPaymentMethodSummary {
-  id: string;
-  type: string | null;
-  brand: string | null;
-  last4: string | null;
-}
-
-export interface PlatformStripeHostedSessionResult {
-  stripeConfigured: boolean;
-  url?: string;
 }
 
 async function rawClient(): Promise<RawClient | null> {
@@ -71,12 +58,24 @@ function priceMetadata(kind: "plan" | "addon", code: string) {
   };
 }
 
+/** A billing_plans / billing_addons catalog row, narrowed to the fields
+ *  the Stripe sync touches. Rows arrive untyped from the service-role
+ *  client (the billing tables aren't in the generated Database types). */
+interface CatalogRow {
+  id: string;
+  name: string;
+  description?: string | null;
+  code: string;
+  stripe_price_id?: string | null;
+  stripe_product_id?: string | null;
+}
+
 async function ensureRecurringPrice(args: {
   stripe: Stripe;
   raw: RawClient;
   table: "billing_plans" | "billing_addons";
   kind: "plan" | "addon";
-  row: any;
+  row: CatalogRow;
   amountCents: number | null;
 }): Promise<string | null> {
   if (!args.amountCents || args.amountCents <= 0)
@@ -238,18 +237,36 @@ export async function ensureTenantStripeCustomer(args: {
   return { stripeConfigured: true, customerId: customer.id };
 }
 
-function subscriptionStatus(sub: any): string | null {
-  return typeof sub.status === "string" ? sub.status : null;
-}
+/** Recent Stripe API versions expose the billing period on subscription
+ *  items rather than the subscription itself, so the SDK's
+ *  `Stripe.Subscription` type no longer declares these top-level fields
+ *  even though they're still present on the wire. Narrow to read them
+ *  without reaching for `any`. */
+type SubscriptionPeriods = {
+  current_period_start?: number | null;
+  current_period_end?: number | null;
+};
 
-function adminBillingReturnUrl(config: StripeConfig, orgId: string): string {
-  const base = config.publicBaseUrl.replace(/\/$/, "");
-  const params = new URLSearchParams({ tenant: orgId });
-  return `${base}/admin/platform-billing?${params.toString()}`;
-}
+/** The subscription line items this module builds: either a reference to
+ *  an existing recurring price, or an inline `price_data` with
+ *  `product_data`. The latter shape isn't modeled by the Stripe SDK's
+ *  subscription-item `PriceData` type (it expects an existing `product`),
+ *  so the call sites cast through `unknown` to the SDK param type rather
+ *  than reach for `any`. */
+type SubscriptionItemInput =
+  | { price: string; quantity: number }
+  | {
+      price_data: {
+        product_data: { name: string; metadata: Record<string, string> };
+        currency: string;
+        unit_amount: number;
+        recurring: { interval: "month" };
+      };
+      quantity: number;
+    };
 
-function tenantBillingReturnUrl(config: StripeConfig): string {
-  return `${config.publicBaseUrl.replace(/\/$/, "")}/admin/billing/package`;
+function subscriptionStatus(sub: Stripe.Subscription): string | null {
+  return sub.status ?? null;
 }
 
 export async function syncTenantStripeSubscription(args: {
@@ -293,7 +310,7 @@ export async function syncTenantStripeSubscription(args: {
       });
   if (!planAmount || planAmount <= 0) throw new Error("plan_not_billable");
 
-  const items: any[] = [
+  const items: SubscriptionItemInput[] = [
     planPriceId
       ? { price: planPriceId, quantity: 1 }
       : {
@@ -362,22 +379,27 @@ export async function syncTenantStripeSubscription(args: {
     }));
     stripeSub = await stripe.subscriptions.update(sub.stripe_subscription_id, {
       metadata,
-      items: [...deletedItems, ...items],
+      items: [
+        ...deletedItems,
+        ...items,
+      ] as unknown as Stripe.SubscriptionUpdateParams.Item[],
       proration_behavior: "create_prorations",
       expand: ["latest_invoice"],
-    } as any);
+    });
   } else {
     stripeSub = await stripe.subscriptions.create({
       customer: customer.id,
-      items,
+      items: items as unknown as Stripe.SubscriptionCreateParams.Item[],
       metadata,
       collection_method: "send_invoice",
       days_until_due: 15,
       expand: ["latest_invoice"],
-    } as any);
+    });
   }
 
-  const latestInvoice = invoiceStatus((stripeSub as any).latest_invoice);
+  const latestInvoice = invoiceStatus(stripeSub.latest_invoice);
+  const stripeSubPeriods = stripeSub as Stripe.Subscription &
+    SubscriptionPeriods;
   await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
@@ -387,10 +409,10 @@ export async function syncTenantStripeSubscription(args: {
       stripe_status: subscriptionStatus(stripeSub),
       stripe_last_synced_at: new Date().toISOString(),
       current_period_start: asStripeTimestamp(
-        (stripeSub as any).current_period_start,
+        stripeSubPeriods.current_period_start,
       ),
       current_period_end: asStripeTimestamp(
-        (stripeSub as any).current_period_end,
+        stripeSubPeriods.current_period_end,
       ),
       last_invoice_id: latestInvoice.id,
       last_invoice_status: latestInvoice.status,
@@ -420,190 +442,10 @@ export async function syncTenantStripeSubscription(args: {
   };
 }
 
-function paymentMethodSummary(
-  paymentMethod: Stripe.PaymentMethod | null,
-): PlatformTenantPaymentMethodSummary | null {
-  if (!paymentMethod?.id) return null;
-  const card = paymentMethod.card;
-  const usBank = paymentMethod.us_bank_account;
-  return {
-    id: paymentMethod.id,
-    type: paymentMethod.type ?? null,
-    brand: card?.brand ?? usBank?.bank_name ?? null,
-    last4: card?.last4 ?? usBank?.last4 ?? null,
-  };
-}
-
-async function retrievePaymentMethodSummary(args: {
-  stripe: Stripe;
-  customerId: string;
-  setupIntentId?: string | null;
-}): Promise<PlatformTenantPaymentMethodSummary | null> {
-  let paymentMethodId: string | null = null;
-  if (args.setupIntentId) {
-    const setupIntent = await args.stripe.setupIntents.retrieve(
-      args.setupIntentId,
-    );
-    const ref = setupIntent.payment_method;
-    paymentMethodId = typeof ref === "string" ? ref : (ref?.id ?? null);
-  }
-  if (!paymentMethodId) {
-    const customer = await args.stripe.customers.retrieve(args.customerId);
-    if (!customer.deleted) {
-      const ref = customer.invoice_settings?.default_payment_method;
-      paymentMethodId = typeof ref === "string" ? ref : (ref?.id ?? null);
-    }
-  }
-  if (!paymentMethodId) return null;
-  const paymentMethod =
-    await args.stripe.paymentMethods.retrieve(paymentMethodId);
-  return paymentMethodSummary(paymentMethod);
-}
-
-async function persistPaymentMethodSummary(args: {
-  raw: RawClient;
-  orgId: string;
-  customerId: string;
-  summary: PlatformTenantPaymentMethodSummary | null;
-}) {
-  await args.raw
-    .schema("resupply")
-    .from("tenant_billing_subscriptions")
-    .update({
-      stripe_customer_id: args.customerId,
-      stripe_default_payment_method_id: args.summary?.id ?? null,
-      stripe_payment_method_type: args.summary?.type ?? null,
-      stripe_payment_method_brand: args.summary?.brand ?? null,
-      stripe_payment_method_last4: args.summary?.last4 ?? null,
-      stripe_payment_method_updated_at: new Date().toISOString(),
-      stripe_last_synced_at: new Date().toISOString(),
-    })
-    .eq("org_id", args.orgId)
-    .in("status", ["active", "trialing", "past_due"]);
-}
-
-export async function syncTenantStripePaymentMethod(args: {
-  orgId: string;
-  stripeCustomerId?: string | null;
-  setupIntentId?: string | null;
-  adminEmail?: string | null;
-}): Promise<PlatformStripeSyncResult> {
-  const config = readStripeConfigOrNull();
-  if (!config) return { stripeConfigured: false };
-  const raw = await rawClient();
-  if (!raw) throw new Error("tenant_directory_unavailable");
-  const sub = await activeSubscription(raw, args.orgId);
-  const customerId = args.stripeCustomerId ?? sub.stripe_customer_id;
-  if (!customerId) throw new Error("stripe_customer_not_linked");
-  const stripe = getStripeClient(config);
-  const summary = await retrievePaymentMethodSummary({
-    stripe,
-    customerId,
-    setupIntentId: args.setupIntentId ?? null,
-  });
-  await persistPaymentMethodSummary({
-    raw,
-    orgId: args.orgId,
-    customerId,
-    summary,
-  });
-  await logAudit({
-    action: "platform.billing.stripe.payment_method.synced",
-    adminEmail: args.adminEmail ?? "platform-admin",
-    adminUserId: null,
-    targetTable: "tenant_billing_subscriptions",
-    targetId: args.orgId,
-    metadata: {
-      stripeCustomerId: customerId,
-      paymentMethodId: summary?.id ?? null,
-    },
-    ip: null,
-    userAgent: null,
-  }).catch(() => undefined);
-  return { stripeConfigured: true, customerId, paymentMethod: summary };
-}
-
-export async function createTenantStripeSetupSession(args: {
-  orgId: string;
-  adminEmail?: string | null;
-  returnUrl?: string | null;
-}): Promise<PlatformStripeHostedSessionResult> {
-  const config = readStripeConfigOrNull();
-  if (!config) return { stripeConfigured: false };
-  const customer = await ensureTenantStripeCustomer({
-    orgId: args.orgId,
-    adminEmail: args.adminEmail ?? null,
-  });
-  if (!customer.stripeConfigured || !customer.customerId) {
-    return { stripeConfigured: customer.stripeConfigured };
-  }
-  const stripe = getStripeClient(config);
-  const returnUrl = args.returnUrl ?? adminBillingReturnUrl(config, args.orgId);
-  const session = await stripe.checkout.sessions.create({
-    mode: "setup",
-    customer: customer.customerId,
-    payment_method_types: ["card", "us_bank_account"],
-    success_url: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}stripe_setup=success`,
-    cancel_url: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}stripe_setup=cancelled`,
-    metadata: {
-      billing_scope: PLATFORM_BILLING_SCOPE,
-      org_id: args.orgId,
-      setup_kind: "tenant_payment_method",
-    },
-  });
-  await logAudit({
-    action: "platform.billing.stripe.setup_session.created",
-    adminEmail: args.adminEmail ?? "platform-admin",
-    adminUserId: null,
-    targetTable: "tenant_billing_subscriptions",
-    targetId: args.orgId,
-    metadata: { stripeCustomerId: customer.customerId },
-    ip: null,
-    userAgent: null,
-  }).catch(() => undefined);
-  return { stripeConfigured: true, url: session.url ?? undefined };
-}
-
-export async function createTenantStripeBillingPortalSession(args: {
-  orgId: string;
-  adminEmail?: string | null;
-  tenantReturn?: boolean;
-}): Promise<PlatformStripeHostedSessionResult> {
-  const config = readStripeConfigOrNull();
-  if (!config) return { stripeConfigured: false };
-  const customer = await ensureTenantStripeCustomer({
-    orgId: args.orgId,
-    adminEmail: args.adminEmail ?? null,
-  });
-  if (!customer.stripeConfigured || !customer.customerId) {
-    return { stripeConfigured: customer.stripeConfigured };
-  }
-  const stripe = getStripeClient(config);
-  const session = await stripe.billingPortal.sessions.create({
-    customer: customer.customerId,
-    return_url: args.tenantReturn
-      ? tenantBillingReturnUrl(config)
-      : adminBillingReturnUrl(config, args.orgId),
-  });
-  await logAudit({
-    action: "platform.billing.stripe.portal_session.created",
-    adminEmail: args.adminEmail ?? "platform-admin",
-    adminUserId: null,
-    targetTable: "tenant_billing_subscriptions",
-    targetId: args.orgId,
-    metadata: { stripeCustomerId: customer.customerId },
-    ip: null,
-    userAgent: null,
-  }).catch(() => undefined);
-  return { stripeConfigured: true, url: session.url };
-}
-
 export async function handlePlatformTenantStripeEvent(
   event: Stripe.Event,
 ): Promise<boolean> {
   if (
-    event.type !== "checkout.session.completed" &&
-    event.type !== "checkout.session.async_payment_succeeded" &&
     event.type !== "customer.subscription.created" &&
     event.type !== "customer.subscription.updated" &&
     event.type !== "customer.subscription.deleted" &&
@@ -614,40 +456,6 @@ export async function handlePlatformTenantStripeEvent(
   }
   const raw = await rawClient();
   if (!raw) return false;
-  if (event.type.startsWith("checkout.session.")) {
-    const session = event.data.object as Stripe.Checkout.Session;
-    if (
-      session.mode !== "setup" ||
-      session.metadata?.billing_scope !== PLATFORM_BILLING_SCOPE ||
-      !session.metadata.org_id
-    ) {
-      return false;
-    }
-    const customerId =
-      typeof session.customer === "string"
-        ? session.customer
-        : (session.customer?.id ?? null);
-    const setupIntentId =
-      typeof session.setup_intent === "string"
-        ? session.setup_intent
-        : (session.setup_intent?.id ?? null);
-    if (!customerId) return false;
-    const config = readStripeConfigOrNull();
-    if (!config) return false;
-    const stripe = getStripeClient(config);
-    const summary = await retrievePaymentMethodSummary({
-      stripe,
-      customerId,
-      setupIntentId,
-    });
-    await persistPaymentMethodSummary({
-      raw,
-      orgId: session.metadata.org_id,
-      customerId,
-      summary,
-    });
-    return true;
-  }
   if (event.type.startsWith("customer.subscription.")) {
     const sub = event.data.object as Stripe.Subscription;
     if (
@@ -655,7 +463,8 @@ export async function handlePlatformTenantStripeEvent(
       !sub.metadata.org_id
     )
       return false;
-    await raw
+    const subPeriods = sub as Stripe.Subscription & SubscriptionPeriods;
+    const { error } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
       .update({
@@ -663,20 +472,37 @@ export async function handlePlatformTenantStripeEvent(
         stripe_status: sub.status,
         stripe_last_synced_at: new Date().toISOString(),
         current_period_start: asStripeTimestamp(
-          (sub as any).current_period_start,
+          subPeriods.current_period_start,
         ),
-        current_period_end: asStripeTimestamp((sub as any).current_period_end),
+        current_period_end: asStripeTimestamp(subPeriods.current_period_end),
       })
       .eq("org_id", sub.metadata.org_id)
       .in("status", ["active", "trialing", "past_due"]);
+    if (error) {
+      logger.error(
+        {
+          event: "platform_billing_stripe_subscription_webhook_update_failed",
+          err: error,
+          orgId: sub.metadata.org_id,
+          stripeSubscriptionId: sub.id,
+        },
+        "platform billing Stripe subscription webhook update failed",
+      );
+    }
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
-  const subRef = invoice.parent?.subscription_details?.subscription;
+  const legacySub = (
+    invoice as Stripe.Invoice & {
+      subscription?: string | Stripe.Subscription | null;
+    }
+  ).subscription;
+  const subRef =
+    invoice.parent?.subscription_details?.subscription ?? legacySub;
   const subscriptionId =
     typeof subRef === "string" ? subRef : (subRef?.id ?? null);
   if (!subscriptionId) return false;
-  const { data, error } = await raw
+  const { error } = await raw
     .schema("resupply")
     .from("tenant_billing_subscriptions")
     .update({
@@ -684,10 +510,17 @@ export async function handlePlatformTenantStripeEvent(
       last_invoice_status: invoice.status,
       stripe_last_synced_at: new Date().toISOString(),
     })
-    .eq("stripe_subscription_id", subscriptionId)
-    .select("id");
-  if (error) throw error;
-  if (!data || data.length === 0) return false;
+    .eq("stripe_subscription_id", subscriptionId);
+  if (error) {
+    logger.error(
+      {
+        event: "platform_billing_stripe_invoice_webhook_update_failed",
+        err: error,
+        stripeSubscriptionId: subscriptionId,
+      },
+      "platform billing Stripe invoice webhook update failed",
+    );
+  }
   logger.info(
     {
       event: "platform_billing_stripe_invoice_synced",
@@ -696,3 +529,4 @@ export async function handlePlatformTenantStripeEvent(
     "platform billing Stripe invoice synced",
   );
   return true;
+}

@@ -24,14 +24,6 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain(
       '"/platform/billing/tenants/:id/stripe/subscription"',
     );
-    expect(SRC).toContain(
-      '"/platform/billing/tenants/:id/stripe/setup-session"',
-    );
-    expect(SRC).toContain('"/platform/billing/tenants/:id/stripe/portal"');
-    expect(SRC).toContain('"/admin/billing/stripe/portal"');
-    expect(SRC).toContain(
-      '"/platform/billing/tenants/:id/stripe/payment-method/sync"',
-    );
     expect(SRC).toContain("requirePlatformAdmin");
   });
 
