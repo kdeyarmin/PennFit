@@ -191,7 +191,7 @@ import webhookTestSendRouter from "./admin/webhook-test-send.js";
 import payerFeeSchedulesImportRouter from "./admin/payer-fee-schedules-import.js";
 import systemIntegrationsStatusRouter from "./admin/system-integrations-status.js";
 import pacwareRouter from "./admin/pacware.js";
-import connectionTestsRouter from "./admin/connection-tests.js";
+import platformConnectionTestsRouter from "./platform/connection-tests.js";
 import proxyChainRouter from "./admin/proxy-chain.js";
 import botPlaygroundRouter from "./admin/bot-playground.js";
 import documentationPacketsRouter from "./admin/documentation-packets.js";
@@ -234,6 +234,7 @@ router.use(platformMeRouter);
 router.use(platformTenantsRouter);
 router.use(platformBillingRouter);
 router.use(platformConfigRouter);
+router.use(platformConnectionTestsRouter);
 router.use(platformImpersonationRouter);
 // Public shop routes (no auth) — patient-facing cash-pay catalog,
 // Stripe Hosted Checkout, and order summary lookup. Mounted before
@@ -628,10 +629,6 @@ router.use(systemIntegrationsStatusRouter);
 // patient-roster import (sync), and CSV exports (roster + resupply-due).
 // PacWare has no API; this is the documented CSV bridge.
 router.use(pacwareRouter);
-// /admin/connection-tests/* — super-admin "send a test" diagnostics for
-// email / SMS / voice / chat. Verifies a credential (including one just
-// saved in System Configuration) actually works. system.config.manage.
-router.use(connectionTestsRouter);
 // /admin/diagnostics/proxy-chain — echoes the forwarding-header chain
 // (socket peer, XFF, CF-Connecting-IP) plus Express's req.ip resolution
 // for the calling request. Operator tool for confirming Railway's XFF

@@ -1234,19 +1234,11 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
           },
           {
             href: "/admin/system/configuration",
-            label: "Configuration & tests",
+            label: "Configuration",
             icon: SlidersHorizontal,
             matchPrefix: "/admin/system/configuration",
             requiredPermission: "system.config.manage",
-            hint: "Integration credentials & platform secrets, plus send-a-test for email/SMS/voice/chat (super-admin)",
-          },
-          {
-            href: "/admin/connection-tests",
-            label: "Connection tests",
-            icon: Plug,
-            matchPrefix: "/admin/connection-tests",
-            requiredPermission: "system.config.manage",
-            hint: "Send a real test email, SMS, voice call, or AI chat to confirm credentials work (super-admin)",
+            hint: "Your branding and your own integration accounts (therapy-cloud, clearinghouse)",
           },
           {
             href: "/admin/platform-billing",

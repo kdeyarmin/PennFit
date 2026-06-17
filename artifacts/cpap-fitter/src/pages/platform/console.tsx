@@ -45,6 +45,7 @@ import {
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
+import { ConnectionTests } from "@/components/admin/ConnectionTests";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { Input, Label } from "@/components/admin/Input";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -736,7 +737,20 @@ const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/platform", label: "Tenants" },
   { href: "/platform/overview", label: "Fleet overview" },
   { href: "/platform/integrations", label: "Global integrations" },
+  { href: "/platform/connection-tests", label: "Connection tests" },
 ];
+
+function PlatformConnectionTests() {
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Connection tests"
+        description="Send a real test email, SMS, voice call, or AI chat to confirm the platform's SendGrid / Twilio / AI vendor credentials actually work."
+      />
+      <ConnectionTests />
+    </div>
+  );
+}
 
 function PlatformNav() {
   const [location] = useLocation();
@@ -815,6 +829,10 @@ function PlatformConsole() {
         <Route path="/platform/tenants" component={TenantDirectory} />
         <Route path="/platform/overview" component={FleetOverview} />
         <Route path="/platform/integrations" component={GlobalIntegrations} />
+        <Route
+          path="/platform/connection-tests"
+          component={PlatformConnectionTests}
+        />
         <Route>
           <Redirect to="/platform" replace />
         </Route>

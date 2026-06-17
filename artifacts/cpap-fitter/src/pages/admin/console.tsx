@@ -376,11 +376,6 @@ const AdminSystemConfigurationPage = lazyWithRetry(() =>
     default: m.AdminSystemConfigurationPage,
   })),
 );
-const AdminConnectionTestsPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-connection-tests").then((m) => ({
-    default: m.AdminConnectionTestsPage,
-  })),
-);
 const AdminBotPlaygroundPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-bot-playground").then((m) => ({
     default: m.AdminBotPlaygroundPage,
@@ -1185,10 +1180,6 @@ function AdminConsole() {
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}
-            />
-            <Route
-              path="/admin/connection-tests"
-              component={AdminConnectionTestsPage}
             />
             <Route
               path="/admin/platform-billing"
