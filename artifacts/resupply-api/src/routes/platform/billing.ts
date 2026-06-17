@@ -94,8 +94,7 @@ async function currentUsage(orgId: string) {
     countTable(orgId, "patients", undefined, (q) => q.eq("status", "active")),
       q.eq("status", "active"),
     ),
-    countTable(orgId, "locations", undefined, (q) => q.eq("status", "active")),
-    countTable(orgId, "shop_orders", from),
+    countTable(orgId, "locations", undefined, (q) => q.eq("is_active", true)),
     countTable(orgId, "shop_subscriptions", undefined, (q) =>
       q.in("status", ["active", "trialing"]),
     ),
