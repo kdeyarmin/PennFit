@@ -22,7 +22,6 @@ import type Stripe from "stripe";
 
 import {
   getOrgScopedClient,
-  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -31,6 +30,8 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config.js";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect.js";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   chargeInstallment,
   selectChargeableInstallments,
@@ -65,7 +66,10 @@ function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
           confirm: true,
           metadata: req.metadata,
         },
-        { idempotencyKey: req.idempotencyKey },
+        // `accountOptions` carries `{ stripeAccount }` for a tenant on Stripe
+        // Connect, routing the charge to its connected account (where its
+        // customer + PM live). Empty for the platform account (seed tenant).
+        { idempotencyKey: req.idempotencyKey, ...(req.accountOptions ?? {}) },
       );
       if (pi.status === "succeeded") {
         return { outcome: "succeeded", paymentIntentId: pi.id };
@@ -163,11 +167,34 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
     );
     return stats;
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return stats;
-  const supabase = getOrgScopedClient(orgId);
   const charger = buildStripeOffSessionCharger(getStripeClient(config));
+  // Fan out across every active tenant — patient_payment_plans /
+  // _installments are org-scoped, and each tenant's off-session charge is
+  // routed to ITS OWN Stripe account (stripeAccountRequestOptions(orgId)) so
+  // the stored customer + PM resolve on the account they were created on.
+  // Per-tenant failure isolation; results summed. Single-tenant:
+  // listActiveOrgIds() returns just the seed org → platform account, exactly
+  // as before Connect.
+  await forEachActiveOrg(
+    async (orgId) => {
+      await paymentPlanAutochargeForOrg(orgId, charger, stats);
+    },
+    { jobName: PAYMENT_PLAN_AUTOCHARGE_JOB },
+  );
+  return stats;
+}
+
+async function paymentPlanAutochargeForOrg(
+  orgId: string,
+  charger: OffSessionCharger,
+  stats: AutochargeRunStats,
+): Promise<void> {
+  const supabase = getOrgScopedClient(orgId);
   const sink = buildSupabaseSink(supabase);
+  // Resolve the tenant's Stripe Connect routing once per tick. Empty for the
+  // platform account (seed / not-yet-onboarded); `{ stripeAccount }` once the
+  // tenant's connected account has charges_enabled.
+  const accountOptions = await stripeAccountRequestOptions(orgId);
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Keyset-paginate the plan scan. PostgREST silently caps un-limited
@@ -287,7 +314,13 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
         continue;
       }
 
-      const res = await chargeInstallment(plan, inst, charger, sink);
+      const res = await chargeInstallment(
+        plan,
+        inst,
+        charger,
+        sink,
+        accountOptions,
+      );
       if (res.outcome === "succeeded") {
         stats.charged += 1;
         // Reflect the success locally so the plan-completion check below
@@ -320,7 +353,6 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
       }
     }
   }
-  return stats;
 }
 
 export async function registerPaymentPlanAutochargeJob(
