@@ -174,6 +174,20 @@ export interface SendgridClient {
 export const DEFAULT_SENDGRID_FROM_EMAIL = "noreply@cmbreathe.com";
 
 /**
+ * The PLATFORM's default sender display name — the CareMetric Breathe
+ * platform identity. Used when neither an explicit `fromName` option,
+ * `SENDGRID_FROM_NAME`, nor a per-tenant `organizations.from_name`
+ * (migration 0360) is set, so unconfigured tenants render a branded
+ * "From" name rather than a bare email address.
+ *
+ * Like the From email, this is the PLATFORM fallback, NOT a tenant name:
+ * the Penn Home Medical Supply tenant pins its own "Penn Home Medical
+ * Supply" name (migration 0377), so this default only affects tenants
+ * that haven't set their own.
+ */
+export const DEFAULT_SENDGRID_FROM_NAME = "CareMetric Breathe";
+
+/**
  * Build a SendgridClient.
  *
  * Reads SENDGRID_API_KEY, SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME from
@@ -203,7 +217,15 @@ export function createSendgridClient(
     fromEmailCandidate && fromEmailCandidate !== ""
       ? fromEmailCandidate
       : DEFAULT_SENDGRID_FROM_EMAIL;
-  const fromName = opts.fromName ?? process.env.SENDGRID_FROM_NAME;
+  // Display name only. An explicit override (option or env) wins; an
+  // unset/blank value falls back to the platform constant so unconfigured
+  // tenants still render a branded sender name rather than a bare address.
+  const fromNameOverride = opts.fromName ?? process.env.SENDGRID_FROM_NAME;
+  const fromNameCandidate = fromNameOverride?.trim();
+  const fromName =
+    fromNameCandidate && fromNameCandidate !== ""
+      ? fromNameCandidate
+      : DEFAULT_SENDGRID_FROM_NAME;
 
   if (!apiKey) {
     throw new EmailConfigError(

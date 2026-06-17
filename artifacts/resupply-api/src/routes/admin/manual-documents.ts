@@ -36,7 +36,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient, type Json } from "@workspace/resupply-db";
-import { createSendgridClient } from "@workspace/resupply-email";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import {
   createTelnyxFaxClient,
   TelnyxApiError,
@@ -885,7 +885,7 @@ router.post(
     ].join("\n");
 
     try {
-      const client = createSendgridClient();
+      const client = await createTenantSendgridClient(orgId);
       await client.sendEmail({
         to,
         subject: `${row.title} — ${supplier}`,

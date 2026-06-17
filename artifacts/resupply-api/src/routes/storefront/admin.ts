@@ -623,8 +623,9 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
     // Read the same env vars the shared SendGrid integration reads, so
     // this readiness flag matches what `createSendgridClient()` will
     // actually do. The API key is the only requirement — the From address
-    // now defaults in code to info@pennpaps.com when SENDGRID_FROM_EMAIL
-    // is unset (ADR 018), so it is not part of the readiness check.
+    // now defaults in code to the platform identity (noreply@cmbreathe.com)
+    // when SENDGRID_FROM_EMAIL is unset, so it is not part of the readiness
+    // check.
     sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY),
   });
 });

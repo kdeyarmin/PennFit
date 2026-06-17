@@ -50,7 +50,7 @@ export type NotAuthorizedReason =
 // cutover (mailbox rename, distribution list change) doesn't require a code
 // change.
 const DEFAULT_CONTACT_EMAIL =
-  (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined) ??
+  (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined)?.trim() ||
   "info@cmbreathe.com";
 
 export function NotAuthorizedPage({

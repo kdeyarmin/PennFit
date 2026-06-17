@@ -61,7 +61,7 @@ const VALID_PROD_ENV: Record<string, string> = {
   STRIPE_WEBHOOK_SIGNING_SECRET: "whsec" + "_abc123def456",
   // SendGrid:
   SENDGRID_API_KEY: "SG" + ".abc123def456",
-  SENDGRID_FROM_EMAIL: "info@pennpaps.com",
+  SENDGRID_FROM_EMAIL: "noreply@cmbreathe.com",
   // Twilio:
   TWILIO_AUTH_TOKEN: "abc123authtoken",
   TWILIO_ACCOUNT_SID: "AC" + "abcdef1234567890abcdef1234567890",
@@ -534,7 +534,7 @@ describe("SendGrid checks", () => {
     expect(exitCode).toBe(1);
   });
 
-  it("fails when SENDGRID_FROM_EMAIL is not info@pennpaps.com in production", () => {
+  it("fails when SENDGRID_FROM_EMAIL is not noreply@cmbreathe.com in production", () => {
     const { exitCode, stdout } = run(
       withEnv({ SENDGRID_FROM_EMAIL: "wrong@example.com" }),
     );
