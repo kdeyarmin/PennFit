@@ -19,7 +19,7 @@ apex**, not a tenant-claimable custom domain.
 - **`pennpaps.com`** is the **Penn Home Medical Supply tenant's** verified
   custom domain (seeded permanently by migration
   `0353_platform_and_pennpaps_domains.sql` against `slug =
-  'penn-home-medical'`). A unique index on `organizations.custom_domain`
+'penn-home-medical'`). A unique index on `organizations.custom_domain`
   means no other tenant can claim it. Requests on this host resolve to the
   Penn org and render the **"PennPaps"** brand.
 
@@ -104,7 +104,7 @@ Then load each host in a browser:
 
 - `pennpaps.com` needs the **same** Cloudflare-proxy + Railway custom-domain
   binding to actually terminate TLS and route to the app — the DB row
-  (migration 0353) only decides *which tenant* a reaching request resolves
+  (migration 0353) only decides _which tenant_ a reaching request resolves
   to, it does not front the host.
 - To change the CNAME target shown to **future** tenants wiring up their own
   domains, set `PENNFIT_CUSTOM_DOMAIN_CNAME_TARGET` (default:
