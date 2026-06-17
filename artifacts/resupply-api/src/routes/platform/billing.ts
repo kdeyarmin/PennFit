@@ -173,7 +173,9 @@ async function currentUsage(orgId: string) {
     countTable(orgId, "admin_users", undefined, {
       eq: [["status", "active"]],
     }),
-    countTable(orgId, "locations", undefined, { eq: [["status", "active"]] }),
+    countTable(orgId, "locations", undefined, {
+      eq: [["is_active", "true"]],
+    }),
     countTable(orgId, "shop_orders", from),
     countTable(orgId, "shop_subscriptions", undefined, {
       in: [["status", ["active", "trialing"]]],
