@@ -2296,6 +2296,9 @@ export interface Database {
           stripe_charges_enabled: boolean;
           from_email: string | null;
           from_name: string | null;
+          // Per-tenant internal notification recipients (migration 0379).
+          fulfillment_email: string | null;
+          lead_notification_email: string | null;
           sms_from_number: string | null;
           voice_from_number: string | null;
           twilio_messaging_service_sid: string | null;

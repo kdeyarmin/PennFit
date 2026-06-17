@@ -21,7 +21,10 @@
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "./email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "./tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveOrgNotificationEmail,
+} from "./tenant-branding.js";
 
 export interface InsuranceLeadPayload {
   fullName: string;
@@ -65,8 +68,13 @@ function escapeHtml(s: string): string {
  * INSURANCE_LEAD_NOTIFICATION_EMAIL once a dedicated verifications
  * mailbox exists.
  */
-function teamRecipient(): string | null {
+async function teamRecipient(
+  orgId: string | undefined,
+): Promise<string | null> {
+  // The tenant's own verifications inbox when set (migration 0379), else the
+  // platform env default (the seed operator's mailbox).
   return (
+    (await resolveOrgNotificationEmail(orgId, "lead_notification_email")) ||
     process.env.INSURANCE_LEAD_NOTIFICATION_EMAIL ||
     process.env.SENDGRID_FROM_EMAIL ||
     null
@@ -214,7 +222,7 @@ export async function sendInsuranceLeadEmails(
   // Brand the copy with the tenant's storefront name (seed → "PennPaps").
   const brandName = (await resolveBrandingByOrgId(payload.orgId))
     .storefrontName;
-  const team = teamRecipient();
+  const team = await teamRecipient(payload.orgId);
   let notificationDelivered = false;
   let confirmationDelivered = false;
   const errors: string[] = [];

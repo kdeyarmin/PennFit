@@ -243,6 +243,41 @@ export async function resolveBrandingByOrgId(
 }
 
 /**
+ * Resolve a tenant's per-tenant INTERNAL notification recipient (migration
+ * 0379): `fulfillment_email` (fitter-flow order notifications) or
+ * `lead_notification_email` (insurance-lead notifications). Returns the
+ * column value, or null when unset / no org / on any error — callers fall
+ * back to the platform env default so single-tenant is unchanged.
+ */
+export async function resolveOrgNotificationEmail(
+  orgId: string | undefined,
+  column: "fulfillment_email" | "lead_notification_email",
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  try {
+    const supabase = getOrgScopedClient(id);
+    // GLOBAL `organizations` directory — `.raw()` so the facade doesn't
+    // re-append an org filter; select this org by id.
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select(column)
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (error) return null;
+    const value = (data as Record<string, unknown> | null)?.[column];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Drop the branding cache so an admin save is visible on the next read.
  * Also drops the host→org cache: every branding/custom-domain mutation
  * invalidates this, and a domain bind/unbind changes which org a host

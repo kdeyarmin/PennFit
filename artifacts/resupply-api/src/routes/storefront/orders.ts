@@ -231,7 +231,10 @@ router.post(
       }
     }
 
-    const result = await sendOrderToPenn(order, { orderReference });
+    const result = await sendOrderToPenn(order, {
+      orderReference,
+      orgId: orgId ?? undefined,
+    });
 
     // Update DB row with delivery status (best-effort; do not surface errors
     // to the patient if this update fails)
