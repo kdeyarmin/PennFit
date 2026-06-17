@@ -91,8 +91,7 @@ async function currentUsage(orgId: string) {
     faxEvents,
     voiceEvents,
   ] = await Promise.all([
-    countTable(orgId, "patients"),
-    countTable(orgId, "admin_users", undefined, (q) =>
+    countTable(orgId, "patients", undefined, (q) => q.eq("status", "active")),
       q.eq("status", "active"),
     ),
     countTable(orgId, "locations", undefined, (q) => q.eq("status", "active")),
