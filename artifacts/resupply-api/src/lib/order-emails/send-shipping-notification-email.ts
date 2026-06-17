@@ -31,13 +31,12 @@
 //                link when the carrier is known), shipping address
 //                summary, "View order" CTA, support footer.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -62,6 +61,13 @@ export interface SendShippingNotificationEmailInput {
    * then https://pennpaps.com.
    */
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the email is sent under it (G6) and
+   * the copy carries the tenant's storefront brand; otherwise the platform
+   * default From/brand is used. Omit / undefined leaves it unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendShippingNotificationEmailResult {
@@ -147,7 +153,9 @@ export async function sendShippingNotificationEmail(
 
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       // Fail-open here (return configured: false) — the admin route
@@ -158,14 +166,20 @@ export async function sendShippingNotificationEmail(
     throw err;
   }
 
-  const subject = "Your PennPaps order has shipped";
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+
+  const subject = `Your ${brandName} order has shipped`;
 
   const orderUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
   const trackingUrl = getCarrierTrackingUrl(carrier, trackingNumber);
 
   // ---------- text body ----------
   const textLines: string[] = [
-    "Good news — your PennPaps order has shipped and is on its way.",
+    `Good news — your ${brandName} order has shipped and is on its way.`,
     "",
     `Carrier:  ${carrier}`,
     `Tracking: ${trackingNumber}`,
@@ -230,13 +244,13 @@ export async function sendShippingNotificationEmail(
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
           <tr>
             <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
               <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">On its way</div>
             </td>
           </tr>
           <tr>
             <td style="padding-top:20px;color:#333;font-size:15px;line-height:1.5;">
-              Good news &mdash; your PennPaps order has shipped.
+              Good news &mdash; your ${escapeHtml(brandName)} order has shipped.
             </td>
           </tr>
           <tr>

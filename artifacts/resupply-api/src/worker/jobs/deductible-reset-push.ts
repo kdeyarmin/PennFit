@@ -272,6 +272,7 @@ async function deductibleResetPushForOrg(
         const result = await sendDeductibleResetEmail({
           toEmail: row.email_lower,
           firstName,
+          orgId,
         });
         if (!result.configured) {
           await releaseClaim();

@@ -279,6 +279,7 @@ async function deliveryFollowupSweepForOrg(
         stripeSessionId: claimed.stripe_session_id,
         firstName: recipient.firstName,
         orderId: claimed.id,
+        orgId,
       });
       if (!result.configured) {
         await releaseClaim();
@@ -403,6 +404,7 @@ async function deliveryFollowupSweepForOrg(
           caregiverName: recipient.caregiver.name,
           patientFirstName: recipient.firstName,
           kind: "delivered",
+          orgId,
         });
         if (cgResult.delivered) {
           recordOutboundMessageUsage({

@@ -399,6 +399,7 @@ async function sendShippingNotificationIfNew(args: {
       shippingAddress:
         (claimedRow.shipping_address_json as SavedShippingAddress | null) ??
         null,
+      orgId,
     });
 
     if (!result.configured) {
@@ -509,6 +510,7 @@ async function sendShippingNotificationIfNew(args: {
           kind: "shipped",
           carrier: claimedRow.tracking_carrier,
           trackingNumber: claimedRow.tracking_number,
+          orgId,
         });
       } catch (err) {
         log?.warn?.(
@@ -1121,6 +1123,7 @@ async function sendReadyForPickupNotificationIfNew(args: {
         postalCode: location.postalCode,
         phoneE164: location.phoneE164,
       },
+      orgId,
     });
     if (!result.configured) {
       await releaseClaim();
