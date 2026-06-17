@@ -30,6 +30,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -115,6 +116,14 @@ describe("POST /voice/status-callback", () => {
       .send({ CallSid: "CA1", CallStatus: "completed" });
     expect(res.status).toBe(200);
     expect(getSupabaseCallCount("conversations", "update")).toBe(1);
+    // Tenant-agnostic webhook keyed by the globally-unique conversation id:
+    // the close must NOT be org-scoped (the facade forces org_id onto the
+    // patch), else a non-seed tenant's call would never close.
+    const [closePatch] = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Array<Record<string, unknown>>;
+    expect(closePatch).not.toHaveProperty("org_id");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("voice.call.completed");

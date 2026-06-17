@@ -122,7 +122,13 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
       // us whether THIS call flipped the row; only the winner emits
       // the audit row, so the HMAC-chained audit log doesn't grow
       // a duplicate `voice.call.completed` entry on every retry.
+      // Tenant-agnostic webhook: the conversation id is a globally-unique
+      // uuid, so match across tenants via `.raw()` — the org-scoped client
+      // would filter by the seed org_id and never close a non-seed tenant's
+      // call (the rest of this handler already uses `supabase.raw()`).
       const { data: flipped, error } = await supabase
+        .raw()
+        .schema("resupply")
         .from("conversations")
         .update({ status: "closed", updated_at: new Date().toISOString() })
         .eq("id", conversationId)
