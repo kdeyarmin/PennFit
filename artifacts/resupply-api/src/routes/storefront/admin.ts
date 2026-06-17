@@ -466,6 +466,8 @@ router.get("/admin/reminders", async (req, res) => {
     .select(
       "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
     )
+    // Tenant-scoped (migration 0378) — a tenant admin sees only ITS subscribers.
+    .eq("org_id", orgId)
     .order("created_at", { ascending: false })
     .limit(2000);
   if (error) throw error;
@@ -526,7 +528,9 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
     .schema("public")
     .from("reminder_subscriptions")
     .select("id, email, manage_token, items, last_sent_at")
-    .eq("status", "active");
+    .eq("status", "active")
+    // Tenant-scoped (migration 0378) — only send to THIS tenant's subscribers.
+    .eq("org_id", orgId);
   if (error) throw error;
 
   let sent = 0;

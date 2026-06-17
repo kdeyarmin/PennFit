@@ -149,8 +149,15 @@ claims.
 
 **Still open after this branch (tracked):** the full per-tenant conversion of
 the remaining ~55 email senders and remaining outbound-SMS callsites lacking
-an in-scope `orgId`; and the G1 `reminder_subscriptions` global-table
-resolution. The G8 read-only singleton consumers are now **addressed**:
+an in-scope `orgId`. The G1 `reminder_subscriptions` global-table resolution is
+now **addressed** — migration 0378 adds `org_id` to the public
+`reminder_subscriptions` table (backfilled to seed) and re-keys email
+uniqueness to `(org_id, email)` so two tenants can each enroll the same email;
+the storefront subscribe records the host tenant, the admin list/send filter to
+the caller's org, the order auto-enroll stamps the order's org (per-tenant
+flag), and the unsubscribe copy resolves the subscription's own brand instead of
+hard-coded "PennPaps" (manage/unsubscribe stay keyed by the globally-unique
+token). The G8 read-only singleton consumers are now **addressed**:
 `company-info` is org-aware (`getCompanyInfo(orgId)` / `getDocumentSupplierName(orgId)`
 with a per-org cache; the seed/sync path is unchanged), and the patient-facing
 DME document callers thread their `orgId` (PA requests, CMN/DWO/SWO,

@@ -80,6 +80,9 @@ export interface Database {
           last_sent_at: string | null;
           created_at: string;
           updated_at: string;
+          // Owning tenant (migration 0378). Nullable for back-compat with
+          // pre-0378 rows until backfilled to the seed org.
+          org_id: string | null;
         };
         Insert: Partial<
           Database["public"]["Tables"]["reminder_subscriptions"]["Row"]
