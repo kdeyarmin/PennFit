@@ -66,6 +66,20 @@ describe("runPaymentPlanAutocharge — multi-tenant fan-out", () => {
     expect(getSupabaseCallCount("patient_payment_plans", "select")).toBe(0);
   });
 
+  it("re-throws after fan-out when a tenant fails (prompt pg-boss retry)", async () => {
+    // Money-path retry safety: a per-tenant throw (here, a plan-scan DB
+    // error standing in for a post-charge sink.markPaid failure) is caught
+    // by forEachActiveOrg, so the wrapper must re-surface it so pg-boss
+    // retries promptly rather than waiting for the next cron tick.
+    // beforeEach already staged one active org.
+    stageSupabaseResponse("patient_payment_plans", "select", {
+      error: { message: "db down" },
+    });
+    await expect(runPaymentPlanAutocharge()).rejects.toThrow(
+      /tenant\(s\) failed/,
+    );
+  });
+
   it("routes the off-session charge to the tenant's connected account (G5)", async () => {
     connectAcctOpts.value = { stripeAccount: "acct_tenant" };
     // One authorized plan with one overdue, chargeable installment.

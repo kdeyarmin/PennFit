@@ -175,12 +175,25 @@ export async function runPaymentPlanAutocharge(): Promise<AutochargeRunStats> {
   // Per-tenant failure isolation; results summed. Single-tenant:
   // listActiveOrgIds() returns just the seed org → platform account, exactly
   // as before Connect.
-  await forEachActiveOrg(
+  const fan = await forEachActiveOrg(
     async (orgId) => {
       await paymentPlanAutochargeForOrg(orgId, charger, stats);
     },
     { jobName: PAYMENT_PLAN_AUTOCHARGE_JOB },
   );
+  // Money-path retry safety: a throw in the per-tenant body (e.g. sink.markPaid
+  // failing AFTER a successful Stripe charge) is caught + isolated by
+  // forEachActiveOrg, so we re-surface it as a job failure. Otherwise pg-boss
+  // would mark the tick succeeded and the only retry would be the next cron
+  // run — potentially past Stripe's ~24h idempotency window, risking a second
+  // charge. Re-throwing makes pg-boss retry the tick PROMPTLY
+  // (VENDOR_SEND_QUEUE_OPTS); the already-charged installments are idempotent
+  // (per-installment claim + idempotency key) so the retry is safe.
+  if (fan.failedOrgIds.length > 0) {
+    throw new Error(
+      `payment-plan-autocharge: ${fan.failedOrgIds.length} tenant(s) failed this tick — retrying`,
+    );
+  }
   return stats;
 }
 
