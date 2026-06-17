@@ -34,6 +34,7 @@ import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -230,6 +231,11 @@ router.post(
       }
 
       if (outcome.status === "ok") {
+        recordOutboundMessageUsage({
+          orgId,
+          channel,
+          source: "admin.bulk_send",
+        });
         results.push({
           episodeId,
           status: "ok",

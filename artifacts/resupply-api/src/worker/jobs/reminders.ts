@@ -86,6 +86,7 @@ import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../../lib/logger.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   CRON_SCAN_QUEUE_OPTS,
@@ -1006,6 +1007,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-sms: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing SMS went out (the dedup claim above makes this
+      // once-per (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "sms",
+        source: "reminders.sms",
+      });
     }
   });
 
@@ -1086,6 +1095,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
           `reminders.send-email: retryable failure: ${outcome.status}`,
         );
       }
+    } else {
+      // One patient-facing email went out (dedup-claimed once-per
+      // (patient, episode, day) — no double-count on retry).
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "reminders.email",
+      });
     }
   });
 

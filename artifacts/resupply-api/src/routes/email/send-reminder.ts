@@ -17,6 +17,7 @@ import {
 } from "@workspace/resupply-reminders";
 
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -105,6 +106,11 @@ router.post(
 
     switch (outcome.status) {
       case "ok":
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "admin.send_reminder.email",
+        });
         res.status(201).json({
           conversationId: outcome.conversationId,
           messageId: outcome.vendorRef,
