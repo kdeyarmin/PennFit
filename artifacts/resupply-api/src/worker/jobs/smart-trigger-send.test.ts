@@ -5,12 +5,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { runSmartTriggerSendDueMock, listActiveOrgIdsMock } = vi.hoisted(
-  () => ({
-    runSmartTriggerSendDueMock: vi.fn(),
-    listActiveOrgIdsMock: vi.fn(),
-  }),
-);
+const { runSmartTriggerSendDueMock, listActiveOrgIdsMock } = vi.hoisted(() => ({
+  runSmartTriggerSendDueMock: vi.fn(),
+  listActiveOrgIdsMock: vi.fn(),
+}));
 vi.mock("../../lib/smart-triggers/dispatcher", () => ({
   runSmartTriggerSendDue: runSmartTriggerSendDueMock,
 }));
