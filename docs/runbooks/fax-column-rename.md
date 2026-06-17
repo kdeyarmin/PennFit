@@ -40,8 +40,8 @@ safe.
 Railway's `preDeployCommand` runs migrations **while the previous release is
 still serving traffic**, so every contract step must be safe against the
 release one version behind it. That means: don't drop `NOT NULL`/`column`
-in the same deploy that stops *writing* it, AND don't drop the column in the
-same deploy that stops *reading* it (the legacy unique-violation fallback
+in the same deploy that stops _writing_ it, AND don't drop the column in the
+same deploy that stops _reading_ it (the legacy unique-violation fallback
 `SELECT`). Each "stop using it" must go fully live before the matching DB
 change. That yields three ordered deploys.
 
