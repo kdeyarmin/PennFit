@@ -25,8 +25,8 @@
 //
 // NOTE: the canonical idempotency key is `provider_fax_id` (vendor-neutral,
 // migration 0369); we store the Telnyx fax id in it. The legacy
-// `twilio_fax_sid` column is still written with the same value during the
-// expand/contract rename and is dropped by a later CONTRACT migration.
+// `twilio_fax_sid` column is no longer written (CONTRACT step 2a) and is
+// dropped in step 2b — see docs/runbooks/fax-column-rename.md.
 
 import type { Logger } from "pino";
 
@@ -104,8 +104,7 @@ async function fetchAllowlistedMedia(
 }
 
 export interface IngestInboundFaxInput {
-  /** Telnyx fax id (UUID). Stored in `provider_fax_id` (and, during the
-   *  rename, the legacy `twilio_fax_sid`). */
+  /** Telnyx fax id (UUID). Stored in `provider_fax_id`. */
   telnyxFaxId: string;
   fromE164: string | null;
   toE164: string | null;
@@ -161,16 +160,14 @@ export async function ingestInboundFax(
 
   // Step 1: insert (or learn it already exists).
   //
-  // Dual-write during the twilio_fax_sid → provider_fax_id rename
-  // (migration 0369, EXPAND phase): provider_fax_id is the canonical dedupe
-  // key, but we keep writing the legacy twilio_fax_sid (same value, still
-  // NOT NULL) so a rollback to the prior release stays safe. The CONTRACT
-  // migration drops twilio_fax_sid and this dual-write together.
+  // provider_fax_id is the canonical dedupe key (migration 0369). The legacy
+  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0370
+  // made it nullable); it is dropped in step 2b. The conflict lookup below
+  // still matches either column to cover any pre-2a rows.
   const insertRes = await supabase
     .from("inbound_faxes")
     .insert({
       provider_fax_id: input.telnyxFaxId,
-      twilio_fax_sid: input.telnyxFaxId,
       from_e164: input.fromE164 ?? null,
       to_e164: input.toE164 ?? null,
       num_pages: input.numPages ?? null,
