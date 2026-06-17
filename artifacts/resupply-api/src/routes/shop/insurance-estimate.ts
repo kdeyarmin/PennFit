@@ -51,26 +51,26 @@ interface LearnedEstimate {
 }
 
 /**
- * Read the precomputed learned OOP stat for a payer slug. Fail-soft:
- * any error (incl. the table not existing pre-0230) → null, so the
- * route always degrades to the static estimate.
+ * Read the precomputed learned OOP stat for a payer slug, scoped to the
+ * caller's tenant. Fail-soft: any error (incl. the table not existing
+ * pre-0230) → null, so the route always degrades to the static estimate.
  */
 async function fetchLearnedEstimate(
+  orgId: string,
   slug: string,
 ): Promise<LearnedEstimate | null> {
   try {
-    // payer_estimate_stats is a GLOBAL learned-stats table (no org_id):
-    // the OOP benchmarks are shared across tenants. Resolve the seed org
-    // only for a client, then read via .raw() (the facade .from() would
-    // append an org_id filter the column lacks). Fail-soft to null.
-    const orgId = await resolveSeedOrgId();
-    if (!orgId) return null;
+    // payer_estimate_stats is now keyed (org_id, slug) (migration 0382):
+    // each tenant learns its OWN benchmarks from its OWN claims. Read via
+    // .raw() (the table isn't in the typed Database) and filter to the
+    // resolved tenant. A tenant with no learned row → null → static range.
     const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
       .from("payer_estimate_stats")
       .select("p50_cents, p90_cents, sample_size")
+      .eq("org_id", orgId)
       .eq("slug", slug)
       .limit(1)
       .maybeSingle();
@@ -204,9 +204,11 @@ router.post("/shop/insurance-estimates", async (req, res) => {
 
   // Public route (no auth middleware populates req.orgId): resolve the
   // tenant from the request host so the estimate email sends under that
-  // tenant's From identity and brand (G6). Custom domain → that org;
+  // tenant's From identity and brand (G6) and the learned-stats read pulls
+  // THAT tenant's stats (migration 0382). Custom domain → that org;
   // platform host / miss → seed org (single-tenant unchanged).
-  const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+  const hostOrgId = await resolveOrgIdByHost(requestHost(req));
+  const orgId = hostOrgId ?? undefined;
 
   // Fire-and-forget the estimate email so SendGrid latency doesn't
   // hold the response. The patient sees the inline range result
@@ -242,10 +244,15 @@ router.post("/shop/insurance-estimates", async (req, res) => {
     }
   })();
 
-  // A data-derived range from our own adjudicated claims, when we have
-  // enough of them for this payer. The page shows it alongside the
+  // A data-derived range from this tenant's own adjudicated claims, when
+  // it has enough of them for this payer. The page shows it alongside the
   // static range; the email stays on the conservative static numbers.
-  const learned = await fetchLearnedEstimate(estimate.slug);
+  // Read the host tenant's stats, falling back to the seed org for the
+  // platform host / a custom-domain miss (single-tenant unchanged).
+  const statsOrgId = hostOrgId ?? (await resolveSeedOrgId());
+  const learned = statsOrgId
+    ? await fetchLearnedEstimate(statsOrgId, estimate.slug)
+    : null;
 
   // Return the canonical range so the page renders the same numbers
   // we just emailed — avoids any drift between the on-page result
