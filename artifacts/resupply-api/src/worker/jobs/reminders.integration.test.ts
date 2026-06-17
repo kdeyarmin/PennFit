@@ -93,10 +93,18 @@ describeIfDb("reminder scan fan-out (live db)", () => {
 
   beforeAll(async () => {
     try {
-      await getDbPool().query(
-        `SELECT org_id FROM resupply.prescriptions LIMIT 0`,
-      );
-      await getDbPool().query(`SELECT org_id FROM resupply.episodes LIMIT 0`);
+      // Probe EVERY table the scan reads so a partially-migrated DB skips
+      // cleanly instead of seeding then failing mid-scan on PostgREST.
+      for (const table of [
+        "frequency_rules",
+        "prescriptions",
+        "episodes",
+        "patients",
+        "fulfillments",
+        "conversations",
+      ]) {
+        await getDbPool().query(`SELECT org_id FROM resupply.${table} LIMIT 0`);
+      }
       migrationsReady = true;
     } catch {
       migrationsReady = false;

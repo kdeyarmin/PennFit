@@ -435,7 +435,9 @@ export async function scanForDueReminders(
   orgId: string,
   asOf: Date = new Date(),
 ): Promise<ScanRow[]> {
-  if (!orgId) return [];
+  // Empty / whitespace orgId → no tenant to scan (return empty rather than
+  // letting getOrgScopedClient throw on a blank id).
+  if (!orgId || !orgId.trim()) return [];
   const supabase = getOrgScopedClient(orgId);
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
   const quietCutoffIso = quietCutoff.toISOString();
@@ -936,8 +938,10 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       return;
     }
     // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
-    // to the seed org for jobs enqueued before the fan-out deploy.
-    const orgId = j.data.orgId ?? (await resolveSeedOrgId());
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
@@ -962,6 +966,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderSms({
         supabase: supabase.raw(),
+        orgId,
         cfg: cfg.sms,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
@@ -1016,8 +1021,10 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
       return;
     }
     // Prefer the tenant stamped by the per-tenant scan fan-out; fall back
-    // to the seed org for jobs enqueued before the fan-out deploy.
-    const orgId = j.data.orgId ?? (await resolveSeedOrgId());
+    // to the seed org for jobs enqueued before the fan-out deploy. Treat an
+    // empty/whitespace payload orgId as absent (a blank id would otherwise
+    // throw in getOrgScopedClient instead of using the seed fallback).
+    const orgId = j.data.orgId?.trim() || (await resolveSeedOrgId());
     if (!orgId) {
       logger.warn(
         { job_id: j.id },
@@ -1041,6 +1048,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     try {
       outcome = await sendReminderEmail({
         supabase: supabase.raw(),
+        orgId,
         cfg: cfg.email,
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
