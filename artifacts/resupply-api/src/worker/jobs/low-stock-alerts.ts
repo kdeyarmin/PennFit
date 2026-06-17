@@ -25,7 +25,11 @@
 
 import type PgBoss from "pg-boss";
 
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import {
+  getOrgScopedClient,
+  resolveSeedOrgId,
+  type OrgScopedClient,
+} from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -365,10 +369,7 @@ async function lowStockAlertsForOrg(
   } catch (err) {
     if (err instanceof EmailConfigError) {
       logger.warn(
-        {
-          event: "shop-inventory.low-stock-alerts.email_unconfigured",
-          message: err.message,
-        },
+        { event: "shop-inventory.low-stock-alerts.email_unconfigured", err },
         "low-stock-alerts: email not configured; skipping send",
       );
       return;
@@ -376,7 +377,11 @@ async function lowStockAlertsForOrg(
     throw err;
   }
 
-  const { subject, html, text } = renderDigest(alertable, practiceName);
+  // Brand the subject with THIS tenant's name, not the process-global env
+  // practice name (which is the seed tenant's) — the recipients are this
+  // tenant's admins.
+  const brand = await resolveTenantBrandName(supabase, orgId, practiceName);
+  const { subject, html, text } = renderDigest(alertable, brand);
   let anySent = false;
   for (const to of recipients) {
     try {
@@ -426,6 +431,16 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   }
   const stripe = getStripeClient(config);
   const seedOrgId = await resolveSeedOrgId();
+  if (!seedOrgId) {
+    // Fail-soft: without the seed org we can't attribute the platform catalog
+    // to a tenant, so the seed/platform catalog is skipped this tick (the gate
+    // below treats every org as non-seed). Connected tenants still alert on
+    // their own accounts. Log so this degraded tick isn't silent.
+    logger.warn(
+      { event: "shop-inventory.low-stock-alerts.no_seed_org" },
+      "low-stock-alerts: seed org unresolved — platform catalog skipped this tick (connected tenants unaffected)",
+    );
+  }
   const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
 
   await forEachActiveOrg(
@@ -440,6 +455,46 @@ export async function runLowStockAlerts(): Promise<LowStockAlertStats> {
   );
 
   return stats;
+}
+
+/**
+ * The tenant's customer-facing brand for the alert subject. Reads the org's
+ * storefront/legal name from the GLOBAL organizations directory via `.raw()`
+ * (the org-scoped facade would wrongly filter that table), falling back to
+ * the platform practice name on any miss/error so a DB blip never blocks the
+ * alert.
+ */
+async function resolveTenantBrandName(
+  supabase: OrgScopedClient,
+  orgId: string,
+  fallback: string,
+): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("storefront_name, name")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const row = data as {
+      storefront_name: string | null;
+      name: string | null;
+    } | null;
+    return row?.storefront_name?.trim() || row?.name?.trim() || fallback;
+  } catch (err) {
+    logger.warn(
+      {
+        event: "shop-inventory.low-stock-alerts.brand_lookup_failed",
+        err,
+        org_id: orgId,
+      },
+      "low-stock-alerts: tenant brand lookup failed; using platform practice name",
+    );
+    return fallback;
+  }
 }
 
 async function upsertAlertState(
@@ -460,7 +515,11 @@ async function upsertAlertState(
   }));
   const { error } = await supabase
     .from("low_stock_alert_state")
-    .upsert(rows, { onConflict: "product_id" });
+    // (org_id, product_id) PK (migration 0369) — the org-scoped facade
+    // injects org_id, so the conflict target must include it. Two connected
+    // Stripe accounts can share a product id; conflicting on product_id alone
+    // would overwrite the OTHER tenant's alert state.
+    .upsert(rows, { onConflict: "org_id,product_id" });
   if (error) {
     logger.warn({ err: error }, "low-stock-alerts: state upsert failed");
   }

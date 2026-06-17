@@ -532,6 +532,7 @@ describe("runLowStockAlerts: multi-tenant fan-out", () => {
   it("routes a connected tenant's catalog read to its Stripe account and alerts its admins", async () => {
     // Active tenant directory = one NON-seed, connected tenant.
     supabaseMock.reset();
+    // 1st organizations read → the active-tenant directory (listActiveOrgIds).
     stageSupabaseResponse("organizations", "select", {
       data: [{ id: "org-connected" }],
     });
@@ -540,6 +541,10 @@ describe("runLowStockAlerts: multi-tenant fan-out", () => {
     stageSingleStripePage([stripeProduct("prod_LOW", "Cushion", 1, 5)]);
     stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
     stageSupabaseResponse("low_stock_alert_state", "select", { data: [] });
+    // 2nd organizations read → the per-tenant brand resolution for the subject.
+    stageSupabaseResponse("organizations", "select", {
+      data: { storefront_name: "Acme DME", name: "Acme DME LLC" },
+    });
     stageSupabaseResponse("low_stock_alert_state", "upsert", { data: null });
 
     const stats = await runLowStockAlerts();
@@ -551,10 +556,15 @@ describe("runLowStockAlerts: multi-tenant fan-out", () => {
       stripeAccount?: string;
     };
     expect(accountOpts.stripeAccount).toBe("acct_connected");
-    // And the tenant's admins (env fallback) got the alert.
+    // And the tenant's admins (env fallback) got the alert, branded with the
+    // tenant's OWN storefront name — not the process-global practice name.
     expect(stats.newAlerts).toBe(1);
     expect(stats.emailSent).toBe(true);
     expect(sendEmailMock).toHaveBeenCalled();
+    const sentSubject = (
+      sendEmailMock.mock.calls[0]?.[0] as { subject: string }
+    ).subject;
+    expect(sentSubject).toContain("Acme DME");
   });
 
   it("skips a non-seed tenant that has no connected Stripe account (no catalog of its own)", async () => {
