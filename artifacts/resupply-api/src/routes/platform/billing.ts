@@ -501,9 +501,12 @@ router.get(
         .select("*, billing_addons(*)")
         .in("org_id", orgIds)
         .eq("status", "active"),
-      raw.rpc("platform_tenant_usage_snapshot" as never, {
-        p_month_start: monthStart.toISOString(),
-      } as never),
+      raw.rpc(
+        "platform_tenant_usage_snapshot" as never,
+        {
+          p_month_start: monthStart.toISOString(),
+        } as never,
+      ),
     ]);
     if (subs.error || addons.error || usage.error) {
       logger.error(
