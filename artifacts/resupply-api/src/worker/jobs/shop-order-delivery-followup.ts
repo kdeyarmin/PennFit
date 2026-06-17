@@ -63,6 +63,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -293,6 +294,11 @@ async function deliveryFollowupSweepForOrg(
         continue;
       }
       stats.sent += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "shop_order_delivery_followup.email",
+      });
     } catch (err) {
       await releaseClaim();
       stats.failed += 1;
@@ -359,6 +365,11 @@ async function deliveryFollowupSweepForOrg(
           to: smsRecipient.phoneE164,
           body: `${greeting}: how is your new CPAP setup going? Reply YES if it works, or NO and we'll start a return. Reply STOP to opt out.`,
         });
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "sms",
+          source: "shop_order_delivery_followup.sms",
+        });
       }
     } catch (smsErr) {
       if (!(smsErr instanceof TwilioConfigError)) {
@@ -383,6 +394,11 @@ async function deliveryFollowupSweepForOrg(
           caregiverName: recipient.caregiver.name,
           patientFirstName: recipient.firstName,
           kind: "delivered",
+        });
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "shop_order_delivery_followup.caregiver_email",
         });
       } catch (cgErr) {
         logger.warn(

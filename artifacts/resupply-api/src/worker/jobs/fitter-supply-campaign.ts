@@ -85,6 +85,7 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -1292,6 +1293,11 @@ async function fitterSupplyCampaignSweepForOrg(
           },
         });
         stats.emailed += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "fitter_supply_campaign.email",
+        });
         await recordTouch(
           supabase,
           lead.id,
@@ -1347,6 +1353,11 @@ async function fitterSupplyCampaignSweepForOrg(
             body: copy.sms,
           });
           stats.smsSent += 1;
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "fitter_supply_campaign.sms",
+          });
           await recordTouch(
             supabase,
             lead.id,

@@ -55,6 +55,7 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -329,6 +330,11 @@ async function fitterLeadReengageSweepForOrg(
         text,
       });
       stats.emailed += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "fitter_lead_reengage.email",
+      });
     } catch (err) {
       // Pass the Error object so pino's err.message / err.stack /
       // err.cause.* redact rules engage; logging err.message as a

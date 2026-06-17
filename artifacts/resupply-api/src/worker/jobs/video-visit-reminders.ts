@@ -37,6 +37,7 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -308,6 +309,11 @@ async function videoVisitReminderSweepForOrg(
         });
       }
       stats.sent += 1;
+      recordOutboundMessageUsage({
+        orgId,
+        channel: target.channel === "sms" ? "sms" : "email",
+        source: "video_visit_reminder",
+      });
     } catch (err) {
       stats.errors += 1;
       logger.warn(
