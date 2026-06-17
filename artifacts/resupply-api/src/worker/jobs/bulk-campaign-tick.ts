@@ -155,12 +155,12 @@ export async function processTick(
   }
 
   // 1. Re-read the campaign state so a pause/cancel that landed after the tick
-  //    was scheduled is honored. Read by PK from the directory via `.raw()`
-  //    (campaign id is globally unique): an org-less tick for a NON-seed
-  //    campaign is still found, instead of being mis-scoped to the seed tenant
-  //    — which would read as "missing", return without re-enqueueing, and
-  //    strand the campaign in 'sending'. We then scope every subsequent
-  //    read/write to the campaign's OWNER org.
+  //    was scheduled is honored. Read `bulk_campaigns` UNSCOPED by PK via the
+  //    service-role `.raw()` escape hatch (campaign id is globally unique): an
+  //    org-less tick for a NON-seed campaign is still found, instead of being
+  //    mis-scoped to the seed tenant — which would read as "missing", return
+  //    without re-enqueueing, and strand the campaign in 'sending'. We then
+  //    scope every subsequent read/write to the campaign's OWNER org.
   const { data: campaign, error: cErr } = await getOrgScopedClient(
     bootstrapOrgId,
   )
