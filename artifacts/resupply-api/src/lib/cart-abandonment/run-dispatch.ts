@@ -38,6 +38,7 @@ import {
 
 import { isInDndWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { sendCartAbandonmentEmail } from "./send-cart-abandonment-email";
 
 /**
@@ -307,6 +308,11 @@ export async function runCartAbandonmentDispatch(opts: {
     }
 
     sent += 1;
+    recordOutboundMessageUsage({
+      orgId: opts.orgId,
+      channel: "email",
+      source: "cart_abandonment",
+    });
   }
 
   return {

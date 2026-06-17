@@ -13,10 +13,12 @@
 import { randomInt } from "node:crypto";
 
 import { type Json, type OrgScopedClient } from "@workspace/resupply-db";
+import { createSendgridClient } from "@workspace/resupply-email";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "../patient-packet/company";
 import {
   effectiveTemplateContent,
@@ -258,7 +260,13 @@ export async function deliverCsrOrderInvite(input: {
   let emailSent = false;
   if (input.email) {
     try {
-      await getAuthDeps().email({
+      // Send via createSendgridClient() directly (not getAuthDeps().email,
+      // which swallows EmailConfigError/EmailApiError and resolves anyway)
+      // so an unconfigured provider or a vendor reject surfaces as a throw.
+      // That keeps emailSent — and the usage metering below — gated on a
+      // genuinely accepted send, never an over-count during a config gap.
+      const client = createSendgridClient();
+      await client.sendEmail({
         to: input.email,
         subject: input.reminder
           ? `Reminder: complete your ${company.legalName} order ${input.orderReference}`
@@ -281,6 +289,11 @@ export async function deliverCsrOrderInvite(input: {
         }),
       });
       emailSent = true;
+      recordOutboundMessageUsage({
+        orgId: input.supabase.orgId,
+        channel: "email",
+        source: "csr_order_invite",
+      });
     } catch (err) {
       logger.warn(
         {
@@ -313,6 +326,11 @@ export async function deliverCsrOrderInvite(input: {
         });
         await client.sendSms({ to: input.phone, body: body.slice(0, 480) });
         smsSent = true;
+        recordOutboundMessageUsage({
+          orgId: input.supabase.orgId,
+          channel: "sms",
+          source: "csr_order_invite",
+        });
       } catch (err) {
         logger.warn(
           {

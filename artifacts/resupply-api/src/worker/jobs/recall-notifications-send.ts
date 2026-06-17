@@ -42,6 +42,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -477,6 +478,11 @@ async function recallSendSweepForOrg(
     // on a genuinely stuck claim.
     const nowIso = new Date().toISOString();
     if (outcome.kind === "sent") {
+      recordOutboundMessageUsage({
+        orgId,
+        channel: outcome.channel,
+        source: "recall_notification",
+      });
       const { error: sentErr } = await supabase
         .from("recall_notifications")
         .update({

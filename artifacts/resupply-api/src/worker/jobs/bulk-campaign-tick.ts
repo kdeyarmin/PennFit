@@ -56,6 +56,7 @@ import {
   TICK_INTERVAL_SECONDS,
 } from "../../lib/bulk-campaigns/dispatch-helpers.js";
 import { logger } from "../../lib/logger.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -458,6 +459,14 @@ export async function processTick(
         html: renderable.bodyHtml ?? renderable.bodyText,
         text: renderable.bodyText,
         customArgs: customArgsFor(campaign.id, row.id),
+      });
+      // Vendor accepted — the patient will receive this email even if the
+      // row finalize below fails (the recipient is then parked, never
+      // re-sent), so count the outbound message here.
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "bulk_campaign",
       });
       const { error: finalizeErr } = await supabase
         .from("bulk_campaign_recipients")
