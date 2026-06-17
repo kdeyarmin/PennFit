@@ -354,7 +354,7 @@ export function demoToday() {
     inboundFaxes: [
       {
         id: "demo-fax-1",
-        twilio_fax_sid: "FX_demo_1",
+        provider_fax_id: "FX_demo_1",
         from_e164: "+12155550173",
         num_pages: 3,
         received_at: hoursAgo(8),

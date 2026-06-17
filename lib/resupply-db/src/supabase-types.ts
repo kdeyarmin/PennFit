@@ -3712,6 +3712,7 @@ export interface Database {
           org_id: string | null;
           id: string;
           twilio_fax_sid: string;
+          provider_fax_id: string | null;
           from_e164: string | null;
           to_e164: string | null;
           received_at: string;

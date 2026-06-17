@@ -270,6 +270,149 @@ describe("createTwilioSmsClient", () => {
     });
   });
 
+  describe("confirmDelivery", () => {
+    const noSleep = () => Promise.resolve();
+
+    function envOn() {
+      process.env.TWILIO_ACCOUNT_SID = "AC123";
+      process.env.TWILIO_AUTH_TOKEN = "tok";
+      process.env.TWILIO_PHONE_NUMBER = "+12158675309";
+    }
+
+    /** Build a fake SDK whose messages(sid).fetch() returns the queued statuses in order. */
+    function fakeSdkWithFetch(
+      statuses: Array<{
+        status: string;
+        errorCode?: number | null;
+        errorMessage?: string | null;
+      }>,
+    ): { sdk: RawTwilioMessagingSdk; fetch: ReturnType<typeof vi.fn> } {
+      const fetch = vi.fn();
+      for (const s of statuses) {
+        fetch.mockResolvedValueOnce({ sid: "SM_1", ...s });
+      }
+      // Last status repeats for any extra polls.
+      const last = statuses[statuses.length - 1];
+      if (last) fetch.mockResolvedValue({ sid: "SM_1", ...last });
+      const messages = ((_sid: string) => ({ fetch })) as unknown as {
+        (sid: string): { fetch: typeof fetch };
+        create: ReturnType<typeof vi.fn>;
+      };
+      messages.create = vi.fn().mockResolvedValue({ sid: "SM_1" });
+      return {
+        sdk: { messages } as unknown as RawTwilioMessagingSdk,
+        fetch,
+      };
+    }
+
+    it("returns delivered=true on a terminal delivered status", async () => {
+      envOn();
+      const { sdk } = fakeSdkWithFetch([{ status: "delivered" }]);
+      const client = createTwilioSmsClient({ sdkFactory: () => sdk });
+      const r = await client.confirmDelivery("SM_1", { sleep: noSleep });
+      expect(r).toMatchObject({
+        status: "delivered",
+        terminal: true,
+        delivered: true,
+        errorCode: null,
+      });
+    });
+
+    it("surfaces the error code on a terminal undelivered status", async () => {
+      envOn();
+      const { sdk } = fakeSdkWithFetch([
+        {
+          status: "undelivered",
+          errorCode: 30032,
+          errorMessage: "Toll-free number has not been verified",
+        },
+      ]);
+      const client = createTwilioSmsClient({ sdkFactory: () => sdk });
+      const r = await client.confirmDelivery("SM_1", { sleep: noSleep });
+      expect(r).toMatchObject({
+        status: "undelivered",
+        terminal: true,
+        delivered: false,
+        errorCode: 30032,
+        errorMessage: "Toll-free number has not been verified",
+      });
+    });
+
+    it("polls past non-terminal statuses until terminal", async () => {
+      envOn();
+      const { sdk, fetch } = fakeSdkWithFetch([
+        { status: "queued" },
+        { status: "sent" },
+        { status: "delivered" },
+      ]);
+      const client = createTwilioSmsClient({ sdkFactory: () => sdk });
+      const r = await client.confirmDelivery("SM_1", {
+        sleep: noSleep,
+        pollIntervalMs: 1,
+        timeoutMs: 10_000,
+      });
+      expect(r.terminal).toBe(true);
+      expect(r.delivered).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it("returns terminal=false when it times out non-terminal", async () => {
+      envOn();
+      const { sdk } = fakeSdkWithFetch([{ status: "sent" }]);
+      const client = createTwilioSmsClient({ sdkFactory: () => sdk });
+      const r = await client.confirmDelivery("SM_1", {
+        sleep: noSleep,
+        pollIntervalMs: 1000,
+        timeoutMs: 1, // one fetch then give up
+      });
+      expect(r).toMatchObject({
+        status: "sent",
+        terminal: false,
+        delivered: false,
+      });
+    });
+
+    it("coerces NaN timeout/pollInterval instead of looping forever", async () => {
+      envOn();
+      // A terminal status returns on the first fetch, so even with NaN
+      // options this must resolve (proving NaN doesn't crash/hang the
+      // option handling). The non-terminal loop-termination is covered by
+      // the timeout test above with valid finite values.
+      const { sdk, fetch } = fakeSdkWithFetch([{ status: "delivered" }]);
+      const client = createTwilioSmsClient({ sdkFactory: () => sdk });
+      const r = await client.confirmDelivery("SM_1", {
+        sleep: noSleep,
+        timeoutMs: Number.NaN,
+        pollIntervalMs: Number.NaN,
+      });
+      expect(r).toMatchObject({ status: "delivered", terminal: true });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("never throws on a fetch failure; returns unknown/non-terminal", async () => {
+      envOn();
+      const fetch = vi.fn().mockRejectedValue(new Error("network"));
+      const messages = ((_sid: string) => ({ fetch })) as unknown as {
+        (sid: string): { fetch: typeof fetch };
+        create: ReturnType<typeof vi.fn>;
+      };
+      messages.create = vi.fn().mockResolvedValue({ sid: "SM_1" });
+      const client = createTwilioSmsClient({
+        sdkFactory: () => ({ messages }) as unknown as RawTwilioMessagingSdk,
+      });
+      const r = await client.confirmDelivery("SM_1", {
+        sleep: noSleep,
+        pollIntervalMs: 1000,
+        timeoutMs: 1,
+      });
+      expect(r).toMatchObject({
+        status: "unknown",
+        terminal: false,
+        delivered: false,
+      });
+    });
+  });
+
   it("respects per-call from override", async () => {
     process.env.TWILIO_ACCOUNT_SID = "AC123";
     process.env.TWILIO_AUTH_TOKEN = "tok";
