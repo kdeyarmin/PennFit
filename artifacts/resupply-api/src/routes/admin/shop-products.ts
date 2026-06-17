@@ -50,6 +50,7 @@ import {
 } from "../../lib/stripe/products-meta";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
+import { resolveTenantBaseUrl } from "../../lib/tenant-branding";
 import { invalidateShopProductsCache } from "../shop/products";
 
 const router: IRouter = Router();
@@ -253,9 +254,13 @@ router.patch(
     const nowIn =
       typeof projected.stockCount === "number" && projected.stockCount > 0;
     if (wasOut && nowIn) {
+      // Point the email link at the tenant's own verified custom domain
+      // when it has one (seed → pennpaps.com via the env fallback), and
+      // scope the dispatch to this admin's tenant.
       const baseUrl =
-        process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-        "https://pennpaps.com";
+        (await resolveTenantBaseUrl(req.orgId)) ??
+        (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
+          "https://pennpaps.com");
       const priceLabel =
         typeof projected.price?.unitAmount === "number"
           ? `$${(projected.price.unitAmount / 100).toFixed(2)}`
@@ -266,6 +271,7 @@ router.patch(
         productImageUrl: projected.imageUrl ?? null,
         productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
         priceLabel,
+        orgId: req.orgId,
       }).catch((err) => {
         // Not a Stripe failure (the dispatch path is DB + email), so
         // the categorized Stripe fields don't apply — log the error

@@ -24,7 +24,13 @@ import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
   resolveOrgNotificationEmail,
+  resolveTenantBaseUrl,
 } from "./tenant-branding.js";
+
+/** Strip the scheme + trailing slash for inline link-text display. */
+function displayHost(baseUrl: string): string {
+  return baseUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
 
 export interface InsuranceLeadPayload {
   fullName: string;
@@ -84,6 +90,7 @@ async function teamRecipient(
 function renderNotificationHtml(
   payload: InsuranceLeadPayload,
   brandName: string,
+  baseUrl: string,
 ): string {
   const rows: Array<[string, string]> = [
     ["Patient name", payload.fullName],
@@ -117,7 +124,7 @@ function renderNotificationHtml(
           <div style="font-size:20px;color:#1a1a1a;font-weight:700;margin-top:4px;">New lead from ${escapeHtml(payload.fullName)}</div>
         </td></tr>
         <tr><td style="padding-top:18px;color:#333;font-size:14px;line-height:1.55;">
-          A patient just submitted the insurance verification form on <a href="https://pennpaps.com/insurance" style="color:#7a5d00;">pennpaps.com/insurance</a>. Please call back within <strong>one business day</strong>.
+          A patient just submitted the insurance verification form on <a href="${escapeHtml(baseUrl)}/insurance" style="color:#7a5d00;">${escapeHtml(displayHost(baseUrl))}/insurance</a>. Please call back within <strong>one business day</strong>.
         </td></tr>
         <tr><td style="padding-top:18px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;border-radius:8px;">${tableRows}</table>
@@ -155,6 +162,7 @@ function renderNotificationText(
 function renderConfirmationHtml(
   payload: InsuranceLeadPayload,
   brandName: string,
+  baseUrl: string,
 ): string {
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f7f4ec;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f4ec;padding:24px 0;">
@@ -171,10 +179,10 @@ function renderConfirmationHtml(
           We'll never charge you anything until we've confirmed your coverage and told you what (if anything) is owed out of pocket. There's no obligation to proceed.
         </td></tr>
         <tr><td align="center" style="padding-top:24px;">
-          <a href="https://pennpaps.com/insurance" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">How insurance works at ${escapeHtml(brandName)}</a>
+          <a href="${escapeHtml(baseUrl)}/insurance" style="display:inline-block;background:#c9a227;color:#1a1a1a;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;">How insurance works at ${escapeHtml(brandName)}</a>
         </td></tr>
         <tr><td style="padding-top:28px;border-top:1px solid #eee;color:#888;font-size:12px;line-height:1.4;">
-          Need to reach us sooner? Reply to this email or visit <a href="https://pennpaps.com/faq" style="color:#7a5d00;">pennpaps.com/faq</a>.
+          Need to reach us sooner? Reply to this email or visit <a href="${escapeHtml(baseUrl)}/faq" style="color:#7a5d00;">${escapeHtml(displayHost(baseUrl))}/faq</a>.
         </td></tr>
       </table>
     </td></tr>
@@ -184,6 +192,7 @@ function renderConfirmationHtml(
 function renderConfirmationText(
   payload: InsuranceLeadPayload,
   brandName: string,
+  baseUrl: string,
 ): string {
   const first = payload.fullName.split(/\s+/)[0] || "there";
   return [
@@ -193,9 +202,9 @@ function renderConfirmationText(
     "",
     "We won't charge you anything until we've confirmed your coverage and told you what (if anything) is owed out of pocket. There's no obligation to proceed.",
     "",
-    `How insurance works at ${brandName}: https://pennpaps.com/insurance`,
+    `How insurance works at ${brandName}: ${baseUrl}/insurance`,
     "",
-    "Need to reach us sooner? Reply to this email or visit https://pennpaps.com/faq.",
+    `Need to reach us sooner? Reply to this email or visit ${baseUrl}/faq.`,
   ].join("\n");
 }
 
@@ -222,6 +231,10 @@ export async function sendInsuranceLeadEmails(
   // Brand the copy with the tenant's storefront name (seed → "PennPaps").
   const brandName = (await resolveBrandingByOrgId(payload.orgId))
     .storefrontName;
+  // Point the /insurance + /faq links at the tenant's own verified custom
+  // domain when it has one (seed → pennpaps.com, unchanged).
+  const baseUrl =
+    (await resolveTenantBaseUrl(payload.orgId)) ?? "https://pennpaps.com";
   const team = await teamRecipient(payload.orgId);
   let notificationDelivered = false;
   let confirmationDelivered = false;
@@ -236,7 +249,7 @@ export async function sendInsuranceLeadEmails(
         // notification banners on locked phones — keep PHI in the
         // body, behind the recipient's mailbox auth.
         subject: "New insurance verification request",
-        html: renderNotificationHtml(payload, brandName),
+        html: renderNotificationHtml(payload, brandName, baseUrl),
         text: renderNotificationText(payload, brandName),
         // DO NOT set replyTo to payload.email. The /insurance-lead
         // form is unauthenticated, so anyone can submit an arbitrary
@@ -264,8 +277,8 @@ export async function sendInsuranceLeadEmails(
     await client.sendEmail({
       to: payload.email,
       subject: `We have your ${brandName} insurance verification request`,
-      html: renderConfirmationHtml(payload, brandName),
-      text: renderConfirmationText(payload, brandName),
+      html: renderConfirmationHtml(payload, brandName, baseUrl),
+      text: renderConfirmationText(payload, brandName, baseUrl),
       customArgs: { kind: "insurance_lead_confirmation_v1" },
     });
     confirmationDelivered = true;
