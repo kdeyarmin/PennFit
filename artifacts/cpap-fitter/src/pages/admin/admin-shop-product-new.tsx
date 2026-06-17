@@ -692,7 +692,7 @@ export function AdminShopProductNewPage() {
               type="url"
               value={form.imageUrl}
               onChange={(e) => update("imageUrl", e.target.value)}
-              placeholder="https://app.pennpaps.com/products/airfit-p10.webp"
+              placeholder="https://cdn.example.com/products/airfit-p10.webp"
               style={INPUT_STYLE}
               disabled={isSubmitting || imageUploading}
             />

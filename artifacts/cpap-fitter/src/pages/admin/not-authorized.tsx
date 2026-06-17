@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { clearAllDrafts } from "@/lib/admin/use-draft-autosave";
+import { PLATFORM_NAME, useStorefrontBranding } from "@/lib/branding";
 
 // Friendly "you can't see the admin console" screen.
 //
@@ -60,6 +61,7 @@ export function NotAuthorizedPage({
   contactEmail?: string;
 }) {
   const identity = useDashboardIdentity();
+  const { storefrontName } = useStorefrontBranding();
   const { signOut } = identity;
   const email = identity.email ?? "your account";
   const [, setNotAuthLocation] = useLocation();
@@ -102,11 +104,11 @@ export function NotAuthorizedPage({
             style={{ backgroundColor: "#c9a24a", color: "hsl(var(--ink-1))" }}
             aria-hidden="true"
           >
-            P
+            CB
           </div>
           <div className="leading-tight">
             <div className="text-white font-semibold tracking-tight">
-              PennPaps Console
+              {PLATFORM_NAME} Console
             </div>
             <div
               className="text-xs"
@@ -156,7 +158,7 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-2"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Please contact your PennPaps IT administrator so they can finish
+                Please contact your IT administrator so they can finish
                 configuring admin access for this server.
               </p>
             </>
@@ -264,7 +266,8 @@ export function NotAuthorizedPage({
           borderColor: "hsl(var(--line-1))",
         }}
       >
-        PennPaps · Internal tooling · Not for patient use
+        {PLATFORM_NAME} · {storefrontName} · Internal tooling · Not for patient
+        use
       </footer>
     </div>
   );

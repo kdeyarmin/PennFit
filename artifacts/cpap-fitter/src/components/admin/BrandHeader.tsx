@@ -1,12 +1,18 @@
 import type { ReactNode } from "react";
 
-// PennPaps-branded top chrome. Replaces the old hardcoded-hex band with
-// a token-driven `.brand-band` (radial gold glow over the navy gradient)
-// and an `.aurora-divider` underneath that threads a hairline of brand
-// gold across the band-to-canvas seam — matches the customer-app
-// vocabulary so the two SPAs feel like one product.
+import { PLATFORM_NAME, useStorefrontBranding } from "@/lib/branding";
+
+// Admin workstation top chrome. The admin console is the CareMetric
+// Breathe *platform* product (every tenant's staff signs into the same
+// software), so the primary brand is always CareMetric Breathe; the
+// host-resolved tenant brand (PennPaps for the Penn Home Medical Supply
+// tenant) rides along as a secondary label. Token-driven `.brand-band`
+// (radial gold glow over the navy gradient) with an `.aurora-divider`
+// underneath — matches the customer-app vocabulary so the two SPAs feel
+// like one product.
 
 export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
+  const { storefrontName } = useStorefrontBranding();
   return (
     <>
       <header className="brand-band relative flex items-center justify-between px-6 py-4">
@@ -22,17 +28,17 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
             }}
             aria-hidden="true"
           >
-            P
+            CB
           </div>
           <div className="leading-tight">
             <div className="text-white font-semibold tracking-tight text-sm">
-              PennPaps
+              {PLATFORM_NAME}
             </div>
             <div
               className="text-[10px] uppercase tracking-[0.18em] font-semibold"
               style={{ color: "hsl(var(--penn-gold-soft))" }}
             >
-              Admin workstation
+              {storefrontName} · Admin workstation
             </div>
           </div>
         </div>
@@ -46,6 +52,7 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
 }
 
 export function BrandFooter() {
+  const { storefrontName } = useStorefrontBranding();
   return (
     <footer
       className="text-[11px] px-6 py-3 border-t text-center font-medium tracking-wide"
@@ -55,7 +62,8 @@ export function BrandFooter() {
         borderColor: "hsl(var(--line-1))",
       }}
     >
-      PennPaps · Internal tooling · Not for patient use
+      {PLATFORM_NAME} · {storefrontName} · Internal tooling · Not for patient
+      use
     </footer>
   );
 }

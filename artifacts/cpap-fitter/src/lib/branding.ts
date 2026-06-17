@@ -13,6 +13,17 @@
 
 import { useSyncExternalStore } from "react";
 
+/**
+ * The platform/parent-product brand. `PennFit` is only the repository
+ * codename and `PennPaps` is one tenant operating on the platform — when
+ * the software refers to *itself* (the admin workstation chrome, the SaaS
+ * product name) it is always **CareMetric Breathe**. Mirrors the
+ * server-side `PLATFORM_NAME` in
+ * `artifacts/resupply-api/src/lib/company-info.ts`. Tenant-specific
+ * surfaces use the host-resolved `storefrontName` instead.
+ */
+export const PLATFORM_NAME = "CareMetric Breathe";
+
 export interface StorefrontBranding {
   /** Short customer-facing brand shown in the header/hero. */
   storefrontName: string;
