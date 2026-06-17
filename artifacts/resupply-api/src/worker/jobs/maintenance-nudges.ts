@@ -31,6 +31,7 @@ import {
   type MaintenanceTask,
 } from "../../lib/patient-maintenance/catalog";
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -361,6 +362,11 @@ async function maintenanceNudgeSweepForOrg(
         stats.errors += 1;
         continue;
       }
+      recordOutboundMessageUsage({
+        orgId,
+        channel: "email",
+        source: "maintenance_nudge.email",
+      });
 
       // Log the nudge.
       const { error: insErr } = await supabase

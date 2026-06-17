@@ -62,6 +62,7 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
@@ -377,6 +378,11 @@ async function firstDayNudgeSweepForOrg(
           },
         });
         stats.emailed += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "fitter_first_day_nudge.email",
+        });
       } catch (err) {
         logger.warn(
           { err, leadId: lead.id },
@@ -404,6 +410,11 @@ async function firstDayNudgeSweepForOrg(
             body: composeFirstDaySms({ practiceName, resumeUrl }),
           });
           stats.smsSent += 1;
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "fitter_first_day_nudge.sms",
+          });
         } catch (err) {
           logger.warn(
             { err, leadId: lead.id },
