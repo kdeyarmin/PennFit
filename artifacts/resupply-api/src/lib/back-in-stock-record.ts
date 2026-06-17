@@ -12,6 +12,7 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
+import { recordOutboundMessageUsage } from "./metering/usage";
 import {
   sendBackInStockEmail,
   type BackInStockEmailPayload,
@@ -195,8 +196,14 @@ export async function dispatchBackInStockForProduct(
           "back-in-stock-record: delivery flag stamp failed",
         );
       }
-      if (send.delivered) result.delivered += 1;
-      else result.failed += 1;
+      if (send.delivered) {
+        result.delivered += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "back_in_stock",
+        });
+      } else result.failed += 1;
     }
     logger.info(
       {
