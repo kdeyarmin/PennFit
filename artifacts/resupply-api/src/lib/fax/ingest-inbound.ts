@@ -26,7 +26,7 @@
 // NOTE: the canonical idempotency key is `provider_fax_id` (vendor-neutral,
 // migration 0369); we store the Telnyx fax id in it. The legacy
 // `twilio_fax_sid` column is no longer written (CONTRACT step 2a) and is
-// dropped in step 2b — see docs/runbooks/fax-column-rename.md.
+// dropped in step 2c — see docs/runbooks/fax-column-rename.md.
 
 import type { Logger } from "pino";
 
@@ -161,9 +161,9 @@ export async function ingestInboundFax(
   // Step 1: insert (or learn it already exists).
   //
   // provider_fax_id is the canonical dedupe key (migration 0369). The legacy
-  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0370
-  // made it nullable); it is dropped in step 2b. The conflict lookup below
-  // still matches either column to cover any pre-2a rows.
+  // twilio_fax_sid is no longer written (CONTRACT step 2a, migration 0372
+  // made it nullable) and is dropped in step 2c (migration 0374). The
+  // conflict lookup below matches only provider_fax_id.
   const insertRes = await supabase
     .from("inbound_faxes")
     .insert({
@@ -185,7 +185,7 @@ export async function ingestInboundFax(
       // already-recorded fax (Telnyx retry). Look up the existing row id and
       // exit; we trust the prior attempt's media-download outcome rather
       // than re-running it. (The legacy twilio_fax_sid column + its index
-      // were dropped in migration 0371, so provider_fax_id is the only key.)
+      // are dropped in migration 0374, so provider_fax_id is the only key.)
       const existing = await supabase
         .from("inbound_faxes")
         .select("id")

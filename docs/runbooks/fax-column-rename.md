@@ -55,7 +55,7 @@ the still-running Phase 1 release — which writes a non-NULL value — keeps
 working, and the new release — which omits it — works because the column is
 now nullable):
 
-1. Migration `0370`: `ALTER COLUMN "twilio_fax_sid" DROP NOT NULL`.
+1. Migration `0372`: `ALTER COLUMN "twilio_fax_sid" DROP NOT NULL`.
 2. App: drop `twilio_fax_sid: input.telnyxFaxId,` from the
    `ingest-inbound.ts` insert (leave `provider_fax_id`). **Keep** the
    dual-key `.or(...)` conflict lookup — the prior (0369) release still
@@ -77,8 +77,8 @@ No DB change in this deploy — the column still exists, just unused.
 ### Deploy 2c — drop the column (migration)
 
 Once 2b is live and **no running release writes, reads, or references**
-`twilio_fax_sid`. Drop the 0369 sync trigger + function (they reference the
-column) before the column:
+`twilio_fax_sid`. Migration `0374` drops the 0369 sync trigger + function
+(they reference the column) before the column:
 
 ```sql
 -- CONTRACT: run ONLY after 2b is live (no release references the column).
