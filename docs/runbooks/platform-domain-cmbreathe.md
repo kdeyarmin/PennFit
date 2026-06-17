@@ -11,21 +11,23 @@ apex**, not a tenant-claimable custom domain.
 
 - **`cmbreathe.com`** is the **platform / home** domain. A request to the
   bare apex falls back to the platform brand **"CareMetric Breathe"**
-  (`DEFAULT_BRANDING` in `lib/tenant-branding.ts`). It is **reserved** —
-  the domain normalizer rejects it as a tenant custom domain
-  (`lib/tenant-domain.ts`), and it is the default
+  (`DEFAULT_BRANDING` in `artifacts/resupply-api/src/lib/tenant-branding.ts`).
+  It is **reserved** — the domain normalizer rejects it as a tenant custom
+  domain (`artifacts/resupply-api/src/lib/tenant-domain.ts`), and it is the
+  default
   `PLATFORM_SUBDOMAIN_BASES` value, so `<slug>.cmbreathe.com` routes to
   the tenant whose `organizations.slug = <slug>`.
 - **`pennpaps.com`** is the **Penn Home Medical Supply tenant's** verified
-  custom domain (seeded permanently by migration
-  `0353_platform_and_pennpaps_domains.sql` against `slug =
-'penn-home-medical'`). A unique index on `organizations.custom_domain`
-  means no other tenant can claim it. Requests on this host resolve to the
-  Penn org and render the **"PennPaps"** brand.
+  custom domain, seeded permanently for the `penn-home-medical` org by
+  migration `0353_platform_and_pennpaps_domains.sql`. A unique index on
+  `organizations.custom_domain` means no other tenant can claim it. Requests
+  on this host resolve to the Penn org and render the **"PennPaps"** brand.
 
 No code change is required to add `cmbreathe.com` — the application already
-treats it as the platform apex. The steps below are DNS + Railway + one env
-var.
+treats it as the platform apex. The steps below are DNS + Railway + env: the
+CORS allowlist, plus pinning the public base URL **before** binding so the
+tenant's outbound links don't silently follow `RAILWAY_PUBLIC_DOMAIN` to the
+new host (Step 2).
 
 ## Steps
 
@@ -53,14 +55,31 @@ R7:
 
 ### 2. Bind the domain on Railway
 
+**Prerequisite — pin the public base URL first.** Binding a custom domain can
+change `RAILWAY_PUBLIC_DOMAIN` to `cmbreathe.com`, and when `PUBLIC_BASE_URL`
+is unset the boot-time `applyEnvAliases()`
+(`lib/resupply-secrets/src/env-aliases.ts`) synthesizes the five
+`*_PUBLIC_BASE_URL` vars (`SHOP_`, `REMINDER_`, `RESUPPLY_VOICE_`,
+`RESUPPLY_DASHBOARD_`, `PENN_ADMIN_`) from it. So if those are left blank, the
+PennPaps tenant's reminder / shop / admin / voice links would silently move to
+`cmbreathe.com`. Before binding, set **`PUBLIC_BASE_URL=https://pennpaps.com`**
+(or pin each `*_PUBLIC_BASE_URL` var) so the tenant's outbound links stay on
+`pennpaps.com`. An explicit value always wins over the `RAILWAY_PUBLIC_DOMAIN`
+fallback.
+
 Add `cmbreathe.com` (and `www.cmbreathe.com` if you serve it) under the
-production service's **Settings → Domains**. Railway issues the cert and
-shows a CNAME target — it must match the Cloudflare record above. Wait for
-Railway to report the domain **Active**.
+production service's **Settings → Domains**. Publish **exactly** the DNS
+records Railway shows — typically a CNAME, and any **TXT ownership record**
+Railway displays — into Cloudflare; with only the CNAME the domain can stay
+inactive (or 404) even after DNS resolves. The CNAME target must match the
+Cloudflare record from Step 1. Wait for Railway to report the domain
+**Active** (it issues the cert once verified).
 
 > Note: once a custom domain takes over, Railway may set
 > `RAILWAY_PUBLIC_DOMAIN` to `cmbreathe.com`. Step 3 makes the CORS
-> allowlist independent of whatever Railway puts there.
+> allowlist independent of whatever Railway puts there, and the
+> `PUBLIC_BASE_URL` pin above keeps the tenant's link-building independent of
+> it too.
 
 ### 3. Set `RESUPPLY_ALLOWED_ORIGINS`
 
