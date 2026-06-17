@@ -43,14 +43,15 @@ export type NotAuthorizedReason =
   | "not-configured"
   | "transient";
 
-// Admin-facing contact address. Override per environment with
-// VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
-// rename, distribution list change, etc.) doesn't require shipping
-// a code change. Default is the PennPaps operations inbox, which
-// is also the production value in dev/staging.
+// Software-support contact address. This is the PLATFORM's own support
+// inbox (CareMetric Breathe), not a tenant's — the page is the shared admin
+// console's "you can't get in" screen, so it routes to the software team.
+// Override per environment with VITE_RESUPPLY_CONTACT_EMAIL so a production
+// cutover (mailbox rename, distribution list change) doesn't require a code
+// change.
 const DEFAULT_CONTACT_EMAIL =
   (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined) ??
-  "info@pennpaps.com";
+  "info@cmbreathe.com";
 
 export function NotAuthorizedPage({
   reason,
