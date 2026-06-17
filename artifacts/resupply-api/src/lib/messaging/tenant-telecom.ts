@@ -47,6 +47,7 @@ const byOrg = new Map<
     smsFromNumber: string | null;
     voiceFromNumber: string | null;
     messagingServiceSid: string | null;
+    faxFromNumber: string | null;
   }>
 >();
 // called number → owning orgId (or null when unknown).
@@ -68,12 +69,14 @@ interface TelecomRow {
   smsFromNumber: string | null;
   voiceFromNumber: string | null;
   messagingServiceSid: string | null;
+  faxFromNumber: string | null;
 }
 
 const EMPTY_ROW: TelecomRow = {
   smsFromNumber: null,
   voiceFromNumber: null,
   messagingServiceSid: null,
+  faxFromNumber: null,
 };
 
 /** Load (and cache) a tenant's telecom identity row. Fails soft to empty. */
@@ -90,7 +93,7 @@ async function loadTelecomRow(orgId: string): Promise<TelecomRow> {
         .schema("resupply")
         .from("organizations")
         .select(
-          "sms_from_number, voice_from_number, twilio_messaging_service_sid",
+          "sms_from_number, voice_from_number, twilio_messaging_service_sid, fax_from_number",
         )
         .eq("id", orgId)
         .limit(1)
@@ -100,11 +103,13 @@ async function loadTelecomRow(orgId: string): Promise<TelecomRow> {
         sms_from_number: string | null;
         voice_from_number: string | null;
         twilio_messaging_service_sid: string | null;
+        fax_from_number: string | null;
       } | null;
       value = {
         smsFromNumber: row?.sms_from_number?.trim() || null,
         voiceFromNumber: row?.voice_from_number?.trim() || null,
         messagingServiceSid: row?.twilio_messaging_service_sid?.trim() || null,
+        faxFromNumber: row?.fax_from_number?.trim() || null,
       };
     }
   } catch (err) {
@@ -125,6 +130,11 @@ async function loadTelecomRow(orgId: string): Promise<TelecomRow> {
     });
   if (value.voiceFromNumber)
     byNumber.set(value.voiceFromNumber, {
+      value: orgId,
+      expiresAt: now + CACHE_TTL_MS,
+    });
+  if (value.faxFromNumber)
+    byNumber.set(value.faxFromNumber, {
       value: orgId,
       expiresAt: now + CACHE_TTL_MS,
     });
@@ -160,6 +170,62 @@ export async function resolveTenantVoiceFrom(
   if (!tenantOrgId) return null;
   const row = await loadTelecomRow(tenantOrgId);
   return row.voiceFromNumber;
+}
+
+/**
+ * The tenant's outbound fax sender (E.164), or `null` (→ platform default
+ * `TELNYX_FAX_FROM_NUMBER`) when it has none. Accepts `undefined` / blank
+ * orgId → `null`.
+ */
+export async function resolveTenantFaxFrom(
+  orgId: string | undefined,
+): Promise<string | null> {
+  const tenantOrgId = orgId?.trim();
+  if (!tenantOrgId) return null;
+  const row = await loadTelecomRow(tenantOrgId);
+  return row.faxFromNumber;
+}
+
+/**
+ * Reverse lookup for an inbound FAX webhook: the `org_id` that owns the
+ * called fax number, or `null` when no tenant is bound to it (caller falls
+ * back to the seed org). The unique partial index on `fax_from_number`
+ * guarantees at most one match. Fails soft to `null` so a DB blip never
+ * misroutes an inbound fax — it just lands in the seed tenant's queue.
+ */
+export async function resolveOrgIdByFaxNumber(
+  toNumber: string | undefined,
+): Promise<string | null> {
+  const number = toNumber?.trim();
+  if (!number) return null;
+  const now = Date.now();
+  const cached = byNumber.get(number);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  let value: string | null = null;
+  try {
+    const raw = await rawOrgClient();
+    if (raw) {
+      const { data, error } = await raw
+        .schema("resupply")
+        .from("organizations")
+        .select("id")
+        .eq("fax_from_number", number)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      value = (data as { id: string } | null)?.id ?? null;
+    }
+  } catch (err) {
+    logger.warn(
+      { event: "tenant_telecom_org_by_fax_lookup_failed", err },
+      "tenant-telecom: org-by-fax-number lookup failed",
+    );
+    value = null;
+  }
+
+  byNumber.set(number, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
 }
 
 /**

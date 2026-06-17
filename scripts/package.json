@@ -28,6 +28,7 @@
     "@workspace/resupply-db": "workspace:*",
     "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
+    "@workspace/resupply-telecom": "workspace:*",
     "stripe": "^22.1.1"
   }
 }

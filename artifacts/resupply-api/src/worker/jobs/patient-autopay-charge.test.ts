@@ -18,11 +18,26 @@ import {
 
 const supabaseMock = installSupabaseMock();
 
+// Stripe Connect routing — controllable per test. Default `{}` = the
+// platform account (seed tenant), preserving the pre-Connect behavior.
+const connectAcctOpts = vi.hoisted(() => ({
+  value: {} as { stripeAccount?: string },
+}));
+vi.mock("../../lib/stripe/connect.js", () => ({
+  stripeAccountRequestOptions: vi.fn(async () => connectAcctOpts.value),
+}));
+
 import type { OffSessionCharger } from "../../lib/billing/payment-plan-autocharge.js";
 import { runPatientAutopayCharge } from "./patient-autopay-charge";
 
 beforeEach(() => {
   supabaseMock.reset();
+  connectAcctOpts.value = {};
+  // The sweep fans out across active tenants (forEachActiveOrg →
+  // listActiveOrgIds reads `organizations`); stage a single active org.
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: "00000000-0000-4000-8000-000000000001" }],
+  });
 });
 
 function stageAuthorizationScan(over: Record<string, unknown> = {}) {
@@ -152,5 +167,60 @@ describe("runPatientAutopayCharge — per-authorization claim", () => {
     expect(supabaseMock.callCount("patient_payments", "insert")).toBe(0);
     expect(stats.charged).toBe(0);
     expect(stats.failed).toBe(0);
+  });
+
+  it("routes the charge to the tenant's connected Stripe account (G5)", async () => {
+    // The tenant has an onboarded connected account → the off-session charge
+    // must carry `{ stripeAccount }` so it lands on that account.
+    connectAcctOpts.value = { stripeAccount: "acct_tenant" };
+    stageAuthorizationScan();
+    stageOpenBalance();
+    stageSupabaseResponse("patient_autopay_authorizations", "update", {
+      data: [{ id: "auth-1" }],
+      error: null,
+    });
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: "pay-1" },
+      error: null,
+    });
+
+    const charger = vi.fn<OffSessionCharger>().mockResolvedValue({
+      outcome: "failed",
+      paymentIntentId: "pi_1",
+      reason: "card_declined",
+    });
+    await runPatientAutopayCharge({ charger });
+
+    expect(charger).toHaveBeenCalledTimes(1);
+    expect(charger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountOptions: { stripeAccount: "acct_tenant" },
+      }),
+    );
+  });
+
+  it("omits the account route for the platform tenant (no connected account)", async () => {
+    // Default connectAcctOpts is `{}` → platform account, as before Connect.
+    stageAuthorizationScan();
+    stageOpenBalance();
+    stageSupabaseResponse("patient_autopay_authorizations", "update", {
+      data: [{ id: "auth-1" }],
+      error: null,
+    });
+    stageSupabaseResponse("patient_payments", "insert", {
+      data: { id: "pay-1" },
+      error: null,
+    });
+
+    const charger = vi.fn<OffSessionCharger>().mockResolvedValue({
+      outcome: "failed",
+      paymentIntentId: "pi_1",
+      reason: "card_declined",
+    });
+    await runPatientAutopayCharge({ charger });
+
+    expect(charger).toHaveBeenCalledWith(
+      expect.objectContaining({ accountOptions: {} }),
+    );
   });
 });
