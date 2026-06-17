@@ -58,6 +58,7 @@ import { enterWebhookOrg, resolveWebhookOrgId } from "./webhook-org-context";
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { maybeDispatchPaymentFailedAlert } from "../alerts/payment-failed-trigger";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { handlePlatformTenantStripeEvent } from "../platform-billing/stripe";
 import { getBoss } from "../../worker/index.js";
 import { PAYMENT_FAILED_ALERT_JOB } from "../../worker/jobs/payment-failed-alert.js";
@@ -1032,6 +1033,12 @@ export async function sendOrderConfirmationIfFirst(args: {
       return { skipped: false, delivered: false };
     }
 
+    // Patient-facing email the vendor accepted — meter it.
+    recordOutboundMessageUsage({
+      orgId,
+      channel: "email",
+      source: "shop_order_confirmation",
+    });
     log?.info?.(
       { orderId: claimed.id, messageId: result.messageId ?? null },
       "order confirmation email delivered",

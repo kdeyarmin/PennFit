@@ -41,6 +41,7 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { redactDbErr } from "../../lib/redact-db-err.js";
 import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
@@ -345,6 +346,13 @@ router.post(
             },
             "fitter order: confirmation-email send failed (non-fatal)",
           );
+        } else {
+          // Patient-facing email the vendor accepted — meter it.
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "email",
+            source: "fitter_order_confirmation",
+          });
         }
       } catch (err) {
         logger.warn(
