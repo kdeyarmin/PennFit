@@ -55,7 +55,7 @@ the still-running Phase 1 release — which writes a non-NULL value — keeps
 working, and the new release — which omits it — works because the column is
 now nullable):
 
-1. Migration `0370`: `ALTER COLUMN "twilio_fax_sid" DROP NOT NULL`.
+1. Migration `0372`: `ALTER COLUMN "twilio_fax_sid" DROP NOT NULL`.
 2. App: drop `twilio_fax_sid: input.telnyxFaxId,` from the
    `ingest-inbound.ts` insert (leave `provider_fax_id`). **Keep** the
    dual-key `.or(...)` conflict lookup — the prior (0369) release still

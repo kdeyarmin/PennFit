@@ -1,4 +1,4 @@
--- 0370_inbound_fax_twilio_sid_nullable — CONTRACT step 2a of the
+-- 0372_inbound_fax_twilio_sid_nullable — CONTRACT step 2a of the
 -- twilio_fax_sid → provider_fax_id rename (see migration 0369 and
 -- docs/runbooks/fax-column-rename.md).
 --
