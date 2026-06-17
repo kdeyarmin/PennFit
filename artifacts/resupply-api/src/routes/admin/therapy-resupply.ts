@@ -95,7 +95,10 @@ router.get(
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
-      .rpc("therapy_resupply_summary", { p_due_within_days: dueWithinDays });
+      .rpc("therapy_resupply_summary", {
+        p_org_id: orgId,
+        p_due_within_days: dueWithinDays,
+      });
     if (error) throw error;
 
     const row = (Array.isArray(data) ? data[0] : data) as SummaryRow | null;

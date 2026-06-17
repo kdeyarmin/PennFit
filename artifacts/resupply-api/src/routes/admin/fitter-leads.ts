@@ -457,8 +457,10 @@ router.get(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
-    // fitter_campaign_touch_metrics is a VIEW (not a tenant table) — read
-    // it through the unscoped client.
+    // fitter_campaign_touch_metrics is a VIEW read via .raw() (the facade
+    // .from() wouldn't know it). As of migration 0382 the view exposes an
+    // org_id column and groups by (org_id, touch_index), so filter it to the
+    // caller's tenant.
     const { data: rows, error } = await supabase
       .raw()
       .schema("resupply")
@@ -466,6 +468,7 @@ router.get(
       .select(
         "touch_index, email_sends, email_failures, opens, sms_sends, sms_failures, clicks",
       )
+      .eq("org_id", orgId)
       .order("touch_index", { ascending: true });
     if (error) throw error;
 

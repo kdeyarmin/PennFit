@@ -1,8 +1,15 @@
 # Multi-Tenant: Analytics-Grain Redesign Plan (deferred G2 tail)
 
 **Date:** 2026-06-17
-**Status:** Plan / scoping — the one remaining multi-tenant code item after
-the G0–G8 / G10 / G12 / G16 work and the cron fan-out tail merged.
+**Status:** ✅ **DONE** (PR #1071) — all three slices shipped; this doc is
+retained as the design record. Migrations `0380` (metrics trio) / `0381`
+(therapy fleet + 4 RPCs) / `0382` (payer stats + fitter view) re-key every
+grain-keyed aggregate per tenant, with the runtime cutover (per-tenant
+fan-out writers, org-scoped RPCs, host-org storefront read, and the admin
+dashboards/views filtered by org). `integration_run_health` needed no change
+— already per-tenant by convention (rows keyed `${JOB}:${orgId}`). The
+sections below are the original plan; where they say "to do", read "done in
+PR #1071".
 **Parent:**
 [`multi-tenant-remaining-work-plan-2026-06-15.md`](./multi-tenant-remaining-work-plan-2026-06-15.md)
 

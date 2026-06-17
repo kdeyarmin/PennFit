@@ -14,6 +14,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -119,6 +120,7 @@ describe("GET /admin/therapy-fleet/overview", () => {
     expect(res.body.overview.averages.ahi).toBe(3.1);
     expect(res.body.overview.totalNights).toBe(2890);
     expect(getSupabaseRpcArgs("therapy_fleet_overview")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_window_days: 30,
     });
   });
