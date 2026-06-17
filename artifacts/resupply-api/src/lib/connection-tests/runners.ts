@@ -308,13 +308,10 @@ export async function runSmsTest(
   } catch (err) {
     return configErrorResult("sms", err, TwilioConfigError);
   }
+  let messageSid: string;
   try {
     const result = await client.sendSms({ to: input.to, body: TEST_SMS_BODY });
-    return {
-      ok: true,
-      channel: "sms",
-      detail: { messageSid: result.messageSid },
-    };
+    messageSid = result.messageSid;
   } catch (err) {
     if (err instanceof TwilioConfigError) {
       return {
@@ -335,6 +332,75 @@ export async function runSmsTest(
     }
     return unknownResult("sms", err);
   }
+
+  // Twilio ACCEPTED the message (we have a SID) — but acceptance is not
+  // delivery. A toll-free / 10DLC number that hasn't completed
+  // verification, a blocked recipient, or carrier filtering all return a
+  // SID first and only fail at the carrier moments later. Reporting "ok"
+  // here is the bug we're fixing: it shows green while every message is
+  // silently dropped. So we briefly poll the Message resource for the
+  // real terminal status before deciding the result.
+  let delivery: Awaited<ReturnType<TwilioSmsClient["confirmDelivery"]>>;
+  try {
+    delivery = await client.confirmDelivery(messageSid);
+  } catch {
+    // confirmDelivery is best-effort and shouldn't throw, but if it does
+    // we fall back to the historical behavior: report acceptance, and be
+    // explicit that delivery wasn't confirmed.
+    return {
+      ok: true,
+      channel: "sms",
+      detail: {
+        messageSid,
+        status: "accepted",
+        note: "Twilio accepted the message; delivery status could not be confirmed.",
+      },
+    };
+  }
+
+  if (delivery.delivered) {
+    return {
+      ok: true,
+      channel: "sms",
+      detail: { messageSid, status: "delivered" },
+    };
+  }
+
+  if (delivery.terminal) {
+    // Reached undelivered / failed — a real, carrier-level failure. Surface
+    // the Twilio error code (e.g. 30032 = toll-free number not verified)
+    // so the operator gets an actionable reason instead of a false green.
+    const codePart =
+      delivery.errorCode != null ? ` (Twilio error ${delivery.errorCode})` : "";
+    const reason = delivery.errorMessage ? `: ${delivery.errorMessage}` : "";
+    return {
+      ok: false,
+      channel: "sms",
+      code: "upstream_error",
+      message: cap(
+        `Twilio accepted the message but the carrier reported it as ` +
+          `"${delivery.status}"${codePart}${reason}. Common cause: the ` +
+          `sender number's toll-free/10DLC verification is not yet approved.`,
+      ),
+      upstream: { status: null, code: delivery.errorCode ?? null },
+    };
+  }
+
+  // Non-terminal at timeout (still queued / sending / sent). We can't
+  // claim delivery, but it's not a confirmed failure either — report
+  // acceptance honestly with the last status seen.
+  return {
+    ok: true,
+    channel: "sms",
+    detail: {
+      messageSid,
+      status: delivery.status,
+      note:
+        "Twilio accepted the message and it is still in flight " +
+        `(status "${delivery.status}"). If it never arrives, check the ` +
+        "Delivery failures inbox or the Twilio Console for the final status.",
+    },
+  };
 }
 
 export async function runVoiceTest(
