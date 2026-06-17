@@ -48,6 +48,8 @@ router.get(
     const parsed = listQuery.safeParse(req.query);
     const status = parsed.success ? parsed.data.status : undefined;
 
+    // metric_alerts is not in the typed Database, so reach it via raw();
+    // the org filter must therefore be explicit (migration 0380).
     let query = supabase
       .raw()
       .schema("resupply")
@@ -55,6 +57,7 @@ router.get(
       .select(
         "id, threshold_id, metric_key, metric_date, observed_value, compared_value, baseline_value, severity, message, status, notified_at, created_at",
       )
+      .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .limit(200);
     // Default to the actionable feed (open) unless an explicit filter is
@@ -125,6 +128,7 @@ router.patch(
       .schema("resupply")
       .from("metric_alerts")
       .update({ status, updated_at: new Date().toISOString() })
+      .eq("org_id", orgId)
       .eq("id", id)
       .select("id, status")
       .maybeSingle();
