@@ -515,7 +515,7 @@ async function upsertAlertState(
   }));
   const { error } = await supabase
     .from("low_stock_alert_state")
-    // (org_id, product_id) PK (migration 0370) — the org-scoped facade
+    // (org_id, product_id) PK (migration 0373) — the org-scoped facade
     // injects org_id, so the conflict target must include it. Two connected
     // Stripe accounts can share a product id; conflicting on product_id alone
     // would overwrite the OTHER tenant's alert state.

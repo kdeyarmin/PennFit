@@ -64,3 +64,18 @@
 # this PR merges.
 0357_platform_billing_packages.sql
 0358_platform_billing_stripe.sql
+
+# 2026-06-17 prefix-collision repair: three PRs took prefix 0370 —
+# 0370_platform_billing_payment_method.sql (#1056),
+# 0370_low_stock_alert_state_org_pk.sql (#1058), and
+# 0370_inbound_fax_twilio_sid_nullable.sql (#1060). Surfaced post-merge
+# (tree-wide). Resolution: platform_billing keeps 0370; low_stock is
+# renamed to 0373_ with IDENTICAL content (migrate.mjs dedups by content
+# sha256, so the applied hash is unchanged and it is NOT re-applied); the
+# inbound-fax file is a stale duplicate of the content-identical
+# 0372_inbound_fax_twilio_sid_nullable.sql (its intended renumbered home)
+# and is deleted. The immutability check sees the old 0370 paths as
+# deletions; allowlist them so this repair PR passes. Safe to delete these
+# two lines after this PR merges.
+0370_low_stock_alert_state_org_pk.sql
+0370_inbound_fax_twilio_sid_nullable.sql
