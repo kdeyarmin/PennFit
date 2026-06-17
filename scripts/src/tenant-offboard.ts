@@ -32,7 +32,10 @@
 //   1 — invalid args / db error / org not found / unexpected
 //   2 — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  SEED_ORG_SLUG,
+} from "@workspace/resupply-db";
 import {
   createTelnyxNumberClient,
   TelnyxConfigError,
@@ -61,6 +64,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   const orgSlug = (args.get("org-slug") ?? "").trim().toLowerCase();
   if (!orgSlug) fail("--org-slug=<slug> is required.");
+  // Never offboard the seed/platform tenant — it is the home of the
+  // platform admins and the fallback for unrouted inbound traffic.
+  // Suspending/archiving it (or releasing its fax number) would take the
+  // platform down. The platform lifecycle route blocks this slug too.
+  if (orgSlug === SEED_ORG_SLUG) {
+    fail(
+      `Refusing to offboard the seed/platform tenant ('${SEED_ORG_SLUG}'). ` +
+        `It hosts the platform admins and is not a customer tenant.`,
+    );
+  }
 
   const statusRaw = args.get("status") ?? "archived";
   if (statusRaw !== "suspended" && statusRaw !== "archived") {
@@ -87,7 +100,11 @@ async function releaseTenantFax(
   faxNumber: string,
   telnyxOrderId: string | null,
 ): Promise<string> {
-  let telnyxResult = "skipped (no Telnyx credentials)";
+  // Release (lookup + delete) needs only the API key — NOT the fax
+  // connection id (that's required only to ORDER). Gating on just the key
+  // means an API-key-only environment still releases the DID instead of
+  // orphaning a billable number.
+  let telnyxResult = "skipped (TELNYX_API_KEY not set)";
   if (process.env.TELNYX_API_KEY?.trim()) {
     try {
       const client = createTelnyxNumberClient();

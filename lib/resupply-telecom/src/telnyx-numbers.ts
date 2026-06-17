@@ -13,11 +13,13 @@
 // `--provision-fax` flag, or the admin "Provision fax number" button).
 //
 // Environment:
-//   - TELNYX_API_KEY            — required. Bearer key (Keys & Credentials).
-//   - TELNYX_FAX_CONNECTION_ID  — required. The Fax Application
-//                                 ("connection") the ordered number is
-//                                 attached to, so inbound faxes hit our
-//                                 webhook and outbound faxes send from it.
+//   - TELNYX_API_KEY            — required for every operation. Bearer key
+//                                 (Keys & Credentials).
+//   - TELNYX_FAX_CONNECTION_ID  — required only to ORDER a number. The Fax
+//                                 Application ("connection") the ordered
+//                                 number is attached to, so inbound faxes
+//                                 hit our webhook and outbound faxes send
+//                                 from it. Search/release need only the key.
 //
 // Architecture: this package MUST NOT import @workspace/resupply-db (Rule
 // 10). Persisting the provisioned number onto `organizations.fax_from_number`
@@ -79,7 +81,11 @@ export interface ProvisionFaxNumberInput {
 export type ProvisionFaxNumberResult = OrderNumberResult;
 
 export interface ReleaseFaxNumberResult {
-  /** True when the number was deleted; false when it was already gone. */
+  /**
+   * True when this call actually deleted the number; false when it was
+   * already gone — either not on the account at lookup time, or the DELETE
+   * returned 404. Either way the number is no longer ours.
+   */
   released: boolean;
   /** The Telnyx phone-number record id that was released, when known. */
   phoneNumberId: string | null;
@@ -123,8 +129,14 @@ export type NumbersHttpLookup = (
   url: string,
   apiKey: string,
 ) => Promise<string | null>;
-/** DELETE a Telnyx phone-number record by id. */
-export type NumbersHttpDelete = (url: string, apiKey: string) => Promise<void>;
+/**
+ * DELETE a Telnyx phone-number record by id. Resolves `true` when the
+ * record was actually deleted, `false` when it was already gone (404).
+ */
+export type NumbersHttpDelete = (
+  url: string,
+  apiKey: string,
+) => Promise<boolean>;
 
 export interface CreateTelnyxNumberClientOptions {
   apiKey?: string;
@@ -154,11 +166,11 @@ export function createTelnyxNumberClient(
       "TELNYX_API_KEY is not set — refusing to construct Telnyx number client.",
     );
   }
-  if (!connectionId) {
-    throw new TelnyxConfigError(
-      "TELNYX_FAX_CONNECTION_ID is not set — refusing to construct Telnyx number client.",
-    );
-  }
+  // NOTE: connectionId is required only to ORDER a number (it attaches the
+  // DID to the fax Application). Searching and RELEASING need just the API
+  // key, so we don't demand it at construction — that would orphan a
+  // billable DID on offboard in an API-key-only environment. orderNumber()
+  // throws if it's missing.
 
   const httpGet = opts.httpGet ?? defaultHttpGet;
   const httpPost = opts.httpPost ?? defaultHttpPost;
@@ -184,6 +196,11 @@ export function createTelnyxNumberClient(
   async function orderNumber(
     input: OrderNumberInput,
   ): Promise<OrderNumberResult> {
+    if (!connectionId) {
+      throw new TelnyxConfigError(
+        "TELNYX_FAX_CONNECTION_ID is not set — required to order/attach a fax number.",
+      );
+    }
     const body: Record<string, unknown> = {
       phone_numbers: [{ phone_number: input.phoneNumber }],
       // Attach to the fax Application so inbound faxes reach our webhook
@@ -232,10 +249,12 @@ export function createTelnyxNumberClient(
       // Not on the account (already released, or never ours) — idempotent.
       return { released: false, phoneNumberId: null };
     }
-    await wrapApi(() =>
+    // `deleted` is false when the DELETE 404s (the record vanished between
+    // lookup and delete) — still no-longer-ours, but not a delete WE made.
+    const deleted = await wrapApi(() =>
       httpDelete(`${PHONE_NUMBERS_URL}/${phoneNumberId}`, apiKey!),
     );
-    return { released: true, phoneNumberId };
+    return { released: deleted, phoneNumberId };
   }
 
   return {
@@ -444,14 +463,19 @@ async function defaultHttpLookup(
   return typeof id === "string" ? id : null;
 }
 
-async function defaultHttpDelete(url: string, apiKey: string): Promise<void> {
+async function defaultHttpDelete(
+  url: string,
+  apiKey: string,
+): Promise<boolean> {
   const res = await fetch(url, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
   });
-  // 200/202/204 are all acceptable "deleted" responses; a 404 means it's
-  // already gone, which we treat as success (idempotent release).
-  if (res.ok || res.status === 404) return;
+  // 200/202/204 mean we deleted it. A 404 means it was already gone — an
+  // idempotent no-op, reported as `false` so the caller can tell the two
+  // apart.
+  if (res.ok) return true;
+  if (res.status === 404) return false;
   let parsed: unknown;
   try {
     parsed = await res.json();
