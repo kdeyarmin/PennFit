@@ -13,10 +13,10 @@
 import { randomInt } from "node:crypto";
 
 import { type Json, type OrgScopedClient } from "@workspace/resupply-db";
-import { createSendgridClient } from "@workspace/resupply-email";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import { logger } from "../logger";
 import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
@@ -266,7 +266,7 @@ export async function deliverCsrOrderInvite(input: {
       // so an unconfigured provider or a vendor reject surfaces as a throw.
       // That keeps emailSent — and the usage metering below — gated on a
       // genuinely accepted send, never an over-count during a config gap.
-      const client = createSendgridClient();
+      const client = await createTenantSendgridClient(input.supabase.orgId);
       await client.sendEmail({
         to: input.email,
         subject: input.reminder

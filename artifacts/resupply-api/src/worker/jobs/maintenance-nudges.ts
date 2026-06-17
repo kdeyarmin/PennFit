@@ -20,8 +20,8 @@
 import type PgBoss from "pg-boss";
 
 import {
-  createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
+  EmailConfigError,
 } from "@workspace/resupply-email";
 import { getOrgScopedClient } from "@workspace/resupply-db";
 
@@ -31,6 +31,8 @@ import {
   type MaintenanceTask,
 } from "../../lib/patient-maintenance/catalog";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -164,17 +166,33 @@ function emptyNudgeStats(): NudgeStats {
  * tally. Extracted so the cron can fan out across every active tenant —
  * `patients` and `patient_maintenance_*` are tenant-scoped, so each tenant
  * must be swept on its own org-scoped client (a patient is only ever
- * nudged for tasks/contacts in their own org). The SendGrid client and the
- * as-of clock are built once per run and threaded in. The per-tenant send
- * cap (BATCH_SIZE) and scan ceiling apply PER tenant.
+ * nudged for tasks/contacts in their own org). The as-of clock is built
+ * once per run and threaded in; the SendGrid client + brand are now
+ * resolved PER tenant so each tenant sends under its own From identity and
+ * brand name (G6). The per-tenant send cap (BATCH_SIZE) and scan ceiling
+ * apply PER tenant.
  */
 async function maintenanceNudgeSweepForOrg(
   orgId: string,
   cfg: MessagingConfig,
-  sendgrid: ReturnType<typeof createSendgridClient>,
   asOfDate: Date,
 ): Promise<NudgeStats> {
   const stats = emptyNudgeStats();
+
+  // Send under the tenant's own From identity (G6); the seed tenant resolves
+  // to the platform default, so single-tenant behavior is unchanged. A
+  // tenant whose sender config is incomplete is skipped gracefully rather
+  // than failing the whole fan-out.
+  let sendgrid: Awaited<ReturnType<typeof createTenantSendgridClient>>;
+  try {
+    sendgrid = await createTenantSendgridClient(orgId);
+  } catch (err) {
+    if (err instanceof EmailConfigError) return stats;
+    throw err;
+  }
+  // Brand the copy with the tenant's own storefront name (G6); for the seed
+  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
   const supabase = getOrgScopedClient(orgId);
 
   // Eligible patients: anyone with an email AND at least one
@@ -340,7 +358,7 @@ async function maintenanceNudgeSweepForOrg(
 
       // Send.
       const { subject, html, text } = composeNudgeEmail({
-        practiceName: cfg.practiceName,
+        practiceName: brand.storefrontName,
         publicBaseUrl: cfg.publicBaseUrl,
         overdueTasks,
       });
@@ -412,21 +430,14 @@ export async function runMaintenanceNudgeSweep(
     return stats;
   }
 
-  const sendgrid = createSendgridClient({
-    apiKey: cfg.sendgridApiKey,
-    fromEmail: cfg.sendgridFromEmail,
-    fromName: cfg.sendgridFromName,
-  });
+  // The SendGrid client is now built PER tenant inside the sweep (G6) so each
+  // tenant sends under its own From identity; the config-gate above stays as a
+  // cheap platform-level pre-check.
   const asOfDate = new Date();
 
   await forEachActiveOrg(
     async (orgId) => {
-      const orgStats = await maintenanceNudgeSweepForOrg(
-        orgId,
-        cfg,
-        sendgrid,
-        asOfDate,
-      );
+      const orgStats = await maintenanceNudgeSweepForOrg(orgId, cfg, asOfDate);
       stats.scanned += orgStats.scanned;
       stats.emailed += orgStats.emailed;
       stats.skippedQuiet += orgStats.skippedQuiet;

@@ -49,6 +49,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { isOutsideSmsSendWindow } from "./comm-prefs";
+import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import { isFeatureEnabled } from "./feature-flags";
 import { logger } from "./logger";
 import {
@@ -793,7 +794,11 @@ async function buildClients(
 ): Promise<BuiltClients> {
   let sg: BuiltClients["sg"] = null;
   try {
-    sg = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default otherwise. The day-copy body
+    // builders are intentionally left brand-literal as-is (out of scope
+    // for the email-client swap).
+    sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (!(err instanceof EmailConfigError)) {
       logger.warn({ err }, "sendgrid client construction failed");

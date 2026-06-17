@@ -267,6 +267,7 @@ export async function runCartAbandonmentDispatch(opts: {
         items: row.items,
         subtotalCents: row.subtotalCents,
         currency: row.currency,
+        orgId: opts.orgId,
       });
     } catch (err) {
       // Most commonly EmailConfigError when SendGrid env is missing.

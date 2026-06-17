@@ -45,8 +45,8 @@
 import type PgBoss from "pg-boss";
 
 import {
-  createSendgridClient,
   DEFAULT_SENDGRID_FROM_EMAIL,
+  EmailConfigError,
 } from "@workspace/resupply-email";
 import {
   escapePostgRESTFilterValue,
@@ -55,6 +55,8 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -279,13 +281,24 @@ async function fitterLeadReengageSweepForOrg(
     }
   }
 
-  const sendgrid = createSendgridClient({
-    apiKey: sendgridApiKey,
-    fromEmail: cfg.sendgridFromEmail,
-    fromName: sendgridFromName,
-  });
+  // Send under the tenant's own From identity (G6); the seed tenant resolves
+  // to the platform default, so single-tenant behavior is unchanged. A tenant
+  // whose sender config is incomplete is skipped gracefully.
+  let sendgrid: Awaited<ReturnType<typeof createTenantSendgridClient>>;
+  try {
+    sendgrid = await createTenantSendgridClient(orgId);
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      stats.skippedNoConfig += 1;
+      return;
+    }
+    throw err;
+  }
+  // Brand the copy with the tenant's own storefront name (G6); for the seed
+  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
   const { subject, html, text } = composeReengageEmail({
-    practiceName: cfg.practiceName,
+    practiceName: brand.storefrontName,
     publicBaseUrl,
   });
 

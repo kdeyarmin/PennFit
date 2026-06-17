@@ -37,8 +37,9 @@ import {
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
-import { readPracticeName } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -242,6 +243,14 @@ async function videoVisitReminderSweepForOrg(
     ? createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId))
     : null;
 
+  // Send under the tenant's own From identity (G6); the global
+  // `clients.sendgrid` already proved constructibility in the avail gate,
+  // mirroring the tenant SMS pattern above. For the seed tenant this resolves
+  // to the platform default From, so single-tenant behavior is unchanged.
+  const tenantSendgrid = avail.email
+    ? await createTenantSendgridClient(orgId)
+    : null;
+
   const supabase = getOrgScopedClient(orgId);
   const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS).toISOString();
   const { data, error } = await supabase
@@ -258,7 +267,11 @@ async function videoVisitReminderSweepForOrg(
   if (error) throw error;
 
   const visits = (data ?? []) as unknown as ReminderVisitRow[];
-  const practiceName = readPracticeName();
+  // Brand the reminder copy with the tenant's own storefront name (G6); for
+  // the seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const practiceName = brand.storefrontName;
   const base = publicBaseUrl();
 
   for (const visit of visits) {
@@ -309,7 +322,8 @@ async function videoVisitReminderSweepForOrg(
         // Non-null by construction: avail.sms implied tenantTwilio above.
         await tenantTwilio!.sendSms({ to: target.to, body: message.sms });
       } else {
-        await clients.sendgrid!.sendEmail({
+        // Non-null by construction: avail.email implied tenantSendgrid above.
+        await tenantSendgrid!.sendEmail({
           to: target.to,
           // No PHI in the subject line.
           subject: message.subject,

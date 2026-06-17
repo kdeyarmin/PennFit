@@ -42,6 +42,8 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -159,6 +161,15 @@ export type SendOutcome =
 export async function sendRecallNotification(
   ctx: RecallNotificationContext,
   cfg: MessagingConfig,
+  /**
+   * Tenant the recall belongs to (G6). When provided, the EMAIL leg sends
+   * under the tenant's own From identity via `createTenantSendgridClient`;
+   * omitting it (the pure-function test seam) keeps the cfg-built client so
+   * existing tests stage SendGrid via `cfg` unchanged. The brand name in the
+   * body comes from `cfg.practiceName`, which the caller pre-resolves to the
+   * tenant's storefront name.
+   */
+  orgId?: string,
 ): Promise<SendOutcome> {
   const subject = `Important: ${ctx.recall.title}`;
   const bodyText = [
@@ -179,11 +190,16 @@ export async function sendRecallNotification(
   // description; SMS is the short-form fallback.
   if (ctx.patient.email && cfg.sendgridApiKey && cfg.sendgridFromName) {
     try {
-      const client = createSendgridClient({
-        apiKey: cfg.sendgridApiKey,
-        fromEmail: cfg.sendgridFromEmail,
-        fromName: cfg.sendgridFromName,
-      });
+      // G6: send under the tenant's own From identity when an orgId is in
+      // play (the worker path); the pure-function test seam (no orgId) keeps
+      // the cfg-built client so staged SendGrid responses still apply.
+      const client = orgId
+        ? await createTenantSendgridClient(orgId)
+        : createSendgridClient({
+            apiKey: cfg.sendgridApiKey,
+            fromEmail: cfg.sendgridFromEmail,
+            fromName: cfg.sendgridFromName,
+          });
       await client.sendEmail({
         to: ctx.patient.email,
         subject,
@@ -324,6 +340,16 @@ async function recallSendSweepForOrg(
   // one (G7); falls back to the platform default otherwise. Resolved
   // once per tenant and threaded into every sendRecallNotification call.
   const cfg = await applyTenantSmsFrom(orgId, baseCfg);
+
+  // Brand the notice copy with the tenant's own storefront name (G6); for the
+  // seed tenant this resolves to "PennPaps" so single-tenant copy is
+  // unchanged. The email From identity is applied inside
+  // sendRecallNotification via the orgId we thread through below.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const tenantCfg: MessagingConfig = {
+    ...cfg,
+    practiceName: brand.storefrontName,
+  };
 
   // Phase 0 — reclaim orphaned claims. A worker that flipped a row to
   // 'sending' (below) and then crashed before the terminal flip would
@@ -473,7 +499,8 @@ async function recallSendSweepForOrg(
           phoneE164: patient.phone_e164,
         },
       },
-      cfg,
+      tenantCfg,
+      orgId,
     );
 
     // Terminal flip: sending -> sent/failed/skipped, gated on

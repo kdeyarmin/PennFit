@@ -28,22 +28,18 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getOrgScopedClient } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
-import {
-  readPracticeName,
-  readSmsConfigOrNull,
-} from "../../lib/messaging/messaging-config";
+import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
@@ -106,9 +102,13 @@ function inviteStatusCallbackUrl(visitId: string): string | undefined {
     : undefined;
 }
 
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default otherwise.
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
@@ -223,7 +223,7 @@ async function deliverInvite(opts: {
   try {
     if (opts.channel === "email") {
       if (!opts.email) return { delivered: false, reason: "no_email" };
-      const sendgrid = tryCreateSendgrid();
+      const sendgrid = await tryCreateSendgrid(opts.orgId);
       if (!sendgrid) return { delivered: false, reason: "no_email_config" };
       await sendgrid.sendEmail({
         to: opts.email,
@@ -491,7 +491,7 @@ async function createVisitAndRespond(
       email: recipientEmail,
       phone: recipientPhone,
       firstName: greetingName,
-      practiceName: readPracticeName(),
+      practiceName: (await resolveBrandingByOrgId(orgId)).storefrontName,
       scheduledAt: visit.scheduled_at,
       link: joinUrl,
     });
@@ -797,7 +797,7 @@ router.post(
         visit.patients?.legal_first_name ??
         visit.guest_name?.split(/\s+/)[0] ??
         null,
-      practiceName: readPracticeName(),
+      practiceName: (await resolveBrandingByOrgId(orgId)).storefrontName,
       scheduledAt: visit.scheduled_at,
       link: joinUrl,
     });

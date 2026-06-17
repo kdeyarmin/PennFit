@@ -178,6 +178,7 @@ export async function dispatchBackInStockForProduct(
         productImageUrl: input.productImageUrl ?? null,
         productUrl: input.productUrl,
         priceLabel: input.priceLabel ?? null,
+        orgId,
       };
       const send = await sendBackInStockEmail(payload);
       const { error: stampErr } = await supabase

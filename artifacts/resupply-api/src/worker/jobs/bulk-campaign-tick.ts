@@ -396,9 +396,9 @@ export async function processTick(
   // pg-boss DLQs it and the stale-'sending' recovery reclaims the batch back
   // to 'pending' on a later tick) instead of burning every recipient to
   // 'failed' on what is really a one-off misconfiguration.
-  const sendgridClient = await import("@workspace/resupply-email").then((m) =>
-    m.createSendgridClient(),
-  );
+  const { createTenantSendgridClient } =
+    await import("../../lib/email/tenant-sender.js");
+  const sendgridClient = await createTenantSendgridClient(orgId);
   let sent = 0;
   let failed = 0;
   let retried = 0;

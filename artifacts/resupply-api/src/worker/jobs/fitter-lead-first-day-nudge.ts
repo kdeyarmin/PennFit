@@ -50,10 +50,7 @@ import {
   escapePostgRESTFilterValue,
   getOrgScopedClient,
 } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailConfigError } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
   TwilioConfigError,
@@ -62,6 +59,8 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -164,11 +163,15 @@ export function composeFirstDaySms(opts: {
   return `${opts.practiceName}: you started a mask fitting earlier — finish in 2 min: ${opts.resumeUrl} . Reply STOP to opt out.`;
 }
 
-/** Construct the SendGrid client; return null on missing config so the
- *  worker can degrade gracefully rather than killing the cron tick. */
-function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
+/** Construct the tenant SendGrid client (G6 — sends under the tenant's own
+ *  From identity, falling back to the platform default for the seed tenant);
+ *  return null on missing config so the worker can degrade gracefully rather
+ *  than killing the cron tick. */
+async function tryCreateSendgrid(
+  orgId: string,
+): Promise<Awaited<ReturnType<typeof createTenantSendgridClient>> | null> {
   try {
-    return createSendgridClient();
+    return await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) return null;
     throw err;
@@ -299,10 +302,13 @@ async function firstDayNudgeSweepForOrg(
   // can still send via the channels it DOES have configured. e.g.
   // SendGrid configured but Twilio missing → emails still ship, SMS
   // is silently skipped.
-  const sendgrid = tryCreateSendgrid();
+  const sendgrid = await tryCreateSendgrid(orgId);
   const twilioSms = await tryCreateTwilioSms(orgId);
 
-  const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
+  // Brand the copy with the tenant's own storefront name (G6); for the seed
+  // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
+  const brand = await resolveBrandingByOrgId(orgId);
+  const practiceName = brand.storefrontName;
   const resumeUrl = `${publicBaseUrl()}/consent`;
 
   for (const lead of candidates) {

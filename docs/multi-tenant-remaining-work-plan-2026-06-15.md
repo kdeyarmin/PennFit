@@ -147,9 +147,31 @@ claims.
    the tenant by host (`resolveOrgIdByHost`), seed only as last-resort
    fallback.
 
-**Still open after this branch (tracked):** the full per-tenant conversion of
-the remaining ~55 email senders and remaining outbound-SMS callsites lacking
-an in-scope `orgId`. The G1 `reminder_subscriptions` global-table resolution is
+**Per-tenant email senders — now largely converted.** The patient-facing email
+senders have been moved off the bare platform SendGrid client onto
+`createTenantSendgridClient(orgId)` + per-tenant brand
+(`resolveBrandingByOrgId`): the order-confirmation pair, the 12 `lib/order-emails`
+lifecycle senders (winback, deductible-reset, delivery-followup, EOB-explainer,
+insurance-estimate, lifecycle-touchpoint, quarterly-summary, quiz-results,
+ready-for-pickup, shipping-notification, therapy-milestone, caregiver), the
+storefront reminder + return-status emails, the smart-trigger and rx-renewal
+dispatchers, the cart-abandonment / back-in-stock / appointment-assigned /
+review-request senders, clinical-outreach, the checkin / patient-packet /
+csr-order email paths, and the per-org lead/patient worker crons
+(video-visit-reminders, recall, maintenance-nudges, fitter-supply-campaign,
+fitter-lead-reengage / first-day-nudge, bulk-campaign-tick) plus the admin
+video-visits / fitter-invites routes. Internal/ops/auth mail (password resets,
+operator digests, DLQ/metric/integration alerts, CSR-inbox, review-moderation,
+scheduled reports, the admin assistant) intentionally stays on the platform
+From. _Remaining sender items:_ a few internal-vs-patient nuanced senders
+(`storefront/orderEmail` fulfillment-to-practice, `insurance-lead-email`'s mixed
+team+lead recipients), `statement-send`'s sync `practiceName` builder, and the
+non-brand-copy bodies in a couple of large knowledge-base senders
+(checkin day-copy); none affect a second tenant's From identity. Remaining
+outbound-SMS callsites lacking an in-scope `orgId` are likewise a small tail.
+
+**Still open after this branch (tracked):** the small sender/SMS tail noted
+above. The G1 `reminder_subscriptions` global-table resolution is
 now **addressed** — migration 0378 adds `org_id` to the public
 `reminder_subscriptions` table (backfilled to seed) and re-keys email
 uniqueness to `(org_id, email)` so two tenants can each enroll the same email;
