@@ -259,6 +259,24 @@ The remaining code item is (b) the **G2** SUITE-GATED cron tail owned by the
 cron-fan-out workstream — which does not block a second tenant from being
 served, transacting, or billing.
 
+**G2 cron tail — final classification (2026-06-17).** The tractable
+per-tenant fan-out work is complete. Of the seed-pinned worker jobs that
+remain: most are **legitimately global** (PHI-bucket janitor, idempotency
+prune, webhook dispatcher pending G12, PECOS/NPI registry, bulk-campaign
+which is already per-campaign); the two operator digests
+(`failed-order-emails-digest`, `owner-digest`) are **platform-level** alerts
+and were de-leaked to `PLATFORM_NAME`; the invite/password-expiry notices
+are now **per-tenant branded**. The only genuinely remaining item is the
+**analytics-grain redesign** — `metrics_daily`, `metric_thresholds`,
+`metric_alerts`, `therapy_fleet_daily_metrics`, and the other grain-keyed
+counters that migration `0342` deliberately deferred because per-tenant
+scoping there is a PK/grain redesign + recompute, not an additive column.
+That work (schema re-key + the five pipeline jobs + the `metrics_daily_latest`
+RPC) is scoped in
+[`multi-tenant-analytics-grain-redesign-plan.md`](./multi-tenant-analytics-grain-redesign-plan.md).
+It is **not** on the patient-serving / transacting / billing path, so it does
+not block a second tenant going live.
+
 ## The load-bearing gaps (must-fix before a 2nd tenant goes live)
 
 These are the items that make the difference between "isolation-ready" and
