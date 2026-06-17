@@ -1,4 +1,4 @@
--- 0369_low_stock_alert_state_org_pk — per-tenant low-stock alert state.
+-- 0370_low_stock_alert_state_org_pk — per-tenant low-stock alert state.
 --
 -- Re-keys resupply.low_stock_alert_state from a global (product_id) PRIMARY
 -- KEY to a per-tenant (org_id, product_id) shape. Migration 0341 added the
