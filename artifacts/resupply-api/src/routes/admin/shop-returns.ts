@@ -48,6 +48,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { sendReturnStatusEmail } from "../../lib/shop-returns/send-return-status-email";
 import { logger } from "../../lib/logger";
 
@@ -690,6 +691,11 @@ router.post(
         // callback below keeps the TS control-flow narrowing from the
         // outer `if (stripe && orderRow.stripe_payment_intent_id)`.
         const paymentIntentId = orderRow.stripe_payment_intent_id;
+        // The original PaymentIntent lives on the tenant's connected
+        // account (Stripe Connect, G5) when it has one, so the refund must
+        // be issued on that SAME account — else Stripe 404s the PI on the
+        // platform account. No connected account → platform account, as today.
+        const acct = await stripeAccountRequestOptions(orgId);
         const refund = await withMetrics(
           {
             name: "stripe.refunds.create",
@@ -706,7 +712,7 @@ router.post(
                   shop_order_id: ret.order_id,
                 },
               },
-              { idempotencyKey },
+              { ...acct, idempotencyKey },
             ),
         );
         stripeRefundId = refund.id;

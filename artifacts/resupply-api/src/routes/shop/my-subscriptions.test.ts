@@ -237,9 +237,13 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
     expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledTimes(1);
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
-      pause_collection: { behavior: "void" },
-    });
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
+      STRIPE_SUB_ID,
+      {
+        pause_collection: { behavior: "void" },
+      },
+      {},
+    );
   });
 });
 
@@ -260,9 +264,13 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
     ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
-      pause_collection: "",
-    });
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
+      STRIPE_SUB_ID,
+      {
+        pause_collection: "",
+      },
+      {},
+    );
   });
 
   it("409 when subscription is canceled (shared guard)", async () => {
@@ -472,10 +480,14 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
-      items: [{ id: STRIPE_ITEM_ID, price: NEW_PRICE_ID }],
-      proration_behavior: "none",
-    });
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
+      STRIPE_SUB_ID,
+      {
+        items: [{ id: STRIPE_ITEM_ID, price: NEW_PRICE_ID }],
+        proration_behavior: "none",
+      },
+      {},
+    );
   });
 });
 
@@ -670,8 +682,12 @@ describe("POST /shop/me/subscriptions/:id/cancel (smoke)", () => {
     ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
-      cancel_at_period_end: true,
-    });
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
+      STRIPE_SUB_ID,
+      {
+        cancel_at_period_end: true,
+      },
+      {},
+    );
   });
 });
