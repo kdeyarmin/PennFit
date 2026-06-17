@@ -151,8 +151,11 @@ claims.
 the remaining ~55 email senders and remaining outbound-SMS callsites lacking
 an in-scope `orgId`; the G8 read-only singleton consumers (company-info
 display, dispense-readiness, GFE issuer block) which read the seed row for a
-non-seed tenant (display gap, not mis-billing); the order-confirmation brand
-string; and the G1 `reminder_subscriptions` global-table resolution. The G16
+non-seed tenant (display gap, not mis-billing); and the G1
+`reminder_subscriptions` global-table resolution. The order-confirmation brand
+string is now **addressed** — both order-confirmation emails resolve the
+tenant's storefront name via `resolveBrandingByOrgId(orgId)` (seed → "PennPaps",
+unchanged; a second tenant → its own brand). The G16
 seed-org BAA grandfather row is now **addressed** (migration 0376 seeds the
 seed org's `baa` + `platform_terms` acceptances at the current versions,
 `ON CONFLICT DO NOTHING`, so deploying the gate no longer locks the existing

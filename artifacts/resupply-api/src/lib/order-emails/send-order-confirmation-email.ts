@@ -42,6 +42,7 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 import { withMetrics } from "../observability";
 import { withRetry } from "../with-retry.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -176,14 +177,19 @@ export async function sendOrderConfirmationEmail(
     throw err;
   }
 
-  const subject = "Your PennPaps order is confirmed";
+  // Brand the email with the tenant's own storefront name (G6). For the seed
+  // tenant this resolves to "PennPaps" (its stored brand), so single-tenant
+  // copy is unchanged; a second tenant's order email carries ITS brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
+  const subject = `Your ${brandName} order is confirmed`;
 
   const orderUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
   const browseUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop`;
 
   // ---------- text body ----------
   const textLines: string[] = [
-    "Thanks for your order at PennPaps. Your payment was received and we're getting it ready to ship.",
+    `Thanks for your order at ${brandName}. Your payment was received and we're getting it ready to ship.`,
     "",
   ];
   if (items.length > 0) {
@@ -257,7 +263,7 @@ export async function sendOrderConfirmationEmail(
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;max-width:560px;">
           <tr>
             <td style="padding-bottom:16px;border-bottom:2px solid #c9a227;">
-              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">PennPaps</div>
+              <div style="font-size:14px;letter-spacing:0.08em;color:#7a5d00;text-transform:uppercase;font-weight:600;">${escapeHtml(brandName)}</div>
               <div style="font-size:22px;color:#1a1a1a;font-weight:700;margin-top:4px;">Your order is confirmed</div>
             </td>
           </tr>

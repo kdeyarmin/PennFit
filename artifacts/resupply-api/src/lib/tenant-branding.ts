@@ -185,6 +185,63 @@ export async function resolveBrandingByHost(
   return branding;
 }
 
+// Branding cache keyed by org_id (separate from the host cache above). Used by
+// callsites that already know their tenant — e.g. order-confirmation emails
+// fired from a Stripe webhook, which have an org_id but no request host.
+const orgBrandingCache = new Map<string, CacheEntry>();
+
+async function loadBrandingForOrgId(
+  orgId: string,
+): Promise<StorefrontBranding> {
+  const supabase = getOrgScopedClient(orgId);
+  // GLOBAL `organizations` directory — reach via `.raw()` so the org-scoped
+  // facade does not append an org_id filter to the tenant directory, then
+  // select this specific org by id.
+  const { data, error } = await withTimeout(
+    supabase
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select("name, storefront_name, tagline, logo_url")
+      .eq("id", orgId)
+      .limit(1)
+      .maybeSingle(),
+  );
+  if (error) throw error;
+  return mapBranding(data);
+}
+
+/**
+ * The effective storefront branding for a known tenant `orgId`. Cached ~60s
+ * per org; never throws (any failure degrades to the platform/default brand).
+ * For the seed tenant this returns its stored brand (e.g. "PennPaps"), so
+ * single-tenant copy is unchanged.
+ */
+export async function resolveBrandingByOrgId(
+  orgId: string | undefined,
+): Promise<StorefrontBranding> {
+  const key = orgId?.trim();
+  if (!key) return DEFAULT_BRANDING;
+  const now = Date.now();
+  const hit = orgBrandingCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.branding;
+
+  let branding: StorefrontBranding;
+  try {
+    branding = await loadBrandingForOrgId(key);
+  } catch (err) {
+    const normalized =
+      err instanceof Error ? err : new Error(String(err ?? "unknown"));
+    logger.warn(
+      { event: "tenant_branding_load_failed", err: normalized },
+      "tenant branding load by org failed; falling back to default brand",
+    );
+    branding = DEFAULT_BRANDING;
+  }
+  orgBrandingCache.set(key, { branding, expiresAt: now + CACHE_TTL_MS });
+  return branding;
+}
+
 /**
  * Drop the branding cache so an admin save is visible on the next read.
  * Also drops the host→org cache: every branding/custom-domain mutation

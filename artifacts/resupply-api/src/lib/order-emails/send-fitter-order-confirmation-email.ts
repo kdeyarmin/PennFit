@@ -31,6 +31,7 @@
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -93,6 +94,10 @@ export async function sendFitterOrderConfirmationEmail(
     throw err;
   }
 
+  // Brand the signature with the tenant's own storefront name (G6). Seed
+  // tenant → "PennPaps" (unchanged); a second tenant → its own brand.
+  const brand = await resolveBrandingByOrgId(input.orgId);
+  const brandName = brand.storefrontName;
   const base = publicBaseUrl(input.baseUrlOverride);
   const accountUrl = `${base}/account`;
   const greeting = input.firstName
@@ -125,7 +130,7 @@ export async function sendFitterOrderConfirmationEmail(
     "Reply to this email if you have any questions — a real human picks",
     "it up.",
     "",
-    "—The PennPaps team",
+    `—The ${brandName} team`,
   ].join("\n");
 
   const html = `<!doctype html>
@@ -161,7 +166,7 @@ export async function sendFitterOrderConfirmationEmail(
           </p>
         </td></tr>
         <tr><td style="padding:16px 28px 24px;border-top:1px solid #eef0f5;font-size:12px;color:#8b95a9;">
-          The PennPaps team
+          The ${escapeHtml(brandName)} team
         </td></tr>
       </table>
     </td></tr>
