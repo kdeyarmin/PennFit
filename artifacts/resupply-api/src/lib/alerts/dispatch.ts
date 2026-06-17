@@ -46,6 +46,10 @@ import {
   readEmailConfigOrNull,
   readSmsConfigOrNull,
 } from "../messaging/messaging-config";
+import {
+  applyTenantSmsFrom,
+  resolveTenantVoiceFrom,
+} from "../messaging/tenant-telecom";
 import { readVoiceConfigOrNull } from "../voice/voice-config";
 import { getAlertVoiceScripts } from "./voice-scripts";
 
@@ -330,11 +334,14 @@ export async function dispatchAlert(
     const cfg = readSmsConfigOrNull();
     if (!cfg) return { status: "messaging_not_configured" };
     try {
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform default otherwise.
+      const tenantCfg = await applyTenantSmsFrom(orgId, cfg);
       const sms = createTwilioSmsClient({
-        accountSid: cfg.twilioAccountSid,
-        authToken: cfg.twilioAuthToken,
-        from: cfg.twilioPhoneNumber,
-        messagingServiceSid: cfg.twilioMessagingServiceSid,
+        accountSid: tenantCfg.twilioAccountSid,
+        authToken: tenantCfg.twilioAuthToken,
+        from: tenantCfg.twilioPhoneNumber,
+        messagingServiceSid: tenantCfg.twilioMessagingServiceSid,
       });
       const r = await sms.sendSms({ to: normalized, body: rendered.bodyText });
       return { status: "ok", channel, vendorRef: r.messageSid };
@@ -357,6 +364,10 @@ export async function dispatchAlert(
   const ref = randomUUID();
   getAlertVoiceScripts().register(ref, rendered.bodyText);
   const base = voiceCfg.publicBaseUrl;
+  // Call from the tenant's own voice caller-id when it has one (G7),
+  // else the platform default. Fails soft to the default.
+  const callerId =
+    (await resolveTenantVoiceFrom(orgId)) ?? voiceCfg.twilioPhoneNumber;
   try {
     const twilio = createTwilioClient({
       accountSid: voiceCfg.twilioAccountSid,
@@ -364,7 +375,7 @@ export async function dispatchAlert(
     });
     const r = await twilio.placeCall({
       to: normalized,
-      from: voiceCfg.twilioPhoneNumber,
+      from: callerId,
       url: `${base}/resupply-api/voice/alert-twiml?ref=${encodeURIComponent(ref)}`,
       statusCallbackUrl: `${base}/resupply-api/voice/status-callback?conversationId=${encodeURIComponent(ref)}`,
     });

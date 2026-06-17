@@ -30,6 +30,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 import { shouldSendEmail, shouldSendSms, type DndOptions } from "../comm-prefs";
 import { getDocumentSupplierNameSync } from "../company-info";
 import { logger } from "../logger";
+import { applyTenantSmsFrom } from "../messaging/tenant-telecom";
 
 export interface StatementMessagingConfig {
   sendgridApiKey: string | null;
@@ -591,6 +592,16 @@ export async function runStatementBatchSend(
     mailQueued: 0,
   };
 
+  // Resolve the tenant's own SMS sender ONCE for the batch (G7) and pin
+  // it onto deps.cfg so every statement SMS goes out under the tenant's
+  // number / Messaging Service (falling back to the platform default
+  // when the tenant has none). The email From is unaffected.
+  const baseCfg = deps.cfg ?? readStatementMessagingConfig();
+  const tenantDeps: StatementSendDeps = {
+    ...deps,
+    cfg: await applyTenantSmsFrom(supabase.orgId, baseCfg),
+  };
+
   const { data, error } = await supabase
     .from("patient_billing_statements")
     .select("id, total_patient_responsibility_cents")
@@ -610,7 +621,7 @@ export async function runStatementBatchSend(
 
   for (const row of rows) {
     try {
-      const outcome = await sendOneStatement(supabase, row.id, deps);
+      const outcome = await sendOneStatement(supabase, row.id, tenantDeps);
       if (outcome.kind === "sent") result.sent += 1;
       else if (outcome.kind === "failed") result.failed += 1;
       else if (outcome.kind === "mail") result.mailQueued += 1;

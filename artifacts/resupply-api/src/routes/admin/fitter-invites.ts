@@ -36,6 +36,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import {
   FITTER_INVITE_TTL_MS,
   signFitterInviteToken,
@@ -88,9 +89,13 @@ function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -105,6 +110,7 @@ const inviteLinkFor = (token: string) =>
  *  can still hand the staff member a copy-able link. */
 async function deliverInvite(opts: {
   channel: "email" | "sms";
+  orgId: string;
   email: string | null;
   phone: string | null;
   name: string | null;
@@ -127,7 +133,7 @@ async function deliverInvite(opts: {
     }
     // SMS
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
-    const twilio = tryCreateTwilioSms();
+    const twilio = await tryCreateTwilioSms(opts.orgId);
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     await twilio.sendSms({
       to: opts.phone,
@@ -309,6 +315,7 @@ router.post(
     const link = inviteLinkFor(token);
     const delivery = await deliverInvite({
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       name: recipientName,
@@ -798,6 +805,7 @@ router.post(
     const link = inviteLinkFor(token);
     const delivery = await deliverInvite({
       channel: invite.channel,
+      orgId,
       email: invite.recipient_email,
       phone: invite.recipient_phone_e164,
       name: invite.recipient_name,

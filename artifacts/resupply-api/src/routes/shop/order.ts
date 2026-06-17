@@ -15,12 +15,14 @@ import { Router, type IRouter } from "express";
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
 import {
   SHOP_UNAVAILABLE_BODY,
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 
 const SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]{20,}$/;
 
@@ -43,7 +45,11 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   // This stops an attacker from probing arbitrary session IDs from
   // unrelated Stripe accounts (Stripe would 404 those, but we'd
   // rather not even ask).
-  const orgId = await resolveSeedOrgId();
+  // Public route (opaque session id is the access token) — no auth
+  // middleware populates req.orgId, so resolve the tenant from the request
+  // host (custom domain → that org; platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

@@ -51,6 +51,7 @@ import {
 import { isInDndWindow, isOutsideSmsSendWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
@@ -196,7 +197,9 @@ export async function runSmartTriggerSendDue(
     }
   } else {
     try {
-      sms = createTwilioSmsClient();
+      // Send under the tenant's own number / Messaging Service when it
+      // has one (G7); falls back to the platform env default otherwise.
+      sms = createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
     } catch (err) {
       if (err instanceof TwilioConfigError) {
         return { status: "not_configured", channel };

@@ -29,6 +29,7 @@ import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom";
 import { adminWriteRateLimiter } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -86,18 +87,25 @@ router.post(
     }
     const supabase = getOrgScopedClient(orgId);
 
+    // Resolve the tenant's own SMS sender (number / Messaging Service),
+    // falling back to the platform default when the tenant has none. We
+    // override the cfg HERE (app side) rather than inside the shared
+    // reminders lib, which must not import the app's tenant resolver.
+    const smsCfg = await applyTenantSmsFrom(orgId, {
+      twilioAccountSid: cfg.sms.twilioAccountSid,
+      twilioAuthToken: cfg.sms.twilioAuthToken,
+      twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
+      twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
+      publicBaseUrl: cfg.sms.publicBaseUrl,
+      practiceName: cfg.practiceName,
+    });
+
     let outcome: SendReminderOutcome;
     try {
       outcome = await sendReminderSms({
         supabase: supabase.raw(),
-        cfg: {
-          twilioAccountSid: cfg.sms.twilioAccountSid,
-          twilioAuthToken: cfg.sms.twilioAuthToken,
-          twilioPhoneNumber: cfg.sms.twilioPhoneNumber,
-          twilioMessagingServiceSid: cfg.sms.twilioMessagingServiceSid,
-          publicBaseUrl: cfg.sms.publicBaseUrl,
-          practiceName: cfg.practiceName,
-        },
+        orgId,
+        cfg: smsCfg,
         patientId,
         episodeId,
         body,

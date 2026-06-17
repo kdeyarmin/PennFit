@@ -22,6 +22,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "./company";
 import {
@@ -840,6 +841,7 @@ export async function deliverPacketLink(
   let smsSent = false;
   if (wantSms && input.phone) {
     smsSent = await sendPacketSms(
+      input.supabase.orgId,
       company,
       input.phone,
       input.link,
@@ -857,7 +859,8 @@ export async function deliverPacketLink(
   return { emailSent, smsSent };
 }
 
-function sendPacketSms(
+async function sendPacketSms(
+  orgId: string,
   company: CompanyProfile,
   phoneE164: string,
   link: string,
@@ -869,16 +872,20 @@ function sendPacketSms(
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID ?? null;
   if (!accountSid || !authToken || !(from || messagingServiceSid)) {
     // SMS not configured (dev / preview). Graceful no-op.
-    return Promise.resolve(false);
+    return false;
   }
   const body =
     `${company.legalName}: please review & sign your new patient documents here: ${link}` +
     ` Reply STOP to opt out.`;
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform env default otherwise.
+  const tenantSms = await resolveTenantSmsClientOptions(orgId);
   const client = createTwilioSmsClient({
     accountSid,
     authToken,
-    from: from ?? undefined,
-    messagingServiceSid: messagingServiceSid ?? undefined,
+    from: tenantSms.from ?? from ?? undefined,
+    messagingServiceSid:
+      tenantSms.messagingServiceSid ?? messagingServiceSid ?? undefined,
   });
   return client
     .sendSms({ to: phoneE164, body: body.slice(0, 480) })

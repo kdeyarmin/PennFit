@@ -38,6 +38,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { applyTenantEmailSender } from "../../lib/email/apply-tenant-email-sender";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { sendPushToCustomer } from "../../lib/web-push";
 import {
@@ -157,7 +158,12 @@ router.post(
         supabase: earlyDb.raw(),
         orgId,
         smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
-        emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
+        // Reply under the tenant's own From identity when configured (G6);
+        // falls back to the platform default when it isn't.
+        emailCfg: await applyTenantEmailSender(orgId, {
+          ...cfg.email,
+          practiceName: cfg.practiceName,
+        }),
         conversationId,
         body,
         actor: {

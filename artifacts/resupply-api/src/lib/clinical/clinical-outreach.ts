@@ -31,6 +31,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { isInDndWindow, type DndOptions } from "../comm-prefs";
 import { logger } from "../logger";
+import { applyTenantSmsFrom } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 
 type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
@@ -461,9 +462,20 @@ export async function runClinicalOutreachBatch(
   );
   result.selected = targets.length;
 
+  // Resolve the tenant's own SMS sender ONCE for the whole batch (G7) and
+  // pin it onto deps.cfg so every per-patient send goes out under the
+  // tenant's number / Messaging Service (falling back to the platform
+  // default when the tenant has none). deps.cfg drives the SMS branch of
+  // `deliver`; the email From is unaffected.
+  const baseCfg = deps.cfg ?? readOutreachMessagingConfig();
+  const tenantDeps: OutreachDeps = {
+    ...deps,
+    cfg: await applyTenantSmsFrom(opts.orgId, baseCfg),
+  };
+
   for (const t of targets) {
     try {
-      const outcome = await sendOneOutreach(supabase, t, deps);
+      const outcome = await sendOneOutreach(supabase, t, tenantDeps);
       if (outcome.kind === "sent") {
         result.sent += 1;
         recordOutboundMessageUsage({

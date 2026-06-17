@@ -42,6 +42,7 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { applyTenantSmsFrom } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -314,10 +315,15 @@ async function runRecallSendSweepInner(
  */
 async function recallSendSweepForOrg(
   orgId: string,
-  cfg: MessagingConfig,
+  baseCfg: MessagingConfig,
   stats: SweepStats,
 ): Promise<void> {
   const supabase = getOrgScopedClient(orgId);
+
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise. Resolved
+  // once per tenant and threaded into every sendRecallNotification call.
+  const cfg = await applyTenantSmsFrom(orgId, baseCfg);
 
   // Phase 0 — reclaim orphaned claims. A worker that flipped a row to
   // 'sending' (below) and then crashed before the terminal flip would

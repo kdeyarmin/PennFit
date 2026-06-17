@@ -43,6 +43,7 @@ import {
   readPracticeName,
   readSmsConfigOrNull,
 } from "../../lib/messaging/messaging-config";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { resolveIceServers } from "../../lib/video/ice-servers";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import {
@@ -114,9 +115,13 @@ function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
   }
 }
 
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    // Send under the tenant's own number / Messaging Service when it has
+    // one (G7); falls back to the platform env default otherwise.
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -205,6 +210,7 @@ function renderInviteEmailText(
 async function deliverInvite(opts: {
   visitId: string;
   channel: "email" | "sms";
+  orgId: string;
   email: string | null;
   phone: string | null;
   firstName: string | null;
@@ -239,7 +245,7 @@ async function deliverInvite(opts: {
       return { delivered: true };
     }
     if (!opts.phone) return { delivered: false, reason: "no_phone" };
-    const twilio = tryCreateTwilioSms();
+    const twilio = await tryCreateTwilioSms(opts.orgId);
     if (!twilio) return { delivered: false, reason: "no_sms_config" };
     const statusCallbackUrl = inviteStatusCallbackUrl(opts.visitId);
     const sent = await twilio.sendSms({
@@ -481,6 +487,7 @@ async function createVisitAndRespond(
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       firstName: greetingName,
@@ -783,6 +790,7 @@ router.post(
     const delivery = await deliverInvite({
       visitId: visit.id,
       channel: body.channel,
+      orgId,
       email: recipientEmail,
       phone: recipientPhone,
       firstName:

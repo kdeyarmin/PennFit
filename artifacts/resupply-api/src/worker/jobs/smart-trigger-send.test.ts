@@ -5,11 +5,20 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { runSmartTriggerSendDueMock } = vi.hoisted(() => ({
-  runSmartTriggerSendDueMock: vi.fn(),
-}));
+const { runSmartTriggerSendDueMock, listActiveOrgIdsMock } = vi.hoisted(
+  () => ({
+    runSmartTriggerSendDueMock: vi.fn(),
+    listActiveOrgIdsMock: vi.fn(),
+  }),
+);
 vi.mock("../../lib/smart-triggers/dispatcher", () => ({
   runSmartTriggerSendDue: runSmartTriggerSendDueMock,
+}));
+// The cron now fans out across active tenants via forEachActiveOrg, which
+// calls listActiveOrgIds. Pin it to a single tenant so these orchestration
+// tests still assert the per-tenant channel sequencing.
+vi.mock("@workspace/resupply-db", () => ({
+  listActiveOrgIds: listActiveOrgIdsMock,
 }));
 
 vi.mock("../../lib/smart-triggers/renderers", () => ({
@@ -44,6 +53,8 @@ import { registerSmartTriggerSendJob } from "./smart-trigger-send";
 
 beforeEach(() => {
   runSmartTriggerSendDueMock.mockReset();
+  listActiveOrgIdsMock.mockReset();
+  listActiveOrgIdsMock.mockResolvedValue(["org-1"]);
 });
 
 describe("smart-triggers.send-due cron handler", () => {
@@ -71,7 +82,7 @@ describe("smart-triggers.send-due cron handler", () => {
     await expect(fake.run()).resolves.toBeUndefined();
   });
 
-  it("runs SMS even when email throws, then re-throws AggregateError", async () => {
+  it("runs SMS even when email throws, isolating the tenant failure", async () => {
     runSmartTriggerSendDueMock
       .mockRejectedValueOnce(new Error("sg 500"))
       .mockResolvedValueOnce({
@@ -82,17 +93,35 @@ describe("smart-triggers.send-due cron handler", () => {
       });
     const fake = makeFakeBoss();
     await registerSmartTriggerSendJob(fake.boss as never);
-    await expect(fake.run()).rejects.toBeInstanceOf(AggregateError);
+    // forEachActiveOrg isolates the per-tenant failure (logs + tallies,
+    // never rejects); the SMS channel must still have been attempted.
+    await expect(fake.run()).resolves.toBeUndefined();
     expect(runSmartTriggerSendDueMock).toHaveBeenCalledTimes(2);
   });
 
-  it("re-throws an AggregateError when both channels throw", async () => {
+  it("isolates a tenant whose channels both throw without rejecting", async () => {
     runSmartTriggerSendDueMock
       .mockRejectedValueOnce(new Error("sg"))
       .mockRejectedValueOnce(new Error("twilio"));
     const fake = makeFakeBoss();
     await registerSmartTriggerSendJob(fake.boss as never);
-    await expect(fake.run()).rejects.toBeInstanceOf(AggregateError);
+    // Per-tenant error isolation keeps the sweep (and scheduler tick) alive.
+    await expect(fake.run()).resolves.toBeUndefined();
+  });
+
+  it("passes an explicit orgId to each channel", async () => {
+    runSmartTriggerSendDueMock.mockResolvedValue({
+      status: "ok",
+      considered: 0,
+      sent: 0,
+      failed: 0,
+    });
+    const fake = makeFakeBoss();
+    await registerSmartTriggerSendJob(fake.boss as never);
+    await fake.run();
+    // Cron path always passes the tenant org as the 4th arg.
+    expect(runSmartTriggerSendDueMock.mock.calls[0]?.[3]).toBe("org-1");
+    expect(runSmartTriggerSendDueMock.mock.calls[1]?.[3]).toBe("org-1");
   });
 
   it("passes the system-cron actor identity to the dispatcher", async () => {

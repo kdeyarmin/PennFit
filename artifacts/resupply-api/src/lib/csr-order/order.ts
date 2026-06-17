@@ -18,6 +18,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
+import { resolveTenantSmsClientOptions } from "../messaging/tenant-telecom";
 import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "../patient-packet/company";
 import {
@@ -318,11 +319,17 @@ export async function deliverCsrOrderInvite(input: {
         `Review${input.hasDocuments ? ", sign" : ""} & pay securely here: ${input.link}` +
         ` Reply STOP to opt out.`;
       try {
+        // Send under the tenant's own number / Messaging Service when it
+        // has one (G7); falls back to the platform env default otherwise.
+        const tenantSms = await resolveTenantSmsClientOptions(
+          input.supabase.orgId,
+        );
         const client = createTwilioSmsClient({
           accountSid,
           authToken,
-          from: from ?? undefined,
-          messagingServiceSid: messagingServiceSid ?? undefined,
+          from: tenantSms.from ?? from ?? undefined,
+          messagingServiceSid:
+            tenantSms.messagingServiceSid ?? messagingServiceSid ?? undefined,
         });
         await client.sendSms({ to: input.phone, body: body.slice(0, 480) });
         smsSent = true;

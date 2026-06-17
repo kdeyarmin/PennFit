@@ -59,13 +59,10 @@ import {
   type Json,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { claimDedupKey } from "../../lib/dedup-keys";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { selectLlmProvider } from "../../lib/llm-provider";
@@ -458,6 +455,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       if (await isFeatureEnabled("email.auto_reply", req.orgId)) {
         autoReplied = await attemptEmailAutoReply({
           supabase,
+          orgId,
           conversationId,
           patientId,
           toEmail: fromEmail,
@@ -525,6 +523,8 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 
 interface AttemptEmailAutoReplyInput {
   supabase: OrgScopedClient;
+  /** Tenant the inbound thread belongs to — drives the per-tenant From (G6). */
+  orgId: string;
   conversationId: string;
   patientId: string;
   /** Patient's email address (the inbound `From`) — where the reply goes. */
@@ -567,6 +567,7 @@ async function attemptEmailAutoReply(
 ): Promise<boolean> {
   const {
     supabase,
+    orgId,
     conversationId,
     patientId,
     toEmail,
@@ -667,11 +668,9 @@ async function attemptEmailAutoReply(
 
   let sg;
   try {
-    sg = createSendgridClient({
-      apiKey: cfg.sendgridApiKey,
-      fromEmail: cfg.sendgridFromEmail,
-      fromName: cfg.sendgridFromName,
-    });
+    // Send the auto-reply under the tenant's own From identity when
+    // configured (G6); falls back to the platform default when it isn't.
+    sg = await createTenantSendgridClient(orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       logger.warn(

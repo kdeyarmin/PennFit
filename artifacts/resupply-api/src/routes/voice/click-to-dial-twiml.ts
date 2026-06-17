@@ -20,6 +20,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { resolveTenantVoiceFrom } from "../../lib/messaging/tenant-telecom";
 import {
   readTwilioWebhookAuthTokenOrNull,
   readVoiceConfigOrNull,
@@ -53,7 +54,6 @@ router.post(
     }
 
     const config = readVoiceConfigOrNull();
-    const callerId = config?.twilioPhoneNumber;
 
     // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to
     // the same clean Hangup any other miss returns so Twilio doesn't
@@ -64,6 +64,11 @@ router.post(
       return;
     }
     const supabase = getOrgScopedClient(orgId);
+
+    // Bridge from the tenant's own voice caller-id when it has one (G7),
+    // else the platform default. Fails soft to the default.
+    const callerId =
+      (await resolveTenantVoiceFrom(orgId)) ?? config?.twilioPhoneNumber;
     const dispRes = await supabase
       .from("call_dispositions")
       .select("id, patient_id")

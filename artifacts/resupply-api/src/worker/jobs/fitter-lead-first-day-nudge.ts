@@ -62,6 +62,7 @@ import {
 import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -174,10 +175,14 @@ function tryCreateSendgrid(): ReturnType<typeof createSendgridClient> | null {
   }
 }
 
-/** Construct the Twilio SMS client; return null on missing config. */
-function tryCreateTwilioSms(): ReturnType<typeof createTwilioSmsClient> | null {
+/** Construct the Twilio SMS client; return null on missing config.
+ *  Sends under the tenant's own number / Messaging Service when it has
+ *  one (G7); falls back to the platform env default otherwise. */
+async function tryCreateTwilioSms(
+  orgId: string,
+): Promise<ReturnType<typeof createTwilioSmsClient> | null> {
   try {
-    return createTwilioSmsClient();
+    return createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId));
   } catch (err) {
     if (err instanceof TwilioConfigError) return null;
     throw err;
@@ -295,7 +300,7 @@ async function firstDayNudgeSweepForOrg(
   // SendGrid configured but Twilio missing → emails still ship, SMS
   // is silently skipped.
   const sendgrid = tryCreateSendgrid();
-  const twilioSms = tryCreateTwilioSms();
+  const twilioSms = await tryCreateTwilioSms(orgId);
 
   const practiceName = process.env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
   const resumeUrl = `${publicBaseUrl()}/consent`;

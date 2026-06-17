@@ -282,6 +282,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
 
     getPendingSessions().register({
       conversationId: shopConversationId,
+      orgId,
       // Patient/episode are empty for a storefront caller; callerKind +
       // shopCustomerId drive the shop tool set + prompt.
       patientId: "",
@@ -444,6 +445,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   // in that we're calling them.
   getPendingSessions().register({
     conversationId,
+    orgId,
     patientId,
     episodeId,
     callContext: INBOUND_CALL_CONTEXT,

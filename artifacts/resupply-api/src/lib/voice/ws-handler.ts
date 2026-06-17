@@ -141,11 +141,13 @@ export async function handleVoiceWsConnection(
   pending: PendingSessionEntry,
 ): Promise<void> {
   const config = readVoiceConfigOrThrow();
-  // Voice WS has no auth tenant context — resolve the seed org (single-
-  // tenant bridge) and route DB access through the org-scoped chokepoint.
-  // If the tenant can't be resolved the call can't persist anything, so
-  // close cleanly rather than run unscoped.
-  const orgId = await resolveSeedOrgId();
+  // Voice WS has no auth tenant context — prefer the tenant the
+  // registering route (place-call / inbound-reorder) stamped on the
+  // pending session so the bridge persists + sends under the RIGHT
+  // tenant (G7). Fall back to the seed org for legacy/diagnostic entries
+  // that carry no orgId (single-tenant-correct). If neither resolves the
+  // call can't persist anything, so close cleanly rather than run unscoped.
+  const orgId = pending.orgId ?? (await resolveSeedOrgId());
   if (!orgId) {
     logger.error(
       { event: "voice_ws_no_tenant" },

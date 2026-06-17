@@ -39,6 +39,7 @@ import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { readPracticeName } from "../../lib/messaging/messaging-config";
+import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -233,6 +234,14 @@ async function videoVisitReminderSweepForOrg(
   };
   if (!avail.sms && !avail.email) return;
 
+  // Send under the tenant's own number / Messaging Service when it has
+  // one (G7); falls back to the platform default otherwise. The global
+  // `clients.twilio` proves SMS is constructible (availability gate
+  // above); we build a tenant-scoped sender for the actual send.
+  const tenantTwilio = avail.sms
+    ? createTwilioSmsClient(await resolveTenantSmsClientOptions(orgId))
+    : null;
+
   const supabase = getOrgScopedClient(orgId);
   const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS).toISOString();
   const { data, error } = await supabase
@@ -297,8 +306,8 @@ async function videoVisitReminderSweepForOrg(
       });
 
       if (target.channel === "sms") {
-        // Non-null by construction: avail.sms implied clients.twilio above.
-        await clients.twilio!.sendSms({ to: target.to, body: message.sms });
+        // Non-null by construction: avail.sms implied tenantTwilio above.
+        await tenantTwilio!.sendSms({ to: target.to, body: message.sms });
       } else {
         await clients.sendgrid!.sendEmail({
           to: target.to,

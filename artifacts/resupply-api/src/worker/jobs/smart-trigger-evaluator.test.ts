@@ -6,11 +6,19 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { runSmartTriggerEvaluatorMock } = vi.hoisted(() => ({
-  runSmartTriggerEvaluatorMock: vi.fn(),
-}));
+const { runSmartTriggerEvaluatorMock, listActiveOrgIdsMock } = vi.hoisted(
+  () => ({
+    runSmartTriggerEvaluatorMock: vi.fn(),
+    listActiveOrgIdsMock: vi.fn(),
+  }),
+);
 vi.mock("../../lib/smart-triggers/evaluator", () => ({
   runSmartTriggerEvaluator: runSmartTriggerEvaluatorMock,
+}));
+// The cron now fans out across active tenants via forEachActiveOrg, which
+// calls listActiveOrgIds. Pin it to a single tenant for these tests.
+vi.mock("@workspace/resupply-db", () => ({
+  listActiveOrgIds: listActiveOrgIdsMock,
 }));
 
 vi.mock("../lib/queue-options", () => ({
@@ -37,10 +45,12 @@ import { registerSmartTriggerEvaluatorJob } from "./smart-trigger-evaluator";
 
 beforeEach(() => {
   runSmartTriggerEvaluatorMock.mockReset();
+  listActiveOrgIdsMock.mockReset();
+  listActiveOrgIdsMock.mockResolvedValue(["org-1"]);
 });
 
 describe("smart-triggers.evaluate cron handler", () => {
-  it("invokes the evaluator with the system-cron actor identity", async () => {
+  it("invokes the evaluator with the system-cron actor identity + explicit org", async () => {
     runSmartTriggerEvaluatorMock.mockResolvedValueOnce({
       patientsScanned: 50,
       triggersFired: 3,
@@ -48,18 +58,25 @@ describe("smart-triggers.evaluate cron handler", () => {
     const fake = makeFakeBoss();
     await registerSmartTriggerEvaluatorJob(fake.boss as never);
     await fake.run();
-    expect(runSmartTriggerEvaluatorMock).toHaveBeenCalledWith({
-      adminEmail: "system:cron:smart-trigger-evaluator",
-      adminUserId: null,
-      ip: null,
-      userAgent: null,
-    });
+    // Cron path passes the system actor AND the explicit tenant org (never
+    // the seed-org default).
+    expect(runSmartTriggerEvaluatorMock).toHaveBeenCalledWith(
+      {
+        adminEmail: "system:cron:smart-trigger-evaluator",
+        adminUserId: null,
+        ip: null,
+        userAgent: null,
+      },
+      "org-1",
+    );
   });
 
-  it("propagates errors so pg-boss marks the job failed", async () => {
+  it("isolates a tenant's failure without aborting the sweep", async () => {
+    // forEachActiveOrg logs + tallies a per-tenant failure and never rejects,
+    // so one tenant's broken scan can't crash the shared scheduler tick.
     runSmartTriggerEvaluatorMock.mockRejectedValueOnce(new Error("DB down"));
     const fake = makeFakeBoss();
     await registerSmartTriggerEvaluatorJob(fake.boss as never);
-    await expect(fake.run()).rejects.toThrow("DB down");
+    await expect(fake.run()).resolves.toBeUndefined();
   });
 });

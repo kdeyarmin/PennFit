@@ -35,16 +35,13 @@
 //                order detail page on the customer success page,
 //                support footer.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { withMetrics } from "../observability";
 import { withRetry } from "../with-retry.js";
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -83,6 +80,13 @@ export interface SendOrderConfirmationEmailInput {
    * deploys still resolve to production.
    */
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the confirmation is sent under it
+   * (G6); otherwise the platform default From is used. Omit / undefined
+   * leaves the platform default unchanged.
+   */
+  orgId?: string;
 }
 
 export interface SendOrderConfirmationEmailResult {
@@ -158,7 +162,9 @@ export async function sendOrderConfirmationEmail(
 
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       // Fail-open here (return configured: false) — the webhook

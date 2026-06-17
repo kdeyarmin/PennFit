@@ -28,11 +28,9 @@
 // received the order — the confirmation email is a comfort signal
 // on top of that. The route calls this best-effort.
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -47,6 +45,12 @@ export interface SendFitterOrderConfirmationInput {
   maskManufacturer?: string | null;
   /** Optional override; otherwise pulled from env. */
   baseUrlOverride?: string;
+  /**
+   * Tenant the order belongs to. When set and the tenant has its own
+   * From identity (migration 0360), the confirmation is sent under it
+   * (G6); otherwise the platform default From is used.
+   */
+  orgId?: string;
 }
 
 export interface SendFitterOrderConfirmationResult {
@@ -79,7 +83,9 @@ export async function sendFitterOrderConfirmationEmail(
 ): Promise<SendFitterOrderConfirmationResult> {
   let client;
   try {
-    client = createSendgridClient();
+    // Send under the tenant's own From identity when configured (G6);
+    // falls back to the platform default when it isn't / orgId is unset.
+    client = await createTenantSendgridClient(input.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false, error: err.message };

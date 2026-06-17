@@ -34,6 +34,8 @@ import { z } from "zod";
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { verifyNpsToken } from "../../lib/nps-token";
 
 const router: IRouter = Router();
@@ -83,7 +85,11 @@ router.post("/shop/orders/nps", npsRateLimiter, async (req, res) => {
     return;
   }
 
-  const orgId = await resolveSeedOrgId();
+  // Public capture endpoint — no auth middleware populates req.orgId, so
+  // resolve the tenant from the request host (custom domain → that org;
+  // platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;

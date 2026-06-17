@@ -70,12 +70,103 @@ Work landed on `claude/multitenant-migration-plan-alh7jy` so far:
 The full `resupply-api` suite (5500+ tests) and the tenant-isolation guard
 (baseline 0) stay green throughout.
 
+## Independent verification audit + corrective fixes — 2026-06-17
+
+A full independent re-review of the transition (every gate, read against the
+working tree rather than the status table) found that the **2026-06-17 status
+table below was materially over-optimistic**: several gates marked
+"Done & merged" were **substrate-only** (the per-tenant resolver was written
+and unit-tested, but the callsites were never converted), and the audit
+surfaced **three real bugs the gap list never tracked**. The isolation
+substrate itself (the `getOrgScopedClient` facade — all four verbs scoped,
+forces `org_id` on writes, fails closed on a missing org) and G4/G10/G12 are
+genuinely solid; the corrections are to the per-tenant **identity/serving**
+claims.
+
+**Corrected verdicts (what the table got wrong):**
+
+- **G6 (per-tenant email From) — was substrate-only, not "merged".** Only 1
+  of ~60 senders used `resolveTenantSender`; all patient email (reminders,
+  order confirmations, auto-replies) went out from the platform
+  `info@pennpaps.com` / "PennPaps".
+- **G7 (per-tenant telecom) — inbound done, OUTBOUND was not.** Inbound
+  SMS/voice/fax route by called number, but every outbound SMS/voice used the
+  global Twilio number; `resolveTenantSmsFrom`/`resolveTenantVoiceFrom` were
+  dead code and the voice bridge hardcoded the seed org.
+- **G8 (per-tenant payer creds) — actively mis-billed.** `dme_organization`
+  was read as an unscoped **singleton**, so every tenant's 837P/PAS was built
+  under the **seed NPI/PTAN/tax-id**; the claim-submit path uploaded over the
+  **seed SFTP** account (no per-tenant transport override). Credential
+  resolution failed **open** (env→stub).
+- **G2 — the SUITE-GATED list was both stale and incomplete.** Most listed
+  crons were already fanned out, but ~9 patient-facing/clinical crons were
+  seed-pinned at the **engine** layer and untracked (rx-renewal,
+  smart-triggers, onboarding-checkins, coaching-auto-enroll, …).
+- **New, untracked bugs:** (a) `patient-autopay-charge` **and**
+  `payment-plan-autocharge` checked their feature flag **once globally** then
+  fanned out — the seed tenant's flag authorized off-session card charges for
+  **every** tenant; (b) six public storefront routes (`reviews`,
+  `product-questions`, `product-compatibility`, `nps-response`, `order-pod`,
+  `order`) resolved `resolveSeedOrgId()` on `org_id`-bearing tables, so
+  tenant #2's data read/wrote the seed tenant.
+
+**Corrective fixes landed on this branch
+(`claude/charming-ramanujan-25rytd`):**
+
+1. **Money flag (both autopay crons):** the `billing.patient_autopay` /
+   `billing.payment_plan_autocharge` flag is now checked **per-org inside the
+   fan-out**, so one tenant's flag can never authorize another's charges
+   (regression tests added).
+2. **Billing identity (G8 #1/#2):** `resolveBillingIdentity` /
+   `resolveClearinghouse` now read `dme_organization` **org-scoped** and gate
+   the env/seed fallback to the seed org only — a non-seed tenant without its
+   own identity **fails closed** instead of billing under the seed NPI. The
+   Office Ally submit path now injects the **tenant's own SFTP transport** and
+   refuses to submit for an under-configured non-seed tenant. Migration
+   **0375** relaxes the `dme_organization` singleton and
+   `clearinghouse_credentials (slug, usage_indicator)` uniqueness to **per
+   `org_id`** so a second tenant can be configured. Single-tenant behavior is
+   unchanged (the seed row's `org_id` was backfilled in 0331/0341).
+3. **Email From (G6):** patient-facing senders that know their `orgId`
+   (reminders, conversation replies, inbound auto-reply, order confirmations)
+   now send under the tenant sender, falling back to the platform default —
+   via an app-side `applyTenantEmailSender` helper so the `resupply-reminders`
+   lib keeps its layering. (Remaining: the hardcoded "PennPaps" brand string
+   in order-confirmation body copy needs a tenant-brand lookup — a separate
+   storefront-brand change, not the From identity.)
+4. **Outbound telecom (G7):** the dead `resolveTenantSmsFrom` /
+   `resolveTenantVoiceFrom` resolvers are now threaded through the outbound
+   SMS/voice senders that have an `orgId` in scope, and the voice bridge
+   carries the resolved tenant instead of the seed org.
+5. **Crons (G2):** the untracked seed-pinned patient/clinical crons
+   (rx-renewal-send, smart-trigger-send/evaluator, onboarding-checkins,
+   coaching-auto-enroll) now fan out per active tenant with per-tenant flag
+   checks. `referral-review-extract` is deferred (event-driven per-review;
+   needs a job-payload `org_id` contract change).
+6. **Storefront (G1):** the six seed-pinned public shop routes now resolve
+   the tenant by host (`resolveOrgIdByHost`), seed only as last-resort
+   fallback.
+
+**Still open after this branch (tracked):** the full per-tenant conversion of
+the remaining ~55 email senders and remaining outbound-SMS callsites lacking
+an in-scope `orgId`; the G8 read-only singleton consumers (company-info
+display, dispense-readiness, GFE issuer block) which read the seed row for a
+non-seed tenant (display gap, not mis-billing); the order-confirmation brand
+string; the G1 `reminder_subscriptions` global-table resolution; and the G16
+seed-org BAA grandfather row (deploying the gate locks out the existing admin
+until they re-sign — needs an idempotent acceptance seed). **The
+billing-identity change (item 2) is unit-tested but should be
+integration-verified against a real PostgREST/DB before a second tenant
+transmits live claims.**
+
 ## Status refresh — 2026-06-17
 
 The gap list below was written on 2026-06-15; nearly all of it has since
 shipped and merged. **This section is the current source of truth**; the
 detailed per-gap prose further down is kept for context but is no longer
-the live status.
+the live status. _(Superseded in part by the **Independent verification
+audit** section above — where they disagree, the audit is correct: G6, G7
+outbound, and G8 were substrate-only/mis-billing, not fully done.)_
 
 **What changed since the 2026-06-16 refresh:** G10 (subdomain routing),
 G12 (per-org usage metering), and G16 (BAA gate) have all **merged to

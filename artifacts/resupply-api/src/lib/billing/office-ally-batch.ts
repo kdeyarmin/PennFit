@@ -24,7 +24,10 @@ import {
   controlNumbersFromValue,
   type ControlNumbers,
   build837P,
+  createFileTransport,
   createOfficeAllyAdapter,
+  createSftpTransport,
+  resolveOutboxDir,
   type ClaimDetail,
   type OtherSubscriberDetail,
   type ProviderRef,
@@ -602,10 +605,34 @@ export async function executeOfficeAllyBatchSubmit(
   >;
   try {
     identity = await resolveBillingIdentity({ orgId });
+    const clearinghouse = await resolveClearinghouse({ orgId });
+    // Fail closed for a non-seed tenant that hasn't configured its OWN billing
+    // identity AND clearinghouse transport. Without this guard a second
+    // tenant's 837P would be built under the seed NPI (identity stub/env) and
+    // uploaded over the seed SFTP account (env transport) — wrong-NPI billing.
+    // The seed/single-tenant org keeps its env+stub fallbacks (isSeedOrg in the
+    // resolvers), so this only blocks an under-configured additional tenant.
+    const seedOrgId = await resolveSeedOrgId();
+    if (
+      orgId !== seedOrgId &&
+      (identity.source !== "db" || clearinghouse.source !== "db")
+    ) {
+      throw new Error(
+        "office-ally-batch: tenant billing identity / clearinghouse not configured " +
+          "(refusing to submit under the platform NPI/SFTP)",
+      );
+    }
     const adapter = createOfficeAllyAdapter({
       submitterOverride: identity.submitter,
       billingProviderOverride: identity.billingProvider,
       usageIndicatorOverride: identity.usageIndicator,
+      // Route the upload over the TENANT's own SFTP transport (its
+      // clearinghouse_credentials row); fall back to the local file outbox
+      // only when there's no transport (seed dev/preview/stub).
+      transportFactory: () =>
+        clearinghouse.config
+          ? createSftpTransport(clearinghouse.config)
+          : createFileTransport({ outboxDir: resolveOutboxDir() }),
     });
     submission = await adapter.submitClaims({
       control,

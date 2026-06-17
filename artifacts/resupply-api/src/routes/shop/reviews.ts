@@ -39,6 +39,8 @@ import {
   type Database,
 } from "@workspace/resupply-db";
 
+import { requestHost } from "../../lib/request-host";
+import { resolveOrgIdByHost } from "../../lib/tenant-branding";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
   encodeCompositeCursor,
@@ -256,8 +258,12 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
     return;
   }
 
-  // Public read — resolve the single seed tenant (single-tenant bridge).
-  const orgId = await resolveSeedOrgId();
+  // Public read — no auth middleware populates req.orgId, so resolve the
+  // tenant from the request host (verified custom domain → that org;
+  // platform host / miss → seed org) so a second tenant's reviews don't
+  // read the seed tenant's data.
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;
@@ -379,8 +385,11 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
   // PostgREST has no GROUP BY. Fetch the rating column for every
   // approved review in the requested product set and group JS-side.
   // The result set is bounded by `BULK_AGGREGATE_MAX` products.
-  // Public aggregate — resolve the single seed tenant (single-tenant bridge).
-  const orgId = await resolveSeedOrgId();
+  // Public aggregate — no auth middleware populates req.orgId, so resolve
+  // the tenant from the request host (custom domain → that org; platform
+  // host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;
@@ -427,9 +436,12 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
 // and aggregate JS-side. Returns 0/0 cleanly when no reviews exist
 // (fresh install) so the frontend can hide the strip without a
 // special-case.
-router.get("/shop/reviews/site-aggregate", async (_req, res) => {
-  // Public site-wide aggregate — resolve the seed tenant (single-tenant bridge).
-  const orgId = await resolveSeedOrgId();
+router.get("/shop/reviews/site-aggregate", async (req, res) => {
+  // Public site-wide aggregate — no auth middleware populates req.orgId, so
+  // resolve the tenant from the request host (custom domain → that org;
+  // platform host / miss → seed org).
+  const orgId =
+    (await resolveOrgIdByHost(requestHost(req))) ?? (await resolveSeedOrgId());
   if (!orgId) {
     res.status(503).json({ error: "tenant_unavailable" });
     return;
