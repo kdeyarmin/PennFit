@@ -31,6 +31,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { isInDndWindow, type DndOptions } from "../comm-prefs";
 import { logger } from "../logger";
+import { recordOutboundMessageUsage } from "../metering/usage";
 
 type SupabaseClient = ReturnType<typeof getOrgScopedClient>;
 
@@ -463,8 +464,14 @@ export async function runClinicalOutreachBatch(
   for (const t of targets) {
     try {
       const outcome = await sendOneOutreach(supabase, t, deps);
-      if (outcome.kind === "sent") result.sent += 1;
-      else if (outcome.kind === "failed") result.failed += 1;
+      if (outcome.kind === "sent") {
+        result.sent += 1;
+        recordOutboundMessageUsage({
+          orgId: opts.orgId,
+          channel: outcome.channel === "email" ? "email" : "sms",
+          source: "clinical_outreach",
+        });
+      } else if (outcome.kind === "failed") result.failed += 1;
       else result.skipped += 1;
     } catch (err) {
       logger.warn(

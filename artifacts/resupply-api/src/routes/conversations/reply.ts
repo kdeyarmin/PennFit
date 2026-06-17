@@ -38,6 +38,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage";
 import { sendPushToCustomer } from "../../lib/web-push";
 import {
   appendAdminInAppReply,
@@ -184,6 +185,15 @@ router.post(
 
     switch (outcome.status) {
       case "ok":
+        // replyInConversation only returns "ok" after the patient's
+        // SMS/email vendor accepted the reply (voice/in-app never reach
+        // here), so meter the outbound patient-facing message. The
+        // channel is the conversation's own channel resolved above.
+        recordOutboundMessageUsage({
+          orgId,
+          channel: channelRow.channel === "sms" ? "sms" : "email",
+          source: "conversation_reply",
+        });
         res.status(201).json({
           messageId: outcome.messageId,
           conversationId: outcome.conversationId,
@@ -527,6 +537,15 @@ async function tryNotifyCustomerOfReply(input: {
       conversation_id: input.conversationId,
       kind: "in_app_reply_notification",
     },
+  });
+
+  // The in-app message itself is a portal write, not a billable
+  // channel send; the "you have a new message" nudge email IS an
+  // outbound patient-facing email, so meter it here.
+  recordOutboundMessageUsage({
+    orgId: supabase.orgId,
+    channel: "email",
+    source: "in_app_reply_notification",
   });
 
   // Stamp the throttle timestamp AFTER a successful SendGrid send.

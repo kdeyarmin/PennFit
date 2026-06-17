@@ -17,6 +17,7 @@ import { createTwilioSmsClient } from "@workspace/resupply-telecom";
 
 import { getAuthDeps } from "../auth-deps";
 import { logger } from "../logger";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { resolveCompanyProfile } from "../patient-packet/company";
 import {
   effectiveTemplateContent,
@@ -281,6 +282,11 @@ export async function deliverCsrOrderInvite(input: {
         }),
       });
       emailSent = true;
+      recordOutboundMessageUsage({
+        orgId: input.supabase.orgId,
+        channel: "email",
+        source: "csr_order_invite",
+      });
     } catch (err) {
       logger.warn(
         {
@@ -313,6 +319,11 @@ export async function deliverCsrOrderInvite(input: {
         });
         await client.sendSms({ to: input.phone, body: body.slice(0, 480) });
         smsSent = true;
+        recordOutboundMessageUsage({
+          orgId: input.supabase.orgId,
+          channel: "sms",
+          source: "csr_order_invite",
+        });
       } catch (err) {
         logger.warn(
           {

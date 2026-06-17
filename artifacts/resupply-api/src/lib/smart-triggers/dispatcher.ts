@@ -51,6 +51,7 @@ import {
 import { isInDndWindow, isOutsideSmsSendWindow } from "../comm-prefs";
 import { isFeatureEnabled } from "../feature-flags";
 import { logger } from "../logger";
+import { recordOutboundMessageUsage } from "../metering/usage";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
 import { PATIENT_DISPATCH_KINDS, type TriggerKind } from "./index";
@@ -481,6 +482,12 @@ export async function runSmartTriggerSendDue(
       }
 
       // sent_at was already stamped by the atomic claim — no UPDATE here.
+
+      recordOutboundMessageUsage({
+        orgId,
+        channel: channel === "email" ? "email" : "sms",
+        source: "smart_trigger",
+      });
 
       await logAudit({
         action: "patient.smart_trigger.sent",
