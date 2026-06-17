@@ -71,6 +71,18 @@ vi.mock("../../lib/stripe/config", () => ({
   }),
 }));
 
+// Stripe Connect routing. Default → {} (platform account); tests that
+// exercise a connected tenant override the resolved account per org.
+const { stripeAccountMock } = vi.hoisted(() => ({
+  stripeAccountMock: vi.fn(
+    async (_orgId: string | undefined) => ({}) as { stripeAccount?: string },
+  ),
+}));
+vi.mock("../../lib/stripe/connect", () => ({
+  stripeAccountRequestOptions: (orgId: string | undefined) =>
+    stripeAccountMock(orgId),
+}));
+
 // Project every Stripe product into the canonical ShopProductView the
 // worker iterates. The worker only reads `id`, `name`, `stockCount`,
 // and `lowStockThreshold`, so we stub a minimal projection.
@@ -134,13 +146,24 @@ function stageSingleStripePage(products: ReturnType<typeof stripeProduct>[]) {
 
 const originalAdminEmails = process.env.RESUPPLY_ADMIN_EMAILS;
 
+// The seed org id the supabase mock's resolveSeedOrgId() returns. The fan-out
+// resolves active tenants via listActiveOrgIds (a staged `organizations`
+// read); staging the seed here makes the cron run once for it — the
+// single-tenant behavior the bulk of these tests assert.
+const SEED_ORG = "00000000-0000-4000-8000-000000000000";
+
 beforeEach(() => {
   supabaseMock.reset();
   sendEmailMock.mockClear();
   stripeListMock.mockReset();
   stripeConfiguredRef.current = true;
   sendgridShouldThrow.current = false;
+  stripeAccountMock.mockReset().mockResolvedValue({});
   process.env.RESUPPLY_ADMIN_EMAILS = "ops@penn.example,owner@penn.example";
+  // Active-tenant directory → just the seed org (one fan-out iteration).
+  stageSupabaseResponse("organizations", "select", {
+    data: [{ id: SEED_ORG }],
+  });
 });
 
 afterEach(() => {
@@ -406,6 +429,10 @@ describe("runLowStockAlerts: cooldown + recovery", () => {
       ],
     });
     stageSupabaseResponse("low_stock_alert_state", "upsert", { data: null });
+    // Second fan-out tick → re-stage the active-tenant directory.
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: SEED_ORG }],
+    });
 
     const redipStats = await runLowStockAlerts();
     expect(redipStats.newAlerts).toBe(1);
@@ -498,5 +525,53 @@ describe("runLowStockAlerts: pagination", () => {
     expect(stats.scanned).toBe(2);
     expect(stats.belowThreshold).toBe(1);
     expect(stats.newAlerts).toBe(1);
+  });
+});
+
+describe("runLowStockAlerts: multi-tenant fan-out", () => {
+  it("routes a connected tenant's catalog read to its Stripe account and alerts its admins", async () => {
+    // Active tenant directory = one NON-seed, connected tenant.
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-connected" }],
+    });
+    stripeAccountMock.mockResolvedValue({ stripeAccount: "acct_connected" });
+
+    stageSingleStripePage([stripeProduct("prod_LOW", "Cushion", 1, 5)]);
+    stageSupabaseResponse("low_stock_alert_state", "update", { data: [] });
+    stageSupabaseResponse("low_stock_alert_state", "select", { data: [] });
+    stageSupabaseResponse("low_stock_alert_state", "upsert", { data: null });
+
+    const stats = await runLowStockAlerts();
+
+    // The catalog read was routed to the tenant's connected account
+    // (the SECOND arg to products.list).
+    expect(stripeListMock).toHaveBeenCalledTimes(1);
+    const accountOpts = stripeListMock.mock.calls[0]?.[1] as {
+      stripeAccount?: string;
+    };
+    expect(accountOpts.stripeAccount).toBe("acct_connected");
+    // And the tenant's admins (env fallback) got the alert.
+    expect(stats.newAlerts).toBe(1);
+    expect(stats.emailSent).toBe(true);
+    expect(sendEmailMock).toHaveBeenCalled();
+  });
+
+  it("skips a non-seed tenant that has no connected Stripe account (no catalog of its own)", async () => {
+    // Active tenant directory = one NON-seed tenant with NO connected
+    // account → it owns no catalog, so it must not scan (or alert on) the
+    // platform catalog. stripeAccountMock stays {} (the beforeEach default).
+    supabaseMock.reset();
+    stageSupabaseResponse("organizations", "select", {
+      data: [{ id: "org-unconnected" }],
+    });
+
+    const stats = await runLowStockAlerts();
+
+    // Never reached Stripe or the alert path.
+    expect(stripeListMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(stats.scanned).toBe(0);
+    expect(stats.newAlerts).toBe(0);
   });
 });
