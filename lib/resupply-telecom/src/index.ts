@@ -60,6 +60,10 @@ export {
   type CreateTwilioSmsClientOptions,
   type TwilioSmsClient,
   type RawTwilioMessagingSdk,
+  type RawTwilioMessageContext,
+  type SmsDeliveryStatus,
+  type ConfirmDeliveryOptions,
+  type ConfirmDeliveryResult,
   type InboundSmsParams,
   type SmsStatusCallbackParams,
 } from "./sms";
