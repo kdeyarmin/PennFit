@@ -668,7 +668,7 @@ export async function handlePlatformTenantStripeEvent(
         current_period_end: asStripeTimestamp((sub as any).current_period_end),
       })
       .eq("org_id", sub.metadata.org_id)
-      .eq("stripe_subscription_id", sub.id);
+      .in("status", ["active", "trialing", "past_due"]);
     return true;
   }
   const invoice = event.data.object as Stripe.Invoice;
