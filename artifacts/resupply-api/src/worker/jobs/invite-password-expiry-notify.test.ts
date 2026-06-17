@@ -29,6 +29,20 @@ vi.mock("@workspace/resupply-email", () => ({
   }),
 }));
 
+// Per-recipient tenant branding: "org-b" is a second tenant; any other
+// org (or none) falls back to the seed/platform copy.
+vi.mock("../../lib/tenant-branding", () => ({
+  resolveBrandingByOrgId: vi.fn(async (orgId?: string) => ({
+    storefrontName: orgId === "org-b" ? "Foo DME" : "PennPaps",
+    legalName: orgId === "org-b" ? "Foo DME LLC" : "Penn Home Medical Supply",
+    tagline: "",
+    logoUrl: null,
+  })),
+  resolveTenantBaseUrl: vi.fn(async (orgId?: string) =>
+    orgId === "org-b" ? "https://foodme.example" : null,
+  ),
+}));
+
 import {
   composeReminderEmail,
   composeExpiredEmail,
@@ -169,6 +183,52 @@ describe("runInvitePasswordExpiryNotifySweep", () => {
     ) as Array<Record<string, string>>;
     expect(writes[0]).toHaveProperty("expiry_reminder_sent_at");
     expect(writes[1]).toHaveProperty("expired_notice_sent_at");
+  });
+
+  it("brands the email with the recipient's own tenant (name + sign-in URL)", async () => {
+    const setRecent = new Date(Date.now() - 5.5 * 86_400_000).toISOString();
+    // reminder candidate
+    stageSupabaseResponse("password_credentials", "select", {
+      data: [
+        {
+          user_id: "u-9",
+          set_by_admin_at: setRecent,
+          expiry_reminder_sent_at: null,
+          expired_notice_sent_at: null,
+        },
+      ],
+    });
+    // no expired candidates
+    stageSupabaseResponse("password_credentials", "select", { data: [] });
+    stageSupabaseResponse("users", "select", {
+      data: [
+        {
+          id: "u-9",
+          email_lower: "ann@foodme.test",
+          display_name: "Ann",
+          status: "invited",
+        },
+      ],
+    });
+    // user → tenant map (admin_users.auth_user_id → org_id)
+    stageSupabaseResponse("admin_users", "select", {
+      data: [{ auth_user_id: "u-9", org_id: "org-b" }],
+    });
+    stageSupabaseResponse("password_credentials", "update", {
+      data: [{ user_id: "u-9" }],
+    });
+
+    await runInvitePasswordExpiryNotifySweep(FULL_CFG);
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const call = sendEmailMock.mock.calls[0]?.[0] as unknown as {
+      subject: string;
+      html: string;
+    };
+    // Tenant brand in the subject, tenant custom domain in the sign-in link —
+    // NOT the seed "PennPaps" / platform host from FULL_CFG.
+    expect(call.subject).toBe("Your Foo DME invite expires soon");
+    expect(call.html).toContain("https://foodme.example/admin/sign-in");
   });
 
   it("re-invites get a fresh reminder even when an older stamp exists", async () => {
