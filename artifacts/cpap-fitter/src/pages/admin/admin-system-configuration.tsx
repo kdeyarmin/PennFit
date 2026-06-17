@@ -86,8 +86,10 @@ export function AdminSystemConfigurationPage() {
           <SlidersHorizontal className="h-6 w-6" /> System Configuration
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          Enter and rotate integration credentials and platform secrets.
-          Restricted to super-admins.
+          Your branding and your own integration accounts — your therapy-cloud
+          and clearinghouse logins. Shared platform infrastructure (AI vendors,
+          telephony, email, payments) is managed by the platform super-admin.
+          Restricted to owners.
         </p>
       </header>
 

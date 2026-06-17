@@ -19,7 +19,7 @@
 // tokens must stay scoped under that class).
 
 import { useMemo, useState } from "react";
-import { Link, Redirect, Route, Switch } from "wouter";
+import { Link, Redirect, Route, Switch, useLocation } from "wouter";
 
 import {
   ApiError,
@@ -32,8 +32,16 @@ import {
   useImpersonateTenant,
   type PlatformTenant,
 } from "@workspace/api-client-react/admin";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import {
+  clearPlatformConfig,
+  fetchFleetOverview,
+  fetchPlatformConfig,
+  setPlatformConfig,
+  type FleetTenant,
+  type PlatformConfigSetting,
+} from "@/lib/admin/platform-config-api";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card } from "@/components/admin/Card";
@@ -378,6 +386,289 @@ function TenantDirectory() {
   );
 }
 
+// ── Fleet overview (cross-tenant aggregates — no PHI) ──────────────
+
+function fmtCount(v: number | null | undefined): string {
+  return v == null ? "—" : v.toLocaleString();
+}
+
+function FleetOverview() {
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["platform-overview"],
+    queryFn: fetchFleetOverview,
+  });
+
+  const columns = useMemo<Column<FleetTenant>[]>(
+    () => [
+      {
+        key: "name",
+        header: "Tenant",
+        render: (t) => (
+          <div>
+            <div className="font-medium" style={{ color: "hsl(var(--ink-1))" }}>
+              {t.name ?? t.slug}
+            </div>
+            <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              {t.slug}
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "status",
+        header: "Status",
+        render: (t) => (
+          <Badge variant={statusVariant(t.status)}>{t.status}</Badge>
+        ),
+      },
+      {
+        key: "patients",
+        header: "Patients",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.usage.patients),
+      },
+      {
+        key: "orders",
+        header: "Orders",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.usage.orders),
+      },
+      {
+        key: "conversations",
+        header: "Conversations",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.usage.conversations),
+      },
+    ],
+    [],
+  );
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Fleet overview"
+        description="Headline activity across every tenant. Aggregate counts only — no patient data is shown here. To see a tenant's actual records, impersonate it from the Tenants tab (audited)."
+      />
+      <Card title="All tenants">
+        {isPending ? (
+          <Spinner label="Loading fleet…" />
+        ) : isError ? (
+          <EmptyState
+            title="Couldn't load the fleet overview."
+            hint="A transient error — try again."
+            action={
+              <Button
+                intent="secondary"
+                size="sm"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </Button>
+            }
+          />
+        ) : (
+          <Table<FleetTenant>
+            columns={columns}
+            rows={data?.tenants ?? []}
+            rowKey={(t) => t.id}
+            emptyState={<EmptyState title="No tenants yet." />}
+          />
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ── Global integrations (platform infra credentials) ───────────────
+
+function configStatus(s: PlatformConfigSetting): {
+  label: string;
+  variant: "success" | "muted" | "neutral";
+} {
+  if (s.source === "db") return { label: "Set", variant: "success" };
+  if (s.source === "env")
+    return { label: "From environment", variant: "muted" };
+  return { label: "Not set", variant: "neutral" };
+}
+
+function ConfigSettingRow({ setting }: { setting: PlatformConfigSetting }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function invalidate() {
+    void queryClient.invalidateQueries({ queryKey: ["platform-config"] });
+  }
+
+  const save = useMutation({
+    mutationFn: () => setPlatformConfig(setting.key, value),
+    onSuccess: () => {
+      setValue("");
+      setError(null);
+      invalidate();
+    },
+    onError: () => setError("Couldn't save that value."),
+  });
+  const clear = useMutation({
+    mutationFn: () => clearPlatformConfig(setting.key),
+    onSuccess: invalidate,
+    onError: () => setError("Couldn't clear that value."),
+  });
+
+  const status = configStatus(setting);
+  const applyBadge =
+    setting.applyMode === "live" ? "Applies live" : "Applies on next deploy";
+
+  return (
+    <div
+      className="py-3 border-t first:border-t-0"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div
+            className="text-sm font-medium"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            {setting.label}
+          </div>
+          <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            {setting.description}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={status.variant}>{status.label}</Badge>
+          {setting.hint && (
+            <span
+              className="text-xs font-mono"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              {setting.hint}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        <Input
+          type={setting.secret ? "password" : "text"}
+          value={value}
+          placeholder={setting.placeholder ?? "Enter a value…"}
+          autoComplete="off"
+          onChange={(e) => setValue(e.target.value)}
+          className="flex-1 min-w-[12rem]"
+        />
+        <Button
+          intent="secondary"
+          size="sm"
+          disabled={value.trim().length === 0 || save.isPending}
+          isLoading={save.isPending}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </Button>
+        {setting.source === "db" && (
+          <Button
+            intent="ghost"
+            size="sm"
+            disabled={clear.isPending}
+            isLoading={clear.isPending}
+            onClick={() => clear.mutate()}
+          >
+            Clear
+          </Button>
+        )}
+        <span className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+          {applyBadge}
+        </span>
+      </div>
+      {error && (
+        <p className="text-xs mt-1" style={{ color: "hsl(354 75% 38%)" }}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GlobalIntegrations() {
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["platform-config"],
+    queryFn: fetchPlatformConfig,
+  });
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Global integrations"
+        description="Platform-wide infrastructure credentials — the AI vendors and the platform's own Twilio, Telnyx, SendGrid, and Stripe. Shared by every tenant. A tenant's OWN business accounts (its therapy-cloud and clearinghouse logins) live in that tenant's own settings."
+      />
+      {data?.overlayDisabled && (
+        <Card title="Overlay disabled">
+          <p className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+            APP_CONFIG_OVERLAY_DISABLED is set, so saved values are NOT applied
+            to the running process. Unset it to resume using saved
+            configuration.
+          </p>
+        </Card>
+      )}
+      {isPending ? (
+        <Spinner label="Loading configuration…" />
+      ) : isError ? (
+        <EmptyState
+          title="Couldn't load configuration."
+          hint="A transient error — try again."
+          action={
+            <Button intent="secondary" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          {(data?.categories ?? []).map((cat) => (
+            <Card key={cat.category} title={cat.category}>
+              {cat.settings.map((s) => (
+                <ConfigSettingRow key={s.key} setting={s} />
+              ))}
+            </Card>
+          ))}
+          {data?.webhookReference?.endpoints.length ? (
+            <Card title="Telephony webhook URLs">
+              <p
+                className="text-xs mb-2"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Paste these into each vendor portal (Twilio for voice/SMS,
+                Telnyx for fax).
+              </p>
+              {data.webhookReference.endpoints.map((e) => (
+                <div
+                  key={e.id}
+                  className="py-2 border-t first:border-t-0"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <div
+                    className="text-xs font-medium"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {e.label}
+                  </div>
+                  <div
+                    className="text-xs font-mono break-all"
+                    style={{ color: "hsl(var(--ink-2))" }}
+                  >
+                    {e.url}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Shell ──────────────────────────────────────────────────────────
 
 function PlatformShell({
@@ -435,8 +726,51 @@ function PlatformShell({
           </div>
         </div>
       </header>
+      <PlatformNav />
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </div>
+  );
+}
+
+const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
+  { href: "/platform", label: "Tenants" },
+  { href: "/platform/overview", label: "Fleet overview" },
+  { href: "/platform/integrations", label: "Global integrations" },
+];
+
+function PlatformNav() {
+  const [location] = useLocation();
+  return (
+    <nav
+      className="border-b"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor: "hsl(var(--surface-1))",
+      }}
+      aria-label="Platform navigation"
+    >
+      <div className="mx-auto max-w-5xl px-4 flex items-center gap-1">
+        {PLATFORM_NAV.map((item) => {
+          const active =
+            item.href === "/platform"
+              ? location === "/platform" || location === "/platform/tenants"
+              : location === item.href || location.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="text-xs font-medium px-3 py-2.5 -mb-px border-b-2"
+              style={{
+                color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-3))",
+                borderColor: active ? "hsl(var(--penn-navy))" : "transparent",
+              }}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -479,6 +813,8 @@ function PlatformConsole() {
       <Switch>
         <Route path="/platform" component={TenantDirectory} />
         <Route path="/platform/tenants" component={TenantDirectory} />
+        <Route path="/platform/overview" component={FleetOverview} />
+        <Route path="/platform/integrations" component={GlobalIntegrations} />
         <Route>
           <Redirect to="/platform" replace />
         </Route>
