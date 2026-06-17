@@ -38,8 +38,8 @@ import {
 } from "../../lib/connection-tests/runners";
 import { logger } from "../../lib/logger";
 import {
-  adminRateLimit,
   adminReadRateLimiter,
+  adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
 import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
@@ -106,10 +106,7 @@ router.get(
 
 router.post(
   "/platform/connection-tests/email",
-  adminRateLimit({
-    name: "platform_connection_tests.email",
-    preset: "sensitive",
-  }),
+  adminWriteRateLimiter,
   requirePlatformAdmin,
   async (req, res) => {
     const parsed = emailBody.safeParse(req.body);
@@ -123,10 +120,7 @@ router.post(
 
 router.post(
   "/platform/connection-tests/sms",
-  adminRateLimit({
-    name: "platform_connection_tests.sms",
-    preset: "sensitive",
-  }),
+  adminWriteRateLimiter,
   requirePlatformAdmin,
   async (req, res) => {
     const parsed = phoneBody.safeParse(req.body);
@@ -140,10 +134,7 @@ router.post(
 
 router.post(
   "/platform/connection-tests/voice",
-  adminRateLimit({
-    name: "platform_connection_tests.voice",
-    preset: "sensitive",
-  }),
+  adminWriteRateLimiter,
   requirePlatformAdmin,
   async (req, res) => {
     const parsed = phoneBody.safeParse(req.body);
@@ -157,10 +148,7 @@ router.post(
 
 router.post(
   "/platform/connection-tests/chat",
-  adminRateLimit({
-    name: "platform_connection_tests.chat",
-    preset: "sensitive",
-  }),
+  adminWriteRateLimiter,
   requirePlatformAdmin,
   async (req, res) => {
     const env = await getEffectiveEnv();
