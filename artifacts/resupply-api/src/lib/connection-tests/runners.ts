@@ -386,19 +386,27 @@ export async function runSmsTest(
     };
   }
 
-  // Non-terminal at timeout (still queued / sending / sent). We can't
-  // claim delivery, but it's not a confirmed failure either — report
-  // acceptance honestly with the last status seen.
+  // Non-terminal: we can't claim delivery, but it's not a confirmed
+  // failure either. Distinguish two cases so the note stays honest:
+  //   * "unknown" — confirmDelivery never managed to read a status (the
+  //     Message-resource fetch kept failing). Don't pretend it's
+  //     in-flight; say we couldn't confirm.
+  //   * any real status (queued / sending / sent) — accepted and still
+  //     working through Twilio.
+  const couldNotConfirm = delivery.status === "unknown";
   return {
     ok: true,
     channel: "sms",
     detail: {
       messageSid,
       status: delivery.status,
-      note:
-        "Twilio accepted the message and it is still in flight " +
-        `(status "${delivery.status}"). If it never arrives, check the ` +
-        "Delivery failures inbox or the Twilio Console for the final status.",
+      note: couldNotConfirm
+        ? "Twilio accepted the message, but its delivery status could not " +
+          "be retrieved. Check the Delivery failures inbox or the Twilio " +
+          "Console to confirm it actually arrived."
+        : "Twilio accepted the message and it is still in flight " +
+          `(status "${delivery.status}"). If it never arrives, check the ` +
+          "Delivery failures inbox or the Twilio Console for the final status.",
     },
   };
 }

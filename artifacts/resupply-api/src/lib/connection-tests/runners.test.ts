@@ -237,6 +237,30 @@ describe("runSmsTest", () => {
     });
   });
 
+  it("is honest when delivery status could not be retrieved (unknown)", async () => {
+    const deps = makeDeps({
+      createTwilioSmsClient: vi.fn().mockReturnValue({
+        sendSms: vi.fn().mockResolvedValue({ messageSid: "SM_1" }),
+        confirmDelivery: vi.fn().mockResolvedValue({
+          status: "unknown",
+          errorCode: null,
+          errorMessage: null,
+          terminal: false,
+          delivered: false,
+        }),
+      }),
+    });
+    const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.detail.status).toBe("unknown");
+      // Must NOT claim the message is "in flight" — it says it couldn't
+      // retrieve the status.
+      expect(String(r.detail.note)).toContain("could not be retrieved");
+      expect(String(r.detail.note)).not.toContain("in flight");
+    }
+  });
+
   it("maps a TwilioApiError to upstream_error with status + code", async () => {
     const deps = makeDeps({
       createTwilioSmsClient: vi.fn().mockReturnValue({

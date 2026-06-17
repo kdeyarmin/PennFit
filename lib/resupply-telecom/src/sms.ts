@@ -180,9 +180,25 @@ const TERMINAL_DELIVERY_STATUSES = new Set([
 
 const DEFAULT_CONFIRM_TIMEOUT_MS = 8_000;
 const DEFAULT_CONFIRM_POLL_INTERVAL_MS = 1_500;
+// Floor for the poll interval. Guards against a tight loop hammering the
+// Twilio API if a caller passes 0 / a tiny value, and (with the coercion
+// below) against a NaN/negative value producing a never-terminating loop.
+const MIN_CONFIRM_POLL_INTERVAL_MS = 250;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Coerce a caller-supplied millisecond option to a finite, non-negative
+ * number, falling back to `fallback` for NaN / Infinity / negative input.
+ * Without this a `NaN` timeout makes `deadline` NaN and the loop-exit
+ * comparison is never true → an infinite tight poll loop.
+ */
+function coerceMs(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return value;
 }
 
 /**
@@ -305,9 +321,17 @@ export function createTwilioSmsClient(
     },
 
     async confirmDelivery(messageSid, confirmOpts = {}) {
-      const timeoutMs = confirmOpts.timeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS;
-      const pollIntervalMs =
-        confirmOpts.pollIntervalMs ?? DEFAULT_CONFIRM_POLL_INTERVAL_MS;
+      // Coerce caller options to finite, sane values. A NaN/negative
+      // timeout would make `deadline` NaN (loop never exits); a
+      // NaN/tiny poll interval would tight-loop on the Twilio API.
+      const timeoutMs = coerceMs(
+        confirmOpts.timeoutMs,
+        DEFAULT_CONFIRM_TIMEOUT_MS,
+      );
+      const pollIntervalMs = Math.max(
+        MIN_CONFIRM_POLL_INTERVAL_MS,
+        coerceMs(confirmOpts.pollIntervalMs, DEFAULT_CONFIRM_POLL_INTERVAL_MS),
+      );
       const sleep = confirmOpts.sleep ?? defaultSleep;
       const deadline = Date.now() + timeoutMs;
 

@@ -372,6 +372,23 @@ describe("createTwilioSmsClient", () => {
       });
     });
 
+    it("coerces NaN timeout/pollInterval instead of looping forever", async () => {
+      envOn();
+      // A terminal status returns on the first fetch, so even with NaN
+      // options this must resolve (proving NaN doesn't crash/hang the
+      // option handling). The non-terminal loop-termination is covered by
+      // the timeout test above with valid finite values.
+      const { sdk, fetch } = fakeSdkWithFetch([{ status: "delivered" }]);
+      const client = createTwilioSmsClient({ sdkFactory: () => sdk });
+      const r = await client.confirmDelivery("SM_1", {
+        sleep: noSleep,
+        timeoutMs: Number.NaN,
+        pollIntervalMs: Number.NaN,
+      });
+      expect(r).toMatchObject({ status: "delivered", terminal: true });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it("never throws on a fetch failure; returns unknown/non-terminal", async () => {
       envOn();
       const fetch = vi.fn().mockRejectedValue(new Error("network"));
