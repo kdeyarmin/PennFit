@@ -163,18 +163,102 @@ describe("runSmsTest", () => {
     });
   });
 
-  it("sends and returns the messageSid on success", async () => {
+  it("reports delivered when Twilio confirms terminal delivery", async () => {
     const sendSms = vi.fn().mockResolvedValue({ messageSid: "SM_1" });
+    const confirmDelivery = vi.fn().mockResolvedValue({
+      status: "delivered",
+      errorCode: null,
+      errorMessage: null,
+      terminal: true,
+      delivered: true,
+    });
     const deps = makeDeps({
-      createTwilioSmsClient: vi.fn().mockReturnValue({ sendSms }),
+      createTwilioSmsClient: vi
+        .fn()
+        .mockReturnValue({ sendSms, confirmDelivery }),
     });
     const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
     expect(r).toMatchObject({
       ok: true,
       channel: "sms",
-      detail: { messageSid: "SM_1" },
+      detail: { messageSid: "SM_1", status: "delivered" },
     });
     expect(sendSms.mock.calls[0][0]).toMatchObject({ to: "+12155551212" });
+    expect(confirmDelivery).toHaveBeenCalledWith("SM_1");
+  });
+
+  it("fails (not false-green) when the carrier reports undelivered", async () => {
+    // Twilio ACCEPTS the message (returns a SID) but the carrier blocks it
+    // — the exact "shows sent successful but not delivered" symptom. The
+    // test must surface this as a failure with the Twilio error code.
+    const deps = makeDeps({
+      createTwilioSmsClient: vi.fn().mockReturnValue({
+        sendSms: vi.fn().mockResolvedValue({ messageSid: "SM_1" }),
+        confirmDelivery: vi.fn().mockResolvedValue({
+          status: "undelivered",
+          errorCode: 30032,
+          errorMessage: "Toll-free number has not been verified",
+          terminal: true,
+          delivered: false,
+        }),
+      }),
+    });
+    const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "sms",
+      code: "upstream_error",
+      upstream: { code: 30032 },
+    });
+    if (!r.ok) {
+      expect(r.message).toContain("30032");
+      expect(r.message).toContain("undelivered");
+    }
+  });
+
+  it("reports acceptance honestly when delivery is still pending at timeout", async () => {
+    const deps = makeDeps({
+      createTwilioSmsClient: vi.fn().mockReturnValue({
+        sendSms: vi.fn().mockResolvedValue({ messageSid: "SM_1" }),
+        confirmDelivery: vi.fn().mockResolvedValue({
+          status: "sent",
+          errorCode: null,
+          errorMessage: null,
+          terminal: false,
+          delivered: false,
+        }),
+      }),
+    });
+    const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
+    expect(r.ok).toBe(true);
+    expect(r).toMatchObject({
+      channel: "sms",
+      detail: { messageSid: "SM_1", status: "sent" },
+    });
+  });
+
+  it("is honest when delivery status could not be retrieved (unknown)", async () => {
+    const deps = makeDeps({
+      createTwilioSmsClient: vi.fn().mockReturnValue({
+        sendSms: vi.fn().mockResolvedValue({ messageSid: "SM_1" }),
+        confirmDelivery: vi.fn().mockResolvedValue({
+          status: "unknown",
+          errorCode: null,
+          errorMessage: null,
+          terminal: false,
+          delivered: false,
+        }),
+      }),
+    });
+    const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.detail.status).toBe("unknown");
+      // Must NOT claim the message is "in flight" — it says it couldn't
+      // retrieve the status.
+      expect(String(r.detail.note)).toContain("could not be retrieved");
+      expect(String(r.detail.note)).not.toContain("in flight");
+    }
   });
 
   it("maps a TwilioApiError to upstream_error with status + code", async () => {

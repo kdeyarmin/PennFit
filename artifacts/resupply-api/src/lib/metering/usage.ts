@@ -101,3 +101,33 @@ export async function recordTenantUsage(
     );
   }
 }
+
+/**
+ * Shared chokepoint for the `outboundMessagesPerMonth` billing metric: call
+ * this from every PATIENT-FACING outbound SMS/email sender right after a
+ * successful send. Fire-and-forget (returns void, not a promise) so a
+ * sender can drop it on its hot path without awaiting.
+ *
+ * Count only patient-facing messages — reminders, outreach, campaigns,
+ * recall/maintenance nudges, CSR/agent replies, etc. Do NOT call it for
+ * internal operator emails (owner digest, DLQ/metric alerts, failed-order
+ * digests, invite/password auth mail): those don't consume a tenant's
+ * patient-message allowance.
+ */
+export function recordOutboundMessageUsage(input: {
+  orgId: string | undefined | null;
+  /** Channel, for debugging/metadata only — both count as one message. */
+  channel: "sms" | "email";
+  /** Short origin tag, e.g. "reminders.sms" or "clinical_outreach". */
+  source: string;
+  /** Defaults to 1; pass a batch size for a single bulk send if applicable. */
+  count?: number;
+}): void {
+  void recordTenantUsage({
+    orgId: input.orgId,
+    metricKey: "outboundMessagesPerMonth",
+    quantity: input.count ?? 1,
+    source: input.source,
+    metadata: { channel: input.channel },
+  });
+}

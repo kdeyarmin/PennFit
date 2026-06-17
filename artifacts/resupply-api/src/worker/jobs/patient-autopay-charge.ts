@@ -62,13 +62,6 @@ type Allocation = CreateCheckoutSessionInput["allocations"][number];
 function buildStripeOffSessionCharger(stripe: Stripe): OffSessionCharger {
   return async (req) => {
     try {
-      // G5 NOTE: this off-session charge stays on the platform account
-      // because the job is seed-pinned (resolveSeedOrgId, below). When the
-      // autopay sweep is fanned out per tenant (G2), thread the tenant
-      // orgId into `req` and pass `await stripeAccountRequestOptions(orgId)`
-      // here — and route the paired card-capture (lib/billing/
-      // patient-autopay.ts `setup` session) onto the same account, since a
-      // saved PaymentMethod is account-scoped.
       const pi = await stripe.paymentIntents.create(
         {
           amount: req.amountCents,
@@ -164,12 +157,24 @@ export async function runPatientAutopayCharge(
   // Per-tenant failure isolation; results summed. Single-tenant:
   // listActiveOrgIds() returns just the seed org → empty account options →
   // the platform account, exactly as before Connect.
-  await forEachActiveOrg(
+  const fan = await forEachActiveOrg(
     async (orgId) => {
       await patientAutopayChargeForOrg(orgId, activeCharger, stats);
     },
     { jobName: PATIENT_AUTOPAY_CHARGE_JOB },
   );
+  // Money-path retry safety: forEachActiveOrg isolates a per-tenant throw
+  // (e.g. a DB write failing AFTER a successful PaymentIntent), so the
+  // handler would otherwise see success and not retry until the next cron
+  // tick — potentially past Stripe's ~24h idempotency window, risking a
+  // second charge. Re-throw so pg-boss retries the tick promptly; the
+  // already-charged authorizations are idempotent (per-auth CAS claim +
+  // idempotency key) so the retry is safe.
+  if (fan.failedOrgIds.length > 0) {
+    throw new Error(
+      `patient-autopay-charge: ${fan.failedOrgIds.length} tenant(s) failed this tick — retrying`,
+    );
+  }
   return stats;
 }
 

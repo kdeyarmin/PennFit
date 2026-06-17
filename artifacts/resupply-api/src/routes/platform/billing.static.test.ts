@@ -27,6 +27,15 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("requirePlatformAdmin");
   });
 
+  it("counts active locations by is_active, not a nonexistent status column", () => {
+    // resupply.locations has `is_active` (boolean), no `status` column —
+    // filtering on `status` 400s in PostgREST and 500s the whole tenant
+    // billing list (column locations.status does not exist).
+    expect(SRC).toContain('countTable(orgId, "locations"');
+    expect(SRC).toContain('["is_active", "true"]');
+    expect(SRC).not.toMatch(/"locations"[^)]*\[\["status"/);
+  });
+
   it("persists usage and emits auditable subscription changes", () => {
     expect(SRC).toContain("tenant_usage_events");
     expect(SRC).toContain("platform.billing.subscription.updated");
