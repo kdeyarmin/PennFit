@@ -23,9 +23,10 @@
 // Allowed document types are PDF (Telnyx's default) and TIFF. Image
 // types are NOT allowed — a fax is by definition a document.
 //
-// NOTE: the DB column is still named `twilio_fax_sid` (renaming it is a
-// production migration tracked separately); we store the Telnyx fax id
-// in it. It remains the unique idempotency key.
+// NOTE: the canonical idempotency key is `provider_fax_id` (vendor-neutral,
+// migration 0369); we store the Telnyx fax id in it. The legacy
+// `twilio_fax_sid` column is still written with the same value during the
+// expand/contract rename and is dropped by a later CONTRACT migration.
 
 import type { Logger } from "pino";
 
@@ -103,7 +104,8 @@ async function fetchAllowlistedMedia(
 }
 
 export interface IngestInboundFaxInput {
-  /** Telnyx fax id (UUID). Stored in the `twilio_fax_sid` column. */
+  /** Telnyx fax id (UUID). Stored in `provider_fax_id` (and, during the
+   *  rename, the legacy `twilio_fax_sid`). */
   telnyxFaxId: string;
   fromE164: string | null;
   toE164: string | null;
@@ -122,7 +124,7 @@ export type IngestInboundFaxOutcome =
  * Idempotent inbound-fax ingest.
  *
  * Flow:
- *   1. Insert the row (returning id). Conflict on twilio_fax_sid
+ *   1. Insert the row (returning id). Conflict on provider_fax_id
  *      means a Telnyx retry — we look up the existing id and return
  *      `already_recorded` without re-downloading.
  *   2. If a media URL is present, download the fax bytes; otherwise
@@ -158,9 +160,16 @@ export async function ingestInboundFax(
   const supabase = getOrgScopedClient(orgId);
 
   // Step 1: insert (or learn it already exists).
+  //
+  // Dual-write during the twilio_fax_sid → provider_fax_id rename
+  // (migration 0369, EXPAND phase): provider_fax_id is the canonical dedupe
+  // key, but we keep writing the legacy twilio_fax_sid (same value, still
+  // NOT NULL) so a rollback to the prior release stays safe. The CONTRACT
+  // migration drops twilio_fax_sid and this dual-write together.
   const insertRes = await supabase
     .from("inbound_faxes")
     .insert({
+      provider_fax_id: input.telnyxFaxId,
       twilio_fax_sid: input.telnyxFaxId,
       from_e164: input.fromE164 ?? null,
       to_e164: input.toE164 ?? null,
@@ -175,13 +184,13 @@ export async function ingestInboundFax(
   if (insertRes.error) {
     const code = (insertRes.error as { code?: string }).code;
     if (code === "23505") {
-      // Unique violation on twilio_fax_sid — Telnyx retry. Look up
-      // the existing row id and exit; we trust the prior attempt's
+      // Unique violation on provider_fax_id — Telnyx retry. Look up the
+      // existing row id and exit; we trust the prior attempt's
       // media-download outcome rather than re-running it.
       const existing = await supabase
         .from("inbound_faxes")
         .select("id")
-        .eq("twilio_fax_sid", input.telnyxFaxId)
+        .eq("provider_fax_id", input.telnyxFaxId)
         .limit(1)
         .maybeSingle();
       if (existing.data) {
