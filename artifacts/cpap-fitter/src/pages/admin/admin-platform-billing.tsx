@@ -208,6 +208,16 @@ function TenantEditor({
             {tenant.slug} · {tenant.status} · usage month{" "}
             {tenant.billing.usage.month}
           </p>
+          <p className="text-sm text-slate-500">
+            Fax:{" "}
+            {tenant.faxNumber ? (
+              <span className="font-medium tabular-nums text-slate-700">
+                {tenant.faxNumber}
+              </span>
+            ) : (
+              <span className="text-slate-400">not provisioned</span>
+            )}
+          </p>
         </div>
         <div className="text-right text-sm">
           <div className="font-semibold text-slate-900">

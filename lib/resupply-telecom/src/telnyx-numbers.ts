@@ -32,6 +32,7 @@ import { TelnyxApiError, TelnyxConfigError } from "./telnyx-fax";
 const AVAILABLE_NUMBERS_URL =
   "https://api.telnyx.com/v2/available_phone_numbers";
 const NUMBER_ORDERS_URL = "https://api.telnyx.com/v2/number_orders";
+const PHONE_NUMBERS_URL = "https://api.telnyx.com/v2/phone_numbers";
 
 /** A fax-capable DID returned by the availability search. */
 export interface AvailableFaxNumber {
@@ -77,6 +78,13 @@ export interface ProvisionFaxNumberInput {
 
 export type ProvisionFaxNumberResult = OrderNumberResult;
 
+export interface ReleaseFaxNumberResult {
+  /** True when the number was deleted; false when it was already gone. */
+  released: boolean;
+  /** The Telnyx phone-number record id that was released, when known. */
+  phoneNumberId: string | null;
+}
+
 export interface TelnyxNumberClient {
   /** Search Telnyx for fax-capable numbers matching the filters. */
   searchAvailableFaxNumbers(
@@ -91,6 +99,13 @@ export interface TelnyxNumberClient {
   provisionFaxNumber(
     input?: ProvisionFaxNumberInput,
   ): Promise<ProvisionFaxNumberResult>;
+  /**
+   * Release (delete) a number back to Telnyx by its E.164 — used when a
+   * tenant offboards so we stop paying for the DID. Idempotent: a number
+   * that isn't on the account returns `{ released: false }` rather than
+   * throwing, so a re-run after a partial failure is safe.
+   */
+  releaseFaxNumber(phoneNumber: string): Promise<ReleaseFaxNumberResult>;
 }
 
 /** Test-only seams: replace the HTTP calls without touching global fetch. */
@@ -103,6 +118,13 @@ export type NumbersHttpPost = (
   apiKey: string,
   body: Record<string, unknown>,
 ) => Promise<OrderNumberResult>;
+/** Look up a Telnyx phone-number record id by E.164; null when not found. */
+export type NumbersHttpLookup = (
+  url: string,
+  apiKey: string,
+) => Promise<string | null>;
+/** DELETE a Telnyx phone-number record by id. */
+export type NumbersHttpDelete = (url: string, apiKey: string) => Promise<void>;
 
 export interface CreateTelnyxNumberClientOptions {
   apiKey?: string;
@@ -110,6 +132,8 @@ export interface CreateTelnyxNumberClientOptions {
   /** Test-only seams. Production callers leave undefined. */
   httpGet?: NumbersHttpGet;
   httpPost?: NumbersHttpPost;
+  httpLookup?: NumbersHttpLookup;
+  httpDelete?: NumbersHttpDelete;
 }
 
 /**
@@ -138,6 +162,8 @@ export function createTelnyxNumberClient(
 
   const httpGet = opts.httpGet ?? defaultHttpGet;
   const httpPost = opts.httpPost ?? defaultHttpPost;
+  const httpLookup = opts.httpLookup ?? defaultHttpLookup;
+  const httpDelete = opts.httpDelete ?? defaultHttpDelete;
 
   async function searchAvailableFaxNumbers(
     input: SearchFaxNumbersInput = {},
@@ -195,7 +221,29 @@ export function createTelnyxNumberClient(
     });
   }
 
-  return { searchAvailableFaxNumbers, orderNumber, provisionFaxNumber };
+  async function releaseFaxNumber(
+    phoneNumber: string,
+  ): Promise<ReleaseFaxNumberResult> {
+    const lookupUrl = `${PHONE_NUMBERS_URL}?filter[phone_number]=${encodeURIComponent(
+      phoneNumber,
+    )}`;
+    const phoneNumberId = await wrapApi(() => httpLookup(lookupUrl, apiKey!));
+    if (!phoneNumberId) {
+      // Not on the account (already released, or never ours) — idempotent.
+      return { released: false, phoneNumberId: null };
+    }
+    await wrapApi(() =>
+      httpDelete(`${PHONE_NUMBERS_URL}/${phoneNumberId}`, apiKey!),
+    );
+    return { released: true, phoneNumberId };
+  }
+
+  return {
+    searchAvailableFaxNumbers,
+    orderNumber,
+    provisionFaxNumber,
+    releaseFaxNumber,
+  };
 }
 
 /** Normalize unknown throws into TelnyxApiError so callers get one shape. */
@@ -361,4 +409,62 @@ async function defaultHttpPost(
     status:
       typeof d["status"] === "string" ? (d["status"] as string) : "pending",
   };
+}
+
+async function defaultHttpLookup(
+  url: string,
+  apiKey: string,
+): Promise<string | null> {
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+  });
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    throw new TelnyxApiError(
+      `Telnyx number lookup: non-JSON response (HTTP ${res.status})`,
+      res.status,
+    );
+  }
+  const p = parsed as Record<string, unknown>;
+  if (!res.ok) {
+    const { message, code } = firstErrorMessage(
+      p,
+      res.status,
+      "Telnyx number lookup error",
+    );
+    throw new TelnyxApiError(message, res.status, code);
+  }
+  const data = Array.isArray(p["data"])
+    ? (p["data"] as Array<Record<string, unknown>>)
+    : [];
+  const id = data[0]?.["id"];
+  return typeof id === "string" ? id : null;
+}
+
+async function defaultHttpDelete(url: string, apiKey: string): Promise<void> {
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+  });
+  // 200/202/204 are all acceptable "deleted" responses; a 404 means it's
+  // already gone, which we treat as success (idempotent release).
+  if (res.ok || res.status === 404) return;
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    throw new TelnyxApiError(
+      `Telnyx number delete: non-JSON error (HTTP ${res.status})`,
+      res.status,
+    );
+  }
+  const { message, code } = firstErrorMessage(
+    parsed as Record<string, unknown>,
+    res.status,
+    "Telnyx number delete error",
+  );
+  throw new TelnyxApiError(message, res.status, code);
 }

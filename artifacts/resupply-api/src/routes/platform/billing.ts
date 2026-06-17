@@ -114,6 +114,8 @@ interface OrgDirectoryRow {
   name: string | null;
   storefront_name: string | null;
   status: string;
+  fax_from_number: string | null;
+  fax_provisioned_at: string | null;
 }
 
 /** A minimal Express-Response stand-in so `tenantBilling` can be reused
@@ -440,7 +442,9 @@ router.get(
     const { data: orgs, error } = await raw
       .schema("resupply")
       .from("organizations")
-      .select("id, slug, name, storefront_name, status")
+      .select(
+        "id, slug, name, storefront_name, status, fax_from_number, fax_provisioned_at",
+      )
       .order("created_at");
     if (error) {
       res.status(500).json({ error: "tenant_list_failed" });
@@ -467,6 +471,8 @@ router.get(
           name: o.name,
           storefrontName: o.storefront_name,
           status: o.status,
+          faxNumber: o.fax_from_number,
+          faxProvisionedAt: o.fax_provisioned_at,
           billing: capture.body,
         };
       }),

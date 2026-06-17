@@ -16,7 +16,9 @@ import { TelnyxApiError, TelnyxConfigError } from "./telnyx-fax";
 import {
   createTelnyxNumberClient,
   type AvailableFaxNumber,
+  type NumbersHttpDelete,
   type NumbersHttpGet,
+  type NumbersHttpLookup,
   type NumbersHttpPost,
   type OrderNumberResult,
 } from "./telnyx-numbers";
@@ -154,6 +156,46 @@ describe("provisionFaxNumber", () => {
   });
 });
 
+describe("releaseFaxNumber", () => {
+  it("looks the number up by E.164 then deletes it by id", async () => {
+    const lookupUrls: string[] = [];
+    const deleteUrls: string[] = [];
+    const httpLookup: NumbersHttpLookup = vi.fn(async (url) => {
+      lookupUrls.push(url);
+      return "num-123";
+    });
+    const httpDelete: NumbersHttpDelete = vi.fn(async (url) => {
+      deleteUrls.push(url);
+    });
+    const client = createTelnyxNumberClient({
+      ...BASE_CREDS,
+      httpLookup,
+      httpDelete,
+    });
+    const result = await client.releaseFaxNumber("+12155551212");
+    expect(result).toEqual({ released: true, phoneNumberId: "num-123" });
+    expect(decodeURIComponent(lookupUrls[0]!)).toContain(
+      "filter[phone_number]=+12155551212",
+    );
+    expect(deleteUrls[0]).toBe(
+      "https://api.telnyx.com/v2/phone_numbers/num-123",
+    );
+  });
+
+  it("is idempotent when the number is not on the account", async () => {
+    const httpLookup: NumbersHttpLookup = vi.fn(async () => null);
+    const httpDelete: NumbersHttpDelete = vi.fn(async () => {});
+    const client = createTelnyxNumberClient({
+      ...BASE_CREDS,
+      httpLookup,
+      httpDelete,
+    });
+    const result = await client.releaseFaxNumber("+12155550000");
+    expect(result).toEqual({ released: false, phoneNumberId: null });
+    expect(httpDelete).not.toHaveBeenCalled();
+  });
+});
+
 describe("default fetch path", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -228,5 +270,29 @@ describe("default fetch path", () => {
       code: "10015",
       message: "no inventory",
     });
+  });
+
+  it("releaseFaxNumber parses lookup id then DELETEs (and treats 404 as success)", async () => {
+    const calls: Array<{ method: string; status: number }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method === "GET") {
+          calls.push({ method, status: 200 });
+          return new Response(JSON.stringify({ data: [{ id: "num-9" }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        // DELETE → simulate "already gone"; release should still succeed.
+        calls.push({ method, status: 404 });
+        return new Response(null, { status: 404 });
+      }),
+    );
+    const client = createTelnyxNumberClient(BASE_CREDS);
+    const result = await client.releaseFaxNumber("+12155551212");
+    expect(result).toEqual({ released: true, phoneNumberId: "num-9" });
+    expect(calls.map((c) => c.method)).toEqual(["GET", "DELETE"]);
   });
 });
