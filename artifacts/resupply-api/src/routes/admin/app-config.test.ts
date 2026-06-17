@@ -172,6 +172,9 @@ describe("GET /admin/system/config", () => {
     // Telephony webhooks are platform-scoped — not on the tenant surface.
     expect(res.body.webhookReference).toBeNull();
     expect(res.body.twilioWebhooks).toBeNull();
+    // The overlay kill-switch DOES affect tenant overlays, so the flag must
+    // be present for the tenant page's warning (regression guard).
+    expect(res.body.overlayDisabled).toBe(false);
 
     // Hard guarantee: no secret plaintext anywhere in the payload.
     expect(JSON.stringify(res.body)).not.toContain(SECRET);

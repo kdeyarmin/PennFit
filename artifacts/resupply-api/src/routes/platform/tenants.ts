@@ -474,8 +474,19 @@ router.get(
                 .select("*", { count: "exact", head: true });
               if (countErr) throw countErr;
               return [label, count ?? 0] as const;
-            } catch {
-              // Degrade this one metric to null; keep the rest.
+            } catch (err) {
+              // Degrade this one metric to null; keep the rest. Log with
+              // tenant + table context so a persistent null (RLS/grant
+              // misconfig, PostgREST blip) is diagnosable, not invisible.
+              logger.warn(
+                {
+                  event: "platform_overview_count_failed",
+                  err,
+                  orgId: o.id,
+                  table,
+                },
+                "platform: overview per-tenant count failed; degrading to null",
+              );
               return [label, null] as const;
             }
           }),

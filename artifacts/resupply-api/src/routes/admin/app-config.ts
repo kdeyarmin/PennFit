@@ -93,8 +93,14 @@ router.get(
         category,
         settings: byCategory.get(category)!,
       })),
-      // Telephony webhooks + the overlay kill-switch are platform-level —
-      // they belong to the super-admin surface, not the tenant admin.
+      // The overlay kill-switch (APP_CONFIG_OVERLAY_DISABLED) suppresses the
+      // tenant overlay too (getEffectiveEnvForOrg / getTenantConfigValue),
+      // so the tenant page surfaces the same "saved values aren't applied"
+      // warning. Telephony webhooks ARE platform-level and stay off the
+      // tenant surface.
+      overlayDisabled:
+        process.env.APP_CONFIG_OVERLAY_DISABLED === "1" ||
+        process.env.APP_CONFIG_OVERLAY_DISABLED === "true",
       webhookReference: null,
       twilioWebhooks: null,
     });

@@ -15,7 +15,8 @@
 //
 // Gating: `requirePlatformAdmin` — the global super-admin tier. The sends
 // cost money / hit external vendors, so they sit behind the highest-trust
-// role plus a "sensitive" rate limit.
+// role plus the shared admin write rate limiter (`adminWriteRateLimiter`),
+// applied before the auth gate.
 //
 // PHI / secret posture: the recipient an operator types is their own test
 // target; we never log it. The app logger sees channel + outcome +

@@ -512,7 +512,12 @@ function ConfigSettingRow({ setting }: { setting: PlatformConfigSetting }) {
   });
   const clear = useMutation({
     mutationFn: () => clearPlatformConfig(setting.key),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      // Clear any stale "couldn't clear" message so a successful retry
+      // doesn't leave the old error visible.
+      setError(null);
+      invalidate();
+    },
     onError: () => setError("Couldn't clear that value."),
   });
 
@@ -773,6 +778,7 @@ function PlatformNav() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? "page" : undefined}
               className="text-xs font-medium px-3 py-2.5 -mb-px border-b-2"
               style={{
                 color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-3))",
