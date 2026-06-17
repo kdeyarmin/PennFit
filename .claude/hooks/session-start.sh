@@ -49,18 +49,38 @@ mkdir -p "$LOCAL_BIN"
 # Install + activate Node 24 via the image's nvm. Keep going on failure
 # (e.g. offline) so setup still completes on the image's Node 22 rather
 # than aborting the whole session.
+#
+# Resilience: `nvm install 24` needs nodejs.org, and a cold-container DNS
+# blip at session start can make that one call fail — which historically
+# dropped the WHOLE session back to Node 22 even though Node 24 may already
+# be cached on disk from a prior run. So we (a) retry the install a few
+# times, and (b) treat an already-installed Node 24 (`nvm which 24`) as
+# success even when every fresh install attempt fails offline.
 node_upgraded=false
 export NVM_DIR="${NVM_DIR:-/opt/nvm}"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
   # shellcheck disable=SC1091
   . "$NVM_DIR/nvm.sh"
-  if nvm install 24 >/dev/null 2>&1; then
+
+  # Try to install/refresh Node 24, retrying a couple of times to ride out
+  # a transient cold-start network failure. Non-fatal: a cached install
+  # (checked next) can still carry the session.
+  for attempt in 1 2 3; do
+    nvm install 24 >/dev/null 2>&1 && break
+    sleep $((attempt * 2))
+  done
+
+  # Resolve a usable Node 24 whether it was just installed or already
+  # cached. `nvm which 24` prints the binary path for the newest matching
+  # version and exits non-zero if none is installed.
+  if NODE24="$(nvm which 24 2>/dev/null)" && [ -x "$NODE24" ]; then
     nvm alias default 24 >/dev/null 2>&1 || true
-    NODE24_BIN="$(dirname "$(nvm which 24)")"
+    NODE24_BIN="$(dirname "$NODE24")"
     for b in node npm npx corepack; do
       [ -x "$NODE24_BIN/$b" ] && ln -sf "$NODE24_BIN/$b" "$LOCAL_BIN/$b"
     done
-    # corepack pnpm shim → pnpm 11.6.0 (honours the packageManager pin).
+    # corepack pnpm shim → resolves the pnpm version from the
+    # packageManager pin in package.json at run time (currently 11.7.0).
     "$NODE24_BIN/corepack" enable --install-directory "$LOCAL_BIN" pnpm >/dev/null 2>&1 || true
     node_upgraded=true
   fi
