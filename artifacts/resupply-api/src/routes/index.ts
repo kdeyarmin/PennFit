@@ -210,6 +210,7 @@ import platformImpersonationRouter from "./platform/impersonation.js";
 import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
 import platformBillingRouter from "./platform/billing.js";
+import platformConfigRouter from "./platform/config.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
 import complianceRulesRouter from "./compliance-rules/index.js";
@@ -232,6 +233,7 @@ router.use(meRouter);
 router.use(platformMeRouter);
 router.use(platformTenantsRouter);
 router.use(platformBillingRouter);
+router.use(platformConfigRouter);
 router.use(platformImpersonationRouter);
 // Public shop routes (no auth) — patient-facing cash-pay catalog,
 // Stripe Hosted Checkout, and order summary lookup. Mounted before

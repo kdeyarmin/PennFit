@@ -427,4 +427,71 @@ router.post(
   },
 );
 
+// ── GET /platform/overview ──────────────────────────────────────────
+// One-call fleet snapshot for the super-admin dashboard: every tenant
+// plus its headline usage counts, so the "see all tenants" view loads
+// without N per-tenant round-trips. AGGREGATE COUNTS ONLY — no patient
+// PHI ever crosses this surface; a super-admin who needs a tenant's real
+// records uses audited impersonation (act-as-tenant) instead.
+//
+// Fan-out is bounded by the number of tenants (a handful) and each count
+// is a HEAD request (no rows returned). A per-tenant count failure
+// degrades that tenant's number to null rather than failing the whole
+// dashboard.
+router.get(
+  "/platform/overview",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (_req, res): Promise<void> => {
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await getOrgScopedClient(seedOrgId)
+      .raw()
+      .schema("resupply")
+      .from("organizations")
+      .select(TENANT_SELECT)
+      .order("created_at", { ascending: true });
+    if (error) {
+      logger.error(
+        { event: "platform_overview_list_failed", err: error },
+        "platform: overview tenant list failed",
+      );
+      res.status(500).json({ error: "overview_failed" });
+      return;
+    }
+
+    const tenants = await Promise.all(
+      ((data ?? []) as OrgRow[]).map(async (o) => {
+        const db = getOrgScopedClient(o.id);
+        const usageEntries = await Promise.all(
+          USAGE_COUNTS.map(async ([label, table]) => {
+            try {
+              const { count, error: countErr } = await db
+                .from(table)
+                .select("*", { count: "exact", head: true });
+              if (countErr) throw countErr;
+              return [label, count ?? 0] as const;
+            } catch {
+              // Degrade this one metric to null; keep the rest.
+              return [label, null] as const;
+            }
+          }),
+        );
+        return {
+          ...toTenantView(o),
+          usage: Object.fromEntries(usageEntries) as Record<
+            string,
+            number | null
+          >,
+        };
+      }),
+    );
+
+    res.json({ tenants, generatedAt: new Date().toISOString() });
+  },
+);
+
 export default router;

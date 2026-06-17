@@ -529,6 +529,27 @@ const CATALOG_BY_KEY: ReadonlyMap<string, AppConfigSetting> = new Map(
   APP_CONFIG_CATALOG.map((s) => [s.key, s]),
 );
 
+/**
+ * Business-integration categories are inherently PER-TENANT: each DME
+ * brings its OWN partner accounts — its ResMed AirView / Philips Care
+ * Orchestrator / 3B (React Health) therapy-cloud credentials and its own
+ * Office Ally clearinghouse login. Those are the tenant's business
+ * relationships, so they belong on that tenant's admin, NOT on the
+ * platform super-admin's global integration surface. Platform infra
+ * (AI vendors, the platform's Twilio/Telnyx/SendGrid/Stripe) stays
+ * "platform" and is owned by the global super-admin.
+ *
+ * An entry's explicit `scope` still wins; this only supplies the default
+ * for the business categories so every key in them is tenant-scoped
+ * without annotating each one.
+ */
+const TENANT_BUSINESS_CATEGORIES: ReadonlySet<string> = new Set([
+  CATEGORY_AIRVIEW,
+  CATEGORY_CARE,
+  CATEGORY_REACT_HEALTH,
+  CATEGORY_OFFICE_ALLY,
+]);
+
 /** Every key the catalog declares (env-var names). */
 export const APP_CONFIG_KEYS: readonly string[] = APP_CONFIG_CATALOG.map(
   (s) => s.key,
@@ -540,17 +561,32 @@ export function getAppConfigSetting(key: string): AppConfigSetting | undefined {
 }
 
 /**
- * The scope of a catalog key, defaulting to "platform" for any key whose
- * entry omits `scope` (and for unknown keys). Use this everywhere instead
- * of reading `.scope` directly so the default is applied consistently.
+ * The scope of a catalog key. Resolution order:
+ *   1. the entry's explicit `scope`, when set;
+ *   2. "tenant" for any key in a per-tenant business category;
+ *   3. "platform" otherwise (and for unknown keys).
+ * Use this everywhere instead of reading `.scope` directly so the default
+ * is applied consistently.
  */
 export function appConfigScopeOf(key: string): AppConfigScope {
-  return CATALOG_BY_KEY.get(key)?.scope ?? "platform";
+  const setting = CATALOG_BY_KEY.get(key);
+  if (!setting) return "platform";
+  if (setting.scope) return setting.scope;
+  if (TENANT_BUSINESS_CATEGORIES.has(setting.category)) return "tenant";
+  return "platform";
 }
 
 /** Keys a tenant owner can override for their own org (scope = "tenant"). */
 export const TENANT_SCOPED_APP_CONFIG_KEYS: readonly string[] =
-  APP_CONFIG_CATALOG.filter((s) => s.scope === "tenant").map((s) => s.key);
+  APP_CONFIG_CATALOG.filter((s) => appConfigScopeOf(s.key) === "tenant").map(
+    (s) => s.key,
+  );
+
+/** Keys owned by the global super-admin (scope = "platform"). */
+export const PLATFORM_SCOPED_APP_CONFIG_KEYS: readonly string[] =
+  APP_CONFIG_CATALOG.filter((s) => appConfigScopeOf(s.key) === "platform").map(
+    (s) => s.key,
+  );
 
 /** True iff `key` is a writable catalog setting. */
 export function isAppConfigKey(key: string): boolean {
