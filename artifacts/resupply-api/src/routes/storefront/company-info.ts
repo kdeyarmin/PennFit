@@ -20,15 +20,13 @@ import { requestHost } from "../../lib/request-host.js";
 const router: IRouter = Router();
 
 router.get("/company-info", async (req, res) => {
-  const info = await getCompanyInfo();
-  // Resolve the storefront's assistant name for the tenant that owns THIS
-  // host (the two assistant-name keys are app_config `scope: "tenant"`),
-  // not the seed org's — so a second tenant's storefront shows its own bot
-  // name. `getCompanyInfo()` is still seed-scoped for the contact fields;
-  // a NULL/unresolved host falls back to the seed/default names (the
-  // single-tenant deployment is unchanged). Fail-soft: the resolver never
+  // Resolve the tenant that owns THIS host so the storefront shows its own
+  // contact identity + assistant name (both are per-tenant), not the seed
+  // org's. A NULL/unresolved host falls back to the seed/default identity, so
+  // the single-tenant deployment is unchanged. Fail-soft: the resolver never
   // throws.
   const orgId = (await resolveOrgIdByHost(requestHost(req))) ?? undefined;
+  const info = await getCompanyInfo(orgId);
   const assistantNames = orgId
     ? await resolveAssistantNamesForOrg(orgId)
     : {
