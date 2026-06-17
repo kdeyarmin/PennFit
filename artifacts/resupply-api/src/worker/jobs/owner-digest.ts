@@ -21,6 +21,7 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 
+import { PLATFORM_NAME } from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   createQueueWithDlq,
@@ -169,7 +170,7 @@ function fmtDelta(deltaPct: number | null): string {
 /** Pure: render the digest to a plain-text email body. */
 export function formatDigestText(digest: OwnerDigest): string {
   const lines = [
-    `PennPaps weekly owner digest — week of ${digest.windowStart}`,
+    `${PLATFORM_NAME} weekly owner digest — week of ${digest.windowStart}`,
     "",
   ];
   for (const m of digest.metrics) {
@@ -301,7 +302,7 @@ export async function runOwnerDigest(
   await sendImpl(
     sendgrid,
     recipients,
-    `PennPaps weekly digest — week of ${digest.windowStart}`,
+    `${PLATFORM_NAME} weekly digest — week of ${digest.windowStart}`,
     formatDigestText(digest),
   );
 
