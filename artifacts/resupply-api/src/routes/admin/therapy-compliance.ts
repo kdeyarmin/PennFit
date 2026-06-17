@@ -67,7 +67,7 @@ router.get(
     const { data, error } = await supabase
       .raw()
       .schema("resupply")
-      .rpc("therapy_setup_adherence_summary");
+      .rpc("therapy_setup_adherence_summary", { p_org_id: orgId });
     if (error) throw error;
 
     const row = (Array.isArray(data) ? data[0] : data) as SummaryRow | null;

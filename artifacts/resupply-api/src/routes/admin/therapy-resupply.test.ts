@@ -14,6 +14,7 @@ import request from "supertest";
 
 import {
   makeRequireAdminMock,
+  MOCK_ORG_ID,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
 import {
@@ -100,6 +101,7 @@ describe("GET /admin/therapy-resupply/summary", () => {
     });
     expect(res.body.summary.highLeakRefit).toBe(7);
     expect(getSupabaseRpcArgs("therapy_resupply_summary")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_due_within_days: 14,
     });
   });
