@@ -55,7 +55,6 @@ import {
   type Json,
   type OrgScopedClient,
   getOrgScopedClient,
-  resolveSeedOrgId,
 } from "@workspace/resupply-db";
 import {
   classifyEdiPayload,
@@ -80,6 +79,7 @@ import { reconcileEra } from "../../lib/billing/era-reconciler";
 import { resolveClearinghouse } from "../../lib/billing/identity-resolver";
 import { logger } from "../../lib/logger";
 import { publishEvent } from "../../lib/webhooks/publisher";
+import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
   createQueueWithDlq,
   VENDOR_SEND_QUEUE_OPTS,
@@ -110,14 +110,8 @@ export interface PollStats {
   aiAnalysesQueued: number;
 }
 
-/**
- * Run the polling job once. Returns stats for the audit / log line.
- * Caller (the pg-boss handler) decides whether to throw on errors;
- * we generally do NOT throw — every per-file error lands as a row
- * in clearinghouse_inbound_files so the operator can triage.
- */
-export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
-  const stats: PollStats = {
+function emptyPollStats(): PollStats {
+  return {
     listed: 0,
     downloaded: 0,
     skippedDuplicates: 0,
@@ -131,17 +125,29 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
     dispatchErrors: 0,
     aiAnalysesQueued: 0,
   };
+}
 
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) {
-    return stats;
-  }
+/**
+ * Poll ONE tenant's Office Ally outbound directory and dispatch its inbound
+ * files. Extracted so the cron can fan out across every active tenant — the
+ * clearinghouse credentials (SFTP host/creds/dirs) are per-tenant
+ * (`clearinghouse_credentials` is org-scoped, #950), so each tenant polls
+ * its OWN Office Ally account and dispatches into its OWN org-scoped tables.
+ * A tenant with no Office Ally clearinghouse configured returns empty stats
+ * (skipped). Returns stats for the audit / log line; generally does NOT throw
+ * — every per-file error lands as a clearinghouse_inbound_files row for
+ * operator triage. Exported for tests.
+ */
+export async function runOfficeAllyInboundPollForOrg(
+  orgId: string,
+): Promise<PollStats> {
+  const stats = emptyPollStats();
   const supabase = getOrgScopedClient(orgId);
 
   const clearinghouse = await resolveClearinghouse({ orgId });
   if (!clearinghouse.config || !clearinghouse.row) {
     logger.info(
-      { source: clearinghouse.source },
+      { source: clearinghouse.source, orgId },
       "office-ally.inbound-poll: no clearinghouse configured; skipping run",
     );
     return stats;
@@ -202,6 +208,36 @@ export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
   // A successful list resets the consecutive-failure counter.
   await recordIntegrationSuccess(JOB).catch(() => undefined);
 
+  return stats;
+}
+
+/**
+ * Run the inbound poll for EVERY active tenant, aggregating the per-tenant
+ * stats. Each tenant is polled on its own org-scoped client with its own
+ * clearinghouse credentials, and failures are isolated per tenant
+ * (`forEachActiveOrg`) so one tenant's SFTP outage can't stall the others.
+ * A tenant without an Office Ally clearinghouse contributes empty stats.
+ */
+export async function runOfficeAllyInboundPoll(): Promise<PollStats> {
+  const stats = emptyPollStats();
+  await forEachActiveOrg(
+    async (orgId) => {
+      const orgStats = await runOfficeAllyInboundPollForOrg(orgId);
+      stats.listed += orgStats.listed;
+      stats.downloaded += orgStats.downloaded;
+      stats.skippedDuplicates += orgStats.skippedDuplicates;
+      stats.dispatched += orgStats.dispatched;
+      stats.dispatch999 += orgStats.dispatch999;
+      stats.dispatch277ca += orgStats.dispatch277ca;
+      stats.dispatch277 += orgStats.dispatch277;
+      stats.dispatch835 += orgStats.dispatch835;
+      stats.dispatch271 += orgStats.dispatch271;
+      stats.dispatchUnknown += orgStats.dispatchUnknown;
+      stats.dispatchErrors += orgStats.dispatchErrors;
+      stats.aiAnalysesQueued += orgStats.aiAnalysesQueued;
+    },
+    { jobName: JOB },
+  );
   return stats;
 }
 
