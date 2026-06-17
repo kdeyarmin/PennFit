@@ -79,7 +79,7 @@ export function AdminOrders() {
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
             All orders submitted through your storefront. Click a row to view
-            full patient detail.
+            full patient details.
           </p>
         </div>
       </div>

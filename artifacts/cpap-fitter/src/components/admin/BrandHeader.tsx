@@ -10,9 +10,17 @@ import { PLATFORM_NAME, useStorefrontBranding } from "@/lib/branding";
 // (radial gold glow over the navy gradient) with an `.aurora-divider`
 // underneath — matches the customer-app vocabulary so the two SPAs feel
 // like one product.
+//
+// Tenant-neutral until resolved: `useStorefrontBranding()`'s bundled
+// fallback is the Penn tenant's "PennPaps", which is correct on the
+// storefront but would mis-label a DIFFERENT tenant's admin console before
+// (or if) the host-resolved fetch lands. So the shared admin chrome shows a
+// neutral label until `resolved` is true, then the real tenant name.
+const NEUTRAL_TENANT_LABEL = "Storefront";
 
 export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
-  const { storefrontName } = useStorefrontBranding();
+  const { storefrontName, resolved } = useStorefrontBranding();
+  const tenantLabel = resolved ? storefrontName : NEUTRAL_TENANT_LABEL;
   return (
     <>
       <header className="brand-band relative flex items-center justify-between px-6 py-4">
@@ -38,7 +46,7 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
               className="text-[10px] uppercase tracking-[0.18em] font-semibold"
               style={{ color: "hsl(var(--penn-gold-soft))" }}
             >
-              {storefrontName} · Admin workstation
+              {tenantLabel} · Admin workstation
             </div>
           </div>
         </div>
@@ -52,7 +60,8 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
 }
 
 export function BrandFooter() {
-  const { storefrontName } = useStorefrontBranding();
+  const { storefrontName, resolved } = useStorefrontBranding();
+  const tenantLabel = resolved ? storefrontName : NEUTRAL_TENANT_LABEL;
   return (
     <footer
       className="text-[11px] px-6 py-3 border-t text-center font-medium tracking-wide"
@@ -62,8 +71,7 @@ export function BrandFooter() {
         borderColor: "hsl(var(--line-1))",
       }}
     >
-      {PLATFORM_NAME} · {storefrontName} · Internal tooling · Not for patient
-      use
+      {PLATFORM_NAME} · {tenantLabel} · Internal tooling · Not for patient use
     </footer>
   );
 }

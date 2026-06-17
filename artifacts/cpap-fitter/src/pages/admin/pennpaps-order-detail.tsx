@@ -216,7 +216,7 @@ export function AdminOrderDetail() {
             value={
               prescription.hasExistingPrescription
                 ? "Yes"
-                : "No — we must obtain Rx before shipping"
+                : "No — a prescription must be obtained before shipping"
             }
           />
           {prescription.physicianName && (

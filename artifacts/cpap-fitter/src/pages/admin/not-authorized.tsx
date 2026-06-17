@@ -61,7 +61,10 @@ export function NotAuthorizedPage({
   contactEmail?: string;
 }) {
   const identity = useDashboardIdentity();
-  const { storefrontName } = useStorefrontBranding();
+  const { storefrontName, resolved } = useStorefrontBranding();
+  // Tenant-neutral until the host-resolved brand lands, so a non-Penn host
+  // never shows the "PennPaps" bundled fallback in this shared chrome.
+  const tenantLabel = resolved ? storefrontName : "Storefront";
   const { signOut } = identity;
   const email = identity.email ?? "your account";
   const [, setNotAuthLocation] = useLocation();
@@ -266,8 +269,7 @@ export function NotAuthorizedPage({
           borderColor: "hsl(var(--line-1))",
         }}
       >
-        {PLATFORM_NAME} · {storefrontName} · Internal tooling · Not for patient
-        use
+        {PLATFORM_NAME} · {tenantLabel} · Internal tooling · Not for patient use
       </footer>
     </div>
   );
