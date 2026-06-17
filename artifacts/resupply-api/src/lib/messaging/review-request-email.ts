@@ -10,11 +10,7 @@
 // returns a discriminated `{sent, reason?}` shape so the dispatcher
 // keeps moving on partial failures.
 
-import {
-  createSendgridClient,
-  EmailConfigError,
-  type SendgridClient,
-} from "@workspace/resupply-email";
+import { type SendgridClient } from "@workspace/resupply-email";
 
 import { isFeatureEnabled } from "../feature-flags";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
@@ -41,15 +37,6 @@ export interface SendReviewRequestEmailDeps {
   clientFactory?: () => SendgridClient | null;
 }
 
-function defaultClientFactory(): SendgridClient | null {
-  try {
-    return createSendgridClient();
-  } catch (err) {
-    if (err instanceof EmailConfigError) return null;
-    return null;
-  }
-}
-
 export async function sendReviewRequestEmail(
   input: ReviewRequestEmailInput,
   deps: SendReviewRequestEmailDeps = {},
@@ -64,8 +51,7 @@ export async function sendReviewRequestEmail(
   // Tests inject a synchronous clientFactory; honour that seam unchanged.
   // Otherwise build a SendgridClient bound to the tenant's own From
   // identity (G6) — falling back to the platform default when the tenant
-  // has none / orgId is unset. Mirrors defaultClientFactory's
-  // null-on-config-error so a missing SendGrid key skips cleanly.
+  // has none / orgId is unset.
   let client: SendgridClient | null;
   if (deps.clientFactory) {
     client = deps.clientFactory();
@@ -73,9 +59,8 @@ export async function sendReviewRequestEmail(
     try {
       client = await createTenantSendgridClient(input.orgId);
     } catch {
-      // Mirror defaultClientFactory: any config/build failure (incl.
-      // EmailConfigError) skips cleanly as "not configured" rather than
-      // throwing out of this fail-soft helper.
+      // Fail soft: any config/build failure (incl. EmailConfigError) skips
+      // cleanly as "not configured" rather than throwing out of this helper.
       client = null;
     }
   }
