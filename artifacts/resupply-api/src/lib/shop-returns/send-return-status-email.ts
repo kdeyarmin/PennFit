@@ -27,6 +27,7 @@ import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
   type StorefrontBranding,
 } from "../tenant-branding.js";
 
@@ -246,7 +247,11 @@ export async function sendReturnStatusEmail(
   // tenant this resolves to "PennPaps", so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(input.orgId);
 
-  const myReturnsUrl = `${publicBaseUrl(input.baseUrlOverride)}/account/returns`;
+  const myReturnsUrl = `${publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  )}/account/returns`;
   const body =
     input.kind === "approved"
       ? buildApprovedBody(input, myReturnsUrl, brand)

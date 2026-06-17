@@ -36,7 +36,10 @@ import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -174,7 +177,12 @@ export async function sendShippingNotificationEmail(
 
   const subject = `Your ${brandName} order has shipped`;
 
-  const orderUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
+  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
   const trackingUrl = getCarrierTrackingUrl(carrier, trackingNumber);
 
   // ---------- text body ----------

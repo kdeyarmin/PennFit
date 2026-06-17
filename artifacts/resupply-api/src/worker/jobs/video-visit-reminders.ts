@@ -38,7 +38,10 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
 import { signVideoVisitToken } from "../../lib/video/video-visit-token";
@@ -138,8 +141,12 @@ function formatStartTime(scheduledAt: string): string {
   });
 }
 
-function publicBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+function publicBaseUrl(
+  override?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   return (
+    override ??
     env.SHOP_PUBLIC_BASE_URL ??
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (env.RAILWAY_PUBLIC_DOMAIN
@@ -272,7 +279,10 @@ async function videoVisitReminderSweepForOrg(
   // unchanged.
   const brand = await resolveBrandingByOrgId(orgId);
   const practiceName = brand.storefrontName;
-  const base = publicBaseUrl();
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the env/
+  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
+  const base = publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined);
 
   for (const visit of visits) {
     stats.scanned += 1;

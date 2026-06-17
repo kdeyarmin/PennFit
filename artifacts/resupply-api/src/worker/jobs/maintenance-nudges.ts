@@ -32,7 +32,10 @@ import {
 } from "../../lib/patient-maintenance/catalog";
 import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -193,6 +196,12 @@ async function maintenanceNudgeSweepForOrg(
   // Brand the copy with the tenant's own storefront name (G6); for the seed
   // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(orgId);
+  // Build the account link from the tenant's own storefront origin (its
+  // verified custom domain) when it has one; the seed tenant falls through to
+  // the env-derived platform base, so single-tenant is unchanged. Resolved once
+  // per tenant sweep.
+  const tenantBaseUrl =
+    (await resolveTenantBaseUrl(orgId)) ?? cfg.publicBaseUrl;
   const supabase = getOrgScopedClient(orgId);
 
   // Eligible patients: anyone with an email AND at least one
@@ -359,7 +368,7 @@ async function maintenanceNudgeSweepForOrg(
       // Send.
       const { subject, html, text } = composeNudgeEmail({
         practiceName: brand.storefrontName,
-        publicBaseUrl: cfg.publicBaseUrl,
+        publicBaseUrl: tenantBaseUrl,
         overdueTasks,
       });
       try {

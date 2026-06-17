@@ -38,7 +38,10 @@
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -69,9 +72,11 @@ export function labelForSku(sku: string): string {
   return SKU_LABELS[sku] ?? sku;
 }
 
-export function manageLinkFor(token: string): string {
+export function manageLinkFor(token: string, baseUrlOverride?: string): string {
   const base = (
-    process.env.REMINDER_PUBLIC_BASE_URL ?? DEFAULT_BASE_URL
+    baseUrlOverride ??
+    process.env.REMINDER_PUBLIC_BASE_URL ??
+    DEFAULT_BASE_URL
   ).replace(/\/$/, "");
   return `${base}/reminders/manage?token=${encodeURIComponent(token)}`;
 }
@@ -173,7 +178,13 @@ export async function sendReminderConfirmation(opts: {
   // resolve to "PennPaps"/"Penn Home Medical Supply" so single-tenant copy
   // is unchanged; a second tenant's reminder carries ITS brand.
   const brand = await resolveBrandingByOrgId(opts.orgId);
-  const link = manageLinkFor(opts.manageToken);
+  // Build the manage link from the tenant's own storefront origin (its
+  // verified custom domain) when it has one; the seed tenant falls through to
+  // REMINDER_PUBLIC_BASE_URL/default, so single-tenant is unchanged.
+  const link = manageLinkFor(
+    opts.manageToken,
+    (await resolveTenantBaseUrl(opts.orgId)) ?? undefined,
+  );
   const lines: string[] = [];
   lines.push(`You're signed up for ${brand.storefrontName} supply reminders.`);
   lines.push("");
@@ -209,7 +220,10 @@ export async function sendReminderManageLink(opts: {
 }): Promise<SendEmailResult> {
   // Brand with the tenant's own identity (G6); seed tenant → "PennPaps".
   const brand = await resolveBrandingByOrgId(opts.orgId);
-  const link = manageLinkFor(opts.manageToken);
+  const link = manageLinkFor(
+    opts.manageToken,
+    (await resolveTenantBaseUrl(opts.orgId)) ?? undefined,
+  );
   const lines: string[] = [];
   lines.push(
     `Someone — possibly you — re-submitted the ${brand.storefrontName} reminder signup form`,
@@ -250,7 +264,10 @@ export async function sendReminderDue(opts: {
 }): Promise<SendEmailResult> {
   // Brand with the tenant's own identity (G6); seed tenant → "PennPaps".
   const brand = await resolveBrandingByOrgId(opts.orgId);
-  const link = manageLinkFor(opts.manageToken);
+  const link = manageLinkFor(
+    opts.manageToken,
+    (await resolveTenantBaseUrl(opts.orgId)) ?? undefined,
+  );
   const isPlural = opts.dueItems.length > 1;
   const lines: string[] = [];
   lines.push(`Time to replace your CPAP ${isPlural ? "supplies" : "supply"}.`);

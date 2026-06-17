@@ -277,6 +277,60 @@ export async function resolveOrgNotificationEmail(
   }
 }
 
+// Tenant base-URL cache (origin string), keyed by org_id. Patient-facing email
+// links are built from this; it changes only on a custom-domain bind/unbind.
+const orgBaseUrlCache = new Map<
+  string,
+  { value: string | null; expiresAt: number }
+>();
+
+/**
+ * The public origin (e.g. `https://acme.example`) for a tenant's own storefront
+ * links, taken from its VERIFIED custom domain. Returns null when the tenant
+ * has no verified domain (or no org / on error) — callers fall back to the
+ * platform `SHOP_PUBLIC_BASE_URL` env / default, so single-tenant is unchanged
+ * (the seed org's verified `pennpaps.com` resolves to `https://pennpaps.com`).
+ * Cached ~60s per org.
+ */
+export async function resolveTenantBaseUrl(
+  orgId: string | undefined,
+): Promise<string | null> {
+  const id = orgId?.trim();
+  if (!id) return null;
+  const now = Date.now();
+  const hit = orgBaseUrlCache.get(id);
+  if (hit && hit.expiresAt > now) return hit.value;
+
+  let value: string | null = null;
+  try {
+    const supabase = getOrgScopedClient(id);
+    const { data, error } = await withTimeout(
+      supabase
+        .raw()
+        .schema("resupply")
+        .from("organizations")
+        .select("custom_domain, custom_domain_status")
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (!error) {
+      const row = data as {
+        custom_domain: string | null;
+        custom_domain_status: string | null;
+      } | null;
+      const domain = trimmed(row?.custom_domain);
+      if (domain && row?.custom_domain_status === "verified") {
+        value = `https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+      }
+    }
+  } catch {
+    value = null;
+  }
+  orgBaseUrlCache.set(id, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
+}
+
 /**
  * Drop the branding cache so an admin save is visible on the next read.
  * Also drops the host→org cache: every branding/custom-domain mutation
@@ -286,6 +340,8 @@ export async function resolveOrgNotificationEmail(
 export function invalidateBrandingCache(): void {
   cache.clear();
   orgIdCache.clear();
+  orgBrandingCache.clear();
+  orgBaseUrlCache.clear();
 }
 
 // ────────────────────────────────────────────────────────────────────

@@ -32,6 +32,7 @@ vi.mock("../../lib/tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
 }));
 
 const supabaseMock = installSupabaseMock();

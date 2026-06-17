@@ -56,7 +56,10 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -297,9 +300,14 @@ async function fitterLeadReengageSweepForOrg(
   // Brand the copy with the tenant's own storefront name (G6); for the seed
   // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(orgId);
+  // Build the resume link from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the
+  // env-derived platform base, so single-tenant is unchanged. Resolved once per
+  // tenant sweep.
+  const tenantBaseUrl = (await resolveTenantBaseUrl(orgId)) ?? publicBaseUrl;
   const { subject, html, text } = composeReengageEmail({
     practiceName: brand.storefrontName,
-    publicBaseUrl,
+    publicBaseUrl: tenantBaseUrl,
   });
 
   for (const lead of candidates) {

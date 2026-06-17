@@ -36,6 +36,7 @@ vi.mock("../tenant-branding.js", () => ({
     tagline: "tagline",
     logoUrl: null,
   })),
+  resolveTenantBaseUrl: vi.fn(async () => null),
 }));
 
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";

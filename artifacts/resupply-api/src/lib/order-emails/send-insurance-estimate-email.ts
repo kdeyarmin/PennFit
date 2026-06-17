@@ -27,7 +27,10 @@ import {
   formatEstimateRange,
 } from "../insurance-estimates/data";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -97,7 +100,11 @@ export async function sendInsuranceEstimateEmail(
   const brandName = brand.storefrontName;
 
   const { estimate } = input;
-  const base = publicBaseUrl(input.baseUrlOverride);
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const consentUrl = `${base}/consent`;
   const insuranceFullFormUrl = `${base}/insurance`;
   const range = formatEstimateRange(estimate);

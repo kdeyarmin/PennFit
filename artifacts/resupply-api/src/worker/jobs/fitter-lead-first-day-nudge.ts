@@ -60,7 +60,10 @@ import { isOutsideSmsSendWindow } from "../../lib/comm-prefs";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../../lib/tenant-branding.js";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -108,8 +111,9 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function publicBaseUrl(): string {
+function publicBaseUrl(override?: string): string {
   return (
+    override ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
     (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -309,7 +313,10 @@ async function firstDayNudgeSweepForOrg(
   // tenant this resolves to "PennPaps" so single-tenant copy is unchanged.
   const brand = await resolveBrandingByOrgId(orgId);
   const practiceName = brand.storefrontName;
-  const resumeUrl = `${publicBaseUrl()}/consent`;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when it has one; the seed tenant falls through to the env/
+  // default, so single-tenant is unchanged. Resolved once per tenant sweep.
+  const resumeUrl = `${publicBaseUrl((await resolveTenantBaseUrl(orgId)) ?? undefined)}/consent`;
 
   for (const lead of candidates) {
     stats.scanned += 1;

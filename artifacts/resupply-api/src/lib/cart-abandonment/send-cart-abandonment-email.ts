@@ -32,7 +32,10 @@ import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 import type { ShopAbandonedCartItem } from "@workspace/resupply-db";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -130,8 +133,13 @@ export async function sendCartAbandonmentEmail(
   const itemCount = items.reduce((sum, it) => sum + it.quantity, 0);
   const subject = `You left ${itemCount} item${itemCount === 1 ? "" : "s"} in your ${brandName} cart`;
 
-  const cartUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/cart?resume=1`;
-  const browseUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop`;
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
+  const cartUrl = `${base}/shop/cart?resume=1`;
+  const browseUrl = `${base}/shop`;
 
   // Plain-text body — many corporate filters drop HTML-only mail.
   const textLines: string[] = [

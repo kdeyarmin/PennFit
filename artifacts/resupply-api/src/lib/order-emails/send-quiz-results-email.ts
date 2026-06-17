@@ -19,7 +19,10 @@
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -122,7 +125,11 @@ export async function sendQuizResultsEmail(
   const brandName = brand.storefrontName;
 
   const copy = copyForBand(input.band, input.score);
-  const base = publicBaseUrl(input.baseUrlOverride);
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const learnUrl = `${base}/learn`;
   const insuranceUrl = `${base}/insurance`;
 

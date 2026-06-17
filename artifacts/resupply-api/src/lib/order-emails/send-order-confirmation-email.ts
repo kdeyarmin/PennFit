@@ -42,7 +42,10 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 import { withMetrics } from "../observability";
 import { withRetry } from "../with-retry.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -184,8 +187,17 @@ export async function sendOrderConfirmationEmail(
   const brandName = brand.storefrontName;
   const subject = `Your ${brandName} order is confirmed`;
 
-  const orderUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
-  const browseUrl = `${publicBaseUrl(input.baseUrlOverride)}/shop`;
+  // Build patient links from the tenant's own storefront origin (its verified
+  // custom domain) when the caller didn't pass an explicit override; the seed
+  // tenant falls through to the platform env/default, so single-tenant is
+  // unchanged. Resolved once per send.
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
+  const orderUrl = `${base}/shop/checkout-success?session_id=${encodeURIComponent(stripeSessionId)}`;
+  const browseUrl = `${base}/shop`;
 
   // ---------- text body ----------
   const textLines: string[] = [

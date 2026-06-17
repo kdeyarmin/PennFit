@@ -19,7 +19,10 @@
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
-import { resolveBrandingByOrgId } from "../tenant-branding.js";
+import {
+  resolveBrandingByOrgId,
+  resolveTenantBaseUrl,
+} from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -140,7 +143,11 @@ export async function sendTherapyMilestoneEmail(
   const brandName = brand.storefrontName;
 
   const c = copyFor(input.kind, input.metrics);
-  const base = publicBaseUrl(input.baseUrlOverride);
+  const base = publicBaseUrl(
+    input.baseUrlOverride ??
+      (await resolveTenantBaseUrl(input.orgId)) ??
+      undefined,
+  );
   const therapyUrl = `${base}/account#therapy`;
   const greeting = input.firstName
     ? `Hi ${escapeHtml(input.firstName)},`
