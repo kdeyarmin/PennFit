@@ -102,10 +102,45 @@ interface BillingAddonRow {
 
 interface TenantAddonRow {
   id: string;
+  org_id: string;
   quantity: number;
   custom_recurring_price_cents: number | null;
   notes: string | null;
   billing_addons: BillingAddonRow;
+}
+
+interface TenantSubscriptionRow {
+  id: string;
+  org_id: string;
+  status: string;
+  effective_at: string;
+  custom_monthly_price_cents: number | null;
+  custom_onboarding_fee_cents: number | null;
+  custom_allowances: Record<string, unknown> | null;
+  notes: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_status: string | null;
+  stripe_last_synced_at: string | null;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  last_invoice_id: string | null;
+  last_invoice_status: string | null;
+  billing_plans: BillingPlanRow;
+}
+
+interface TenantUsageSnapshotRow {
+  org_id: string;
+  active_patients: number | null;
+  seats: number | null;
+  locations: number | null;
+  orders_per_month: number | null;
+  active_subscriptions: number | null;
+  outbound_messages_per_month: number | null;
+  ai_text_interactions_per_month: number | null;
+  billing_transactions_per_month: number | null;
+  fax_events: number | null;
+  ai_voice_events: number | null;
 }
 
 interface OrgDirectoryRow {
@@ -116,15 +151,6 @@ interface OrgDirectoryRow {
   status: string;
   fax_from_number: string | null;
   fax_provisioned_at: string | null;
-}
-
-/** A minimal Express-Response stand-in so `tenantBilling` can be reused
- *  to capture each tenant's billing payload in the platform list view. */
-interface CaptureResponse {
-  body: unknown;
-  statusCode: number;
-  status(code: number): CaptureResponse;
-  json(body: unknown): CaptureResponse;
 }
 
 async function rawClient(): Promise<RawClient | null> {
@@ -452,33 +478,123 @@ router.get(
       res.status(500).json({ error: "tenant_list_failed" });
       return;
     }
-    const tenants = await Promise.all(
-      ((orgs ?? []) as OrgDirectoryRow[]).map(async (o) => {
-        const capture: CaptureResponse = {
-          body: undefined,
-          statusCode: 200,
-          status(code: number) {
-            this.statusCode = code;
-            return this;
+    const orgRows = (orgs ?? []) as OrgDirectoryRow[];
+    if (orgRows.length === 0) {
+      res.json({ tenants: [] });
+      return;
+    }
+    const orgIds = orgRows.map((o) => o.id);
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const usageMonth = monthStart.toISOString().slice(0, 7);
+    const [subs, addons, usage] = await Promise.all([
+      raw
+        .schema("resupply")
+        .from("tenant_billing_subscriptions")
+        .select("*, billing_plans(*)")
+        .in("org_id", orgIds)
+        .in("status", ["active", "trialing", "past_due"]),
+      raw
+        .schema("resupply")
+        .from("tenant_billing_addons")
+        .select("*, billing_addons(*)")
+        .in("org_id", orgIds)
+        .eq("status", "active"),
+      raw.rpc(
+        "platform_tenant_usage_snapshot" as never,
+        {
+          p_month_start: monthStart.toISOString(),
+        } as never,
+      ),
+    ]);
+    if (subs.error || addons.error || usage.error) {
+      logger.error(
+        {
+          event: "tenant_billing_list_read_failed",
+          err: subs.error ?? addons.error ?? usage.error,
+        },
+        "tenant billing list read failed",
+      );
+      res.status(500).json({ error: "tenant_billing_failed" });
+      return;
+    }
+    const subscriptionByOrg = new Map<string, TenantSubscriptionRow>();
+    for (const s of (subs.data ?? []) as TenantSubscriptionRow[]) {
+      if (!subscriptionByOrg.has(s.org_id)) subscriptionByOrg.set(s.org_id, s);
+    }
+    const addonsByOrg = new Map<string, TenantAddonRow[]>();
+    for (const a of (addons.data ?? []) as TenantAddonRow[]) {
+      const rows = addonsByOrg.get(a.org_id);
+      if (rows) rows.push(a);
+      else addonsByOrg.set(a.org_id, [a]);
+    }
+    const usageByOrg = new Map<string, TenantUsageSnapshotRow>();
+    for (const row of (usage.data ?? []) as TenantUsageSnapshotRow[]) {
+      usageByOrg.set(row.org_id, row);
+    }
+    const tenants = orgRows.map((o) => {
+      const sub = subscriptionByOrg.get(o.id);
+      const addonRows = addonsByOrg.get(o.id) ?? [];
+      const usageRow = usageByOrg.get(o.id);
+      return {
+        id: o.id,
+        slug: o.slug,
+        name: o.name,
+        storefrontName: o.storefront_name,
+        status: o.status,
+        faxNumber: o.fax_from_number,
+        faxProvisionedAt: o.fax_provisioned_at,
+        billing: {
+          tenantId: o.id,
+          subscription: sub
+            ? {
+                id: sub.id,
+                status: sub.status,
+                effectiveAt: sub.effective_at,
+                customMonthlyPriceCents: sub.custom_monthly_price_cents,
+                customOnboardingFeeCents: sub.custom_onboarding_fee_cents,
+                customAllowances: sub.custom_allowances ?? {},
+                notes: sub.notes ?? "",
+                stripeCustomerId: sub.stripe_customer_id ?? null,
+                stripeSubscriptionId: sub.stripe_subscription_id ?? null,
+                stripeStatus: sub.stripe_status ?? null,
+                stripeLastSyncedAt: sub.stripe_last_synced_at ?? null,
+                currentPeriodStart: sub.current_period_start ?? null,
+                currentPeriodEnd: sub.current_period_end ?? null,
+                lastInvoiceId: sub.last_invoice_id ?? null,
+                lastInvoiceStatus: sub.last_invoice_status ?? null,
+                plan: mapPlan(sub.billing_plans),
+              }
+            : null,
+          addons: addonRows.map((a) => ({
+            id: a.id,
+            quantity: a.quantity,
+            customRecurringPriceCents: a.custom_recurring_price_cents,
+            notes: a.notes ?? "",
+            addon: mapAddon(a.billing_addons),
+          })),
+          usage: {
+            month: usageMonth,
+            metrics: {
+              activePatients: usageRow?.active_patients ?? 0,
+              seats: usageRow?.seats ?? 0,
+              locations: usageRow?.locations ?? 0,
+              ordersPerMonth: usageRow?.orders_per_month ?? 0,
+              activeSubscriptions: usageRow?.active_subscriptions ?? 0,
+              outboundMessagesPerMonth:
+                usageRow?.outbound_messages_per_month ?? 0,
+              aiTextInteractionsPerMonth:
+                usageRow?.ai_text_interactions_per_month ?? 0,
+              billingTransactionsPerMonth:
+                usageRow?.billing_transactions_per_month ?? 0,
+              faxEvents: usageRow?.fax_events ?? 0,
+              aiVoiceEvents: usageRow?.ai_voice_events ?? 0,
+            },
           },
-          json(body: unknown) {
-            this.body = body;
-            return this;
-          },
-        };
-        await tenantBilling(o.id, capture as unknown as Response);
-        return {
-          id: o.id,
-          slug: o.slug,
-          name: o.name,
-          storefrontName: o.storefront_name,
-          status: o.status,
-          faxNumber: o.fax_from_number,
-          faxProvisionedAt: o.fax_provisioned_at,
-          billing: capture.body,
-        };
-      }),
-    );
+        },
+      };
+    });
     res.json({ tenants });
   },
 );

@@ -1107,3 +1107,60 @@ describe("processTick — step-6 status re-read failure does not kill the tick c
     expect(boss.send).not.toHaveBeenCalled();
   });
 });
+
+describe("processTick — multi-tenant org threading", () => {
+  it("threads the payload orgId through the re-enqueued tick", async () => {
+    // Claim-race-lost path re-enqueues directly (no finalize/drain), so it's
+    // the cleanest way to assert the next tick carries the same tenant.
+    stageDb("bulk_campaigns", "select", { data: makeCampaign({}) });
+    // Stale-'sending' reclaim UPDATE (no-op).
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    // Pending recipients SELECT.
+    stageDb("bulk_campaign_recipients", "select", {
+      data: [makeRecipient({})],
+    });
+    // Claim UPDATE returns 0 rows → race lost → enqueueNextTick.
+    stageDb("bulk_campaign_recipients", "update", { data: [] });
+
+    const boss = makeBoss();
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1", orgId: "org-x" },
+      testLog as never,
+    );
+
+    const payloads = (boss.send as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[1],
+    );
+    expect(payloads).toContainEqual(
+      expect.objectContaining({ campaignId: "camp-1", orgId: "org-x" }),
+    );
+  });
+
+  it("falls back to the seed org when the payload carries no orgId", async () => {
+    stageDb("bulk_campaigns", "select", { data: makeCampaign({}) });
+    stageDb("bulk_campaign_recipients", "update", { data: null });
+    stageDb("bulk_campaign_recipients", "select", {
+      data: [makeRecipient({})],
+    });
+    stageDb("bulk_campaign_recipients", "update", { data: [] });
+
+    const boss = makeBoss();
+    await processTick(
+      boss as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    // resolveSeedOrgId mock → the fixed seed uuid; the re-enqueue carries it.
+    const payloads = (boss.send as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[1],
+    );
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        campaignId: "camp-1",
+        orgId: "00000000-0000-4000-8000-000000000000",
+      }),
+    );
+  });
+});
