@@ -143,11 +143,17 @@ export async function runOfficeAllyInboundPollForOrg(
 ): Promise<PollStats> {
   const stats = emptyPollStats();
   const supabase = getOrgScopedClient(orgId);
+  // Scope the integration-health key PER TENANT. Under the fan-out this body
+  // runs once per active org in a single tick; a bare `JOB` key would let one
+  // tenant's SFTP outage reset/increment another tenant's consecutive-failure
+  // counter (masking failures or inflating one tick into N increments). A
+  // per-org key tracks each tenant's Office Ally connection independently.
+  const healthKey = `${JOB}:${orgId}`;
 
   const clearinghouse = await resolveClearinghouse({ orgId });
   if (!clearinghouse.config || !clearinghouse.row) {
     logger.info(
-      { source: clearinghouse.source, orgId },
+      { source: clearinghouse.source, org_id: orgId },
       "office-ally.inbound-poll: no clearinghouse configured; skipping run",
     );
     return stats;
@@ -161,7 +167,7 @@ export async function runOfficeAllyInboundPollForOrg(
       "office-ally.inbound-poll: SFTP list failed — EDI ingest pipeline stalled",
     );
     await recordIntegrationFailure(
-      JOB,
+      healthKey,
       `SFTP list failed: ${list.kind} — ${list.message}`,
     ).catch(() => undefined);
     return stats;
@@ -206,7 +212,7 @@ export async function runOfficeAllyInboundPollForOrg(
   });
 
   // A successful list resets the consecutive-failure counter.
-  await recordIntegrationSuccess(JOB).catch(() => undefined);
+  await recordIntegrationSuccess(healthKey).catch(() => undefined);
 
   return stats;
 }
@@ -680,6 +686,11 @@ export async function dispatch835(
     actorEmail: SYSTEM_ACTOR_EMAIL,
     fileName,
     checkOrEftNumber: parsed.checkOrEftNumber,
+    // Reconcile within the SAME tenant whose 835 this is. Without this,
+    // reconcileEra falls back to resolveSeedOrgId() and would read/write the
+    // SEED tenant's claims for a non-seed tenant's remittance — leaving their
+    // paid/denied claims unmatched. The org-scoped client carries the tenant.
+    orgId: supabase.orgId,
   });
 
   const finalStatus = summary.unmatchedClaims === 0 ? "processed" : "partial";

@@ -11,12 +11,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const listActiveOrgIdsMock = vi.hoisted(() => vi.fn());
-vi.mock("@workspace/resupply-db", () => ({
-  listActiveOrgIds: listActiveOrgIdsMock,
-  // The per-org body builds a client but, with resolveClearinghouse stubbed
-  // to "no config", never calls a method on it — a sentinel is enough.
-  getOrgScopedClient: vi.fn((orgId: string) => ({ orgId })),
-}));
+// Spread the real module so transitive importers (e.g. integration-health.ts,
+// which imports resolveSeedOrgId) still find every export; override only the
+// two the fan-out exercises. The per-org body builds a client but, with
+// resolveClearinghouse stubbed to "no config", never calls a method on it — a
+// sentinel is enough.
+vi.mock("@workspace/resupply-db", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@workspace/resupply-db")>();
+  return {
+    ...actual,
+    listActiveOrgIds: listActiveOrgIdsMock,
+    getOrgScopedClient: vi.fn((orgId: string) => ({ orgId })),
+  };
+});
 
 const resolveClearinghouseMock = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/billing/identity-resolver", () => ({
