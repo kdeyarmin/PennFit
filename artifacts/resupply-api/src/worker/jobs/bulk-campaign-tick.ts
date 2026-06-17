@@ -142,26 +142,33 @@ export async function processTick(
   payload: BulkCampaignTickPayload,
   log: typeof logger,
 ): Promise<void> {
-  // Operate on the campaign's OWN tenant. The orgId is threaded through the
-  // enqueue→tick payload; a tick enqueued before this deploy carries none, so
-  // fall back to the seed org (single-tenant-correct). A blank/whitespace
-  // payload orgId is treated as absent so the seed fallback still applies.
-  const orgId = payload.orgId?.trim() || (await resolveSeedOrgId());
-  if (!orgId) {
+  // Bootstrap a client just to read the campaign by PK. New ticks carry orgId
+  // in the payload; a tick enqueued by the pre-deploy helper carries none.
+  const payloadOrgId = payload.orgId?.trim();
+  const bootstrapOrgId = payloadOrgId || (await resolveSeedOrgId());
+  if (!bootstrapOrgId) {
     log.warn(
       { campaignId: payload.campaignId },
       "bulk_campaigns.tick: no org resolved — skipping tick",
     );
     return;
   }
-  const supabase = getOrgScopedClient(orgId);
 
-  // 1. Re-read the campaign state so a pause/cancel that landed
-  //    after the tick was scheduled is honored.
-  const { data: campaign, error: cErr } = await supabase
+  // 1. Re-read the campaign state so a pause/cancel that landed after the tick
+  //    was scheduled is honored. Read `bulk_campaigns` UNSCOPED by PK via the
+  //    service-role `.raw()` escape hatch (campaign id is globally unique): an
+  //    org-less tick for a NON-seed campaign is still found, instead of being
+  //    mis-scoped to the seed tenant — which would read as "missing", return
+  //    without re-enqueueing, and strand the campaign in 'sending'. We then
+  //    scope every subsequent read/write to the campaign's OWNER org.
+  const { data: campaign, error: cErr } = await getOrgScopedClient(
+    bootstrapOrgId,
+  )
+    .raw()
+    .schema("resupply")
     .from("bulk_campaigns")
     .select(
-      "id, name, status, throttle_per_minute, template_key, category, sent_count, failed_count, total_recipients, suppressed_count",
+      "id, org_id, name, status, throttle_per_minute, template_key, category, sent_count, failed_count, total_recipients, suppressed_count",
     )
     .eq("id", payload.campaignId)
     .limit(1)
@@ -187,6 +194,15 @@ export async function processTick(
     );
     return;
   }
+
+  // The campaign's real owner: the payload orgId when present, else the org_id
+  // read off the row (org-less tick), else the seed bootstrap. Every read and
+  // write below — and the raw counter UPDATE — is scoped to it.
+  const orgId =
+    payloadOrgId ||
+    (campaign.org_id as string | null)?.trim() ||
+    bootstrapOrgId;
+  const supabase = getOrgScopedClient(orgId);
 
   // 1b. Recover orphaned recipients. A prior tick claims a batch
   //     pending → sending in one update, then sends + finalizes each row.
