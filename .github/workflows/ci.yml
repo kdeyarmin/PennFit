@@ -354,7 +354,8 @@ jobs:
               src/worker/jobs/maintenance-nudges.integration.test.ts \
               src/worker/jobs/video-visit-reminders.integration.test.ts \
               src/worker/jobs/recall-notifications-send.integration.test.ts \
-              src/worker/jobs/patient-packet-reminders.integration.test.ts
+              src/worker/jobs/patient-packet-reminders.integration.test.ts \
+              src/worker/jobs/pacware-ready-to-sync-digest.integration.test.ts
 
   a11y:
     name: A11y (Playwright + axe)
