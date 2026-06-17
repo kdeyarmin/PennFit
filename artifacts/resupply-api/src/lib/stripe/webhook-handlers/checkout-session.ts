@@ -31,6 +31,7 @@ import { normalizeE164 } from "@workspace/resupply-domain";
 
 import { resolveWebhookOrgId } from "../webhook-org-context";
 
+import { stripeAccountRequestOptions } from "../connect";
 import { getStripeClient, type StripeConfig } from "../config";
 import { readDefaultPaymentMethod } from "../customer";
 import type { OrderConfirmationLineItem } from "../../order-emails/send-order-confirmation-email";
@@ -71,7 +72,22 @@ export async function authorizePaymentPlanAutopay(
       ? session.customer
       : (session.customer?.id ?? null);
 
-  // Resolve the payment method from the SetupIntent.
+  // Resolve the tenant FIRST — the SetupIntent + customer + PM for a
+  // connected-account setup live ON that account, so we must retrieve them
+  // with its `{ stripeAccount }` options (G5). The webhook event already
+  // carries the account context (resolveWebhookOrgId → the event.account
+  // tenant). Empty options for the platform account, unchanged.
+  const orgId = await resolveWebhookOrgId();
+  if (!orgId) {
+    log?.info?.(
+      { planId },
+      "stripe webhook: payment-plan autopay authorize skipped — tenant context missing",
+    );
+    return;
+  }
+  const accountOptions = await stripeAccountRequestOptions(orgId);
+
+  // Resolve the payment method from the SetupIntent (on the tenant's account).
   const stripe = getStripeClient(config);
   const setupIntentId =
     typeof session.setup_intent === "string"
@@ -79,7 +95,11 @@ export async function authorizePaymentPlanAutopay(
       : (session.setup_intent?.id ?? null);
   let paymentMethodId: string | null = null;
   if (setupIntentId) {
-    const si = await stripe.setupIntents.retrieve(setupIntentId);
+    const si = await stripe.setupIntents.retrieve(
+      setupIntentId,
+      undefined,
+      accountOptions,
+    );
     paymentMethodId =
       typeof si.payment_method === "string"
         ? si.payment_method
@@ -97,14 +117,6 @@ export async function authorizePaymentPlanAutopay(
     return;
   }
 
-  const orgId = await resolveWebhookOrgId();
-  if (!orgId) {
-    log?.info?.(
-      { planId },
-      "stripe webhook: payment-plan autopay authorize skipped — tenant context missing",
-    );
-    return;
-  }
   const supabase = getOrgScopedClient(orgId);
   const { error } = await supabase
     .from("patient_payment_plans")
