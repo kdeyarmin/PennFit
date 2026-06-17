@@ -19,11 +19,7 @@
 // a partial unique index (migration 0260). Adding a card updates the
 // active row in place; removing it stamps revoked_at.
 
-import {
-  type Database,
-  getOrgScopedClient,
-  resolveSeedOrgId,
-} from "@workspace/resupply-db";
+import { type Database, getOrgScopedClient } from "@workspace/resupply-db";
 import type Stripe from "stripe";
 
 import { logger } from "../logger";
@@ -333,9 +329,9 @@ export async function recordAutopayAuthorization(
 // ─── Status / toggle / revoke ────────────────────────────────────────────
 
 export async function getActiveAutopayAuthorization(
+  orgId: string | undefined,
   patientId: string,
 ): Promise<AutopayRow | null> {
-  const orgId = await resolveSeedOrgId();
   if (!orgId) return null;
   const supabase = getOrgScopedClient(orgId);
   const { data } = await supabase
@@ -354,14 +350,14 @@ export type SetAutopayResult =
 
 /** Flip the patient-controlled autopay switch. Requires a card on file. */
 export async function setAutopayEnabled(
+  orgId: string | undefined,
   patientId: string,
   enabled: boolean,
   actor: string | null,
 ): Promise<SetAutopayResult> {
-  const row = await getActiveAutopayAuthorization(patientId);
-  if (!row) return { error: "no_card_on_file" };
-  const orgId = await resolveSeedOrgId();
   if (!orgId) return { error: "no_card_on_file" };
+  const row = await getActiveAutopayAuthorization(orgId, patientId);
+  if (!row) return { error: "no_card_on_file" };
   const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -389,10 +385,12 @@ export type RevokeAutopayResult = { ok: true } | { error: "no_card_on_file" };
  * payment_method.detached webhook is idempotent with this.
  */
 export async function revokeAutopayAuthorization(
+  orgId: string | undefined,
   patientId: string,
   actor: string | null,
 ): Promise<RevokeAutopayResult> {
-  const row = await getActiveAutopayAuthorization(patientId);
+  if (!orgId) return { error: "no_card_on_file" };
+  const row = await getActiveAutopayAuthorization(orgId, patientId);
   if (!row) return { error: "no_card_on_file" };
   const config = readStripeConfigOrNull();
   if (config) {
@@ -407,8 +405,6 @@ export async function revokeAutopayAuthorization(
       );
     }
   }
-  const orgId = await resolveSeedOrgId();
-  if (!orgId) return { error: "no_card_on_file" };
   const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -434,7 +430,10 @@ export async function clearAutopayByPaymentMethod(
   paymentMethodId: string,
   log?: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  // Webhook (payment_method.detached) → resolve the event's tenant, not the
+  // seed org, so a non-seed tenant's detached card is revoked under the
+  // correct org (matching where the autopay authorization was written).
+  const orgId = await resolveWebhookOrgId();
   if (!orgId) return;
   const supabase = getOrgScopedClient(orgId);
   const now = new Date().toISOString();

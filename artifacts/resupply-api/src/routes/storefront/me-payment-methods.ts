@@ -161,7 +161,7 @@ router.get(
       res.json(toAutopayStatusView(null));
       return;
     }
-    const row = await getActiveAutopayAuthorization(link.patientId);
+    const row = await getActiveAutopayAuthorization(req.orgId, link.patientId);
     res.json(toAutopayStatusView(row));
   },
 );
@@ -288,6 +288,7 @@ router.patch(
       return;
     }
     const result = await setAutopayEnabled(
+      req.orgId,
       link.patientId,
       parsed.data.enabled,
       `customer:${link.customerEmail}`,
@@ -347,6 +348,7 @@ router.delete(
       return;
     }
     const result = await revokeAutopayAuthorization(
+      req.orgId,
       link.patientId,
       `customer:${link.customerEmail}`,
     );
