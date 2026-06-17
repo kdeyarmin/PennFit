@@ -398,6 +398,7 @@ router.post(
         returnCarrier: updated.return_carrier,
         returnTrackingNumber: updated.return_tracking_number,
         returnLabelUrl: updated.return_label_url,
+        orgId,
       });
       if (!result.delivered) {
         // `errorCode` is the machine-readable token returned by
@@ -831,6 +832,7 @@ router.post(
         // when we need precise rendering. shop_orders carries it; if
         // unavailable, the helper defaults to "usd" which matches v1.
         currency: null,
+        orgId,
       });
       if (!result.delivered) {
         // See approve handler — `errorCode` (not `err`) so the

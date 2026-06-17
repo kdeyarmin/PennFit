@@ -218,6 +218,7 @@ router.post("/reminders", async (req, res) => {
       const result = await sendReminderManageLink({
         toEmail: existing.email,
         manageToken: existing.manage_token,
+        orgId,
       });
       emailStatus = !result.configured
         ? "skipped"
@@ -287,6 +288,7 @@ router.post("/reminders", async (req, res) => {
       toEmail: row.email,
       manageToken: row.manage_token,
       items: itemsWithDue,
+      orgId,
     });
     emailStatus = !result.configured
       ? "skipped"

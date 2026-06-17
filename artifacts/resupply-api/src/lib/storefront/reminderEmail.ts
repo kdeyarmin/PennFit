@@ -35,11 +35,10 @@
  * the recipient email is never logged.
  */
 
-import {
-  createSendgridClient,
-  EmailApiError,
-  EmailConfigError,
-} from "@workspace/resupply-email";
+import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
+
+import { createTenantSendgridClient } from "../email/tenant-sender.js";
+import { resolveBrandingByOrgId } from "../tenant-branding.js";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -106,18 +105,23 @@ function bodyToHtml(text: string): string {
 
 /**
  * Send via the shared SendGrid integration. All Penn Fit reminder emails
- * funnel through this single helper so the From address (info@pennpaps.com),
- * display name, and API key are always read from the same env vars as the
- * rest of the platform — no separate PENN_FROM_EMAIL, no raw fetch.
+ * funnel through this single helper so the API key is always read from the
+ * same env vars as the rest of the platform — no separate PENN_FROM_EMAIL,
+ * no raw fetch. The From identity is the tenant's own when configured (G6):
+ * `createTenantSendgridClient(orgId)` resolves the tenant's
+ * `from_email`/`from_name` (migration 0360), falling back to the platform
+ * default (info@pennpaps.com) when the tenant has none / orgId is unset, so
+ * single-tenant behavior is unchanged.
  */
 async function sendViaSendGrid(opts: {
   toEmail: string;
   subject: string;
   body: string;
+  orgId?: string;
 }): Promise<SendEmailResult> {
   let client;
   try {
-    client = createSendgridClient();
+    client = await createTenantSendgridClient(opts.orgId);
   } catch (err) {
     if (err instanceof EmailConfigError) {
       return { configured: false, delivered: false };
@@ -163,10 +167,15 @@ export async function sendReminderConfirmation(opts: {
   toEmail: string;
   manageToken: string;
   items: ReminderItemForEmail[];
+  orgId?: string;
 }): Promise<SendEmailResult> {
+  // Brand with the tenant's own identity (G6). For the seed tenant these
+  // resolve to "PennPaps"/"Penn Home Medical Supply" so single-tenant copy
+  // is unchanged; a second tenant's reminder carries ITS brand.
+  const brand = await resolveBrandingByOrgId(opts.orgId);
   const link = manageLinkFor(opts.manageToken);
   const lines: string[] = [];
-  lines.push("You're signed up for PennPaps supply reminders.");
+  lines.push(`You're signed up for ${brand.storefrontName} supply reminders.`);
   lines.push("");
   lines.push("We'll email you when each of these items is due to be replaced:");
   lines.push("");
@@ -175,12 +184,13 @@ export async function sendReminderConfirmation(opts: {
   lines.push("Need to change your dates, intervals, or unsubscribe?");
   lines.push(link);
   lines.push("");
-  lines.push("— PennPaps by Penn Home Medical Supply");
+  lines.push(`— ${brand.storefrontName} by ${brand.legalName}`);
 
   return sendViaSendGrid({
     toEmail: opts.toEmail,
-    subject: "You're signed up for PennPaps supply reminders",
+    subject: `You're signed up for ${brand.storefrontName} supply reminders`,
     body: lines.join("\n"),
+    orgId: opts.orgId,
   });
 }
 
@@ -195,11 +205,14 @@ export async function sendReminderConfirmation(opts: {
 export async function sendReminderManageLink(opts: {
   toEmail: string;
   manageToken: string;
+  orgId?: string;
 }): Promise<SendEmailResult> {
+  // Brand with the tenant's own identity (G6); seed tenant → "PennPaps".
+  const brand = await resolveBrandingByOrgId(opts.orgId);
   const link = manageLinkFor(opts.manageToken);
   const lines: string[] = [];
   lines.push(
-    "Someone — possibly you — re-submitted the PennPaps reminder signup form",
+    `Someone — possibly you — re-submitted the ${brand.storefrontName} reminder signup form`,
   );
   lines.push("with this email address.");
   lines.push("");
@@ -214,12 +227,13 @@ export async function sendReminderManageLink(opts: {
     "If this wasn't you, no action is needed — your subscription is unchanged.",
   );
   lines.push("");
-  lines.push("— PennPaps by Penn Home Medical Supply");
+  lines.push(`— ${brand.storefrontName} by ${brand.legalName}`);
 
   return sendViaSendGrid({
     toEmail: opts.toEmail,
-    subject: "Your PennPaps reminders manage link",
+    subject: `Your ${brand.storefrontName} reminders manage link`,
     body: lines.join("\n"),
+    orgId: opts.orgId,
   });
 }
 
@@ -232,7 +246,10 @@ export async function sendReminderDue(opts: {
   toEmail: string;
   manageToken: string;
   dueItems: ReminderItemForEmail[];
+  orgId?: string;
 }): Promise<SendEmailResult> {
+  // Brand with the tenant's own identity (G6); seed tenant → "PennPaps".
+  const brand = await resolveBrandingByOrgId(opts.orgId);
   const link = manageLinkFor(opts.manageToken);
   const isPlural = opts.dueItems.length > 1;
   const lines: string[] = [];
@@ -247,7 +264,7 @@ export async function sendReminderDue(opts: {
   lines.push(formatItemsList(opts.dueItems));
   lines.push("");
   lines.push(
-    "Need a refill? Visit the PennPaps shop to order — or call Penn Home Medical Supply.",
+    `Need a refill? Visit the ${brand.storefrontName} shop to order — or call ${brand.legalName}.`,
   );
   lines.push("");
   lines.push(
@@ -256,7 +273,7 @@ export async function sendReminderDue(opts: {
   lines.push("nag you again:");
   lines.push(link);
   lines.push("");
-  lines.push("— PennPaps by Penn Home Medical Supply");
+  lines.push(`— ${brand.storefrontName} by ${brand.legalName}`);
 
   return sendViaSendGrid({
     toEmail: opts.toEmail,
@@ -264,5 +281,6 @@ export async function sendReminderDue(opts: {
       ? "Your CPAP supplies are due for replacement"
       : `Your ${labelForSku(opts.dueItems[0]!.sku).toLowerCase()} is due for replacement`,
     body: lines.join("\n"),
+    orgId: opts.orgId,
   });
 }

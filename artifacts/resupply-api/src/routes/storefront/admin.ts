@@ -558,6 +558,7 @@ router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
       toEmail: row.email,
       manageToken: row.manage_token,
       dueItems,
+      orgId,
     });
 
     if (!result.configured) {
