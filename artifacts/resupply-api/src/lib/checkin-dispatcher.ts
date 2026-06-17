@@ -808,7 +808,7 @@ async function buildClients(
   // Send under the tenant's own number / Messaging Service when it has
   // one (G7); falls back to the platform env default otherwise.
   const tenantSms = await resolveTenantSmsClientOptions(orgId);
-  if (accountSid && authToken && (phoneNumber || messagingServiceSid)) {
+  if (accountSid && authToken && (tenantSms.from || tenantSms.messagingServiceSid || phoneNumber || messagingServiceSid)) {
     try {
       sms = {
         client: createTwilioSmsClient({
