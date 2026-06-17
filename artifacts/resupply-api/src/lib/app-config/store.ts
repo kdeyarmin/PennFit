@@ -36,7 +36,12 @@
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
-import { APP_CONFIG_KEYS, isAppConfigKey } from "./catalog";
+import {
+  APP_CONFIG_KEYS,
+  appConfigScopeOf,
+  isAppConfigKey,
+  TENANT_SCOPED_APP_CONFIG_KEYS,
+} from "./catalog";
 
 // Catalog keys are all optional/feature-gated, but guard the bootstrap
 // credentials explicitly so a future catalog edit can never make the
@@ -63,6 +68,12 @@ interface OverlayCache {
 }
 
 let cache: OverlayCache | null = null;
+
+// Per-org overlay of a tenant's OWN tenant-scoped values (its therapy-cloud
+// + clearinghouse accounts). Keyed by orgId; short TTL like the platform
+// overlay. Distinct from `cache` (the seed/platform overlay) so a tenant's
+// business credentials never leak across tenants.
+const orgOverlayCache = new Map<string, OverlayCache>();
 
 function overlayDisabled(): boolean {
   const v = process.env.APP_CONFIG_OVERLAY_DISABLED;
@@ -163,9 +174,121 @@ export async function getEffectiveEnv(
   return { ...base, ...overrides };
 }
 
-/** Drop the cached overlay so a recent write is visible next read. */
+/**
+ * A single org's OWN tenant-scoped overrides (its therapy-cloud +
+ * clearinghouse credentials), read through the org-scoped facade so it can
+ * only ever see its own rows. Filtered to `scope: "tenant"` catalog keys —
+ * a platform key stored on a tenant's rows is ignored here (platform infra
+ * is owned by the super-admin, not a tenant). Fail-soft: `{}` on any error.
+ */
+async function loadOrgTenantOverridesFromDb(
+  orgId: string,
+  timeoutMs: number,
+): Promise<Record<string, string>> {
+  try {
+    const supabase = getOrgScopedClient(orgId);
+    const lookup = supabase.from("app_config").select("key, value");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new AppConfigLookupTimeout()), timeoutMs);
+    });
+    let result: Awaited<typeof lookup>;
+    try {
+      result = await Promise.race([lookup, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    const { data, error } = result;
+    if (error) throw error;
+    const out: Record<string, string> = {};
+    for (const row of data ?? []) {
+      const key = (row as { key: string }).key;
+      const value = (row as { value: string }).value;
+      if (!isAppConfigKey(key)) continue;
+      if (BOOT_CRITICAL_KEYS.has(key)) continue;
+      // Only a tenant's OWN (tenant-scoped) keys overlay here.
+      if (appConfigScopeOf(key) !== "tenant") continue;
+      if (typeof value === "string") out[key] = value;
+    }
+    return out;
+  } catch (err) {
+    const normalized =
+      err instanceof Error
+        ? err
+        : new Error(String((err as unknown) ?? "unknown"));
+    logger.warn(
+      { event: "org_tenant_overlay_load_failed", err: normalized },
+      "per-org tenant config overlay load failed; degrading to none",
+    );
+    return {};
+  }
+}
+
+async function getOrgTenantOverrides(
+  orgId: string,
+): Promise<Record<string, string>> {
+  if (overlayDisabled()) return {};
+  const now = Date.now();
+  const hit = orgOverlayCache.get(orgId);
+  if (hit && hit.expiresAt > now) return hit.overrides;
+  const overrides = await loadOrgTenantOverridesFromDb(orgId, LIVE_TIMEOUT_MS);
+  orgOverlayCache.set(orgId, { overrides, expiresAt: now + CACHE_TTL_MS });
+  return overrides;
+}
+
+/**
+ * `process.env` resolved for a SPECIFIC tenant — the per-tenant counterpart
+ * of `getEffectiveEnv()`. Two layers on top of `base`:
+ *
+ *   1. PLATFORM infra (seed org's platform-scoped values) — shared by every
+ *      tenant, owned by the super-admin (/platform/config).
+ *   2. TENANT business (this org's OWN tenant-scoped values) — its
+ *      therapy-cloud + clearinghouse accounts (/admin/system/config).
+ *
+ * Precedence: base < platform < tenant. Crucially, a NON-seed tenant does
+ * NOT inherit the platform deployment's (seed org / Railway env) business
+ * credentials for a key it hasn't set itself — those keys are stripped so a
+ * second tenant can never run its patients against another company's vendor
+ * account. The seed org keeps byte-identical single-tenant behavior.
+ *
+ * Fail-soft: any overlay read degrades to "no overrides", so a flaky lookup
+ * can't break a sync — the adapter just reports `unavailable`.
+ */
+export async function getEffectiveEnvForOrg(
+  orgId: string,
+  base: NodeJS.ProcessEnv = process.env,
+): Promise<NodeJS.ProcessEnv> {
+  const [platform, tenant, seedOrgId] = await Promise.all([
+    getConfigOverrides(),
+    getOrgTenantOverrides(orgId),
+    resolveSeedOrgId(),
+  ]);
+  const isSeed = !!seedOrgId && seedOrgId === orgId;
+
+  const merged: NodeJS.ProcessEnv = { ...base };
+  // Platform infra layer: only the seed org's PLATFORM-scoped values.
+  for (const [k, v] of Object.entries(platform)) {
+    if (typeof v === "string" && appConfigScopeOf(k) === "platform")
+      merged[k] = v;
+  }
+  // Tenant business layer: this org's own tenant-scoped values win.
+  for (const [k, v] of Object.entries(tenant)) {
+    if (typeof v === "string") merged[k] = v;
+  }
+  // A non-seed tenant must not fall back to the platform deployment's
+  // business credentials for a key it hasn't configured itself.
+  if (!isSeed) {
+    for (const key of TENANT_SCOPED_APP_CONFIG_KEYS) {
+      if (!(key in tenant)) delete merged[key];
+    }
+  }
+  return merged;
+}
+
+/** Drop the cached overlays so a recent write is visible next read. */
 export function invalidateAppConfigCache(): void {
   cache = null;
+  orgOverlayCache.clear();
 }
 
 /**
@@ -314,6 +437,7 @@ export function invalidateTenantConfigCache(): void {
 /** Test-only: clear the module cache between cases. */
 export function __resetAppConfigCacheForTests(): void {
   cache = null;
+  orgOverlayCache.clear();
   tenantConfigCache.clear();
 }
 
