@@ -34,29 +34,31 @@ treated as **platform** alerts (their seed-brand leak was already fixed —
 
 ## Affected schema (the grain-keyed set)
 
-| Table                             | Current grain (PK / unique)            | Target grain                                   |
-| --------------------------------- | -------------------------------------- | ---------------------------------------------- |
-| `metrics_daily`                   | PK `(metric_date, metric_key)`         | PK `(org_id, metric_date, metric_key)`         |
-| `metric_thresholds`               | PK `id`; enabled-idx on `(metric_key)` | add `org_id`; unique `(org_id, metric_key)`    |
-| `metric_alerts`                   | PK `id`; unique `(threshold_id, date)` | add `org_id` (threshold already implies org)   |
-| `therapy_fleet_daily_metrics`     | day-grain aggregate                    | PK gains `org_id`                              |
-| `fitter_campaign_touch_metrics`   | `(…, touch_index)` counter             | PK gains `org_id`                              |
-| `fitter_campaign_variant_metrics` | variant counter                        | PK gains `org_id`                              |
-| `payer_estimate_stats`            | `(payer_slug, …)` counter              | PK gains `org_id`                              |
-| `integration_run_health`          | `(adapter_key)` counter                | PK gains `org_id`                              |
-| `control_number_counters`         | `(pool)` counter                       | PK gains `org_id` (per-tenant claim sequences) |
+| Table                             | Current grain (PK / unique)            | Target grain                                 |
+| --------------------------------- | -------------------------------------- | -------------------------------------------- |
+| `metrics_daily`                   | PK `(metric_date, metric_key)`         | PK `(org_id, metric_date, metric_key)`       |
+| `metric_thresholds`               | PK `id`; enabled-idx on `(metric_key)` | add `org_id`; unique `(org_id, metric_key)`  |
+| `metric_alerts`                   | PK `id`; unique `(threshold_id, date)` | add `org_id` (threshold already implies org) |
+| `therapy_fleet_daily_metrics`     | day-grain aggregate                    | PK gains `org_id`                            |
+| `fitter_campaign_touch_metrics`   | `(…, touch_index)` counter             | PK gains `org_id`                            |
+| `fitter_campaign_variant_metrics` | variant counter                        | PK gains `org_id`                            |
+| `payer_estimate_stats`            | `(payer_slug, …)` counter              | PK gains `org_id`                            |
+| `integration_run_health`          | `(adapter_key)` counter                | PK gains `org_id`                            |
 
 Source of truth for grains:
 [`0194_metrics_substrate.sql`](../lib/resupply-db/drizzle/0194_metrics_substrate.sql)
 (metrics trio) and the per-table create migrations for the rest.
 
-> **Note on `control_number_counters`:** this is the X12 claim
-> control-number sequence pool, not analytics. It is grain-keyed the same
-> way and so was excluded with the others, but it belongs to the **billing**
-> domain — a second tenant submitting claims needs its **own** monotonic
-> sequence. It can be split out and done independently of the analytics
-> work (and arguably should land sooner, alongside the G8 billing-identity
-> work).
+> **`control_number_counters` is already DONE (not part of this work).** The
+> X12 claim control-number pool was also grain-keyed and deferred by `0342`,
+> but because it is a **billing-correctness** gap (two tenants drawing from
+> one ISA13 sequence collide at Office Ally's 999) it was pulled forward and
+> shipped on its own: migration
+> [`0361_control_number_counters_org_scoped.sql`](../lib/resupply-db/drizzle/0361_control_number_counters_org_scoped.sql)
+> re-keys the PK to `(org_id, pool)` + adds RLS, and the runtime cutover
+> landed in the same PR (`reserveIsa13Value` takes the caller's org-scoped
+> client and self-provisions a new tenant's counter row). It is listed here
+> only so nobody re-does it; it is **not** in scope below.
 
 ## Affected jobs (the pipeline)
 
@@ -133,13 +135,15 @@ for `/platform/*`.
 
 ## Suggested sequencing
 
-1. **`control_number_counters`** first, on its own — it's billing, not
-   analytics, and unblocks a second tenant's claim submission. Smallest,
-   highest-urgency slice.
-2. **metrics trio** (`metrics_daily` + `metric_thresholds` +
+The billing slice (`control_number_counters`) that would have led here is
+**already shipped** (migration `0361` — see the note above), so the
+remaining work is purely analytics/dashboards and carries no
+patient-serving or billing urgency:
+
+1. **metrics trio** (`metrics_daily` + `metric_thresholds` +
    `metric_alerts`) + their three jobs + the RPC, as one coordinated unit.
-3. **`therapy_fleet_daily_metrics`** + its snapshot job.
-4. The remaining counters (`fitter_campaign_*`, `payer_estimate_stats`,
+2. **`therapy_fleet_daily_metrics`** + its snapshot job.
+3. The remaining counters (`fitter_campaign_*`, `payer_estimate_stats`,
    `integration_run_health`) — lowest urgency; they back internal
    dashboards, not patient- or tenant-facing surfaces.
 
