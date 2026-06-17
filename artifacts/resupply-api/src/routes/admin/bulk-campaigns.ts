@@ -421,7 +421,7 @@ interface TransitionPlan {
   /** Per-transition audit action. */
   auditAction: string;
   /** Side effect to run after the DB update succeeds. */
-  sideEffect?: (campaignId: string) => Promise<void>;
+  sideEffect?: (campaignId: string, orgId: string | undefined) => Promise<void>;
 }
 
 function planFor(
@@ -432,10 +432,10 @@ function planFor(
       return {
         to: "sending",
         auditAction: "bulk_campaign.start",
-        sideEffect: async (id) => {
+        sideEffect: async (id, orgId) => {
           const boss = getBoss();
           if (boss) {
-            await enqueueImmediateTick(boss, id);
+            await enqueueImmediateTick(boss, id, orgId);
           } else {
             // The worker isn't booted (dev / test environment).
             // Mark the campaign sending anyway — the next worker
@@ -455,10 +455,10 @@ function planFor(
       return {
         to: "sending",
         auditAction: "bulk_campaign.resume",
-        sideEffect: async (id) => {
+        sideEffect: async (id, orgId) => {
           const boss = getBoss();
           if (boss) {
-            await enqueueImmediateTick(boss, id);
+            await enqueueImmediateTick(boss, id, orgId);
           }
         },
       };
@@ -584,7 +584,7 @@ function makeTransitionHandler(
 
     if (plan.sideEffect) {
       try {
-        await plan.sideEffect(params.data.id);
+        await plan.sideEffect(params.data.id, req.orgId);
       } catch (err) {
         logger.error(
           {

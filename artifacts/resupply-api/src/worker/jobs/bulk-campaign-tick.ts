@@ -78,6 +78,14 @@ const PENDING_STATUSES = ["pending", "retry_pending"] as const;
 
 export interface BulkCampaignTickPayload {
   campaignId: string;
+  /**
+   * Tenant that owns the campaign. Threaded through the tick chain so each
+   * tick reads/sends the campaign + recipients on its own org-scoped client
+   * — a non-seed tenant's campaign would otherwise never send (the worker
+   * read the seed org). Optional + seed fallback keeps any in-flight
+   * pre-upgrade payload (no orgId) working single-tenant-correct.
+   */
+  orgId?: string;
 }
 
 type CampaignRow = Database["resupply"]["Tables"]["bulk_campaigns"]["Row"];
@@ -134,11 +142,14 @@ export async function processTick(
   payload: BulkCampaignTickPayload,
   log: typeof logger,
 ): Promise<void> {
-  const orgId = await resolveSeedOrgId();
+  // Tenant comes from the tick payload (threaded from the start route through
+  // every re-enqueue). Fall back to the seed org for any pre-upgrade payload
+  // still in the queue — single-tenant-correct. Treat a blank id as absent.
+  const orgId = payload.orgId?.trim() || (await resolveSeedOrgId());
   if (!orgId) {
     log.warn(
       { campaignId: payload.campaignId },
-      "bulk_campaigns.tick: no seed org resolved — skipping tick",
+      "bulk_campaigns.tick: no org resolved — skipping tick",
     );
     return;
   }
@@ -232,7 +243,7 @@ export async function processTick(
     // No more pending. Only finalize if nothing is mid-flight either —
     // a non-stale 'sending' row (in-flight or not-yet-reclaimed orphan)
     // means the campaign isn't actually done.
-    await finalizeOrReschedule(boss, supabase, campaign.id, log);
+    await finalizeOrReschedule(boss, supabase, campaign.id, orgId, log);
     return;
   }
 
@@ -284,7 +295,7 @@ export async function processTick(
       { campaignId: campaign.id },
       "bulk_campaigns.tick: race lost on claim, deferring",
     );
-    await enqueueNextTick(boss, campaign.id);
+    await enqueueNextTick(boss, campaign.id, orgId);
     return;
   }
 
@@ -631,7 +642,7 @@ export async function processTick(
     return;
   }
 
-  await finalizeOrReschedule(boss, supabase, campaign.id, log);
+  await finalizeOrReschedule(boss, supabase, campaign.id, orgId, log);
 }
 
 /**
@@ -654,6 +665,7 @@ async function finalizeOrReschedule(
   boss: PgBoss,
   supabase: OrgScopedClient,
   campaignId: string,
+  orgId: string,
   log: typeof logger,
 ): Promise<void> {
   const { count: remaining, error } = await supabase
@@ -667,7 +679,7 @@ async function finalizeOrReschedule(
       { err: error, campaignId },
       "bulk_campaigns.tick: remaining-work count failed — rescheduling",
     );
-    await enqueueNextTick(boss, campaignId);
+    await enqueueNextTick(boss, campaignId, orgId);
     return;
   }
   if (!remaining || remaining === 0) {
@@ -682,7 +694,7 @@ async function finalizeOrReschedule(
         { campaignId },
         "bulk_campaigns.tick: campaign finalize failed — rescheduling",
       );
-      await enqueueNextTick(boss, campaignId);
+      await enqueueNextTick(boss, campaignId, orgId);
       return;
     }
     log.info(
@@ -691,7 +703,7 @@ async function finalizeOrReschedule(
     );
     return;
   }
-  await enqueueNextTick(boss, campaignId);
+  await enqueueNextTick(boss, campaignId, orgId);
 }
 
 /**
@@ -800,10 +812,11 @@ async function markCampaignSent(
 export async function enqueueNextTick(
   boss: PgBoss,
   campaignId: string,
+  orgId?: string,
 ): Promise<void> {
   await boss.send(
     BULK_CAMPAIGN_TICK_JOB,
-    { campaignId },
+    { campaignId, orgId },
     { startAfter: TICK_INTERVAL_SECONDS },
   );
 }
@@ -813,8 +826,9 @@ export async function enqueueNextTick(
 export async function enqueueImmediateTick(
   boss: PgBoss,
   campaignId: string,
+  orgId?: string,
 ): Promise<void> {
-  await boss.send(BULK_CAMPAIGN_TICK_JOB, { campaignId });
+  await boss.send(BULK_CAMPAIGN_TICK_JOB, { campaignId, orgId });
 }
 
 // Silence unused-import lint when CampaignRow isn't referenced
