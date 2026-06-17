@@ -44,6 +44,7 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
@@ -520,7 +521,14 @@ async function maybeSendAdherenceSms(
       body,
       actor,
     });
-    if (outcome.status === "ok") return true;
+    if (outcome.status === "ok") {
+      recordOutboundMessageUsage({
+        orgId: supabase.orgId,
+        channel: "sms",
+        source: "therapy_fleet_adherence.sms",
+      });
+      return true;
+    }
     // Didn't actually dispatch (e.g. no routable phone) — release the cap
     // key so a later run can retry instead of suppressing for 14 days.
     await releaseAdherenceCapKey(supabase, capKey);

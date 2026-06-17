@@ -43,6 +43,7 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { claimDedupKey } from "../../lib/dedup-keys.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
 import { logger } from "../../lib/logger.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -364,7 +365,14 @@ async function maybeSendDeadlineSms(
       body,
       actor,
     });
-    if (outcome.status === "ok") return true;
+    if (outcome.status === "ok") {
+      recordOutboundMessageUsage({
+        orgId: supabase.orgId,
+        channel: "sms",
+        source: "therapy_setup_deadline.sms",
+      });
+      return true;
+    }
     await releaseCapKey(supabase, capKey);
     return false;
   } catch (err) {

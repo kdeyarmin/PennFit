@@ -30,7 +30,7 @@ vi.mock("../logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-import { recordTenantUsage } from "./usage";
+import { recordTenantUsage, recordOutboundMessageUsage } from "./usage";
 
 beforeEach(() => {
   state.inserted = [];
@@ -124,5 +124,44 @@ describe("recordTenantUsage", () => {
         metricKey: "aiTextInteractionsPerMonth",
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("recordOutboundMessageUsage", () => {
+  beforeEach(() => {
+    state.inserted = [];
+    state.insertError = null;
+    state.throwOnInsert = false;
+  });
+
+  it("records one outboundMessagesPerMonth (fire-and-forget, returns void)", async () => {
+    const ret = recordOutboundMessageUsage({
+      orgId: "org-1",
+      channel: "sms",
+      source: "reminders.sms",
+    });
+    expect(ret).toBeUndefined(); // void, not a promise
+    // The emit is async under the hood; let it settle.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(state.inserted).toHaveLength(1);
+    expect(state.inserted[0]).toMatchObject({
+      __fn: "increment_tenant_usage_rollup",
+      p_org_id: "org-1",
+      p_metric_key: "outboundMessagesPerMonth",
+      p_quantity: 1,
+    });
+  });
+
+  it("passes a batch count through as the quantity", async () => {
+    recordOutboundMessageUsage({
+      orgId: "org-2",
+      channel: "email",
+      source: "bulk",
+      count: 7,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(state.inserted[0]).toMatchObject({ p_quantity: 7 });
   });
 });

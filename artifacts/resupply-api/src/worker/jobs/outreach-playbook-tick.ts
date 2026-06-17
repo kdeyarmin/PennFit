@@ -60,6 +60,7 @@ import {
   shouldSendSms,
 } from "../../lib/comm-prefs.js";
 import { isFeatureEnabled } from "../../lib/feature-flags.js";
+import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import { logger } from "../../lib/logger.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
 import {
@@ -515,6 +516,11 @@ async function outreachPlaybookSweepForOrg(
         });
         if (outcome.status === "ok") {
           stats.smsSent += 1;
+          recordOutboundMessageUsage({
+            orgId,
+            channel: "sms",
+            source: "outreach_playbook.sms",
+          });
           await recordStep(orgId, {
             runId: run.id,
             stepIndex: step.step_index,
@@ -570,6 +576,11 @@ async function outreachPlaybookSweepForOrg(
       });
       if (outcome.status === "ok") {
         stats.emailsSent += 1;
+        recordOutboundMessageUsage({
+          orgId,
+          channel: "email",
+          source: "outreach_playbook.email",
+        });
         await recordStep(orgId, {
           runId: run.id,
           stepIndex: step.step_index,
