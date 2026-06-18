@@ -48,6 +48,11 @@ const EXCLUDED_PREFIXES = [
   "/shop/", // cart / checkout-* / orders / wishlist / p/:id — /shop itself IS indexed
   "/sign-in",
   "/sign-up",
+  // CareMetric.ai "Breathe" marketing surface — the landing page plus its
+  // split-out Product/Compare/ROI/Pricing/Security sub-pages. Separate-brand
+  // B2B content, NOT tenant content (pennpaps.com is reserved for the first
+  // tenant, Penn Home Medical Supply), so none of /breathe/* is indexed.
+  "/breathe",
 ];
 
 const EXCLUDED_EXACT = new Set([
@@ -72,11 +77,6 @@ const EXCLUDED_EXACT = new Set([
   "/forgot-password",
   "/reset-password",
   "/verify-email",
-  // CareMetric.ai "Breathe" platform marketing/showcase page. It is a
-  // separate-brand B2B surface, NOT tenant content — pennpaps.com is
-  // reserved for the first tenant (Penn Home Medical Supply), so this
-  // route must NOT appear in the tenant's sitemap.
-  "/breathe",
 ]);
 
 function staticRoutePaths(): string[] {

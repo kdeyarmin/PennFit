@@ -197,10 +197,13 @@
   z-index: 50;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  /* Near-opaque so page content scrolls cleanly BEHIND the sticky bar — the
+     old 0.46 bottom stop let section content (e.g. the add-ons header) bleed
+     through the glass and read as an overlap. */
   background: linear-gradient(
     180deg,
-    rgba(4, 7, 15, 0.88),
-    rgba(4, 7, 15, 0.46)
+    rgba(4, 7, 15, 0.98),
+    rgba(4, 7, 15, 0.95)
   );
   border-bottom: 1px solid var(--bx-line);
 }
@@ -271,9 +274,65 @@
 .bx-nav-links a.bx-nav-anchor:hover::after {
   width: 100%;
 }
+.bx-nav-links a.bx-nav-anchor.is-active {
+  color: var(--bx-text);
+}
+.bx-nav-links a.bx-nav-anchor.is-active::after {
+  width: 100%;
+}
+/* Mobile menu (toggle hidden on desktop; the page-nav links collapse into
+   a dropdown under 900px so the split-out routes stay reachable on phones). */
+.bx-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bx-text);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.bx-nav-toggle:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.bx-nav-mobile {
+  border-bottom: 1px solid var(--bx-line);
+  background: var(--bx-panel-3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.bx-nav-mobile-inner {
+  display: flex;
+  flex-direction: column;
+  padding-top: 6px;
+  padding-bottom: 18px;
+}
+.bx-nav-mobile-link {
+  color: var(--bx-text-dim);
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px 6px;
+  border-bottom: 1px solid var(--bx-line);
+  transition: color 0.18s ease;
+}
+.bx-nav-mobile-link:hover,
+.bx-nav-mobile-link.is-active {
+  color: var(--bx-cyan);
+}
+.bx-nav-mobile-demo {
+  margin-top: 16px;
+  justify-content: center;
+}
 @media (max-width: 900px) {
-  .bx-nav-links .bx-nav-anchor {
+  .bx-nav-links {
     display: none;
+  }
+  .bx-nav-toggle {
+    display: inline-flex;
   }
 }
 
@@ -302,11 +361,15 @@
   font-size: 13.5px;
 }
 .bx-btn-primary {
-  color: #04122e;
-  background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue-bright));
+  /* Near-black ink on a fully LIGHT blue gradient. The old mid-blue stop
+     (#4f8dff) under dark text read muddy/low-contrast; both stops are now
+     light so the label stays crisp across the whole button (incl. the small
+     nav variant). */
+  color: #05101f;
+  background: linear-gradient(135deg, #7ed7ff 0%, #6aa6ff 100%);
   box-shadow:
     0 10px 30px -8px var(--_glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .bx-btn-primary:hover {
   transform: translateY(-2px);
@@ -430,7 +493,8 @@
   line-height: 0.98;
   margin: 22px 0 0;
 }
-.bx-h1 .grad-em {
+.bx-h1 .grad-em,
+.bx-pagehead-title .grad-em {
   font-style: italic;
   font-weight: 500;
   background: linear-gradient(
@@ -467,6 +531,27 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Inner-page header (Product / Compare / ROI / Pricing / Security) */
+.bx-pagehead {
+  padding: 60px 0 0;
+}
+.bx-pagehead-title {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: clamp(34px, 5vw, 60px);
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  margin: 20px 0 0;
+}
+.bx-pagehead-sub {
+  font-size: 18px;
+  line-height: 1.62;
+  color: var(--bx-text-dim);
+  margin: 22px 0 0;
+  max-width: 620px;
 }
 
 /* Breathing orb visual */
@@ -561,10 +646,18 @@
   position: relative;
 }
 .bx-orb-logo {
+  /* The icon is itself a blue app-tile, so on the equally blue orb core it
+     used to vanish (blue-on-blue). Seat it on a bright tile for separation;
+     border-box keeps the padded tile at 116px. */
   width: 116px;
   height: 116px;
-  border-radius: 24px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  border-radius: 26px;
+  padding: 10px;
+  background: linear-gradient(160deg, #ffffff, #e9f1ff);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .bx-orb-chip {
   position: absolute;
@@ -2012,6 +2105,227 @@
   font-weight: 600;
 }
 
+/* Subscription packages */
+.bx-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+@media (max-width: 980px) {
+  .bx-plan-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .bx-plan-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 22px;
+  border-radius: 18px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease;
+}
+.bx-plan:hover {
+  transform: translateY(-3px);
+  border-color: var(--bx-line-strong);
+}
+.bx-plan.featured {
+  border-color: rgba(84, 200, 255, 0.5);
+  background: linear-gradient(
+    180deg,
+    rgba(84, 200, 255, 0.08),
+    var(--bx-panel)
+  );
+  box-shadow: 0 22px 60px -28px rgba(84, 200, 255, 0.6);
+}
+.bx-plan-badge {
+  position: absolute;
+  top: -11px;
+  left: 22px;
+  font-family: var(--bx-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #04122e;
+  background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue-bright));
+  padding: 4px 10px;
+  border-radius: 100px;
+}
+.bx-plan-name {
+  font-family: var(--bx-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.bx-plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 12px;
+}
+.bx-plan-amt {
+  font-family: var(--bx-display);
+  font-optical-sizing: auto;
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #fff, var(--bx-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bx-plan-cadence {
+  font-size: 14px;
+  color: var(--bx-text-faint);
+}
+.bx-plan-setup {
+  font-size: 12px;
+  color: var(--bx-text-faint);
+  margin-top: 4px;
+}
+.bx-plan-blurb {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+  margin: 14px 0 0;
+}
+.bx-plan-list {
+  list-style: none;
+  margin: 16px 0 22px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.bx-plan-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--bx-text-dim);
+}
+.bx-plan-list li svg {
+  color: var(--bx-mint);
+  flex: none;
+  margin-top: 2px;
+}
+.bx-plan .bx-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Add-ons catalog */
+.bx-addons {
+  margin-top: 22px;
+  padding: 26px;
+  border-radius: 18px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel-2);
+}
+.bx-addons-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--bx-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bx-text-dim);
+  margin-bottom: 20px;
+}
+.bx-addons-head svg {
+  color: var(--bx-cyan);
+}
+.bx-addon-groups {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 26px 30px;
+}
+@media (max-width: 900px) {
+  .bx-addon-groups {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 540px) {
+  .bx-addon-groups {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-addon-group-name {
+  font-family: var(--bx-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bx-cyan);
+  margin-bottom: 12px;
+}
+.bx-addon-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--bx-line);
+}
+.bx-addon-name {
+  font-size: 13px;
+  color: var(--bx-text-dim);
+}
+.bx-addon-price {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--bx-text);
+  white-space: nowrap;
+}
+
+/* Add-ons teaser (landing page) */
+.bx-addons-teaser {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding: 18px 26px;
+  border-radius: 16px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+  text-align: center;
+}
+.bx-addons-teaser > svg {
+  color: var(--bx-cyan);
+  flex: none;
+}
+.bx-addons-teaser span {
+  font-size: 14px;
+  color: var(--bx-text-dim);
+}
+.bx-addons-teaser-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--bx-cyan);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bx-addons-teaser-link:hover {
+  color: var(--bx-text);
+}
+
 /* ───────────────────────── Security ───────────────────────── */
 .bx-sec-grid {
   display: grid;
@@ -2316,6 +2630,22 @@
   max-width: 420px;
   line-height: 1.6;
 }
+.bx-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin-top: 30px;
+}
+.bx-footer-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bx-text-dim);
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+.bx-footer-link:hover {
+  color: var(--bx-text);
+}
 .bx-footer-admin {
   border-top: 1px solid var(--bx-line);
   margin-top: 36px;
@@ -2439,5 +2769,57 @@
   .bx-wave i,
   .bx-bento-wave i {
     height: 60%;
+  }
+}
+
+/* ───────────────────── Responsive refinements ───────────────────── */
+/* Product-tour mock console: the fixed 212px sidebar + multi-column panels
+   are illegible on phones, so collapse them down progressively. */
+@media (max-width: 760px) {
+  .bx-app-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bx-app-cols {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .bx-app-body {
+    grid-template-columns: 1fr;
+  }
+  .bx-app-side {
+    display: none;
+  }
+  .bx-app-main {
+    padding: 18px 16px 20px;
+  }
+}
+@media (max-width: 420px) {
+  .bx-app-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .bx-app-search {
+    display: none;
+  }
+}
+
+/* Tighten vertical rhythm + side gutters on small screens. */
+@media (max-width: 600px) {
+  .bx-section {
+    padding: 72px 0;
+  }
+  .bx-shell {
+    padding: 0 18px;
+  }
+  .bx-section-head {
+    margin-bottom: 40px;
+  }
+  .bx-hero {
+    padding: 40px 0 64px;
+  }
+  .bx-pagehead {
+    padding: 44px 0 0;
   }
 }
