@@ -301,12 +301,10 @@ router.post(
 
     const amountTotalCents = computeAmountTotalCents(b.items);
     if (amountTotalCents < MIN_TOTAL_CENTS) {
-      res
-        .status(400)
-        .json({
-          error: "amount_below_minimum",
-          minTotalCents: MIN_TOTAL_CENTS,
-        });
+      res.status(400).json({
+        error: "amount_below_minimum",
+        minTotalCents: MIN_TOTAL_CENTS,
+      });
       return;
     }
     if (amountTotalCents > MAX_TOTAL_CENTS) {
@@ -337,12 +335,10 @@ router.post(
       ...new Set(b.documentKeys),
     ]);
     if (!snapshot.ok) {
-      res
-        .status(400)
-        .json({
-          error: "invalid_document_keys",
-          invalidKeys: snapshot.invalidKeys,
-        });
+      res.status(400).json({
+        error: "invalid_document_keys",
+        invalidKeys: snapshot.invalidKeys,
+      });
       return;
     }
 
