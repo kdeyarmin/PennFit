@@ -662,6 +662,7 @@ export function BreatheHome() {
       <Lifecycle />
       <Capabilities />
       <Replaces />
+      <Outcomes />
       <PricingHome />
       <ClosingCta />
     </BreatheShell>
@@ -693,6 +694,7 @@ export function BreatheProduct() {
       <Features />
       <RevenueCycle />
       <AiBento />
+      <Outcomes />
       <ClosingCta />
     </BreatheShell>
   );
@@ -1556,7 +1558,7 @@ const FEATURES: Feature[] = [
   {
     icon: <Receipt size={22} />,
     title: "Revenue Cycle + AI Claims",
-    body: "Real-time 270/271 eligibility, AI claim scrubbing, auto-submission of the 837P, and a denials worklist ranked by recoverable dollars × win probability.",
+    body: "Real-time 270/271 eligibility, AI claim scrubbing, one-click Office Ally auto-submission — or a downloadable 837P for any clearinghouse — and a denials worklist ranked by recoverable dollars × win probability.",
     tag: "AI",
     gold: true,
   },
@@ -1736,6 +1738,256 @@ function AiBento() {
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Outcomes / proof ───────────────────────── */
+/*
+ * Three-pillar "what it adds up to" section: more sales, better patient
+ * care, cleaner billing (AI). Every figure is an ILLUSTRATIVE range
+ * grounded in published DME / healthcare revenue-cycle benchmarks (see the
+ * section footnote) — directional, not a guarantee. Charts are hand-built
+ * bars (no third-party charting library) so the page stays same-origin
+ * under the strict CSP, matching the Sparkline / ROI patterns above.
+ */
+type OutcomeBar = {
+  fromLabel: string;
+  from: number;
+  toLabel: string;
+  to: number;
+  unit: string;
+  caption: string;
+};
+
+type OutcomeCard = {
+  icon: React.ReactNode;
+  eyebrow: string;
+  hero: string;
+  heroSub: string;
+  bar: OutcomeBar;
+  points: string[];
+  source: string;
+  gold?: boolean;
+};
+
+const OUTCOMES: OutcomeCard[] = [
+  {
+    icon: <TrendingUp size={20} />,
+    eyebrow: "More sales",
+    hero: "2.5×",
+    heroSub: "more resupply orders captured",
+    bar: {
+      fromLabel: "Reactive outreach",
+      from: 20,
+      toLabel: "Breathe automation",
+      to: 50,
+      unit: "%",
+      caption: "Resupply order rate — higher is better",
+    },
+    points: [
+      "Eligibility-aware reminders by SMS, email & voice on the right cadence",
+      "24/7 AI voice agent books reorders even while your team sleeps",
+      "One-tap reorder links — no spreadsheets, no missed replacement windows",
+    ],
+    source:
+      "Industry: proactive / managed resupply lifts order rates from ~20% to 45–50%.",
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    eyebrow: "Better patient care",
+    hero: "85%",
+    heroSub: "therapy compliance, up from a ~50% norm",
+    bar: {
+      fromLabel: "National average",
+      from: 50,
+      toLabel: "Proactive monitoring",
+      to: 85,
+      unit: "%",
+      caption: "CPAP compliance — higher is better",
+    },
+    points: [
+      "Live ResMed, Philips & 3B adherence pulled nightly into one worklist",
+      "At-risk patients surfaced before they fall off therapy",
+      "~1 in 3 CPAP patients drift out of adherence — caught early, not lost",
+    ],
+    source:
+      "Industry: live outreach raised compliance from the ~50% national average to 85%.",
+  },
+  {
+    icon: <Receipt size={20} />,
+    eyebrow: "Better billing — AI built in",
+    hero: "94%",
+    heroSub: "first-pass clean-claim rate",
+    gold: true,
+    bar: {
+      fromLabel: "Typical DME",
+      from: 80,
+      toLabel: "Breathe AI scrubbing",
+      to: 94,
+      unit: "%",
+      caption: "First-pass clean claims — higher is better",
+    },
+    points: [
+      "AI scrubs every 837P clean, then auto-submits via Office Ally — or download it for any clearinghouse",
+      "Denial worklist ranked by recoverable dollars × win probability",
+      "AI eligibility checks cut denials up to 42%; each rework costs $25–$118",
+    ],
+    source:
+      "Industry: best-practice first-pass rate is 95%+; initial denials average ~11.8%.",
+  },
+];
+
+const CLAIMS_FLOW: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <BadgeCheck size={16} />,
+    label: "Eligibility",
+    sub: "270 / 271 real-time",
+  },
+  {
+    icon: <Sparkles size={16} />,
+    label: "AI scrub",
+    sub: "837P cleaned pre-submit",
+  },
+  {
+    icon: <Receipt size={16} />,
+    label: "Submit or export",
+    sub: "Office Ally auto-submit · or download the 837P",
+  },
+  {
+    icon: <RefreshCw size={16} />,
+    label: "ERA auto-post",
+    sub: "835 reconciled",
+  },
+  {
+    icon: <LineChart size={16} />,
+    label: "AI denial worklist",
+    sub: "ranked by $ recoverable",
+    gold: true,
+  },
+];
+
+function OutcomeBars({ bar, gold }: { bar: OutcomeBar; gold?: boolean }) {
+  // Expose the comparison to assistive tech as a single image label rather
+  // than hiding the chart: e.g. "Resupply order rate: Reactive outreach 20%,
+  // Breathe automation 50%." The decorative bars themselves carry no text.
+  const metric = bar.caption.split(" — ")[0];
+  const ariaLabel = `${metric}: ${bar.fromLabel} ${bar.from}${bar.unit}, ${bar.toLabel} ${bar.to}${bar.unit}.`;
+  return (
+    <div className="bx-ob" role="img" aria-label={ariaLabel}>
+      <div className="bx-ob-row" aria-hidden="true">
+        <span className="bx-ob-tag">{bar.fromLabel}</span>
+        <span className="bx-ob-track">
+          <i
+            className="from"
+            style={{ ["--w"]: `${bar.from}%` } as React.CSSProperties}
+          />
+        </span>
+        <span className="bx-ob-val">
+          {bar.from}
+          {bar.unit}
+        </span>
+      </div>
+      <div className="bx-ob-row" aria-hidden="true">
+        <span className="bx-ob-tag">{bar.toLabel}</span>
+        <span className="bx-ob-track">
+          <i
+            className={"to" + (gold ? " gold" : "")}
+            style={{ ["--w"]: `${bar.to}%` } as React.CSSProperties}
+          />
+        </span>
+        <span className={"bx-ob-val to" + (gold ? " gold" : "")}>
+          {bar.to}
+          {bar.unit}
+        </span>
+      </div>
+      <div className="bx-ob-axis" aria-hidden="true">
+        {bar.caption}
+      </div>
+    </div>
+  );
+}
+
+function Outcomes() {
+  return (
+    <section className="bx-section" id="outcomes">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <LineChart size={13} /> What it adds up to
+          </span>
+          <h2 className="bx-h2">More sales, better care, cleaner billing</h2>
+          <p className="bx-lede">
+            One platform moves every number that matters — recurring resupply
+            revenue, patients kept on therapy, and claims that get paid the
+            first time — with the AI doing the heavy lifting.
+          </p>
+        </div>
+
+        <div className="bx-outcomes">
+          {OUTCOMES.map((o) => (
+            <div
+              className={`bx-outcome bx-reveal${o.gold ? " gold" : ""}`}
+              key={o.eyebrow}
+            >
+              <div className="bx-outcome-top">
+                <span className="bx-outcome-ic">{o.icon}</span>
+                <span className="bx-outcome-eyebrow">{o.eyebrow}</span>
+              </div>
+              <div className="bx-outcome-hero">{o.hero}</div>
+              <div className="bx-outcome-hero-sub">{o.heroSub}</div>
+              <OutcomeBars bar={o.bar} gold={o.gold} />
+              <ul className="bx-outcome-points">
+                {o.points.map((p) => (
+                  <li key={p}>
+                    <Check size={14} />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+              <p className="bx-outcome-source">{o.source}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="bx-claims-engine bx-reveal">
+          <div className="bx-claims-engine-head">
+            <BrainCircuit size={15} /> Inside the AI claims engine
+          </div>
+          <ol className="bx-claims-flow">
+            {CLAIMS_FLOW.map((s, i) => (
+              <li
+                className={`bx-claims-step${s.gold ? " gold" : ""}`}
+                key={s.label}
+              >
+                <span className="bx-claims-ic">{s.icon}</span>
+                <span className="bx-claims-meta">
+                  <b>{s.label}</b>
+                  <i>{s.sub}</i>
+                </span>
+                {i < CLAIMS_FLOW.length - 1 ? (
+                  <ArrowRight
+                    className="bx-claims-arrow"
+                    size={15}
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <p className="bx-outcomes-foot">
+          Illustrative ranges drawn from published DME and healthcare
+          revenue-cycle benchmarks; actual results depend on your payer mix,
+          patient base, and current processes. Directional, not a guarantee.
+        </p>
       </div>
     </section>
   );
@@ -2115,7 +2367,7 @@ const COMPARE_ROWS: CompareRow[] = [
     breathe: "yes",
     cols: ["no", "partial", "partial"],
     text: {
-      breathe: "Weeks",
+      breathe: "Day one",
       cols: ["Months", "Weeks–months", "Weeks–months"],
     },
   },
@@ -2893,9 +3145,10 @@ function Pricing() {
           </h2>
           <p className="bx-lede">
             Transparent subscription tiers sized to your patient base —
-            month-to-month, with onboarding and migration included and your data
-            always exportable (back out to PacWare too). License premium modules
-            à la carte.
+            month-to-month, with onboarding and migration included. Upload a CSV
+            of your patients and you&apos;re live on day one, and your data
+            stays yours — always exportable (back out to PacWare too). License
+            premium modules à la carte.
           </p>
         </div>
         <PricingPlans cards={cards} />
@@ -2930,8 +3183,9 @@ function PricingHome() {
           </h2>
           <p className="bx-lede">
             Subscription tiers sized to your patient base — month-to-month, with
-            onboarding and migration included. Add premium modules only when you
-            need them.
+            onboarding and migration included. Upload a CSV of your patients and
+            you&apos;re live on day one. Add premium modules only when you need
+            them.
           </p>
         </div>
         <PricingPlans />
@@ -3023,8 +3277,8 @@ const STEPS: {
   {
     icon: <Database size={20} />,
     n: "01",
-    title: "Import your world",
-    body: "Patient roster, device-cloud connections, and billing data come over from PacWare CSVs and your therapy clouds. The import is fill-only — an existing value is never overwritten.",
+    title: "Import your patients — day one",
+    body: "Upload a CSV of your current patients and they're in the system the same day. The importer is pre-mapped to PacWare's export, but any billing or CRM system that can export your roster to CSV works just as well. It's a fill-only sync — new patients are added and blank fields filled, while an existing value is never overwritten.",
   },
   {
     icon: <Plug size={20} />,
@@ -3048,11 +3302,13 @@ function Onboarding() {
           <span className="bx-eyebrow">
             <GitBranch size={13} /> Migration
           </span>
-          <h2 className="bx-h2">Switch in weeks, not quarters</h2>
+          <h2 className="bx-h2">Ready on day one</h2>
           <p className="bx-lede">
             Moving off legacy DME software is the scariest part — so we made it
-            the easiest. Your data comes with you, and nothing you already have
-            gets clobbered.
+            the easiest. Upload a CSV of your patients and you&apos;re running
+            the same day; the deeper payer and device-cloud connections come
+            online over the following weeks. Your data comes with you, and
+            nothing you already have gets clobbered.
           </p>
         </div>
         <div className="bx-steps">
@@ -3098,11 +3354,15 @@ function Manifesto() {
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Will it work with our billing system?",
-    a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV, submits 837P claims through the Office Ally clearinghouse, and posts ERAs back automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
+    a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV and builds standard ASC X12 5010 837P claims. Once the AI scrubs them clean you have a choice: submit automatically through the built-in Office Ally integration, or download the 837P and upload it to the clearinghouse of your choice. Either way, ERAs (835) post back and reconcile automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
+  },
+  {
+    q: "Can we import our current patients?",
+    a: "Yes — on day one. Export your patient roster to a CSV and upload it, and your patients are in the system the same day. The importer is pre-mapped to PacWare's export format, but any billing or CRM system that can produce a CSV of your patients works. It runs as a fill-only sync — new patients are added and blank fields filled, and an existing value is never overwritten — so you can re-import as often as you like with no risk of clobbering data.",
   },
   {
     q: "How long does implementation take?",
-    a: "Most operators are live in weeks, not quarters. Your roster and history import as a fill-only sync — new patients are added and blank fields are filled, but an existing value is never overwritten — so there is no risky big-bang cutover.",
+    a: "You can be working on day one — upload a CSV of your patients and your team starts the same day. The deeper connections (payers, clearinghouse, device clouds) come online over the following weeks, not quarters. Because the roster imports as a fill-only sync — new patients added and blank fields filled, an existing value never overwritten — there is no risky big-bang cutover.",
   },
   {
     q: "Is our patient data safe?",
@@ -3185,7 +3445,7 @@ function ClosingCta() {
               <Check size={13} /> Sample data only
             </span>
             <span>
-              <ArrowUpRight size={13} /> Set up in minutes
+              <ArrowUpRight size={13} /> Live on day one
             </span>
           </div>
         </div>
