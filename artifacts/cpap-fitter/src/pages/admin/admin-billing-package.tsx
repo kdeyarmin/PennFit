@@ -42,6 +42,10 @@ function PlanSelector({ currentPlanCode }: { currentPlanCode: string | null }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [pendingCode, setPendingCode] = useState<string | null>(null);
+  // Guards the async preview window: until the preview resolves and
+  // mutation.isPending flips, a second fast click would otherwise open a
+  // duplicate confirm dialog and fire a second mutation.
+  const [previewingCode, setPreviewingCode] = useState<string | null>(null);
 
   const plansQuery = useQuery({
     queryKey: ["tenant-billing-plans"],
@@ -92,7 +96,9 @@ function PlanSelector({ currentPlanCode }: { currentPlanCode: string | null }) {
       <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {plans.map((plan: BillingPlan) => {
           const isCurrent = plan.code === currentPlanCode;
-          const isPending = pendingCode === plan.code && mutation.isPending;
+          const isPending =
+            (pendingCode === plan.code && mutation.isPending) ||
+            previewingCode === plan.code;
           return (
             <div
               key={plan.code}
@@ -151,13 +157,17 @@ function PlanSelector({ currentPlanCode }: { currentPlanCode: string | null }) {
                     intent="primary"
                     className="w-full"
                     isLoading={isPending}
-                    disabled={mutation.isPending}
+                    disabled={mutation.isPending || previewingCode !== null}
                     onClick={async () => {
+                      // Ignore re-entrant clicks while a preview is already
+                      // in flight or a mutation is committing.
+                      if (mutation.isPending || previewingCode !== null) return;
                       // Cost/proration preview before confirming. Falls back
                       // to a plain confirm if the preview can't be fetched.
                       let message = `Switch to the ${plan.name} plan (${formatMoney(
                         plan.monthlyPriceCents,
                       )}/mo)? This updates your Stripe billing immediately.`;
+                      setPreviewingCode(plan.code);
                       try {
                         const preview = await previewOwnBillingChange({
                           kind: "plan",
@@ -166,6 +176,8 @@ function PlanSelector({ currentPlanCode }: { currentPlanCode: string | null }) {
                         message = buildPreviewConfirm(preview);
                       } catch {
                         // keep the static fallback message
+                      } finally {
+                        setPreviewingCode(null);
                       }
                       if (window.confirm(message)) {
                         mutation.mutate(plan.code);
@@ -196,6 +208,9 @@ function AddonSelector({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [pendingCode, setPendingCode] = useState<string | null>(null);
+  // Guards the async preview window so a fast second click (or a
+  // blur→refocus→blur) can't open a duplicate confirm + second mutation.
+  const [previewingCode, setPreviewingCode] = useState<string | null>(null);
 
   const addonsQuery = useQuery({
     queryKey: ["tenant-billing-addons"],
@@ -244,11 +259,15 @@ function AddonSelector({
   // Show a cost/proration preview before committing an add-on change. Falls
   // back to a plain confirm when the preview can't be fetched.
   const confirmAndMutate = async (code: string, quantity: number) => {
+    // Ignore re-entrant changes while a preview is in flight or a mutation
+    // is committing.
+    if (mutation.isPending || previewingCode !== null) return;
     const name = addons.find((a) => a.code === code)?.name ?? code;
     let message =
       quantity === 0
         ? `Remove the ${name} add-on? This updates your Stripe billing immediately.`
         : `Set ${name} to ${quantity}? This updates your Stripe billing immediately.`;
+    setPreviewingCode(code);
     try {
       const preview = await previewOwnBillingChange({
         kind: "addon",
@@ -258,6 +277,8 @@ function AddonSelector({
       message = buildPreviewConfirm(preview);
     } catch {
       // keep the static fallback message
+    } finally {
+      setPreviewingCode(null);
     }
     if (window.confirm(message)) mutation.mutate({ code, quantity });
   };
@@ -274,7 +295,10 @@ function AddonSelector({
           const qty = currentByCode.get(addon.code) ?? 0;
           const isActive = qty > 0;
           const isRecurring = addon.recurringPriceCents != null;
-          const isPending = pendingCode === addon.code && mutation.isPending;
+          const isPending =
+            (pendingCode === addon.code && mutation.isPending) ||
+            previewingCode === addon.code;
+          const busy = mutation.isPending || previewingCode !== null;
           return (
             <div
               key={addon.code}
@@ -331,7 +355,7 @@ function AddonSelector({
                       intent="secondary"
                       size="sm"
                       aria-label={`Decrease ${addon.name}`}
-                      disabled={mutation.isPending || qty === 0}
+                      disabled={busy || qty === 0}
                       onClick={() => confirmAndMutate(addon.code, qty - 1)}
                     >
                       −
@@ -346,7 +370,7 @@ function AddonSelector({
                       intent="secondary"
                       size="sm"
                       aria-label={`Increase ${addon.name}`}
-                      disabled={mutation.isPending}
+                      disabled={busy}
                       onClick={() => confirmAndMutate(addon.code, qty + 1)}
                     >
                       +
@@ -356,7 +380,7 @@ function AddonSelector({
                         intent="ghost"
                         size="sm"
                         className="ml-auto"
-                        disabled={mutation.isPending}
+                        disabled={busy}
                         onClick={() => confirmAndMutate(addon.code, 0)}
                       >
                         Remove

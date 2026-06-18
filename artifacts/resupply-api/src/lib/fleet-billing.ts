@@ -57,19 +57,44 @@ export interface FleetBillingSummary {
   byPlan: FleetBillingByPlan[];
 }
 
+/** Recurring monthly price for a single billing line (plan or add-on unit):
+ *  the operator override wins, else the catalog list price, else 0. This is
+ *  the single source of truth for the price-fallback rule — shared by the
+ *  fleet MRR summary AND the per-tenant cost preview (`loadRecurringState`),
+ *  so the two can never silently diverge. */
+export function recurringPriceCents(
+  customCents: number | null | undefined,
+  catalogCents: number | null | undefined,
+): number {
+  return customCents ?? catalogCents ?? 0;
+}
+
+/** A recurring line's monthly contribution: unit price × non-negative qty. */
+export function recurringLineCents(
+  unitCents: number,
+  quantity: number,
+): number {
+  return unitCents * (quantity > 0 ? quantity : 0);
+}
+
 /** Monthly plan price for a subscription: the operator override wins,
  *  else the plan list price, else 0. */
 export function subscriptionMonthlyCents(sub: FleetSubscription): number {
-  return sub.customMonthlyPriceCents ?? sub.planMonthlyPriceCents ?? 0;
+  return recurringPriceCents(
+    sub.customMonthlyPriceCents,
+    sub.planMonthlyPriceCents,
+  );
 }
 
 /** Recurring revenue contributed by a tenant's add-ons. */
 export function addonsMonthlyCents(addons: ReadonlyArray<FleetAddon>): number {
   let cents = 0;
   for (const a of addons) {
-    const unit = a.customRecurringPriceCents ?? a.addonRecurringPriceCents ?? 0;
-    const qty = a.quantity > 0 ? a.quantity : 0;
-    cents += unit * qty;
+    const unit = recurringPriceCents(
+      a.customRecurringPriceCents,
+      a.addonRecurringPriceCents,
+    );
+    cents += recurringLineCents(unit, a.quantity);
   }
   return cents;
 }
