@@ -264,7 +264,7 @@ correctness, not style:
   (migrations 0364/0368, platform Twilio/Telnyx number as the fallback), and
   patient-facing copy (SMS/voice/email/chatbot/PDF) is branded to the tenant
   at the I/O boundary via `applyCompanyIdentityToText(text,
-  getCompanyInfo(orgId))` / `resolveBrandingByOrgId(orgId)`. The unconfigured
+getCompanyInfo(orgId))` / `resolveBrandingByOrgId(orgId)`. The unconfigured
   fallback identity in `company-info.ts` is the **platform** (CareMetric
   Breathe / `cmbreathe.com`), not PennPaps. Patient-facing link fallbacks
   default to `https://cmbreathe.com`, overridden by the tenant's verified

@@ -454,7 +454,8 @@ async function tryNotifyCustomerOfReply(input: {
   const brand = await resolveBrandingByOrgId(orgId);
   const brandName = brand.storefrontName;
   const legalName = brand.legalName || brandName;
-  const baseUrl = (await resolveTenantBaseUrl(orgId)) ?? "https://cmbreathe.com";
+  const baseUrl =
+    (await resolveTenantBaseUrl(orgId)) ?? "https://cmbreathe.com";
 
   // Push fan-out runs independently of the email opt-in — push is
   // its own channel that the customer enables explicitly via the

@@ -37,10 +37,7 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
-import {
-  applyCompanyIdentityToText,
-  getCompanyInfo,
-} from "../company-info.js";
+import { applyCompanyIdentityToText, getCompanyInfo } from "../company-info.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,

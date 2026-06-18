@@ -22,6 +22,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useCompanyContact } from "@/lib/contact";
 
 interface Shortcut {
   keys: string[];
@@ -49,6 +50,7 @@ const SHORTCUTS: Shortcut[] = [
 
 export function KeyboardShortcutsDialog() {
   const [open, setOpen] = useState(false);
+  const c = useCompanyContact();
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -82,7 +84,7 @@ export function KeyboardShortcutsDialog() {
       >
         <DialogTitle>Keyboard shortcuts</DialogTitle>
         <DialogDescription>
-          Quick keyboard moves available across the PennPaps storefront.
+          Quick keyboard moves available across the {c.name} storefront.
         </DialogDescription>
         <ul className="mt-2 space-y-2">
           {SHORTCUTS.map((s) => (

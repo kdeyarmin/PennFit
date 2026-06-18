@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ManufacturerAutocomplete } from "@/components/ManufacturerAutocomplete";
 import { Label } from "@/components/ui/label";
+import { BrandName } from "@/components/company-contact";
 import {
   listFormAcknowledgements,
   listMyReferrals,
@@ -122,8 +123,8 @@ export function ReferralProgramSection() {
         <div className="flex-1">
           <h2 className="text-lg font-semibold">Refer a friend</h2>
           <p className="text-sm text-muted-foreground">
-            Share PennPaps with another CPAP user. We&apos;ll thank you once
-            they place their first order.
+            Share <BrandName /> with another CPAP user. We&apos;ll thank you
+            once they place their first order.
           </p>
         </div>
         {stats && (

@@ -2,12 +2,19 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldCheck } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { GeneralEmailLink } from "@/components/company-contact";
+import {
+  BrandName,
+  LegalName,
+  WebsiteHost,
+  GeneralEmailLink,
+} from "@/components/company-contact";
+import { useCompanyContact } from "@/lib/contact";
 
 export function Privacy() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "Privacy policy",
-    "Penn Home Medical Supply privacy policy. How PennPaps handles your personal information, on-device face capture, and order data.",
+    `${c.legalName} privacy policy. How ${c.name} handles your personal information, on-device face capture, and order data.`,
   );
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
@@ -20,7 +27,7 @@ export function Privacy() {
             <div className="inline-flex items-center gap-3">
               <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-                PennPaps · Privacy
+                <BrandName /> · Privacy
               </span>
               <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
             </div>
@@ -28,16 +35,17 @@ export function Privacy() {
               Privacy Policy
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              PennPaps.com — operated by Penn Home Medical Supply
+              <WebsiteHost /> — operated by <LegalName />
             </p>
           </div>
         </CardHeader>
         <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed pt-6">
           <p>
-            This Privacy Policy describes how Penn Home Medical Supply ("Penn
-            Home Medical Supply," "we," "us," or "our") — operator of the
-            PennPaps.com CPAP mask fitting and resupply service (the "Service")
-            — handles information you provide while using the Service.
+            This Privacy Policy describes how <LegalName /> ("
+            <LegalName />
+            ," "we," "us," or "our") — operator of the <WebsiteHost /> CPAP mask
+            fitting and resupply service (the "Service") — handles information
+            you provide while using the Service.
           </p>
 
           <section className="space-y-2">
@@ -48,14 +56,15 @@ export function Privacy() {
               Data Processing and Camera Use
             </h3>
             <p>
-              PennPaps uses your device's camera to perform real-time facial
-              measurements required for CPAP mask fitting.
+              <BrandName /> uses your device's camera to perform real-time
+              facial measurements required for CPAP mask fitting.
               <strong>
                 {" "}
                 All image and video processing occurs locally on your device.
               </strong>{" "}
-              PennPaps does not capture, record, store, or transmit photographs,
-              video streams, or biometric identifiers to our servers.
+              <BrandName /> does not capture, record, store, or transmit
+              photographs, video streams, or biometric identifiers to our
+              servers.
             </p>
           </section>
 
@@ -67,8 +76,8 @@ export function Privacy() {
               Data Transmitted
             </h3>
             <p>
-              The only data transmitted from your device to PennPaps's servers
-              are:
+              The only data transmitted from your device to <BrandName />
+              's servers are:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>
@@ -109,9 +118,9 @@ export function Privacy() {
               <strong>If you submit an order</strong>, the contact, shipping,
               insurance, prescription, and notes fields you enter — together
               with the chosen mask, on-device measurements, and an anonymized
-              order reference — are stored in PennPaps's secure
-              order-fulfillment database. This information is used by PennPaps
-              staff to:
+              order reference — are stored in <BrandName />
+              's secure order-fulfillment database. This information is used by{" "}
+              <BrandName /> staff to:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>Ship the mask to your address;</li>
@@ -124,10 +133,10 @@ export function Privacy() {
             </ul>
             <p className="mt-2">
               You re-confirm this storage at checkout via a required consent
-              checkbox. Access to stored orders is limited to PennPaps staff who
-              have signed in with an authorized email and is recorded in an
-              internal audit log. To request a copy or deletion of your stored
-              order information, contact PennPaps directly.
+              checkbox. Access to stored orders is limited to <BrandName />{" "}
+              staff who have signed in with an authorized email and is recorded
+              in an internal audit log. To request a copy or deletion of your
+              stored order information, contact <BrandName /> directly.
             </p>
           </section>
 
@@ -139,11 +148,11 @@ export function Privacy() {
               Third-Party Services
             </h3>
             <p>
-              PennPaps uses Google's MediaPipe technology for on-device landmark
-              detection. This operates entirely within your browser environment.
-              Order emails are delivered to PennPaps through SendGrid, our
-              transactional email provider. Authentication for PennPaps staff is
-              handled by a third-party identity service.
+              <BrandName /> uses Google's MediaPipe technology for on-device
+              landmark detection. This operates entirely within your browser
+              environment. Order emails are delivered to <BrandName /> through
+              SendGrid, our transactional email provider. Authentication for{" "}
+              <BrandName /> staff is handled by a third-party identity service.
             </p>
           </section>
 
@@ -155,8 +164,8 @@ export function Privacy() {
               SMS / Text Messaging Notifications
             </h3>
             <p>
-              When you place an order and consent to be contacted, PennPaps may
-              send you SMS text messages from our toll-free number for the
+              When you place an order and consent to be contacted, <BrandName />{" "}
+              may send you SMS text messages from our toll-free number for the
               following purposes:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
@@ -180,8 +189,8 @@ export function Privacy() {
             <p className="mt-2">
               <strong>Help and opt-out:</strong> Reply <strong>HELP</strong> at
               any time for assistance, or <strong>STOP</strong> to unsubscribe
-              from all PennPaps text messages. After you reply STOP we will send
-              one final confirmation and then no further texts; reply
+              from all <BrandName /> text messages. After you reply STOP we will
+              send one final confirmation and then no further texts; reply
               <strong> START</strong> to resume.
             </p>
             <p className="mt-2">
@@ -190,12 +199,12 @@ export function Privacy() {
               for delayed or undelivered messages.
             </p>
             <p className="mt-2">
-              <strong>No third-party sharing for marketing:</strong> PennPaps
-              will not sell, rent, or share your mobile phone number or SMS
-              opt-in consent with any third party for their marketing purposes.
-              We share your phone number only with the telecommunications
-              providers required to deliver the messages you have asked us to
-              send (our SMS carrier).
+              <strong>No third-party sharing for marketing:</strong>{" "}
+              <BrandName /> will not sell, rent, or share your mobile phone
+              number or SMS opt-in consent with any third party for their
+              marketing purposes. We share your phone number only with the
+              telecommunications providers required to deliver the messages you
+              have asked us to send (our SMS carrier).
             </p>
           </section>
 
@@ -210,12 +219,12 @@ export function Privacy() {
               Camera images and biometric measurements are never stored beyond
               the immediate browser session — closing the browser or clicking
               "Start Over" clears them. For data you submitted with an order
-              (contact, shipping, insurance, prescription), you may contact
-              PennPaps directly at{" "}
+              (contact, shipping, insurance, prescription), you may contact{" "}
+              <BrandName /> directly at{" "}
               <GeneralEmailLink className="underline hover:text-primary" /> to
               request a copy, correction, or deletion subject to applicable
               recordkeeping requirements. To stop receiving texts at any time,
-              reply STOP to any message from PennPaps.
+              reply STOP to any message from <BrandName />.
             </p>
           </section>
         </CardContent>

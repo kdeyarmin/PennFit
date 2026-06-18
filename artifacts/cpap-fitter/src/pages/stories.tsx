@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ShareArticle } from "@/components/share-article";
+import { BrandName } from "@/components/company-contact";
+import { useCompanyContact } from "@/lib/contact";
 import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
 import nasalImg from "@/assets/masks/nasal.webp";
 import fullFaceImg from "@/assets/masks/full-face.webp";
@@ -50,7 +52,7 @@ const stories: Story[] = [
       "My cardiologist took me off two of the four blood pressure medications I'd been on for a decade. That's the part that still doesn't feel real.",
     paragraphs: [
       "I'd been on four blood-pressure medications for almost a decade and we still couldn't get my numbers consistently under 140/90. My cardiologist suspected sleep apnea for years but I kept putting off the study. The home sleep test finally happened after I had a near-miss falling asleep on the drive home from work.",
-      "The fitter at PennPaps put me in a ResMed AirFit P10 on the first try. I won't pretend the first two weeks weren't rough — I leaked the second night, the cushion was too big the third night, I quit at 2am at least once that first week. The team had me switched to the right size by day five.",
+      "The fitter put me in a ResMed AirFit P10 on the first try. I won't pretend the first two weeks weren't rough — I leaked the second night, the cushion was too big the third night, I quit at 2am at least once that first week. The team had me switched to the right size by day five.",
       "Six months in, my morning blood pressure runs in the 120s. My cardiologist took me off two of the four blood pressure medications I'd been on for a decade. That's the part that still doesn't feel real. The 4am bathroom trip every night also disappeared.",
     ],
     beforeAfter: [
@@ -144,9 +146,10 @@ const stories: Story[] = [
 ];
 
 export function Stories() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "Patient stories",
-    "Real outcomes from PennPaps patients — how the right mask, fit, and follow-through moves the numbers cardiology, mental health, and energy charts actually care about.",
+    `Real outcomes from ${c.name} patients — how the right mask, fit, and follow-through moves the numbers cardiology, mental health, and energy charts actually care about.`,
     { schema: "Article" },
   );
   const [, navigate] = useLocation();
@@ -168,11 +171,11 @@ export function Stories() {
             <span className="hero-headline-swoosh">In their words.</span>
           </h1>
           <p className="text-base sm:text-lg md:text-xl text-white/85 leading-relaxed max-w-2xl mx-auto">
-            Four composite PennPaps stories, based on real patient experiences,
-            on what therapy actually changed — the cardiology numbers, the mood,
-            the working hours, the bedroom. Identifying details have been
-            changed for privacy, while the outcomes and mask types reflect real
-            therapy experiences.
+            Four composite <BrandName /> stories, based on real patient
+            experiences, on what therapy actually changed — the cardiology
+            numbers, the mood, the working hours, the bedroom. Identifying
+            details have been changed for privacy, while the outcomes and mask
+            types reflect real therapy experiences.
           </p>
         </div>
       </section>
@@ -305,7 +308,7 @@ export function Stories() {
                 On these stories
               </div>
               <p className="text-sm text-foreground/85 leading-relaxed">
-                These are composite narratives drawn from PennPaps patient
+                These are composite narratives drawn from <BrandName /> patient
                 experiences. Initials, ages, and identifying details have been
                 altered for privacy. The clinical outcomes, masks, and
                 before/after metrics reflect patterns we actually see in our
@@ -322,7 +325,7 @@ export function Stories() {
         <ShareArticle
           path="/stories"
           title="What gets better on CPAP — patient stories"
-          blurb="Four real PennPaps patients on what therapy actually changed. The cardiology numbers, the mood, the working hours, the bedroom. Send to anyone considering starting."
+          blurb="Four real patients on what therapy actually changed. The cardiology numbers, the mood, the working hours, the bedroom. Send to anyone considering starting."
           testIdPrefix="share-stories"
         />
       </div>
@@ -386,7 +389,7 @@ export function Stories() {
       </div>
 
       <p className="text-xs text-muted-foreground/80 leading-relaxed mt-12 max-w-2xl mx-auto text-center">
-        Educational content. Composite stories drawn from PennPaps patient
+        Educational content. Composite stories drawn from <BrandName /> patient
         experiences with privacy-altered identifying details; clinical outcomes
         reflect real cohort patterns. Individual results vary.
       </p>

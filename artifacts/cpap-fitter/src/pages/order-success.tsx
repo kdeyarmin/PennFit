@@ -178,8 +178,8 @@ export function OrderSuccess() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Save this reference for your records and to mention when calling
-              Penn Home Medical Supply.
+              Save this reference for your records and to mention when calling{" "}
+              {contact.legalName}.
             </p>
           </div>
 
@@ -217,9 +217,9 @@ export function OrderSuccess() {
           </h3>
           <ol className="space-y-4 text-sm">
             <Step n={1}>
-              <strong>Within 1 business day:</strong> A Penn Home Medical Supply
-              team member will call or email you to confirm your order and
-              verify your insurance benefits.
+              <strong>Within 1 business day:</strong> A {contact.legalName} team
+              member will call or email you to confirm your order and verify
+              your insurance benefits.
             </Step>
             <Step n={2}>
               <strong>Prescription verification:</strong> If we don't already
@@ -253,7 +253,7 @@ export function OrderSuccess() {
                 <span className="font-medium text-foreground">
                   {contact.phoneDisplay}
                 </span>
-                <span className="text-xs">Call PennPaps</span>
+                <span className="text-xs">Call {contact.name}</span>
               </span>
             </a>
             <a
@@ -268,7 +268,7 @@ export function OrderSuccess() {
                 <span className="font-medium text-foreground break-all">
                   {contact.email}
                 </span>
-                <span className="text-xs">Email PennPaps</span>
+                <span className="text-xs">Email {contact.name}</span>
               </span>
             </a>
           </div>
@@ -285,9 +285,9 @@ export function OrderSuccess() {
       <div className="flex items-start gap-3 text-xs text-muted-foreground p-4 rounded-xl callout-navy mb-8">
         <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
         <p>
-          Your order details have been securely transmitted to and stored by
-          Penn Home Medical Supply for fulfillment. They are not retained on
-          this website.
+          Your order details have been securely transmitted to and stored by{" "}
+          {contact.legalName} for fulfillment. They are not retained on this
+          website.
         </p>
       </div>
 

@@ -8,6 +8,44 @@
 
 import { useCompanyContact } from "@/lib/contact";
 
+/**
+ * The storefront brand/display name as plain text (e.g. "PennPaps" for the
+ * Penn tenant, "CareMetric Breathe" as the platform default). Defers the read
+ * to render time so module-scope copy arrays pick up the admin-saved value.
+ */
+export function BrandName() {
+  const c = useCompanyContact();
+  return <>{c.name}</>;
+}
+
+/** The registered legal company name (e.g. "Penn Home Medical Supply"). */
+export function LegalName() {
+  const c = useCompanyContact();
+  return <>{c.legalName}</>;
+}
+
+/**
+ * The tenant's website host (e.g. "pennpaps.com"), from the saved website URL,
+ * falling back to the live host so a non-seed tenant never shows pennpaps.com.
+ */
+export function WebsiteHost() {
+  const c = useCompanyContact();
+  const fromUrl = (() => {
+    if (!c.websiteUrl) return null;
+    try {
+      return new URL(c.websiteUrl).host.replace(/^www\./, "");
+    } catch {
+      return null;
+    }
+  })();
+  const host =
+    fromUrl ??
+    (typeof window !== "undefined"
+      ? window.location.host.replace(/^www\./, "")
+      : "");
+  return <>{host}</>;
+}
+
 /** The support phone as plain text, e.g. "(814) 471-0627". */
 export function SupportPhoneText() {
   const c = useCompanyContact();

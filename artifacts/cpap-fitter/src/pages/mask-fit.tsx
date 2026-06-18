@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Wind } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { csrfHeader } from "@/lib/csrf";
+import { BrandName } from "@/components/company-contact";
 
 function readSearchParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -190,7 +191,7 @@ export function MaskFitLanding() {
               )}
               <div className="pt-2">
                 <Link href="/" className="text-sm text-primary hover:underline">
-                  Back to PennPaps
+                  Back to <BrandName />
                 </Link>
               </div>
             </>
