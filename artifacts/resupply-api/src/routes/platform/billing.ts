@@ -13,6 +13,8 @@ import {
   type BillingPreview,
 } from "../../lib/billing-preview";
 import {
+  recurringLineCents,
+  recurringPriceCents,
   summarizeFleetBilling,
   type FleetBillingTenant,
 } from "../../lib/fleet-billing";
@@ -657,10 +659,10 @@ async function loadRecurringState(
     current_period_end: string | null;
     billing_plans: { monthly_price_cents: number | null } | null;
   } | null;
-  const planMonthlyCents =
-    subRow?.custom_monthly_price_cents ??
-    subRow?.billing_plans?.monthly_price_cents ??
-    0;
+  const planMonthlyCents = recurringPriceCents(
+    subRow?.custom_monthly_price_cents,
+    subRow?.billing_plans?.monthly_price_cents,
+  );
 
   const addonByCode = new Map<
     string,
@@ -678,12 +680,12 @@ async function loadRecurringState(
     const code = a.billing_addons?.code;
     if (!code) continue;
     const quantity = a.quantity ?? 0;
-    const unitCents =
-      a.custom_recurring_price_cents ??
-      a.billing_addons?.recurring_price_cents ??
-      0;
+    const unitCents = recurringPriceCents(
+      a.custom_recurring_price_cents,
+      a.billing_addons?.recurring_price_cents,
+    );
     addonByCode.set(code, { quantity, unitCents });
-    addonsTotalCents += unitCents * Math.max(0, quantity);
+    addonsTotalCents += recurringLineCents(unitCents, quantity);
   }
 
   return {

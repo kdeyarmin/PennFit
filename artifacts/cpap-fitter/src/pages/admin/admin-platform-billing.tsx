@@ -141,6 +141,11 @@ function TenantEditor({
   );
   const [notes, setNotes] = useState(tenant.billing.subscription?.notes ?? "");
   const [message, setMessage] = useState<string | null>(null);
+  // Guard the async preview windows so a fast second click (Save plan) or a
+  // blur→refocus→blur (add-on input) can't open a duplicate confirm + fire a
+  // second mutation while the preview fetch is still in flight.
+  const [previewingPlan, setPreviewingPlan] = useState(false);
+  const [previewingAddon, setPreviewingAddon] = useState<string | null>(null);
   const savePlan = useMutation({
     mutationFn: () =>
       updateTenantPlan(tenant.id, {
@@ -349,11 +354,15 @@ function TenantEditor({
         </label>
         <button
           onClick={async () => {
+            // Ignore re-entrant clicks while a preview is in flight or the
+            // save is committing.
+            if (savePlan.isPending || previewingPlan) return;
             // Cost/proration preview before committing the plan change. A
             // custom monthly override skips the preview (it isn't catalog
             // priced); on a preview failure we still show a plain confirm so
             // a save never commits without acknowledgement.
             if (!monthly.trim()) {
+              setPreviewingPlan(true);
               const planName =
                 plans.find((p) => p.code === planCode)?.name ?? planCode;
               const who = tenant.storefrontName || tenant.name || tenant.slug;
@@ -366,15 +375,21 @@ function TenantEditor({
                 message = buildPreviewConfirm(preview);
               } catch {
                 // preview unavailable — keep the static fallback message
+              } finally {
+                setPreviewingPlan(false);
               }
               if (!window.confirm(message)) return;
             }
             savePlan.mutate();
           }}
-          disabled={savePlan.isPending}
+          disabled={savePlan.isPending || previewingPlan}
           className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {savePlan.isPending ? "Saving…" : "Save plan"}
+          {savePlan.isPending
+            ? "Saving…"
+            : previewingPlan
+              ? "Checking…"
+              : "Save plan"}
         </button>
       </div>
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}
@@ -414,8 +429,12 @@ function TenantEditor({
                   type="number"
                   min={0}
                   step={1}
-                  className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                  disabled={saveAddon.isPending || previewingAddon !== null}
+                  className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm disabled:opacity-60"
                   onBlur={async (e) => {
+                    // Ignore re-entrant blurs while a preview is in flight or
+                    // a save is committing (blur→refocus→blur).
+                    if (saveAddon.isPending || previewingAddon !== null) return;
                     // Normalize to a non-negative integer — the API schema
                     // expects an int, so an empty/decimal/NaN field would
                     // otherwise 400. Reflect the cleaned value back into the
@@ -429,6 +448,7 @@ function TenantEditor({
                     // Cost/proration preview before committing the change; on
                     // a preview failure we still show a plain confirm so a
                     // save never commits without acknowledgement.
+                    setPreviewingAddon(addon.code);
                     let message =
                       next === 0
                         ? `Remove ${addon.name} from this tenant?`
@@ -445,6 +465,8 @@ function TenantEditor({
                       message = buildPreviewConfirm(preview);
                     } catch {
                       // preview unavailable — keep the static fallback message
+                    } finally {
+                      setPreviewingAddon(null);
                     }
                     if (!window.confirm(message)) return;
                     saveAddon.mutate({
