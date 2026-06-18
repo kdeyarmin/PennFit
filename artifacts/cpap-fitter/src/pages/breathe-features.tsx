@@ -191,7 +191,7 @@ const CAPABILITIES: Capability[] = [
     title: "Branded storefront and fitter",
     summary: "A shop that converts shoppers into patients.",
     points: [
-      "On-device AI mask fitting from the phone camera — images never leave it",
+      "Virtual mask fitter — patients self-fit at home, no staff fittings, no wasted masks",
       "Catalog, cart, Stripe checkout, subscriptions, returns and reviews",
       "Live insurance benefit estimates before a patient ever pays",
       "Your brand, your domain — patient accounts, tracking and POD photos",
@@ -268,8 +268,8 @@ const AI_CELLS: AiCell[] = [
   },
   {
     icon: <ScanFace size={22} />,
-    title: "On-device mask fitting",
-    body: "Facial measurements are computed right in the browser, so patients self-fit from their phone and the image never leaves it.",
+    title: "Virtual mask fitter",
+    body: "Patients self-fit at home from their phone — no staff time on fittings and no sample masks opened just to be thrown away. AI facial measurements pick the perfect mask and size, and the image never leaves the browser.",
     gold: true,
   },
   {
@@ -548,16 +548,16 @@ const ROLES: RoleBlock[] = [
       },
       {
         icon: <ScanFace size={20} />,
-        title: "On-device AI mask fitting",
-        body: "Patients get fitted for the right mask from their phone camera. Facial measurements are computed on-device — images never leave the browser.",
+        title: "Virtual mask fitter",
+        body: "Patients fit themselves at home from their phone camera — AI facial measurements pick the perfect mask and size, and images never leave the browser.",
         impacts: [
           {
             kind: "time",
-            text: "Self-serve fitting removes a manual sizing step from intake.",
+            text: "Self-serve fitting at home removes in-person fittings from staff's day.",
           },
           {
             kind: "revenue",
-            text: "Right-first-time fit means fewer returns and remakes eating margin.",
+            text: "No sample masks opened just to fit a patient, and a right-first-time fit means fewer returns eating margin.",
           },
         ],
       },

@@ -1774,8 +1774,8 @@ const AI_CELLS: Ai[] = [
   },
   {
     icon: <ScanFace size={20} />,
-    title: "On-device mask fitting",
-    body: "Facial measurements computed in the browser — the image never leaves the phone.",
+    title: "Virtual mask fitter",
+    body: "Patients self-fit at home — perfect mask and size, no wasted sample masks. Measurements are computed in the browser; the image never leaves the phone.",
   },
   {
     icon: <Bot size={20} />,
