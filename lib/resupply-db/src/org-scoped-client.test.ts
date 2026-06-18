@@ -251,7 +251,9 @@ describe("listActiveOrgIds", () => {
     // so the loop advances to page 2); page 2 errors. The result must be [] —
     // never the 500 ids from page 1 — so the scheduler skips the tick rather
     // than fanning crons out to only the first page of tenants.
-    const firstPage = Array.from({ length: 500 }, (_, i) => ({ id: `org-${i}` }));
+    const firstPage = Array.from({ length: 500 }, (_, i) => ({
+      id: `org-${i}`,
+    }));
     let call = 0;
     const builder = {
       select() {
