@@ -1158,7 +1158,7 @@ const COMPARE_ROWS: CompareRow[] = [
     breathe: "yes",
     cols: ["no", "partial", "partial"],
     text: {
-      breathe: "Weeks",
+      breathe: "Day one",
       cols: ["Months", "Weeks–months", "Weeks–months"],
     },
   },
@@ -1841,8 +1841,8 @@ const STEPS: {
   {
     icon: <Database size={20} />,
     n: "01",
-    title: "Import your world",
-    body: "Patient roster, device-cloud connections, and billing data come over from PacWare CSVs and your therapy clouds. The import is fill-only — an existing value is never overwritten.",
+    title: "Import your patients — day one",
+    body: "Upload a CSV of your current patients and they're in the system the same day. The importer is pre-mapped to PacWare's export, but any billing or CRM system that can export your roster to CSV works just as well. It's a fill-only sync — new patients are added and blank fields filled, while an existing value is never overwritten.",
   },
   {
     icon: <Plug size={20} />,
@@ -1866,11 +1866,13 @@ function Onboarding() {
           <span className="bx-eyebrow">
             <GitBranch size={13} /> Migration
           </span>
-          <h2 className="bx-h2">Switch in weeks, not quarters</h2>
+          <h2 className="bx-h2">Ready on day one</h2>
           <p className="bx-lede">
             Moving off legacy DME software is the scariest part — so we made it
-            the easiest. Your data comes with you, and nothing you already have
-            gets clobbered.
+            the easiest. Upload a CSV of your patients and you&apos;re running
+            the same day; the deeper payer and device-cloud connections come
+            online over the following weeks. Your data comes with you, and
+            nothing you already have gets clobbered.
           </p>
         </div>
         <div className="bx-steps">
@@ -1919,8 +1921,12 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV, submits 837P claims through the Office Ally clearinghouse, and posts ERAs back automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
   },
   {
+    q: "Can we import our current patients?",
+    a: "Yes — on day one. Export your patient roster to a CSV and upload it, and your patients are in the system the same day. The importer is pre-mapped to PacWare's export format, but any billing or CRM system that can produce a CSV of your patients works. It runs as a fill-only sync — new patients are added and blank fields filled, and an existing value is never overwritten — so you can re-import as often as you like with no risk of clobbering data.",
+  },
+  {
     q: "How long does implementation take?",
-    a: "Most operators are live in weeks, not quarters. Your roster and history import as a fill-only sync — new patients are added and blank fields are filled, but an existing value is never overwritten — so there is no risky big-bang cutover.",
+    a: "You can be working on day one — upload a CSV of your patients and your team starts the same day. The deeper connections (payers, clearinghouse, device clouds) come online over the following weeks, not quarters. Because the roster imports as a fill-only sync — new patients added and blank fields filled, an existing value never overwritten — there is no risky big-bang cutover.",
   },
   {
     q: "Is our patient data safe?",
@@ -2005,7 +2011,7 @@ function ClosingCta() {
               <Check size={13} /> Tailored to your payers
             </span>
             <span>
-              <ArrowUpRight size={13} /> Live in weeks
+              <ArrowUpRight size={13} /> Live on day one
             </span>
           </div>
         </div>
