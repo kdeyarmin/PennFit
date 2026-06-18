@@ -39,12 +39,15 @@ import {
   getPacwareSettings,
   getPacwareSyncPreview,
   importPacwarePatients,
+  previewPacwarePatientHeaders,
   setPacwareAutoSync,
+  type PacwareHeaderPreview,
   type PacwareImportCommit,
   type PacwareImportPreview,
   type PacwareReport,
   type PacwareStatus,
   type PacwareSyncTarget,
+  type PatientColumnMapping,
 } from "@/lib/admin/pacware-api";
 import { todayAppDateIso } from "@/lib/utils";
 
@@ -184,6 +187,11 @@ function ImportCard() {
   const [err, setErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<PacwareImportPreview | null>(null);
   const [commit, setCommit] = useState<PacwareImportCommit | null>(null);
+  // "Map columns" mode: import a roster exported from ANY system, not just a
+  // PacWare report, by matching that file's headers to CareMetric fields.
+  const [mapMode, setMapMode] = useState(false);
+  const [headers, setHeaders] = useState<PacwareHeaderPreview | null>(null);
+  const [mapping, setMapping] = useState<PatientColumnMapping>({});
 
   function reset() {
     setFileName(null);
@@ -191,6 +199,8 @@ function ImportCard() {
     setPreview(null);
     setCommit(null);
     setErr(null);
+    setHeaders(null);
+    setMapping({});
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -201,13 +211,39 @@ function ImportCard() {
     try {
       const text = await file.text();
       setCsv(text);
+      if (mapMode) {
+        // Read just the header row and pre-fill the auto-detected mapping;
+        // the operator confirms it before we parse any data rows.
+        const hp = await previewPacwarePatientHeaders(text);
+        setHeaders(hp);
+        setMapping(hp.suggestedMapping);
+      } else {
+        const res = (await importPacwarePatients(
+          text,
+          "preview",
+        )) as PacwareImportPreview;
+        setPreview(res);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not read or parse file.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onPreviewMapped() {
+    if (!csv) return;
+    setBusy(true);
+    setErr(null);
+    try {
       const res = (await importPacwarePatients(
-        text,
+        csv,
         "preview",
+        mapping,
       )) as PacwareImportPreview;
       setPreview(res);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not read or parse file.");
+      setErr(e instanceof Error ? e.message : "Could not parse with mapping.");
     } finally {
       setBusy(false);
     }
@@ -221,6 +257,7 @@ function ImportCard() {
       const res = (await importPacwarePatients(
         csv,
         "commit",
+        mapMode ? mapping : undefined,
       )) as PacwareImportCommit;
       setCommit(res);
     } catch (e) {
@@ -242,6 +279,24 @@ function ImportCard() {
         <strong>blank</strong> fields are filled in — a value already in
         CareMetric Breathe is never overwritten.
       </p>
+
+      <label
+        className="flex items-center gap-2 text-sm mb-3 cursor-pointer select-none"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        <input
+          type="checkbox"
+          checked={mapMode}
+          disabled={busy}
+          onChange={(e) => {
+            reset();
+            setMapMode(e.target.checked);
+          }}
+        />
+        My roster is from another system — let me map the columns (any CSV with
+        patient ID, name &amp; date of birth works; dates and phones are
+        normalized automatically).
+      </label>
 
       <div className="flex items-center gap-3">
         <input
@@ -293,12 +348,102 @@ function ImportCard() {
         </div>
       )}
 
+      {mapMode && headers && !preview && !commit && (
+        <MappingPanel
+          headers={headers}
+          mapping={mapping}
+          busy={busy}
+          onChange={(field, value) =>
+            setMapping((m) => {
+              const next = { ...m };
+              if (value) next[field] = value;
+              else delete next[field];
+              return next;
+            })
+          }
+          onPreview={onPreviewMapped}
+        />
+      )}
+
       {preview && !commit && (
         <PreviewPanel preview={preview} onCommit={onCommit} busy={busy} />
       )}
 
       {commit && <CommitPanel commit={commit} />}
     </Card>
+  );
+}
+
+function MappingPanel({
+  headers,
+  mapping,
+  busy,
+  onChange,
+  onPreview,
+}: {
+  headers: PacwareHeaderPreview;
+  mapping: PatientColumnMapping;
+  busy: boolean;
+  onChange: (field: string, value: string) => void;
+  onPreview: () => void;
+}) {
+  const requiredOk = headers.fields
+    .filter((f) => f.required)
+    .every((f) => (mapping[f.field] ?? "") !== "");
+  return (
+    <div className="mt-4 space-y-3">
+      <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+        Match each CareMetric field to a column in your file. Required fields
+        are marked{" "}
+        <span style={{ color: "hsl(0,84%,55%)" }} aria-hidden="true">
+          •
+        </span>
+        .
+      </p>
+      <div className="grid gap-2">
+        {headers.fields.map((f) => (
+          <div key={f.field} className="flex items-center gap-2 text-sm">
+            <label
+              className="w-48 shrink-0"
+              htmlFor={`map-${f.field}`}
+              title={f.description}
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              {f.header}
+              {f.required && (
+                <span style={{ color: "hsl(0,84%,55%)" }} aria-hidden="true">
+                  {" "}
+                  •
+                </span>
+              )}
+            </label>
+            <select
+              id={`map-${f.field}`}
+              className="rounded-md border px-2 py-1 bg-transparent text-sm"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              value={mapping[f.field] ?? ""}
+              disabled={busy}
+              onChange={(e) => onChange(f.field, e.target.value)}
+            >
+              <option value="">— ignore —</option>
+              {headers.headers.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+      <Button onClick={onPreview} disabled={busy || !requiredOk}>
+        <Upload className="h-4 w-4" /> Preview with this mapping
+      </Button>
+      {!requiredOk && (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Map all required (•) fields to continue.
+        </p>
+      )}
+    </div>
   );
 }
 
