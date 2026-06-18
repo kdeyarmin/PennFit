@@ -49,9 +49,11 @@ const addonBody = z.object({
   notes: z.string().max(2000).optional(),
 });
 // Tenant self-service plan selection: a tenant owner picks one of the
-// public, non-custom plans for their own org. Custom/Enterprise plans are
-// excluded here (they carry NULL/negotiated pricing) and must be assigned
-// by a platform admin via PUT /platform/billing/tenants/:id/subscription.
+// public, non-custom plans for their own org. Selection is gated on the
+// plan's flags — a plan must be is_public AND NOT is_custom. Plans flagged
+// is_custom (e.g. Enterprise) carry negotiated pricing/allowances and must
+// be assigned by a platform admin via
+// PUT /platform/billing/tenants/:id/subscription.
 const selectPlanBody = z.object({
   planCode: z.string().regex(/^[a-z0-9_]+$/),
 });
@@ -426,7 +428,10 @@ router.get(
       .schema("resupply")
       .from("billing_plans")
       .select("*")
-      .eq("is_public", true)
+      // Public plans are self-selectable; custom plans (e.g. Enterprise,
+      // seeded is_public=false) are surfaced too so the UI can render them
+      // as a non-selectable "Contact us" tier alongside the public plans.
+      .or("is_public.eq.true,is_custom.eq.true")
       .order("sort_order");
     if (error) {
       logger.error(
@@ -567,15 +572,21 @@ router.post(
         });
       }
     } catch (err) {
-      if (err instanceof PlatformBillingAccountChangedError) {
-        res.status(409).json({ error: "stripe_account_changed" });
-        return;
-      }
+      // The plan change is already persisted, so Stripe-sync failures must
+      // NOT turn into an error response — that would tell the client the
+      // selection failed when the tenant is already on the new plan, and
+      // invite retries that pile up canceled rows. Every sync failure
+      // (including a platform-billing account mismatch, which an operator
+      // resolves from the platform portal) is logged best-effort and the
+      // recorded selection is returned with 200.
       logger.error(
-        { event: "tenant_billing_self_select_stripe_failed", err },
+        {
+          event: "tenant_billing_self_select_stripe_failed",
+          accountChanged: err instanceof PlatformBillingAccountChangedError,
+          err,
+        },
         "tenant self-select Stripe sync failed",
       );
-      // The selection is recorded; surface it even if Stripe sync failed.
     }
     await tenantBilling(req.orgId, res);
   },
