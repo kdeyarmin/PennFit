@@ -385,7 +385,11 @@ function TenantEditor({
           disabled={savePlan.isPending || previewingPlan}
           className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {savePlan.isPending || previewingPlan ? "Saving…" : "Save plan"}
+          {savePlan.isPending
+            ? "Saving…"
+            : previewingPlan
+              ? "Checking…"
+              : "Save plan"}
         </button>
       </div>
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}
