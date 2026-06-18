@@ -248,10 +248,132 @@ describe("demo router", () => {
     }
   });
 
-  it("falls back to empty object for unmatched API GETs", async () => {
-    const res = await get("/api/totally-unknown-endpoint");
+  it("answers a conversation detail with a populated message timeline", async () => {
+    // Regression guard: ConversationDetailPage derefs `data.messages`
+    // (and keys on `data.id`). Without a :id handler the detail GET hit
+    // the empty-object fallback, so `data.messages.length` threw into
+    // the global ErrorBoundary ("Something went wrong") the instant a
+    // demo explorer clicked any inbox row.
+    const res = await get("/resupply-api/conversations/demo-conv-2");
+    expect(res).not.toBeNull();
     expect(res!.status).toBe(200);
-    expect(await res!.json()).toEqual({});
+    const body = (await res!.json()) as {
+      id: string;
+      channel: string;
+      status: string;
+      messages: Array<{ id: string; direction: string; body: string }>;
+    };
+    expect(body.id).toBe("demo-conv-2");
+    expect(Array.isArray(body.messages)).toBe(true);
+    expect(body.messages.length).toBeGreaterThan(0);
+    for (const m of body.messages) {
+      expect(typeof m.body).toBe("string");
+      expect(["inbound", "outbound"]).toContain(m.direction);
+    }
+  });
+
+  it("round-trips an unrecognized conversation id to a valid detail", async () => {
+    // A stale deep link must still render a full thread, not a
+    // half-empty shell that trips the same deref.
+    const res = await get("/resupply-api/conversations/demo-conv-999");
+    const body = (await res!.json()) as {
+      id: string;
+      messages: unknown[];
+    };
+    expect(body.id).toBe("demo-conv-999");
+    expect(body.messages.length).toBeGreaterThan(0);
+  });
+
+  it("answers a patient detail with the four related-record arrays", async () => {
+    // Regression guard: PatientDetailPage derefs data.episodes.length,
+    // .conversations.length, .fulfillments.length, .prescriptions.length
+    // for its tab counts. Without a :id handler the detail GET hit the
+    // empty-object fallback and crashed into the global ErrorBoundary the
+    // instant a roster row was clicked.
+    const res = await get("/resupply-api/patients/demo-patient-3");
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as Record<string, unknown>;
+    expect(body.id).toBe("demo-patient-3");
+    for (const key of [
+      "episodes",
+      "conversations",
+      "fulfillments",
+      "prescriptions",
+    ]) {
+      expect(Array.isArray(body[key]), key).toBe(true);
+    }
+  });
+
+  it("does not let the patient :id fixture shadow static sub-routes", async () => {
+    // Regression guard (Codex review): `:id` matches any single segment,
+    // so /resupply-api/patients/duplicates was being answered with
+    // demoPatientDetail("duplicates") — which has no `groups`, crashing
+    // AdminPatientsDuplicatesPage (data.groups.length). Non-demo ids must
+    // fall through to the empty-collections body instead.
+    const res = await get("/resupply-api/patients/duplicates");
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as Record<string, unknown>;
+    expect(Array.isArray(body.groups)).toBe(true);
+    expect((body.groups as unknown[]).length).toBe(0);
+    // And a real demo patient id still gets the full detail.
+    const detail = (await (await get(
+      "/resupply-api/patients/demo-patient-1",
+    ))!.json()) as { id: string; episodes: unknown[] };
+    expect(detail.id).toBe("demo-patient-1");
+    expect(Array.isArray(detail.episodes)).toBe(true);
+  });
+
+  it("returns a bodyless 200 for unmatched HEAD requests", async () => {
+    // HTTP semantics (Copilot review): HEAD responses carry no body.
+    const res = await routeDemoRequest("/resupply-api/whatever", {
+      method: "HEAD",
+    });
+    expect(res!.status).toBe(200);
+    expect(await res!.text()).toBe("");
+  });
+
+  it("answers a storefront order detail with a populated payload", async () => {
+    // Regression guard: AdminOrderDetail derefs data.order.payload.* —
+    // the empty-object fallback (no `order`) crashed it on click.
+    const res = await get("/api/admin/orders/demo-aorder-2");
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as {
+      order: { id: string; orderReference: string; payload: unknown };
+    };
+    expect(body.order.id).toBe("demo-aorder-2");
+    expect(typeof body.order.orderReference).toBe("string");
+    expect(body.order.payload).toBeTypeOf("object");
+    expect(body.order.payload).not.toBeNull();
+  });
+
+  it("falls back to an empty-collections shape for unmatched API GETs", async () => {
+    // Systemic guard for the whole bug class: a broadly-permissioned demo
+    // explorer can navigate to admin list pages whose endpoints aren't
+    // seeded. Those pages deref `data.<field>.map/.length` directly, so a
+    // bare `{}` fallback crashed them into the global ErrorBoundary. The
+    // fallback now returns empty collections + zeroed pagination so each
+    // renders its empty state instead.
+    const res = await get("/resupply-api/admin/some-unseeded-list");
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as Record<string, unknown>;
+    // A representative sample of the collection names pages read.
+    for (const key of [
+      "items",
+      "rows",
+      "agents",
+      "providers",
+      "closures",
+      "interventions",
+      "claims",
+      "ordersByDay",
+    ]) {
+      expect(Array.isArray(body[key]), key).toBe(true);
+      expect((body[key] as unknown[]).length).toBe(0);
+    }
+    expect(body.total).toBe(0);
+    expect(body.counts).toBeTypeOf("object");
   });
 
   it("falls back to ok for unmatched API mutations", async () => {
