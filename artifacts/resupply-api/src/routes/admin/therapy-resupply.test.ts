@@ -176,6 +176,7 @@ describe("GET /admin/therapy-resupply/opportunities", () => {
       highLeak: false,
     });
     expect(getSupabaseRpcArgs("therapy_resupply_opportunities")[0]).toEqual({
+      p_org_id: MOCK_ORG_ID,
       p_due_within_days: 14,
       p_limit: 50,
     });
