@@ -10,8 +10,9 @@
 //     from inside the tenant console.
 //   * PlatformSystemInfoPage — read-only environment + deployment
 //     metadata, mounted on the platform super-admin console
-//     (/platform/system). All data comes from /admin/system-info.
-//     Env-var VALUES are never returned by the backend; it renders
+//     (/platform/system). All data comes from /platform/system-info
+//     (gated by requirePlatformAdmin). Env-var VALUES are never returned
+//     by the backend; it renders
 //     presence ("is this set?") booleans plus a few benign-to-display
 //     values (Postgres version, server time, uptime, public URLs).
 //
@@ -82,7 +83,7 @@ export function isSystemInfo(value: unknown): value is SystemInfo {
 }
 
 export async function fetchSystemInfo(): Promise<SystemInfo> {
-  const res = await fetch("/resupply-api/admin/system-info", {
+  const res = await fetch("/resupply-api/platform/system-info", {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load system info (${res.status})`);

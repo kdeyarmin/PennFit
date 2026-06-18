@@ -84,9 +84,11 @@ export const adminHandlers: DemoHandler[] = [
   ),
   // The Settings page derefs nested objects from this payload directly, so
   // it must be answered with a full shape — without this the router's
-  // empty-object GET fallback crashes /admin/settings (and traps the user,
-  // since the demo on/off toggle lives on that very page).
-  route("GET", "/resupply-api/admin/system-info", () => json(demoSystemInfo())),
+  // empty-object GET fallback would crash the platform System-info page
+  // (PlatformSystemInfoPage) if demo mode is ever active on it.
+  route("GET", "/resupply-api/platform/system-info", () =>
+    json(demoSystemInfo()),
+  ),
 
   // ── PennPilot (admin assistant widget) ───────────────────────────
   route("POST", "/resupply-api/admin/assistant/chat", (req) => {
