@@ -109,7 +109,8 @@ describe("platform billing route wiring", () => {
     // Both the tenant self-service PUT and the platform-admin PUT must treat a
     // 23505 on the read-then-insert path as idempotent (the partial unique
     // index on (org_id, addon_id) WHERE status='active', migration 0362).
-    const fallbacks = SRC.match(/!existing && write\.error\.code === "23505"/g) ?? [];
+    const fallbacks =
+      SRC.match(/!existing && write\.error\.code === "23505"/g) ?? [];
     expect(fallbacks.length).toBeGreaterThanOrEqual(2);
     // The platform route's write must be reassignable (let, not const) so the
     // fallback can replace it.
