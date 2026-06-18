@@ -4,14 +4,17 @@
 // (routes/admin/therapy-resupply.ts). A draft is a PROPOSAL that a patient
 // is due for a supply; it is NOT an order and nothing is charged. A CSR
 // stages drafts here (manually from the opportunities page, or via the
-// daily resupply-auto-draft worker), reviews the queue, and later approves
-// a draft into the existing sign-&-pay order flow (approve endpoint is a
-// follow-up).
+// daily resupply-auto-draft worker), reviews the queue, and approves a
+// draft into the existing CSR sign-&-pay order flow (a Stripe Hosted
+// Checkout link the patient pays — nothing is charged on approve).
 //
-//   GET  /admin/therapy-resupply/draft-orders          — review queue
-//   POST /admin/therapy-resupply/draft-orders          — batch-stage from
-//                                                         selected items
+//   GET  /admin/therapy-resupply/draft-orders             — review queue
+//   POST /admin/therapy-resupply/draft-orders             — batch-stage from
+//                                                            selected items
 //   POST /admin/therapy-resupply/draft-orders/:id/dismiss — drop a proposal
+//   POST /admin/therapy-resupply/draft-orders/:id/approve — create the
+//                                                            sign-&-pay order
+//                                                            request + link
 //
 // Org-scoped (the facade enforces the tenant filter + injects org_id on
 // insert). PHI posture: rows reference patient ids + device descriptions;
