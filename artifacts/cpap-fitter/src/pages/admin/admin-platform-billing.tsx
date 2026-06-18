@@ -5,10 +5,13 @@ import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import {
+  buildPreviewConfirm,
+  fetchPlatformBillingActivity,
   fetchPlatformBillingCatalog,
   fetchPlatformTenantBilling,
   ensureTenantStripeCustomer,
   formatMoney,
+  previewTenantBillingChange,
   resyncTenantStripeSubscriptions,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
@@ -16,12 +19,14 @@ import {
   updateCatalogPlan,
   updateTenantAddon,
   updateTenantPlan,
+  type BillingActivityEvent,
   type BillingAddon,
   type BillingPlan,
   type CatalogAddonEdit,
   type CatalogPlanEdit,
   type PlatformTenantBillingRow,
 } from "@/lib/admin/platform-billing-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const METRIC_LABELS: Record<string, string> = {
   activePatients: "Active patients",
@@ -342,7 +347,30 @@ function TenantEditor({
           />
         </label>
         <button
-          onClick={() => savePlan.mutate()}
+          onClick={async () => {
+            // Cost/proration preview before committing the plan change. A
+            // custom monthly override skips the preview (it isn't catalog
+            // priced); on a preview failure we still show a plain confirm so
+            // a save never commits without acknowledgement.
+            if (!monthly.trim()) {
+              const planName =
+                plans.find((p) => p.code === planCode)?.name ?? planCode;
+              const who =
+                tenant.storefrontName || tenant.name || tenant.slug;
+              let message = `Switch ${who} to the ${planName} plan? This updates their Stripe billing.`;
+              try {
+                const preview = await previewTenantBillingChange(tenant.id, {
+                  kind: "plan",
+                  planCode,
+                });
+                message = buildPreviewConfirm(preview);
+              } catch {
+                // preview unavailable — keep the static fallback message
+              }
+              if (!window.confirm(message)) return;
+            }
+            savePlan.mutate();
+          }}
           disabled={savePlan.isPending}
           className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
@@ -385,14 +413,44 @@ function TenantEditor({
                   defaultValue={qty}
                   type="number"
                   min={0}
+                  step={1}
                   className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
-                  onBlur={(e) => {
-                    const next = Number(e.currentTarget.value || 0);
-                    if (next !== qty)
-                      saveAddon.mutate({
-                        addonCode: addon.code,
-                        quantity: next,
-                      });
+                  onBlur={async (e) => {
+                    // Normalize to a non-negative integer — the API schema
+                    // expects an int, so an empty/decimal/NaN field would
+                    // otherwise 400. Reflect the cleaned value back into the
+                    // input so the UI matches what we'll send.
+                    const parsed = Number(e.currentTarget.value);
+                    const next = Number.isFinite(parsed)
+                      ? Math.max(0, Math.floor(parsed))
+                      : 0;
+                    e.currentTarget.value = String(next);
+                    if (next === qty) return;
+                    // Cost/proration preview before committing the change; on
+                    // a preview failure we still show a plain confirm so a
+                    // save never commits without acknowledgement.
+                    let message =
+                      next === 0
+                        ? `Remove ${addon.name} from this tenant?`
+                        : `Set ${addon.name} to ${next} for this tenant?`;
+                    try {
+                      const preview = await previewTenantBillingChange(
+                        tenant.id,
+                        {
+                          kind: "addon",
+                          addonCode: addon.code,
+                          quantity: next,
+                        },
+                      );
+                      message = buildPreviewConfirm(preview);
+                    } catch {
+                      // preview unavailable — keep the static fallback message
+                    }
+                    if (!window.confirm(message)) return;
+                    saveAddon.mutate({
+                      addonCode: addon.code,
+                      quantity: next,
+                    });
                   }}
                 />
               </div>
@@ -871,6 +929,72 @@ function CatalogPreview({
   );
 }
 
+/** Recent tenant-billing changes across the fleet — surfaces the
+ *  tenant.billing.* / platform.billing.* events the logAudit stub can't show.
+ *  Polls every 60s; degrades to a quiet empty/error state. */
+function RecentBillingActivity() {
+  const activity = useQuery({
+    queryKey: ["platform-billing", "activity"],
+    queryFn: () => fetchPlatformBillingActivity(25),
+    refetchInterval: 60_000,
+  });
+  return (
+    <Card className="p-5" data-testid="platform-billing-activity">
+      <h2 className="font-semibold text-slate-950">Recent billing activity</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Plan and add-on changes across every tenant — who changed what, and
+        when. Self-service tenant changes and super-admin assignments both show
+        here.
+      </p>
+      {activity.isPending ? (
+        <div className="mt-4">
+          <Spinner label="Loading activity…" />
+        </div>
+      ) : activity.isError ? (
+        <p className="mt-4 text-sm text-slate-500">
+          Could not load billing activity.
+        </p>
+      ) : activity.data.activity.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-500">No billing changes yet.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-slate-100">
+          {activity.data.activity.map((e: BillingActivityEvent) => (
+            <li
+              key={e.id}
+              className="flex flex-wrap items-baseline justify-between gap-2 py-2"
+            >
+              <div className="min-w-0">
+                <span className="font-medium text-slate-900">
+                  {e.tenantName}
+                </span>
+                <span className="text-slate-600">
+                  {" "}
+                  — {e.summary ?? e.action}
+                </span>
+                <span
+                  className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    e.actor === "tenant"
+                      ? "bg-sky-50 text-sky-700"
+                      : "bg-violet-50 text-violet-700"
+                  }`}
+                >
+                  {e.actor === "tenant" ? "self-service" : "super-admin"}
+                </span>
+              </div>
+              <div className="text-right text-xs text-slate-500">
+                <div>{e.operatorEmail ?? "—"}</div>
+                <time dateTime={e.occurredAt}>
+                  {formatAppDateTime(e.occurredAt)}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export function AdminPlatformBillingPage() {
   const catalog = useQuery({
     queryKey: ["platform-billing", "catalog"],
@@ -954,6 +1078,7 @@ export function AdminPlatformBillingPage() {
           </div>
         </Card>
       </div>
+      <RecentBillingActivity />
       <CatalogPreview plans={plans} addons={addons} />
       {tenantRows.map(({ tenant }) => (
         <TenantEditor

@@ -9,10 +9,12 @@ import { useToast } from "@/hooks/use-toast";
 import {
   type BillingAddon,
   type BillingPlan,
+  buildPreviewConfirm,
   fetchSelectableAddons,
   fetchSelectablePlans,
   fetchTenantBilling,
   formatMoney,
+  previewOwnBillingChange,
   selectTenantPlan,
   updateOwnAddon,
 } from "@/lib/admin/platform-billing-api";
@@ -149,14 +151,22 @@ function PlanSelector({ currentPlanCode }: { currentPlanCode: string | null }) {
                     className="w-full"
                     isLoading={isPending}
                     disabled={mutation.isPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Switch to the ${plan.name} plan (${formatMoney(
-                            plan.monthlyPriceCents,
-                          )}/mo)? This updates your Stripe billing immediately.`,
-                        )
-                      ) {
+                    onClick={async () => {
+                      // Cost/proration preview before confirming. Falls back
+                      // to a plain confirm if the preview can't be fetched.
+                      let message = `Switch to the ${plan.name} plan (${formatMoney(
+                        plan.monthlyPriceCents,
+                      )}/mo)? This updates your Stripe billing immediately.`;
+                      try {
+                        const preview = await previewOwnBillingChange({
+                          kind: "plan",
+                          planCode: plan.code,
+                        });
+                        message = buildPreviewConfirm(preview);
+                      } catch {
+                        // keep the static fallback message
+                      }
+                      if (window.confirm(message)) {
                         mutation.mutate(plan.code);
                       }
                     }}
@@ -230,6 +240,27 @@ function AddonSelector({
   const addons = addonsQuery.data.addons;
   if (addons.length === 0) return null;
 
+  // Show a cost/proration preview before committing an add-on change. Falls
+  // back to a plain confirm when the preview can't be fetched.
+  const confirmAndMutate = async (code: string, quantity: number) => {
+    const name = addons.find((a) => a.code === code)?.name ?? code;
+    let message =
+      quantity === 0
+        ? `Remove the ${name} add-on? This updates your Stripe billing immediately.`
+        : `Set ${name} to ${quantity}? This updates your Stripe billing immediately.`;
+    try {
+      const preview = await previewOwnBillingChange({
+        kind: "addon",
+        addonCode: code,
+        quantity,
+      });
+      message = buildPreviewConfirm(preview);
+    } catch {
+      // keep the static fallback message
+    }
+    if (window.confirm(message)) mutation.mutate({ code, quantity });
+  };
+
   return (
     <Card className="p-5" data-testid="addon-selector">
       <h2 className="font-semibold text-slate-950">Add-ons</h2>
@@ -299,12 +330,7 @@ function AddonSelector({
                       size="sm"
                       aria-label={`Decrease ${addon.name}`}
                       disabled={mutation.isPending || qty === 0}
-                      onClick={() =>
-                        mutation.mutate({
-                          code: addon.code,
-                          quantity: qty - 1,
-                        })
-                      }
+                      onClick={() => confirmAndMutate(addon.code, qty - 1)}
                     >
                       −
                     </Button>
@@ -319,12 +345,7 @@ function AddonSelector({
                       size="sm"
                       aria-label={`Increase ${addon.name}`}
                       disabled={mutation.isPending}
-                      onClick={() =>
-                        mutation.mutate({
-                          code: addon.code,
-                          quantity: qty + 1,
-                        })
-                      }
+                      onClick={() => confirmAndMutate(addon.code, qty + 1)}
                     >
                       +
                     </Button>
@@ -334,9 +355,7 @@ function AddonSelector({
                         size="sm"
                         className="ml-auto"
                         disabled={mutation.isPending}
-                        onClick={() =>
-                          mutation.mutate({ code: addon.code, quantity: 0 })
-                        }
+                        onClick={() => confirmAndMutate(addon.code, 0)}
                       >
                         Remove
                       </Button>

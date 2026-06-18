@@ -144,6 +144,71 @@ export function updateOwnAddon(
   });
 }
 
+// ── Cost / proration preview ────────────────────────────────────────
+
+/** A pending plan switch or add-on quantity change to estimate the cost of. */
+export type BillingPreviewChange =
+  | { kind: "plan"; planCode: string }
+  | { kind: "addon"; addonCode: string; quantity: number };
+
+export interface BillingPreview {
+  currentMonthlyCents: number;
+  newMonthlyCents: number;
+  /** newMonthly − currentMonthly. Positive = costs more going forward. */
+  deltaMonthlyCents: number;
+  /** Prorated charge (+) or credit (−) for the rest of the current period,
+   *  or null when the billing period is unknown (no Stripe sync yet). */
+  proratedNowCents: number | null;
+  daysRemaining: number | null;
+  periodDays: number | null;
+  currentPeriodEnd: string | null;
+  /** Human-readable description of the change, e.g. "Switch to Growth". */
+  changeLabel: string;
+}
+
+/** Preview the cost impact of a change to the caller's own tenant. */
+export function previewOwnBillingChange(
+  change: BillingPreviewChange,
+): Promise<BillingPreview> {
+  return jsonFetch<BillingPreview>("/admin/billing/preview", {
+    method: "POST",
+    body: JSON.stringify(change),
+  });
+}
+
+/** Preview the cost impact of a change to a given tenant (super-admin). */
+export function previewTenantBillingChange(
+  tenantId: string,
+  change: BillingPreviewChange,
+): Promise<BillingPreview> {
+  return jsonFetch<BillingPreview>(
+    `/platform/billing/tenants/${encodeURIComponent(tenantId)}/preview`,
+    { method: "POST", body: JSON.stringify(change) },
+  );
+}
+
+// ── Recent billing activity (super-admin portal) ────────────────────
+
+export interface BillingActivityEvent {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  action: string;
+  actor: "tenant" | "platform";
+  operatorEmail: string | null;
+  summary: string | null;
+  metadata: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export function fetchPlatformBillingActivity(
+  limit = 25,
+): Promise<{ activity: BillingActivityEvent[] }> {
+  return jsonFetch<{ activity: BillingActivityEvent[] }>(
+    `/platform/billing/activity?limit=${encodeURIComponent(String(limit))}`,
+  );
+}
+
 export function fetchPlatformBillingCatalog(): Promise<BillingCatalogResponse> {
   return jsonFetch<BillingCatalogResponse>("/platform/billing/catalog");
 }
@@ -341,4 +406,35 @@ export function formatMoney(cents: number | null | undefined): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(cents / 100);
+}
+
+/** Render a cost/proration preview as the body of a confirm dialog shown
+ *  before a plan/add-on change is committed. Pure — unit-tested. */
+export function buildPreviewConfirm(preview: BillingPreview): string {
+  const lines = [`${preview.changeLabel}?`, ""];
+  const delta = preview.deltaMonthlyCents;
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
+  lines.push(
+    `New monthly total: ${formatMoney(preview.newMonthlyCents)}/mo ` +
+      `(${sign}${formatMoney(Math.abs(delta))}/mo vs. today).`,
+  );
+  if (preview.proratedNowCents == null) {
+    lines.push(
+      "Proration will be calculated by Stripe when billing is connected.",
+    );
+  } else if (preview.proratedNowCents > 0) {
+    lines.push(
+      `Estimated prorated charge for the rest of this period: ` +
+        `~${formatMoney(preview.proratedNowCents)}.`,
+    );
+  } else if (preview.proratedNowCents < 0) {
+    lines.push(
+      `Estimated prorated credit for the rest of this period: ` +
+        `~${formatMoney(-preview.proratedNowCents)}.`,
+    );
+  } else {
+    lines.push("No proration for the remainder of this period.");
+  }
+  lines.push("", "This updates your Stripe billing immediately.");
+  return lines.join("\n");
 }
