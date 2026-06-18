@@ -616,6 +616,8 @@ function runChecks(): void {
       );
     }
 
+    // Distinct-key constraint gets its OWN check name so it can't collide
+    // with a PASS recorded above under "STRIPE_PLATFORM_SECRET_KEY".
     if (platformKey === getTrimmed("STRIPE_SECRET_KEY")) {
       record(
         "STRIPE_PLATFORM_SECRET_KEY_DISTINCT",

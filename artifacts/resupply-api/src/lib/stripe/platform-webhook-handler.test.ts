@@ -66,6 +66,8 @@ const SHARED: PlatformBillingStripeConfig = {
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 describe("stripePlatformBillingWebhookHandler gating", () => {
+  // Preserve and restore NODE_ENV rather than deleting it — other tests in
+  // the same Vitest worker assume it stays "test".
   afterEach(() => {
     cfg.current = null;
     if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV;
