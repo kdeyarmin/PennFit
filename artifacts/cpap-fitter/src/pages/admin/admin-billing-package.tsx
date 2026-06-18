@@ -50,8 +50,7 @@ const ADDON_DETAILS: Record<
       "Every team member should have their own secure login rather than sharing one — it keeps activity attributable, protects PHI, and means no one gets locked out as your team grows.",
   },
   active_patient_block: {
-    whatItDoes:
-      "Raises your active-patient ceiling by 500 patients/customers.",
+    whatItDoes: "Raises your active-patient ceiling by 500 patients/customers.",
     whyItMatters:
       "Your plan caps how many active patients you can manage at once. Adding a block before you hit the limit keeps resupply reminders and new orders flowing instead of stalling when your roster grows.",
   },
@@ -161,7 +160,9 @@ function AddonExplainer({ addon }: { addon: BillingAddon }) {
         {detail ? (
           <>
             <p>
-              <span className="font-semibold text-slate-700">What it does:</span>{" "}
+              <span className="font-semibold text-slate-700">
+                What it does:
+              </span>{" "}
               {detail.whatItDoes}
             </p>
             <p>
