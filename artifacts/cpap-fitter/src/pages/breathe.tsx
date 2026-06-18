@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation } from "wouter";
 import {
   type LucideIcon,
@@ -92,9 +99,11 @@ function BreatheShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="breathe-page">
       <div className="bx-grain" aria-hidden="true" />
-      <Nav />
-      <main>{children}</main>
-      <Footer />
+      <DemoGateProvider>
+        <Nav />
+        <main>{children}</main>
+        <Footer />
+      </DemoGateProvider>
     </div>
   );
 }
@@ -126,6 +135,516 @@ function PageHead({
         <p className="bx-pagehead-sub bx-reveal in">{sub}</p>
       </div>
     </header>
+  );
+}
+
+/* ───────────────────── Self-serve demo gate ───────────────────── */
+// Where the email gate sends a visitor: the admin "command center" demo.
+// `?demo=1` is read by ./demo/boot at load, which flips on the CLIENT-ONLY
+// sandbox — every API call is answered from in-browser fixtures, so there
+// is no real patient data and no integration ever runs.
+const DEMO_ENTRY_URL = "/admin?demo=1";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type DemoGateContextValue = { open: (source?: string) => void };
+const DemoGateContext = React.createContext<DemoGateContextValue | null>(null);
+
+/** Open the email→demo gate from any CTA. */
+function useDemoGate(): DemoGateContextValue {
+  const ctx = useContext(DemoGateContext);
+  if (!ctx) throw new Error("useDemoGate must be used within DemoGateProvider");
+  return ctx;
+}
+
+function DemoGateProvider({ children }: { children: React.ReactNode }) {
+  const [openSource, setOpenSource] = useState<string | null>(null);
+  const open = useCallback((source?: string) => {
+    setOpenSource(source ?? "breathe");
+  }, []);
+  const value = useMemo(() => ({ open }), [open]);
+  return (
+    <DemoGateContext.Provider value={value}>
+      {children}
+      {openSource !== null ? (
+        <DemoGateModal
+          source={openSource}
+          onClose={() => setOpenSource(null)}
+        />
+      ) : null}
+    </DemoGateContext.Provider>
+  );
+}
+
+/**
+ * Saves the volunteered email to the marketing list (best-effort — a
+ * failure must never block demo entry) and then hard-navigates into the
+ * client-side demo sandbox.
+ */
+async function enterDemoWithEmail(
+  email: string,
+  source: string,
+  honeypot: string,
+): Promise<void> {
+  try {
+    await fetch("/api/demo-lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        source,
+        website: honeypot || undefined,
+      }),
+    });
+  } catch {
+    /* best-effort: enter the demo regardless of capture success */
+  }
+  window.location.href = DEMO_ENTRY_URL;
+}
+
+/** The email input + submit, reused inline (closing CTA) and in the modal. */
+function DemoEmailForm({
+  source,
+  autoFocus,
+  cta = "Start the demo",
+}: {
+  source: string;
+  autoFocus?: boolean;
+  cta?: string;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting" | "error">("idle");
+  const [err, setErr] = useState("");
+  const hpRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) emailRef.current?.focus();
+  }, [autoFocus]);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(value)) {
+      setErr("Please enter a valid email address.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    await enterDemoWithEmail(value, source, hpRef.current?.value ?? "");
+    // Navigation is in flight; keep the button disabled until unload.
+  };
+
+  return (
+    <form className="bx-demoform" onSubmit={onSubmit} noValidate>
+      {/* Honeypot: real users never see or fill this. */}
+      <input
+        ref={hpRef}
+        type="text"
+        name="website"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="bx-hp"
+      />
+      <div className="bx-demoform-row">
+        <input
+          ref={emailRef}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (status === "error") setStatus("idle");
+          }}
+          placeholder="you@yourdme.com"
+          aria-label="Work email"
+          aria-invalid={status === "error"}
+        />
+        <button
+          type="submit"
+          className="bx-btn bx-btn-primary"
+          disabled={status === "submitting"}
+        >
+          {status === "submitting" ? (
+            "Starting…"
+          ) : (
+            <>
+              {cta} <ArrowRight size={16} />
+            </>
+          )}
+        </button>
+      </div>
+      {status === "error" ? (
+        <span className="bx-demoform-err" role="alert">
+          {err}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+
+function DemoGateModal({
+  source,
+  onClose,
+}: {
+  source: string;
+  onClose: () => void;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Esc to close, body scroll-lock, a focus trap (keyboard users can't
+  // tab out to the page behind), and focus restored to the trigger on
+  // close.
+  useEffect(() => {
+    const prevFocused = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !modalRef.current) return;
+      const focusables = modalRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      prevFocused?.focus?.();
+    };
+  }, [onClose]);
+
+  return (
+    <div className="bx-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        ref={modalRef}
+        className="bx-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bx-demo-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="bx-modal-close"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <X size={18} />
+        </button>
+        <span className="bx-modal-ic">
+          <Sparkles size={20} />
+        </span>
+        <h3 id="bx-demo-modal-title">Start the live demo</h3>
+        <p className="bx-modal-lede">
+          Enter your email and you&apos;ll land straight in the Breathe console,
+          running on sample data — no call, no credit card, and no real patient
+          information.
+        </p>
+        <DemoEmailForm source={source} autoFocus cta="Enter the demo" />
+        <p className="bx-modal-fine">
+          By continuing you agree to receive occasional product emails. You can
+          unsubscribe anytime.
+        </p>
+        <div className="bx-modal-alt">
+          Ready to commit?{" "}
+          <Link href="/breathe/signup" onClick={onClose}>
+            Create your account →
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Create-your-account — self-serve tenant signup. */
+export function BreatheSignup() {
+  useDocumentTitle(
+    "Create your account — Breathe by CareMetric.ai",
+    "Spin up your own Breathe workspace and admin login in minutes. No credit card — choose a plan in-app whenever you're ready.",
+  );
+  return (
+    <BreatheShell>
+      <SignupSection />
+    </BreatheShell>
+  );
+}
+
+// Cloudflare Turnstile — optional. The widget only renders (and a token
+// is then required) when VITE_TURNSTILE_SITE_KEY is configured; otherwise
+// the backend skips verification too (fail-soft, server + client agree).
+const TURNSTILE_SITE_KEY = (
+  import.meta.env as Record<string, string | undefined>
+).VITE_TURNSTILE_SITE_KEY;
+
+type TurnstileApi = {
+  render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+  remove: (id: string) => void;
+};
+function getTurnstile(): TurnstileApi | undefined {
+  return (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+}
+
+/** Renders a Turnstile widget when a site key is set; yields its token. */
+function useTurnstile() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [token, setToken] = useState("");
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    let widgetId: string | undefined;
+    let cancelled = false;
+    const render = () => {
+      const ts = getTurnstile();
+      if (cancelled || !ts || !ref.current || ref.current.childElementCount > 0)
+        return;
+      widgetId = ts.render(ref.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (t: string) => setToken(t),
+        "error-callback": () => setToken(""),
+        "expired-callback": () => setToken(""),
+      });
+    };
+    if (getTurnstile()) {
+      render();
+    } else {
+      const id = "cf-turnstile-script";
+      let script = document.getElementById(id) as HTMLScriptElement | null;
+      if (!script) {
+        script = document.createElement("script");
+        script.id = id;
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener("load", render);
+    }
+    return () => {
+      cancelled = true;
+      const ts = getTurnstile();
+      if (ts && widgetId !== undefined) {
+        try {
+          ts.remove(widgetId);
+        } catch {
+          /* widget already removed */
+        }
+      }
+    };
+  }, []);
+  return { ref, token, enabled: Boolean(TURNSTILE_SITE_KEY) };
+}
+
+function SignupSection() {
+  const { open: openDemoGate } = useDemoGate();
+  const turnstile = useTurnstile();
+  const [org, setOrg] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<
+    "idle" | "submitting" | "done" | "error"
+  >("idle");
+  const [err, setErr] = useState("");
+  const [signInUrl, setSignInUrl] = useState("/admin/sign-in");
+  const hpRef = useRef<HTMLInputElement>(null);
+
+  const clearError = () => {
+    if (status === "error") setStatus("idle");
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (org.trim().length < 2) {
+      setErr("Tell us your company name.");
+      setStatus("error");
+      return;
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      setErr("Please enter a valid work email.");
+      setStatus("error");
+      return;
+    }
+    if (password.length < 12) {
+      setErr("Use a password of at least 12 characters.");
+      setStatus("error");
+      return;
+    }
+    if (turnstile.enabled && !turnstile.token) {
+      setErr("Please complete the verification below.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    try {
+      const resp = await fetch("/api/tenant-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgName: org.trim(),
+          email: email.trim(),
+          password,
+          captchaToken: turnstile.token || undefined,
+          website: hpRef.current?.value || undefined,
+        }),
+      });
+      const data = (await resp.json().catch(() => ({}))) as {
+        signInUrl?: string;
+        error?: string;
+      };
+      if (resp.ok) {
+        setSignInUrl(data.signInUrl || "/admin/sign-in");
+        setStatus("done");
+        return;
+      }
+      setErr(data.error || "Something went wrong. Please try again.");
+      setStatus("error");
+    } catch {
+      setErr("Network error. Please check your connection and try again.");
+      setStatus("error");
+    }
+  };
+
+  if (status === "done") {
+    return (
+      <section className="bx-section bx-pagehead" id="top">
+        <div className="bx-shell bx-signup-shell">
+          <div className="bx-signup bx-reveal in">
+            <span className="bx-signup-ic">
+              <Check size={24} />
+            </span>
+            <h1 className="bx-pagehead-title">Check your email.</h1>
+            <p className="bx-pagehead-sub">
+              We sent a verification link to <b>{email.trim()}</b>. Click it to
+              activate your account, then sign in to your new Breathe workspace.
+            </p>
+            <a className="bx-btn bx-btn-primary" href={signInUrl}>
+              Go to sign in <ArrowRight size={16} />
+            </a>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bx-section bx-pagehead" id="top">
+      <div className="bx-shell bx-signup-shell">
+        <div className="bx-signup bx-reveal in">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> Create your account
+          </span>
+          <h1 className="bx-pagehead-title">
+            Your own Breathe, in <span className="grad-em">minutes.</span>
+          </h1>
+          <p className="bx-pagehead-sub">
+            Spin up your workspace and your admin login. No credit card — pick a
+            plan in-app whenever you&apos;re ready.
+          </p>
+          <form className="bx-signup-form" onSubmit={onSubmit} noValidate>
+            <input
+              ref={hpRef}
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="bx-hp"
+            />
+            <label className="bx-field-label">
+              Company name
+              <input
+                type="text"
+                value={org}
+                onChange={(e) => {
+                  setOrg(e.target.value);
+                  clearError();
+                }}
+                placeholder="Acme Home Medical"
+                autoComplete="organization"
+                required
+              />
+            </label>
+            <label className="bx-field-label">
+              Work email
+              <input
+                type="email"
+                inputMode="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearError();
+                }}
+                placeholder="you@yourdme.com"
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label className="bx-field-label">
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearError();
+                }}
+                placeholder="At least 12 characters"
+                autoComplete="new-password"
+                minLength={12}
+                required
+              />
+            </label>
+            {turnstile.enabled ? (
+              <div ref={turnstile.ref} className="bx-turnstile" />
+            ) : null}
+            {status === "error" ? (
+              <p className="bx-demoform-err" role="alert">
+                {err}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="bx-btn bx-btn-primary"
+              disabled={status === "submitting"}
+            >
+              {status === "submitting" ? (
+                "Creating your workspace…"
+              ) : (
+                <>
+                  Create account <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </form>
+          <p className="bx-signup-alt">
+            Prefer to look around first?{" "}
+            <button
+              type="button"
+              className="bx-linkbtn"
+              onClick={() => openDemoGate("breathe-signup")}
+            >
+              Start the free demo
+            </button>
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -294,6 +813,7 @@ const NAV_LINKS: { href: string; label: string }[] = [
 function Nav() {
   const [loc] = useLocation();
   const [open, setOpen] = useState(false);
+  const { open: openDemoGate } = useDemoGate();
   // Close the mobile menu on any route change so it never lingers open.
   useEffect(() => {
     setOpen(false);
@@ -318,9 +838,13 @@ function Nav() {
               {l.label}
             </Link>
           ))}
-          <a className="bx-btn bx-btn-primary bx-btn-sm" href="#demo">
-            Request a demo
-          </a>
+          <button
+            type="button"
+            className="bx-btn bx-btn-primary bx-btn-sm"
+            onClick={() => openDemoGate("breathe-nav")}
+          >
+            Start free demo
+          </button>
         </div>
         <button
           type="button"
@@ -348,13 +872,16 @@ function Nav() {
                 {l.label}
               </Link>
             ))}
-            <a
+            <button
+              type="button"
               className="bx-btn bx-btn-primary bx-nav-mobile-demo"
-              href="#demo"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                openDemoGate("breathe-nav");
+              }}
             >
-              Request a demo
-            </a>
+              Start free demo
+            </button>
           </div>
         </div>
       ) : null}
@@ -364,6 +891,7 @@ function Nav() {
 
 /* ───────────────────────── Hero ───────────────────────── */
 function Hero() {
+  const { open: openDemoGate } = useDemoGate();
   const onMove = (e: React.MouseEvent<HTMLElement>) => {
     if (prefersReducedMotion()) return;
     const r = e.currentTarget.getBoundingClientRect();
@@ -402,17 +930,20 @@ function Hero() {
               starts caring for patients.
             </p>
             <div className="bx-hero-cta bx-reveal in">
-              <a className="bx-btn bx-btn-primary" href="#demo">
-                Request a demo <ArrowRight size={17} />
-              </a>
-              <a className="bx-btn bx-btn-ghost" href="#capabilities">
-                See what it does
-              </a>
+              <button
+                type="button"
+                className="bx-btn bx-btn-primary"
+                onClick={() => openDemoGate("breathe-hero")}
+              >
+                Start the free demo <ArrowRight size={17} />
+              </button>
+              <Link className="bx-btn bx-btn-ghost" href="/breathe/signup">
+                Create your account
+              </Link>
             </div>
             <div className="bx-hero-trust bx-reveal in">
               <BadgeCheck size={15} color="#54c8ff" />
-              HIPAA-eligible · SOC&nbsp;2-aligned posture · On-device patient
-              imaging
+              Live demo on sample data · No call · No credit card
             </div>
           </div>
 
@@ -2546,15 +3077,15 @@ function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
               </li>
             ))}
           </ul>
-          <a
+          <Link
             className={
               "bx-btn bx-btn-sm " +
               (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
             }
-            href="#demo"
+            href="/breathe/signup"
           >
-            {p.price === "Custom" ? "Talk to sales" : "Request a demo"}
-          </a>
+            Create your account
+          </Link>
         </div>
       ))}
     </div>
@@ -2595,6 +3126,7 @@ function PricingAddons({
    prices are driven by the live billing catalog (/api/platform/pricing)
    when available, falling back to the static PLANS / ADDON_GROUPS copy. */
 function Pricing() {
+  const { open: openDemoGate } = useDemoGate();
   const live = usePublicPricing();
   const cards = live ? liveToPlanCards(live.plans) : PLANS;
   const groups =
@@ -2623,9 +3155,13 @@ function Pricing() {
         <PricingAddons groups={groups} />
         <div className="bx-price-cta bx-reveal">
           <span>Not sure which package fits?</span>
-          <a className="bx-btn bx-btn-primary" href="#demo">
-            Get a tailored quote <ArrowRight size={16} />
-          </a>
+          <button
+            type="button"
+            className="bx-btn bx-btn-primary"
+            onClick={() => openDemoGate("breathe-pricing")}
+          >
+            Try it free first <ArrowRight size={16} />
+          </button>
         </div>
       </div>
     </section>
@@ -2888,27 +3424,25 @@ function ClosingCta() {
           </span>
           <h2>Give your team room to breathe.</h2>
           <p>
-            See Breathe run a live resupply order, scrub a claim, and book a
-            telehealth visit in one walkthrough — tailored to your payers and
-            your patients.
+            Jump straight into the live console on sample data — no call, no
+            credit card. Enter your email and you&apos;re in. When you&apos;re
+            ready, create your account in minutes.
           </p>
+          <DemoEmailForm source="breathe-cta" cta="Start the demo" />
           <div className="bx-cta-row">
-            <a
-              className="bx-btn bx-btn-gold"
-              href="mailto:hello@caremetric.ai?subject=Breathe%20demo%20request"
-            >
-              Request a demo <ArrowRight size={17} />
-            </a>
+            <Link className="bx-btn bx-btn-gold" href="/breathe/signup">
+              Create your account <ArrowRight size={17} />
+            </Link>
             <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
               Explore the platform
             </Link>
           </div>
           <div className="bx-cta-meta">
             <span>
-              <Radio size={13} /> No commitment
+              <Radio size={13} /> No credit card
             </span>
             <span>
-              <Check size={13} /> Tailored to your payers
+              <Check size={13} /> Sample data only
             </span>
             <span>
               <ArrowUpRight size={13} /> Live on day one
