@@ -1,25 +1,44 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { Lock } from "lucide-react";
 import {
   Activity,
   ArrowRight,
+  ArrowUpRight,
   BadgeCheck,
+  Bot,
   BrainCircuit,
+  CalendarClock,
   Check,
+  ChevronDown,
   ClipboardSignature,
+  Cpu,
+  Database,
   FileStack,
+  Gauge,
+  GitBranch,
+  Headphones,
+  KeyRound,
   LineChart,
+  Lock,
+  MessageSquare,
   Mic,
   Minus,
+  Network,
   PhoneCall,
+  Plug,
+  Quote,
+  Radio,
   Receipt,
   RefreshCw,
   ScanFace,
+  Server,
+  ShieldCheck,
   Sparkles,
   Stethoscope,
   Video,
+  Waypoints,
   Workflow,
+  Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import "./breathe.css";
@@ -36,6 +55,13 @@ const LOGO = "/breathe/caremetric-logo.png";
  * `breathe.css` so nothing here can clobber the storefront/admin token
  * systems. Lazy-loaded, so its CSS + this component never weigh on the
  * patient-shop initial bundle.
+ *
+ * Art direction (2026 rebuild): editorial-meets-command-center. A
+ * distinctive optical serif (Fraunces) carries the display voice over a
+ * refined grotesque (Hanken) body, on the brand's deep-navy luminance —
+ * a look no legacy DME vendor has. Both fonts are SELF-HOSTED woff2 in
+ * /public/fonts so the page stays same-origin (the app's CSP forbids
+ * third-party font CDNs).
  */
 export function Breathe() {
   useDocumentTitle(
@@ -52,11 +78,19 @@ export function Breathe() {
       <Nav />
       <main>
         <Hero />
+        <IntegrationsStrip />
         <Replaces />
+        <Lifecycle />
+        <ProductShowcase />
         <Features />
+        <AiBento />
         <Comparison />
         <Roles />
         <Roi />
+        <Security />
+        <Onboarding />
+        <Manifesto />
+        <Faq />
         <ClosingCta />
       </main>
       <Footer />
@@ -65,6 +99,14 @@ export function Breathe() {
 }
 
 /* ───────────────────────── Nav ───────────────────────── */
+const NAV_LINKS: { href: string; label: string }[] = [
+  { href: "#product", label: "Tour" },
+  { href: "#platform", label: "Platform" },
+  { href: "#compare", label: "Compare" },
+  { href: "#roi", label: "ROI" },
+  { href: "#security", label: "Security" },
+];
+
 function Nav() {
   return (
     <nav className="bx-nav">
@@ -77,19 +119,12 @@ function Nav() {
           </span>
         </a>
         <div className="bx-nav-links">
-          <a className="bx-nav-anchor" href="#platform">
-            Platform
-          </a>
-          <a className="bx-nav-anchor" href="#compare">
-            Compare
-          </a>
-          <a className="bx-nav-anchor" href="#roles">
-            Time saved
-          </a>
-          <a className="bx-nav-anchor" href="#roi">
-            ROI
-          </a>
-          <a className="bx-btn bx-btn-primary" href="#demo">
+          {NAV_LINKS.map((l) => (
+            <a className="bx-nav-anchor" href={l.href} key={l.href}>
+              {l.label}
+            </a>
+          ))}
+          <a className="bx-btn bx-btn-primary bx-btn-sm" href="#demo">
             Request a demo
           </a>
         </div>
@@ -104,33 +139,34 @@ function Hero() {
     <header className="bx-section bx-hero" id="top">
       <div className="bx-shell">
         <div className="bx-hero-grid">
-          <div className="bx-reveal in">
-            <span className="bx-eyebrow">
+          <div className="bx-hero-copy">
+            <span className="bx-eyebrow bx-reveal in">
               <span className="bx-dot" />
               The AI-native platform for DME
             </span>
-            <h1 className="bx-h1">
+            <h1 className="bx-h1 bx-reveal in">
               Run your entire DME
               <br />
-              business on <span className="grad">one breath.</span>
+              business on <span className="grad-em">one breath.</span>
             </h1>
-            <p className="bx-hero-sub">
+            <p className="bx-hero-sub bx-reveal in">
               Breathe unifies intake, resupply, revenue cycle, clinical
               monitoring, and patient communication into a single AI-native
-              system — so your team stops stitching tools together and starts
-              caring for patients.
+              system — so your team stops stitching seven tools together and
+              starts caring for patients.
             </p>
-            <div className="bx-hero-cta">
+            <div className="bx-hero-cta bx-reveal in">
               <a className="bx-btn bx-btn-primary" href="#demo">
                 Request a demo <ArrowRight size={17} />
               </a>
-              <a className="bx-btn bx-btn-ghost" href="#roi">
-                Calculate your savings
+              <a className="bx-btn bx-btn-ghost" href="#product">
+                See it in action
               </a>
             </div>
-            <div className="bx-hero-trust">
+            <div className="bx-hero-trust bx-reveal in">
               <BadgeCheck size={15} color="#54c8ff" />
-              HIPAA-eligible · SOC 2 posture · Built on CareMetric.ai
+              HIPAA-eligible · SOC&nbsp;2-aligned posture · On-device patient
+              imaging
             </div>
           </div>
 
@@ -193,6 +229,41 @@ function StatBand() {
   );
 }
 
+/* ───────────────────── Integrations strip ───────────────────── */
+const INTEGRATIONS = [
+  "ResMed AirView",
+  "Philips Care Orchestrator",
+  "3B React Health",
+  "Office Ally",
+  "DaVinci PAS",
+  "PacWare",
+  "Stripe",
+  "Twilio",
+  "SendGrid",
+];
+
+function IntegrationsStrip() {
+  return (
+    <section className="bx-integrations bx-reveal" aria-label="Integrations">
+      <div className="bx-shell">
+        <p className="bx-integrations-label">
+          <Plug size={13} /> Connected to the device clouds, clearinghouses, and
+          billing systems you already run
+        </p>
+      </div>
+      <div className="bx-marquee" aria-hidden="true">
+        <div className="bx-marquee-track">
+          {[...INTEGRATIONS, ...INTEGRATIONS].map((name, i) => (
+            <span className="bx-marquee-item" key={`${name}-${i}`}>
+              {name}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Replaces strip ───────────────────────── */
 const REPLACED = [
   "Resupply software",
@@ -216,6 +287,308 @@ function Replaces() {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ───────────────────────── Lifecycle pipeline ───────────────────────── */
+const LIFECYCLE: { icon: React.ReactNode; label: string }[] = [
+  { icon: <PhoneCall size={18} />, label: "Intake" },
+  { icon: <BadgeCheck size={18} />, label: "Eligibility" },
+  { icon: <ScanFace size={18} />, label: "Mask fitting" },
+  { icon: <Receipt size={18} />, label: "Order" },
+  { icon: <RefreshCw size={18} />, label: "Fulfillment" },
+  { icon: <Stethoscope size={18} />, label: "Monitoring" },
+  { icon: <CalendarClock size={18} />, label: "Resupply" },
+  { icon: <LineChart size={18} />, label: "Revenue" },
+];
+
+function Lifecycle() {
+  return (
+    <section className="bx-section bx-lifecycle-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Waypoints size={13} /> The whole lifecycle
+          </span>
+          <h2 className="bx-h2">One continuous workflow, end to end</h2>
+          <p className="bx-lede">
+            From the first intake call to the last reconciled claim, every stage
+            of the DME lifecycle runs on the same data — no exports, no
+            swivel-chair, no patients lost between systems.
+          </p>
+        </div>
+        <div className="bx-pipeline bx-reveal">
+          <div className="bx-pipeline-line">
+            <span className="bx-pipeline-pulse" />
+          </div>
+          <ol className="bx-pipeline-nodes">
+            {LIFECYCLE.map((s, i) => (
+              <li className="bx-pipe-node" key={s.label}>
+                <span className="bx-pipe-dot">{s.icon}</span>
+                <span className="bx-pipe-label">{s.label}</span>
+                <span className="bx-pipe-idx">{`0${i + 1}`}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Product showcase ───────────────────────── */
+const SIDE_NAV: { icon: React.ReactNode; label: string; active?: boolean }[] = [
+  { icon: <Gauge size={15} />, label: "Today", active: true },
+  { icon: <Activity size={15} />, label: "Patients" },
+  { icon: <RefreshCw size={15} />, label: "Resupply" },
+  { icon: <Receipt size={15} />, label: "Claims" },
+  { icon: <MessageSquare size={15} />, label: "Conversations" },
+  { icon: <Stethoscope size={15} />, label: "Therapy" },
+  { icon: <Video size={15} />, label: "Telehealth" },
+  { icon: <LineChart size={15} />, label: "Analytics" },
+];
+
+const KPIS: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  delta: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <RefreshCw size={15} />,
+    label: "Resupply due",
+    value: "248",
+    delta: "+12 today",
+  },
+  {
+    icon: <Receipt size={15} />,
+    label: "First-pass claims",
+    value: "94%",
+    delta: "+3.1 pts",
+  },
+  {
+    icon: <LineChart size={15} />,
+    label: "Collected MTD",
+    value: "$182.4k",
+    delta: "on pace",
+    gold: true,
+  },
+  {
+    icon: <Stethoscope size={15} />,
+    label: "At-risk patients",
+    value: "37",
+    delta: "−8 this wk",
+  },
+];
+
+const WORKLIST: {
+  initials: string;
+  device: string;
+  status: string;
+  tone: "eligible" | "verify" | "auto" | "hold";
+}[] = [
+  {
+    initials: "J·M",
+    device: "AirSense 11",
+    status: "Due now",
+    tone: "eligible",
+  },
+  {
+    initials: "R·K",
+    device: "DreamStation 2",
+    status: "Verify Rx",
+    tone: "verify",
+  },
+  {
+    initials: "S·P",
+    device: "AirCurve VAuto",
+    status: "Reorder placed",
+    tone: "auto",
+  },
+  {
+    initials: "T·W",
+    device: "3B Luna G3",
+    status: "Due now",
+    tone: "eligible",
+  },
+  {
+    initials: "D·L",
+    device: "AirSense 10",
+    status: "Awaiting Rx",
+    tone: "hold",
+  },
+];
+
+const DENIALS: { reason: string; amount: string; pct: number }[] = [
+  { reason: "Prior auth missing", amount: "$4,210", pct: 100 },
+  { reason: "Invalid HCPCS modifier", amount: "$1,980", pct: 47 },
+  { reason: "Eligibility lapse", amount: "$1,140", pct: 27 },
+];
+
+function ProductShowcase() {
+  return (
+    <section className="bx-section" id="product">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Cpu size={13} /> The command center
+          </span>
+          <h2 className="bx-h2">Your whole operation, on one screen</h2>
+          <p className="bx-lede">
+            Every queue, every claim, every conversation, and a live AI voice
+            agent — in one console your team actually wants to work in.
+          </p>
+        </div>
+
+        <div className="bx-app-frame bx-reveal">
+          <div className="bx-app">
+            <div className="bx-app-top">
+              <span className="bx-app-dots">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="bx-app-url">
+                <Lock size={11} /> app.cmbreathe.com/admin/today
+              </span>
+              <span className="bx-app-live">
+                <span className="dot" /> Live
+              </span>
+            </div>
+
+            <div className="bx-app-body">
+              <aside className="bx-app-side">
+                <div className="bx-app-brand">
+                  <img src={LOGO} alt="" />
+                  <b>Breathe</b>
+                </div>
+                <nav className="bx-app-nav">
+                  {SIDE_NAV.map((n) => (
+                    <span
+                      className={`bx-app-navitem${n.active ? " active" : ""}`}
+                      key={n.label}
+                    >
+                      {n.icon}
+                      {n.label}
+                    </span>
+                  ))}
+                </nav>
+                <div className="bx-app-pilot">
+                  <Bot size={14} />
+                  <span>
+                    <b>PennPilot</b>
+                    <i>AI copilot · ready</i>
+                  </span>
+                </div>
+              </aside>
+
+              <div className="bx-app-main">
+                <div className="bx-app-head">
+                  <div>
+                    <div className="bx-app-hello">Good morning, Maria</div>
+                    <div className="bx-app-sub">
+                      Tuesday · 248 patients due this week
+                    </div>
+                  </div>
+                  <div className="bx-app-search">
+                    <span>Search patients, orders, claims…</span>
+                    <kbd>⌘K</kbd>
+                  </div>
+                </div>
+
+                <div className="bx-app-kpis">
+                  {KPIS.map((k) => (
+                    <div
+                      className={`bx-app-kpi${k.gold ? " gold" : ""}`}
+                      key={k.label}
+                    >
+                      <span className="bx-app-kpi-ic">{k.icon}</span>
+                      <span className="bx-app-kpi-label">{k.label}</span>
+                      <span className="bx-app-kpi-val">{k.value}</span>
+                      <span className="bx-app-kpi-delta">{k.delta}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bx-app-cols">
+                  <div className="bx-app-panel">
+                    <div className="bx-app-panel-head">
+                      <b>Resupply worklist</b>
+                      <span>Eligibility-ranked</span>
+                    </div>
+                    <ul className="bx-worklist">
+                      {WORKLIST.map((w) => (
+                        <li key={w.initials}>
+                          <span className="bx-avatar">{w.initials}</span>
+                          <span className="bx-worklist-meta">
+                            <b>{w.device}</b>
+                            <i>Resupply window open</i>
+                          </span>
+                          <span className={`bx-pill ${w.tone}`}>
+                            {w.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="bx-app-stack">
+                    <div className="bx-app-panel bx-voice">
+                      <div className="bx-app-panel-head">
+                        <b>
+                          <Mic size={13} /> AI voice agent
+                        </b>
+                        <span className="bx-voice-timer">
+                          <span className="dot" /> on call · 02:14
+                        </span>
+                      </div>
+                      <div className="bx-wave" aria-hidden="true">
+                        {Array.from({ length: 28 }).map((_, i) => (
+                          <i
+                            key={i}
+                            style={{ animationDelay: `${i * 60}ms` }}
+                          />
+                        ))}
+                      </div>
+                      <p className="bx-voice-transcript">
+                        “…confirming your mask cushion and tubing for this
+                        month&apos;s resupply — I have you all set.”
+                      </p>
+                      <div className="bx-voice-action">
+                        <Check size={13} /> Order #80432 placed · eligibility
+                        confirmed
+                      </div>
+                    </div>
+
+                    <div className="bx-app-panel bx-denials">
+                      <div className="bx-app-panel-head">
+                        <b>Denials by $ recoverable</b>
+                        <span>worklist</span>
+                      </div>
+                      {DENIALS.map((d) => (
+                        <div className="bx-denial" key={d.reason}>
+                          <span className="bx-denial-k">{d.reason}</span>
+                          <span className="bx-denial-v">{d.amount}</span>
+                          <span className="bx-denial-bar">
+                            <i style={{ width: `${d.pct}%` }} />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bx-app-glow" aria-hidden="true" />
+        </div>
+        <p className="bx-app-caption">
+          Illustrative interface. Sample data shown — no real patient
+          information.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -324,6 +697,91 @@ function FeatureCard({ f, delay }: { f: Feature; delay: number }) {
       <h3>{f.title}</h3>
       <p>{f.body}</p>
     </div>
+  );
+}
+
+/* ───────────────────────── AI bento ───────────────────────── */
+type Ai = {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  span?: boolean;
+  wave?: boolean;
+};
+
+const AI_CELLS: Ai[] = [
+  {
+    icon: <Mic size={20} />,
+    title: "Voice agent that closes the loop",
+    body: "Answers inbound resupply and status calls, confirms coverage, places the order, and hands your team a transcript, summary, and sentiment read.",
+    span: true,
+    wave: true,
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Claims intelligence",
+    body: "Scrubs the 837P, predicts denials, and ranks the worklist by recoverable dollars.",
+  },
+  {
+    icon: <ScanFace size={20} />,
+    title: "On-device mask fitting",
+    body: "Facial measurements computed in the browser — the image never leaves the phone.",
+  },
+  {
+    icon: <Bot size={20} />,
+    title: "PennPilot copilot",
+    body: "An in-app assistant that answers “where do I…?” and surfaces the next best action for staff.",
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    title: "Storefront chatbot",
+    body: "Warm, on-brand answers for patients on the web and over email — with clean human hand-off.",
+  },
+  {
+    icon: <Headphones size={20} />,
+    title: "Sleep coach & SMS triage",
+    body: "Adherence coaching plus intent classification that routes every inbound text correctly.",
+  },
+];
+
+function AiBento() {
+  return (
+    <section className="bx-section" id="ai">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <BrainCircuit size={13} /> Intelligence, built in
+          </span>
+          <h2 className="bx-h2">
+            AI that does the work — <em>not just the talking</em>
+          </h2>
+          <p className="bx-lede">
+            Best-in-class models from Anthropic, OpenAI, and ElevenLabs are
+            wired into the product where each is strongest — and every one
+            degrades gracefully when a key is unset.
+          </p>
+        </div>
+        <div className="bx-bento">
+          {AI_CELLS.map((c) => (
+            <div
+              className={`bx-bento-cell${c.span ? " span" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-bento-ic">{c.icon}</div>
+              <h3>{c.title}</h3>
+              <p>{c.body}</p>
+              {c.wave ? (
+                <div className="bx-bento-wave" aria-hidden="true">
+                  {Array.from({ length: 40 }).map((_, i) => (
+                    <i key={i} style={{ animationDelay: `${i * 45}ms` }} />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -740,6 +1198,209 @@ function Roi() {
   );
 }
 
+/* ───────────────────────── Security ───────────────────────── */
+const SECURITY: { icon: React.ReactNode; title: string; body: string }[] = [
+  {
+    icon: <ScanFace size={20} />,
+    title: "On-device patient imaging",
+    body: "Camera frames for mask fitting never leave the browser — only numeric measurements are transmitted. Nothing image-derived is ever logged.",
+  },
+  {
+    icon: <ShieldCheck size={20} />,
+    title: "HIPAA-eligible infrastructure",
+    body: "Every AI and communications vendor in the stack is HIPAA-eligible, and patient data flows through a SOC 2-aligned posture.",
+  },
+  {
+    icon: <KeyRound size={20} />,
+    title: "Least-privilege access",
+    body: "Granular, permission-gated admin roles mean each teammate sees only what their job requires — enforced at every route.",
+  },
+  {
+    icon: <Database size={20} />,
+    title: "PHI minimization",
+    body: "Order payloads and patient images are treated as world-readable and kept out of application logs by design, not by policy alone.",
+  },
+  {
+    icon: <Server size={20} />,
+    title: "Tenant isolation",
+    body: "Multi-tenant by architecture: your brand, sending domain, and patient panel are cleanly separated from every other operator.",
+  },
+  {
+    icon: <Network size={20} />,
+    title: "Encrypted in transit",
+    body: "Same-origin, strict-CSP delivery with TLS everywhere — no third-party trackers or font CDNs reaching into patient sessions.",
+  },
+];
+
+function Security() {
+  return (
+    <section className="bx-section" id="security">
+      <div className="bx-shell">
+        <div className="bx-section-head bx-reveal">
+          <span className="bx-eyebrow">
+            <Lock size={13} /> Trust &amp; security
+          </span>
+          <h2 className="bx-h2">Built for PHI from the first line of code</h2>
+          <p className="bx-lede">
+            Patient privacy isn&apos;t a settings page — it&apos;s an
+            architectural invariant. The hard rules are enforced in the
+            codebase, not left to operator discipline.
+          </p>
+        </div>
+        <div className="bx-sec-grid">
+          {SECURITY.map((s) => (
+            <div className="bx-sec-card bx-reveal" key={s.title}>
+              <div className="bx-sec-ic">{s.icon}</div>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Onboarding / migration ───────────────────────── */
+const STEPS: {
+  icon: React.ReactNode;
+  n: string;
+  title: string;
+  body: string;
+}[] = [
+  {
+    icon: <Database size={20} />,
+    n: "01",
+    title: "Import your world",
+    body: "Patient roster, device-cloud connections, and billing data come over from PacWare CSVs and your therapy clouds. The import is fill-only — an existing value is never overwritten.",
+  },
+  {
+    icon: <Plug size={20} />,
+    n: "02",
+    title: "Configure & connect",
+    body: "Wire up your payers, clearinghouse, brand, From address, and reminder cadences. Turn AI surfaces on one feature flag at a time, at your pace.",
+  },
+  {
+    icon: <Zap size={20} />,
+    n: "03",
+    title: "Go live, white-glove",
+    body: "Your team starts in a console they grasp in minutes. We stay on the line through the first resupply run and the first claim batch.",
+  },
+];
+
+function Onboarding() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <GitBranch size={13} /> Migration
+          </span>
+          <h2 className="bx-h2">Switch in weeks, not quarters</h2>
+          <p className="bx-lede">
+            Moving off legacy DME software is the scariest part — so we made it
+            the easiest. Your data comes with you, and nothing you already have
+            gets clobbered.
+          </p>
+        </div>
+        <div className="bx-steps">
+          {STEPS.map((s) => (
+            <div className="bx-step bx-reveal" key={s.n}>
+              <span className="bx-step-n">{s.n}</span>
+              <div className="bx-step-ic">{s.icon}</div>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Manifesto ───────────────────────── */
+function Manifesto() {
+  return (
+    <section className="bx-section bx-manifesto-section">
+      <div className="bx-shell">
+        <figure className="bx-manifesto bx-reveal">
+          <Quote className="bx-quote-mark" size={40} aria-hidden="true" />
+          <blockquote>
+            DME software was built for billing departments. We built Breathe for
+            patients — and for the people who care for them.
+          </blockquote>
+          <figcaption>
+            <img src={LOGO} alt="" />
+            <span>
+              <b>The CareMetric.ai team</b>
+              <i>Why we built Breathe</i>
+            </span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── FAQ ───────────────────────── */
+const FAQ: { q: string; a: React.ReactNode }[] = [
+  {
+    q: "Will it work with our billing system?",
+    a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV, submits 837P claims through the Office Ally clearinghouse, and posts ERAs back automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
+  },
+  {
+    q: "How long does implementation take?",
+    a: "Most operators are live in weeks, not quarters. Your roster and history import as a fill-only sync — new patients are added and blank fields are filled, but an existing value is never overwritten — so there is no risky big-bang cutover.",
+  },
+  {
+    q: "Is our patient data safe?",
+    a: "Privacy is architectural. Mask-fitting images are processed on-device and never transmitted, order payloads and images are kept out of application logs by design, admin access is least-privilege and permission-gated, and every AI vendor in the stack is HIPAA-eligible.",
+  },
+  {
+    q: "Does the AI replace my staff?",
+    a: "No — it removes the repetitive work so your team can do the human parts. The voice agent leaves a summary for review, claims are scrubbed before a person approves them, and the admin copilot always confirms before it sends anything. People stay in the loop.",
+  },
+  {
+    q: "Which device clouds do you support?",
+    a: "ResMed AirView, Philips Care Orchestrator, and 3B React Health today, with adherence pulled nightly and surfaced as a prioritized worklist of who is slipping and who is due.",
+  },
+  {
+    q: "Do we own our data?",
+    a: "Always. Your patients, orders, and history are yours — exportable on demand, including back out to PacWare. No lock-in, no hostage data.",
+  },
+];
+
+function Faq() {
+  return (
+    <section className="bx-section" id="faq">
+      <div className="bx-shell bx-faq-shell">
+        <div className="bx-section-head bx-reveal">
+          <span className="bx-eyebrow">
+            <MessageSquare size={13} /> Questions
+          </span>
+          <h2 className="bx-h2">What DME owners ask us first</h2>
+          <p className="bx-lede">
+            Straight answers on the things that actually decide a switch —
+            integrations, migration risk, security, and what the AI does and
+            does not do.
+          </p>
+        </div>
+        <div className="bx-faq bx-reveal">
+          {FAQ.map((f) => (
+            <details className="bx-faq-item" key={f.q}>
+              <summary>
+                <span>{f.q}</span>
+                <ChevronDown className="bx-faq-chev" size={18} />
+              </summary>
+              <div className="bx-faq-a">{f.a}</div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Closing CTA ───────────────────────── */
 function ClosingCta() {
   return (
@@ -762,9 +1423,20 @@ function ClosingCta() {
             >
               Request a demo <ArrowRight size={17} />
             </a>
-            <a className="bx-btn bx-btn-ghost" href="#platform">
+            <a className="bx-btn bx-btn-ghost" href="#product">
               Explore the platform
             </a>
+          </div>
+          <div className="bx-cta-meta">
+            <span>
+              <Radio size={13} /> No commitment
+            </span>
+            <span>
+              <Check size={13} /> Tailored to your payers
+            </span>
+            <span>
+              <ArrowUpRight size={13} /> Live in weeks
+            </span>
           </div>
         </div>
       </div>
