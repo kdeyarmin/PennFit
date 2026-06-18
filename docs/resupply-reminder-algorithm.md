@@ -280,16 +280,19 @@ automated call counts as `aiVoiceEvents`.
 
 ## 8. Where this lives
 
-| Concern                                            | File                                                                                               |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| First-touch scan + per-channel SMS/email send      | `artifacts/resupply-api/src/worker/jobs/reminders.ts`                                              |
-| Eligibility / cadence + channel resolver           | `lib/resupply-domain/src/outreach-plan.ts`                                                         |
-| Escalation ladder (spacing, voice tier, CSR alert) | `artifacts/resupply-api/src/worker/jobs/reminder-escalation.ts`                                    |
-| Automated-call send job                            | `artifacts/resupply-api/src/worker/jobs/reminder-voice.ts`                                         |
-| Shared outbound-call placement (route + worker)    | `artifacts/resupply-api/src/lib/voice/place-outbound-call.ts`                                      |
-| Admin "Call" button route                          | `artifacts/resupply-api/src/routes/voice/place-call.ts`                                            |
-| SMS reminder copy                                  | `lib/resupply-reminders/src/send-sms.ts`                                                           |
-| Email reminder copy + signed CTAs                  | `lib/resupply-messaging/src/email-templates.ts`                                                    |
-| Inbound SMS keyword routing                        | `lib/resupply-messaging/src/keyword-router.ts`, `artifacts/resupply-api/src/routes/sms/inbound.ts` |
-| Voice agent grounding context                      | `artifacts/resupply-api/src/lib/voice/ws-handler.ts`                                               |
-| Voice tier opt-in flag (seed)                      | `lib/resupply-db/drizzle/0394_reminder_escalation_voice_flag.sql`                                  |
+| Concern                                            | File                                                                                                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First-touch scan + per-channel SMS/email send      | `artifacts/resupply-api/src/worker/jobs/reminders.ts`                                                                                                                                             |
+| Eligibility / cadence + channel resolver           | `lib/resupply-domain/src/outreach-plan.ts`                                                                                                                                                        |
+| Escalation ladder (spacing, voice tier, CSR alert) | `artifacts/resupply-api/src/worker/jobs/reminder-escalation.ts`                                                                                                                                   |
+| Automated-call send job                            | `artifacts/resupply-api/src/worker/jobs/reminder-voice.ts`                                                                                                                                        |
+| Shared outbound-call placement (route + worker)    | `artifacts/resupply-api/src/lib/voice/place-outbound-call.ts`                                                                                                                                     |
+| Admin "Call" button route                          | `artifacts/resupply-api/src/routes/voice/place-call.ts`                                                                                                                                           |
+| SMS reminder copy                                  | `lib/resupply-reminders/src/send-sms.ts`                                                                                                                                                          |
+| Email reminder copy + signed CTAs                  | `lib/resupply-messaging/src/email-templates.ts`                                                                                                                                                   |
+| Inbound SMS keyword routing                        | `lib/resupply-messaging/src/keyword-router.ts`, `artifacts/resupply-api/src/routes/sms/inbound.ts`                                                                                                |
+| Voice agent grounding context                      | `artifacts/resupply-api/src/lib/voice/ws-handler.ts`                                                                                                                                              |
+| Voice tier opt-in flag (seed)                      | `lib/resupply-db/drizzle/0394_reminder_escalation_voice_flag.sql`                                                                                                                                 |
+| Voice-call disposition (AMD) column                | `lib/resupply-db/drizzle/0395_voice_calls_answered_by.sql`                                                                                                                                        |
+| Tunable cadence (Control Center settings)          | `artifacts/resupply-api/src/lib/app-config/catalog.ts` (`RESUPPLY_ESCALATION_*`)                                                                                                                  |
+| Reorder funnel view (admin page + API)             | `artifacts/cpap-fitter/src/pages/admin/admin-reorder-reminders.tsx`, `artifacts/resupply-api/src/routes/admin/reorder-reminders.ts`, `artifacts/resupply-api/src/lib/analytics/reorder-funnel.ts` |
