@@ -751,6 +751,10 @@ function AddonCatalogRow({ addon }: { addon: BillingAddon }) {
                 resetForm();
                 setEditing(false);
                 setMessage(null);
+                setName(addon.name);
+                setRecurring(centsToDollarInput(addon.recurringPriceCents));
+                setUnitLabel(addon.unitLabel ?? "");
+                setIsActive(addon.isActive !== false);
               }}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
             >
