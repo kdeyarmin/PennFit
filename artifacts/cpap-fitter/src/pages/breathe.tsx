@@ -77,6 +77,7 @@ export function Breathe() {
   useRevealOnScroll();
   useNoIndex();
   useSmoothScroll();
+  useInitialHashScroll();
 
   return (
     <div className="breathe-page">
@@ -1694,6 +1695,42 @@ function useSmoothScroll() {
     return () => {
       root.style.scrollBehavior = prev;
     };
+  }, []);
+}
+
+/**
+ * Scrolls to the URL hash target on mount. A deep link / cross-page
+ * navigation like `/breathe#roi` would otherwise land at the top of the
+ * page, because this surface is lazy-loaded — the browser's native hash
+ * jump fires before the React content (and the `#roi` section) has
+ * mounted. We retry on a few animation frames until the target exists,
+ * then scroll to it (honoring prefers-reduced-motion). No hash, or a
+ * hash that never resolves, is a silent no-op.
+ */
+function useInitialHashScroll() {
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash === "#" || hash === "#top") return;
+    let frame = 0;
+    let tries = 0;
+    const tryScroll = () => {
+      let el: Element | null = null;
+      try {
+        el = document.querySelector(hash);
+      } catch {
+        return; // malformed selector — nothing to do
+      }
+      if (el) {
+        el.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "start",
+        });
+        return;
+      }
+      if (tries++ < 60) frame = requestAnimationFrame(tryScroll);
+    };
+    frame = requestAnimationFrame(tryScroll);
+    return () => cancelAnimationFrame(frame);
   }, []);
 }
 
