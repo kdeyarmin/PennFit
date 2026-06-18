@@ -152,7 +152,7 @@ overrides:
   qs: '>=6.15.2'
   axios@<1.16.1: ^1.16.1
   '@babel/core@<7.29.6': ^7.29.6
-  undici@<7.28.0: ^7.28.0
+  undici@>=7.23.0 <7.28.0: '>=7.28.0 <8'
 
 importers:
 
@@ -505,7 +505,7 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
       undici:
-        specifier: ^7.28.0
+        specifier: '>=7.28.0 <8'
         version: 7.28.0
       web-push:
         specifier: ^3.6.7
