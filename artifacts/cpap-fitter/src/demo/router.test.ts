@@ -284,6 +284,42 @@ describe("demo router", () => {
     expect(body.messages.length).toBeGreaterThan(0);
   });
 
+  it("answers a patient detail with the four related-record arrays", async () => {
+    // Regression guard: PatientDetailPage derefs data.episodes.length,
+    // .conversations.length, .fulfillments.length, .prescriptions.length
+    // for its tab counts. Without a :id handler the detail GET hit the
+    // empty-object fallback and crashed into the global ErrorBoundary the
+    // instant a roster row was clicked.
+    const res = await get("/resupply-api/patients/demo-patient-3");
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as Record<string, unknown>;
+    expect(body.id).toBe("demo-patient-3");
+    for (const key of [
+      "episodes",
+      "conversations",
+      "fulfillments",
+      "prescriptions",
+    ]) {
+      expect(Array.isArray(body[key]), key).toBe(true);
+    }
+  });
+
+  it("answers a storefront order detail with a populated payload", async () => {
+    // Regression guard: AdminOrderDetail derefs data.order.payload.* —
+    // the empty-object fallback (no `order`) crashed it on click.
+    const res = await get("/api/admin/orders/demo-aorder-2");
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as {
+      order: { id: string; orderReference: string; payload: unknown };
+    };
+    expect(body.order.id).toBe("demo-aorder-2");
+    expect(typeof body.order.orderReference).toBe("string");
+    expect(body.order.payload).toBeTypeOf("object");
+    expect(body.order.payload).not.toBeNull();
+  });
+
   it("falls back to empty object for unmatched API GETs", async () => {
     const res = await get("/api/totally-unknown-endpoint");
     expect(res!.status).toBe(200);

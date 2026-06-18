@@ -120,6 +120,89 @@ export function demoPatients(limit = 25, offset = 0, search?: string | null) {
   return { items, total: all.length, limit, offset };
 }
 
+// Full patient detail (header + the four related-record arrays the
+// page derefs for its tab counts) for /resupply-api/patients/:id.
+// Without this the detail GET hits the router's empty-object fallback
+// and `data.episodes.length` (and its siblings) throw into the global
+// ErrorBoundary the instant a demo explorer clicks a roster row.
+export function demoPatientDetail(id: string) {
+  const n = Number.parseInt(id.replace(/\D/g, ""), 10) || 1;
+  const i = n - 1;
+  const first = FIRST_NAMES[i % FIRST_NAMES.length];
+  const last = LAST_NAMES[i % LAST_NAMES.length];
+  const status: PatientStatus =
+    i % 7 === 0 ? "paused" : i % 11 === 0 ? "closed" : "active";
+  const rxId = `demo-rx-${n}`;
+  const epId = `demo-ep-${n}`;
+  return {
+    id,
+    pacwareId: `PW-${10240 + i}`,
+    firstName: first,
+    lastName: last,
+    status,
+    hasPhone: i % 3 !== 0,
+    hasEmail: true,
+    insurancePayer: "Aetna PPO",
+    cadenceOverrideDays: null,
+    channelPreference: null,
+    locationId: null,
+    locationName: null,
+    createdAt: daysAgo(120 - i * 5),
+    updatedAt: daysAgo(i),
+    lastMessageAt: hoursAgo(i + 1),
+    lastMessageDirection: "inbound" as const,
+    lastMessagePreview: "Hi, I wanted to check on my next resupply shipment.",
+    prescriptions: [
+      {
+        id: rxId,
+        itemSku: "A7034",
+        hcpcsCode: "A7034",
+        cadenceDays: 90,
+        validFrom: daysAgo(200),
+        validUntil: daysFromNow(160),
+        status: "active" as const,
+        createdAt: daysAgo(200),
+      },
+    ],
+    episodes: [
+      {
+        id: epId,
+        prescriptionId: rxId,
+        itemSku: "A7034",
+        status: "awaiting_response" as const,
+        dueAt: daysFromNow(5),
+        createdAt: daysAgo(10),
+      },
+    ],
+    conversations: [
+      {
+        id: `demo-conv-${n}`,
+        episodeId: epId,
+        channel: "sms" as const,
+        status: "awaiting_admin" as const,
+        lastMessageAt: hoursAgo(i + 1),
+        createdAt: daysAgo(2),
+      },
+    ],
+    fulfillments: [
+      {
+        id: `demo-ful-${n}`,
+        episodeId: epId,
+        itemSku: "A7034",
+        quantity: 1,
+        status: "shipped" as const,
+        pacwareOrderRef: `PW-ORD-${3300 + i}`,
+        shippedAt: daysAgo(40),
+        deliveredAt: daysAgo(38),
+        createdAt: daysAgo(42),
+      },
+    ],
+    portalStatus: "active" as const,
+    portalInvitedAt: daysAgo(60),
+    linkedCustomerUserId: i % 2 === 0 ? `demo-customer-${n}` : null,
+  };
+}
+
 export function demoShopCustomers(opts: {
   q?: string | null;
   page?: number;
@@ -721,8 +804,11 @@ export function demoSystemInfo() {
   };
 }
 
-export function demoAdminOrders(page = 1, pageSize = 25) {
-  const all = FIRST_NAMES.slice(0, 10).map((first, i) => ({
+const DEMO_ADMIN_ORDER_COUNT = 10;
+
+function demoAdminOrderRow(i: number) {
+  const first = FIRST_NAMES[i % FIRST_NAMES.length];
+  return {
     id: `demo-aorder-${i + 1}`,
     orderReference: `PENN-DEMO-${2000 + i}`,
     patientFirstName: first,
@@ -745,12 +831,66 @@ export function demoAdminOrders(page = 1, pageSize = 25) {
     emailDeliveredAt: i % 5 === 0 ? null : daysAgo(i),
     emailError: i % 5 === 0 ? "550 mailbox unavailable" : null,
     createdAt: daysAgo(i),
-  }));
+  };
+}
+
+export function demoAdminOrders(page = 1, pageSize = 25) {
+  const all = Array.from({ length: DEMO_ADMIN_ORDER_COUNT }, (_, i) =>
+    demoAdminOrderRow(i),
+  );
   const start = (page - 1) * pageSize;
   return {
     orders: all.slice(start, start + pageSize),
     page,
     pageSize,
     total: all.length,
+  };
+}
+
+// Full order detail (the list row + the `payload` blob the detail page
+// derefs as `data.order.payload.{insurance,prescription,…}`) for
+// /api/admin/orders/:id. Without it the detail GET hits the empty-object
+// fallback and `data.order` is undefined → crash into the ErrorBoundary
+// on the click the seeded orders list invites.
+export function demoAdminOrderDetail(id: string) {
+  const n = Number.parseInt(id.replace(/\D/g, ""), 10) || 1;
+  const i = (n - 1 + DEMO_ADMIN_ORDER_COUNT) % DEMO_ADMIN_ORDER_COUNT;
+  const row = demoAdminOrderRow(i);
+  row.id = id;
+  return {
+    order: {
+      ...row,
+      payload: {
+        insurance: {
+          provider: "Aetna",
+          memberId: "W2840173355",
+          groupNumber: "PA-00271",
+          planName: "Aetna Choice PPO",
+          policyholderName: `${row.patientFirstName} ${row.patientLastName}`,
+          policyholderRelationship: "self",
+        },
+        prescription: {
+          hasExistingPrescription: true,
+          physicianName: "Dr. Alex Rivera",
+          physicianPhone: "+1 814 555 0142",
+        },
+        measurements: {
+          noseWidth: 34.2,
+          noseHeight: 48.6,
+          noseToChin: 61.0,
+          mouthWidth: 51.4,
+          faceWidthAtCheekbones: 132.5,
+          calibrationMethod: "iris",
+        },
+        shippingAddress: {
+          street1: "415 Maple Avenue",
+          street2: "Apt 6",
+          city: row.shippingCity,
+          state: row.shippingState,
+          zip: row.shippingZip,
+        },
+        notes: "Patient prefers afternoon delivery windows.",
+      },
+    },
   };
 }
