@@ -88,6 +88,28 @@ const OUTBOUND_DEFAULT_CALL_CONTEXT =
   "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
   "review supplies due, confirm shipping address, and place the order.";
 
+// Process-level concurrent-call cap. Each accepted call opens up to three
+// upstream sockets (OpenAI Realtime, ElevenLabs TTS, Deepgram STT) and is
+// held up to ~15 min, so an unbounded burst can exhaust file descriptors /
+// vendor concurrency limits and degrade the in-process API as a whole.
+// We count active calls at the module level and reject new connections
+// over the ceiling BEFORE opening any upstream sockets. The ceiling reads
+// from VOICE_MAX_CONCURRENT_CALLS (default 50 — generous; well past the
+// real peak for a single-tenant resupply line) and is clamped to a sane
+// positive integer so a typo'd env var can't disable the call path.
+const DEFAULT_VOICE_MAX_CONCURRENT_CALLS = 50;
+let activeVoiceCallCount = 0;
+
+function voiceMaxConcurrentCalls(): number {
+  const raw = process.env.VOICE_MAX_CONCURRENT_CALLS;
+  if (!raw) return DEFAULT_VOICE_MAX_CONCURRENT_CALLS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_VOICE_MAX_CONCURRENT_CALLS;
+  }
+  return parsed;
+}
+
 const DIAGNOSTIC_DEFAULT_CALL_CONTEXT = "Voice connection diagnostic.";
 
 /**
@@ -161,6 +183,52 @@ export async function handleVoiceWsConnection(
     return;
   }
   const supabase = getOrgScopedClient(orgId);
+
+  // Concurrent-call cap. Reject — gracefully — before opening ANY upstream
+  // socket when we're already at the ceiling, so a burst can't exhaust FDs
+  // / vendor concurrency and take down the in-process API. The slot is
+  // reserved just before the first upstream socket opens (see
+  // `reserveCallSlot()` below) and released exactly once via
+  // `releaseCallSlot()` on EVERY teardown path.
+  const maxConcurrent = voiceMaxConcurrentCalls();
+  if (activeVoiceCallCount >= maxConcurrent) {
+    logger.warn(
+      {
+        event: "voice_max_concurrent_reached",
+        active: activeVoiceCallCount,
+        max: maxConcurrent,
+        conversationId: pending.conversationId,
+      },
+      "voice WS: concurrent-call ceiling reached; rejecting connection",
+    );
+    try {
+      // 1013 = "Try Again Later" — the right signal for transient
+      // capacity rejection (vs a protocol/auth failure).
+      ws.close(1013, "voice-capacity");
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
+  // The slot is RESERVED just before the first upstream socket opens (the
+  // RealtimeClient constructor, below) — not here — so a synchronous throw
+  // in the cheap setup between now and then (dispatcher / ElevenLabs client
+  // construction) can't leak a slot. The ceiling check above and the
+  // reserve below are atomic: no `await` runs between them, so the count
+  // can't move underneath us. `releaseCallSlot()` is the exactly-once
+  // decrement, invoked from every teardown path.
+  let callSlotReserved = false;
+  let callSlotReleased = false;
+  const reserveCallSlot = (): void => {
+    if (callSlotReserved) return;
+    callSlotReserved = true;
+    activeVoiceCallCount += 1;
+  };
+  const releaseCallSlot = (): void => {
+    if (!callSlotReserved || callSlotReleased) return;
+    callSlotReleased = true;
+    activeVoiceCallCount = Math.max(0, activeVoiceCallCount - 1);
+  };
 
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
@@ -329,31 +397,44 @@ export async function handleVoiceWsConnection(
     );
   }
 
-  const client = new RealtimeClient({
-    apiKey: config.openaiApiKey,
-    ...realtime,
-    // When ElevenLabs owns the voice, the model emits text (not audio)
-    // and the bridge synthesises it. Otherwise the model speaks (cedar).
-    generateAudio: !externalVoice,
-    instructions: buildPromptOrFallback(
-      {
-        practiceName: config.practiceName?.trim() || "PennPaps",
-        callerKind,
-        // Inbound calls (the reorder IVR) set their own context + greeting
-        // on the pending entry so the agent doesn't tell a caller who
-        // dialed in that we're calling them. Outbound (place-call) leaves
-        // both unset → the default check-in context + DEFAULT_GREETING.
-        callContext: pending.callContext ?? OUTBOUND_DEFAULT_CALL_CONTEXT,
-        ...(pending.greeting ? { greeting: pending.greeting } : {}),
-      },
-      OUTBOUND_DEFAULT_CALL_CONTEXT,
-      pending.conversationId,
-    ),
-    tools: OPENAI_TOOL_DESCRIPTORS,
-    allowedToolNames: new Set(
-      callerKind === "shop_customer" ? SHOP_TOOL_NAMES : PATIENT_TOOL_NAMES,
-    ),
-  });
+  // The RealtimeClient constructor OPENS the OpenAI WebSocket (the first
+  // upstream socket of the call). Reserve the concurrency slot here, right
+  // before that socket opens. A synchronous throw in the constructor
+  // happens after the reserve but before `finalizeAndClose` is wired, so
+  // release the slot before propagating — otherwise a construction failure
+  // would permanently consume a concurrency slot.
+  reserveCallSlot();
+  let client: RealtimeClient;
+  try {
+    client = new RealtimeClient({
+      apiKey: config.openaiApiKey,
+      ...realtime,
+      // When ElevenLabs owns the voice, the model emits text (not audio)
+      // and the bridge synthesises it. Otherwise the model speaks (cedar).
+      generateAudio: !externalVoice,
+      instructions: buildPromptOrFallback(
+        {
+          practiceName: config.practiceName?.trim() || "PennPaps",
+          callerKind,
+          // Inbound calls (the reorder IVR) set their own context + greeting
+          // on the pending entry so the agent doesn't tell a caller who
+          // dialed in that we're calling them. Outbound (place-call) leaves
+          // both unset → the default check-in context + DEFAULT_GREETING.
+          callContext: pending.callContext ?? OUTBOUND_DEFAULT_CALL_CONTEXT,
+          ...(pending.greeting ? { greeting: pending.greeting } : {}),
+        },
+        OUTBOUND_DEFAULT_CALL_CONTEXT,
+        pending.conversationId,
+      ),
+      tools: OPENAI_TOOL_DESCRIPTORS,
+      allowedToolNames: new Set(
+        callerKind === "shop_customer" ? SHOP_TOOL_NAMES : PATIENT_TOOL_NAMES,
+      ),
+    });
+  } catch (err) {
+    releaseCallSlot();
+    throw err;
+  }
 
   // RealtimeClient's constructor OPENS the OpenAI WebSocket, so a throw
   // from anything between client construction and the bridge taking
@@ -383,6 +464,10 @@ export async function handleVoiceWsConnection(
     } catch {
       /* never mask the original error with a close failure */
     }
+    // The slot was reserved above but `finalizeAndClose` never runs on
+    // this pre-bridge throw — release it here so a construction failure
+    // doesn't permanently consume a concurrency slot.
+    releaseCallSlot();
     throw err;
   }
 
@@ -560,6 +645,11 @@ export async function handleVoiceWsConnection(
   ): void => {
     if (closed) return;
     closed = true;
+    // Release the concurrent-call slot the moment teardown begins. The
+    // `closed` guard above makes this the exactly-once decrement for the
+    // normal lifecycle; the bridge-construction catch handles the
+    // pre-bridge throw separately.
+    releaseCallSlot();
     if (maxDurationTimer !== null) {
       clearTimeout(maxDurationTimer);
       maxDurationTimer = null;
