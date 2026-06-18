@@ -51,8 +51,8 @@ describe("computeConnectionTestStatus", () => {
   });
 
   it("treats email as configured with only the API key (From is a fixed default)", () => {
-    // The From address defaults to info@pennpaps.com in code, so the API
-    // key alone is enough to mark email configured.
+    // The From address defaults to the platform constant in code, so the
+    // API key alone is enough to mark email configured.
     const status = computeConnectionTestStatus({ SENDGRID_API_KEY: "SG.x" });
     expect(status.email.configured).toBe(true);
   });
@@ -123,7 +123,7 @@ describe("runEmailTest", () => {
     expect(r.ok).toBe(true);
     expect(r).toMatchObject({
       channel: "email",
-      detail: { messageId: "msg_def", from: "info@pennpaps.com" },
+      detail: { messageId: "msg_def", from: "noreply@cmbreathe.com" },
     });
   });
 

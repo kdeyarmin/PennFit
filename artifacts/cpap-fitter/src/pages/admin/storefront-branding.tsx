@@ -220,7 +220,7 @@ export function AdminStorefrontBrandingPage() {
               style={INPUT_STYLE}
               value={storefrontName}
               maxLength={120}
-              placeholder="e.g. PennPaps"
+              placeholder="e.g. Acme CPAP"
               onChange={(e) => {
                 setSavedBrand(false);
                 setStorefrontName(e.target.value);

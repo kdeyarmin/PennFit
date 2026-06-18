@@ -1,34 +1,28 @@
-// /admin/system/config — TENANT System Configuration store.
+// /resupply-api/platform/config — GLOBAL super-admin System Configuration.
 //
-//   GET    /admin/system/config            catalog + current state
-//   PUT    /admin/system/config/:key       set / update one value
-//   DELETE /admin/system/config/:key       clear one value (env fallback)
-//   GET    /admin/system/config/activity   recent write events
+//   GET    /platform/config            catalog + current state
+//   PUT    /platform/config/:key        set / update one value
+//   DELETE /platform/config/:key        clear one value (env fallback)
+//   GET    /platform/config/activity    recent write events
 //
-// This is the backing API for the tenant admin's System Configuration
-// page. It exposes ONLY tenant-scoped settings (appConfigScopeOf ===
-// "tenant"): the tenant's branding/assistant names and its OWN business
-// integrations (its ResMed/Philips/3B therapy-cloud accounts and its
-// Office Ally clearinghouse login). Platform infra credentials (AI
-// vendors, the platform's Twilio/Telnyx/SendGrid/Stripe) are PLATFORM-
-// scoped and live only on the global super-admin surface
-// (/platform/config, gated by requirePlatformAdmin) — a tenant admin can
-// neither see nor edit them here.
+// The global super-admin's counterpart of /admin/system/config. It owns
+// the PLATFORM-scoped catalog keys (appConfigScopeOf === "platform"): the
+// AI vendors and the platform's own Twilio/Telnyx/SendGrid/Stripe
+// credentials — infra shared by every tenant. A tenant admin can neither
+// see nor edit these; they live behind requirePlatformAdmin.
 //
-// Gating: every route requires `system.config.manage`, which only the
-// tenant's Admin/Owner role holds (see lib/resupply-auth/src/rbac.ts).
-// CSRs and clinicians get a 403.
-//
-// SECRET POSTURE — values are stored PLAINTEXT in resupply.app_config
-// (no column encryption — repo hard rule). The protections are service-
-// role-only table access, role-gated routes, and masking on read
-// (see lib/app-config/views.ts). The plaintext NEVER crosses the wire.
+// Values are read from / written to the SEED org's app_config rows — the
+// platform defaults the boot overlay (applyAppConfigOverlayToEnv) folds
+// into process.env on the next deploy, and that getEffectiveEnv() reads
+// live for the therapy-cloud adapters. Same plaintext-stored, masked-on-
+// read secret posture as the tenant route (see lib/app-config/views.ts).
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import {
   getOrgScopedClient,
+  resolveSeedOrgId,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
 
@@ -37,49 +31,62 @@ import {
   appConfigScopeOf,
   getAppConfigSetting,
 } from "../../lib/app-config/catalog";
-import {
-  invalidateAppConfigCache,
-  invalidateTenantConfigCache,
-} from "../../lib/app-config/store";
+import { invalidateAppConfigCache } from "../../lib/app-config/store";
 import {
   buildSettingView,
+  buildWebhookReference,
   loadDbState,
   type SettingView,
 } from "../../lib/app-config/views";
 import { logger } from "../../lib/logger";
 import {
-  adminRateLimit,
   adminReadRateLimiter,
+  adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
-import { requirePermission } from "../../middlewares/requireAdmin";
+import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
 
-/** A tenant admin may only see/edit tenant-scoped catalog keys. */
-function isTenantKey(key: string): boolean {
-  return appConfigScopeOf(key) === "tenant";
+/** Only platform-scoped catalog keys are managed on the super-admin surface. */
+function isPlatformKey(key: string): boolean {
+  return appConfigScopeOf(key) === "platform";
 }
 
-// ── GET /admin/system/config ────────────────────────────────────────
-// Returns the TENANT-scoped catalog grouped by category with each
-// setting's current state. Secrets are masked. Read-limited + gated.
+/**
+ * The platform config lives on the seed org's rows (the boot overlay reads
+ * exactly these). Returns null when the seed org can't be resolved — the
+ * caller 503s rather than silently writing to the wrong place.
+ */
+async function seedOrgClientOrNull(): Promise<OrgScopedClient | null> {
+  const orgId = await resolveSeedOrgId();
+  if (!orgId) return null;
+  return getOrgScopedClient(orgId);
+}
+
+function overlayDisabled(): boolean {
+  return (
+    process.env.APP_CONFIG_OVERLAY_DISABLED === "1" ||
+    process.env.APP_CONFIG_OVERLAY_DISABLED === "true"
+  );
+}
+
+// ── GET /platform/config ────────────────────────────────────────────
 router.get(
-  "/admin/system/config",
+  "/platform/config",
   adminReadRateLimiter,
-  requirePermission("system.config.manage"),
-  async (req, res) => {
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+  requirePlatformAdmin,
+  async (_req, res) => {
+    const supabase = await seedOrgClientOrNull();
+    if (!supabase) {
+      res.status(503).json({ error: "seed_org_unresolved" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
     const dbState = await loadDbState(supabase);
 
     const order: string[] = [];
     const byCategory = new Map<string, SettingView[]>();
     for (const setting of APP_CONFIG_CATALOG) {
-      if (!isTenantKey(setting.key)) continue;
+      if (!isPlatformKey(setting.key)) continue;
       const view = buildSettingView(setting, dbState.get(setting.key));
       if (!byCategory.has(setting.category)) {
         byCategory.set(setting.category, []);
@@ -93,41 +100,28 @@ router.get(
         category,
         settings: byCategory.get(category)!,
       })),
-      // The overlay kill-switch (APP_CONFIG_OVERLAY_DISABLED) suppresses the
-      // tenant overlay too (getEffectiveEnvForOrg / getTenantConfigValue),
-      // so the tenant page surfaces the same "saved values aren't applied"
-      // warning. Telephony webhooks ARE platform-level and stay off the
-      // tenant surface.
-      overlayDisabled:
-        process.env.APP_CONFIG_OVERLAY_DISABLED === "1" ||
-        process.env.APP_CONFIG_OVERLAY_DISABLED === "true",
-      webhookReference: null,
-      twilioWebhooks: null,
+      overlayDisabled: overlayDisabled(),
+      webhookReference: buildWebhookReference(dbState),
     });
   },
 );
 
 const keyParamSchema = z.object({ key: z.string().min(1) });
-
-// ── PUT /admin/system/config/:key ───────────────────────────────────
 const putBody = z
-  .object({
-    value: z.string().trim().min(1).max(8192),
-  })
+  .object({ value: z.string().trim().min(1).max(8192) })
   .strict();
 
+// ── PUT /platform/config/:key ───────────────────────────────────────
 router.put(
-  "/admin/system/config/:key",
-  requirePermission("system.config.manage"),
-  adminRateLimit({ name: "system_config.set", preset: "sensitive" }),
+  "/platform/config/:key",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
   async (req, res) => {
     const keyParsed = keyParamSchema.safeParse(req.params);
     const setting = keyParsed.success
       ? getAppConfigSetting(keyParsed.data.key)
       : undefined;
-    // A platform-scoped key is not editable here — 404 like an unknown key
-    // so the tenant surface never reveals that platform settings exist.
-    if (!setting || !isTenantKey(setting.key)) {
+    if (!setting || !isPlatformKey(setting.key)) {
       res.status(404).json({ error: "unknown_key" });
       return;
     }
@@ -144,12 +138,11 @@ router.put(
       return;
     }
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+    const supabase = await seedOrgClientOrNull();
+    if (!supabase) {
+      res.status(503).json({ error: "seed_org_unresolved" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
 
     const { data: prior, error: priorErr } = await supabase
       .from("app_config")
@@ -166,8 +159,8 @@ router.put(
         {
           key,
           value: parsed.data.value,
-          updated_by_user_id: req.adminUserId ?? null,
-          updated_by_email: req.adminEmail ?? null,
+          updated_by_user_id: req.platformAdminUserId ?? null,
+          updated_by_email: req.platformAdminEmail ?? null,
           updated_at: nowIso,
         },
         { onConflict: "org_id,key" },
@@ -177,24 +170,23 @@ router.put(
     if (upErr) throw upErr;
 
     invalidateAppConfigCache();
-    invalidateTenantConfigCache();
     await writeConfigEvent(
       supabase,
       key,
       "set",
       hadPrevious,
-      req.adminEmail ?? null,
+      req.platformAdminEmail ?? null,
     );
 
     logger.info(
       {
-        event: "app_config_set",
+        event: "platform_config_set",
         key,
         secret: setting.secret,
-        operator: req.adminEmail ?? null,
+        operator: req.platformAdminEmail ?? null,
         hadPrevious,
       },
-      "tenant config value saved",
+      "platform config value saved",
     );
 
     const row = updated as {
@@ -212,28 +204,27 @@ router.put(
   },
 );
 
-// ── DELETE /admin/system/config/:key ────────────────────────────────
+// ── DELETE /platform/config/:key ────────────────────────────────────
 router.delete(
-  "/admin/system/config/:key",
-  requirePermission("system.config.manage"),
-  adminRateLimit({ name: "system_config.clear", preset: "sensitive" }),
+  "/platform/config/:key",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
   async (req, res) => {
     const keyParsed = keyParamSchema.safeParse(req.params);
     const setting = keyParsed.success
       ? getAppConfigSetting(keyParsed.data.key)
       : undefined;
-    if (!setting || !isTenantKey(setting.key)) {
+    if (!setting || !isPlatformKey(setting.key)) {
       res.status(404).json({ error: "unknown_key" });
       return;
     }
     const key = setting.key;
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+    const supabase = await seedOrgClientOrNull();
+    if (!supabase) {
+      res.status(503).json({ error: "seed_org_unresolved" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
     const { data: deleted, error: delErr } = await supabase
       .from("app_config")
       .delete()
@@ -244,17 +235,20 @@ router.delete(
     const removed = (deleted ?? []).length > 0;
     if (removed) {
       invalidateAppConfigCache();
-      invalidateTenantConfigCache();
       await writeConfigEvent(
         supabase,
         key,
         "clear",
         true,
-        req.adminEmail ?? null,
+        req.platformAdminEmail ?? null,
       );
       logger.info(
-        { event: "app_config_clear", key, operator: req.adminEmail ?? null },
-        "tenant config value cleared",
+        {
+          event: "platform_config_clear",
+          key,
+          operator: req.platformAdminEmail ?? null,
+        },
+        "platform config value cleared",
       );
     }
 
@@ -262,7 +256,7 @@ router.delete(
   },
 );
 
-// ── GET /admin/system/config/activity ───────────────────────────────
+// ── GET /platform/config/activity ───────────────────────────────────
 const ACTIVITY_DEFAULT_LIMIT = 20;
 const ACTIVITY_MAX_LIMIT = 100;
 
@@ -279,19 +273,18 @@ const activityQuerySchema = z.object({
 });
 
 router.get(
-  "/admin/system/config/activity",
+  "/platform/config/activity",
   adminReadRateLimiter,
-  requirePermission("system.config.manage"),
+  requirePlatformAdmin,
   async (req, res) => {
     const parsed = activityQuerySchema.safeParse(req.query);
     const limit = parsed.success ? parsed.data.limit : ACTIVITY_DEFAULT_LIMIT;
 
-    const orgId = req.orgId;
-    if (!orgId) {
-      res.status(500).json({ error: "tenant_context_missing" });
+    const supabase = await seedOrgClientOrNull();
+    if (!supabase) {
+      res.status(503).json({ error: "seed_org_unresolved" });
       return;
     }
-    const supabase = getOrgScopedClient(orgId);
     const { data, error } = await supabase
       .from("app_config_events")
       .select("occurred_at, operator_email, key, action, had_previous")
@@ -307,9 +300,7 @@ router.get(
       had_previous: boolean;
     };
     const activity = ((data ?? []) as ActivityRow[])
-      // Only surface tenant-scoped keys here; platform-key history lives on
-      // the super-admin surface.
-      .filter((r) => isTenantKey(r.key))
+      .filter((r) => isPlatformKey(r.key))
       .map((r) => {
         const setting = getAppConfigSetting(r.key);
         return {
@@ -326,11 +317,6 @@ router.get(
   },
 );
 
-/**
- * Append an app_config_events row. Fire-and-forget on failure — a config
- * write that already succeeded must NOT 5xx because its history row
- * couldn't be written. Never includes the value.
- */
 async function writeConfigEvent(
   supabase: OrgScopedClient,
   key: string,
@@ -349,7 +335,7 @@ async function writeConfigEvent(
   } catch (err) {
     logger.warn(
       { err, key, action },
-      "app_config_events insert failed (activity panel will miss this write)",
+      "app_config_events insert failed (platform activity panel will miss this write)",
     );
   }
 }
