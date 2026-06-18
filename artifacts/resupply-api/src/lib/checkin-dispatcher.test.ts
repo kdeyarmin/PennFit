@@ -7,6 +7,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  htmlBodyForDay,
+  htmlEscape,
   isWithinCallWindow,
   nextDueCheckin,
   smsBodyForDay,
@@ -126,6 +128,25 @@ describe("rendered scripts", () => {
     expect(subjectForDay("day3")).not.toBe(subjectForDay("day7"));
     expect(subjectForDay("day60")).not.toBe(subjectForDay("day30"));
     expect(subjectForDay("day60")).not.toBe(subjectForDay("day90"));
+  });
+
+  it("keeps the branded HTML well-formed when a tenant brand contains '&'", () => {
+    // A second tenant with an XML-special char in its storefront name must
+    // not re-introduce raw markup into the rendered email — the HTML body
+    // brands with an HTML-escaped name (htmlEscape), matching how sendEmail
+    // substitutes clients.brandName into htmlBodyForDay output.
+    const brandName = "Smith & Sons CPAP";
+    const html = htmlBodyForDay("day90", "Hi Anna")
+      .split("PennPaps")
+      .join(htmlEscape(brandName));
+    // The brand substitutes in HTML-escaped, so the literal "&" never lands
+    // raw next to "Sons" — it is encoded as "&amp;".
+    expect(html).toContain("Smith &amp; Sons CPAP");
+    expect(html).not.toContain("Smith & Sons CPAP");
+    // Plain-text subject/body keep the raw "&" (correct for text/plain).
+    expect(subjectForDay("day90").split("PennPaps").join(brandName)).toContain(
+      "Smith & Sons CPAP",
+    );
   });
 });
 

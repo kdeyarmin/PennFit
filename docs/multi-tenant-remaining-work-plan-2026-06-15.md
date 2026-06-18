@@ -165,10 +165,30 @@ operator digests, DLQ/metric/integration alerts, CSR-inbox, review-moderation,
 scheduled reports, the admin assistant) intentionally stays on the platform
 From. _Remaining sender items:_ a few internal-vs-patient nuanced senders
 (`storefront/orderEmail` fulfillment-to-practice, `insurance-lead-email`'s mixed
-team+lead recipients), `statement-send`'s sync `practiceName` builder, and the
-non-brand-copy bodies in a couple of large knowledge-base senders
-(checkin day-copy); none affect a second tenant's From identity. Remaining
-outbound-SMS callsites lacking an in-scope `orgId` are likewise a small tail.
+team+lead recipients) and `statement-send`'s sync `practiceName` builder; none
+affect a second tenant's From identity.
+
+**Patient-facing brand-string tail — now addressed (2026-06-18).** The
+brand-literal patient-facing _copy_ (distinct from the From identity) is now
+branded to the tenant at the I/O boundary. The onboarding check-in flow uses the
+parametric `brandName` resolved once per dispatch via
+`resolveBrandingByOrgId(orgId).storefrontName` (seed → "PennPaps"), threaded
+through `BuiltClients.brandName` into the **SMS** + **voice** day-copy builders
+(`smsBodyForDay`/`voiceScriptForDay`) and the **check-in IVR** `<Say>` script +
+goodbye (`voice/checkin-twiml`, tenant resolved from the signed patient id). The
+check-in **email** day-copy is likewise branded by substituting `brandName` into
+the rendered subject/text/HTML — the HTML body uses an **HTML-escaped** brand
+(`htmlEscape`) so a tenant DBA like "Smith & Sons" can't re-introduce raw markup
+that `htmlBodyForDay` deliberately strips. The check-in IVR org lookup is
+**fail-soft** (try/catch → default brand) so a transient PostgREST/network hiccup
+never 500s the Twilio webhook and drops the call. The **inbound-reorder** shop
+greeting + human-transfer line (`voice/inbound-reorder`, tenant from the called
+number) and the fitter-order concierge **SMS** (`storefront/orders`) brand via
+`applyCompanyIdentityToText(text, getCompanyInfo(orgId))`; the transfer `<Say>` is
+XML-escaped. `applyCompanyIdentityToText` also rewrites the TTS-spaced
+`"Penn Paps"` spelling for a non-seed tenant (left intact for the seed so PennPaps
+keeps its two-word pronunciation). All paths are no-ops for the seed tenant and
+for any unseeded environment.
 
 **Still open after this branch (tracked):** the small sender/SMS tail noted
 above. The G1 `reminder_subscriptions` global-table resolution is

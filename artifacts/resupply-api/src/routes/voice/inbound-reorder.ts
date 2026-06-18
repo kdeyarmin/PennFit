@@ -36,6 +36,10 @@ import {
   requireTwilioSignature,
 } from "@workspace/resupply-telecom";
 
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+} from "../../lib/company-info";
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
 import { resolveOrgIdByCalledNumber } from "../../lib/messaging/tenant-telecom";
@@ -141,6 +145,14 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
   }
   const supabase = getOrgScopedClient(orgId);
 
+  // Resolve the tenant's spoken brand once. The greeting + human-transfer
+  // copy is brand-literal ("PennPaps"); rewrite it to this tenant's saved
+  // name so a non-seed tenant's caller never hears the seed brand. No-op for
+  // the seed tenant and for any unseeded environment.
+  const companyInfo = await getCompanyInfo(orgId);
+  const brand = (text: string): string =>
+    applyCompanyIdentityToText(text, companyInfo);
+
   // 1. Identify the caller. A DB failure here must NOT be silently treated
   // as "unidentified" — that would mask an outage and mis-route the caller.
   // Surface it and ask the caller to retry (same posture as the session-
@@ -227,7 +239,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         [
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
-          "<Say>Hi! Welcome to your PennPaps reorder line. ",
+          `<Say>${escapeXmlText(brand("Hi! Welcome to your PennPaps reorder line. "))}`,
           "Connecting you to our team now.</Say>",
           `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
           "</Response>",
@@ -290,7 +302,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
       callerKind: "shop_customer",
       shopCustomerId,
       callContext: INBOUND_SHOP_CALL_CONTEXT,
-      greeting: INBOUND_SHOP_GREETING,
+      greeting: brand(INBOUND_SHOP_GREETING),
       // The caller dialed US — the agent must greet first, not wait for
       // the caller to break the silence.
       agentSpeaksFirst: true,
@@ -559,6 +571,14 @@ async function identifyCaller(
     case "none":
       return { patientId: null, shopCustomerId: null, ambiguous: false };
   }
+}
+
+// A tenant's saved brand name is substituted into the transfer <Say> below;
+// escape it so a name containing & < > can't produce malformed TwiML (which
+// Twilio rejects, dropping the human-transfer call). Mirrors the helper in
+// voice/checkin-twiml.ts.
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export default router;

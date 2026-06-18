@@ -35,6 +35,10 @@ import {
   sendOrderToPenn,
   generateOrderReference,
 } from "../../lib/storefront/orderEmail.js";
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+} from "../../lib/company-info.js";
 import { sendFitterOrderConfirmationEmail } from "../../lib/order-emails/send-fitter-order-confirmation-email.js";
 import {
   createTwilioSmsClient,
@@ -303,7 +307,10 @@ router.post(
         // Keep the body under 160 GSM-7 characters so it ships as a
         // single segment. The order reference doubles as a per-message
         // search anchor if the patient texts back asking about it.
-        const body = `PennPaps: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`;
+        const body = applyCompanyIdentityToText(
+          `PennPaps: order ${result.orderReference} received. We'll reach out to Dr. ${physicianName.split(" ").pop()} this week to coordinate your prescription. Reply STOP to opt out.`,
+          await getCompanyInfo(orgId ?? undefined),
+        );
         await sms.sendSms({ to: phone, body });
       } catch (err) {
         if (err instanceof TwilioConfigError) {

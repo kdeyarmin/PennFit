@@ -78,7 +78,21 @@ router.post(
 
     // Brand the spoken script with the patient's tenant (the patient id rode
     // in the signed URL). Seed / unresolved → "PennPaps", unchanged.
-    const orgId = await resolveOrgIdForSignedRecord("patients", patientId);
+    //
+    // Fail-soft: this is a Twilio webhook, so a tenant-lookup hiccup
+    // (PostgREST/network) must NEVER 500 — that would drop the patient's
+    // check-in call. resolveOrgIdForSignedRecord isn't itself guarded, so
+    // catch here and fall back to the default brand (resolveBrandingByOrgId
+    // is already fail-soft).
+    let orgId: string | null = null;
+    try {
+      orgId = await resolveOrgIdForSignedRecord("patients", patientId);
+    } catch (err) {
+      logger.warn(
+        { err },
+        "voice.checkin_twiml: tenant resolution failed; using default brand",
+      );
+    }
     const brandName = (await resolveBrandingByOrgId(orgId ?? undefined))
       .storefrontName;
     const script = voiceScriptForDay(day, brandName);

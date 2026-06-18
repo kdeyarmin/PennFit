@@ -269,4 +269,30 @@ describe("applyCompanyIdentityToText", () => {
     expect(out).not.toContain("PennPaps");
     expect(out).not.toContain("(814) 471-0627");
   });
+
+  it("rewrites the TTS-spaced brand spelling used in voice/IVR copy", async () => {
+    stageSupabaseResponse("dme_organization", "select", { data: ORG_ROW });
+    await getCompanyInfo(); // warm the sync cache
+    const out = applyCompanyIdentityToText(
+      "Hi, this is an automated check-in from Penn Paps.",
+    );
+    expect(out).toBe("Hi, this is an automated check-in from Acme Sleep.");
+    expect(out).not.toContain("Penn Paps");
+  });
+
+  it("preserves the seed tenant's two-word 'Penn Paps' TTS spelling", async () => {
+    // Seed tenant: DB row resolves to the seed brand "PennPaps". The voice
+    // copy is deliberately spaced for natural TTS pronunciation, so the
+    // spaced-spelling needle must NOT collapse it to camel case.
+    stageSupabaseResponse("dme_organization", "select", {
+      data: {
+        ...ORG_ROW,
+        legal_name: "Penn Home Medical Supply",
+        dba_name: "PennPaps",
+      },
+    });
+    await getCompanyInfo(); // warm the sync cache
+    const text = "Hi, this is an automated check-in from Penn Paps.";
+    expect(applyCompanyIdentityToText(text)).toBe(text);
+  });
 });

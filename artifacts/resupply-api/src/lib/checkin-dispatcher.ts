@@ -562,11 +562,20 @@ async function sendEmail(
   }
   const greeting = greetingFor(row.firstName);
   try {
+    // Brand the day-copy to the tenant's storefront name (seed → "PennPaps",
+    // a no-op). Plain-text subject/body take the raw name; the HTML body
+    // takes an HTML-escaped name so a tenant DBA like "Smith & Sons" can't
+    // re-introduce raw markup (htmlBodyForDay strips <>& from its own inputs
+    // specifically to keep the template well-formed).
+    const brand = (s: string): string =>
+      s.split("PennPaps").join(clients.brandName);
+    const brandHtml = (s: string): string =>
+      s.split("PennPaps").join(htmlEscape(clients.brandName));
     const r = await clients.sg.sendEmail({
       to: row.email,
-      subject: subjectForDay(day),
-      text: textBodyForDay(day, greeting),
-      html: htmlBodyForDay(day, greeting),
+      subject: brand(subjectForDay(day)),
+      text: brand(textBodyForDay(day, greeting)),
+      html: brandHtml(htmlBodyForDay(day, greeting)),
       customArgs: { kind: "onboarding_checkin", day },
     });
     return {
@@ -913,6 +922,13 @@ export function stampFieldForDay(
     case "day90":
       return "day90_sent_at";
   }
+}
+
+/** HTML-escape a tenant-configured brand name before it is substituted
+ * into an already-rendered HTML email body, so a free-text DBA name
+ * containing `< > &` (e.g. "Smith & Sons") can't break the template. */
+export function htmlEscape(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export function subjectForDay(label: OnboardingDayLabel): string {
