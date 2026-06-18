@@ -109,6 +109,36 @@ export function fetchPlatformBillingCatalog(): Promise<BillingCatalogResponse> {
   return jsonFetch<BillingCatalogResponse>("/platform/billing/catalog");
 }
 
+// ── Fleet recurring-revenue (MRR) summary ───────────────────────────
+
+export interface FleetBillingByPlan {
+  planCode: string;
+  planName: string;
+  tenants: number;
+  mrrCents: number;
+}
+
+export interface FleetBillingSummaryResponse {
+  /** Active + trialing recurring revenue, cents/month. */
+  mrrCents: number;
+  /** Recurring revenue from add-ons (a subset of mrrCents). */
+  addonMrrCents: number;
+  /** Past-due recurring revenue — booked but at risk. */
+  atRiskMrrCents: number;
+  /** Average revenue per paying tenant, cents/month. */
+  arpuCents: number;
+  payingTenants: number;
+  trialingTenants: number;
+  pastDueTenants: number;
+  unsubscribedTenants: number;
+  byPlan: FleetBillingByPlan[];
+  generatedAt: string;
+}
+
+export function fetchFleetBillingSummary(): Promise<FleetBillingSummaryResponse> {
+  return jsonFetch<FleetBillingSummaryResponse>("/platform/billing/summary");
+}
+
 export function fetchPlatformTenantBilling(): Promise<{
   tenants: PlatformTenantBillingRow[];
 }> {

@@ -664,6 +664,11 @@ const AdminOfficeAllySubmissionDetailPage = lazyWithRetry(() =>
 const AdminNpsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-nps").then((m) => ({ default: m.AdminNpsPage })),
 );
+const AdminSupportPage = lazyWithRetry(() =>
+  import("@/pages/admin/admin-support").then((m) => ({
+    default: m.AdminSupportPage,
+  })),
+);
 const AdminCustomerDetailPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-customer-detail").then((m) => ({
     default: m.AdminCustomerDetailPage,
@@ -1151,6 +1156,7 @@ function AdminConsole() {
               component={AdminControlCenterPage}
             />
             <Route path="/admin/nps" component={AdminNpsPage} />
+            <Route path="/admin/support" component={AdminSupportPage} />
             <Route
               path="/admin/productivity"
               component={AdminProductivityPage}

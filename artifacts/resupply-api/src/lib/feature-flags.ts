@@ -95,6 +95,7 @@ export const FEATURE_FLAG_KEYS = [
   "frontdesk.counter_orders",
   "asset_recovery.auto_populate",
   "domains.tls_automation",
+  "support.tickets",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

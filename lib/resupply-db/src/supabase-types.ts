@@ -2310,6 +2310,53 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Relationships: [];
       };
+      // Migration 0385: tenant → platform support tickets with an AI
+      // intake bot.
+      support_tickets: {
+        Row: {
+          id: string;
+          // NOT NULL in migration 0385 (created NOT NULL from the start,
+          // unlike the legacy tables backfilled to nullable org_id).
+          org_id: string;
+          subject: string;
+          status: string;
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          bot_answered: boolean;
+          // `numeric` — PostgREST serializes it as a string, so callers
+          // must `Number(...)` it (the routes do).
+          bot_confidence: number | string | null;
+          created_at: string;
+          updated_at: string;
+          last_activity_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["support_tickets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["support_tickets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      support_ticket_messages: {
+        Row: {
+          id: string;
+          ticket_id: string;
+          // NOT NULL in migration 0385.
+          org_id: string;
+          author_role: string;
+          author_email: string | null;
+          body: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["support_ticket_messages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["support_ticket_messages"]["Row"]
+        >;
+        Relationships: [];
+      };
       organization_agreements: {
         Row: {
           id: string;
