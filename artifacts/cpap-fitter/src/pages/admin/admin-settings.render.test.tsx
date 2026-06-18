@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 //
-// Render regression test for AdminSettingsPage.
+// Render regression test for the platform System-info page (the
+// deployment-metadata view that used to be the tenant /admin/settings
+// page; it now lives on the platform super-admin console). Plus a smoke
+// test that the slimmed tenant Settings page renders the demo toggle.
 //
 // History: the page declared a `SystemInfo.encryption.{phiKeyConfigured,
 // phoneHmacKeyConfigured}` object and rendered `data.encryption.*` directly.
@@ -68,19 +71,29 @@ vi.mock("@/demo/DemoModeProvider", () => ({
   }),
 }));
 
-import { AdminSettingsPage } from "./admin-settings";
+import { AdminSettingsPage, PlatformSystemInfoPage } from "./admin-settings";
 
 afterEach(() => cleanup());
 
-describe("AdminSettingsPage — render regression", () => {
+describe("PlatformSystemInfoPage — render regression", () => {
   it("renders backend-shaped system info without crashing (no encryption deref)", () => {
-    expect(() => render(<AdminSettingsPage />)).not.toThrow();
-    expect(screen.getByTestId("admin-settings-page")).toBeDefined();
+    expect(() => render(<PlatformSystemInfoPage />)).not.toThrow();
+    expect(screen.getByTestId("platform-system-info-page")).toBeDefined();
   });
 
   it("surfaces the link HMAC key presence from `secrets` (not `encryption`)", () => {
-    render(<AdminSettingsPage />);
+    render(<PlatformSystemInfoPage />);
     expect(screen.getByText("Link HMAC key")).toBeDefined();
     expect(screen.getByText("✓ configured")).toBeDefined();
+  });
+});
+
+describe("AdminSettingsPage — tenant settings", () => {
+  it("renders the demo toggle and no deployment metadata", () => {
+    render(<AdminSettingsPage />);
+    expect(screen.getByTestId("admin-settings-page")).toBeDefined();
+    expect(screen.getByLabelText("Toggle demo mode")).toBeDefined();
+    // Deployment metadata moved to the platform console.
+    expect(screen.queryByText("Link HMAC key")).toBeNull();
   });
 });

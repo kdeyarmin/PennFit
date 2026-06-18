@@ -770,9 +770,10 @@ router.use(opsStatusRouter);
 // /admin/voice/metrics — voice-call timing metrics (volume, answer
 // rate, handle + ring time) from the voice_calls ledger. Read-only.
 router.use(voiceMetricsRouter);
-// /admin/account-setup — new-account / production launch checklist.
+// /platform/account-setup — new-account / production launch checklist.
 // Read-only "is this done?" feed (env presence + DB probes) for the
-// Settings -> Account Setup page. Never returns env-var values.
+// platform console's Account setup page. Platform super-admin only;
+// never returns env-var values.
 router.use(accountSetupRouter);
 // /admin/inbox-counts — actionable-work counters for nav badges
 // (awaiting-reply convs, pending returns, pending reviews). Read-
@@ -1024,8 +1025,9 @@ router.use(outboundMessagesRouter);
 // /admin/lookup — global cross-entity lookup bar. Phone (HMAC),
 // email, UUID, and Stripe-session-id-aware. Read-only.
 router.use(lookupRouter);
-// /admin/system-info — read-only env + deployment metadata for ops
-// triage. Never returns env-var values, only "is this set?" booleans.
+// /platform/system-info — read-only env + deployment metadata for ops
+// triage. Platform super-admin only; never returns env-var values, only
+// "is this set?" booleans.
 router.use(systemInfoRouter);
 // /admin/shop/customers/* — Customer 360 surface (search/list +
 // detail + reorder-on-behalf). Read-mostly; the only write is the

@@ -1,10 +1,15 @@
-// /admin/system-info — read-only environment + deployment metadata.
+// /platform/system-info — read-only environment + deployment metadata.
 //
 // Surfaces what ops typically needs to confirm during incident
 // response without ssh-ing into the box: which environment they're
 // looking at, server time (drift check), Postgres version, git
 // commit, configured public URLs, and per-vendor configuration
 // presence.
+//
+// This describes the whole CareMetric Breathe DEPLOYMENT, not any one
+// tenant, so it is a PLATFORM super-admin surface — gated by
+// requirePlatformAdmin, not requireAdmin. A per-tenant admin neither
+// sees nor can fetch it.
 //
 // Privacy posture: env-var VALUES are never returned. We only return
 // "is this set?" booleans plus the sizes of the admin/agent
@@ -17,14 +22,14 @@ import { applyEnvAliases, hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { getEffectiveEnv } from "../../lib/app-config/store";
 import { adminReadRateLimiter } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
 
 router.get(
-  "/admin/system-info",
+  "/platform/system-info",
   adminReadRateLimiter,
-  requireAdmin,
+  requirePlatformAdmin,
   async (_req, res) => {
     // pgVersion / migrationCount / lastMigrationAt are returned as
     // nulls: PostgREST doesn't expose `SHOW server_version`, and the

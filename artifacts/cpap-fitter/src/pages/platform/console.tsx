@@ -73,6 +73,9 @@ import { Table, type Column } from "@/components/admin/Table";
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
+import { AdminPlatformBillingPage } from "@/pages/admin/admin-platform-billing";
+import { AdminAccountSetupPage } from "@/pages/admin/account-setup";
+import { PlatformSystemInfoPage } from "@/pages/admin/admin-settings";
 
 // admin.css ships the design tokens (--penn-navy, --ink-*, --surface-*)
 // the platform console reuses. Imported here so the styles ride the lazy
@@ -1467,9 +1470,12 @@ function PlatformShell({
 const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/platform", label: "Dashboard" },
   { href: "/platform/tenants", label: "Tenants" },
+  { href: "/platform/billing", label: "Billing" },
   { href: "/platform/support", label: "Support" },
   { href: "/platform/integrations", label: "Global integrations" },
   { href: "/platform/connection-tests", label: "Connection tests" },
+  { href: "/platform/account-setup", label: "Account setup" },
+  { href: "/platform/system", label: "System info" },
 ];
 
 function PlatformConnectionTests() {
@@ -1560,6 +1566,7 @@ function PlatformConsole() {
       <Switch>
         <Route path="/platform" component={PlatformDashboard} />
         <Route path="/platform/tenants" component={TenantDirectory} />
+        <Route path="/platform/billing" component={AdminPlatformBillingPage} />
         <Route path="/platform/support" component={PlatformSupport} />
         {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}
         <Route path="/platform/overview">
@@ -1570,6 +1577,11 @@ function PlatformConsole() {
           path="/platform/connection-tests"
           component={PlatformConnectionTests}
         />
+        <Route
+          path="/platform/account-setup"
+          component={AdminAccountSetupPage}
+        />
+        <Route path="/platform/system" component={PlatformSystemInfoPage} />
         <Route>
           <Redirect to="/platform" replace />
         </Route>
