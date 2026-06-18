@@ -102,21 +102,52 @@ episode still outreach_pending / awaiting_response?
 Copy is intentionally warm, short, and ends with one clear action. PHI never
 appears in an email **subject** (subjects aren't encrypted at the provider).
 
-### 4a. SMS (steps 0 and 1)
+**Each touch escalates its wording** so a follow-up never reads identically to
+the first reminder. The text channels (SMS + email) pick one of three copy
+**variants**:
 
-> **Hi {firstName}, it's {practiceName}. You're due for a CPAP refill. Reply
-> YES to ship to the address on file, EDIT to change it, or STOP to opt out.**
+- **`initial`** — the first touch (gentle "you're due").
+- **`followup`** — a later touch with **more** outreach still to come ("just
+  circling back").
+- **`final`** — the **last** automated touch before a human is asked to call
+  ("last call").
 
-- Kept under one GSM-7 segment (160 chars, no em-dashes/curly quotes) so it
-  doesn't silently bill as three segments.
-- `{practiceName}` is the tenant's name (e.g. "PennPaps").
+The variant is chosen by ladder position: the first touch is always `initial`;
+an escalation touch is `final` when it's the last automated channel left, else
+`followup`. So with the voice tier **off** the ladder reads `initial → final`
+(SMS then a stronger email/SMS), and with voice **on** it reads
+`initial → followup → call`.
 
-### 4b. Email (steps 0 and 1)
+### 4a. SMS
 
-- **Subject:** `Time to refill your CPAP supplies`
-- **Body:**
-  > Hi {firstName} — quick note from {practiceName}. You're due for a CPAP
-  > refill, and your next order is ready whenever you are:
+- **`initial`:**
+  > **Hi {firstName}, it's {practiceName}. You're due for a CPAP refill. Reply
+  > YES to ship to the address on file, EDIT to change it, or STOP to opt out.**
+- **`followup`:**
+  > **Hi {firstName}, just checking back from {practiceName} - your CPAP refill
+  > is ready when you are. Reply YES to ship, EDIT to change address, or STOP to
+  > opt out.**
+- **`final`:**
+  > **Last reminder, {firstName} - we don't want you to run out of CPAP
+  > supplies. Reply YES and {practiceName} ships today, or STOP to opt out.**
+
+All three are kept under one GSM-7 segment (160 chars, no em-dashes / curly
+quotes / ellipsis) so they don't silently bill as multiple segments.
+
+### 4b. Email
+
+The body (items list, "keeping these fresh" reassurance, and the
+Confirm / Change-address / Stop buttons) is shared; the **subject** and
+**opening line** change per variant:
+
+| Variant    | Subject                                 | Opening line                                                                                          |
+| ---------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `initial`  | Time to refill your CPAP supplies       | "quick note from {practiceName} — you're due for a CPAP refill…"                                      |
+| `followup` | Still time to refill your CPAP supplies | "just circling back from {practiceName} — your CPAP refill is ready whenever you are…"                |
+| `final`    | Last call: your CPAP refill is ready    | "we don't want you to run low — your CPAP refill from {practiceName} is ready and we can ship today…" |
+
+- **Body (shared):**
+  > Hi {firstName} — {opening line, per variant above}
   >
   > _{itemized list of supplies due}_
   >

@@ -68,6 +68,7 @@ import {
   getOrgScopedClient,
   type OrgScopedClient,
 } from "@workspace/resupply-db";
+import type { ReminderVariant } from "@workspace/resupply-reminders";
 
 import { isFeatureEnabled } from "../../lib/feature-flags";
 import { logger } from "../../lib/logger";
@@ -120,7 +121,7 @@ export interface EscalationPlanInput {
   ladder: readonly string[];
 }
 export type EscalationTier =
-  | { kind: "send"; channel: string }
+  | { kind: "send"; channel: string; variant: ReminderVariant }
   | { kind: "csr_exhausted"; triedChannels: string[] };
 export interface EscalationAction {
   episodeId: string;
@@ -168,17 +169,30 @@ export function planReminderEscalations(
     const sinceLastTouch = input.nowMs - info.latestMs;
     if (sinceLastTouch < input.delayMs) continue; // space the steps out
     const next = input.ladder.find((ch) => !info.channels.has(ch));
-    actions.push({
-      episodeId: ep.id,
-      patientId: ep.patientId,
-      tier: next
-        ? { kind: "send", channel: next }
-        : {
-            kind: "csr_exhausted",
-            // Report in ladder order for the CSR alert copy.
-            triedChannels: input.ladder.filter((ch) => info.channels.has(ch)),
-          },
-    });
+    let tier: EscalationTier;
+    if (next) {
+      // Copy variant reflects whether MORE automated outreach follows this
+      // touch: "followup" when another untried channel remains after `next`,
+      // "final" when `next` is the last automated channel before the CSR
+      // hand-off. (The "initial" variant is the scan's first touch, never an
+      // escalation.) Voice ignores the variant downstream; it's set
+      // uniformly so the type stays simple.
+      const moreAfter = input.ladder.some(
+        (ch) => ch !== next && !info.channels.has(ch),
+      );
+      tier = {
+        kind: "send",
+        channel: next,
+        variant: moreAfter ? "followup" : "final",
+      };
+    } else {
+      tier = {
+        kind: "csr_exhausted",
+        // Report in ladder order for the CSR alert copy.
+        triedChannels: input.ladder.filter((ch) => info.channels.has(ch)),
+      };
+    }
+    actions.push({ episodeId: ep.id, patientId: ep.patientId, tier });
   }
   return actions;
 }
@@ -330,19 +344,29 @@ async function escalationScanForOrg(
     if (action.tier.kind === "send") {
       // Stamp orgId so the send/dial job runs under the RIGHT tenant
       // (caller-id, From identity, dedup, usage) instead of the seed org.
-      const payload = {
+      const base = {
         patientId: action.patientId,
         episodeId: action.episodeId,
         orgId,
       };
       if (action.tier.channel === "sms") {
-        await boss.send(SEND_SMS_JOB, payload);
+        // Carry the escalation copy variant so the follow-up text doesn't
+        // read identically to the first touch.
+        await boss.send(SEND_SMS_JOB, {
+          ...base,
+          variant: action.tier.variant,
+        });
         result.enqueuedSms += 1;
       } else if (action.tier.channel === "email") {
-        await boss.send(SEND_EMAIL_JOB, payload);
+        await boss.send(SEND_EMAIL_JOB, {
+          ...base,
+          variant: action.tier.variant,
+        });
         result.enqueuedEmail += 1;
       } else {
-        await boss.send(SEND_VOICE_JOB, payload);
+        // Voice copy is the agent's spoken script, not a templated body —
+        // no variant to forward.
+        await boss.send(SEND_VOICE_JOB, base);
         result.enqueuedVoice += 1;
       }
     } else {

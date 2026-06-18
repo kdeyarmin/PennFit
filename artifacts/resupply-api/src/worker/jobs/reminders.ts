@@ -80,6 +80,7 @@ import { DEFAULT_SENDGRID_FROM_EMAIL } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
   sendReminderSms,
+  type ReminderVariant,
   type SendActor,
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
@@ -257,6 +258,13 @@ export interface SendJobData {
    * orgId, and the worker falls back to the seed org — single-tenant-correct.
    */
   orgId?: string;
+  /**
+   * Which escalation-ladder touch this send is — selects the copy variant
+   * (initial / followup / final). The hourly scan stamps "initial" (first
+   * touch); the escalation scan stamps the step it resolved. Absent → the
+   * send helper defaults to "initial".
+   */
+  variant?: ReminderVariant;
 }
 
 interface ScanRow {
@@ -908,6 +916,9 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
               patientId: row.patientId,
               episodeId: row.episodeId,
               orgId,
+              // First touch always uses the gentle "initial" copy; the
+              // escalation scan is what advances the variant.
+              variant: "initial",
             };
             if (row.channel === "sms") {
               await boss.send(SEND_SMS_JOB, send);
@@ -975,6 +986,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         cfg: await applyTenantSmsFrom(orgId, cfg.sms),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {
@@ -1067,6 +1079,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         cfg: await applyTenantEmailSender(orgId, cfg.email),
         patientId: j.data.patientId,
         episodeId: j.data.episodeId,
+        variant: j.data.variant,
         actor,
       });
     } catch (err) {

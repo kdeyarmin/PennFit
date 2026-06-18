@@ -50,7 +50,9 @@ describe("planReminderEscalations", () => {
       {
         episodeId: "e1",
         patientId: "p1",
-        tier: { kind: "send", channel: "email" },
+        // email is the last untried channel in the base [sms, email] ladder,
+        // so it carries the "final" copy variant.
+        tier: { kind: "send", channel: "email", variant: "final" },
       },
     ]);
   });
@@ -60,7 +62,11 @@ describe("planReminderEscalations", () => {
       [{ id: "e1", patientId: "p1" }],
       [{ episodeId: "e1", channel: "email", createdAtMs: NOW - 5 * DAY }],
     );
-    expect(actions[0]!.tier).toEqual({ kind: "send", channel: "sms" });
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "sms",
+      variant: "final",
+    });
   });
 
   it("hands off to a CSR once both channels are tried", () => {
@@ -142,7 +148,11 @@ describe("planReminderEscalations", () => {
     const byEpisode = Object.fromEntries(
       actions.map((a) => [a.episodeId, a.tier]),
     );
-    expect(byEpisode.e1).toEqual({ kind: "send", channel: "email" });
+    expect(byEpisode.e1).toEqual({
+      kind: "send",
+      channel: "email",
+      variant: "final",
+    });
     expect(byEpisode.e2).toEqual({
       kind: "csr_exhausted",
       triedChannels: ["sms", "email"],
@@ -160,7 +170,28 @@ describe("planReminderEscalations — voice tier", () => {
       ],
       ESCALATION_LADDER_WITH_VOICE,
     );
-    expect(actions[0]!.tier).toEqual({ kind: "send", channel: "voice" });
+    // voice is the last untried channel → "final" (ignored downstream by the
+    // voice job, but the tier carries it uniformly).
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "voice",
+      variant: "final",
+    });
+  });
+
+  it("uses the 'followup' variant when more channels still follow", () => {
+    // SMS done, email is next, but voice is still untried after it → the
+    // email reads as a circle-back, not a last call.
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [{ episodeId: "e1", channel: "sms", createdAtMs: NOW - 5 * DAY }],
+      ESCALATION_LADDER_WITH_VOICE,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "email",
+      variant: "followup",
+    });
   });
 
   it("hands off to a CSR only after voice is also tried", () => {
@@ -191,7 +222,11 @@ describe("planReminderEscalations — voice tier", () => {
       ],
       ESCALATION_LADDER,
     );
-    expect(actions[0]!.tier).toEqual({ kind: "send", channel: "sms" });
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "sms",
+      variant: "final",
+    });
   });
 });
 

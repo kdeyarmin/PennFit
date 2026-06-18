@@ -35,6 +35,67 @@ export interface RenderResupplyReminderInput {
   editUrl: string;
   /** Signed link the "Stop reminders" CTA points at. */
   stopUrl: string;
+  /**
+   * Which touch in the escalation ladder this is — drives the subject +
+   * opening line so a follow-up doesn't read identically to the first
+   * reminder. Defaults to "initial" (the first touch's copy, unchanged).
+   */
+  variant?: ReminderVariant;
+}
+
+/**
+ * Escalation-step copy variant for resupply reminders. Lives in the
+ * messaging lib (the shared "templates" home) so both the email template
+ * here and the SMS body in @workspace/resupply-reminders pick from the same
+ * vocabulary:
+ *   - "initial"  — first touch (gentle "you're due").
+ *   - "followup" — a later touch with MORE outreach still to come
+ *     ("just circling back").
+ *   - "final"    — the LAST automated touch before a human is asked to call
+ *     ("last call").
+ */
+export type ReminderVariant = "initial" | "followup" | "final";
+
+interface ReminderVariantCopy {
+  /** Subject line + heading (no PHI). */
+  subject: string;
+  /** Opening sentence in the plain-text body (practice name pre-interpolated). */
+  introText: string;
+  /** Opening sentence in the HTML body, following "Hi {name} — "
+   *  (escaped practice name pre-interpolated). */
+  introHtml: string;
+}
+
+/**
+ * Resolve the subject + opening line for a reminder variant. "initial" is
+ * byte-for-byte the historical copy so the first touch is unchanged.
+ */
+function reminderVariantCopy(
+  variant: ReminderVariant,
+  practiceName: string,
+  safePractice: string,
+): ReminderVariantCopy {
+  switch (variant) {
+    case "followup":
+      return {
+        subject: "Still time to refill your CPAP supplies",
+        introText: `Just circling back from ${practiceName} — your CPAP refill is ready whenever you are:`,
+        introHtml: `just circling back from ${safePractice}. Your CPAP refill is ready whenever you are:`,
+      };
+    case "final":
+      return {
+        subject: "Last call: your CPAP refill is ready",
+        introText: `We don't want you to run low — your CPAP refill from ${practiceName} is ready and we can ship today:`,
+        introHtml: `we don't want you to run low — your CPAP refill from ${safePractice} is ready and we can ship today:`,
+      };
+    case "initial":
+    default:
+      return {
+        subject: "Time to refill your CPAP supplies",
+        introText: `Quick note from ${practiceName} — you're due for a CPAP refill, and your next order is ready whenever you are:`,
+        introHtml: `quick note from ${safePractice}. You're due for a CPAP refill, and your next order is ready whenever you are:`,
+      };
+  }
 }
 
 export interface RenderedEmail {
@@ -93,9 +154,14 @@ export function safeHref(rawUrl: string): string {
 export function renderResupplyReminder(
   input: RenderResupplyReminderInput,
 ): RenderedEmail {
-  const subject = "Time to refill your CPAP supplies";
   const safeFirstName = escapeHtml(input.firstName);
   const safePractice = escapeHtml(input.practiceName);
+  const variantCopy = reminderVariantCopy(
+    input.variant ?? "initial",
+    input.practiceName,
+    safePractice,
+  );
+  const subject = variantCopy.subject;
   const itemsTextLines = input.items
     .map((it) => `  • ${it.name} × ${it.quantity}`)
     .join("\n");
@@ -109,7 +175,7 @@ export function renderResupplyReminder(
   const text = [
     `Hi ${input.firstName},`,
     "",
-    `Quick note from ${input.practiceName} — you're due for a CPAP refill, and your next order is ready whenever you are:`,
+    variantCopy.introText,
     "",
     itemsTextLines || "  (your supplies, per your prescription)",
     "",
@@ -139,10 +205,10 @@ export function renderResupplyReminder(
 <body style="margin:0;padding:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
     <h1 style="margin:0 0 16px;font-size:20px;line-height:28px;font-weight:600;color:#0f172a;">
-      Time to refill your CPAP supplies
+      ${escapeHtml(subject)}
     </h1>
     <p style="margin:0 0 16px;font-size:15px;line-height:22px;">
-      Hi ${safeFirstName} — quick note from ${safePractice}. You're due for a CPAP refill, and your next order is ready whenever you are:
+      Hi ${safeFirstName} — ${variantCopy.introHtml}
     </p>
     <ul style="margin:0 0 16px;padding-left:18px;font-size:15px;line-height:22px;color:#1e293b;">
       ${itemsHtmlLines || `<li style="margin:4px 0;">Your supplies, per your prescription.</li>`}
