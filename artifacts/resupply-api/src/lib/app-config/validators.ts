@@ -11,6 +11,8 @@
 // obvious paste error (wrong field, truncated value, swapped key) but
 // permissive about live-vs-test and provider variations.
 
+import { normalizeE164 } from "@workspace/resupply-domain";
+
 const URL_RULE: FormatRule = {
   test: /^https:\/\/\S+$/,
   hint: "an https:// URL",
@@ -92,3 +94,37 @@ export function configFormatHint(key: string): string | null {
 
 /** Every key that has a format rule — used by tests to pin catalog drift. */
 export const FORMAT_RULE_KEYS: readonly string[] = Object.keys(FORMAT_RULES);
+
+// Catalog keys whose value is a US/NANP telephone number stored in E.164
+// form — i.e. the keys mapped to E164_RULE above (TWILIO_PHONE_NUMBER,
+// TELNYX_FAX_FROM_NUMBER). Derived from the rule table so a future E.164
+// field is picked up automatically.
+const PHONE_NUMBER_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(FORMAT_RULES).filter((k) => FORMAT_RULES[k] === E164_RULE),
+);
+
+/** True when `key` holds a phone number we auto-normalize to E.164 on save. */
+export function isPhoneNumberConfigKey(key: string): boolean {
+  return PHONE_NUMBER_KEYS.has(key);
+}
+
+/**
+ * Normalize a System Configuration value before it is persisted.
+ *
+ * For phone-number keys (TWILIO_PHONE_NUMBER, TELNYX_FAX_FROM_NUMBER) a
+ * bare 10-digit US number — or a punctuated one like "(814) 916-9606" — is
+ * upgraded to strict E.164 (`+1…`), so an operator never has to type the
+ * `+1` country code while Twilio/Telnyx still receive a routable number.
+ * A value that can't be parsed as a NANP number is returned unchanged (the
+ * advisory format check then flags it) rather than dropped, and non-phone
+ * keys pass through untouched.
+ */
+export function normalizeConfigValueForSave(
+  key: string,
+  value: string,
+): string {
+  if (isPhoneNumberConfigKey(key)) {
+    return normalizeE164(value) ?? value;
+  }
+  return value;
+}

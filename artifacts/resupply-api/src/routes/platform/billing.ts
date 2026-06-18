@@ -57,6 +57,15 @@ const addonBody = z.object({
 const selectPlanBody = z.object({
   planCode: z.string().regex(/^[a-z0-9_]+$/),
 });
+// Tenant self-service add-on selection. A tenant owner sets the quantity
+// of a recurring add-on for their own org (quantity 0 removes it). Custom
+// pricing is platform-admin-only and is intentionally NOT accepted here —
+// tenants pay the catalog rate. One-time/project add-ons (no recurring
+// price) are not self-selectable; they stay platform-admin-assigned.
+const selectAddonBody = z.object({
+  addonCode: z.string().regex(/^[a-z0-9_]+$/),
+  quantity: z.number().int().min(0).max(9999),
+});
 
 // Catalog edits (platform super-admin). These change the BASE plan/addon
 // pricing + presentation that every tenant account and the public
@@ -602,6 +611,19 @@ router.post(
         status: "canceled",
         updated_at: new Date().toISOString(),
         updated_by_email: req.adminEmail ?? null,
+        // MOVE the Stripe linkage off the canceled row onto the new active
+        // row below. tenant_billing_subscriptions has a partial UNIQUE index
+        // on stripe_subscription_id (migration 0363), so the same id can
+        // live on only one row — leaving it here would make the carry-forward
+        // insert violate the index and fail the plan change.
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+        stripe_account_ref: null,
+        stripe_status: null,
+        current_period_start: null,
+        current_period_end: null,
+        last_invoice_id: null,
+        last_invoice_status: null,
       })
       .eq("org_id", req.orgId)
       .in("status", ["active", "trialing", "past_due"]);
@@ -670,6 +692,192 @@ router.post(
           err,
         },
         "tenant self-select Stripe sync failed",
+      );
+    }
+    await tenantBilling(req.orgId, res);
+  },
+);
+
+// ── GET /admin/billing/addons ───────────────────────────────────────
+// Tenant-facing add-on catalog: the active add-ons a tenant owner can
+// add to their plan. Each carries recurring vs one-time pricing so the
+// SPA can render recurring add-ons with a quantity stepper and surface
+// one-time/project add-ons (no recurring price) as a "Contact us" tier.
+router.get(
+  "/admin/billing/addons",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (_req, res): Promise<void> => {
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order");
+    if (error) {
+      logger.error(
+        { event: "tenant_billing_addons_read_failed", err: error },
+        "tenant billing addons read failed",
+      );
+      res.status(500).json({ error: "billing_addons_failed" });
+      return;
+    }
+    res.json({ addons: ((data ?? []) as BillingAddonRow[]).map(mapAddon) });
+  },
+);
+
+// ── PUT /admin/billing/addons ───────────────────────────────────────
+// Tenant self-service add-on selection. The owner sets the quantity of a
+// recurring add-on on their own org (quantity 0 removes it), then we sync
+// the change to Stripe so the subscription's line items reflect it. Same
+// owner gate, catalog-rate-only, and best-effort-Stripe posture as the
+// plan-selection route. One-time/project add-ons are not self-selectable.
+router.put(
+  "/admin/billing/addons",
+  adminWriteRateLimiter,
+  requirePermission("system.config.manage"),
+  async (req, res): Promise<void> => {
+    if (!req.orgId) {
+      res.status(400).json({ error: "tenant_not_resolved" });
+      return;
+    }
+    const body = selectAddonBody.safeParse(req.body);
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_addon", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data: addon, error: addonErr } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .select("id, code, is_active, recurring_price_cents")
+      .eq("code", body.data.addonCode)
+      .maybeSingle();
+    if (addonErr || !addon) {
+      res.status(404).json({ error: "addon_not_found" });
+      return;
+    }
+    // Guard: only active, recurring add-ons are tenant-self-selectable.
+    // One-time/project add-ons (no recurring price) carry scoped pricing
+    // and stay platform-admin-assigned.
+    if (!addon.is_active || addon.recurring_price_cents == null) {
+      res.status(403).json({ error: "addon_not_self_selectable" });
+      return;
+    }
+    if (body.data.quantity === 0) {
+      const { error: cancelErr } = await raw
+        .schema("resupply")
+        .from("tenant_billing_addons")
+        .update({
+          status: "canceled",
+          quantity: 0,
+          updated_at: new Date().toISOString(),
+          updated_by_email: req.adminEmail ?? null,
+        })
+        .eq("org_id", req.orgId)
+        .eq("addon_id", addon.id)
+        .eq("status", "active");
+      if (cancelErr) {
+        res.status(500).json({ error: "addon_update_failed" });
+        return;
+      }
+    } else {
+      const { data: existing, error: readErr } = await raw
+        .schema("resupply")
+        .from("tenant_billing_addons")
+        .select("id")
+        .eq("org_id", req.orgId)
+        .eq("addon_id", addon.id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (readErr) {
+        res.status(500).json({ error: "addon_update_failed" });
+        return;
+      }
+      // Tenants pay the catalog rate — never accept a custom price here.
+      const payload = {
+        quantity: body.data.quantity,
+        status: "active",
+        custom_recurring_price_cents: null,
+        updated_by_email: req.adminEmail ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      let write = existing
+        ? await raw
+            .schema("resupply")
+            .from("tenant_billing_addons")
+            .update(payload)
+            .eq("id", existing.id)
+        : await raw
+            .schema("resupply")
+            .from("tenant_billing_addons")
+            .insert({ ...payload, org_id: req.orgId, addon_id: addon.id });
+      // Race fallback: the read-then-insert path can lose to a concurrent
+      // request (double-click/retry) and trip the partial unique index on
+      // (org_id, addon_id) WHERE status='active' (migration 0362). Treat
+      // that 23505 as idempotent — update the row the winner just created
+      // rather than 500 the loser.
+      if (write.error && !existing && write.error.code === "23505") {
+        write = await raw
+          .schema("resupply")
+          .from("tenant_billing_addons")
+          .update(payload)
+          .eq("org_id", req.orgId)
+          .eq("addon_id", addon.id)
+          .eq("status", "active");
+      }
+      if (write.error) {
+        res.status(500).json({ error: "addon_update_failed" });
+        return;
+      }
+    }
+    await logAudit({
+      action: "tenant.billing.addon.updated",
+      adminEmail: req.adminEmail ?? "tenant-admin",
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "tenant_billing_addons",
+      targetId: req.orgId,
+      metadata: {
+        addonCode: body.data.addonCode,
+        quantity: body.data.quantity,
+      },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    // Best-effort Stripe sync — mirror the plan-selection route. A sync
+    // failure is logged but never fails the request (the add-on change is
+    // already recorded), so deploys without platform-billing Stripe keys
+    // still work.
+    try {
+      const customer = await ensureTenantStripeCustomer({
+        orgId: req.orgId,
+        adminEmail: req.adminEmail ?? null,
+      });
+      if (customer.stripeConfigured) {
+        await syncTenantStripeSubscription({
+          orgId: req.orgId,
+          adminEmail: req.adminEmail ?? null,
+        });
+      }
+    } catch (err) {
+      logger.error(
+        {
+          event: "tenant_billing_addon_self_select_stripe_failed",
+          accountChanged: err instanceof PlatformBillingAccountChangedError,
+          err,
+        },
+        "tenant self-select add-on Stripe sync failed",
       );
     }
     await tenantBilling(req.orgId, res);
@@ -1204,6 +1412,20 @@ router.put(
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
+    const { data: priorSub, error: priorSubErr } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select(
+        "stripe_customer_id, stripe_subscription_id, stripe_account_ref, stripe_status, current_period_start, current_period_end, last_invoice_id, last_invoice_status",
+      )
+      .eq("org_id", param.data.id)
+      .in("status", ["active", "trialing", "past_due"])
+      .limit(1)
+      .maybeSingle();
+    if (priorSubErr) {
+      res.status(500).json({ error: "subscription_update_failed" });
+      return;
+    }
     const { error: cancelErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
@@ -1211,6 +1433,18 @@ router.put(
         status: "canceled",
         updated_at: new Date().toISOString(),
         updated_by_email: req.platformAdminEmail ?? null,
+        // MOVE the Stripe linkage off the canceled row onto the new active
+        // row below — the partial UNIQUE index on stripe_subscription_id
+        // (migration 0363) allows the id on only one row, so leaving it here
+        // would make the carry-forward insert violate the index.
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+        stripe_account_ref: null,
+        stripe_status: null,
+        current_period_start: null,
+        current_period_end: null,
+        last_invoice_id: null,
+        last_invoice_status: null,
       })
       .eq("org_id", param.data.id)
       .in("status", ["active", "trialing", "past_due"]);
@@ -1230,6 +1464,19 @@ router.put(
         custom_allowances: body.data.customAllowances ?? {},
         notes: body.data.notes ?? "",
         updated_by_email: req.platformAdminEmail ?? null,
+        // Carry the live Stripe linkage forward so a later
+        // syncTenantStripeSubscription() UPDATES the existing subscription
+        // (swapping its line items to the new plan) instead of creating a
+        // second one and leaving the old one billing — see the same guard
+        // on the tenant self-select route.
+        stripe_customer_id: priorSub?.stripe_customer_id ?? null,
+        stripe_subscription_id: priorSub?.stripe_subscription_id ?? null,
+        stripe_account_ref: priorSub?.stripe_account_ref ?? null,
+        stripe_status: priorSub?.stripe_status ?? null,
+        current_period_start: priorSub?.current_period_start ?? null,
+        current_period_end: priorSub?.current_period_end ?? null,
+        last_invoice_id: priorSub?.last_invoice_id ?? null,
+        last_invoice_status: priorSub?.last_invoice_status ?? null,
       });
     if (insErr) {
       res.status(500).json({ error: "subscription_update_failed" });

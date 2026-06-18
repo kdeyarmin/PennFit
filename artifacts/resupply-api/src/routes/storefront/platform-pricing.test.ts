@@ -80,6 +80,33 @@ describe("GET /api/platform/pricing", () => {
     });
   });
 
+  it("nulls concrete pricing for custom/Enterprise tiers", async () => {
+    stageSupabaseResponse("billing_plans", "select", {
+      data: [
+        {
+          ...PLAN_ROW,
+          code: "enterprise",
+          name: "Enterprise",
+          is_custom: true,
+          monthly_price_cents: 750000,
+          onboarding_fee_cents: 250000,
+        },
+      ],
+    });
+    stageSupabaseResponse("billing_addons", "select", { data: [] });
+
+    const res = await request(makeApp()).get("/platform/pricing");
+    expect(res.status).toBe(200);
+    expect(res.body.plans[0]).toMatchObject({
+      code: "enterprise",
+      isCustom: true,
+      monthlyPriceCents: null,
+      onboardingFeeCents: null,
+    });
+    // The negotiated amount must not appear anywhere in the response.
+    expect(JSON.stringify(res.body)).not.toContain("750000");
+  });
+
   it("never leaks Stripe ids or internal flags", async () => {
     stageSupabaseResponse("billing_plans", "select", { data: [PLAN_ROW] });
     stageSupabaseResponse("billing_addons", "select", { data: [ADDON_ROW] });

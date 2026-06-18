@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
+  type LucideIcon,
   Activity,
   ArrowRight,
   ArrowUpRight,
@@ -18,11 +19,10 @@ import {
   Gauge,
   GitBranch,
   Headphones,
-  Infinity as InfinityIcon,
   KeyRound,
-  LifeBuoy,
   LineChart,
   Lock,
+  Menu,
   MessageSquare,
   Mic,
   Minus,
@@ -42,12 +42,19 @@ import {
   Video,
   Waypoints,
   Workflow,
+  X,
   Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import "./breathe.css";
 
-const LOGO = "/breathe/caremetric-logo.png";
+// Icon-only crop of the CareMetric app icon. The full lockup PNG
+// (`caremetric-logo.png`) bakes a "CareMetric AI" wordmark UNDER the icon;
+// squished into the small square brand slots it turned illegible and
+// collided with the "Breathe" text we render beside it. Every on-page
+// lockup pairs this square icon with separately-set brand text, so the
+// wordmark version is never the right asset here.
+const LOGO = "/breathe/caremetric-icon.png";
 
 /**
  * Breathe — the public marketing / showcase homepage for the DME
@@ -67,76 +74,282 @@ const LOGO = "/breathe/caremetric-logo.png";
  * /public/fonts so the page stays same-origin (the app's CSP forbids
  * third-party font CDNs).
  */
-export function Breathe() {
-  useDocumentTitle(
-    "Breathe — The DME Operating Platform by CareMetric.ai",
-    "Breathe is the AI-native operating platform for durable medical equipment companies: patient CRM, resupply automation, revenue-cycle, therapy monitoring, telehealth, and an AI voice agent in one system.",
-    { schema: "Article" },
-  );
-
+/**
+ * Shared chrome for every Breathe marketing page — the dark page shell,
+ * sticky nav, footer, and the reveal / no-index / smooth-scroll effects.
+ * The story used to live on one very long single-scroll page; it is now
+ * split into nav-aligned routes (Product, Compare, ROI, Pricing, Security)
+ * so each page stays short and focused. Every page renders its own slice of
+ * sections inside this shell.
+ */
+function BreatheShell({ children }: { children: React.ReactNode }) {
   useRevealOnScroll();
   useNoIndex();
   useSmoothScroll();
+  useInitialHashScroll();
 
   return (
     <div className="breathe-page">
       <div className="bx-grain" aria-hidden="true" />
       <Nav />
-      <main>
-        <Hero />
-        <IntegrationsStrip />
-        <Replaces />
-        <Lifecycle />
-        <ProductShowcase />
-        <Features />
-        <AiBento />
-        <Comparison />
-        <Roles />
-        <Roi />
-        <Pricing />
-        <Security />
-        <Onboarding />
-        <Manifesto />
-        <Faq />
-        <ClosingCta />
-      </main>
+      <main>{children}</main>
       <Footer />
     </div>
   );
 }
 
+/**
+ * Compact header for the inner pages: eyebrow, H1, and a lede — so each
+ * split-out page has its own title and context instead of opening cold on
+ * a content section.
+ */
+function PageHead({
+  icon: Icon,
+  eyebrow,
+  title,
+  sub,
+}: {
+  icon: LucideIcon;
+  eyebrow: string;
+  title: React.ReactNode;
+  sub: string;
+}) {
+  return (
+    <header className="bx-section bx-pagehead" id="top">
+      <div className="bx-shell">
+        <span className="bx-eyebrow bx-reveal in">
+          <Icon size={13} />
+          {eyebrow}
+        </span>
+        <h1 className="bx-pagehead-title bx-reveal in">{title}</h1>
+        <p className="bx-pagehead-sub bx-reveal in">{sub}</p>
+      </div>
+    </header>
+  );
+}
+
+/* Landing — the elevator pitch: hero, integrations, what it replaces, CTA. */
+export function BreatheHome() {
+  useDocumentTitle(
+    "Breathe — The DME Operating Platform by CareMetric.ai",
+    "Breathe is the AI-native operating platform for durable medical equipment companies: patient CRM, resupply automation, revenue-cycle, therapy monitoring, telehealth, and an AI voice agent in one system.",
+    { schema: "Article" },
+  );
+  return (
+    <BreatheShell>
+      <Hero />
+      <IntegrationsStrip />
+      <Replaces />
+      <PricingHome />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Product tour — how the platform runs the whole DME lifecycle. */
+export function BreatheProduct() {
+  useDocumentTitle(
+    "Product tour — Breathe by CareMetric.ai",
+    "See how Breathe runs the entire DME lifecycle in one system: intake, the resupply engine, revenue cycle, clinical monitoring, and the AI voice agent.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={Workflow}
+        eyebrow="Product tour"
+        title={
+          <>
+            One platform for the{" "}
+            <span className="grad-em">whole lifecycle.</span>
+          </>
+        }
+        sub="From the first intake call to the last reconciled claim — see the console, the automations, and the AI that run a modern DME business."
+      />
+      <Lifecycle />
+      <ProductShowcase />
+      <Features />
+      <AiBento />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Compare — how Breathe stacks up against legacy DME software, by role. */
+export function BreatheCompare() {
+  useDocumentTitle(
+    "How Breathe compares — Breathe by CareMetric.ai",
+    "How Breathe compares to legacy DME software, and how much time it gives back to every role on your team.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={BrainCircuit}
+        eyebrow="Compare"
+        title={
+          <>
+            Built AI-native, <span className="grad-em">not bolted on.</span>
+          </>
+        }
+        sub="Legacy DME systems bolt modules onto decades-old cores. See the line-by-line difference — and what it means for each person on your team."
+      />
+      <Comparison />
+      <Roles />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* ROI — the interactive calculator. */
+export function BreatheRoi() {
+  useDocumentTitle(
+    "ROI calculator — Breathe by CareMetric.ai",
+    "Estimate what Breathe is worth to your DME business: staff time recovered, revenue-cycle recovery, resupply growth, and the point tools it replaces.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={LineChart}
+        eyebrow="ROI"
+        title={
+          <>
+            Size the <span className="grad-em">return.</span>
+          </>
+        }
+        sub="Estimate what Breathe gives back on your own numbers — staff hours, revenue-cycle recovery, resupply growth, and the seven point tools you stop paying for."
+      />
+      <Roi />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Pricing — how it's priced, and how migration works. */
+export function BreathePricing() {
+  useDocumentTitle(
+    "Pricing — Breathe by CareMetric.ai",
+    "One platform, one price. How Breathe is priced, and how a guided migration gets your DME business live in weeks.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={CircleDollarSign}
+        eyebrow="Pricing"
+        title={
+          <>
+            Priced like <span className="grad-em">one platform.</span>
+          </>
+        }
+        sub="No per-module upsells, no surprise line items — and a guided migration that gets you live in weeks, not quarters."
+      />
+      <Pricing />
+      <Onboarding />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Security — posture, the why behind it, and the FAQ. */
+export function BreatheSecurity() {
+  useDocumentTitle(
+    "Security — Breathe by CareMetric.ai",
+    "Breathe's security posture: HIPAA-eligible infrastructure, on-device patient imaging, and the principles behind the platform.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={ShieldCheck}
+        eyebrow="Security"
+        title={
+          <>
+            Patient trust, <span className="grad-em">engineered in.</span>
+          </>
+        }
+        sub="HIPAA-eligible infrastructure, on-device patient imaging, and a least-privilege posture — the questions your compliance team will ask, answered."
+      />
+      <Security />
+      <Manifesto />
+      <Faq />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
 /* ───────────────────────── Nav ───────────────────────── */
 const NAV_LINKS: { href: string; label: string }[] = [
-  { href: "#product", label: "Tour" },
-  { href: "#platform", label: "Platform" },
-  { href: "#compare", label: "Compare" },
-  { href: "#roi", label: "ROI" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#security", label: "Security" },
+  { href: "/breathe/product", label: "Product" },
+  { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/roi", label: "ROI" },
+  { href: "/breathe/pricing", label: "Pricing" },
+  { href: "/breathe/security", label: "Security" },
 ];
 
 function Nav() {
+  const [loc] = useLocation();
+  const [open, setOpen] = useState(false);
+  // Close the mobile menu on any route change so it never lingers open.
+  useEffect(() => {
+    setOpen(false);
+  }, [loc]);
   return (
     <nav className="bx-nav">
       <div className="bx-shell bx-nav-inner">
-        <a className="bx-brand" href="#top">
+        <Link className="bx-brand" href="/breathe">
           <img src={LOGO} alt="CareMetric AI" />
           <span>
             <span className="bx-brand-name">Breathe</span>
             <span className="bx-brand-sub">by CareMetric.ai</span>
           </span>
-        </a>
+        </Link>
         <div className="bx-nav-links">
           {NAV_LINKS.map((l) => (
-            <a className="bx-nav-anchor" href={l.href} key={l.href}>
+            <Link
+              className={"bx-nav-anchor" + (loc === l.href ? " is-active" : "")}
+              href={l.href}
+              key={l.href}
+            >
               {l.label}
-            </a>
+            </Link>
           ))}
           <a className="bx-btn bx-btn-primary bx-btn-sm" href="#demo">
             Request a demo
           </a>
         </div>
+        <button
+          type="button"
+          className="bx-nav-toggle"
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          aria-controls="bx-nav-mobile"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <X size={22} /> : <Menu size={22} />}
+        </button>
       </div>
+      {open ? (
+        <div className="bx-nav-mobile" id="bx-nav-mobile">
+          <div className="bx-shell bx-nav-mobile-inner">
+            {NAV_LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={
+                  "bx-nav-mobile-link" + (loc === l.href ? " is-active" : "")
+                }
+                onClick={() => setOpen(false)}
+              >
+                {l.label}
+              </Link>
+            ))}
+            <a
+              className="bx-btn bx-btn-primary bx-nav-mobile-demo"
+              href="#demo"
+              onClick={() => setOpen(false)}
+            >
+              Request a demo
+            </a>
+          </div>
+        </div>
+      ) : null}
     </nav>
   );
 }
@@ -1150,6 +1363,12 @@ function Roles() {
             </div>
           ))}
         </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want every feature mapped to the seat that uses it?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/features">
+            See what the software does, by role <ArrowRight size={16} />
+          </Link>
+        </div>
       </div>
     </section>
   );
@@ -1299,29 +1518,83 @@ function Roi() {
 }
 
 /* ───────────────────────── Pricing ───────────────────────── */
-const PRICING: { icon: React.ReactNode; title: string; body: string }[] = [
+// Canonical platform catalog, mirrored from the billing seed in migration
+// 0362 (resupply.billing_plans / billing_addons). Launch/Growth/Scale are
+// is_public=true so their prices are shown; Enterprise is is_custom, so it
+// shows "Custom" and never the internal number. Keep in sync if the seed
+// prices change.
+const PLANS: {
+  name: string;
+  price: string;
+  cadence: string;
+  setup: string;
+  blurb: string;
+  highlights: string[];
+  featured?: boolean;
+}[] = [
   {
-    icon: <InfinityIcon size={20} />,
-    title: "One all-in price",
-    body: "Voice agent, AI claims, telehealth, mask fitting, documents — every module is included. No per-feature licensing, no surprise add-ons.",
+    name: "Launch",
+    price: "$799",
+    cadence: "/mo",
+    setup: "+ $2,500 one-time onboarding",
+    blurb: "Branded storefront and core resupply automation for a small DME.",
+    highlights: [
+      "5 staff seats · 500 active patients · 1 location",
+      "Branded CPAP storefront + mask fitter",
+      "Shop, cart, checkout, and order tracking",
+      "Resupply reminders + subscription tracking",
+    ],
   },
   {
-    icon: <CircleDollarSign size={20} />,
-    title: "Priced to your panel",
-    body: "You pay for your active patients and seats, not a wall of SKUs. As you grow, the math stays simple and predictable.",
+    name: "Growth",
+    price: "$1,899",
+    cadence: "/mo",
+    setup: "+ $5,000 one-time onboarding",
+    blurb:
+      "Full resupply operations, outreach, documents, and billing worklists.",
+    highlights: [
+      "15 seats · 3,000 patients · 3 locations",
+      "Everything in Launch",
+      "Bulk campaigns, patient packets + e-signature",
+      "Eligibility, prior auth, CMN/DIF, and A/R worklists",
+    ],
+    featured: true,
   },
   {
-    icon: <CalendarClock size={20} />,
-    title: "Month-to-month",
-    body: "No multi-year lock-in. Your patients, orders, and history stay yours and exportable — including back out to PacWare.",
+    name: "Scale",
+    price: "$3,999",
+    cadence: "/mo",
+    setup: "+ $10,000 one-time onboarding",
+    blurb:
+      "Multi-location automation, analytics, and AI controls at higher volume.",
+    highlights: [
+      "40 seats · 10,000 patients · 10 locations",
+      "Everything in Growth",
+      "Advanced financial, funnel, and LTV/CAC analytics",
+      "Automation rules, Control Center, bot playground",
+    ],
   },
   {
-    icon: <LifeBuoy size={20} />,
-    title: "Onboarding included",
-    body: "Data migration and white-glove launch support come with the platform, not on a separate professional-services invoice.",
+    name: "Enterprise",
+    price: "Custom",
+    cadence: "",
+    setup: "Contracted volume + SLA",
+    blurb:
+      "For high-volume DME operations needing custom integration and support.",
+    highlights: [
+      "Everything in Scale",
+      "Custom integration + migration plan",
+      "Advanced security and account controls",
+      "Dedicated success manager + priority SLA",
+    ],
   },
 ];
 
+// ── Live pricing from the platform billing catalog ──────────────────
+// The super-admin edits plan + add-on prices in the platform portal and
+// they land here with no redeploy (GET /api/platform/pricing). Fail-soft:
+// a missing/empty response falls back to the static PLANS / ADDON_GROUPS
+// copy in this file.
 interface PublicPlan {
   code: string;
   name: string;
@@ -1332,65 +1605,201 @@ interface PublicPlan {
   allowances: Record<string, number>;
   features: string[];
 }
+interface PublicAddon {
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  recurringPriceCents: number | null;
+  oneTimeMinCents: number | null;
+  oneTimeMaxCents: number | null;
+  unitLabel: string | null;
+}
+interface PublicPricing {
+  plans: PublicPlan[];
+  addons: PublicAddon[];
+}
 
-// Live plan tiers from the platform billing catalog (/api/platform/pricing).
-// The super-admin edits these prices in the platform portal and they land
-// here with no redeploy. Fail-soft: a missing/empty response leaves
-// `plans` null and the section falls back to its static value-prop copy.
-function usePublicPricing(): PublicPlan[] | null {
-  const [plans, setPlans] = useState<PublicPlan[] | null>(null);
+function usePublicPricing(): PublicPricing | null {
+  const [data, setData] = useState<PublicPricing | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/platform/pricing", { headers: { Accept: "application/json" } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: unknown) => {
+      .then((body: unknown) => {
         if (cancelled) return;
-        const list = (data as { plans?: unknown } | null)?.plans;
-        if (Array.isArray(list) && list.length > 0)
-          setPlans(list as PublicPlan[]);
+        const b = body as { plans?: unknown; addons?: unknown } | null;
+        const plans = b?.plans;
+        if (Array.isArray(plans) && plans.length > 0) {
+          setData({
+            plans: plans as PublicPlan[],
+            addons: Array.isArray(b?.addons)
+              ? (b!.addons as PublicAddon[])
+              : [],
+          });
+        }
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, []);
-  return plans;
+  return data;
 }
 
-function planPriceLabel(p: PublicPlan): string {
-  if (p.monthlyPriceCents == null) return p.isCustom ? "Custom" : "Contact us";
-  return `$${Math.round(p.monthlyPriceCents / 100).toLocaleString("en-US")}`;
+function dollars(cents: number): string {
+  const v = cents / 100;
+  // Whole dollars render without decimals ("$799"); fractional amounts
+  // keep cents ("$799.50") so we never misstate a non-round price.
+  return Number.isInteger(v)
+    ? `$${v.toLocaleString("en-US")}`
+    : `$${v.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
 }
 
-function PlanTiers({ plans }: { plans: PublicPlan[] }) {
+type PlanCard = (typeof PLANS)[number];
+
+function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
+  return plans.map((p) => ({
+    name: p.name,
+    // Custom/Enterprise tiers never show a concrete public price — even if
+    // a negotiated amount is stored, the marketing page says "Custom".
+    price: p.isCustom
+      ? "Custom"
+      : p.monthlyPriceCents == null
+        ? "Contact us"
+        : dollars(p.monthlyPriceCents),
+    cadence: p.isCustom || p.monthlyPriceCents == null ? "" : "/mo",
+    setup: p.isCustom
+      ? "Contracted volume + SLA"
+      : p.onboardingFeeCents != null && p.onboardingFeeCents > 0
+        ? `+ ${dollars(p.onboardingFeeCents)} one-time onboarding`
+        : "Onboarding included",
+    blurb: p.description ?? "",
+    highlights: p.features.slice(0, 6),
+    featured: p.code.toLowerCase() === "growth",
+  }));
+}
+
+const ADDON_GROUPS: {
+  group: string;
+  items: { name: string; price: string }[];
+}[] = [
+  {
+    group: "Premium modules",
+    items: [
+      { name: "AI voice agent / IVR", price: "$499/mo" },
+      { name: "Advanced billing automation", price: "$699/mo" },
+      { name: "Advanced analytics suite", price: "$399/mo" },
+      { name: "Multi-location management", price: "$499/mo" },
+      { name: "Fax automation", price: "$199/mo" },
+      { name: "Dedicated success manager", price: "$1,000/mo" },
+    ],
+  },
+  {
+    group: "Capacity",
+    items: [
+      { name: "Additional staff seat", price: "$49/mo" },
+      { name: "Active-patient block (+500)", price: "$99/mo" },
+      { name: "Additional location", price: "$199/mo" },
+      { name: "Extra storage (+100 GB)", price: "$25/mo" },
+    ],
+  },
+  {
+    group: "Usage bundles",
+    items: [
+      { name: "SMS / email bundle (1,000)", price: "$50" },
+      { name: "AI text bundle (1,000)", price: "$40" },
+      { name: "Claims / eligibility bundle (1,000)", price: "$75" },
+    ],
+  },
+  {
+    group: "Integrations & one-time",
+    items: [
+      { name: "Additional therapy-cloud vendor", price: "$299/mo" },
+      { name: "Custom integration", price: "from $5,000" },
+      { name: "Data migration package", price: "$2,500–$15,000" },
+      { name: "Custom domain + branding setup", price: "$500" },
+    ],
+  },
+];
+
+const ADDON_CATEGORY_LABELS: Record<string, string> = {
+  premium: "Premium modules",
+  capacity: "Capacity",
+  usage: "Usage bundles",
+  integration: "Integrations & one-time",
+  one_time: "Integrations & one-time",
+};
+
+function addonPrice(a: PublicAddon): string {
+  if (a.recurringPriceCents != null)
+    return `${dollars(a.recurringPriceCents)}/mo`;
+  if (
+    a.oneTimeMinCents != null &&
+    a.oneTimeMaxCents != null &&
+    a.oneTimeMaxCents !== a.oneTimeMinCents
+  )
+    return `${dollars(a.oneTimeMinCents)}–${dollars(a.oneTimeMaxCents)}`;
+  if (a.oneTimeMinCents != null) return `from ${dollars(a.oneTimeMinCents)}`;
+  return "—";
+}
+
+function liveToAddonGroups(addons: PublicAddon[]): typeof ADDON_GROUPS {
+  const order: string[] = [];
+  const byLabel = new Map<string, { name: string; price: string }[]>();
+  for (const a of addons) {
+    const label = ADDON_CATEGORY_LABELS[a.category ?? ""] ?? "Add-ons";
+    if (!byLabel.has(label)) {
+      byLabel.set(label, []);
+      order.push(label);
+    }
+    byLabel.get(label)!.push({ name: a.name, price: addonPrice(a) });
+  }
+  return order.map((group) => ({ group, items: byLabel.get(group)! }));
+}
+
+/** The four subscription packages. Reused on the landing page + pricing page.
+ *  `cards` defaults to the static PLANS but is fed live catalog data by the
+ *  Pricing section when the public pricing endpoint responds. */
+function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
   return (
-    <div className="bx-price-grid">
-      {plans.map((p) => (
-        <div className="bx-price-card bx-reveal" key={p.code}>
-          <h3>{p.name}</h3>
-          <div className="bx-price-amount">
-            {planPriceLabel(p)}
-            {p.monthlyPriceCents != null ? (
-              <span className="bx-price-per"> /mo</span>
+    <div className="bx-plan-grid">
+      {cards.map((p) => (
+        <div
+          className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
+          key={p.name}
+        >
+          {p.featured ? (
+            <span className="bx-plan-badge">Most popular</span>
+          ) : null}
+          <div className="bx-plan-name">{p.name}</div>
+          <div className="bx-plan-price">
+            <span className="bx-plan-amt">{p.price}</span>
+            {p.cadence ? (
+              <span className="bx-plan-cadence">{p.cadence}</span>
             ) : null}
           </div>
-          {p.onboardingFeeCents != null && p.onboardingFeeCents > 0 ? (
-            <div className="bx-price-onboarding">
-              + $
-              {Math.round(p.onboardingFeeCents / 100).toLocaleString("en-US")}{" "}
-              onboarding
-            </div>
-          ) : null}
-          {p.description ? <p>{p.description}</p> : null}
-          {p.features.length > 0 ? (
-            <ul className="bx-price-features">
-              {p.features.slice(0, 5).map((f) => (
-                <li key={f}>{f}</li>
-              ))}
-            </ul>
-          ) : null}
-          <a className="bx-btn bx-btn-ghost" href="#demo">
-            {p.isCustom ? "Talk to us" : "Get started"} <ArrowRight size={15} />
+          <div className="bx-plan-setup">{p.setup}</div>
+          <p className="bx-plan-blurb">{p.blurb}</p>
+          <ul className="bx-plan-list">
+            {p.highlights.map((h) => (
+              <li key={h}>
+                <Check size={15} />
+                {h}
+              </li>
+            ))}
+          </ul>
+          <a
+            className={
+              "bx-btn bx-btn-sm " +
+              (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
+            }
+            href="#demo"
+          >
+            {p.price === "Custom" ? "Talk to sales" : "Request a demo"}
           </a>
         </div>
       ))}
@@ -1398,8 +1807,46 @@ function PlanTiers({ plans }: { plans: PublicPlan[] }) {
   );
 }
 
+/** The à la carte add-on catalog, grouped by category. `groups` defaults
+ *  to the static ADDON_GROUPS but is fed live catalog data by the Pricing
+ *  section when the public pricing endpoint responds. */
+function PricingAddons({
+  groups = ADDON_GROUPS,
+}: {
+  groups?: typeof ADDON_GROUPS;
+}) {
+  return (
+    <div className="bx-addons bx-reveal">
+      <div className="bx-addons-head">
+        <Plug size={15} /> Add-ons — license only what you need
+      </div>
+      <div className="bx-addon-groups">
+        {groups.map((g) => (
+          <div className="bx-addon-group" key={g.group}>
+            <div className="bx-addon-group-name">{g.group}</div>
+            {g.items.map((it) => (
+              <div className="bx-addon-row" key={it.name}>
+                <span className="bx-addon-name">{it.name}</span>
+                <span className="bx-addon-price">{it.price}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Full pricing — packages + the complete add-on catalog. Tiers + add-on
+   prices are driven by the live billing catalog (/api/platform/pricing)
+   when available, falling back to the static PLANS / ADDON_GROUPS copy. */
 function Pricing() {
-  const plans = usePublicPricing();
+  const live = usePublicPricing();
+  const cards = live ? liveToPlanCards(live.plans) : PLANS;
+  const groups =
+    live && live.addons.length > 0
+      ? liveToAddonGroups(live.addons)
+      : ADDON_GROUPS;
   return (
     <section className="bx-section" id="pricing">
       <div className="bx-shell">
@@ -1408,34 +1855,57 @@ function Pricing() {
             <CircleDollarSign size={13} /> Pricing
           </span>
           <h2 className="bx-h2">
-            Pricing that <em>respects operators</em>
+            Pick a package, <em>add only what you need</em>
           </h2>
           <p className="bx-lede">
-            Legacy DME software charges by the module and meters every feature.
-            Breathe is one platform, one price — built so the value you sized in
-            the calculator above is the value you actually keep.
+            Transparent subscription tiers sized to your patient base —
+            month-to-month, with onboarding and migration included and your data
+            always exportable (back out to PacWare too). License premium modules
+            à la carte.
           </p>
         </div>
-        {/* Live plan tiers from the billing catalog when available, else the
-            static value-prop cards. */}
-        {plans && plans.length > 0 ? (
-          <PlanTiers plans={plans} />
-        ) : (
-          <div className="bx-price-grid">
-            {PRICING.map((p) => (
-              <div className="bx-price-card bx-reveal" key={p.title}>
-                <div className="bx-price-ic">{p.icon}</div>
-                <h3>{p.title}</h3>
-                <p>{p.body}</p>
-              </div>
-            ))}
-          </div>
-        )}
+        <PricingPlans cards={cards} />
+        <PricingAddons groups={groups} />
         <div className="bx-price-cta bx-reveal">
-          <span>Want the number for your panel?</span>
+          <span>Not sure which package fits?</span>
           <a className="bx-btn bx-btn-primary" href="#demo">
             Get a tailored quote <ArrowRight size={16} />
           </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Landing-page pricing — packages up front with an add-ons teaser; the full
+   catalog lives on /breathe/pricing. */
+function PricingHome() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Pricing
+          </span>
+          <h2 className="bx-h2">
+            One platform, <em>packaged for your size</em>
+          </h2>
+          <p className="bx-lede">
+            Subscription tiers sized to your patient base — month-to-month, with
+            onboarding and migration included. Add premium modules only when you
+            need them.
+          </p>
+        </div>
+        <PricingPlans />
+        <div className="bx-addons-teaser bx-reveal">
+          <Plug size={15} />
+          <span>
+            Plus à la carte add-ons — AI voice agent, advanced billing
+            automation, extra seats, locations, and more.
+          </span>
+          <Link className="bx-addons-teaser-link" href="/breathe/pricing">
+            See full pricing &amp; add-ons <ArrowRight size={15} />
+          </Link>
         </div>
       </div>
     </section>
@@ -1467,7 +1937,7 @@ const SECURITY: { icon: React.ReactNode; title: string; body: string }[] = [
   {
     icon: <Server size={20} />,
     title: "Tenant isolation",
-    body: "Multi-tenant by architecture: your brand, sending domain, and patient panel are cleanly separated from every other operator.",
+    body: "Multi-tenant by architecture: your brand, sending domain, and patient data are cleanly separated from every other operator.",
   },
   {
     icon: <Network size={20} />,
@@ -1658,7 +2128,7 @@ function ClosingCta() {
           <p>
             See Breathe run a live resupply order, scrub a claim, and book a
             telehealth visit in one walkthrough — tailored to your payers and
-            your patient panel.
+            your patients.
           </p>
           <div className="bx-cta-row">
             <a
@@ -1667,9 +2137,9 @@ function ClosingCta() {
             >
               Request a demo <ArrowRight size={17} />
             </a>
-            <a className="bx-btn bx-btn-ghost" href="#product">
+            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
               Explore the platform
-            </a>
+            </Link>
           </div>
           <div className="bx-cta-meta">
             <span>
@@ -1693,13 +2163,13 @@ function Footer() {
   return (
     <footer className="bx-footer">
       <div className="bx-shell bx-footer-inner">
-        <a className="bx-brand" href="#top">
+        <Link className="bx-brand" href="/breathe">
           <img src={LOGO} alt="CareMetric AI" />
           <span>
             <span className="bx-brand-name">Breathe</span>
             <span className="bx-brand-sub">by CareMetric.ai</span>
           </span>
-        </a>
+        </Link>
         <p className="bx-footer-note">
           Breathe is the AI-native operating platform for durable medical
           equipment providers, built by CareMetric.ai. HIPAA-eligible
@@ -1710,6 +2180,13 @@ function Footer() {
           © {new Date().getFullYear()} CareMetric.ai
         </div>
       </div>
+      <nav className="bx-shell bx-footer-nav" aria-label="Breathe pages">
+        {NAV_LINKS.map((l) => (
+          <Link className="bx-footer-link" href={l.href} key={l.href}>
+            {l.label}
+          </Link>
+        ))}
+      </nav>
       <div className="bx-footer-admin">
         <Link
           href="/platform"
@@ -1771,6 +2248,42 @@ function useSmoothScroll() {
     return () => {
       root.style.scrollBehavior = prev;
     };
+  }, []);
+}
+
+/**
+ * Scrolls to the URL hash target on mount. A deep link / cross-page
+ * navigation like `/breathe#roi` would otherwise land at the top of the
+ * page, because this surface is lazy-loaded — the browser's native hash
+ * jump fires before the React content (and the `#roi` section) has
+ * mounted. We retry on a few animation frames until the target exists,
+ * then scroll to it (honoring prefers-reduced-motion). No hash, or a
+ * hash that never resolves, is a silent no-op.
+ */
+function useInitialHashScroll() {
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash === "#" || hash === "#top") return;
+    let frame = 0;
+    let tries = 0;
+    const tryScroll = () => {
+      let el: Element | null;
+      try {
+        el = document.querySelector(hash);
+      } catch {
+        return; // malformed selector — nothing to do
+      }
+      if (el) {
+        el.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "start",
+        });
+        return;
+      }
+      if (tries++ < 60) frame = requestAnimationFrame(tryScroll);
+    };
+    frame = requestAnimationFrame(tryScroll);
+    return () => cancelAnimationFrame(frame);
   }, []);
 }
 
@@ -1860,4 +2373,4 @@ function CountUp({
   );
 }
 
-export default Breathe;
+export default BreatheHome;

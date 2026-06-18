@@ -32,6 +32,7 @@ import {
   getAppConfigSetting,
 } from "../../lib/app-config/catalog";
 import { invalidateAppConfigCache } from "../../lib/app-config/store";
+import { normalizeConfigValueForSave } from "../../lib/app-config/validators";
 import {
   buildSettingView,
   buildWebhookReference,
@@ -158,7 +159,7 @@ router.put(
       .upsert(
         {
           key,
-          value: parsed.data.value,
+          value: normalizeConfigValueForSave(key, parsed.data.value),
           updated_by_user_id: req.platformAdminUserId ?? null,
           updated_by_email: req.platformAdminEmail ?? null,
           updated_at: nowIso,

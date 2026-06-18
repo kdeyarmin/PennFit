@@ -429,6 +429,21 @@ function PlanCatalogCard({ plan }: { plan: BillingPlan }) {
   );
   const [features, setFeatures] = useState(plan.features.join("\n"));
 
+  // Re-derive the form from the current catalog values. Called on Cancel so
+  // re-opening the editor never shows stale/unsaved edits.
+  function resetForm() {
+    setName(plan.name);
+    setMonthly(centsToDollarInput(plan.monthlyPriceCents));
+    setOnboarding(centsToDollarInput(plan.onboardingFeeCents));
+    setIsPublic(plan.isPublic !== false);
+    setAllowances(
+      Object.fromEntries(
+        Object.entries(plan.allowances).map(([k, v]) => [k, String(v)]),
+      ),
+    );
+    setFeatures(plan.features.join("\n"));
+  }
+
   const save = useMutation({
     mutationFn: (edit: CatalogPlanEdit) => updateCatalogPlan(plan.code, edit),
     onSuccess: () => {
@@ -569,6 +584,7 @@ function PlanCatalogCard({ plan }: { plan: BillingPlan }) {
             </button>
             <button
               onClick={() => {
+                resetForm();
                 setEditing(false);
                 setMessage(null);
               }}
@@ -615,6 +631,15 @@ function AddonCatalogRow({ addon }: { addon: BillingAddon }) {
   );
   const [unitLabel, setUnitLabel] = useState(addon.unitLabel ?? "");
   const [isActive, setIsActive] = useState(addon.isActive !== false);
+
+  // Re-derive the form from the current catalog values, so Cancel + re-open
+  // never shows stale/unsaved edits.
+  function resetForm() {
+    setName(addon.name);
+    setRecurring(centsToDollarInput(addon.recurringPriceCents));
+    setUnitLabel(addon.unitLabel ?? "");
+    setIsActive(addon.isActive !== false);
+  }
 
   const save = useMutation({
     mutationFn: (edit: CatalogAddonEdit) =>
@@ -723,6 +748,7 @@ function AddonCatalogRow({ addon }: { addon: BillingAddon }) {
             </button>
             <button
               onClick={() => {
+                resetForm();
                 setEditing(false);
                 setMessage(null);
               }}

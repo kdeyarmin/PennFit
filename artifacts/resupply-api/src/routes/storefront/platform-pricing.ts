@@ -83,16 +83,22 @@ router.get("/platform/pricing", async (_req, res) => {
     // /api/company-info).
     res.set("Cache-Control", "public, max-age=300");
     res.json({
-      plans: ((plans.data ?? []) as PublicPlanRow[]).map((p) => ({
-        code: p.code,
-        name: p.name,
-        description: p.description,
-        monthlyPriceCents: p.monthly_price_cents,
-        onboardingFeeCents: p.onboarding_fee_cents,
-        isCustom: Boolean(p.is_custom),
-        allowances: p.allowances ?? {},
-        features: p.features ?? [],
-      })),
+      plans: ((plans.data ?? []) as PublicPlanRow[]).map((p) => {
+        // Custom/Enterprise tiers carry NEGOTIATED pricing — never expose a
+        // concrete amount publicly even if one is stored. The marketing page
+        // renders these as a "Custom / contact us" tier.
+        const custom = Boolean(p.is_custom);
+        return {
+          code: p.code,
+          name: p.name,
+          description: p.description,
+          monthlyPriceCents: custom ? null : p.monthly_price_cents,
+          onboardingFeeCents: custom ? null : p.onboarding_fee_cents,
+          isCustom: custom,
+          allowances: p.allowances ?? {},
+          features: p.features ?? [],
+        };
+      }),
       addons: ((addons.data ?? []) as PublicAddonRow[]).map((a) => ({
         code: a.code,
         name: a.name,
