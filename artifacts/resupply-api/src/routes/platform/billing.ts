@@ -23,7 +23,10 @@ import {
   adminReadRateLimiter,
   adminWriteRateLimiter,
 } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 import { requirePlatformAdmin } from "../../middlewares/requirePlatformAdmin";
 
 const router: IRouter = Router();
@@ -44,6 +47,13 @@ const addonBody = z.object({
   quantity: z.number().int().min(0).max(9999),
   customRecurringPriceCents: z.number().int().min(0).nullable().optional(),
   notes: z.string().max(2000).optional(),
+});
+// Tenant self-service plan selection: a tenant owner picks one of the
+// public, non-custom plans for their own org. Custom/Enterprise plans are
+// excluded here (they carry NULL/negotiated pricing) and must be assigned
+// by a platform admin via PUT /platform/billing/tenants/:id/subscription.
+const selectPlanBody = z.object({
+  planCode: z.string().regex(/^[a-z0-9_]+$/),
 });
 const usageEventBody = z.object({
   tenantId: z.string().uuid().optional(),
@@ -392,6 +402,150 @@ router.get(
     if (!req.orgId) {
       res.status(400).json({ error: "tenant_not_resolved" });
       return;
+    }
+    await tenantBilling(req.orgId, res);
+  },
+);
+
+// ── GET /admin/billing/plans ────────────────────────────────────────
+// Tenant-facing plan catalog: the public plans a tenant owner can choose
+// between. Each plan carries `isCustom` so the SPA can render custom /
+// Enterprise tiers as a "contact us" state (not self-selectable) while
+// still showing them in the comparison.
+router.get(
+  "/admin/billing/plans",
+  adminReadRateLimiter,
+  requireAdmin,
+  async (_req, res): Promise<void> => {
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .select("*")
+      .eq("is_public", true)
+      .order("sort_order");
+    if (error) {
+      logger.error(
+        { event: "tenant_billing_plans_read_failed", err: error },
+        "tenant billing plans read failed",
+      );
+      res.status(500).json({ error: "billing_plans_failed" });
+      return;
+    }
+    res.json({ plans: ((data ?? []) as BillingPlanRow[]).map(mapPlan) });
+  },
+);
+
+// ── POST /admin/billing/subscription ────────────────────────────────
+// Tenant self-service plan selection. The owner picks one of the public,
+// non-custom plans; we record it on tenant_billing_subscriptions (the
+// same table the super-admin portal reads), then sync the change to
+// Stripe (customer + subscription) so billing reflects the choice. Stripe
+// sync is best-effort — when the platform-billing Stripe account is not
+// configured (dev/preview), the selection is still recorded and the route
+// returns 200 so deploys without Stripe keys don't break.
+router.post(
+  "/admin/billing/subscription",
+  adminWriteRateLimiter,
+  requirePermission("system.config.manage"),
+  async (req, res): Promise<void> => {
+    if (!req.orgId) {
+      res.status(400).json({ error: "tenant_not_resolved" });
+      return;
+    }
+    const body = selectPlanBody.safeParse(req.body);
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_subscription", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data: plan, error: planErr } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .select("id, code, is_public, is_custom")
+      .eq("code", body.data.planCode)
+      .maybeSingle();
+    if (planErr || !plan) {
+      res.status(404).json({ error: "plan_not_found" });
+      return;
+    }
+    // Guard: a tenant may only self-select a public, non-custom plan.
+    // Custom/Enterprise tiers require platform-admin assignment.
+    if (!plan.is_public || plan.is_custom) {
+      res.status(403).json({ error: "plan_not_self_selectable" });
+      return;
+    }
+    const { error: cancelErr } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .update({
+        status: "canceled",
+        updated_at: new Date().toISOString(),
+        updated_by_email: req.adminEmail ?? null,
+      })
+      .eq("org_id", req.orgId)
+      .in("status", ["active", "trialing", "past_due"]);
+    if (cancelErr) {
+      res.status(500).json({ error: "subscription_update_failed" });
+      return;
+    }
+    const { error: insErr } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .insert({
+        org_id: req.orgId,
+        plan_id: plan.id,
+        status: "active",
+        notes: "",
+        updated_by_email: req.adminEmail ?? null,
+      });
+    if (insErr) {
+      res.status(500).json({ error: "subscription_update_failed" });
+      return;
+    }
+    await logAudit({
+      action: "tenant.billing.subscription.selected",
+      adminEmail: req.adminEmail ?? "tenant-admin",
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "tenant_billing_subscriptions",
+      targetId: req.orgId,
+      metadata: { planCode: body.data.planCode },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    // Best-effort Stripe sync — record the choice regardless of whether
+    // the platform-billing Stripe account is configured.
+    try {
+      const customer = await ensureTenantStripeCustomer({
+        orgId: req.orgId,
+        adminEmail: req.adminEmail ?? null,
+      });
+      if (customer.stripeConfigured) {
+        await syncTenantStripeSubscription({
+          orgId: req.orgId,
+          adminEmail: req.adminEmail ?? null,
+        });
+      }
+    } catch (err) {
+      if (err instanceof PlatformBillingAccountChangedError) {
+        res.status(409).json({ error: "stripe_account_changed" });
+        return;
+      }
+      logger.error(
+        { event: "tenant_billing_self_select_stripe_failed", err },
+        "tenant self-select Stripe sync failed",
+      );
+      // The selection is recorded; surface it even if Stripe sync failed.
     }
     await tenantBilling(req.orgId, res);
   },

@@ -32,6 +32,7 @@ export interface BillingPlan {
   description: string;
   monthlyPriceCents: number | null;
   onboardingFeeCents: number | null;
+  isPublic?: boolean;
   isCustom: boolean;
   allowances: Record<string, number>;
   features: string[];
@@ -103,6 +104,22 @@ export interface PlatformTenantBillingRow {
 
 export function fetchTenantBilling(): Promise<TenantBilling> {
   return jsonFetch<TenantBilling>("/admin/billing/package");
+}
+
+/** Public plans a tenant owner can choose between (incl. custom/Enterprise
+ *  tiers, which the UI renders as "contact us" rather than selectable). */
+export function fetchSelectablePlans(): Promise<{ plans: BillingPlan[] }> {
+  return jsonFetch<{ plans: BillingPlan[] }>("/admin/billing/plans");
+}
+
+/** Self-select a public, non-custom plan for the caller's own tenant.
+ *  Records the choice and syncs it to Stripe; returns the refreshed
+ *  tenant billing package. */
+export function selectTenantPlan(planCode: string): Promise<TenantBilling> {
+  return jsonFetch<TenantBilling>("/admin/billing/subscription", {
+    method: "POST",
+    body: JSON.stringify({ planCode }),
+  });
 }
 
 export function fetchPlatformBillingCatalog(): Promise<BillingCatalogResponse> {

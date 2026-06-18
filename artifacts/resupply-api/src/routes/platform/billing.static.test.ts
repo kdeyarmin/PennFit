@@ -28,6 +28,20 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("requirePlatformAdmin");
   });
 
+  it("exposes tenant self-service plan listing and selection", () => {
+    expect(SRC).toContain('"/admin/billing/plans"');
+    expect(SRC).toContain('"/admin/billing/subscription"');
+    // Selection is an owner-level action gated by system.config.manage.
+    expect(SRC).toContain('requirePermission("system.config.manage")');
+    // A tenant may only self-select a public, non-custom plan.
+    expect(SRC).toContain("plan_not_self_selectable");
+    // The choice is recorded and synced to Stripe (customer + subscription).
+    expect(SRC).toContain("ensureTenantStripeCustomer");
+    expect(SRC).toContain("syncTenantStripeSubscription");
+    // Auditable so the super-admin portal can see who chose what.
+    expect(SRC).toContain("tenant.billing.subscription.selected");
+  });
+
   it("counts active locations by is_active, not a nonexistent status column", () => {
     // resupply.locations has `is_active` (boolean), no `status` column —
     // filtering on `status` 400s in PostgREST and 500s the whole tenant
