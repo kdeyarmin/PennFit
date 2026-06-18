@@ -543,6 +543,7 @@ const VideoVisitPage = lazyWithRetry(() =>
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
+import { isPlatformHomeHost } from "@/lib/platform-host";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
 import { DemoBanner } from "@/demo/DemoBanner";
@@ -1125,8 +1126,18 @@ function TopRouter() {
           Breathe marketing/showcase page. Mounted here (not in the
           patient <Layout>) so it renders in its own full-bleed dark
           chrome instead of the storefront header/footer.
+
+          On the platform's OWN home host (cmbreathe.com / the Railway
+          fallback) Breathe is ALSO the homepage and the super-admin
+          sign-in entry point — its footer links to /platform. On a
+          tenant storefront host, `/` stays the patient storefront, so
+          the explicit `/` route below falls through to PatientRouter.
+          The canonical /breathe URL keeps working on every host.
         */}
         <Route path="/breathe" component={Breathe} />
+        <Route path="/">
+          {() => (isPlatformHomeHost() ? <Breathe /> : <PatientRouter />)}
+        </Route>
 
         <Route path="/sign-in" component={SignInPage} />
         <Route path="/sign-in/*" component={SignInPage} />
