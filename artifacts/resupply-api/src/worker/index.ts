@@ -36,6 +36,7 @@ import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
+import { registerPlatformEmailTickJob } from "./jobs/platform-email-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerReferralReviewExtractJob } from "./jobs/referral-review-extract.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
@@ -631,6 +632,16 @@ async function doStartWorker(): Promise<void> {
   // is drained, paused, or cancelled.
   await safeRegister("registerBulkCampaignTickJob", registrationFailures, () =>
     registerBulkCampaignTickJob(boss),
+  );
+
+  // Platform outreach email send worker (super-admin broadcast). Same
+  // on-demand tick model as bulk campaigns: enqueued by the
+  // /platform/email-campaigns/:id/start endpoint, self-re-enqueues until
+  // drained, paused, or cancelled.
+  await safeRegister(
+    "registerPlatformEmailTickJob",
+    registrationFailures,
+    () => registerPlatformEmailTickJob(boss),
   );
 
   // Nightly bulk refresh of every active therapy-cloud link. Runs at
