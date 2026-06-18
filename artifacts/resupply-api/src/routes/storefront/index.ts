@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
 import companyInfoRouter from "./company-info.js";
+import platformPricingRouter from "./platform-pricing.js";
 import storefrontBrandingRouter from "./storefront-branding.js";
 import recommendRouter from "./recommend.js";
 import ordersRouter from "./orders.js";
@@ -26,6 +27,11 @@ router.use(healthRouter);
 // /api/company-info — public business identity (name, support phone /
 // email / hours) sourced from the admin Company information page.
 router.use(companyInfoRouter);
+// /api/platform/pricing — PUBLIC SaaS plan catalog for the platform
+// marketing site (cmbreathe.com). Reads the same billing catalog the
+// super-admin edits, so a price change reaches the marketing page with no
+// redeploy. Never exposes Stripe ids or tenant data.
+router.use(platformPricingRouter);
 // /api/storefront-branding — public, host-resolved per-tenant brand
 // (storefront name, tagline, logo). Drives the storefront's header/hero
 // so a tenant on a verified custom domain sees their own identity.
