@@ -163,6 +163,43 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     // matching the full-read/write support contract. `impersonatorUserId`
     // makes every downstream action attributable to the real human.
     if (session.impersonatedOrgId) {
+      // Re-verify the impersonator is STILL an active platform admin on
+      // EVERY request. Without this, a live act-as-tenant cookie keeps full
+      // tenant-admin access for up to the session TTL after the human is
+      // removed from `platform_admins` — revoking a compromised/departed
+      // platform admin would not immediately cut their cross-tenant access.
+      // The session's userId IS the platform admin's auth user id (the mint
+      // sets userId === impersonatorUserId === platformAdminUserId). Fail
+      // closed on a lookup error or a non-member. `platform_admins` is a
+      // GLOBAL directory, so read it via the service-role client (no org
+      // filter); this file is allowlisted for that direct call.
+      try {
+        const svc = getSupabaseServiceRoleClient();
+        const { data: pa, error: paErr } = await svc
+          .schema("resupply")
+          .from("platform_admins")
+          .select("auth_user_id")
+          .eq("auth_user_id", user.id)
+          .limit(1)
+          .maybeSingle();
+        if (paErr || !pa) {
+          logger.warn(
+            {
+              event: "resupply_impersonation_platform_admin_revoked",
+              impersonatorUserId: user.id,
+              hadLookupError: Boolean(paErr),
+            },
+            "requireAdmin: impersonator is no longer an active platform admin; rejecting impersonation session",
+          );
+          return null;
+        }
+      } catch (err) {
+        logger.warn(
+          { event: "resupply_impersonation_platform_admin_check_failed", err },
+          "requireAdmin: platform_admins re-check threw; failing closed",
+        );
+        return null;
+      }
       return {
         email: user.emailLower,
         userId: user.id,

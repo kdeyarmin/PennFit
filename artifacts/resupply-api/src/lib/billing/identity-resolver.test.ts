@@ -277,12 +277,15 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     const result = await resolveClearinghouse({
       env: {
         ...FULL_ENV,
-        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        // Must be an https *.officeally.io host — the realtime config reader
+        // rejects any other host so the 270 (PHI) can't be POSTed in cleartext
+        // or to an SSRF target (see readOfficeAllyRealtimeConfigOrNull).
+        OFFICE_ALLY_REALTIME_URL: "https://edi.officeally.io/env-rt",
         OFFICE_ALLY_REALTIME_API_KEY: "envkey",
       },
     });
     expect(result.source).toBe("env");
-    expect(result.realtimeConfig?.url).toBe("https://oa.example/env-rt");
+    expect(result.realtimeConfig?.url).toBe("https://edi.officeally.io/env-rt");
     expect(result.realtimeConfig?.apiKey).toBe("envkey");
   });
 
@@ -326,7 +329,9 @@ describe("resolveClearinghouse — real-time eligibility config", () => {
     });
     const result = await resolveClearinghouse({
       env: {
-        OFFICE_ALLY_REALTIME_URL: "https://oa.example/env-rt",
+        // Valid host so the ONLY reason realtimeConfig is null is the DB
+        // "disabled" toggle — not URL rejection.
+        OFFICE_ALLY_REALTIME_URL: "https://edi.officeally.io/env-rt",
         OFFICE_ALLY_REALTIME_API_KEY: "envkey",
       },
     });

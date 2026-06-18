@@ -116,6 +116,16 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   const [mine, setMine] = useState<MyReview | null>(null);
   const [mineLoaded, setMineLoaded] = useState(false);
 
+  // Tracks mount status so async event-handler callbacks (e.g.
+  // onMineChange's reviews refetch) don't setState after unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useDocumentTitle(
     product ? `${product.name} — PennPaps shop` : "Product — PennPaps shop",
     product?.tagline ?? product?.description ?? undefined,
@@ -239,26 +249,39 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   // Load the caller's own review for this product when the auth provider is ready.
   // Refetches on sign-in/out via the user-id key dep below.
   const { isSignedIn, userId } = useShopIdentity();
-  const refetchMine = useCallback(() => {
-    if (!isSignedIn) {
-      setMine(null);
-      setMineLoaded(true);
-      return;
-    }
-    fetchMyReview(productId)
-      .then((r) => {
-        setMine(r);
-        setMineLoaded(true);
-      })
-      .catch(() => {
-        // Network / 5xx shouldn't break the page — treat as "no review".
+  const refetchMine = useCallback(
+    (isActive: () => boolean = () => true) => {
+      if (!isSignedIn) {
+        if (!isActive()) return;
         setMine(null);
         setMineLoaded(true);
-      });
-  }, [isSignedIn, productId]);
+        return;
+      }
+      fetchMyReview(productId)
+        .then((r) => {
+          // Guard against a stale response / post-unmount setState — a
+          // newer fetch (sign-in/out, product change) may have superseded
+          // this one, mirroring the mount effect's `active` flag.
+          if (!isActive()) return;
+          setMine(r);
+          setMineLoaded(true);
+        })
+        .catch(() => {
+          // Network / 5xx shouldn't break the page — treat as "no review".
+          if (!isActive()) return;
+          setMine(null);
+          setMineLoaded(true);
+        });
+    },
+    [isSignedIn, productId],
+  );
   useEffect(() => {
+    let cancelled = false;
     setMineLoaded(false);
-    refetchMine();
+    refetchMine(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [refetchMine, userId]);
 
   const handleLoadMore = useCallback(async () => {
@@ -360,7 +383,11 @@ export function ShopProductDetail({ productId }: { productId: string }) {
           // Refetch the public list so a freshly-approved review (or
           // a deletion) is reflected immediately on this page.
           fetchProductReviews(productId)
-            .then(setReviewPages)
+            .then((pages) => {
+              // Guard against post-unmount / stale-response setState.
+              if (!mountedRef.current) return;
+              setReviewPages(pages);
+            })
             .catch(() => {
               // Non-fatal — list will refresh on next mount.
             });

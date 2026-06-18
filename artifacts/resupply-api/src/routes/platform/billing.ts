@@ -860,74 +860,22 @@ router.post(
       res.status(403).json({ error: "plan_not_self_selectable" });
       return;
     }
-    // Carry the existing Stripe identity forward when switching plans. The
-    // new active row must keep the prior stripe_customer_id /
-    // stripe_subscription_id / stripe_account_ref so the subsequent
-    // syncTenantStripeSubscription() UPDATES the existing Stripe
-    // subscription (swapping its line items to the new plan) instead of
-    // creating a second one — leaving the old subscription billing would
-    // double-charge the tenant.
-    const { data: prior, error: priorErr } = await raw
+    // Switch plans atomically. The cancel-then-insert (carrying the prior
+    // Stripe linkage forward so syncTenantStripeSubscription() UPDATES the
+    // existing Stripe subscription instead of creating a second one) runs
+    // inside a single SECURITY DEFINER transaction (migration 0389) with a
+    // FOR UPDATE lock on the row being replaced. This guarantees the tenant
+    // is never left with zero current subscriptions if the insert fails, and
+    // serializes concurrent double-clicks against the
+    // tenant_billing_one_current_plan_uq partial unique index.
+    const { error: swapErr } = await raw
       .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .select(
-        "stripe_customer_id, stripe_subscription_id, stripe_account_ref, stripe_status, current_period_start, current_period_end, last_invoice_id, last_invoice_status",
-      )
-      .eq("org_id", req.orgId)
-      .in("status", ["active", "trialing", "past_due"])
-      .limit(1)
-      .maybeSingle();
-    if (priorErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: cancelErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .update({
-        status: "canceled",
-        updated_at: new Date().toISOString(),
-        updated_by_email: req.adminEmail ?? null,
-        // MOVE the Stripe linkage off the canceled row onto the new active
-        // row below. tenant_billing_subscriptions has a partial UNIQUE index
-        // on stripe_subscription_id (migration 0363), so the same id can
-        // live on only one row — leaving it here would make the carry-forward
-        // insert violate the index and fail the plan change.
-        stripe_customer_id: null,
-        stripe_subscription_id: null,
-        stripe_account_ref: null,
-        stripe_status: null,
-        current_period_start: null,
-        current_period_end: null,
-        last_invoice_id: null,
-        last_invoice_status: null,
-      })
-      .eq("org_id", req.orgId)
-      .in("status", ["active", "trialing", "past_due"]);
-    if (cancelErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: insErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .insert({
-        org_id: req.orgId,
-        plan_id: plan.id,
-        status: "active",
-        notes: "",
-        updated_by_email: req.adminEmail ?? null,
-        // Preserve the live Stripe linkage from the plan being replaced.
-        stripe_customer_id: prior?.stripe_customer_id ?? null,
-        stripe_subscription_id: prior?.stripe_subscription_id ?? null,
-        stripe_account_ref: prior?.stripe_account_ref ?? null,
-        stripe_status: prior?.stripe_status ?? null,
-        current_period_start: prior?.current_period_start ?? null,
-        current_period_end: prior?.current_period_end ?? null,
-        last_invoice_id: prior?.last_invoice_id ?? null,
-        last_invoice_status: prior?.last_invoice_status ?? null,
+      .rpc("swap_tenant_subscription", {
+        p_org_id: req.orgId,
+        p_plan_id: plan.id,
+        p_updated_by_email: req.adminEmail ?? null,
       });
-    if (insErr) {
+    if (swapErr) {
       res.status(500).json({ error: "subscription_update_failed" });
       return;
     }
@@ -1842,73 +1790,27 @@ router.put(
       res.status(404).json({ error: "plan_not_found" });
       return;
     }
-    const { data: priorSub, error: priorSubErr } = await raw
+    // Assign the plan atomically. The cancel-then-insert — carrying the live
+    // Stripe linkage forward so a later syncTenantStripeSubscription() UPDATES
+    // the existing subscription instead of creating a second one and leaving
+    // the old one billing — runs inside a single SECURITY DEFINER transaction
+    // (migration 0389) with a FOR UPDATE lock on the row being replaced. The
+    // tenant is never left with zero current subscriptions if the insert
+    // fails. Carries the operator-chosen status + custom pricing + notes.
+    const { error: assignErr } = await raw
       .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .select(
-        "stripe_customer_id, stripe_subscription_id, stripe_account_ref, stripe_status, current_period_start, current_period_end, last_invoice_id, last_invoice_status",
-      )
-      .eq("org_id", param.data.id)
-      .in("status", ["active", "trialing", "past_due"])
-      .limit(1)
-      .maybeSingle();
-    if (priorSubErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: cancelErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .update({
-        status: "canceled",
-        updated_at: new Date().toISOString(),
-        updated_by_email: req.platformAdminEmail ?? null,
-        // MOVE the Stripe linkage off the canceled row onto the new active
-        // row below — the partial UNIQUE index on stripe_subscription_id
-        // (migration 0363) allows the id on only one row, so leaving it here
-        // would make the carry-forward insert violate the index.
-        stripe_customer_id: null,
-        stripe_subscription_id: null,
-        stripe_account_ref: null,
-        stripe_status: null,
-        current_period_start: null,
-        current_period_end: null,
-        last_invoice_id: null,
-        last_invoice_status: null,
-      })
-      .eq("org_id", param.data.id)
-      .in("status", ["active", "trialing", "past_due"]);
-    if (cancelErr) {
-      res.status(500).json({ error: "subscription_update_failed" });
-      return;
-    }
-    const { error: insErr } = await raw
-      .schema("resupply")
-      .from("tenant_billing_subscriptions")
-      .insert({
-        org_id: param.data.id,
-        plan_id: plan.id,
-        status: body.data.status,
-        custom_monthly_price_cents: body.data.customMonthlyPriceCents ?? null,
-        custom_onboarding_fee_cents: body.data.customOnboardingFeeCents ?? null,
-        custom_allowances: body.data.customAllowances ?? {},
-        notes: body.data.notes ?? "",
-        updated_by_email: req.platformAdminEmail ?? null,
-        // Carry the live Stripe linkage forward so a later
-        // syncTenantStripeSubscription() UPDATES the existing subscription
-        // (swapping its line items to the new plan) instead of creating a
-        // second one and leaving the old one billing — see the same guard
-        // on the tenant self-select route.
-        stripe_customer_id: priorSub?.stripe_customer_id ?? null,
-        stripe_subscription_id: priorSub?.stripe_subscription_id ?? null,
-        stripe_account_ref: priorSub?.stripe_account_ref ?? null,
-        stripe_status: priorSub?.stripe_status ?? null,
-        current_period_start: priorSub?.current_period_start ?? null,
-        current_period_end: priorSub?.current_period_end ?? null,
-        last_invoice_id: priorSub?.last_invoice_id ?? null,
-        last_invoice_status: priorSub?.last_invoice_status ?? null,
+      .rpc("assign_tenant_subscription", {
+        p_org_id: param.data.id,
+        p_plan_id: plan.id,
+        p_status: body.data.status,
+        p_custom_monthly_price_cents: body.data.customMonthlyPriceCents ?? null,
+        p_custom_onboarding_fee_cents:
+          body.data.customOnboardingFeeCents ?? null,
+        p_custom_allowances: body.data.customAllowances ?? {},
+        p_notes: body.data.notes ?? "",
+        p_updated_by_email: req.platformAdminEmail ?? null,
       });
-    if (insErr) {
+    if (assignErr) {
       res.status(500).json({ error: "subscription_update_failed" });
       return;
     }
