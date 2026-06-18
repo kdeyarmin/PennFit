@@ -63,10 +63,17 @@ CREATE TABLE IF NOT EXISTS "resupply"."resupply_order_drafts" (
 -- Dedup: at most one OPEN (proposed/approved) draft per
 -- (org, patient, category, eligible-date). A dismissed/ordered row does
 -- not block a fresh proposal when the supply comes due again. Partial
--- unique index so the daily worker's upsert is idempotent.
+-- unique index so the daily worker's staging is idempotent.
+--
+-- next_eligible_date is nullable, and SQL treats NULLs as DISTINCT in a
+-- unique index — so a plain column index would let multiple open drafts
+-- with a NULL date stack up for the same (patient, category), defeating
+-- the dedup. COALESCE to a sentinel collapses all NULLs into one bucket,
+-- matching the app-side key (`draftDedupKey(..., nextEligibleDate ?? "")`).
 CREATE UNIQUE INDEX IF NOT EXISTS "resupply_order_drafts_open_dedup_idx"
   ON "resupply"."resupply_order_drafts"
-    ("org_id", "patient_id", "category", "next_eligible_date")
+    ("org_id", "patient_id", "category",
+     (COALESCE("next_eligible_date", DATE '0001-01-01')))
   WHERE "status" IN ('proposed', 'approved');
 --> statement-breakpoint
 

@@ -133,7 +133,7 @@ router.get(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -202,7 +202,7 @@ router.post(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -233,7 +233,7 @@ router.post(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -278,7 +278,7 @@ router.post(
       return;
     }
     const orgId = req.orgId;
-    if (!orgId) {
+    if (!orgId || !orgId.trim()) {
       res.status(500).json({ error: "tenant_context_missing" });
       return;
     }
@@ -314,23 +314,8 @@ router.post(
 
     const supabase = getOrgScopedClient(orgId);
 
-    // The draft must still be open. Load it first so we never create an
-    // order request for an already-ordered/dismissed proposal.
-    const { data: draft, error: draftErr } = await supabase
-      .from("resupply_order_drafts")
-      .select("id, status")
-      .eq("id", draftId)
-      .maybeSingle();
-    if (draftErr) throw draftErr;
-    if (!draft) {
-      res.status(404).json({ error: "draft_not_found" });
-      return;
-    }
-    if (draft.status !== "proposed" && draft.status !== "approved") {
-      res.status(409).json({ error: "draft_not_open", status: draft.status });
-      return;
-    }
-
+    // Validate the optional paperwork BEFORE claiming, so a bad-keys 400
+    // never leaves a half-claimed draft.
     const snapshot = await snapshotOrderDocuments(supabase, [
       ...new Set(b.documentKeys),
     ]);
@@ -342,33 +327,93 @@ router.post(
       return;
     }
 
+    // CLAIM the draft atomically (open → ordered) BEFORE creating anything,
+    // so two concurrent approves can't both produce a checkout link for the
+    // same draft: the loser's conditional update matches zero rows and 409s
+    // here instead of creating a second order request + sending a second
+    // link.
+    const { data: claimed, error: claimErr } = await supabase
+      .from("resupply_order_drafts")
+      .update({ status: "ordered", updated_at: new Date().toISOString() })
+      .eq("id", draftId)
+      .in("status", ["proposed", "approved"])
+      .select("id")
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claimed) {
+      // Not open — distinguish missing from already-claimed for a useful code.
+      const { data: existing } = await supabase
+        .from("resupply_order_drafts")
+        .select("status")
+        .eq("id", draftId)
+        .maybeSingle();
+      if (!existing) {
+        res.status(404).json({ error: "draft_not_found" });
+        return;
+      }
+      res
+        .status(409)
+        .json({ error: "draft_not_open", status: existing.status });
+      return;
+    }
+
     const ttlDays = b.expiresInDays ?? DEFAULT_CSR_ORDER_TTL_DAYS;
     const nowIso = new Date().toISOString();
     const expiresAt = new Date(
       Date.now() + ttlDays * 24 * 60 * 60 * 1000,
     ).toISOString();
 
-    const { data: created, error: insertErr } = await supabase
-      .from("csr_order_requests")
-      .insert({
-        order_reference: generateCsrOrderReference(),
-        status: "sent",
-        customer_name: b.customerName,
-        customer_email: email,
-        customer_phone: phoneE164,
-        items: b.items as unknown as Json,
-        amount_total_cents: amountTotalCents,
-        currency: "usd",
-        note_to_customer: b.noteToCustomer?.trim() || null,
-        documents: snapshot.documents as unknown as Json,
-        link_version: 1,
-        expires_at: expiresAt,
-        sent_at: nowIso,
-        created_by_email: req.adminEmail ?? null,
+    let created: { id: string; order_reference: string; link_version: number };
+    try {
+      const { data, error: insertErr } = await supabase
+        .from("csr_order_requests")
+        .insert({
+          order_reference: generateCsrOrderReference(),
+          status: "sent",
+          customer_name: b.customerName,
+          customer_email: email,
+          customer_phone: phoneE164,
+          items: b.items as unknown as Json,
+          amount_total_cents: amountTotalCents,
+          currency: "usd",
+          note_to_customer: b.noteToCustomer?.trim() || null,
+          documents: snapshot.documents as unknown as Json,
+          link_version: 1,
+          expires_at: expiresAt,
+          sent_at: nowIso,
+          created_by_email: req.adminEmail ?? null,
+        })
+        .select("id, order_reference, link_version")
+        .single();
+      if (insertErr) throw insertErr;
+      created = data;
+    } catch (err) {
+      // Creation failed after we claimed — release the claim so the draft can
+      // be retried, then surface the error.
+      await supabase
+        .from("resupply_order_drafts")
+        .update({ status: "proposed", updated_at: new Date().toISOString() })
+        .eq("id", draftId)
+        .eq("status", "ordered");
+      throw err;
+    }
+
+    // Link the now-ordered draft to the request it produced. Best-effort:
+    // the order request exists + the link will send regardless, so a failed
+    // back-link is logged, not fatal.
+    const { error: linkErr } = await supabase
+      .from("resupply_order_drafts")
+      .update({
+        csr_order_request_id: created.id,
+        updated_at: new Date().toISOString(),
       })
-      .select("id, order_reference, link_version")
-      .single();
-    if (insertErr) throw insertErr;
+      .eq("id", draftId);
+    if (linkErr) {
+      req.log?.warn?.(
+        { err: linkErr, draftId, orderRequestId: created.id },
+        "resupply draft approved but back-link to csr_order_request failed",
+      );
+    }
 
     const link = buildCsrOrderSigningLink(
       created.id,
@@ -390,19 +435,6 @@ router.post(
         orderRequestId: created.id,
       }));
     }
-
-    // Flip the draft to ordered + record the request it produced. Guard on
-    // the open statuses so a concurrent approve can't double-flip.
-    const { error: updateErr } = await supabase
-      .from("resupply_order_drafts")
-      .update({
-        status: "ordered",
-        csr_order_request_id: created.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", draftId)
-      .in("status", ["proposed", "approved"]);
-    if (updateErr) throw updateErr;
 
     res.status(201).json({
       ok: true,

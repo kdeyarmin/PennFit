@@ -623,13 +623,17 @@ function ApproveDraftModal({
     },
   });
 
-  const priceValid = Number(priceDollars) > 0;
+  // Mirror the server's $0.50 Stripe minimum on the TOTAL (unit × qty) so
+  // the modal can't submit an order the API will reject with
+  // amount_below_minimum.
+  const totalCents = Math.round(Number(priceDollars) * 100) * quantity;
+  const totalValid = Number.isFinite(totalCents) && totalCents >= 50;
   const recipientValid =
     customerEmail.trim().length > 0 || customerPhone.trim().length > 0;
   const canSubmit =
     customerName.trim().length >= 2 &&
     description.trim().length > 0 &&
-    priceValid &&
+    totalValid &&
     recipientValid &&
     !approve.isPending;
 
@@ -757,6 +761,11 @@ function ApproveDraftModal({
             {!recipientValid && (
               <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 Enter an email or phone to send the link.
+              </p>
+            )}
+            {priceDollars.trim() !== "" && !totalValid && (
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Order total must be at least $0.50.
               </p>
             )}
             {approve.isError && (

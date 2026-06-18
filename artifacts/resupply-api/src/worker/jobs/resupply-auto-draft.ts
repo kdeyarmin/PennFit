@@ -109,6 +109,7 @@ async function autoDraftForOrg(
     .raw()
     .schema("resupply")
     .rpc("therapy_resupply_opportunities", {
+      p_org_id: orgId,
       p_due_within_days: DUE_WITHIN_DAYS,
       p_limit: OPPORTUNITY_LIMIT,
     });
