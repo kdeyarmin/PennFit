@@ -12,10 +12,14 @@
 // so a miss degrades to the caller's existing not_found path rather than a
 // 500. The `org_id` columns are NOT NULL, so a found row always carries a
 // real tenant.
+//
+// Also used by the Twilio-signature-gated voice TwiML callbacks (check-in
+// IVR, click-to-dial), which carry a record id (patient / call_disposition)
+// in the URL but no tenant — same "resolve the org from the record" shape.
 
 import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
-/** Org-scoped tables a public signed link can reference. */
+/** Org-scoped tables a public signed link / signed callback can reference. */
 export type SignedLinkTable =
   | "csr_order_requests"
   | "patient_packets"
@@ -29,7 +33,9 @@ export type SignedLinkTable =
   | "manual_documents"
   | "manual_document_packets"
   | "prior_authorizations"
-  | "physician_fax_outreach";
+  | "physician_fax_outreach"
+  | "patients"
+  | "call_dispositions";
 
 export async function resolveOrgIdForSignedRecord(
   table: SignedLinkTable,
