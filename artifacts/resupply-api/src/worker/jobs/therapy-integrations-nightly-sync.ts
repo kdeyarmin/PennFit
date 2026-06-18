@@ -25,7 +25,7 @@ import {
   integrationSnapshotSchema,
 } from "@workspace/resupply-integrations";
 
-import { getIntegrationAdaptersWithDbOverrides } from "../../lib/integrations/registry.js";
+import { getIntegrationAdaptersForOrg } from "../../lib/integrations/registry.js";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights.js";
 import { logger } from "../../lib/logger.js";
 import { forEachActiveOrg } from "../lib/for-each-active-org.js";
@@ -162,7 +162,9 @@ export async function runTherapyNightlySyncForOrg(
   orgId: string,
 ): Promise<NightlySyncResult> {
   const supabase = getOrgScopedClient(orgId);
-  const adapters = await getIntegrationAdaptersWithDbOverrides();
+  // Per-tenant adapters: this org's patients are synced against the org's
+  // OWN therapy-cloud credentials, not the seed/platform account.
+  const adapters = await getIntegrationAdaptersForOrg(orgId);
   const result: NightlySyncResult = {
     scanned: 0,
     refreshed: 0,

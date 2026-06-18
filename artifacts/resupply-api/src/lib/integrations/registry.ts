@@ -24,7 +24,7 @@ import { createAirviewAdapter } from "@workspace/resupply-integrations-airview";
 import { createCareOrchestratorAdapter } from "@workspace/resupply-integrations-care-orchestrator";
 import { createReactHealthAdapter } from "@workspace/resupply-integrations-react-health";
 
-import { getEffectiveEnv } from "../app-config/store";
+import { getEffectiveEnv, getEffectiveEnvForOrg } from "../app-config/store";
 
 export function getIntegrationAdapters(
   env: NodeJS.ProcessEnv = process.env,
@@ -54,6 +54,24 @@ export async function getIntegrationAdaptersWithDbOverrides(): Promise<
   Map<IntegrationSource, IntegrationAdapter>
 > {
   const env = await getEffectiveEnv();
+  return getIntegrationAdapters(env);
+}
+
+/**
+ * Per-TENANT adapters: builds the registry from `getEffectiveEnvForOrg`, so
+ * each tenant's therapy-cloud snapshots are fetched with ITS OWN ResMed /
+ * Philips / 3B credentials (the ones its Owner saved on /admin/system/config),
+ * never the platform/seed account. Platform infra still comes from the
+ * super-admin overlay. A tenant that hasn't configured a vendor sees that
+ * adapter report `unavailable` (it does NOT silently inherit the seed
+ * tenant's account). Prefer this anywhere an `orgId` is in scope (the
+ * nightly sync's per-org pass, and every admin route that already resolved
+ * `req.orgId`).
+ */
+export async function getIntegrationAdaptersForOrg(
+  orgId: string,
+): Promise<Map<IntegrationSource, IntegrationAdapter>> {
+  const env = await getEffectiveEnvForOrg(orgId);
   return getIntegrationAdapters(env);
 }
 

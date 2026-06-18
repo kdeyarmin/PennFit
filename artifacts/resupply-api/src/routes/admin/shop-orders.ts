@@ -61,6 +61,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { stripeAccountRequestOptions } from "../../lib/stripe/connect";
 import { stripeErrLogFields } from "../../lib/stripe/err-log-fields";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 import { sendReadyForPickupEmail } from "../../lib/order-emails/send-ready-for-pickup-email";
@@ -1346,6 +1347,9 @@ router.post(
     // earlier `if (!existing.stripePaymentIntentId)` guard
     // established.
     const paymentIntentId = existing.stripePaymentIntentId;
+    // Refund on the SAME account the PaymentIntent lives on — the tenant's
+    // connected account when it has one (Stripe Connect, G5), else platform.
+    const acct = await stripeAccountRequestOptions(orgId);
     let refund;
     try {
       refund = await withMetrics(
@@ -1375,7 +1379,7 @@ router.post(
             // issuing a second refund.  Amount is included so different partial
             // refund amounts on the same order each create a separate Stripe
             // Refund (intentional).
-            { idempotencyKey },
+            { ...acct, idempotencyKey },
           ),
       );
     } catch (err) {

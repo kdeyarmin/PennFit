@@ -1,21 +1,21 @@
-// Route tests for /admin/connection-tests — focuses on the HTTP
-// contract (gating, validation, response shape). The runner logic is
-// covered by lib/connection-tests/runners.test.ts and mocked here.
+// Route tests for /platform/connection-tests — HTTP contract (gating,
+// validation, response shape). The runner logic is covered by
+// lib/connection-tests/runners.test.ts and mocked here.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
 import {
-  makeRequireAdminMock,
-  type MockAdminCtx,
+  makeRequirePlatformAdminMock,
+  type MockPlatformAdminRef,
 } from "../../test-helpers/auth-mocks";
 
-const { mockAdmin } = vi.hoisted(() => ({
-  mockAdmin: { current: null as MockAdminCtx | null },
+const { mockPlatformAdmin } = vi.hoisted(() => ({
+  mockPlatformAdmin: { current: null } as MockPlatformAdminRef,
 }));
-vi.mock("../../middlewares/requireAdmin", () =>
-  makeRequireAdminMock(mockAdmin),
+vi.mock("../../middlewares/requirePlatformAdmin", () =>
+  makeRequirePlatformAdminMock(mockPlatformAdmin),
 );
 
 // getEffectiveEnv would otherwise hit Supabase; pin it to a fixed env.
@@ -32,63 +32,40 @@ const runners = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/connection-tests/runners", () => runners);
 
-import connectionTestsRouter from "./connection-tests";
+import platformConnectionTestsRouter from "./connection-tests";
 
 function makeApp(): Express {
   const app = express();
   app.use(express.json());
-  app.use(connectionTestsRouter);
+  app.use(platformConnectionTestsRouter);
   return app;
 }
 
-function asSuperAdmin() {
-  // granularRole "admin" → super_admin → holds system.config.manage.
-  mockAdmin.current = {
-    userId: "u1",
-    email: "boss@pennpaps.com",
-    role: "admin",
-    granularRole: "admin",
-  };
+function asPlatformAdmin() {
+  mockPlatformAdmin.current = { userId: "u_platform", email: "ops@cm" };
 }
 
 beforeEach(() => {
-  mockAdmin.current = null;
+  mockPlatformAdmin.current = null;
   for (const fn of Object.values(runners)) fn.mockReset();
 });
 
 describe("auth gating", () => {
-  it("401 when not signed in", async () => {
+  it("401 when the caller is not a platform admin", async () => {
     const res = await request(makeApp())
-      .post("/admin/connection-tests/email")
+      .post("/platform/connection-tests/email")
       .send({ to: "a@b.com" });
     expect(res.status).toBe(401);
-  });
-
-  it("403 for a non-super-admin (CSR)", async () => {
-    mockAdmin.current = {
-      userId: "u2",
-      email: "csr@pennpaps.com",
-      role: "agent",
-      granularRole: "csr",
-    };
-    const res = await request(makeApp())
-      .post("/admin/connection-tests/email")
-      .send({ to: "a@b.com" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      error: "permission_denied",
-      requiredPermission: "system.config.manage",
-    });
     expect(runners.runEmailTest).not.toHaveBeenCalled();
   });
 });
 
 describe("validation", () => {
-  beforeEach(asSuperAdmin);
+  beforeEach(asPlatformAdmin);
 
   it("400 on a malformed email", async () => {
     const res = await request(makeApp())
-      .post("/admin/connection-tests/email")
+      .post("/platform/connection-tests/email")
       .send({ to: "not-an-email" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
@@ -97,27 +74,22 @@ describe("validation", () => {
 
   it("400 with an issue message on an unparseable phone for sms", async () => {
     const res = await request(makeApp())
-      .post("/admin/connection-tests/sms")
+      .post("/platform/connection-tests/sms")
       .send({ to: "not-a-number" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
-    // The opaque "HTTP 400 : invalid_body" the UI used to show is backed
-    // by a human-readable issue the client can surface instead.
     expect(res.body.issues?.[0]?.message).toMatch(/valid phone number/i);
     expect(runners.runSmsTest).not.toHaveBeenCalled();
   });
 
   it("normalizes a bare NANP number to E.164 before running the sms test", async () => {
-    // Regression: an operator-typed US number with no +1 (8142418865)
-    // used to fail the strict E.164 regex with "invalid_body". It now
-    // normalizes and reaches Twilio as +18142418865.
     runners.runSmsTest.mockResolvedValue({
       ok: true,
       channel: "sms",
       detail: { messageSid: "sm_1" },
     });
     const res = await request(makeApp())
-      .post("/admin/connection-tests/sms")
+      .post("/platform/connection-tests/sms")
       .send({ to: "8142418865" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, channel: "sms" });
@@ -134,7 +106,7 @@ describe("validation", () => {
       detail: { callSid: "ca_1" },
     });
     const res = await request(makeApp())
-      .post("/admin/connection-tests/voice")
+      .post("/platform/connection-tests/voice")
       .send({ to: "(215) 555-1212" });
     expect(res.status).toBe(200);
     expect(runners.runVoiceTest).toHaveBeenCalledWith(
@@ -145,23 +117,22 @@ describe("validation", () => {
 });
 
 describe("happy paths", () => {
-  beforeEach(asSuperAdmin);
+  beforeEach(asPlatformAdmin);
 
-  it("returns the email runner result as 200", async () => {
+  it("returns the email runner result as 200 against the effective env", async () => {
     runners.runEmailTest.mockResolvedValue({
       ok: true,
       channel: "email",
       detail: { messageId: "msg_1" },
     });
     const res = await request(makeApp())
-      .post("/admin/connection-tests/email")
-      .send({ to: "ops@pennpaps.com" });
+      .post("/platform/connection-tests/email")
+      .send({ to: "ops@example.com" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, channel: "email" });
-    // Runs against the effective env (saved overlay + process.env).
     expect(runners.runEmailTest).toHaveBeenCalledWith(
       { MARK: "effective" },
-      { to: "ops@pennpaps.com" },
+      { to: "ops@example.com" },
     );
   });
 
@@ -173,7 +144,7 @@ describe("happy paths", () => {
       message: "bad number",
     });
     const res = await request(makeApp())
-      .post("/admin/connection-tests/sms")
+      .post("/platform/connection-tests/sms")
       .send({ to: "+12155551212" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: false, code: "upstream_error" });
@@ -186,7 +157,7 @@ describe("happy paths", () => {
       detail: { provider: "anthropic", reply: "OK" },
     });
     const res = await request(makeApp())
-      .post("/admin/connection-tests/chat")
+      .post("/platform/connection-tests/chat")
       .send({});
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -203,7 +174,9 @@ describe("happy paths", () => {
       voice: { configured: false },
       chat: { configured: true, provider: "anthropic" },
     });
-    const res = await request(makeApp()).get("/admin/connection-tests/status");
+    const res = await request(makeApp()).get(
+      "/platform/connection-tests/status",
+    );
     expect(res.status).toBe(200);
     expect(res.body.email.configured).toBe(true);
     expect(res.body.chat.provider).toBe("anthropic");

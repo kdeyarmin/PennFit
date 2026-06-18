@@ -46,10 +46,16 @@ import { useGetAdminMe } from "@workspace/api-client-react/admin";
 
 // Display labels for every DB-persisted role. Legacy values map onto
 // one of the 3 effective buckets so the UI shows a consistent
-// "Super admin / Admin / Customer service rep" vocabulary even for
-// rows persisted under one of the older role names.
+// "Owner / Admin / Customer service rep" vocabulary even for rows
+// persisted under one of the older role names.
+//
+// "Super Admin" is deliberately NOT used here: it now names the GLOBAL
+// platform tier (platform_admins — see the /platform super-admin
+// console), which sits above every tenant. A tenant's TOP role is the
+// "Owner" (full access within that one tenant, including its System
+// Configuration); the mid tier is "Admin".
 const ROLE_LABEL: Record<TeamRole, string> = {
-  admin: "Super admin",
+  admin: "Owner",
   supervisor: "Admin",
   compliance_officer: "Admin",
   csr: "Customer service rep",

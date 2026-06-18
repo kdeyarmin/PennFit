@@ -200,6 +200,9 @@ describe("POST /shop/me/billing-portal", () => {
       expect.objectContaining({
         return_url: expect.stringContaining("/account"),
       }),
+      // Stripe Connect request options — {} (platform account) with no
+      // connected account in the test.
+      {},
     );
   });
 
@@ -223,6 +226,7 @@ describe("POST /shop/me/billing-portal", () => {
         return_url: "https://shop.example.com/account?tab=billing",
         customer: STRIPE_CUSTOMER_ID,
       }),
+      {},
     );
   });
 

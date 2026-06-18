@@ -23,6 +23,7 @@ import {
   __resetAppConfigCacheForTests,
   applyAppConfigOverlayToEnv,
   getEffectiveEnv,
+  getEffectiveEnvForOrg,
   getTenantConfigValue,
   maskSecretHint,
 } from "./store";
@@ -200,6 +201,51 @@ describe("getTenantConfigValue", () => {
       "RESUPPLY_ASSISTANT_ADMIN_NAME",
     );
     expect(v).toBeNull();
+  });
+});
+
+describe("getEffectiveEnvForOrg — per-tenant business credential isolation", () => {
+  afterEach(() => {
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.AIRVIEW_CLIENT_SECRET;
+    delete process.env.CARE_ORCHESTRATOR_CLIENT_SECRET;
+  });
+
+  it("applies platform infra + the tenant's OWN business keys, and does NOT inherit the deployment's business creds", async () => {
+    // A therapy credential present in the deployment env (the seed tenant's
+    // global Railway value) must NOT leak into a second tenant's sync.
+    process.env.CARE_ORCHESTRATOR_CLIENT_SECRET = "deploy-care-secret";
+
+    const rows = {
+      data: [
+        { key: "OPENAI_API_KEY", value: "platform-openai" }, // platform scope
+        { key: "AIRVIEW_CLIENT_SECRET", value: "tenant-airview" }, // tenant scope
+      ],
+    };
+    // Two selects: the seed (platform) overlay + this org's (tenant) overlay.
+    stageSupabaseResponse("app_config", "select", rows);
+    stageSupabaseResponse("app_config", "select", rows);
+
+    const env = await getEffectiveEnvForOrg(TENANT_ORG);
+
+    // Platform infra is shared → applied for the tenant.
+    expect(env.OPENAI_API_KEY).toBe("platform-openai");
+    // The tenant's OWN therapy credential applies.
+    expect(env.AIRVIEW_CLIENT_SECRET).toBe("tenant-airview");
+    // A business key the tenant hasn't set is stripped — it must not fall
+    // back to the deployment/seed account.
+    expect(env.CARE_ORCHESTRATOR_CLIENT_SECRET).toBeUndefined();
+  });
+
+  it("keeps the seed tenant's deployment business creds (single-tenant back-compat)", async () => {
+    process.env.CARE_ORCHESTRATOR_CLIENT_SECRET = "deploy-care-secret";
+    stageSupabaseResponse("app_config", "select", { data: [] });
+    stageSupabaseResponse("app_config", "select", { data: [] });
+
+    const env = await getEffectiveEnvForOrg(SEED_ORG);
+
+    // The seed org IS the platform deployment → it keeps the env value.
+    expect(env.CARE_ORCHESTRATOR_CLIENT_SECRET).toBe("deploy-care-secret");
   });
 });
 
