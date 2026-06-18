@@ -333,8 +333,12 @@ function identityReplacements(info: CompanyInfo): Array<[string, string]> {
     ["+18144710627", info.supportPhoneE164],
     // The voice/IVR (TTS) day-copy spaces the storefront brand as two
     // words ("Penn Paps") so Polly/ElevenLabs pronounce it naturally;
-    // rewrite that spelling too, not just the camel-cased "PennPaps".
-    ["Penn Paps", info.name],
+    // rewrite that spelling too for a non-seed tenant. Skip it when the
+    // brand IS the seed "PennPaps" so the seed tenant keeps its deliberate
+    // two-word TTS spelling rather than collapsing to camel case.
+    ...(info.name === "PennPaps"
+      ? []
+      : ([["Penn Paps", info.name]] as Array<[string, string]>)),
     ["PennPaps", info.name],
     // Hour-blurb variants that appear across the knowledge bases.
     ["Monday-Friday 9 AM - 5 PM Eastern", info.supportHours],

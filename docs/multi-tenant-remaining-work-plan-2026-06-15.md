@@ -178,9 +178,13 @@ branded once-per-dispatch through `BuiltClients.companyInfo`), the
 from the signed patient id), the **inbound-reorder** shop greeting + human-transfer
 line (`voice/inbound-reorder`, tenant from the called number), and the
 fitter-order concierge **SMS** (`storefront/orders`). `applyCompanyIdentityToText`
-now also rewrites the TTS-spaced `"Penn Paps"` spelling, not just camel-cased
-`"PennPaps"`. All are no-ops for the seed tenant (`info.name === "PennPaps"`) and
-for any unseeded environment (`source !== "database"`).
+now also rewrites the TTS-spaced `"Penn Paps"` spelling for a non-seed tenant,
+not just camel-cased `"PennPaps"`; the spaced spelling is **left intact for the
+seed tenant** so PennPaps keeps its deliberate two-word TTS pronunciation. All
+are no-ops for the seed tenant (`info.name === "PennPaps"`) and for any unseeded
+environment (`source !== "database"`). The branded text substituted into the
+inbound-reorder transfer `<Say>` is XML-escaped (a tenant brand with `&`/`<`/`>`
+must not produce malformed TwiML).
 
 **Still open after this branch (tracked):** the small sender/SMS tail noted
 above. The G1 `reminder_subscriptions` global-table resolution is
