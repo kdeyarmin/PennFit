@@ -3085,7 +3085,11 @@ const ADDON_GROUPS: {
   {
     group: "Premium modules",
     items: [
-      { name: "AI voice agent / IVR", price: "$499/mo", code: "ai_voice_agent" },
+      {
+        name: "AI voice agent / IVR",
+        price: "$499/mo",
+        code: "ai_voice_agent",
+      },
       {
         name: "Advanced billing automation",
         price: "$699/mo",
@@ -3127,13 +3131,21 @@ const ADDON_GROUPS: {
         price: "$199/mo",
         code: "additional_location",
       },
-      { name: "Extra storage (+100 GB)", price: "$25/mo", code: "storage_100gb" },
+      {
+        name: "Extra storage (+100 GB)",
+        price: "$25/mo",
+        code: "storage_100gb",
+      },
     ],
   },
   {
     group: "Usage bundles",
     items: [
-      { name: "SMS / email bundle (1,000)", price: "$50", code: "message_bundle" },
+      {
+        name: "SMS / email bundle (1,000)",
+        price: "$50",
+        code: "message_bundle",
+      },
       { name: "AI text bundle (1,000)", price: "$40", code: "ai_text_bundle" },
       {
         name: "Claims / eligibility bundle (1,000)",
@@ -3279,7 +3291,11 @@ function PricingAddonRow({ item }: { item: AddonItem }) {
       <summary className="bx-addon-row">
         <span className="bx-addon-name">
           {item.name}
-          <ChevronDown className="bx-addon-caret" size={14} aria-hidden="true" />
+          <ChevronDown
+            className="bx-addon-caret"
+            size={14}
+            aria-hidden="true"
+          />
         </span>
         <span className="bx-addon-price">{item.price}</span>
       </summary>
