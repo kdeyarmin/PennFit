@@ -19,6 +19,7 @@ import {
   isVerifiedCustomDomainOrigin,
   refreshVerifiedCustomDomains,
   resolveBrandingByHost,
+  resolveStorefrontContextByHost,
 } from "./tenant-branding";
 
 const SEED_ROW = {
@@ -95,6 +96,46 @@ describe("resolveBrandingByHost", () => {
     // response". The cached hit returns the same value.
     const second = await resolveBrandingByHost("pennpaps.com");
     expect(second).toEqual(first);
+  });
+});
+
+describe("resolveStorefrontContextByHost (isPlatform)", () => {
+  it("flags the platform apex (cmbreathe.com) as the platform home", async () => {
+    // The apex normalizes to an empty key → no DB lookup, platform context.
+    const ctx = await resolveStorefrontContextByHost("cmbreathe.com");
+    expect(ctx.isPlatform).toBe(true);
+    expect(ctx.branding.storefrontName).toBe("CareMetric Breathe");
+  });
+
+  it("flags a verified tenant custom domain as NOT the platform", async () => {
+    stageSupabaseResponse("organizations", "select", { data: SEED_ROW });
+    const ctx = await resolveStorefrontContextByHost("pennpaps.com");
+    expect(ctx.isPlatform).toBe(false);
+    expect(ctx.branding.storefrontName).toBe("PennPaps");
+  });
+
+  it("flags a tenant slug subdomain as NOT the platform (G10)", async () => {
+    stageSupabaseResponse("organizations", "select", { data: null });
+    stageSupabaseResponse("organizations", "select", { data: TENANT_ROW });
+    const ctx = await resolveStorefrontContextByHost("acme.cmbreathe.com");
+    expect(ctx.isPlatform).toBe(false);
+    expect(ctx.branding.storefrontName).toBe("AcmeSleep");
+  });
+
+  it("flags an unclaimed host as the platform home", async () => {
+    stageSupabaseResponse("organizations", "select", { data: null });
+    const ctx = await resolveStorefrontContextByHost("unclaimed.example.com");
+    expect(ctx.isPlatform).toBe(true);
+    expect(ctx.branding.storefrontName).toBe("CareMetric Breathe");
+  });
+
+  it("stays on the storefront (isPlatform false) when a tenant lookup errors", async () => {
+    stageSupabaseResponse("organizations", "select", {
+      error: { message: "boom" },
+    });
+    const ctx = await resolveStorefrontContextByHost("pennpaps.com");
+    expect(ctx.isPlatform).toBe(false);
+    expect(ctx.branding).toEqual(DEFAULT_BRANDING);
   });
 });
 

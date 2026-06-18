@@ -13,17 +13,21 @@
 import { Router, type IRouter } from "express";
 
 import { requestHost } from "../../lib/request-host";
-import { resolveBrandingByHost } from "../../lib/tenant-branding";
+import { resolveStorefrontContextByHost } from "../../lib/tenant-branding";
 
 const router: IRouter = Router();
 
 router.get("/storefront-branding", async (req, res) => {
-  const branding = await resolveBrandingByHost(requestHost(req));
+  const { branding, isPlatform } = await resolveStorefrontContextByHost(
+    requestHost(req),
+  );
   // Vary on the forwarded host so a shared edge cache can't serve one
   // tenant's brand to another.
   res.set("Vary", "X-Forwarded-Host");
   res.set("Cache-Control", "public, max-age=300");
-  res.json(branding);
+  // `isPlatform` tells the SPA whether `/` is the CareMetric Breathe
+  // marketing home (platform host) or a tenant storefront.
+  res.json({ ...branding, isPlatform });
 });
 
 export default router;

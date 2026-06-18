@@ -42,6 +42,33 @@ export interface StorefrontBranding {
    * branding resolves: it renders a tenant-neutral label while `false`.
    */
   resolved: boolean;
+  /**
+   * True when this host is the PLATFORM home (cmbreathe.com / the Railway
+   * host) rather than a tenant storefront. The router renders the CareMetric
+   * Breathe marketing page at `/` when this is true. Seeded synchronously
+   * from the hostname so the platform domain doesn't flash a tenant
+   * storefront before the branding fetch confirms it; the fetch then sets
+   * the authoritative value from the server.
+   */
+  isPlatform: boolean;
+}
+
+/**
+ * Synchronous, best-effort guess of whether the current host is the platform
+ * home — used only to seed the first paint so cmbreathe.com doesn't briefly
+ * show a tenant storefront. The server's `isPlatform` is authoritative and
+ * overrides this once the branding fetch lands. Matches ONLY the platform
+ * apex hosts (never a `<slug>.cmbreathe.com` tenant subdomain), so a tenant
+ * host never gets a wrong platform guess.
+ */
+function guessPlatformHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname.toLowerCase().replace(/\.$/, "");
+  return (
+    host === "cmbreathe.com" ||
+    host === "www.cmbreathe.com" ||
+    host.endsWith(".up.railway.app")
+  );
 }
 
 export const DEFAULT_BRANDING: StorefrontBranding = {
@@ -50,9 +77,13 @@ export const DEFAULT_BRANDING: StorefrontBranding = {
   tagline: "Your CPAP, made simple. Fit. Shop. Resupply.",
   logoUrl: null,
   resolved: false,
+  isPlatform: false,
 };
 
-let current: StorefrontBranding = DEFAULT_BRANDING;
+let current: StorefrontBranding = {
+  ...DEFAULT_BRANDING,
+  isPlatform: guessPlatformHost(),
+};
 const listeners = new Set<() => void>();
 let fetchStarted = false;
 
@@ -80,6 +111,10 @@ function startBrandingFetch(): void {
         // The fetch landed — this is the host-resolved brand now, even when
         // the values happen to equal the bundled default (the Penn host).
         resolved: true,
+        // Authoritative platform flag from the server (overrides the
+        // hostname guess used for the first paint).
+        isPlatform:
+          typeof d.isPlatform === "boolean" ? d.isPlatform : current.isPlatform,
       };
       const changed = (
         Object.keys(next) as Array<keyof StorefrontBranding>

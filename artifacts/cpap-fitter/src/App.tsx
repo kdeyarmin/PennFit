@@ -543,6 +543,7 @@ const VideoVisitPage = lazyWithRetry(() =>
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
+import { useStorefrontBranding } from "@/lib/branding";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 import { DemoModeProvider } from "@/demo/DemoModeProvider";
 import { DemoBanner } from "@/demo/DemoBanner";
@@ -1112,6 +1113,24 @@ function PatientRouter() {
  * segment param literally named `rest*`, not as a wildcard — use `*`.)
  */
 function TopRouter() {
+  const { isPlatform } = useStorefrontBranding();
+  const [location] = useLocation();
+
+  // Platform home: on the platform host (cmbreathe.com / the Railway host)
+  // the root path renders the CareMetric Breathe marketing page in its own
+  // chrome — NOT a tenant storefront. Tenant hosts (e.g. pennpaps.com) keep
+  // their storefront <Home> via the catch-all <PatientRouter> below. Scoped
+  // to "/" only so every other path (/admin, /shop, auth) is unaffected, and
+  // handled before the <Switch> so the storefront <Layout> never mounts for
+  // the platform home (Breathe carries its own full-bleed chrome).
+  if (isPlatform && location === "/") {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Breathe />
+      </Suspense>
+    );
+  }
+
   return (
     /*
       Top-level Suspense for sign-in/sign-up/admin chunks. Patient
