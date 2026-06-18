@@ -100,19 +100,24 @@ describe("applyEnvAliases — OPS_EMAIL feeds the web-push VAPID subject", () =>
 });
 
 describe("applyEnvAliases — SendGrid From-name", () => {
-  it("defaults SENDGRID_FROM_NAME to RESUPPLY_PRACTICE_NAME", () => {
+  it("does NOT alias RESUPPLY_PRACTICE_NAME into SENDGRID_FROM_NAME", () => {
+    // The practice name is the seed tenant's brand; leaking it into the
+    // platform-level SENDGRID_FROM_NAME mis-brands platform/auth mail.
+    // An unset From-name must stay unset so the resupply-email client's
+    // platform default ("CareMetric Breathe") applies; a tenant's own
+    // From-name comes from organizations.from_name, not this env var.
     const env: Env = { RESUPPLY_PRACTICE_NAME: "Penn Home Medical" };
     applyEnvAliases(env);
-    expect(env.SENDGRID_FROM_NAME).toBe("Penn Home Medical");
+    expect(env.SENDGRID_FROM_NAME).toBeUndefined();
   });
 
-  it("does not override an explicit From-name", () => {
+  it("leaves an explicit From-name untouched", () => {
     const env: Env = {
       RESUPPLY_PRACTICE_NAME: "Penn Home Medical",
-      SENDGRID_FROM_NAME: "PennPaps",
+      SENDGRID_FROM_NAME: "CareMetric Breathe",
     };
     applyEnvAliases(env);
-    expect(env.SENDGRID_FROM_NAME).toBe("PennPaps");
+    expect(env.SENDGRID_FROM_NAME).toBe("CareMetric Breathe");
   });
 });
 
