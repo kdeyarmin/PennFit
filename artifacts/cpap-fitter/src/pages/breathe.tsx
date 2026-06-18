@@ -2228,12 +2228,12 @@ function RevenueCycle() {
 /* ───────────────────────── Capabilities ───────────────────────── */
 /*
  * The plain-language answer to "what does this software actually do?" —
- * the real product surface grouped into eight capability areas, each with
+ * the real product surface grouped into nine capability areas, each with
  * concrete sub-features. This is the homepage's core explainer; the
  * /breathe/product Features grid and the /breathe/features role page go
  * deeper. Copy is grounded in shipped functionality (resupply engine,
- * Office Ally RCM, therapy-cloud monitoring, the AI workforce, storefront,
- * telehealth, analytics), not aspiration.
+ * Office Ally RCM, therapy-cloud monitoring, the AI workforce, the virtual
+ * mask fitter, storefront, telehealth, analytics), not aspiration.
  */
 type Capability = {
   icon: React.ReactNode;
