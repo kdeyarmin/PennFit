@@ -9,6 +9,7 @@ import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
 import remindersRouter from "./reminders.js";
 import newsletterRouter from "./newsletter.js";
+import demoLeadRouter from "./demo-lead.js";
 import patientPacketsRouter from "./patient-packets.js";
 import csrOrdersRouter from "./csr-orders.js";
 import chatRouter from "./chat.js";
@@ -39,6 +40,10 @@ router.use(remindersRouter);
 // /api/newsletter/subscribe — anonymous marketing email capture.
 // Mounted before attachSignedIn; rate-limited per-IP in app.ts.
 router.use(newsletterRouter);
+// /api/demo-lead — anonymous marketing email capture for the public
+// Breathe self-serve demo gate. Platform-safe (no tenant context
+// required); rate-limited per-IP in app.ts.
+router.use(demoLeadRouter);
 // /api/patient-packets/view + /sign — public e-signature flow for the
 // new-patient document packet. Token-gated (HMAC); no login. Mounted
 // before attachSignedIn so it stays unauthenticated.

@@ -596,6 +596,22 @@ const newsletterSubscribeLimiter = expressRateLimit({
 });
 app.use("/api/newsletter", newsletterSubscribeLimiter);
 
+// POST /api/demo-lead — anonymous Breathe demo-gate email capture. Same
+// drive-by form-spam abuse shape as the newsletter signup, so it reuses
+// the same tight per-IP cap.
+const demoLeadLimiter = expressRateLimit({
+  windowMs: RATE_LIMITS.newsletter_subscribe.windowMs,
+  limit: RATE_LIMITS.newsletter_subscribe.limit,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many demo signup attempts from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/demo-lead", demoLeadLimiter);
+
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and
 // non-admin paths; enforces double-submit (`pf_csrf` cookie ⇄
