@@ -320,10 +320,32 @@ describe("demo router", () => {
     expect(body.order.payload).not.toBeNull();
   });
 
-  it("falls back to empty object for unmatched API GETs", async () => {
-    const res = await get("/api/totally-unknown-endpoint");
+  it("falls back to an empty-collections shape for unmatched API GETs", async () => {
+    // Systemic guard for the whole bug class: a broadly-permissioned demo
+    // explorer can navigate to admin list pages whose endpoints aren't
+    // seeded. Those pages deref `data.<field>.map/.length` directly, so a
+    // bare `{}` fallback crashed them into the global ErrorBoundary. The
+    // fallback now returns empty collections + zeroed pagination so each
+    // renders its empty state instead.
+    const res = await get("/resupply-api/admin/some-unseeded-list");
     expect(res!.status).toBe(200);
-    expect(await res!.json()).toEqual({});
+    const body = (await res!.json()) as Record<string, unknown>;
+    // A representative sample of the collection names pages read.
+    for (const key of [
+      "items",
+      "rows",
+      "agents",
+      "providers",
+      "closures",
+      "interventions",
+      "claims",
+      "ordersByDay",
+    ]) {
+      expect(Array.isArray(body[key]), key).toBe(true);
+      expect((body[key] as unknown[]).length).toBe(0);
+    }
+    expect(body.total).toBe(0);
+    expect(body.counts).toBeTypeOf("object");
   });
 
   it("falls back to ok for unmatched API mutations", async () => {
