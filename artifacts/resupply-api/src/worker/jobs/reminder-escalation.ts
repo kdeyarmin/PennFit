@@ -102,6 +102,18 @@ const IN_PROGRESS_STATUSES = ["outreach_pending", "awaiting_response"];
 export interface EscalationEpisodeRow {
   id: string;
   patientId: string;
+  /**
+   * Whether the patient can be reached on each medium. Channels the patient
+   * can't receive are skipped so the ladder always advances to the CSR
+   * hand-off instead of stalling forever on an un-deliverable step (an
+   * email-only patient would otherwise have the SMS/voice tiers re-enqueued
+   * every tick — each failing with patient_missing_phone, creating no
+   * conversation, so the ladder never records them "tried"). Optional and
+   * default-reachable so callers that don't supply capability (older tests)
+   * keep the prior behavior.
+   */
+  hasPhone?: boolean;
+  hasEmail?: boolean;
 }
 export interface EscalationConvRow {
   episodeId: string;
@@ -127,6 +139,20 @@ export interface EscalationAction {
   episodeId: string;
   patientId: string;
   tier: EscalationTier;
+}
+
+/**
+ * Can the patient receive a touch on this channel? SMS and voice need a
+ * phone; email needs an email address. Unknown channels are not blocked.
+ */
+function channelReachable(
+  channel: string,
+  hasPhone: boolean,
+  hasEmail: boolean,
+): boolean {
+  if (channel === "email") return hasEmail;
+  if (channel === "sms" || channel === "voice") return hasPhone;
+  return true;
 }
 
 /**
@@ -168,7 +194,16 @@ export function planReminderEscalations(
     if (firstTouchAge > input.maxMs) continue; // too old — stop nagging
     const sinceLastTouch = input.nowMs - info.latestMs;
     if (sinceLastTouch < input.delayMs) continue; // space the steps out
-    const next = input.ladder.find((ch) => !info.channels.has(ch));
+    // Only consider channels the patient can actually receive — an
+    // unreachable channel (e.g. SMS for an email-only patient) would
+    // otherwise stall the ladder forever instead of advancing to the CSR
+    // hand-off. Default-reachable when capability is unknown.
+    const hasPhone = ep.hasPhone ?? true;
+    const hasEmail = ep.hasEmail ?? true;
+    const effectiveLadder = input.ladder.filter((ch) =>
+      channelReachable(ch, hasPhone, hasEmail),
+    );
+    const next = effectiveLadder.find((ch) => !info.channels.has(ch));
     let tier: EscalationTier;
     if (next) {
       // Copy variant reflects whether MORE automated outreach follows this
@@ -177,7 +212,7 @@ export function planReminderEscalations(
       // hand-off. (The "initial" variant is the scan's first touch, never an
       // escalation.) Voice ignores the variant downstream; it's set
       // uniformly so the type stays simple.
-      const moreAfter = input.ladder.some(
+      const moreAfter = effectiveLadder.some(
         (ch) => ch !== next && !info.channels.has(ch),
       );
       tier = {
@@ -329,6 +364,46 @@ async function escalationScanForOrg(
       }
       if (data.length < PAGE_SIZE) break;
     }
+  }
+
+  // Patient contactability for the candidate episodes — so the planner can
+  // skip ladder channels the patient can't receive (SMS/voice need a phone,
+  // email needs an address) and always reach the CSR hand-off instead of
+  // stalling on an un-deliverable step. Chunk the patient-id IN list (~200
+  // ids) and page within each chunk, like the reads above. Patients are
+  // active (the scan only opened conversations for active ones), but a row
+  // could have lost a contact field since; default-reachable on a miss.
+  const reachByPatient = new Map<
+    string,
+    { hasPhone: boolean; hasEmail: boolean }
+  >();
+  const patientIds = [...new Set(episodes.map((e) => e.patientId))];
+  for (let i = 0; i < patientIds.length; i += 200) {
+    const idChunk = patientIds.slice(i, i + 200);
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("patients")
+        .select("id, phone_e164, email")
+        .in("id", idChunk)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const p of data) {
+        reachByPatient.set(p.id, {
+          hasPhone: p.phone_e164 != null && p.phone_e164.length > 0,
+          hasEmail: p.email != null && p.email.length > 0,
+        });
+      }
+      if (data.length < PAGE_SIZE) break;
+    }
+  }
+  for (const ep of episodes) {
+    const reach = reachByPatient.get(ep.patientId);
+    // Default-reachable when a patient row wasn't returned (don't suppress
+    // outreach on a transient miss).
+    ep.hasPhone = reach?.hasPhone ?? true;
+    ep.hasEmail = reach?.hasEmail ?? true;
   }
 
   const actions = planReminderEscalations({

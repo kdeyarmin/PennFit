@@ -230,6 +230,63 @@ describe("planReminderEscalations — voice tier", () => {
   });
 });
 
+describe("planReminderEscalations — channel capability", () => {
+  it("hands an email-only patient to a CSR instead of stalling on SMS", () => {
+    // No phone → SMS is unreachable. With the email touch done, the only
+    // reachable channel is exhausted, so we hand off to a human rather than
+    // re-enqueue an un-deliverable SMS forever.
+    const actions = plan(
+      [{ id: "e1", patientId: "p1", hasPhone: false, hasEmail: true }],
+      [{ episodeId: "e1", channel: "email", createdAtMs: NOW - 5 * DAY }],
+      ESCALATION_LADDER,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "csr_exhausted",
+      triedChannels: ["email"],
+    });
+  });
+
+  it("hands a phone-only patient to a CSR after SMS (email skipped)", () => {
+    const actions = plan(
+      [{ id: "e1", patientId: "p1", hasPhone: true, hasEmail: false }],
+      [{ episodeId: "e1", channel: "sms", createdAtMs: NOW - 5 * DAY }],
+      ESCALATION_LADDER,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "csr_exhausted",
+      triedChannels: ["sms"],
+    });
+  });
+
+  it("skips the unreachable email and escalates a phone-only patient to voice", () => {
+    // Phone but no email, voice ladder active: after SMS the next REACHABLE
+    // channel is voice (email is skipped), and it's the last one → "final".
+    const actions = plan(
+      [{ id: "e1", patientId: "p1", hasPhone: true, hasEmail: false }],
+      [{ episodeId: "e1", channel: "sms", createdAtMs: NOW - 5 * DAY }],
+      ESCALATION_LADDER_WITH_VOICE,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "voice",
+      variant: "final",
+    });
+  });
+
+  it("treats capability as reachable when unspecified (back-compat)", () => {
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [{ episodeId: "e1", channel: "sms", createdAtMs: NOW - 5 * DAY }],
+      ESCALATION_LADDER,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "email",
+      variant: "final",
+    });
+  });
+});
+
 // Regression guard (structural source check): the episodes + conversations
 // reads in runReminderEscalationScan MUST keyset-page. PostgREST caps a
 // single response at ~1000 rows, so the previous raw .limit(5000) /

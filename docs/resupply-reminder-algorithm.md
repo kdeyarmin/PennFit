@@ -225,6 +225,11 @@ episode.
 - **Per-day idempotency:** each (patient, episode, channel, local-day) send is
   dedup-claimed, so a worker retry after a vendor hiccup can't double-send or
   double-dial.
+- **Channel-capability aware:** the escalation only steps to channels the
+  patient can actually receive — SMS and voice need a phone, email needs an
+  address. An email-only patient skips the SMS/voice tiers and reaches the CSR
+  hand-off directly, instead of the ladder stalling forever on an
+  un-deliverable step.
 - **Opt-out is sticky:** a STOP pauses the patient; they leave every ladder
   until they re-subscribe.
 - **Fail soft:** if a channel isn't configured (no Twilio / SendGrid / voice
