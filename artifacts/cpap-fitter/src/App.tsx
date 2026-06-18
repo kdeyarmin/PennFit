@@ -534,6 +534,9 @@ const BreathePricing = lazyWithRetry(() =>
 const BreatheSecurity = lazyWithRetry(() =>
   import("@/pages/breathe").then((m) => ({ default: m.BreatheSecurity })),
 );
+const BreatheSignup = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheSignup })),
+);
 
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
@@ -1158,6 +1161,7 @@ function TopRouter() {
         <Route path="/breathe/roi" component={BreatheRoi} />
         <Route path="/breathe/pricing" component={BreathePricing} />
         <Route path="/breathe/security" component={BreatheSecurity} />
+        <Route path="/breathe/signup" component={BreatheSignup} />
         <Route path="/">
           {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
         </Route>

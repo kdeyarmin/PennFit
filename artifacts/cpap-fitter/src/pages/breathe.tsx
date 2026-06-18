@@ -346,6 +346,207 @@ function DemoGateModal({
   );
 }
 
+/* Create-your-account — self-serve tenant signup. */
+export function BreatheSignup() {
+  useDocumentTitle(
+    "Create your account — Breathe by CareMetric.ai",
+    "Spin up your own Breathe workspace and admin login in minutes. No credit card — choose a plan in-app whenever you're ready.",
+  );
+  return (
+    <BreatheShell>
+      <SignupSection />
+    </BreatheShell>
+  );
+}
+
+function SignupSection() {
+  const { open: openDemoGate } = useDemoGate();
+  const [org, setOrg] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<
+    "idle" | "submitting" | "done" | "error"
+  >("idle");
+  const [err, setErr] = useState("");
+  const [signInUrl, setSignInUrl] = useState("/admin/sign-in");
+  const hpRef = useRef<HTMLInputElement>(null);
+
+  const clearError = () => {
+    if (status === "error") setStatus("idle");
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (org.trim().length < 2) {
+      setErr("Tell us your company name.");
+      setStatus("error");
+      return;
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      setErr("Please enter a valid work email.");
+      setStatus("error");
+      return;
+    }
+    if (password.length < 12) {
+      setErr("Use a password of at least 12 characters.");
+      setStatus("error");
+      return;
+    }
+    setStatus("submitting");
+    setErr("");
+    try {
+      const resp = await fetch("/api/tenant-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgName: org.trim(),
+          email: email.trim(),
+          password,
+          website: hpRef.current?.value || undefined,
+        }),
+      });
+      const data = (await resp.json().catch(() => ({}))) as {
+        signInUrl?: string;
+        error?: string;
+      };
+      if (resp.ok) {
+        setSignInUrl(data.signInUrl || "/admin/sign-in");
+        setStatus("done");
+        return;
+      }
+      setErr(data.error || "Something went wrong. Please try again.");
+      setStatus("error");
+    } catch {
+      setErr("Network error. Please check your connection and try again.");
+      setStatus("error");
+    }
+  };
+
+  if (status === "done") {
+    return (
+      <section className="bx-section bx-pagehead" id="top">
+        <div className="bx-shell bx-signup-shell">
+          <div className="bx-signup bx-reveal in">
+            <span className="bx-signup-ic">
+              <Check size={24} />
+            </span>
+            <h1 className="bx-pagehead-title">Check your email.</h1>
+            <p className="bx-pagehead-sub">
+              We sent a verification link to <b>{email.trim()}</b>. Click it to
+              activate your account, then sign in to your new Breathe workspace.
+            </p>
+            <a className="bx-btn bx-btn-primary" href={signInUrl}>
+              Go to sign in <ArrowRight size={16} />
+            </a>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bx-section bx-pagehead" id="top">
+      <div className="bx-shell bx-signup-shell">
+        <div className="bx-signup bx-reveal in">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> Create your account
+          </span>
+          <h1 className="bx-pagehead-title">
+            Your own Breathe, in <span className="grad-em">minutes.</span>
+          </h1>
+          <p className="bx-pagehead-sub">
+            Spin up your workspace and your admin login. No credit card — pick a
+            plan in-app whenever you&apos;re ready.
+          </p>
+          <form className="bx-signup-form" onSubmit={onSubmit} noValidate>
+            <input
+              ref={hpRef}
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="bx-hp"
+            />
+            <label className="bx-field-label">
+              Company name
+              <input
+                type="text"
+                value={org}
+                onChange={(e) => {
+                  setOrg(e.target.value);
+                  clearError();
+                }}
+                placeholder="Acme Home Medical"
+                autoComplete="organization"
+                required
+              />
+            </label>
+            <label className="bx-field-label">
+              Work email
+              <input
+                type="email"
+                inputMode="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearError();
+                }}
+                placeholder="you@yourdme.com"
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label className="bx-field-label">
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearError();
+                }}
+                placeholder="At least 12 characters"
+                autoComplete="new-password"
+                minLength={12}
+                required
+              />
+            </label>
+            {status === "error" ? (
+              <p className="bx-demoform-err" role="alert">
+                {err}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="bx-btn bx-btn-primary"
+              disabled={status === "submitting"}
+            >
+              {status === "submitting" ? (
+                "Creating your workspace…"
+              ) : (
+                <>
+                  Create account <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </form>
+          <p className="bx-signup-alt">
+            Prefer to look around first?{" "}
+            <button
+              type="button"
+              className="bx-linkbtn"
+              onClick={() => openDemoGate("breathe-signup")}
+            >
+              Start the free demo
+            </button>
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* Landing — the elevator pitch: hero, integrations, what it replaces, CTA. */
 export function BreatheHome() {
   useDocumentTitle(

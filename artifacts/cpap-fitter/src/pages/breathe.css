@@ -2788,6 +2788,83 @@
   }
 }
 
+/* ───────────────────── Create-account (signup) ───────────────────── */
+.bx-signup-shell {
+  max-width: 520px;
+}
+.bx-signup {
+  text-align: center;
+}
+.bx-signup-ic {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  color: var(--bx-mint);
+  background: rgba(111, 240, 194, 0.1);
+  border: 1px solid rgba(111, 240, 194, 0.26);
+  margin: 0 0 18px;
+}
+.bx-signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+  margin-top: 30px;
+  padding: 28px;
+  border-radius: 20px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+}
+.bx-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bx-text-dim);
+}
+.bx-field-label input {
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--bx-text);
+  font-family: var(--bx-font);
+  font-size: 15px;
+  font-weight: 400;
+}
+.bx-field-label input::placeholder {
+  color: var(--bx-text-faint);
+}
+.bx-field-label input:focus {
+  outline: none;
+  border-color: var(--bx-cyan);
+  box-shadow: 0 0 0 3px rgba(84, 200, 255, 0.18);
+}
+.bx-signup-form .bx-btn {
+  justify-content: center;
+  margin-top: 4px;
+}
+.bx-signup-alt {
+  font-size: 13.5px;
+  color: var(--bx-text-dim);
+  margin: 20px 0 0;
+}
+.bx-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--bx-cyan);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bx-linkbtn:hover {
+  text-decoration: underline;
+}
+
 .bx-footer {
   border-top: 1px solid var(--bx-line);
   margin-top: 100px;
