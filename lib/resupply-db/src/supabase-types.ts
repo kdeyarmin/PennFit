@@ -2310,6 +2310,48 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["organizations"]["Row"]>;
         Relationships: [];
       };
+      // Migration 0385: tenant → platform support tickets with an AI
+      // intake bot.
+      support_tickets: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          subject: string;
+          status: string;
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          bot_answered: boolean;
+          bot_confidence: number | null;
+          created_at: string;
+          updated_at: string;
+          last_activity_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["support_tickets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["support_tickets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      support_ticket_messages: {
+        Row: {
+          id: string;
+          ticket_id: string;
+          org_id: string | null;
+          author_role: string;
+          author_email: string | null;
+          body: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["support_ticket_messages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["support_ticket_messages"]["Row"]
+        >;
+        Relationships: [];
+      };
       organization_agreements: {
         Row: {
           id: string;

@@ -212,6 +212,8 @@ import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
 import platformBillingRouter from "./platform/billing.js";
 import platformConfigRouter from "./platform/config.js";
+import platformSupportRouter from "./platform/support.js";
+import adminSupportRouter from "./admin/support.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
 import complianceRulesRouter from "./compliance-rules/index.js";
@@ -236,6 +238,7 @@ router.use(platformTenantsRouter);
 router.use(platformAnalyticsRouter);
 router.use(platformBillingRouter);
 router.use(platformConfigRouter);
+router.use(platformSupportRouter);
 router.use(platformConnectionTestsRouter);
 router.use(platformImpersonationRouter);
 // Public shop routes (no auth) — patient-facing cash-pay catalog,
@@ -666,6 +669,9 @@ router.use(webhookDeliveryRetryRouter);
 // that produces a plain-English action plan with specific "how to
 // obtain" guidance for every gap.
 router.use(dispenseReadinessRouter);
+// /admin/support/* — tenant-facing support tickets with an AI intake bot
+// (requireAdmin + support.tickets feature gate on the router).
+router.use(adminSupportRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

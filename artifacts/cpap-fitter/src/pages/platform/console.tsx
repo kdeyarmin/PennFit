@@ -49,6 +49,17 @@ import {
   fetchFleetBillingSummary,
   formatMoney,
 } from "@/lib/admin/platform-billing-api";
+import {
+  getPlatformSupportTicket,
+  listPlatformSupportTickets,
+  replyPlatformSupportTicket,
+  setPlatformSupportStatus,
+  statusLabel as supportStatusLabel,
+  statusVariant as supportStatusVariant,
+  type SupportMessage,
+  type SupportTicket,
+  type SupportTicketStatus,
+} from "@/lib/admin/support-api";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card, KpiCard } from "@/components/admin/Card";
@@ -1115,6 +1126,281 @@ function GlobalIntegrations() {
   );
 }
 
+// ── Support queue (cross-tenant tickets the bot escalated) ─────────
+
+const SUPPORT_FILTERS: ReadonlyArray<{
+  value: SupportTicketStatus | "all";
+  label: string;
+}> = [
+  { value: "awaiting_platform", label: "Needs reply" },
+  { value: "awaiting_tenant", label: "Waiting on tenant" },
+  { value: "resolved", label: "Resolved" },
+  { value: "all", label: "All" },
+];
+
+function SupportMessageRow({ m }: { m: SupportMessage }) {
+  const label =
+    m.authorRole === "bot"
+      ? "Support bot"
+      : m.authorRole === "platform"
+        ? "You (support)"
+        : "Tenant";
+  return (
+    <div
+      className="rounded-lg px-3 py-2 border"
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        backgroundColor:
+          m.authorRole === "tenant"
+            ? "hsl(var(--surface-2))"
+            : "hsl(var(--penn-navy) / 0.06)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span
+          className="text-[11px] font-semibold"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          {label}
+        </span>
+        {m.authorRole === "bot" && <Badge variant="info">AI</Badge>}
+        <span className="text-[10px]" style={{ color: "hsl(var(--ink-3))" }}>
+          {new Date(m.createdAt).toLocaleString()}
+        </span>
+      </div>
+      <p
+        className="text-sm whitespace-pre-wrap leading-snug"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        {m.body}
+      </p>
+    </div>
+  );
+}
+
+function PlatformTicketThread({ id }: { id: string }) {
+  const queryClient = useQueryClient();
+  const [reply, setReply] = useState("");
+  const detail = useQuery({
+    queryKey: ["platform-support-ticket", id],
+    queryFn: () => getPlatformSupportTicket(id),
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["platform-support-ticket", id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["platform-support"] });
+  };
+  const send = useMutation({
+    mutationFn: () => replyPlatformSupportTicket(id, reply.trim()),
+    onSuccess: () => {
+      setReply("");
+      invalidate();
+    },
+  });
+  const setStatus = useMutation({
+    mutationFn: (status: SupportTicketStatus) =>
+      setPlatformSupportStatus(id, status),
+    onSuccess: invalidate,
+  });
+
+  if (detail.isPending) return <Spinner label="Loading ticket…" />;
+  if (detail.isError || !detail.data) {
+    return <EmptyState title="Couldn't load that ticket." hint="Try again." />;
+  }
+  const { ticket, messages } = detail.data;
+  const closed = ticket.status === "resolved" || ticket.status === "closed";
+
+  return (
+    <Card
+      title={ticket.subject}
+      subtitle={
+        ticket.tenant
+          ? `${ticket.tenant.name ?? ticket.tenant.slug} · ${ticket.createdByEmail ?? "unknown"}`
+          : (ticket.createdByEmail ?? undefined)
+      }
+      action={
+        <Badge variant={supportStatusVariant(ticket.status)}>
+          {supportStatusLabel(ticket.status)}
+        </Badge>
+      }
+    >
+      <div className="space-y-3">
+        {messages.map((m) => (
+          <SupportMessageRow key={m.id} m={m} />
+        ))}
+      </div>
+      <div
+        className="mt-4 pt-4 border-t space-y-2"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        <textarea
+          className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "hsl(var(--surface-1))",
+            color: "hsl(var(--ink-1))",
+          }}
+          rows={3}
+          maxLength={6000}
+          value={reply}
+          onChange={(e) => setReply(e.target.value)}
+          placeholder="Reply to the tenant…"
+        />
+        <div className="flex items-center justify-between gap-2">
+          {closed ? (
+            <Button
+              intent="ghost"
+              size="sm"
+              isLoading={setStatus.isPending}
+              onClick={() => setStatus.mutate("awaiting_platform")}
+            >
+              Reopen
+            </Button>
+          ) : (
+            <Button
+              intent="ghost"
+              size="sm"
+              isLoading={setStatus.isPending}
+              onClick={() => setStatus.mutate("resolved")}
+            >
+              Mark resolved
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={reply.trim().length === 0 || send.isPending}
+            isLoading={send.isPending}
+            onClick={() => send.mutate()}
+          >
+            Send reply
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function PlatformSupport() {
+  const [filter, setFilter] = useState<SupportTicketStatus | "all">(
+    "awaiting_platform",
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const list = useQuery({
+    queryKey: ["platform-support", filter],
+    queryFn: () =>
+      listPlatformSupportTickets(filter === "all" ? undefined : filter),
+  });
+
+  const tickets = list.data?.tickets ?? [];
+  const activeId = selectedId ?? tickets[0]?.id ?? null;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Support queue"
+        description="Tickets tenants filed across the fleet. The intake bot auto-answers how-to questions; anything it escalates lands here as “Needs reply”."
+        actions={
+          <div
+            className="inline-flex rounded-md overflow-hidden border flex-wrap"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            role="group"
+            aria-label="Filter tickets"
+          >
+            {SUPPORT_FILTERS.map((f) => {
+              const active = f.value === filter;
+              return (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => {
+                    setFilter(f.value);
+                    setSelectedId(null);
+                  }}
+                  aria-pressed={active}
+                  className="px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    color: active
+                      ? "hsl(var(--surface-1))"
+                      : "hsl(var(--ink-2))",
+                    backgroundColor: active
+                      ? "hsl(var(--penn-navy))"
+                      : "transparent",
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        }
+      />
+      <div className="grid gap-6 lg:grid-cols-[360px_1fr] items-start">
+        <Card title="Tickets">
+          {list.isPending ? (
+            <Spinner label="Loading…" />
+          ) : tickets.length === 0 ? (
+            <EmptyState title="No tickets here." hint="Nothing in this view." />
+          ) : (
+            <ul className="space-y-1">
+              {tickets.map((t: SupportTicket) => {
+                const active = t.id === activeId;
+                return (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(t.id)}
+                      className="w-full text-left rounded-md px-3 py-2 border"
+                      style={{
+                        borderColor: active
+                          ? "hsl(var(--penn-navy))"
+                          : "hsl(var(--line-1))",
+                        backgroundColor: active
+                          ? "hsl(var(--penn-navy) / 0.06)"
+                          : "transparent",
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="text-sm font-medium truncate"
+                          style={{ color: "hsl(var(--ink-1))" }}
+                        >
+                          {t.subject}
+                        </span>
+                        <Badge variant={supportStatusVariant(t.status)}>
+                          {supportStatusLabel(t.status)}
+                        </Badge>
+                      </div>
+                      <div
+                        className="text-[11px]"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        {(t.tenant?.name ?? t.tenant?.slug ?? "tenant") +
+                          " · " +
+                          new Date(t.lastActivityAt).toLocaleDateString()}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+        {activeId ? (
+          <PlatformTicketThread id={activeId} />
+        ) : (
+          <Card title="No ticket selected">
+            <EmptyState
+              title="Select a ticket to view the conversation."
+              hint="Reply, resolve, or reopen from here."
+            />
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Shell ──────────────────────────────────────────────────────────
 
 function PlatformShell({
@@ -1181,6 +1467,7 @@ function PlatformShell({
 const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/platform", label: "Dashboard" },
   { href: "/platform/tenants", label: "Tenants" },
+  { href: "/platform/support", label: "Support" },
   { href: "/platform/integrations", label: "Global integrations" },
   { href: "/platform/connection-tests", label: "Connection tests" },
 ];
@@ -1273,6 +1560,7 @@ function PlatformConsole() {
       <Switch>
         <Route path="/platform" component={PlatformDashboard} />
         <Route path="/platform/tenants" component={TenantDirectory} />
+        <Route path="/platform/support" component={PlatformSupport} />
         {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}
         <Route path="/platform/overview">
           <Redirect to="/platform" replace />

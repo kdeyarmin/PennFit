@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
+  LifeBuoy,
   Store,
   Printer,
   Inbox,
@@ -1064,6 +1065,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     label: "System",
     items: [
+      {
+        label: "Support",
+        icon: LifeBuoy,
+        href: "/admin/support",
+        matchPrefix: "/admin/support",
+        hint: "File a support request — our AI assistant answers how-to questions instantly, and a person handles the rest",
+      },
       {
         label: "Automation",
         icon: ScrollText,
