@@ -30,16 +30,17 @@ vi.mock("../../middlewares/requirePlatformAdmin", () =>
   makeRequirePlatformAdminMock(mockPlatformAdmin),
 );
 
-const { syncCatalogMock } = vi.hoisted(() => ({
+const { syncCatalogMock, syncTenantMock } = vi.hoisted(() => ({
   syncCatalogMock: vi.fn(async () => ({
     stripeConfigured: true,
     catalog: { plans: 1, addons: 0 },
   })),
+  syncTenantMock: vi.fn(async () => undefined),
 }));
 vi.mock("../../lib/platform-billing/stripe", () => ({
   syncPlatformBillingCatalogToStripe: syncCatalogMock,
   ensureTenantStripeCustomer: vi.fn(),
-  syncTenantStripeSubscription: vi.fn(),
+  syncTenantStripeSubscription: syncTenantMock,
   PlatformBillingAccountChangedError: class extends Error {},
 }));
 
@@ -97,6 +98,7 @@ function addonRow(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   supabaseMock.reset();
   syncCatalogMock.mockClear();
+  syncTenantMock.mockClear();
   mockPlatformAdmin.current = { userId: "u_p", email: "ops@cm" };
 });
 
@@ -127,7 +129,12 @@ describe("PUT /platform/billing/catalog/plans/:code", () => {
   it("updates the price, clears the stale Stripe price id, and re-syncs Stripe", async () => {
     stageSupabaseResponse("billing_plans", "select", { data: planRow() });
     stageSupabaseResponse("billing_plans", "update", { error: null });
-    // catalog() re-read
+    // affected-tenant count
+    stageSupabaseResponse("tenant_billing_subscriptions", "select", {
+      count: 3,
+      data: null,
+    });
+    // loadCatalog() re-read
     stageSupabaseResponse("billing_plans", "select", {
       data: [planRow({ monthly_price_cents: 99900, stripe_price_id: null })],
     });
@@ -140,6 +147,9 @@ describe("PUT /platform/billing/catalog/plans/:code", () => {
     expect(res.status).toBe(200);
     expect(res.body.plans).toHaveLength(1);
     expect(res.body.plans[0].monthlyPriceCents).toBe(99900);
+    // Tenants still on the old price are reported so the UI can offer a
+    // deliberate re-sync.
+    expect(res.body.affectedTenants).toBe(3);
 
     // The price changed → the update nulls the immutable Stripe price id
     // and a catalog re-sync is triggered.
@@ -175,7 +185,16 @@ describe("PUT /platform/billing/catalog/addons/:code", () => {
   it("repricing an add-on clears its Stripe price id and re-syncs", async () => {
     stageSupabaseResponse("billing_addons", "select", { data: addonRow() });
     stageSupabaseResponse("billing_addons", "update", { error: null });
-    // catalog() re-read
+    // affected-tenant count: which orgs have this add-on (no custom price)…
+    stageSupabaseResponse("tenant_billing_addons", "select", {
+      data: [{ org_id: "org-1" }],
+    });
+    // …and of those, how many have a live Stripe subscription.
+    stageSupabaseResponse("tenant_billing_subscriptions", "select", {
+      count: 1,
+      data: null,
+    });
+    // loadCatalog() re-read
     stageSupabaseResponse("billing_plans", "select", { data: [] });
     stageSupabaseResponse("billing_addons", "select", {
       data: [addonRow({ recurring_price_cents: 5900, stripe_price_id: null })],
@@ -192,6 +211,7 @@ describe("PUT /platform/billing/catalog/addons/:code", () => {
       stripe_price_id: null,
       stripe_synced_at: null,
     });
+    expect(res.body.affectedTenants).toBe(1);
     expect(syncCatalogMock).toHaveBeenCalledTimes(1);
   });
 
@@ -201,5 +221,35 @@ describe("PUT /platform/billing/catalog/addons/:code", () => {
       .put("/platform/billing/catalog/addons/nope")
       .send({ recurringPriceCents: 100 });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /platform/billing/tenants/resync-stripe", () => {
+  it("re-syncs each tenant with a live Stripe subscription (deduped)", async () => {
+    stageSupabaseResponse("tenant_billing_subscriptions", "select", {
+      data: [{ org_id: "o1" }, { org_id: "o2" }, { org_id: "o1" }],
+    });
+
+    const res = await request(makeApp()).post(
+      "/platform/billing/tenants/resync-stripe",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ total: 2, synced: 2, failed: 0 });
+    expect(syncTenantMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts a per-tenant failure without aborting the rest", async () => {
+    stageSupabaseResponse("tenant_billing_subscriptions", "select", {
+      data: [{ org_id: "o1" }, { org_id: "o2" }],
+    });
+    syncTenantMock.mockRejectedValueOnce(new Error("stripe boom"));
+
+    const res = await request(makeApp()).post(
+      "/platform/billing/tenants/resync-stripe",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ total: 2, synced: 1, failed: 1 });
   });
 });

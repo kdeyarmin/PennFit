@@ -394,7 +394,10 @@ function mapAddon(row: BillingAddonRow) {
   };
 }
 
-async function catalog(res: Response, raw: RawClient): Promise<void> {
+/** Read + map the full catalog, or null on a DB error (already logged). */
+async function loadCatalog(
+  raw: RawClient,
+): Promise<{ plans: unknown[]; addons: unknown[] } | null> {
   const [plans, addons] = await Promise.all([
     raw
       .schema("resupply")
@@ -415,13 +418,71 @@ async function catalog(res: Response, raw: RawClient): Promise<void> {
       },
       "billing catalog read failed",
     );
+    return null;
+  }
+  return {
+    plans: (plans.data ?? []).map(mapPlan),
+    addons: (addons.data ?? []).map(mapAddon),
+  };
+}
+
+async function catalog(res: Response, raw: RawClient): Promise<void> {
+  const data = await loadCatalog(raw);
+  if (!data) {
     res.status(500).json({ error: "billing_catalog_failed" });
     return;
   }
-  res.json({
-    plans: (plans.data ?? []).map(mapPlan),
-    addons: (addons.data ?? []).map(mapAddon),
-  });
+  res.json(data);
+}
+
+const ACTIVE_SUB_STATUSES = ["active", "trialing", "past_due"];
+
+/** How many tenants currently bill the OLD price for this plan and so
+ *  would change on a re-sync: on this plan, no per-tenant custom price,
+ *  and an existing Stripe subscription. */
+async function countTenantsAffectedByPlan(
+  raw: RawClient,
+  planId: string,
+): Promise<number> {
+  const { count, error } = await raw
+    .schema("resupply")
+    .from("tenant_billing_subscriptions")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", planId)
+    .in("status", ACTIVE_SUB_STATUSES)
+    .is("custom_monthly_price_cents", null)
+    .not("stripe_subscription_id", "is", null);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+/** How many tenants bill the OLD price for this add-on: have it active with
+ *  no per-tenant custom price, on an org with a live Stripe subscription. */
+async function countTenantsAffectedByAddon(
+  raw: RawClient,
+  addonId: string,
+): Promise<number> {
+  const { data, error } = await raw
+    .schema("resupply")
+    .from("tenant_billing_addons")
+    .select("org_id")
+    .eq("addon_id", addonId)
+    .eq("status", "active")
+    .is("custom_recurring_price_cents", null);
+  if (error) return 0;
+  const orgIds = Array.from(
+    new Set(((data ?? []) as Array<{ org_id: string }>).map((r) => r.org_id)),
+  );
+  if (orgIds.length === 0) return 0;
+  const { count, error: subErr } = await raw
+    .schema("resupply")
+    .from("tenant_billing_subscriptions")
+    .select("id", { count: "exact", head: true })
+    .in("org_id", orgIds)
+    .in("status", ACTIVE_SUB_STATUSES)
+    .not("stripe_subscription_id", "is", null);
+  if (subErr) return 0;
+  return count ?? 0;
 }
 
 async function tenantBilling(orgId: string, res: Response): Promise<void> {
@@ -1033,8 +1094,19 @@ router.put(
       ip: null,
       userAgent: null,
     }).catch(() => undefined);
+    // When the price changed: re-mint the catalog Stripe price, and report
+    // how many tenants still bill the old amount so the UI can offer a
+    // deliberate re-sync (we never auto-reprice live tenant subscriptions).
+    const affectedTenants = priceChanged
+      ? await countTenantsAffectedByPlan(raw, existing.id)
+      : 0;
     if (priceChanged) await resyncCatalogToStripe();
-    await catalog(res, raw);
+    const data = await loadCatalog(raw);
+    if (!data) {
+      res.status(500).json({ error: "billing_catalog_failed" });
+      return;
+    }
+    res.json({ ...data, affectedTenants });
   },
 );
 
@@ -1123,8 +1195,85 @@ router.put(
       ip: null,
       userAgent: null,
     }).catch(() => undefined);
+    const affectedTenants = priceChanged
+      ? await countTenantsAffectedByAddon(raw, existing.id)
+      : 0;
     if (priceChanged) await resyncCatalogToStripe();
-    await catalog(res, raw);
+    const data = await loadCatalog(raw);
+    if (!data) {
+      res.status(500).json({ error: "billing_catalog_failed" });
+      return;
+    }
+    res.json({ ...data, affectedTenants });
+  },
+);
+
+// ── POST /platform/billing/tenants/resync-stripe ────────────────────
+// Re-sync every tenant's live Stripe subscription to the CURRENT catalog
+// (and per-tenant custom) pricing. The deliberate counterpart to a catalog
+// price edit: editing the catalog never auto-reprices live subscriptions
+// (that would prorate every tenant unexpectedly); the operator triggers
+// this when they're ready to roll the new price out. Tenants with a custom
+// override re-resolve to their custom price (a no-op), so running it over
+// everyone is safe. Best-effort per tenant; one failure doesn't abort.
+router.post(
+  "/platform/billing/tenants/resync-stripe",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data, error } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select("org_id")
+      .in("status", ACTIVE_SUB_STATUSES)
+      .not("stripe_subscription_id", "is", null);
+    if (error) {
+      res.status(500).json({ error: "tenant_resync_failed" });
+      return;
+    }
+    const orgIds = Array.from(
+      new Set(((data ?? []) as Array<{ org_id: string }>).map((r) => r.org_id)),
+    );
+    let synced = 0;
+    let failed = 0;
+    for (const orgId of orgIds) {
+      try {
+        await syncTenantStripeSubscription({
+          orgId,
+          adminEmail: req.platformAdminEmail ?? null,
+        });
+        synced += 1;
+      } catch (err) {
+        failed += 1;
+        if (err instanceof PlatformBillingAccountChangedError) {
+          logger.warn(
+            { event: "tenant_resync_account_changed", orgId },
+            "tenant Stripe resync skipped — account changed",
+          );
+        } else {
+          logger.error(
+            { event: "tenant_resync_failed", orgId, err },
+            "tenant Stripe resync failed",
+          );
+        }
+      }
+    }
+    await logAudit({
+      action: "platform.billing.tenants.stripe.resynced",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "tenant_billing_subscriptions",
+      targetId: "fleet",
+      metadata: { total: orgIds.length, synced, failed },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    res.json({ total: orgIds.length, synced, failed });
   },
 );
 

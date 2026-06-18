@@ -177,26 +177,46 @@ export interface CatalogAddonEdit {
   sortOrder?: number;
 }
 
+/** A catalog edit returns the refreshed catalog plus, on a price change,
+ *  the count of tenants still billing the OLD price (existing Stripe
+ *  subscriptions aren't auto-repriced — the operator re-syncs deliberately
+ *  via {@link resyncTenantStripeSubscriptions}). */
+export interface CatalogEditResponse extends BillingCatalogResponse {
+  affectedTenants?: number;
+}
+
 /** Edit a plan's base pricing/presentation. The change populates to every
  *  tenant account, the public marketing page, and (on a price change)
- *  Stripe. Returns the refreshed catalog. */
+ *  Stripe. Returns the refreshed catalog + affected-tenant count. */
 export function updateCatalogPlan(
   code: string,
   edit: CatalogPlanEdit,
-): Promise<BillingCatalogResponse> {
-  return jsonFetch<BillingCatalogResponse>(
+): Promise<CatalogEditResponse> {
+  return jsonFetch<CatalogEditResponse>(
     `/platform/billing/catalog/plans/${encodeURIComponent(code)}`,
     { method: "PUT", body: JSON.stringify(edit) },
   );
 }
 
+/** Re-sync every tenant's live Stripe subscription to the current catalog
+ *  (+ custom) pricing. The deliberate counterpart to a catalog price edit. */
+export function resyncTenantStripeSubscriptions(): Promise<{
+  total: number;
+  synced: number;
+  failed: number;
+}> {
+  return jsonFetch("/platform/billing/tenants/resync-stripe", {
+    method: "POST",
+  });
+}
+
 /** Edit an add-on's base pricing/presentation. Returns the refreshed
- *  catalog. */
+ *  catalog + affected-tenant count. */
 export function updateCatalogAddon(
   code: string,
   edit: CatalogAddonEdit,
-): Promise<BillingCatalogResponse> {
-  return jsonFetch<BillingCatalogResponse>(
+): Promise<CatalogEditResponse> {
+  return jsonFetch<CatalogEditResponse>(
     `/platform/billing/catalog/addons/${encodeURIComponent(code)}`,
     { method: "PUT", body: JSON.stringify(edit) },
   );

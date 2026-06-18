@@ -24,6 +24,8 @@ describe("platform billing route wiring", () => {
     // Catalog price-edit endpoints (populate to tenants + marketing + Stripe).
     expect(SRC).toContain('"/platform/billing/catalog/plans/:code"');
     expect(SRC).toContain('"/platform/billing/catalog/addons/:code"');
+    // Deliberate roll-out of new catalog pricing to live tenant subscriptions.
+    expect(SRC).toContain('"/platform/billing/tenants/resync-stripe"');
     expect(SRC).toContain('"/platform/billing/tenants/:id/stripe/customer"');
     expect(SRC).toContain(
       '"/platform/billing/tenants/:id/stripe/subscription"',

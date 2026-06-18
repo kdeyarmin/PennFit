@@ -9,6 +9,7 @@ import {
   fetchPlatformTenantBilling,
   ensureTenantStripeCustomer,
   formatMoney,
+  resyncTenantStripeSubscriptions,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
   updateCatalogAddon,
@@ -446,8 +447,12 @@ function PlanCatalogCard({ plan }: { plan: BillingPlan }) {
 
   const save = useMutation({
     mutationFn: (edit: CatalogPlanEdit) => updateCatalogPlan(plan.code, edit),
-    onSuccess: () => {
-      setMessage("Saved.");
+    onSuccess: (res) => {
+      setMessage(
+        res.affectedTenants
+          ? `Saved. ${res.affectedTenants} tenant${res.affectedTenants === 1 ? "" : "s"} still bill the old price — use “Re-sync tenant subscriptions” above to roll it out in Stripe.`
+          : "Saved.",
+      );
       setEditing(false);
       return qc.invalidateQueries({ queryKey: ["platform-billing"] });
     },
@@ -644,8 +649,12 @@ function AddonCatalogRow({ addon }: { addon: BillingAddon }) {
   const save = useMutation({
     mutationFn: (edit: CatalogAddonEdit) =>
       updateCatalogAddon(addon.code, edit),
-    onSuccess: () => {
-      setMessage("Saved.");
+    onSuccess: (res) => {
+      setMessage(
+        res.affectedTenants
+          ? `Saved. ${res.affectedTenants} tenant${res.affectedTenants === 1 ? "" : "s"} still bill the old price — use “Re-sync tenant subscriptions” above to roll it out in Stripe.`
+          : "Saved.",
+      );
       setEditing(false);
       return qc.invalidateQueries({ queryKey: ["platform-billing"] });
     },
@@ -791,6 +800,22 @@ function CatalogPreview({
       );
     },
   });
+  const resyncTenants = useMutation({
+    mutationFn: resyncTenantStripeSubscriptions,
+    onSuccess: (r) => {
+      setCatalogMessage(
+        `Re-synced ${r.synced}/${r.total} tenant subscription${
+          r.total === 1 ? "" : "s"
+        }${r.failed ? `, ${r.failed} failed` : ""}.`,
+      );
+      return qc.invalidateQueries({ queryKey: ["platform-billing"] });
+    },
+    onError: (err) => {
+      setCatalogMessage(
+        err instanceof Error ? err.message : "Tenant re-sync failed.",
+      );
+    },
+  });
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -798,16 +823,31 @@ function CatalogPreview({
           <h2 className="font-semibold text-slate-950">Billing catalog</h2>
           <p className="text-xs text-slate-500">
             Edit base plan &amp; add-on pricing here. Changes populate to every
-            tenant account, the public pricing page, and Stripe.
+            tenant account, the public pricing page, and Stripe. Existing tenant
+            subscriptions keep the old price until you re-sync them.
           </p>
         </div>
-        <button
-          onClick={() => syncCatalog.mutate()}
-          disabled={syncCatalog.isPending}
-          className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
-        >
-          {syncCatalog.isPending ? "Syncing Stripe…" : "Sync catalog to Stripe"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => resyncTenants.mutate()}
+            disabled={resyncTenants.isPending}
+            className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+            title="Roll the current catalog pricing out to every tenant's live Stripe subscription"
+          >
+            {resyncTenants.isPending
+              ? "Re-syncing…"
+              : "Re-sync tenant subscriptions"}
+          </button>
+          <button
+            onClick={() => syncCatalog.mutate()}
+            disabled={syncCatalog.isPending}
+            className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          >
+            {syncCatalog.isPending
+              ? "Syncing Stripe…"
+              : "Sync catalog to Stripe"}
+          </button>
+        </div>
       </div>
       {catalogMessage ? (
         <p className="mt-2 text-sm text-slate-600">{catalogMessage}</p>

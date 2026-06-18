@@ -9,6 +9,7 @@ import {
   fetchTenantBilling,
   formatMoney,
   recordTenantUsage,
+  resyncTenantStripeSubscriptions,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
   updateCatalogAddon,
@@ -107,6 +108,16 @@ describe("platform-billing-api", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({
       recurringPriceCents: 5900,
     });
+  });
+
+  test("resyncTenantStripeSubscriptions POSTs the fleet resync endpoint", async () => {
+    fetchMock.mockResolvedValue(okJson({ total: 2, synced: 2, failed: 0 }));
+
+    await resyncTenantStripeSubscriptions();
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/platform/billing/tenants/resync-stripe");
+    expect(init.method).toBe("POST");
   });
 
   test("updateTenantPlan URL-encodes tenant IDs and sends JSON", async () => {
