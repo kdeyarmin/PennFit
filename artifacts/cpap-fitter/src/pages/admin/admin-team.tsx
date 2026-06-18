@@ -575,7 +575,7 @@ function InviteCard() {
             onChange={(e) => setEmail(e.target.value)}
             aria-label="Email"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-            placeholder="csr@pennpaps.com"
+            placeholder="csr@example.com"
             autoComplete="off"
           />
         </div>

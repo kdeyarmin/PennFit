@@ -1055,7 +1055,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Storefront Analytics",
             icon: BarChart3,
             matchPrefix: "/admin/pennpaps/analytics",
-            hint: "PennPaps storefront traffic & revenue",
+            hint: "Storefront traffic & revenue",
           },
         ],
       },
