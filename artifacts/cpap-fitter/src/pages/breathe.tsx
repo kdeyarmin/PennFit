@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
+  type LucideIcon,
   Activity,
   ArrowRight,
   ArrowUpRight,
@@ -47,7 +48,13 @@ import {
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import "./breathe.css";
 
-const LOGO = "/breathe/caremetric-logo.png";
+// Icon-only crop of the CareMetric app icon. The full lockup PNG
+// (`caremetric-logo.png`) bakes a "CareMetric AI" wordmark UNDER the icon;
+// squished into the small square brand slots it turned illegible and
+// collided with the "Breathe" text we render beside it. Every on-page
+// lockup pairs this square icon with separately-set brand text, so the
+// wordmark version is never the right asset here.
+const LOGO = "/breathe/caremetric-icon.png";
 
 /**
  * Breathe — the public marketing / showcase homepage for the DME
@@ -67,70 +74,233 @@ const LOGO = "/breathe/caremetric-logo.png";
  * /public/fonts so the page stays same-origin (the app's CSP forbids
  * third-party font CDNs).
  */
-export function Breathe() {
-  useDocumentTitle(
-    "Breathe — The DME Operating Platform by CareMetric.ai",
-    "Breathe is the AI-native operating platform for durable medical equipment companies: patient CRM, resupply automation, revenue-cycle, therapy monitoring, telehealth, and an AI voice agent in one system.",
-    { schema: "Article" },
-  );
-
+/**
+ * Shared chrome for every Breathe marketing page — the dark page shell,
+ * sticky nav, footer, and the reveal / no-index / smooth-scroll effects.
+ * The story used to live on one very long single-scroll page; it is now
+ * split into nav-aligned routes (Product, Compare, ROI, Pricing, Security)
+ * so each page stays short and focused. Every page renders its own slice of
+ * sections inside this shell.
+ */
+function BreatheShell({ children }: { children: React.ReactNode }) {
   useRevealOnScroll();
   useNoIndex();
   useSmoothScroll();
-
   return (
     <div className="breathe-page">
       <div className="bx-grain" aria-hidden="true" />
       <Nav />
-      <main>
-        <Hero />
-        <IntegrationsStrip />
-        <Replaces />
-        <Lifecycle />
-        <ProductShowcase />
-        <Features />
-        <AiBento />
-        <Comparison />
-        <Roles />
-        <Roi />
-        <Pricing />
-        <Security />
-        <Onboarding />
-        <Manifesto />
-        <Faq />
-        <ClosingCta />
-      </main>
+      <main>{children}</main>
       <Footer />
     </div>
   );
 }
 
+/**
+ * Compact header for the inner pages: eyebrow, H1, and a lede — so each
+ * split-out page has its own title and context instead of opening cold on
+ * a content section.
+ */
+function PageHead({
+  icon: Icon,
+  eyebrow,
+  title,
+  sub,
+}: {
+  icon: LucideIcon;
+  eyebrow: string;
+  title: React.ReactNode;
+  sub: string;
+}) {
+  return (
+    <header className="bx-section bx-pagehead" id="top">
+      <div className="bx-shell">
+        <span className="bx-eyebrow bx-reveal in">
+          <Icon size={13} />
+          {eyebrow}
+        </span>
+        <h1 className="bx-pagehead-title bx-reveal in">{title}</h1>
+        <p className="bx-pagehead-sub bx-reveal in">{sub}</p>
+      </div>
+    </header>
+  );
+}
+
+/* Landing — the elevator pitch: hero, integrations, what it replaces, CTA. */
+export function BreatheHome() {
+  useDocumentTitle(
+    "Breathe — The DME Operating Platform by CareMetric.ai",
+    "Breathe is the AI-native operating platform for durable medical equipment companies: patient CRM, resupply automation, revenue-cycle, therapy monitoring, telehealth, and an AI voice agent in one system.",
+    { schema: "Article" },
+  );
+  return (
+    <BreatheShell>
+      <Hero />
+      <IntegrationsStrip />
+      <Replaces />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Product tour — how the platform runs the whole DME lifecycle. */
+export function BreatheProduct() {
+  useDocumentTitle(
+    "Product tour — Breathe by CareMetric.ai",
+    "See how Breathe runs the entire DME lifecycle in one system: intake, the resupply engine, revenue cycle, clinical monitoring, and the AI voice agent.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={Workflow}
+        eyebrow="Product tour"
+        title={
+          <>
+            One platform for the{" "}
+            <span className="grad-em">whole lifecycle.</span>
+          </>
+        }
+        sub="From the first intake call to the last reconciled claim — see the console, the automations, and the AI that run a modern DME business."
+      />
+      <Lifecycle />
+      <ProductShowcase />
+      <Features />
+      <AiBento />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Compare — how Breathe stacks up against legacy DME software, by role. */
+export function BreatheCompare() {
+  useDocumentTitle(
+    "How Breathe compares — Breathe by CareMetric.ai",
+    "How Breathe compares to legacy DME software, and how much time it gives back to every role on your team.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={BrainCircuit}
+        eyebrow="Compare"
+        title={
+          <>
+            Built AI-native, <span className="grad-em">not bolted on.</span>
+          </>
+        }
+        sub="Legacy DME systems bolt modules onto decades-old cores. See the line-by-line difference — and what it means for each person on your team."
+      />
+      <Comparison />
+      <Roles />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* ROI — the interactive calculator. */
+export function BreatheRoi() {
+  useDocumentTitle(
+    "ROI calculator — Breathe by CareMetric.ai",
+    "Estimate what Breathe is worth to your DME business: staff time recovered, revenue-cycle recovery, resupply growth, and the point tools it replaces.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={LineChart}
+        eyebrow="ROI"
+        title={
+          <>
+            Size the <span className="grad-em">return.</span>
+          </>
+        }
+        sub="Estimate what Breathe gives back on your own panel — staff hours, revenue-cycle recovery, resupply growth, and the seven point tools you stop paying for."
+      />
+      <Roi />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Pricing — how it's priced, and how migration works. */
+export function BreathePricing() {
+  useDocumentTitle(
+    "Pricing — Breathe by CareMetric.ai",
+    "One platform, one price. How Breathe is priced, and how a guided migration gets your DME business live in weeks.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={CircleDollarSign}
+        eyebrow="Pricing"
+        title={
+          <>
+            Priced like <span className="grad-em">one platform.</span>
+          </>
+        }
+        sub="No per-module upsells, no surprise line items — and a guided migration that gets you live in weeks, not quarters."
+      />
+      <Pricing />
+      <Onboarding />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
+/* Security — posture, the why behind it, and the FAQ. */
+export function BreatheSecurity() {
+  useDocumentTitle(
+    "Security — Breathe by CareMetric.ai",
+    "Breathe's security posture: HIPAA-eligible infrastructure, on-device patient imaging, and the principles behind the platform.",
+  );
+  return (
+    <BreatheShell>
+      <PageHead
+        icon={ShieldCheck}
+        eyebrow="Security"
+        title={
+          <>
+            Patient trust, <span className="grad-em">engineered in.</span>
+          </>
+        }
+        sub="HIPAA-eligible infrastructure, on-device patient imaging, and a least-privilege posture — the questions your compliance team will ask, answered."
+      />
+      <Security />
+      <Manifesto />
+      <Faq />
+      <ClosingCta />
+    </BreatheShell>
+  );
+}
+
 /* ───────────────────────── Nav ───────────────────────── */
 const NAV_LINKS: { href: string; label: string }[] = [
-  { href: "#product", label: "Tour" },
-  { href: "#platform", label: "Platform" },
-  { href: "#compare", label: "Compare" },
-  { href: "#roi", label: "ROI" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#security", label: "Security" },
+  { href: "/breathe/product", label: "Product" },
+  { href: "/breathe/compare", label: "Compare" },
+  { href: "/breathe/roi", label: "ROI" },
+  { href: "/breathe/pricing", label: "Pricing" },
+  { href: "/breathe/security", label: "Security" },
 ];
 
 function Nav() {
+  const [loc] = useLocation();
   return (
     <nav className="bx-nav">
       <div className="bx-shell bx-nav-inner">
-        <a className="bx-brand" href="#top">
+        <Link className="bx-brand" href="/breathe">
           <img src={LOGO} alt="CareMetric AI" />
           <span>
             <span className="bx-brand-name">Breathe</span>
             <span className="bx-brand-sub">by CareMetric.ai</span>
           </span>
-        </a>
+        </Link>
         <div className="bx-nav-links">
           {NAV_LINKS.map((l) => (
-            <a className="bx-nav-anchor" href={l.href} key={l.href}>
+            <Link
+              className={"bx-nav-anchor" + (loc === l.href ? " is-active" : "")}
+              href={l.href}
+              key={l.href}
+            >
               {l.label}
-            </a>
+            </Link>
           ))}
           <a className="bx-btn bx-btn-primary bx-btn-sm" href="#demo">
             Request a demo
@@ -1584,9 +1754,9 @@ function ClosingCta() {
             >
               Request a demo <ArrowRight size={17} />
             </a>
-            <a className="bx-btn bx-btn-ghost" href="#product">
+            <Link className="bx-btn bx-btn-ghost" href="/breathe/product">
               Explore the platform
-            </a>
+            </Link>
           </div>
           <div className="bx-cta-meta">
             <span>
@@ -1610,13 +1780,13 @@ function Footer() {
   return (
     <footer className="bx-footer">
       <div className="bx-shell bx-footer-inner">
-        <a className="bx-brand" href="#top">
+        <Link className="bx-brand" href="/breathe">
           <img src={LOGO} alt="CareMetric AI" />
           <span>
             <span className="bx-brand-name">Breathe</span>
             <span className="bx-brand-sub">by CareMetric.ai</span>
           </span>
-        </a>
+        </Link>
         <p className="bx-footer-note">
           Breathe is the AI-native operating platform for durable medical
           equipment providers, built by CareMetric.ai. HIPAA-eligible
@@ -1627,6 +1797,13 @@ function Footer() {
           © {new Date().getFullYear()} CareMetric.ai
         </div>
       </div>
+      <nav className="bx-shell bx-footer-nav" aria-label="Breathe pages">
+        {NAV_LINKS.map((l) => (
+          <Link className="bx-footer-link" href={l.href} key={l.href}>
+            {l.label}
+          </Link>
+        ))}
+      </nav>
       <div className="bx-footer-admin">
         <Link
           href="/platform"
@@ -1777,4 +1954,4 @@ function CountUp({
   );
 }
 
-export default Breathe;
+export default BreatheHome;

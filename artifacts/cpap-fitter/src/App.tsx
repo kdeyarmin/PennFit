@@ -513,8 +513,26 @@ const ProviderPortalRoute = lazyWithRetry(() =>
 // center" surface rendered OUTSIDE the patient <Layout> (its own chrome),
 // so it's mounted in TopRouter. Lazy-loaded — its bespoke CSS + page code
 // never weigh on the patient-shop initial bundle.
-const Breathe = lazyWithRetry(() =>
-  import("@/pages/breathe").then((m) => ({ default: m.Breathe })),
+// Split out of one long single-scroll page into nav-aligned routes. All six
+// resolve from the same lazy chunk, so only the first /breathe navigation
+// pays the load; the rest are instant.
+const BreatheHome = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheHome })),
+);
+const BreatheProduct = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheProduct })),
+);
+const BreatheCompare = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheCompare })),
+);
+const BreatheRoi = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheRoi })),
+);
+const BreathePricing = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreathePricing })),
+);
+const BreatheSecurity = lazyWithRetry(() =>
+  import("@/pages/breathe").then((m) => ({ default: m.BreatheSecurity })),
 );
 
 const Reminders = lazyWithRetry(() =>
@@ -1134,9 +1152,14 @@ function TopRouter() {
           the explicit `/` route below falls through to PatientRouter.
           The canonical /breathe URL keeps working on every host.
         */}
-        <Route path="/breathe" component={Breathe} />
+        <Route path="/breathe" component={BreatheHome} />
+        <Route path="/breathe/product" component={BreatheProduct} />
+        <Route path="/breathe/compare" component={BreatheCompare} />
+        <Route path="/breathe/roi" component={BreatheRoi} />
+        <Route path="/breathe/pricing" component={BreathePricing} />
+        <Route path="/breathe/security" component={BreatheSecurity} />
         <Route path="/">
-          {() => (isPlatformHomeHost() ? <Breathe /> : <PatientRouter />)}
+          {() => (isPlatformHomeHost() ? <BreatheHome /> : <PatientRouter />)}
         </Route>
 
         <Route path="/sign-in" component={SignInPage} />
