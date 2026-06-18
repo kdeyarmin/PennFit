@@ -43,6 +43,7 @@ import {
   createInsuranceClaim,
   createInsuranceClaimEvent,
   createInsuranceClaimLine,
+  downloadClaims837p,
   fetchInsuranceClaimPreflight,
   getInsuranceClaim,
   listInsuranceClaims,
@@ -630,6 +631,7 @@ function ClaimDrawerContent({
 
       {claim.status === "draft" && (
         <OfficeAllySubmitPanel
+          claimId={claim.id}
           preflight={preflight}
           preflightLoading={preflightLoading}
           submitting={submitting}
@@ -773,6 +775,7 @@ function ClaimDrawerContent({
 // payer) are surfaced but don't block.
 
 function OfficeAllySubmitPanel({
+  claimId,
   preflight,
   preflightLoading,
   submitting,
@@ -780,6 +783,7 @@ function OfficeAllySubmitPanel({
   onSubmit,
   onRefreshPreflight,
 }: {
+  claimId: string;
   preflight: PreflightSummary | null;
   preflightLoading: boolean;
   submitting: boolean;
@@ -788,6 +792,23 @@ function OfficeAllySubmitPanel({
   onRefreshPreflight: () => void;
 }) {
   const ready = preflight?.readyToSubmit ?? false;
+  const [receiverId, setReceiverId] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadErr, setDownloadErr] = useState<string | null>(null);
+
+  async function onDownload837p() {
+    setDownloading(true);
+    setDownloadErr(null);
+    try {
+      await downloadClaims837p([claimId], receiverId);
+    } catch (e) {
+      setDownloadErr(
+        e instanceof Error ? e.message : "Could not export the 837P.",
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
   return (
     <section
       className="space-y-3 rounded border p-4"
@@ -873,6 +894,41 @@ function OfficeAllySubmitPanel({
           ✗ Submit failed: {submitResult.error}
         </p>
       )}
+
+      <div
+        className="space-y-2 rounded border border-dashed p-3"
+        style={{ borderColor: "hsl(var(--surface-3))" }}
+      >
+        <p className="text-[12px]" style={{ color: "hsl(var(--ink-3))" }}>
+          Not using Office Ally? Export the clean 837P and upload it to the
+          clearinghouse of your choice.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={receiverId}
+            onChange={(e) => setReceiverId(e.target.value)}
+            placeholder="Receiver ID (optional)"
+            aria-label="Clearinghouse interchange receiver ID (ISA08)"
+            className="rounded border px-2 py-1 text-[12px]"
+            style={{ borderColor: "hsl(var(--surface-3))" }}
+          />
+          <button
+            type="button"
+            disabled={downloading}
+            onClick={onDownload837p}
+            className="rounded border px-3 py-1 text-[12px] font-semibold disabled:opacity-50"
+            style={{ borderColor: "hsl(var(--surface-3))" }}
+          >
+            {downloading ? "Building…" : "↓ Download 837P"}
+          </button>
+        </div>
+        {downloadErr && (
+          <p className="text-[12px]" style={{ color: "#9f1239" }}>
+            ✗ {downloadErr}
+          </p>
+        )}
+      </div>
     </section>
   );
 }
