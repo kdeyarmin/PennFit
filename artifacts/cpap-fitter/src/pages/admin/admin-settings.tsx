@@ -119,7 +119,10 @@ export function PlatformSystemInfoPage() {
   });
 
   return (
-    <div className="space-y-6 max-w-5xl" data-testid="platform-system-info-page">
+    <div
+      className="space-y-6 max-w-5xl"
+      data-testid="platform-system-info-page"
+    >
       <PageHeader
         title="System info"
         description={`Deployment metadata, vendor configuration, and secret presence. Read-only — env-var values are never surfaced; only "is this set?" booleans plus a few benign-to-display fields.`}
