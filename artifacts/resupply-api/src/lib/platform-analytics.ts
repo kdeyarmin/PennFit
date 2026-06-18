@@ -182,35 +182,41 @@ function sumOrNull(values: ReadonlyArray<number | null>): number | null {
   return sawNumber ? sum : null;
 }
 
-/** Count timestamps falling in `[fromMs, toMs)`. */
-function countInRange(
-  isos: ReadonlyArray<string>,
-  fromMs: number,
-  toMs: number,
-): number {
+/** Sum of a numeric bucket array. */
+function sumOf(values: ReadonlyArray<number>): number {
   let n = 0;
-  for (const iso of isos) {
-    const ms = Date.parse(iso);
-    if (!Number.isNaN(ms) && ms >= fromMs && ms < toMs) n += 1;
-  }
+  for (const v of values) n += v;
   return n;
 }
 
-/** Net GMV (amount − refund) for paid orders whose `paid_at` is in
- *  `[fromMs, toMs)`. */
-function gmvInRange(
+/**
+ * The `days` UTC day keys immediately PRECEDING `currentKeys` (the prior
+ * comparison window). Anchored to the same UTC day starts as
+ * `windowDayKeys` so current/prior windows tile the calendar exactly —
+ * no rolling mid-day cutoff that could let window totals drift from the
+ * day-bucketed series.
+ */
+function priorWindowKeys(
+  currentKeys: ReadonlyArray<string>,
+  days: number,
+): string[] {
+  if (currentKeys.length === 0) return [];
+  const firstDayStartMs = Date.parse(`${currentKeys[0]}T00:00:00.000Z`);
+  return windowDayKeys(firstDayStartMs - DAY_MS, days);
+}
+
+/** Paid-order entries `{ iso: paid_at, cents: net }` — orders count and
+ *  GMV are both keyed on payment, so they share one axis and a pending /
+ *  abandoned checkout (no `paid_at`) contributes to neither. */
+function paidOrderEntries(
   orders: ReadonlyArray<AnalyticsOrder>,
-  fromMs: number,
-  toMs: number,
-): number {
-  let cents = 0;
+): Array<{ iso: string; cents: number }> {
+  const out: Array<{ iso: string; cents: number }> = [];
   for (const o of orders) {
     if (!o.paidAt) continue;
-    const ms = Date.parse(o.paidAt);
-    if (Number.isNaN(ms) || ms < fromMs || ms >= toMs) continue;
-    cents += o.amountCents - o.refundedCents;
+    out.push({ iso: o.paidAt, cents: o.amountCents - o.refundedCents });
   }
-  return cents;
+  return out;
 }
 
 /**
@@ -218,18 +224,19 @@ function gmvInRange(
  * totals, current-vs-prior window deltas, daily trend series, and a
  * per-tenant leaderboard. Pure — `nowMs` is injected so tests are
  * deterministic.
+ *
+ * Current/prior windows are UTC-day-aligned with the series buckets, so
+ * `window.<metric>` always equals `sum(series.<metric>)`. "Orders" means
+ * PAID orders (keyed on `paid_at`), consistent with GMV.
  */
 export function aggregatePlatformAnalytics(
   input: PlatformAnalyticsInput,
 ): PlatformAnalyticsResult {
   const { nowMs, days, tenants } = input;
   const dayKeys = windowDayKeys(nowMs, days);
+  const priorKeys = priorWindowKeys(dayKeys, days);
 
-  const currentCutoff = nowMs - days * DAY_MS;
-  const priorCutoff = nowMs - 2 * days * DAY_MS;
-  const future = nowMs + DAY_MS; // inclusive upper bound for "current"
-
-  // Fleet trend series — summed across tenants into the same buckets.
+  // Fleet trend series (current window) — summed across tenants.
   const newTenants = new Array<number>(dayKeys.length).fill(0);
   const newPatients = new Array<number>(dayKeys.length).fill(0);
   const newOrders = new Array<number>(dayKeys.length).fill(0);
@@ -241,15 +248,10 @@ export function aggregatePlatformAnalytics(
   };
 
   const statusTotals = { total: 0, active: 0, suspended: 0, archived: 0 };
-  let winNewPatients = 0;
-  let winNewOrders = 0;
-  let winNewConversations = 0;
-  let winGmv = 0;
   let priorPatients = 0;
   let priorOrders = 0;
   let priorConversations = 0;
   let priorGmv = 0;
-  let winNewTenants = 0;
 
   const tenantRows: PlatformAnalyticsTenantRow[] = tenants.map((t) => {
     statusTotals.total += 1;
@@ -257,57 +259,28 @@ export function aggregatePlatformAnalytics(
     else if (t.status === "suspended") statusTotals.suspended += 1;
     else if (t.status === "archived") statusTotals.archived += 1;
 
-    const orderCreatedAt = t.orders.map((o) => o.createdAt);
-    const gmvEntries = t.orders
-      .filter((o) => o.paidAt)
-      .map((o) => ({
-        iso: o.paidAt as string,
-        cents: o.amountCents - o.refundedCents,
-      }));
+    const paidEntries = paidOrderEntries(t.orders);
+    const paidIsos = paidEntries.map((e) => e.iso);
 
-    addInto(newPatients, bucketCountByDay(t.patientCreatedAt, dayKeys));
-    addInto(newOrders, bucketCountByDay(orderCreatedAt, dayKeys));
-    addInto(
-      newConversations,
-      bucketCountByDay(t.conversationCreatedAt, dayKeys),
-    );
-    addInto(gmvCents, bucketSumByDay(gmvEntries, dayKeys));
+    // Current-window day buckets for this tenant.
+    const tPatients = bucketCountByDay(t.patientCreatedAt, dayKeys);
+    const tOrders = bucketCountByDay(paidIsos, dayKeys);
+    const tConversations = bucketCountByDay(t.conversationCreatedAt, dayKeys);
+    const tGmv = bucketSumByDay(paidEntries, dayKeys);
+
+    addInto(newPatients, tPatients);
+    addInto(newOrders, tOrders);
+    addInto(newConversations, tConversations);
+    addInto(gmvCents, tGmv);
     addInto(newTenants, bucketCountByDay([t.createdAt], dayKeys));
 
-    // Per-tenant current-window rollups for the leaderboard.
-    const tWinPatients = countInRange(
-      t.patientCreatedAt,
-      currentCutoff,
-      future,
+    // Prior-window totals (for the deltas), same day-aligned bucketing.
+    priorPatients += sumOf(bucketCountByDay(t.patientCreatedAt, priorKeys));
+    priorOrders += sumOf(bucketCountByDay(paidIsos, priorKeys));
+    priorConversations += sumOf(
+      bucketCountByDay(t.conversationCreatedAt, priorKeys),
     );
-    const tWinOrders = countInRange(orderCreatedAt, currentCutoff, future);
-    const tWinGmv = gmvInRange(t.orders, currentCutoff, future);
-
-    winNewPatients += tWinPatients;
-    winNewOrders += tWinOrders;
-    winNewConversations += countInRange(
-      t.conversationCreatedAt,
-      currentCutoff,
-      future,
-    );
-    winGmv += tWinGmv;
-
-    priorPatients += countInRange(
-      t.patientCreatedAt,
-      priorCutoff,
-      currentCutoff,
-    );
-    priorOrders += countInRange(orderCreatedAt, priorCutoff, currentCutoff);
-    priorConversations += countInRange(
-      t.conversationCreatedAt,
-      priorCutoff,
-      currentCutoff,
-    );
-    priorGmv += gmvInRange(t.orders, priorCutoff, currentCutoff);
-
-    if (countInRange([t.createdAt], currentCutoff, future) > 0) {
-      winNewTenants += 1;
-    }
+    priorGmv += sumOf(bucketSumByDay(paidEntries, priorKeys));
 
     return {
       id: t.id,
@@ -318,11 +291,18 @@ export function aggregatePlatformAnalytics(
       patients: t.allTime.patients,
       orders: t.allTime.orders,
       conversations: t.allTime.conversations,
-      windowNewPatients: tWinPatients,
-      windowOrders: tWinOrders,
-      windowGmvCents: tWinGmv,
+      windowNewPatients: sumOf(tPatients),
+      windowOrders: sumOf(tOrders),
+      windowGmvCents: sumOf(tGmv),
     };
   });
+
+  // Window totals == series sums by construction (same day buckets).
+  const winNewTenants = sumOf(newTenants);
+  const winNewPatients = sumOf(newPatients);
+  const winNewOrders = sumOf(newOrders);
+  const winNewConversations = sumOf(newConversations);
+  const winGmv = sumOf(gmvCents);
 
   // Leaderboard: biggest contributors first (GMV, then order volume).
   tenantRows.sort(

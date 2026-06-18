@@ -2315,13 +2315,17 @@ export interface Database {
       support_tickets: {
         Row: {
           id: string;
-          org_id: string | null;
+          // NOT NULL in migration 0385 (created NOT NULL from the start,
+          // unlike the legacy tables backfilled to nullable org_id).
+          org_id: string;
           subject: string;
           status: string;
           created_by_email: string | null;
           created_by_user_id: string | null;
           bot_answered: boolean;
-          bot_confidence: number | null;
+          // `numeric` — PostgREST serializes it as a string, so callers
+          // must `Number(...)` it (the routes do).
+          bot_confidence: number | string | null;
           created_at: string;
           updated_at: string;
           last_activity_at: string;
@@ -2338,7 +2342,8 @@ export interface Database {
         Row: {
           id: string;
           ticket_id: string;
-          org_id: string | null;
+          // NOT NULL in migration 0385.
+          org_id: string;
           author_role: string;
           author_email: string | null;
           body: string;

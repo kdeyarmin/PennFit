@@ -636,7 +636,7 @@ function downloadTenantsCsv(
     "Slug",
     "Status",
     `Revenue (${days}d, USD)`,
-    `Orders (${days}d)`,
+    `Paid orders (${days}d)`,
     `New patients (${days}d)`,
     "Patients (all-time)",
     "Orders (all-time)",
@@ -713,7 +713,7 @@ function PlatformDashboard() {
       },
       {
         key: "orders",
-        header: "Orders",
+        header: "Paid orders",
         className: "text-right tabular-nums",
         render: (t) => fmtCount(t.windowOrders),
         sortable: true,
@@ -882,7 +882,7 @@ function PlatformDashboard() {
                   delta={data.window.delta.newPatients}
                 />
                 <TrendRow
-                  label="New orders"
+                  label="Paid orders"
                   total={data.window.newOrders.toLocaleString()}
                   values={data.series.newOrders}
                   delta={data.window.delta.newOrders}

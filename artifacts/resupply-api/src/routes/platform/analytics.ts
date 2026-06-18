@@ -79,6 +79,10 @@ async function windowCreatedAt(
       .from(table)
       .select("created_at")
       .gte("created_at", cutoffIso)
+      // Deterministic cap: keep the most recent rows if the window
+      // exceeds WINDOW_ROW_CAP (PostgREST doesn't guarantee order
+      // otherwise, which would make the trend sample nondeterministic).
+      .order("created_at", { ascending: false })
       .limit(WINDOW_ROW_CAP);
     if (error) throw error;
     return ((data ?? []) as Array<{ created_at: string | null }>)
@@ -151,6 +155,8 @@ router.get(
                     "created_at, paid_at, amount_total_cents, amount_refunded_cents",
                   )
                   .gte("created_at", fetchCutoffIso)
+                  // Deterministic cap (most-recent first) — see windowCreatedAt.
+                  .order("created_at", { ascending: false })
                   .limit(WINDOW_ROW_CAP);
                 if (error) throw error;
                 return (

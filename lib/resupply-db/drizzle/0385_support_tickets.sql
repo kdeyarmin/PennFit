@@ -90,13 +90,18 @@ ALTER TABLE "resupply"."support_ticket_messages" ENABLE ROW LEVEL SECURITY;
 -- out of the box; it degrades to a human hand-off when no AI provider key
 -- is set. Composite (org_id, key) conflict per migration 0350. New
 -- tenants inherit it via tenant:onboard's seed-org copy.
+--
+-- Shape note: the feature-flags catalog drift guard
+-- (feature-flags.catalog.test.ts) scans migrations for the seeded-key
+-- tuple (quoted key immediately followed by the enabled boolean) and
+-- requires the unquoted `resupply.feature_flags` table reference. The
+-- CROSS JOIN fans that one tuple across every org while keeping the shape.
 -- Keep in sync with FEATURE_FLAG_KEYS in
 -- artifacts/resupply-api/src/lib/feature-flags.ts.
-INSERT INTO "resupply"."feature_flags" ("org_id", "key", "enabled", "description", "category")
-SELECT "id",
-       'support.tickets',
-       true,
-       'Support tickets — tenants file support requests to the platform operator; an AI bot answers from the admin-console knowledge base on intake (Claude / GPT fallback) and escalates anything it can''t confidently answer to a human. Degrades to a hand-off when no AI provider key is set.',
-       'Voice & AI'
-FROM "resupply"."organizations"
+INSERT INTO resupply.feature_flags ("org_id", "key", "enabled", "description", "category")
+SELECT o."id", v."key", v."enabled", v."description", v."category"
+FROM "resupply"."organizations" o
+CROSS JOIN (VALUES
+  ('support.tickets', true, 'Support tickets — tenants file support requests to the platform operator; an AI bot answers from the admin-console knowledge base on intake (Claude / GPT fallback) and escalates anything it cannot confidently answer to a human. Degrades to a hand-off when no AI provider key is set.', 'Voice & AI')
+) AS v("key", "enabled", "description", "category")
 ON CONFLICT ("org_id", "key") DO NOTHING;

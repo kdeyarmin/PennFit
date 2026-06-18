@@ -186,6 +186,70 @@ describe("aggregatePlatformAnalytics", () => {
     });
   });
 
+  it("counts only PAID orders (ignores pending/abandoned checkouts)", () => {
+    const result = aggregatePlatformAnalytics({
+      nowMs: NOW,
+      days: 7,
+      tenants: [
+        tenant({
+          id: "t",
+          slug: "t",
+          orders: [
+            // Paid in-window → counts toward orders + GMV.
+            {
+              createdAt: "2026-06-17T00:00:00Z",
+              paidAt: "2026-06-17T00:00:00Z",
+              amountCents: 5000,
+              refundedCents: 0,
+            },
+            // Pending (no paid_at) → ignored entirely.
+            {
+              createdAt: "2026-06-17T00:00:00Z",
+              paidAt: null,
+              amountCents: 9999,
+              refundedCents: 0,
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result.window.newOrders).toBe(1);
+    expect(result.window.gmvCents).toBe(5000);
+    expect(result.tenants[0].windowOrders).toBe(1);
+  });
+
+  it("keeps window totals equal to the series sums (UTC-day aligned)", () => {
+    // Run at a non-midnight instant to exercise the alignment.
+    const result = aggregatePlatformAnalytics({
+      nowMs: Date.parse("2026-06-18T18:30:00Z"),
+      days: 14,
+      tenants: [
+        tenant({
+          id: "t",
+          slug: "t",
+          patientCreatedAt: ["2026-06-10T03:00:00Z", "2026-06-18T23:00:00Z"],
+          conversationCreatedAt: ["2026-06-12T00:00:00Z"],
+          orders: [
+            {
+              createdAt: "2026-06-15T00:00:00Z",
+              paidAt: "2026-06-15T12:00:00Z",
+              amountCents: 4200,
+              refundedCents: 200,
+            },
+          ],
+        }),
+      ],
+    });
+    const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+    expect(sum(result.series.newPatients)).toBe(result.window.newPatients);
+    expect(sum(result.series.newOrders)).toBe(result.window.newOrders);
+    expect(sum(result.series.newConversations)).toBe(
+      result.window.newConversations,
+    );
+    expect(sum(result.series.gmvCents)).toBe(result.window.gmvCents);
+    expect(sum(result.series.newTenants)).toBe(result.window.newTenants);
+  });
+
   it("reports null all-time totals only when every tenant's count failed", () => {
     const result = aggregatePlatformAnalytics({
       nowMs: NOW,
