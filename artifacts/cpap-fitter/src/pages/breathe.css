@@ -2757,6 +2757,25 @@
   }
 }
 
+/* Each split-out route's content cross-fades up on navigation, so moving
+   between the Product / Compare / ROI / Pricing / Security pages reads as a
+   deliberate transition rather than a hard cut. The nav + footer sit outside
+   <main>, so they stay put while only the content swaps. Disabled wholesale
+   by the reduced-motion block below. */
+.breathe-page main {
+  animation: bx-page-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes bx-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .breathe-page * {
     animation: none !important;
