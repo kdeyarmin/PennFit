@@ -217,15 +217,23 @@ export function demoCustomerDetail(userId: string) {
 type ConvStatus = "open" | "awaiting_patient" | "awaiting_admin" | "closed";
 type ConvChannel = "sms" | "voice" | "email" | "in_app";
 
-export function demoConversations(limit = 25, offset = 0) {
-  const statuses: ConvStatus[] = [
-    "awaiting_admin",
-    "open",
-    "awaiting_patient",
-    "closed",
-  ];
-  const channels: ConvChannel[] = ["sms", "in_app", "email", "voice"];
-  const all = FIRST_NAMES.slice(0, 8).map((first, i) => ({
+const CONV_STATUSES: ConvStatus[] = [
+  "awaiting_admin",
+  "open",
+  "awaiting_patient",
+  "closed",
+];
+const CONV_CHANNELS: ConvChannel[] = ["sms", "in_app", "email", "voice"];
+const DEMO_CONVERSATION_COUNT = 8;
+
+// Single source of truth for a demo conversation header, keyed on the
+// deterministic seed index `i`. The list endpoint maps over this and
+// the detail endpoint reconstructs the SAME header from the row id so
+// the two views never disagree (a list row that opens to a different
+// patient would be a jarring demo bug).
+function demoConversationHeader(i: number) {
+  const first = FIRST_NAMES[i % FIRST_NAMES.length];
+  return {
     id: `demo-conv-${i + 1}`,
     patientId: i % 2 === 0 ? `demo-patient-${i + 1}` : null,
     patientFirstName: first,
@@ -235,13 +243,114 @@ export function demoConversations(limit = 25, offset = 0) {
     customerDisplayName: i % 2 === 0 ? null : `${first} ${LAST_NAMES[i]}`,
     customerEmail:
       i % 2 === 0 ? null : `${first.toLowerCase()}@pennfit.example`,
-    channel: channels[i % channels.length],
-    status: statuses[i % statuses.length],
+    channel: CONV_CHANNELS[i % CONV_CHANNELS.length],
+    status: CONV_STATUSES[i % CONV_STATUSES.length],
     lastMessageAt: hoursAgo(i + 1),
     createdAt: daysAgo(i + 2),
-  }));
+  };
+}
+
+export function demoConversations(limit = 25, offset = 0) {
+  const all = Array.from({ length: DEMO_CONVERSATION_COUNT }, (_, i) =>
+    demoConversationHeader(i),
+  );
   const items = all.slice(offset, offset + limit);
   return { items, total: all.length, limit, offset };
+}
+
+// Recover the seed index from a `demo-conv-<n>` id, clamped into the
+// seeded range. Any unrecognized id (a stale deep link, say) resolves
+// to the first conversation so the detail page still renders a valid,
+// fully-populated thread instead of a half-empty shell.
+function demoConversationIndex(id: string): number {
+  const m = /^demo-conv-(\d+)$/.exec(id);
+  if (!m) return 0;
+  const n = Number.parseInt(m[1] ?? "1", 10) - 1;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n % DEMO_CONVERSATION_COUNT;
+}
+
+type DemoMessageRole = "patient" | "customer" | "admin" | "agent" | "system";
+
+function demoMessage(
+  convId: string,
+  seq: number,
+  direction: "inbound" | "outbound",
+  senderRole: DemoMessageRole,
+  body: string,
+  ageHours: number,
+) {
+  const at = hoursAgo(ageHours);
+  return {
+    id: `${convId}-msg-${seq}`,
+    direction,
+    senderRole,
+    body,
+    deliveryStatus: direction === "outbound" ? "delivered" : null,
+    sentAt: at,
+    deliveredAt: direction === "outbound" ? at : null,
+    createdAt: at,
+    attachments: [] as never[],
+  };
+}
+
+// Full conversation detail (header + message timeline) for the
+// /resupply-api/conversations/:id endpoint. Without this the demo
+// router answers the detail GET with its empty-object fallback, and
+// the detail page's `data.messages.length` deref throws into the
+// patient-facing ErrorBoundary ("Something went wrong") the moment an
+// explorer clicks any inbox row.
+export function demoConversationDetail(id: string) {
+  const i = demoConversationIndex(id);
+  const header = demoConversationHeader(i);
+  // Re-key the header to the requested id so an unrecognized id still
+  // round-trips the value the UI navigated with.
+  header.id = id;
+  const inboundRole: DemoMessageRole = header.customerId
+    ? "customer"
+    : "patient";
+  const name = header.patientFirstName;
+
+  const messages =
+    header.channel === "voice"
+      ? [
+          demoMessage(
+            id,
+            1,
+            "outbound",
+            "system",
+            `Outbound voice call to ${name} — 2m14s. Confirmed resupply of mask cushions and headgear; verified the shipping address on file.`,
+            3,
+          ),
+        ]
+      : [
+          demoMessage(
+            id,
+            1,
+            "outbound",
+            "admin",
+            `Hi ${name}, it's the Penn Home Medical Supply team — your CPAP supplies are due for resupply. Reply YES to confirm and we'll ship today.`,
+            6,
+          ),
+          demoMessage(
+            id,
+            2,
+            "inbound",
+            inboundRole,
+            "Yes please! Could I also add replacement filters this time?",
+            5,
+          ),
+          demoMessage(
+            id,
+            3,
+            "outbound",
+            "admin",
+            "Absolutely — I've added a 6-pack of disposable filters to your order. You'll get tracking by email once it ships. Anything else I can help with?",
+            4,
+          ),
+        ];
+
+  return { ...header, messages };
 }
 
 type EpisodeStatus =

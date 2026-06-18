@@ -248,6 +248,42 @@ describe("demo router", () => {
     }
   });
 
+  it("answers a conversation detail with a populated message timeline", async () => {
+    // Regression guard: ConversationDetailPage derefs `data.messages`
+    // (and keys on `data.id`). Without a :id handler the detail GET hit
+    // the empty-object fallback, so `data.messages.length` threw into
+    // the global ErrorBoundary ("Something went wrong") the instant a
+    // demo explorer clicked any inbox row.
+    const res = await get("/resupply-api/conversations/demo-conv-2");
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as {
+      id: string;
+      channel: string;
+      status: string;
+      messages: Array<{ id: string; direction: string; body: string }>;
+    };
+    expect(body.id).toBe("demo-conv-2");
+    expect(Array.isArray(body.messages)).toBe(true);
+    expect(body.messages.length).toBeGreaterThan(0);
+    for (const m of body.messages) {
+      expect(typeof m.body).toBe("string");
+      expect(["inbound", "outbound"]).toContain(m.direction);
+    }
+  });
+
+  it("round-trips an unrecognized conversation id to a valid detail", async () => {
+    // A stale deep link must still render a full thread, not a
+    // half-empty shell that trips the same deref.
+    const res = await get("/resupply-api/conversations/demo-conv-999");
+    const body = (await res!.json()) as {
+      id: string;
+      messages: unknown[];
+    };
+    expect(body.id).toBe("demo-conv-999");
+    expect(body.messages.length).toBeGreaterThan(0);
+  });
+
   it("falls back to empty object for unmatched API GETs", async () => {
     const res = await get("/api/totally-unknown-endpoint");
     expect(res!.status).toBe(200);

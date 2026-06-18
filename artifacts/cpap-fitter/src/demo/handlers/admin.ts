@@ -12,6 +12,7 @@ import {
   demoDashboardSummary,
   demoPatients,
   demoConversations,
+  demoConversationDetail,
   demoEpisodes,
   demoToday,
   demoWorkItems,
@@ -143,6 +144,13 @@ export const adminHandlers: DemoHandler[] = [
     json(
       demoConversations(intParam(req, "limit", 25), intParam(req, "offset", 0)),
     ),
+  ),
+  // Single-thread detail. MUST be present: the detail page derefs
+  // `data.messages` directly, so the router's empty-object GET fallback
+  // would crash it (ErrorBoundary "Something went wrong") the instant an
+  // explorer clicks any inbox row.
+  route("GET", "/resupply-api/conversations/:id", (_req, { id }) =>
+    json(demoConversationDetail(id)),
   ),
   route("GET", "/resupply-api/episodes", (req) =>
     json(demoEpisodes(intParam(req, "limit", 25), intParam(req, "offset", 0))),
