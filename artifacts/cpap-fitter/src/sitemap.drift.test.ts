@@ -77,6 +77,10 @@ const EXCLUDED_EXACT = new Set([
   "/forgot-password",
   "/reset-password",
   "/verify-email",
+  // NOTE: all of /breathe/* (the landing page and its split-out
+  // sub-pages, including /breathe/features) is excluded via the
+  // "/breathe" prefix in EXCLUDED_PREFIXES above — no per-route exact
+  // entries needed here.
 ]);
 
 function staticRoutePaths(): string[] {

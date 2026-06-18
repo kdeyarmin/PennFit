@@ -535,6 +535,17 @@ const BreatheSecurity = lazyWithRetry(() =>
   import("@/pages/breathe").then((m) => ({ default: m.BreatheSecurity })),
 );
 
+// Breathe — "What the software does, by role". A dedicated companion to
+// the Breathe homepage that breaks every feature down by the team seat
+// that uses it and tags each with time saved / cost cut / revenue grown.
+// Same self-contained dark chrome (reuses breathe.css), mounted in
+// TopRouter alongside /breathe, and lazy-loaded.
+const BreatheFeatures = lazyWithRetry(() =>
+  import("@/pages/breathe-features").then((m) => ({
+    default: m.BreatheFeatures,
+  })),
+);
+
 const Reminders = lazyWithRetry(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -1153,6 +1164,7 @@ function TopRouter() {
           The canonical /breathe URL keeps working on every host.
         */}
         <Route path="/breathe" component={BreatheHome} />
+        <Route path="/breathe/features" component={BreatheFeatures} />
         <Route path="/breathe/product" component={BreatheProduct} />
         <Route path="/breathe/compare" component={BreatheCompare} />
         <Route path="/breathe/roi" component={BreatheRoi} />
