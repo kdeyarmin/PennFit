@@ -275,10 +275,11 @@ describe("platform-billing-api", () => {
   test("fetchPlatformBillingActivity scopes the feed to a tenant when given", async () => {
     fetchMock.mockResolvedValue(okJson({ activity: [] }));
 
-    await fetchPlatformBillingActivity(10, "org-123");
+    const tenantId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+    await fetchPlatformBillingActivity(10, tenantId);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/resupply-api/platform/billing/activity?limit=10&tenantId=org-123",
+      `/resupply-api/platform/billing/activity?limit=10&tenantId=${tenantId}`,
       expect.objectContaining({ credentials: "include" }),
     );
   });

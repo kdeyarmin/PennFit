@@ -2030,8 +2030,10 @@ const billingActivityQuery = z.object({
       return Math.min(n, 100);
     }),
   // Optional tenant filter — scopes the feed to a single org so the panel
-  // can show one tenant's billing history. Invalid/absent → unfiltered.
-  tenantId: z.string().uuid().optional(),
+  // can show one tenant's billing history. `.catch` keeps a bad/empty
+  // tenantId from failing the whole parse (which would also drop a valid
+  // `limit`): an invalid value just disables the filter (→ unfiltered).
+  tenantId: z.string().uuid().optional().catch(undefined),
 });
 
 interface BillingEventRow {
