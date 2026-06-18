@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  CircleDollarSign,
   ClipboardSignature,
   Cpu,
   Database,
@@ -17,7 +18,9 @@ import {
   Gauge,
   GitBranch,
   Headphones,
+  Infinity as InfinityIcon,
   KeyRound,
+  LifeBuoy,
   LineChart,
   Lock,
   MessageSquare,
@@ -35,6 +38,7 @@ import {
   ShieldCheck,
   Sparkles,
   Stethoscope,
+  TrendingUp,
   Video,
   Waypoints,
   Workflow,
@@ -72,9 +76,11 @@ export function Breathe() {
 
   useRevealOnScroll();
   useNoIndex();
+  useSmoothScroll();
 
   return (
     <div className="breathe-page">
+      <div className="bx-grain" aria-hidden="true" />
       <Nav />
       <main>
         <Hero />
@@ -87,6 +93,7 @@ export function Breathe() {
         <Comparison />
         <Roles />
         <Roi />
+        <Pricing />
         <Security />
         <Onboarding />
         <Manifesto />
@@ -104,6 +111,7 @@ const NAV_LINKS: { href: string; label: string }[] = [
   { href: "#platform", label: "Platform" },
   { href: "#compare", label: "Compare" },
   { href: "#roi", label: "ROI" },
+  { href: "#pricing", label: "Pricing" },
   { href: "#security", label: "Security" },
 ];
 
@@ -135,8 +143,24 @@ function Nav() {
 
 /* ───────────────────────── Hero ───────────────────────── */
 function Hero() {
+  const onMove = (e: React.MouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width - 0.5) * 2;
+    const py = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    e.currentTarget.style.setProperty("--px", px.toFixed(3));
+    e.currentTarget.style.setProperty("--py", py.toFixed(3));
+  };
+  const onLeave = (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.setProperty("--px", "0");
+    e.currentTarget.style.setProperty("--py", "0");
+  };
   return (
-    <header className="bx-section bx-hero" id="top">
+    <header
+      className="bx-section bx-hero"
+      id="top"
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+    >
       <div className="bx-shell">
         <div className="bx-hero-grid">
           <div className="bx-hero-copy">
@@ -171,6 +195,7 @@ function Hero() {
           </div>
 
           <div className="bx-orb-wrap bx-reveal in">
+            <div className="bx-orb-aura" aria-hidden="true" />
             <div className="bx-orb">
               <div className="bx-orb-ring r3" />
               <div className="bx-orb-ring r2" />
@@ -426,6 +451,53 @@ const DENIALS: { reason: string; amount: string; pct: number }[] = [
   { reason: "Eligibility lapse", amount: "$1,140", pct: 27 },
 ];
 
+const SPARK = [34, 41, 38, 50, 46, 58, 55, 67, 74, 70, 86, 96];
+
+function Sparkline() {
+  const w = 240;
+  const h = 54;
+  const pad = 5;
+  const max = Math.max(...SPARK);
+  const min = Math.min(...SPARK);
+  const pts = SPARK.map((v, i) => {
+    const x = pad + (i / (SPARK.length - 1)) * (w - pad * 2);
+    const y = pad + (1 - (v - min) / (max - min)) * (h - pad * 2);
+    return [x, y] as const;
+  });
+  const line = pts
+    .map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`)
+    .join(" ");
+  const last = pts[pts.length - 1]!;
+  const first = pts[0]!;
+  const area = `${line} L${last[0].toFixed(1)} ${h} L${first[0].toFixed(1)} ${h} Z`;
+  return (
+    <svg
+      className="bx-spark"
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="bxSparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--bx-cyan)" stopOpacity="0.36" />
+          <stop offset="100%" stopColor="var(--bx-cyan)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill="url(#bxSparkFill)" />
+      <path
+        d={line}
+        fill="none"
+        stroke="var(--bx-cyan)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={last[0]} cy={last[1]} r="2.6" fill="var(--bx-mint)" />
+    </svg>
+  );
+}
+
 function ProductShowcase() {
   return (
     <section className="bx-section" id="product">
@@ -575,6 +647,22 @@ function ProductShowcase() {
                           </span>
                         </div>
                       ))}
+                    </div>
+
+                    <div className="bx-app-panel bx-collections">
+                      <div className="bx-app-panel-head">
+                        <b>
+                          <TrendingUp size={13} /> Collections
+                        </b>
+                        <span>last 7 days</span>
+                      </div>
+                      <Sparkline />
+                      <div className="bx-collections-foot">
+                        <span className="amt">$1.21M collected</span>
+                        <span className="up">
+                          <TrendingUp size={11} /> 8.4%
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1198,6 +1286,67 @@ function Roi() {
   );
 }
 
+/* ───────────────────────── Pricing ───────────────────────── */
+const PRICING: { icon: React.ReactNode; title: string; body: string }[] = [
+  {
+    icon: <InfinityIcon size={20} />,
+    title: "One all-in price",
+    body: "Voice agent, AI claims, telehealth, mask fitting, documents — every module is included. No per-feature licensing, no surprise add-ons.",
+  },
+  {
+    icon: <CircleDollarSign size={20} />,
+    title: "Priced to your panel",
+    body: "You pay for your active patients and seats, not a wall of SKUs. As you grow, the math stays simple and predictable.",
+  },
+  {
+    icon: <CalendarClock size={20} />,
+    title: "Month-to-month",
+    body: "No multi-year lock-in. Your patients, orders, and history stay yours and exportable — including back out to PacWare.",
+  },
+  {
+    icon: <LifeBuoy size={20} />,
+    title: "Onboarding included",
+    body: "Data migration and white-glove launch support come with the platform, not on a separate professional-services invoice.",
+  },
+];
+
+function Pricing() {
+  return (
+    <section className="bx-section" id="pricing">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Pricing
+          </span>
+          <h2 className="bx-h2">
+            Pricing that <em>respects operators</em>
+          </h2>
+          <p className="bx-lede">
+            Legacy DME software charges by the module and meters every feature.
+            Breathe is one platform, one price — built so the value you sized in
+            the calculator above is the value you actually keep.
+          </p>
+        </div>
+        <div className="bx-price-grid">
+          {PRICING.map((p) => (
+            <div className="bx-price-card bx-reveal" key={p.title}>
+              <div className="bx-price-ic">{p.icon}</div>
+              <h3>{p.title}</h3>
+              <p>{p.body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want the number for your panel?</span>
+          <a className="bx-btn bx-btn-primary" href="#demo">
+            Get a tailored quote <ArrowRight size={16} />
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Security ───────────────────────── */
 const SECURITY: { icon: React.ReactNode; title: string; body: string }[] = [
   {
@@ -1497,6 +1646,26 @@ function useNoIndex() {
     document.head.appendChild(meta);
     return () => {
       meta.remove();
+    };
+  }, []);
+}
+
+/**
+ * Enables smooth anchor scrolling for the in-page nav while Breathe is
+ * mounted, restoring the prior value on unmount so it never leaks onto
+ * other SPA routes. Skipped entirely under prefers-reduced-motion.
+ */
+function useSmoothScroll() {
+  useEffect(() => {
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+    const root = document.documentElement;
+    const prev = root.style.scrollBehavior;
+    root.style.scrollBehavior = "smooth";
+    return () => {
+      root.style.scrollBehavior = prev;
     };
   }, []);
 }

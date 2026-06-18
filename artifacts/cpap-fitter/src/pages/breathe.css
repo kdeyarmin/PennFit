@@ -140,6 +140,20 @@
   pointer-events: none;
 }
 
+/* Fine film grain for depth — a tiny tiled SVG turbulence at very low
+   opacity, overlay-blended so it reads as texture, not dirt. data: URIs
+   are permitted by the app CSP (`img-src 'self' data:`). */
+.bx-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
 .breathe-page *,
 .breathe-page *::before,
 .breathe-page *::after {
@@ -151,6 +165,16 @@
   max-width: var(--bx-maxw);
   margin: 0 auto;
   padding: 0 24px;
+}
+
+/* Keyboard focus — visible cyan ring on every interactive element. */
+.breathe-page a:focus-visible,
+.breathe-page button:focus-visible,
+.breathe-page summary:focus-visible,
+.breathe-page input:focus-visible {
+  outline: 2px solid var(--bx-cyan);
+  outline-offset: 3px;
+  border-radius: 8px;
 }
 
 /* ───────────────────────── Nav ───────────────────────── */
@@ -324,6 +348,7 @@
 .bx-section {
   position: relative;
   padding: 104px 0;
+  scroll-margin-top: 84px;
 }
 .bx-section-head {
   max-width: 740px;
@@ -401,9 +426,11 @@
     var(--bx-blue-bright) 45%,
     var(--bx-gold-soft) 100%
   );
+  background-size: 220% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  animation: bx-sheen 7s ease-in-out infinite;
 }
 .bx-hero-sub {
   font-size: 19px;
@@ -435,6 +462,41 @@
   display: grid;
   place-items: center;
   min-height: 440px;
+  transform: translate3d(
+    calc(var(--px, 0) * 12px),
+    calc(var(--py, 0) * 12px),
+    0
+  );
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Slow rotating colour aura behind the orb for depth. */
+.bx-orb-aura {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 470px;
+  height: 470px;
+  margin: -235px 0 0 -235px;
+  border-radius: 50%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.7;
+  filter: blur(48px);
+  background: conic-gradient(
+    from 0deg,
+    rgba(84, 200, 255, 0),
+    rgba(84, 200, 255, 0.32),
+    rgba(47, 111, 230, 0.26),
+    rgba(246, 167, 34, 0.22),
+    rgba(84, 200, 255, 0)
+  );
+  animation: bx-spin 18s linear infinite;
+}
+@media (max-width: 560px) {
+  .bx-orb-aura {
+    width: 340px;
+    height: 340px;
+    margin: -170px 0 0 -170px;
+  }
 }
 .bx-orb {
   position: relative;
@@ -1060,6 +1122,7 @@
   display: grid;
   grid-template-columns: 1.45fr 1fr;
   gap: 12px;
+  align-items: start;
 }
 .bx-app-panel {
   padding: 15px;
@@ -1247,6 +1310,34 @@
   height: 100%;
   border-radius: 5px;
   background: linear-gradient(90deg, var(--bx-gold), var(--bx-gold-soft));
+}
+.bx-collections .bx-app-panel-head b svg {
+  color: var(--bx-mint);
+}
+.bx-spark {
+  display: block;
+  width: 100%;
+  height: 52px;
+  margin: 2px 0 9px;
+}
+.bx-collections-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.bx-collections-foot .amt {
+  font-family: var(--bx-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--bx-text);
+}
+.bx-collections-foot .up {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bx-mint);
 }
 .bx-app-caption {
   text-align: center;
@@ -1828,6 +1919,86 @@
   line-height: 1.5;
 }
 
+/* ───────────────────────── Pricing ───────────────────────── */
+.bx-price-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .bx-price-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 540px) {
+  .bx-price-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-price-card {
+  padding: 26px 22px;
+  border-radius: 16px;
+  border: 1px solid var(--bx-line);
+  background: var(--bx-panel);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease;
+}
+.bx-price-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--bx-line-strong);
+}
+.bx-price-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-gold-soft);
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.16),
+    rgba(246, 167, 34, 0.05)
+  );
+  border: 1px solid rgba(246, 167, 34, 0.32);
+  margin-bottom: 16px;
+}
+.bx-price-card h3 {
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.bx-price-card p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-price-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+  padding: 22px 30px;
+  border-radius: 18px;
+  border: 1px solid var(--bx-line-strong);
+  background:
+    radial-gradient(
+      80% 170% at 50% 0%,
+      rgba(47, 111, 230, 0.18),
+      transparent 70%
+    ),
+    var(--bx-panel-2);
+}
+.bx-price-cta span {
+  font-family: var(--bx-display);
+  font-size: 19px;
+  font-weight: 600;
+}
+
 /* ───────────────────────── Security ───────────────────────── */
 .bx-sec-grid {
   display: grid;
@@ -2231,6 +2402,15 @@
   50% {
     height: 100%;
     opacity: 1;
+  }
+}
+@keyframes bx-sheen {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
   }
 }
 
