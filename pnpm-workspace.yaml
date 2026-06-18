@@ -153,6 +153,8 @@ overrides:
   "@babel/core@<7.29.6": ^7.29.6
   # undici >=7.23.0 <7.28.0 is vulnerable to TLS certificate validation
   # bypass via dropped requestTls in the SOCKS5 ProxyAgent
-  # (GHSA-vmh5-mc38-953g). Pin the jsdom/vitest transitive to the patched
-  # version.
+  # (GHSA-vmh5-mc38-953g). undici is a direct (production) dependency of
+  # artifacts/resupply-api — already bumped to ^7.28.0 in its manifest —
+  # AND is pulled transitively via jsdom/vitest; this range override
+  # forces every remaining transitive copy onto the patched version too.
   "undici@>=7.23.0 <7.28.0": ^7.28.0
