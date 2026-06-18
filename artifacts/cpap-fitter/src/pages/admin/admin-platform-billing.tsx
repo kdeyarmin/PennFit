@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
+import { AddonExplainer } from "@/lib/admin/addon-details";
 import {
   buildPreviewConfirm,
   fetchPlatformBillingActivity,
@@ -766,6 +767,7 @@ function AddonCatalogRow({ addon }: { addon: BillingAddon }) {
           </button>
         ) : null}
       </div>
+      {!editing ? <AddonExplainer addon={addon} /> : null}
       {editing ? (
         <div className="mt-2 space-y-2">
           <div className="grid grid-cols-2 gap-2">

@@ -8,6 +8,10 @@ const SRC = readFileSync(
   path.join(__dirname, "admin-billing-package.tsx"),
   "utf8",
 );
+const ADDON_DETAILS_SRC = readFileSync(
+  path.join(__dirname, "../../lib/admin/addon-details.tsx"),
+  "utf8",
+);
 
 describe("AdminBillingPackagePage Stripe status", () => {
   it("renders Stripe subscription, invoice, and period status", () => {
@@ -35,12 +39,18 @@ describe("AdminBillingPackagePage Stripe status", () => {
   });
 
   it("explains each add-on in a collapsible dropdown", () => {
+    // The page imports the shared explainer and renders it per add-on card.
     expect(SRC).toContain("AddonExplainer");
-    expect(SRC).toContain("addon-explainer-");
-    expect(SRC).toContain("What this does");
-    // Plain-language copy keyed by catalog code, with a description fallback.
-    expect(SRC).toContain("ADDON_DETAILS");
-    expect(SRC).toContain("whatItDoes");
-    expect(SRC).toContain("whyItMatters");
+    expect(SRC).toContain("@/lib/admin/addon-details");
+    expect(SRC).toContain("<AddonExplainer addon={addon} />");
+  });
+
+  it("sources add-on explainer copy from the shared map", () => {
+    expect(ADDON_DETAILS_SRC).toContain("export const ADDON_DETAILS");
+    expect(ADDON_DETAILS_SRC).toContain("export function AddonExplainer");
+    expect(ADDON_DETAILS_SRC).toContain("addon-explainer-");
+    expect(ADDON_DETAILS_SRC).toContain("What this does");
+    expect(ADDON_DETAILS_SRC).toContain("whatItDoes");
+    expect(ADDON_DETAILS_SRC).toContain("whyItMatters");
   });
 });
