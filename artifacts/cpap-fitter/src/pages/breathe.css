@@ -3819,7 +3819,10 @@
    Features page v2 — value levers, integrations strip, footnote.
    Adds the attention-grabbing "three reasons DME owners switch" band
    (time / revenue / leaner team) plus the partner-logos chip row.
-   Still scoped under .breathe-page; reuses bx-* primitives elsewhere.
+   Isolation here is by naming convention, not selector prefix: the
+   bxf-* / bx-* class prefixes are unique to this design system and the
+   markup only ever renders inside .breathe-page — matching the rest of
+   this file. The section reuses bx-* primitives elsewhere.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Three big value levers */

@@ -1206,6 +1206,8 @@ function CountUp({
       setVal(to);
       return;
     }
+    let raf = 0;
+    let cancelled = false;
     const io = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting || done.current) return;
@@ -1213,18 +1215,23 @@ function CountUp({
         const start = performance.now();
         const dur = 1300;
         const tick = (now: number) => {
+          if (cancelled) return;
           const p = Math.min(1, (now - start) / dur);
           const eased = 1 - Math.pow(1 - p, 3);
           setVal(to * eased);
-          if (p < 1) requestAnimationFrame(tick);
+          if (p < 1) raf = requestAnimationFrame(tick);
         };
-        requestAnimationFrame(tick);
+        raf = requestAnimationFrame(tick);
         io.disconnect();
       },
       { threshold: 0.5 },
     );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      io.disconnect();
+    };
   }, [to]);
 
   return (
