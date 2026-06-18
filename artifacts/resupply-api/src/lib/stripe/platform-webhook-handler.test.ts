@@ -63,10 +63,13 @@ const SHARED: PlatformBillingStripeConfig = {
   mode: "shared",
 };
 
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+
 describe("stripePlatformBillingWebhookHandler gating", () => {
   afterEach(() => {
     cfg.current = null;
-    delete process.env.NODE_ENV;
+    if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = ORIGINAL_NODE_ENV;
   });
 
   it("503s in production when not in dedicated mode", async () => {
