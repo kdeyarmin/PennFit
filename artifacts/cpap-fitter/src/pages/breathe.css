@@ -227,6 +227,7 @@
   box-shadow: 0 6px 22px rgba(47, 111, 230, 0.45);
 }
 .bx-brand-name {
+  display: block;
   font-family: var(--bx-display);
   font-optical-sizing: auto;
   font-size: 22px;
@@ -235,6 +236,10 @@
   line-height: 1;
 }
 .bx-brand-sub {
+  /* block so the name + sub-line stack vertically; as inline spans they
+     collapsed onto one baseline (margin-top is ignored on inline boxes),
+     which made "Breathe" and "by CareMetric.ai" overlap. */
+  display: block;
   font-family: var(--bx-mono);
   font-size: 10px;
   letter-spacing: 0.22em;
