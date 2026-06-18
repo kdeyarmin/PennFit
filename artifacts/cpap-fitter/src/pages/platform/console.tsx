@@ -45,6 +45,10 @@ import {
   type PlatformAnalyticsResponse,
   type PlatformAnalyticsTenantRow,
 } from "@/lib/admin/platform-analytics-api";
+import {
+  fetchFleetBillingSummary,
+  formatMoney,
+} from "@/lib/admin/platform-billing-api";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
 import { Card, KpiCard } from "@/components/admin/Card";
@@ -480,6 +484,179 @@ function TrendRow({
   );
 }
 
+// A compact stat block for the MRR card (label over a big number).
+function RevenueStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div
+        className="text-[10px] uppercase tracking-[0.18em] font-semibold"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        {label}
+      </div>
+      <div
+        className="text-2xl font-semibold tabular-nums leading-tight"
+        style={{ color: "hsl(var(--ink-1))" }}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Fleet recurring-revenue (MRR) card — the platform's own SaaS revenue,
+// independent of the analytics window above. Billing may be unconfigured
+// for a fresh fleet, in which case this degrades to an empty state.
+function FleetRevenueCard() {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["platform-billing-summary"],
+    queryFn: fetchFleetBillingSummary,
+  });
+
+  return (
+    <Card
+      title="Recurring revenue (MRR)"
+      subtitle="Platform subscription revenue across all tenants — what tenants pay to run on the platform (distinct from storefront GMV above)."
+    >
+      {isError ? (
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Couldn't load billing — it may not be configured for this fleet yet.
+        </p>
+      ) : isPending ? (
+        <Spinner label="Loading revenue…" />
+      ) : !data || data.payingTenants === 0 ? (
+        <EmptyState
+          title="No active subscriptions yet."
+          hint="Assign tenants to a plan from the platform billing console."
+        />
+      ) : (
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <RevenueStat
+              label="MRR"
+              value={`${formatMoney(data.mrrCents)}/mo`}
+              hint={
+                data.atRiskMrrCents > 0
+                  ? `${formatMoney(data.atRiskMrrCents)} past-due (at risk)`
+                  : `${formatMoney(data.addonMrrCents)} from add-ons`
+              }
+            />
+            <RevenueStat
+              label="ARPU"
+              value={`${formatMoney(data.arpuCents)}/mo`}
+              hint="per paying tenant"
+            />
+            <RevenueStat
+              label="Paying tenants"
+              value={data.payingTenants.toLocaleString()}
+              hint={`${data.trialingTenants} trialing · ${data.unsubscribedTenants} unsubscribed`}
+            />
+          </div>
+          {data.byPlan.length > 0 && (
+            <div
+              className="border-t pt-3"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <div
+                className="text-[11px] font-medium mb-2"
+                style={{ color: "hsl(var(--ink-2))" }}
+              >
+                MRR by plan
+              </div>
+              <div className="space-y-1">
+                {data.byPlan.map((p) => (
+                  <div
+                    key={p.planCode}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <span style={{ color: "hsl(var(--ink-2))" }}>
+                      {p.planName}{" "}
+                      <span style={{ color: "hsl(var(--ink-3))" }}>
+                        ({p.tenants})
+                      </span>
+                    </span>
+                    <span
+                      className="tabular-nums font-medium"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {formatMoney(p.mrrCents)}/mo
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Client-side CSV cell guard: RFC-4180 quoting + formula-injection
+// neutralisation (mirrors the backend safeCsvCell) so an exported
+// leaderboard can't smuggle a `=`/`+`/`-`/`@` formula into a spreadsheet.
+function csvCell(value: unknown): string {
+  if (value == null) return "";
+  let s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadTenantsCsv(
+  rows: PlatformAnalyticsTenantRow[],
+  days: number,
+): void {
+  const header = [
+    "Tenant",
+    "Slug",
+    "Status",
+    `Revenue (${days}d, USD)`,
+    `Orders (${days}d)`,
+    `New patients (${days}d)`,
+    "Patients (all-time)",
+    "Orders (all-time)",
+    "Conversations (all-time)",
+  ];
+  const lines = [
+    header,
+    ...rows.map((t) => [
+      t.name ?? t.slug,
+      t.slug,
+      t.status,
+      (t.windowGmvCents / 100).toFixed(2),
+      String(t.windowOrders),
+      String(t.windowNewPatients),
+      t.patients == null ? "" : String(t.patients),
+      t.orders == null ? "" : String(t.orders),
+      t.conversations == null ? "" : String(t.conversations),
+    ]),
+  ];
+  const csv = lines.map((r) => r.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `fleet-tenants-${days}d-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function PlatformDashboard() {
   const [days, setDays] = useState<number>(30);
   const { data, isPending, isError, refetch, isFetching } =
@@ -668,6 +845,8 @@ function PlatformDashboard() {
             />
           </div>
 
+          <FleetRevenueCard />
+
           {isPending || !data ? (
             <Card title="Fleet trends">
               <Spinner label="Loading analytics…" />
@@ -708,6 +887,17 @@ function PlatformDashboard() {
               <Card
                 title="Tenant leaderboard"
                 subtitle={`Ranked by revenue over the last ${days} days. Click a column to re-sort.`}
+                action={
+                  data.tenants.length > 0 ? (
+                    <Button
+                      intent="secondary"
+                      size="sm"
+                      onClick={() => downloadTenantsCsv(data.tenants, days)}
+                    >
+                      Export CSV
+                    </Button>
+                  ) : undefined
+                }
               >
                 <Table<PlatformAnalyticsTenantRow>
                   columns={columns}

@@ -15,6 +15,7 @@ describe("platform billing route wiring", () => {
 
   it("keeps super-admin catalog, tenant, subscription, add-on, and usage endpoints", () => {
     expect(SRC).toContain('"/platform/billing/catalog"');
+    expect(SRC).toContain('"/platform/billing/summary"');
     expect(SRC).toContain('"/platform/billing/tenants"');
     expect(SRC).toContain('"/platform/billing/tenants/:id/subscription"');
     expect(SRC).toContain('"/platform/billing/tenants/:id/addons"');
@@ -41,5 +42,10 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("platform.billing.subscription.updated");
     expect(SRC).toContain("platform.billing.addon.updated");
     expect(SRC).toContain("platform.billing.stripe.catalog.synced");
+  });
+
+  it("computes the fleet MRR summary through the pure aggregator", () => {
+    expect(SRC).toContain("summarizeFleetBilling");
+    expect(SRC).toContain("billing_summary_failed");
   });
 });

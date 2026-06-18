@@ -8,6 +8,10 @@ import {
   type ResupplyTable,
 } from "@workspace/resupply-db";
 
+import {
+  summarizeFleetBilling,
+  type FleetBillingTenant,
+} from "../../lib/fleet-billing";
 import { logger } from "../../lib/logger";
 import {
   ensureTenantStripeCustomer,
@@ -455,6 +459,116 @@ router.get(
       return;
     }
     await catalog(res, raw);
+  },
+);
+
+// ── GET /platform/billing/summary ───────────────────────────────────
+// Fleet recurring-revenue (MRR) rollup for the super-admin dashboard:
+// total MRR, ARPU, paying/trialing/past-due counts, and an MRR-by-plan
+// breakdown. Aggregate dollar rollups only. Reads only the billing
+// tables (subscriptions + add-ons + plans) plus a tenant HEAD count, so
+// it stays cheap regardless of patient/order volume.
+interface SummarySubRow {
+  org_id: string;
+  status: string;
+  custom_monthly_price_cents: number | null;
+  billing_plans: {
+    code: string;
+    name: string;
+    monthly_price_cents: number | null;
+  } | null;
+}
+interface SummaryAddonRow {
+  org_id: string;
+  quantity: number | null;
+  custom_recurring_price_cents: number | null;
+  billing_addons: { recurring_price_cents: number | null } | null;
+}
+
+router.get(
+  "/platform/billing/summary",
+  adminReadRateLimiter,
+  requirePlatformAdmin,
+  async (_req, res): Promise<void> => {
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const [orgCount, subs, addons] = await Promise.all([
+      raw
+        .schema("resupply")
+        .from("organizations")
+        .select("id", { count: "exact", head: true }),
+      raw
+        .schema("resupply")
+        .from("tenant_billing_subscriptions")
+        .select(
+          "org_id, status, custom_monthly_price_cents, billing_plans(code, name, monthly_price_cents)",
+        )
+        .in("status", ["active", "trialing", "past_due"]),
+      raw
+        .schema("resupply")
+        .from("tenant_billing_addons")
+        .select(
+          "org_id, quantity, custom_recurring_price_cents, billing_addons(recurring_price_cents)",
+        )
+        .eq("status", "active"),
+    ]);
+    if (orgCount.error || subs.error || addons.error) {
+      logger.error(
+        {
+          event: "platform_billing_summary_failed",
+          err: orgCount.error ?? subs.error ?? addons.error,
+        },
+        "platform billing summary read failed",
+      );
+      res.status(500).json({ error: "billing_summary_failed" });
+      return;
+    }
+
+    // One subscription per org (the directory query may return history;
+    // first active/trialing/past_due wins — mirrors /billing/tenants).
+    // PostgREST's select-string parser types embedded relationships
+    // (`billing_plans(...)`) as arrays, but a to-one embed returns a single
+    // object at runtime — cast through `unknown` to our narrowed shape.
+    const subByOrg = new Map<string, SummarySubRow>();
+    for (const s of (subs.data ?? []) as unknown as SummarySubRow[]) {
+      if (!subByOrg.has(s.org_id)) subByOrg.set(s.org_id, s);
+    }
+    const addonsByOrg = new Map<string, SummaryAddonRow[]>();
+    for (const a of (addons.data ?? []) as unknown as SummaryAddonRow[]) {
+      const list = addonsByOrg.get(a.org_id);
+      if (list) list.push(a);
+      else addonsByOrg.set(a.org_id, [a]);
+    }
+
+    const orgIds = new Set<string>([...subByOrg.keys(), ...addonsByOrg.keys()]);
+    const entries: FleetBillingTenant[] = [...orgIds].map((orgId) => {
+      const s = subByOrg.get(orgId);
+      return {
+        orgId,
+        subscription: s
+          ? {
+              status: s.status,
+              customMonthlyPriceCents: s.custom_monthly_price_cents,
+              planCode: s.billing_plans?.code ?? "unknown",
+              planName: s.billing_plans?.name ?? "Unknown plan",
+              planMonthlyPriceCents:
+                s.billing_plans?.monthly_price_cents ?? null,
+            }
+          : null,
+        addons: (addonsByOrg.get(orgId) ?? []).map((a) => ({
+          quantity: a.quantity ?? 0,
+          customRecurringPriceCents: a.custom_recurring_price_cents,
+          addonRecurringPriceCents:
+            a.billing_addons?.recurring_price_cents ?? null,
+        })),
+      };
+    });
+
+    const summary = summarizeFleetBilling(entries, orgCount.count ?? 0);
+    res.json({ ...summary, generatedAt: new Date().toISOString() });
   },
 );
 
