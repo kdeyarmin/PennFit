@@ -1665,6 +1665,104 @@
   }
 }
 
+/* ───────────────────────── Capabilities ───────────────────────── */
+/* The homepage "what it does" grid — capability cards with a header
+   (icon + title + one-line summary) over a bulleted sub-feature list.
+   Mirrors the .bx-card / .bx-role aesthetic so it reads as one system. */
+.bx-caps {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+@media (max-width: 820px) {
+  .bx-caps {
+    grid-template-columns: 1fr;
+  }
+}
+.bx-cap {
+  position: relative;
+  padding: 26px 28px;
+  border-radius: 18px;
+  background: var(--bx-panel);
+  border: 1px solid var(--bx-line);
+  backdrop-filter: blur(10px);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.bx-cap:hover {
+  transform: translateY(-3px);
+  border-color: var(--bx-line-strong);
+  box-shadow: 0 24px 50px -22px rgba(8, 20, 55, 0.9);
+}
+.bx-cap-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  margin-bottom: 16px;
+}
+.bx-cap-ic {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--bx-cyan);
+  background: linear-gradient(
+    135deg,
+    rgba(84, 200, 255, 0.16),
+    rgba(47, 111, 230, 0.08)
+  );
+  border: 1px solid var(--bx-line-strong);
+}
+.bx-cap.gold .bx-cap-ic {
+  color: var(--bx-gold-soft);
+  background: linear-gradient(
+    135deg,
+    rgba(246, 167, 34, 0.18),
+    rgba(246, 167, 34, 0.05)
+  );
+}
+.bx-cap-head h3 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 3px 0 4px;
+}
+.bx-cap-summary {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+  margin: 0;
+}
+.bx-cap-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 9px;
+}
+.bx-cap-list li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bx-text-dim);
+}
+.bx-cap-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--bx-cyan), var(--bx-blue));
+  box-shadow: 0 0 10px rgba(84, 200, 255, 0.5);
+}
+
 /* ───────────────────────── Comparison ───────────────────────── */
 .bx-compare-wrap {
   border: 1px solid var(--bx-line);

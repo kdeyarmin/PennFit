@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   Sparkles,
   Stethoscope,
+  Store,
   TrendingUp,
   Video,
   Waypoints,
@@ -139,6 +140,8 @@ export function BreatheHome() {
     <BreatheShell>
       <Hero />
       <IntegrationsStrip />
+      <Lifecycle />
+      <Capabilities />
       <Replaces />
       <PricingHome />
       <ClosingCta />
@@ -397,8 +400,8 @@ function Hero() {
               <a className="bx-btn bx-btn-primary" href="#demo">
                 Request a demo <ArrowRight size={17} />
               </a>
-              <a className="bx-btn bx-btn-ghost" href="#product">
-                See it in action
+              <a className="bx-btn bx-btn-ghost" href="#capabilities">
+                See what it does
               </a>
             </div>
             <div className="bx-hero-trust bx-reveal in">
@@ -966,6 +969,23 @@ const FEATURES: Feature[] = [
     title: "Analytics & KPIs",
     body: "Margin, DSO, LTV/CAC, payer profitability, team throughput, and NPS — live, with KPI alerts that page you before a number becomes a problem.",
   },
+  {
+    icon: <Store size={22} />,
+    title: "Branded Storefront & Shop",
+    body: "Your own CPAP storefront with catalog, cart, Stripe checkout, subscriptions, returns, and reviews — plus live insurance benefit estimates before a patient pays.",
+  },
+  {
+    icon: <Workflow size={22} />,
+    title: "Automation & Rules",
+    body: "Smart triggers and routing rules fire the right outreach the moment an event happens, while KPI alerts and goal tracking keep leadership ahead of every number.",
+  },
+  {
+    icon: <FileStack size={22} />,
+    title: "AI Referral Intake",
+    body: "Drop in a referral fax and AI extracts the patient and clinical details to pre-fill intake — no manual re-keying, and the paperwork pipeline takes it from there.",
+    tag: "AI",
+    gold: true,
+  },
 ];
 
 function Features() {
@@ -1092,6 +1112,159 @@ function AiBento() {
               ) : null}
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Capabilities ───────────────────────── */
+/*
+ * The plain-language answer to "what does this software actually do?" —
+ * the real product surface grouped into eight capability areas, each with
+ * concrete sub-features. This is the homepage's core explainer; the
+ * /breathe/product Features grid and the /breathe/features role page go
+ * deeper. Copy is grounded in shipped functionality (resupply engine,
+ * Office Ally RCM, therapy-cloud monitoring, the AI workforce, storefront,
+ * telehealth, analytics), not aspiration.
+ */
+type Capability = {
+  icon: React.ReactNode;
+  title: string;
+  summary: string;
+  points: string[];
+  gold?: boolean;
+};
+
+const CAPABILITIES: Capability[] = [
+  {
+    icon: <RefreshCw size={20} />,
+    title: "Resupply engine",
+    summary: "Never miss a replacement window across your whole panel.",
+    points: [
+      "Eligibility-aware reminders by SMS, email & voice",
+      "One-tap signed reorder links — no login, no friction",
+      "Subscriptions, autopay & cart-abandonment recovery",
+    ],
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Revenue cycle & claims",
+    summary: "Get paid the first time, faster — end to end.",
+    points: [
+      "Real-time 270/271 eligibility & re-verification",
+      "AI-scrubbed 837P auto-submitted via Office Ally",
+      "835/ERA auto-posting + denials ranked by $ recoverable",
+      "Prior auth, A/R aging, timely-filing & capped rentals",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    title: "Therapy monitoring",
+    summary: "See who's slipping off therapy before they quit.",
+    points: [
+      "Nightly ResMed, Philips & 3B adherence pulls",
+      "CMS 90-day compliance cohorts & RT interventions",
+      "Provider-ready usage reports & recall tracking",
+    ],
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    title: "Patient communications",
+    summary: "Every conversation in one inbox, fully logged.",
+    points: [
+      "Unified SMS, MMS, email & inbound-fax inbox",
+      "Cases, routing rules, macros & message templates",
+      "Bulk campaigns, alerts & cadence playbooks",
+    ],
+  },
+  {
+    icon: <BrainCircuit size={20} />,
+    title: "AI workforce",
+    summary: "AI that does the work — not just the talking.",
+    points: [
+      "24/7 voice agent confirms coverage & places orders",
+      "Storefront chatbot + high-confidence email auto-reply",
+      "Referral auto-intake from faxes, post-call summaries",
+      "An in-app admin copilot for your whole team",
+    ],
+    gold: true,
+  },
+  {
+    icon: <ScanFace size={20} />,
+    title: "Storefront & fitter",
+    summary: "A branded shop that converts shoppers to patients.",
+    points: [
+      "On-device AI mask fitting from the phone camera",
+      "Catalog, cart, Stripe checkout, returns & reviews",
+      "Live insurance benefit estimates before checkout",
+    ],
+  },
+  {
+    icon: <Video size={20} />,
+    title: "Telehealth",
+    summary: "Face-to-face setups and follow-ups, no friction.",
+    points: [
+      "Built-in video visits for setups, fittings & check-ins",
+      "One-tap patient join by text or email — no app",
+      "Scheduled, reminded & summarized automatically",
+    ],
+  },
+  {
+    icon: <LineChart size={20} />,
+    title: "Analytics & automation",
+    summary: "Run the business on live signal, not last month's export.",
+    points: [
+      "Margin, DSO, LTV/CAC & payer-profitability dashboards",
+      "KPI alerts, goal tracking & live staffing load",
+      "Smart triggers, rules & CSV / PDF / QuickBooks export",
+    ],
+  },
+];
+
+function Capabilities() {
+  return (
+    <section className="bx-section" id="capabilities">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Workflow size={13} /> Everything it does
+          </span>
+          <h2 className="bx-h2">One platform runs the entire DME business</h2>
+          <p className="bx-lede">
+            Resupply, revenue cycle, clinical monitoring, patient communication,
+            a branded storefront, telehealth, and an AI workforce — every
+            workflow on the same patient record. No exports, no swivel-chair, no
+            patients lost between systems.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {CAPABILITIES.map((c) => (
+            <article
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want the full tour — every screen and automation?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/product">
+            Explore the platform <ArrowRight size={16} />
+          </Link>
         </div>
       </div>
     </section>
