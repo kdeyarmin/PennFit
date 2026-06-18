@@ -49,6 +49,36 @@ describe("platform billing route wiring", () => {
     );
   });
 
+  it("exposes tenant self-service add-on listing and selection", () => {
+    expect(SRC).toContain('"/admin/billing/addons"');
+    // Owner-gated, like plan selection.
+    expect(SRC).toContain("tenant.billing.addon.updated");
+    // Only active, recurring add-ons are self-selectable; one-time/project
+    // add-ons stay platform-admin-assigned.
+    expect(SRC).toContain("addon_not_self_selectable");
+    // Tenants pay the catalog rate — no custom pricing accepted here.
+    expect(SRC).toContain("custom_recurring_price_cents: null");
+  });
+
+  it("carries Stripe linkage forward on the platform plan-change route too", () => {
+    // The platform-admin PUT shares the cancel-then-insert pattern; without
+    // carrying the Stripe IDs forward a later sync would create a duplicate
+    // subscription and double-bill the tenant.
+    expect(SRC).toContain(
+      "stripe_subscription_id: priorSub?.stripe_subscription_id",
+    );
+  });
+
+  it("moves (nulls) the Stripe subscription id off the canceled row", () => {
+    // tenant_billing_subscriptions has a partial UNIQUE index on
+    // stripe_subscription_id (migration 0363). Both plan-change routes carry
+    // the id onto the new active row, so the canceled row MUST release it —
+    // otherwise the carry-forward insert violates the index and the plan
+    // change fails for any Stripe-synced tenant. Asserted on both routes.
+    const nulls = SRC.match(/stripe_subscription_id: null/g) ?? [];
+    expect(nulls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("counts active locations by is_active, not a nonexistent status column", () => {
     // resupply.locations has `is_active` (boolean), no `status` column —
     // filtering on `status` 400s in PostgREST and 500s the whole tenant
