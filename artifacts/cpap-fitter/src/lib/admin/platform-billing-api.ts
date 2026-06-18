@@ -52,6 +52,8 @@ export interface BillingAddon {
   unitLabel: string | null;
   usageMetric: string | null;
   passThroughNote: string | null;
+  isActive?: boolean | null;
+  sortOrder?: number | null;
   stripeProductId?: string | null;
   stripePriceId?: string | null;
   stripeSyncedAt?: string | null;
@@ -124,6 +126,60 @@ export function selectTenantPlan(planCode: string): Promise<TenantBilling> {
 
 export function fetchPlatformBillingCatalog(): Promise<BillingCatalogResponse> {
   return jsonFetch<BillingCatalogResponse>("/platform/billing/catalog");
+}
+
+/** Editable fields on a catalog plan. Only the keys present are changed;
+ *  an explicit `null` clears a nullable column. A monthly-price change
+ *  re-mints the plan's Stripe price on the server (best-effort). */
+export interface CatalogPlanEdit {
+  name?: string;
+  description?: string | null;
+  monthlyPriceCents?: number | null;
+  onboardingFeeCents?: number | null;
+  allowances?: Record<string, number>;
+  features?: string[];
+  isPublic?: boolean;
+  sortOrder?: number;
+}
+
+/** Editable fields on a catalog add-on. */
+export interface CatalogAddonEdit {
+  name?: string;
+  description?: string | null;
+  category?: string;
+  recurringPriceCents?: number | null;
+  oneTimeMinCents?: number | null;
+  oneTimeMaxCents?: number | null;
+  unitLabel?: string | null;
+  usageMetric?: string | null;
+  passThroughNote?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+/** Edit a plan's base pricing/presentation. The change populates to every
+ *  tenant account, the public marketing page, and (on a price change)
+ *  Stripe. Returns the refreshed catalog. */
+export function updateCatalogPlan(
+  code: string,
+  edit: CatalogPlanEdit,
+): Promise<BillingCatalogResponse> {
+  return jsonFetch<BillingCatalogResponse>(
+    `/platform/billing/catalog/plans/${encodeURIComponent(code)}`,
+    { method: "PUT", body: JSON.stringify(edit) },
+  );
+}
+
+/** Edit an add-on's base pricing/presentation. Returns the refreshed
+ *  catalog. */
+export function updateCatalogAddon(
+  code: string,
+  edit: CatalogAddonEdit,
+): Promise<BillingCatalogResponse> {
+  return jsonFetch<BillingCatalogResponse>(
+    `/platform/billing/catalog/addons/${encodeURIComponent(code)}`,
+    { method: "PUT", body: JSON.stringify(edit) },
+  );
 }
 
 // ── Fleet recurring-revenue (MRR) summary ───────────────────────────

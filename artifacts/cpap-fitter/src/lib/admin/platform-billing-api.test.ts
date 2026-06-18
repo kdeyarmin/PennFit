@@ -11,6 +11,8 @@ import {
   recordTenantUsage,
   syncPlatformBillingCatalogToStripe,
   syncTenantStripeSubscription,
+  updateCatalogAddon,
+  updateCatalogPlan,
   updateTenantAddon,
   updateTenantPlan,
 } from "./platform-billing-api";
@@ -77,6 +79,34 @@ describe("platform-billing-api", () => {
       "/resupply-api/platform/billing/tenants",
       expect.objectContaining({ credentials: "include" }),
     );
+  });
+
+  test("updateCatalogPlan PUTs the catalog plan edit endpoint", async () => {
+    fetchMock.mockResolvedValue(okJson({ plans: [], addons: [] }));
+
+    await updateCatalogPlan("growth", { monthlyPriceCents: 99900 });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/resupply-api/platform/billing/catalog/plans/growth");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      monthlyPriceCents: 99900,
+    });
+  });
+
+  test("updateCatalogAddon PUTs the catalog add-on edit endpoint", async () => {
+    fetchMock.mockResolvedValue(okJson({ plans: [], addons: [] }));
+
+    await updateCatalogAddon("additional_seat", { recurringPriceCents: 5900 });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "/resupply-api/platform/billing/catalog/addons/additional_seat",
+    );
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      recurringPriceCents: 5900,
+    });
   });
 
   test("updateTenantPlan URL-encodes tenant IDs and sends JSON", async () => {

@@ -1322,7 +1322,84 @@ const PRICING: { icon: React.ReactNode; title: string; body: string }[] = [
   },
 ];
 
+interface PublicPlan {
+  code: string;
+  name: string;
+  description: string | null;
+  monthlyPriceCents: number | null;
+  onboardingFeeCents: number | null;
+  isCustom: boolean;
+  allowances: Record<string, number>;
+  features: string[];
+}
+
+// Live plan tiers from the platform billing catalog (/api/platform/pricing).
+// The super-admin edits these prices in the platform portal and they land
+// here with no redeploy. Fail-soft: a missing/empty response leaves
+// `plans` null and the section falls back to its static value-prop copy.
+function usePublicPricing(): PublicPlan[] | null {
+  const [plans, setPlans] = useState<PublicPlan[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/platform/pricing", { headers: { Accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: unknown) => {
+        if (cancelled) return;
+        const list = (data as { plans?: unknown } | null)?.plans;
+        if (Array.isArray(list) && list.length > 0)
+          setPlans(list as PublicPlan[]);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return plans;
+}
+
+function planPriceLabel(p: PublicPlan): string {
+  if (p.monthlyPriceCents == null) return p.isCustom ? "Custom" : "Contact us";
+  return `$${Math.round(p.monthlyPriceCents / 100).toLocaleString("en-US")}`;
+}
+
+function PlanTiers({ plans }: { plans: PublicPlan[] }) {
+  return (
+    <div className="bx-price-grid">
+      {plans.map((p) => (
+        <div className="bx-price-card bx-reveal" key={p.code}>
+          <h3>{p.name}</h3>
+          <div className="bx-price-amount">
+            {planPriceLabel(p)}
+            {p.monthlyPriceCents != null ? (
+              <span className="bx-price-per"> /mo</span>
+            ) : null}
+          </div>
+          {p.onboardingFeeCents != null && p.onboardingFeeCents > 0 ? (
+            <div className="bx-price-onboarding">
+              + $
+              {Math.round(p.onboardingFeeCents / 100).toLocaleString("en-US")}{" "}
+              onboarding
+            </div>
+          ) : null}
+          {p.description ? <p>{p.description}</p> : null}
+          {p.features.length > 0 ? (
+            <ul className="bx-price-features">
+              {p.features.slice(0, 5).map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          ) : null}
+          <a className="bx-btn bx-btn-ghost" href="#demo">
+            {p.isCustom ? "Talk to us" : "Get started"} <ArrowRight size={15} />
+          </a>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Pricing() {
+  const plans = usePublicPricing();
   return (
     <section className="bx-section" id="pricing">
       <div className="bx-shell">
@@ -1339,15 +1416,21 @@ function Pricing() {
             the calculator above is the value you actually keep.
           </p>
         </div>
-        <div className="bx-price-grid">
-          {PRICING.map((p) => (
-            <div className="bx-price-card bx-reveal" key={p.title}>
-              <div className="bx-price-ic">{p.icon}</div>
-              <h3>{p.title}</h3>
-              <p>{p.body}</p>
-            </div>
-          ))}
-        </div>
+        {/* Live plan tiers from the billing catalog when available, else the
+            static value-prop cards. */}
+        {plans && plans.length > 0 ? (
+          <PlanTiers plans={plans} />
+        ) : (
+          <div className="bx-price-grid">
+            {PRICING.map((p) => (
+              <div className="bx-price-card bx-reveal" key={p.title}>
+                <div className="bx-price-ic">{p.icon}</div>
+                <h3>{p.title}</h3>
+                <p>{p.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="bx-price-cta bx-reveal">
           <span>Want the number for your panel?</span>
           <a className="bx-btn bx-btn-primary" href="#demo">

@@ -57,6 +57,73 @@ const addonBody = z.object({
 const selectPlanBody = z.object({
   planCode: z.string().regex(/^[a-z0-9_]+$/),
 });
+
+// Catalog edits (platform super-admin). These change the BASE plan/addon
+// pricing + presentation that every tenant account and the public
+// marketing page read from, and that the Stripe catalog sync mints prices
+// from. Every field is optional so the UI can PATCH-style send only what
+// changed; an explicit `null` clears a nullable column.
+const catalogCodeParam = z.object({
+  code: z.string().regex(/^[a-z0-9_]+$/),
+});
+const planEditBody = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    monthlyPriceCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    onboardingFeeCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    allowances: z.record(z.string(), z.number().int().min(0)).optional(),
+    features: z.array(z.string().max(200)).max(60).optional(),
+    isPublic: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+const addonEditBody = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    category: z.string().max(80).optional(),
+    recurringPriceCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    oneTimeMinCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    oneTimeMaxCents: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000)
+      .nullable()
+      .optional(),
+    unitLabel: z.string().max(80).nullable().optional(),
+    usageMetric: z.string().max(80).nullable().optional(),
+    passThroughNote: z.string().max(2000).nullable().optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+
 const usageEventBody = z.object({
   tenantId: z.string().uuid().optional(),
   // Allows the camelCase console metric keys (e.g. aiTextInteractionsPerMonth)
@@ -173,6 +240,23 @@ interface OrgDirectoryRow {
 async function rawClient(): Promise<RawClient | null> {
   const seedOrgId = await resolveSeedOrgId();
   return seedOrgId ? getOrgScopedClient(seedOrgId).raw() : null;
+}
+
+// Best-effort push of the catalog to Stripe after a price edit. Fail-soft:
+// Stripe being unconfigured or erroring must never fail the catalog edit —
+// the DB is the source of truth for tenant accounts and the marketing page,
+// and an operator can always re-run the explicit "Sync catalog to Stripe"
+// action. (Editing the price clears the stale immutable Stripe price id, so
+// this sync mints a fresh price at the new amount.)
+async function resyncCatalogToStripe(): Promise<void> {
+  try {
+    await syncPlatformBillingCatalogToStripe();
+  } catch (err) {
+    logger.error(
+      { event: "platform_billing_catalog_edit_stripe_resync_failed", err },
+      "platform billing catalog edit Stripe resync failed (non-fatal)",
+    );
+  }
 }
 
 async function countTable(
@@ -653,6 +737,185 @@ router.get(
       res.status(503).json({ error: "tenant_directory_unavailable" });
       return;
     }
+    await catalog(res, raw);
+  },
+);
+
+// ── PUT /platform/billing/catalog/plans/:code ───────────────────────
+// Edit a subscription plan's BASE pricing + presentation. This is the
+// catalog row every tenant account and the public marketing page read
+// from, and the source the Stripe catalog sync mints prices from — so an
+// edit here populates all three. When the monthly price actually changes
+// we clear the stored (immutable) Stripe price id so the follow-up sync
+// mints a fresh Stripe price at the new amount (the product id is reused),
+// then best-effort re-sync the catalog to Stripe. A Stripe hiccup never
+// fails the edit: the DB is the source of truth for tenant accounts + the
+// marketing page.
+router.put(
+  "/platform/billing/catalog/plans/:code",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const param = catalogCodeParam.safeParse(req.params);
+    const body = planEditBody.safeParse(req.body);
+    if (!param.success) {
+      res.status(400).json({ error: "invalid_code" });
+      return;
+    }
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_plan", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data: existing, error: exErr } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .select("*")
+      .eq("code", param.data.code)
+      .maybeSingle();
+    if (exErr || !existing) {
+      res.status(404).json({ error: "plan_not_found" });
+      return;
+    }
+    const b = body.data;
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (b.name !== undefined) patch.name = b.name;
+    if (b.description !== undefined) patch.description = b.description;
+    if (b.monthlyPriceCents !== undefined)
+      patch.monthly_price_cents = b.monthlyPriceCents;
+    if (b.onboardingFeeCents !== undefined)
+      patch.onboarding_fee_cents = b.onboardingFeeCents;
+    if (b.allowances !== undefined) patch.allowances = b.allowances;
+    if (b.features !== undefined) patch.features = b.features;
+    if (b.isPublic !== undefined) patch.is_public = b.isPublic;
+    if (b.sortOrder !== undefined) patch.sort_order = b.sortOrder;
+
+    const priceChanged =
+      b.monthlyPriceCents !== undefined &&
+      (b.monthlyPriceCents ?? null) !== (existing.monthly_price_cents ?? null);
+    if (priceChanged) {
+      patch.stripe_price_id = null;
+      patch.stripe_synced_at = null;
+    }
+
+    const { error: updErr } = await raw
+      .schema("resupply")
+      .from("billing_plans")
+      .update(patch)
+      .eq("id", existing.id);
+    if (updErr) {
+      res.status(500).json({ error: "plan_update_failed" });
+      return;
+    }
+    await logAudit({
+      action: "platform.billing.catalog.plan.updated",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "billing_plans",
+      targetId: existing.id,
+      metadata: { code: param.data.code, priceChanged },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    if (priceChanged) await resyncCatalogToStripe();
+    await catalog(res, raw);
+  },
+);
+
+// ── PUT /platform/billing/catalog/addons/:code ──────────────────────
+// Edit an add-on's BASE pricing + presentation (recurring or one-time).
+// Same populate-everywhere + Stripe-reprice posture as the plan edit
+// above; the immutable Stripe price is reminted only when the recurring
+// price actually changes.
+router.put(
+  "/platform/billing/catalog/addons/:code",
+  adminWriteRateLimiter,
+  requirePlatformAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const param = catalogCodeParam.safeParse(req.params);
+    const body = addonEditBody.safeParse(req.body);
+    if (!param.success) {
+      res.status(400).json({ error: "invalid_code" });
+      return;
+    }
+    if (!body.success) {
+      res
+        .status(400)
+        .json({ error: "invalid_addon", details: body.error.flatten() });
+      return;
+    }
+    const raw = await rawClient();
+    if (!raw) {
+      res.status(503).json({ error: "tenant_directory_unavailable" });
+      return;
+    }
+    const { data: existing, error: exErr } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .select("*")
+      .eq("code", param.data.code)
+      .maybeSingle();
+    if (exErr || !existing) {
+      res.status(404).json({ error: "addon_not_found" });
+      return;
+    }
+    const b = body.data;
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (b.name !== undefined) patch.name = b.name;
+    if (b.description !== undefined) patch.description = b.description;
+    if (b.category !== undefined) patch.category = b.category;
+    if (b.recurringPriceCents !== undefined)
+      patch.recurring_price_cents = b.recurringPriceCents;
+    if (b.oneTimeMinCents !== undefined)
+      patch.one_time_min_cents = b.oneTimeMinCents;
+    if (b.oneTimeMaxCents !== undefined)
+      patch.one_time_max_cents = b.oneTimeMaxCents;
+    if (b.unitLabel !== undefined) patch.unit_label = b.unitLabel;
+    if (b.usageMetric !== undefined) patch.usage_metric = b.usageMetric;
+    if (b.passThroughNote !== undefined)
+      patch.pass_through_note = b.passThroughNote;
+    if (b.isActive !== undefined) patch.is_active = b.isActive;
+    if (b.sortOrder !== undefined) patch.sort_order = b.sortOrder;
+
+    const priceChanged =
+      b.recurringPriceCents !== undefined &&
+      (b.recurringPriceCents ?? null) !==
+        (existing.recurring_price_cents ?? null);
+    if (priceChanged) {
+      patch.stripe_price_id = null;
+      patch.stripe_synced_at = null;
+    }
+
+    const { error: updErr } = await raw
+      .schema("resupply")
+      .from("billing_addons")
+      .update(patch)
+      .eq("id", existing.id);
+    if (updErr) {
+      res.status(500).json({ error: "addon_update_failed" });
+      return;
+    }
+    await logAudit({
+      action: "platform.billing.catalog.addon.updated",
+      adminEmail: req.platformAdminEmail ?? "platform-admin",
+      adminUserId: req.platformAdminUserId ?? null,
+      targetTable: "billing_addons",
+      targetId: existing.id,
+      metadata: { code: param.data.code, priceChanged },
+      ip: null,
+      userAgent: null,
+    }).catch(() => undefined);
+    if (priceChanged) await resyncCatalogToStripe();
     await catalog(res, raw);
   },
 );
