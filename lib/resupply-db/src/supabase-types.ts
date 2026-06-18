@@ -2357,6 +2357,104 @@ export interface Database {
         >;
         Relationships: [];
       };
+      // Migration 0394: platform outreach email (super-admin broadcast).
+      // Platform-GLOBAL (no org_id) — the platform operator's own rows,
+      // only touched through the service-role client behind
+      // requirePlatformAdmin.
+      platform_contacts: {
+        Row: {
+          id: string;
+          email: string;
+          // DB-generated STORED column (lower(email)); the real unique key
+          // import upserts target via onConflict. Never written by app code.
+          email_lower: string;
+          name: string | null;
+          company: string | null;
+          tags: string[];
+          notes: string | null;
+          unsubscribed: boolean;
+          unsubscribed_at: string | null;
+          source: "manual" | "import";
+          created_by_email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["platform_contacts"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["platform_contacts"]["Row"]
+        >;
+        Relationships: [];
+      };
+      platform_email_campaigns: {
+        Row: {
+          id: string;
+          name: string;
+          subject: string;
+          body_html: string | null;
+          body_text: string;
+          audience_kind:
+            | "all_tenants"
+            | "selected_tenants"
+            | "all_contacts"
+            | "contacts_by_tag"
+            | "manual_list";
+          audience_payload: Json;
+          throttle_per_minute: number;
+          status: "draft" | "sending" | "sent" | "paused" | "cancelled";
+          total_recipients: number;
+          suppressed_count: number;
+          sent_count: number;
+          failed_count: number;
+          created_by_email: string | null;
+          created_by_user_id: string | null;
+          cancelled_by_user_id: string | null;
+          started_at: string | null;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["platform_email_campaigns"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["platform_email_campaigns"]["Row"]
+        >;
+        Relationships: [];
+      };
+      platform_email_recipients: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          recipient_kind: "tenant" | "contact" | "manual";
+          recipient_ref: string | null;
+          recipient_email: string;
+          recipient_name: string | null;
+          status:
+            | "pending"
+            | "suppressed"
+            | "sending"
+            | "sent"
+            | "failed"
+            | "retry_pending";
+          suppression_reason: string | null;
+          error: string | null;
+          send_attempts: number;
+          vendor_message_id: string | null;
+          sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["platform_email_recipients"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["platform_email_recipients"]["Row"]
+        >;
+        Relationships: [];
+      };
       // Migration 0391: staged resupply order drafts (proposals).
       resupply_order_drafts: {
         Row: {

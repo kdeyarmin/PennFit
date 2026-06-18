@@ -215,6 +215,9 @@ import platformTenantsRouter from "./platform/tenants.js";
 import platformBillingRouter from "./platform/billing.js";
 import platformConfigRouter from "./platform/config.js";
 import platformSupportRouter from "./platform/support.js";
+import platformOutreachContactsRouter from "./platform/outreach-contacts.js";
+import platformOutreachCampaignsRouter from "./platform/outreach-campaigns.js";
+import platformUnsubscribeRouter from "./platform/unsubscribe.js";
 import adminSupportRouter from "./admin/support.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
@@ -243,6 +246,10 @@ router.use(platformConfigRouter);
 router.use(platformSupportRouter);
 router.use(platformConnectionTestsRouter);
 router.use(platformImpersonationRouter);
+router.use(platformOutreachContactsRouter);
+router.use(platformOutreachCampaignsRouter);
+// Public (no auth): one-click unsubscribe clicked from outreach emails.
+router.use(platformUnsubscribeRouter);
 // Public shop routes (no auth) — patient-facing cash-pay catalog,
 // Stripe Hosted Checkout, and order summary lookup. Mounted before
 // the admin-gated routes so the literal /shop/* paths can never be
