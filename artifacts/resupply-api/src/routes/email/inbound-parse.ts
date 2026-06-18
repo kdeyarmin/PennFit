@@ -62,6 +62,7 @@ import {
 import { EmailApiError, EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { getCompanyInfo } from "../../lib/company-info";
 import { createTenantSendgridClient } from "../../lib/email/tenant-sender";
 import { claimDedupKey } from "../../lib/dedup-keys";
 import { isFeatureEnabled } from "../../lib/feature-flags";
@@ -673,11 +674,19 @@ async function attemptEmailAutoReply(
       body: (m.body as string) ?? "",
     }));
 
-  const drafted = await generateEmailReply({
-    body: inboundBody,
-    subject: inboundSubject,
-    thread,
-  });
+  // Brand the auto-reply for the SENDER's tenant (orgId derived from the
+  // sender patient): the system prompt's knowledge + sign-off and the
+  // reply subject carry this tenant's identity, not the seed's.
+  const companyInfo = await getCompanyInfo(orgId);
+  const drafted = await generateEmailReply(
+    {
+      body: inboundBody,
+      subject: inboundSubject,
+      thread,
+    },
+    process.env,
+    orgId,
+  );
   if (drafted.kind !== "reply") return false;
 
   const cfg = readEmailConfigOrNull();
@@ -702,7 +711,7 @@ async function attemptEmailAutoReply(
     throw err;
   }
 
-  const subjectLine = buildReplySubject(inboundSubject);
+  const subjectLine = buildReplySubject(inboundSubject, companyInfo.name);
   let vendorRef: string;
   try {
     const r = await sg.sendEmail({
@@ -807,12 +816,15 @@ async function attemptEmailAutoReply(
  * CR/LF — the SendGrid client rejects header newlines, but failing here
  * would lose the reply rather than just losing the prefix.
  */
-function buildReplySubject(subject: string | null): string {
+function buildReplySubject(
+  subject: string | null,
+  brandName = "PennPaps",
+): string {
   const base = (subject ?? "")
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
-  if (!base) return "Re: Your message to PennPaps";
+  if (!base) return `Re: Your message to ${brandName}`;
   return /^re:/i.test(base) ? base : `Re: ${base}`;
 }
 
