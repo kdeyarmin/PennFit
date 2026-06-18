@@ -36,19 +36,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   clearPlatformConfig,
-  fetchFleetOverview,
   fetchPlatformConfig,
   setPlatformConfig,
-  type FleetTenant,
   type PlatformConfigSetting,
 } from "@/lib/admin/platform-config-api";
+import {
+  fetchPlatformAnalytics,
+  type PlatformAnalyticsResponse,
+  type PlatformAnalyticsTenantRow,
+} from "@/lib/admin/platform-analytics-api";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/admin/Button";
-import { Card } from "@/components/admin/Card";
+import { Card, KpiCard } from "@/components/admin/Card";
 import { ConnectionTests } from "@/components/admin/ConnectionTests";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { Input, Label } from "@/components/admin/Input";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { Sparkline } from "@/components/admin/Sparkline";
 import { Spinner } from "@/components/admin/Spinner";
 import { Table, type Column } from "@/components/admin/Table";
 import { authHooks } from "@/lib/admin/auth-hooks";
@@ -387,19 +391,104 @@ function TenantDirectory() {
   );
 }
 
-// ── Fleet overview (cross-tenant aggregates — no PHI) ──────────────
+// ── Analytics dashboard (cross-tenant aggregates — no PHI) ──────────
 
 function fmtCount(v: number | null | undefined): string {
   return v == null ? "—" : v.toLocaleString();
 }
 
-function FleetOverview() {
-  const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ["platform-overview"],
-    queryFn: fetchFleetOverview,
+function fmtUsd(cents: number | null | undefined, decimals = 0): string {
+  if (cents == null) return "—";
+  return (cents / 100).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   });
+}
 
-  const columns = useMemo<Column<FleetTenant>[]>(
+const WINDOW_OPTIONS = [7, 30, 90] as const;
+
+// Period-over-period change chip. A null delta ("no prior baseline") is
+// rendered as muted text rather than a fabricated +100%.
+function DeltaBadge({ pct }: { pct: number | null }) {
+  if (pct == null) {
+    return (
+      <span className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+        no prior data
+      </span>
+    );
+  }
+  const up = pct >= 0;
+  const color = up ? "hsl(152 60% 30%)" : "hsl(354 70% 42%)";
+  return (
+    <span
+      className="text-[11px] font-semibold tabular-nums"
+      style={{ color }}
+      title="vs. the previous equal-length period"
+    >
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
+
+// One labelled trend line: headline total + delta on the left, a
+// dependency-free SVG sparkline on the right.
+function TrendRow({
+  label,
+  total,
+  values,
+  delta,
+  color,
+}: {
+  label: string;
+  total: string;
+  values: number[];
+  delta: number | null;
+  color?: string;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-4 py-3 border-t first:border-t-0"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="min-w-0">
+        <div
+          className="text-xs font-medium"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
+          {label}
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-lg font-semibold tabular-nums"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            {total}
+          </span>
+          <DeltaBadge pct={delta} />
+        </div>
+      </div>
+      <Sparkline
+        values={values}
+        width={160}
+        height={36}
+        color={color}
+        ariaLabel={`${label} trend`}
+      />
+    </div>
+  );
+}
+
+function PlatformDashboard() {
+  const [days, setDays] = useState<number>(30);
+  const { data, isPending, isError, refetch, isFetching } =
+    useQuery<PlatformAnalyticsResponse>({
+      queryKey: ["platform-analytics", days],
+      queryFn: () => fetchPlatformAnalytics(days),
+    });
+
+  const columns = useMemo<Column<PlatformAnalyticsTenantRow>[]>(
     () => [
       {
         key: "name",
@@ -414,6 +503,8 @@ function FleetOverview() {
             </div>
           </div>
         ),
+        sortable: true,
+        sortValue: (t) => (t.name ?? t.slug).toLowerCase(),
       },
       {
         key: "status",
@@ -421,41 +512,100 @@ function FleetOverview() {
         render: (t) => (
           <Badge variant={statusVariant(t.status)}>{t.status}</Badge>
         ),
+        sortable: true,
+        sortValue: (t) => t.status,
       },
       {
-        key: "patients",
-        header: "Patients",
+        key: "gmv",
+        header: "Revenue",
         className: "text-right tabular-nums",
-        render: (t) => fmtCount(t.usage.patients),
+        render: (t) => fmtUsd(t.windowGmvCents),
+        sortable: true,
+        sortValue: (t) => t.windowGmvCents,
       },
       {
         key: "orders",
         header: "Orders",
         className: "text-right tabular-nums",
-        render: (t) => fmtCount(t.usage.orders),
+        render: (t) => fmtCount(t.windowOrders),
+        sortable: true,
+        sortValue: (t) => t.windowOrders,
       },
       {
-        key: "conversations",
-        header: "Conversations",
+        key: "newPatients",
+        header: "New patients",
         className: "text-right tabular-nums",
-        render: (t) => fmtCount(t.usage.conversations),
+        render: (t) => fmtCount(t.windowNewPatients),
+        sortable: true,
+        sortValue: (t) => t.windowNewPatients,
+      },
+      {
+        key: "patients",
+        header: "Patients (all-time)",
+        className: "text-right tabular-nums",
+        render: (t) => fmtCount(t.patients),
+        sortable: true,
+        sortValue: (t) => t.patients ?? -1,
       },
     ],
     [],
   );
 
+  const win = data?.window;
+  const totals = data?.totals;
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Fleet overview"
-        description="Headline activity across every tenant. Aggregate counts only — no patient data is shown here. To see a tenant's actual records, impersonate it from the Tenants tab (audited)."
+        title="Dashboard"
+        description="Fleet-wide activity across every tenant. Aggregate counts and revenue only — no patient data is shown here. To see a tenant's actual records, impersonate it from the Tenants tab (audited)."
+        actions={
+          <>
+            <div
+              className="inline-flex rounded-md overflow-hidden border"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+              role="group"
+              aria-label="Time window"
+            >
+              {WINDOW_OPTIONS.map((opt) => {
+                const active = opt === days;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setDays(opt)}
+                    aria-pressed={active}
+                    className="px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      color: active
+                        ? "hsl(var(--surface-1))"
+                        : "hsl(var(--ink-2))",
+                      backgroundColor: active
+                        ? "hsl(var(--penn-navy))"
+                        : "transparent",
+                    }}
+                  >
+                    {opt}d
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              intent="secondary"
+              size="sm"
+              isLoading={isFetching}
+              onClick={() => void refetch()}
+            >
+              Refresh
+            </Button>
+          </>
+        }
       />
-      <Card title="All tenants">
-        {isPending ? (
-          <Spinner label="Loading fleet…" />
-        ) : isError ? (
+
+      {isError ? (
+        <Card title="Couldn't load analytics">
           <EmptyState
-            title="Couldn't load the fleet overview."
+            title="The analytics query failed."
             hint="A transient error — try again."
             action={
               <Button
@@ -467,15 +617,115 @@ function FleetOverview() {
               </Button>
             }
           />
-        ) : (
-          <Table<FleetTenant>
-            columns={columns}
-            rows={data?.tenants ?? []}
-            rowKey={(t) => t.id}
-            emptyState={<EmptyState title="No tenants yet." />}
-          />
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          {/* Headline KPI tiles */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Active tenants"
+              value={isPending ? "" : fmtCount(totals?.tenants.active)}
+              isLoading={isPending}
+              hint={
+                totals
+                  ? `${totals.tenants.total} total · ${totals.tenants.suspended} suspended` +
+                    (win && win.newTenants > 0
+                      ? ` · +${win.newTenants} new`
+                      : "")
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`Revenue · ${days}d`}
+              tone="gold"
+              value={isPending ? "" : fmtUsd(win?.gmvCents ?? 0)}
+              isLoading={isPending}
+              hint={
+                win
+                  ? `${win.newOrders.toLocaleString()} paid orders this period`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`New patients · ${days}d`}
+              value={isPending ? "" : fmtCount(win?.newPatients)}
+              isLoading={isPending}
+              hint={
+                totals?.patients != null
+                  ? `${totals.patients.toLocaleString()} all-time`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label={`Conversations · ${days}d`}
+              value={isPending ? "" : fmtCount(win?.newConversations)}
+              isLoading={isPending}
+              hint={
+                totals?.conversations != null
+                  ? `${totals.conversations.toLocaleString()} all-time`
+                  : undefined
+              }
+            />
+          </div>
+
+          {isPending || !data ? (
+            <Card title="Fleet trends">
+              <Spinner label="Loading analytics…" />
+            </Card>
+          ) : (
+            <>
+              <Card
+                title="Fleet trends"
+                subtitle={`Daily totals across all tenants for the last ${days} days. Δ compares this period to the one before it.`}
+              >
+                <TrendRow
+                  label="Revenue (GMV)"
+                  total={fmtUsd(data.window.gmvCents)}
+                  values={data.series.gmvCents.map((c) => c / 100)}
+                  delta={data.window.delta.gmvCents}
+                  color="hsl(var(--penn-gold-deep))"
+                />
+                <TrendRow
+                  label="New patients"
+                  total={data.window.newPatients.toLocaleString()}
+                  values={data.series.newPatients}
+                  delta={data.window.delta.newPatients}
+                />
+                <TrendRow
+                  label="New orders"
+                  total={data.window.newOrders.toLocaleString()}
+                  values={data.series.newOrders}
+                  delta={data.window.delta.newOrders}
+                />
+                <TrendRow
+                  label="Conversations"
+                  total={data.window.newConversations.toLocaleString()}
+                  values={data.series.newConversations}
+                  delta={data.window.delta.newConversations}
+                />
+              </Card>
+
+              <Card
+                title="Tenant leaderboard"
+                subtitle={`Ranked by revenue over the last ${days} days. Click a column to re-sort.`}
+              >
+                <Table<PlatformAnalyticsTenantRow>
+                  columns={columns}
+                  rows={data.tenants}
+                  rowKey={(t) => t.id}
+                  initialSort={{ key: "gmv", dir: "desc" }}
+                  emptyState={<EmptyState title="No tenants yet." />}
+                />
+              </Card>
+
+              <p className="text-[11px]" style={{ color: "hsl(var(--ink-3))" }}>
+                Generated {new Date(data.generatedAt).toLocaleString()} · all
+                times UTC-bucketed
+              </p>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -739,8 +989,8 @@ function PlatformShell({
 }
 
 const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/platform", label: "Tenants" },
-  { href: "/platform/overview", label: "Fleet overview" },
+  { href: "/platform", label: "Dashboard" },
+  { href: "/platform/tenants", label: "Tenants" },
   { href: "/platform/integrations", label: "Global integrations" },
   { href: "/platform/connection-tests", label: "Connection tests" },
 ];
@@ -772,7 +1022,7 @@ function PlatformNav() {
         {PLATFORM_NAV.map((item) => {
           const active =
             item.href === "/platform"
-              ? location === "/platform" || location === "/platform/tenants"
+              ? location === "/platform"
               : location === item.href || location.startsWith(`${item.href}/`);
           return (
             <Link
@@ -831,9 +1081,12 @@ function PlatformConsole() {
   return (
     <PlatformShell email={data?.email ?? null}>
       <Switch>
-        <Route path="/platform" component={TenantDirectory} />
+        <Route path="/platform" component={PlatformDashboard} />
         <Route path="/platform/tenants" component={TenantDirectory} />
-        <Route path="/platform/overview" component={FleetOverview} />
+        {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}
+        <Route path="/platform/overview">
+          <Redirect to="/platform" replace />
+        </Route>
         <Route path="/platform/integrations" component={GlobalIntegrations} />
         <Route
           path="/platform/connection-tests"

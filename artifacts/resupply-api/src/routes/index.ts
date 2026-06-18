@@ -206,6 +206,7 @@ import emailRouter from "./email/index.js";
 import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
+import platformAnalyticsRouter from "./platform/analytics.js";
 import platformImpersonationRouter from "./platform/impersonation.js";
 import platformMeRouter from "./platform/me.js";
 import platformTenantsRouter from "./platform/tenants.js";
@@ -232,6 +233,7 @@ router.use(meRouter);
 // requirePlatformAdmin (the tier above a tenant admin).
 router.use(platformMeRouter);
 router.use(platformTenantsRouter);
+router.use(platformAnalyticsRouter);
 router.use(platformBillingRouter);
 router.use(platformConfigRouter);
 router.use(platformConnectionTestsRouter);
