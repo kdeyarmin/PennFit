@@ -39,6 +39,14 @@
 # and #1058's 0370_low_stock_alert_state_org_pk (ALTER low_stock_alert_state).
 # All three touch disjoint tables, so any apply order is equivalent.
 #
+# 0394 is grandfathered for the same reason: #1121's
+# 0394_reminder_escalation_voice_flag (seeds a feature_flags row) and #1125's
+# 0394_platform_outreach_email both took the same free prefix and BOTH merged
+# to main + applied in production before this tree-wide check fired. They touch
+# disjoint features (feature flag vs platform outreach email), so any apply
+# order is equivalent, and the immutability guard now forbids renaming either
+# shipped file — so they're frozen here, exactly like 0337/0338/0370.
+#
 # Self-contained and side-effect free; exits 0 on a clean tree.
 
 set -euo pipefail
@@ -68,6 +76,7 @@ GRANDFATHERED="
 0337:2
 0338:2
 0370:3
+0394:2
 "
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
