@@ -49,6 +49,17 @@ DECLARE
   v_prior resupply.tenant_billing_subscriptions;
   v_new_id uuid;
 BEGIN
+  -- Serialize all plan changes for THIS tenant before touching any row.
+  -- The FOR UPDATE below locks only the CURRENT active row, so under READ
+  -- COMMITTED two overlapping swaps can lock different row generations: the
+  -- first cancels the old row and inserts a new active one; the second swap's
+  -- SELECT then matches neither the old (now canceled) nor the freshly
+  -- inserted row — losing the carried Stripe linkage and risking a duplicate
+  -- Stripe subscription. A per-org transaction-scoped advisory lock makes the
+  -- second swap wait until the first fully commits, then reselect the current
+  -- row. Released automatically at COMMIT/ROLLBACK.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_org_id::text, 0));
+
   -- Capture (and lock) the live subscription being replaced, if any.
   SELECT * INTO v_prior
   FROM resupply.tenant_billing_subscriptions
@@ -125,6 +136,13 @@ DECLARE
   v_prior resupply.tenant_billing_subscriptions;
   v_new_id uuid;
 BEGIN
+  -- Serialize concurrent same-tenant plan changes (see swap_tenant_
+  -- subscription above for the full rationale): FOR UPDATE alone locks only
+  -- the current active row and can lose the carried Stripe linkage under
+  -- overlapping READ COMMITTED swaps. The per-org advisory xact lock makes a
+  -- second swap wait for the first to commit. Released at COMMIT/ROLLBACK.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_org_id::text, 0));
+
   SELECT * INTO v_prior
   FROM resupply.tenant_billing_subscriptions
   WHERE org_id = p_org_id

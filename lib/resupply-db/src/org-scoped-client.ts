@@ -231,7 +231,12 @@ export function __resetSeedOrgIdForTests(): void {
  * the fan-out source for EVERY per-tenant cron, so an implicit cap would
  * SILENTLY drop tenants past it — their reminders/sweeps would just stop
  * running. We page with `.range()` until a short page proves the table is
- * exhausted rather than trusting a single unbounded read.
+ * exhausted rather than trusting a single unbounded read. A stable
+ * `.order("id")` is REQUIRED before paginating — without an ORDER BY,
+ * Postgres returns rows in an arbitrary order that can differ per request,
+ * so pages could overlap or skip rows (a tenant processed twice or missed).
+ * Any page-read error returns `[]` so the scheduler skips the WHOLE tick
+ * (and retries next tick) rather than fanning out to only some tenants.
  */
 /** Per-page window for the active-org scan. Below PostgREST's ~1000-row
  *  implicit cap so each `.range()` call returns a full page. */
@@ -249,11 +254,13 @@ export async function listActiveOrgIds(
         .from("organizations")
         .select("id")
         .eq("status", "active")
+        .order("id")
         .range(from, from + ACTIVE_ORG_PAGE_SIZE - 1);
-      // Fail-soft on the FIRST page only: a mid-scan error would otherwise
-      // return a truncated tenant list, which is worse than skipping the
-      // tick entirely (some tenants would silently miss their cron).
-      if (error) return from === 0 ? [] : ids;
+      // Fail-soft on ANY page error: returning the ids gathered so far would
+      // silently fan out to only the tenants before the failed page and skip
+      // every one after it. Skipping the whole tick (it retries next run) is
+      // strictly safer than a partial, undetectable run.
+      if (error) return [];
       if (!data || data.length === 0) break;
       for (const row of data) {
         const id = (row as { id?: string }).id;

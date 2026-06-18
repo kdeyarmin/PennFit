@@ -173,7 +173,7 @@ describe("getOrgScopedClient", () => {
   });
 });
 
-// A minimal directory-read fake: `.schema().from().select().eq().range()`
+// A minimal directory-read fake: `.schema().from().select().eq().order().range()`
 // resolves to the staged `{ data, error }` envelope (PostgREST select-many
 // shape). `.range(from, to)` slices the staged data so the paginated
 // listActiveOrgIds() loop terminates on a short page; an error envelope is
@@ -183,7 +183,7 @@ function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
   lastEq?: { column: string; value: unknown };
 } {
   const state: { lastEq?: { column: string; value: unknown } } = {};
-  const allRows = Array.isArray(result.data) ? result.data : result.data;
+  const allRows: unknown[] = Array.isArray(result.data) ? result.data : [];
   const builder = {
     select() {
       return this;
@@ -192,12 +192,12 @@ function makeDirectoryClient(result: { data?: unknown; error?: unknown }): {
       state.lastEq = { column, value };
       return this;
     },
+    order() {
+      return this;
+    },
     range(from: number, to: number) {
       if (result.error) return Promise.resolve({ error: result.error });
-      const page = Array.isArray(allRows)
-        ? allRows.slice(from, to + 1)
-        : allRows;
-      return Promise.resolve({ data: page });
+      return Promise.resolve({ data: allRows.slice(from, to + 1) });
     },
   };
   const client = {
@@ -244,6 +244,36 @@ describe("listActiveOrgIds", () => {
       },
     } as unknown as ResupplySupabaseClient;
     expect(await listActiveOrgIds(throwingClient)).toEqual([]);
+  });
+
+  it("returns [] on a mid-scan page error (skips the whole tick, no partial list)", async () => {
+    // Page 1 fills a whole page (500 rows = the internal ACTIVE_ORG_PAGE_SIZE,
+    // so the loop advances to page 2); page 2 errors. The result must be [] —
+    // never the 500 ids from page 1 — so the scheduler skips the tick rather
+    // than fanning crons out to only the first page of tenants.
+    const firstPage = Array.from({ length: 500 }, (_, i) => ({ id: `org-${i}` }));
+    let call = 0;
+    const builder = {
+      select() {
+        return this;
+      },
+      eq() {
+        return this;
+      },
+      order() {
+        return this;
+      },
+      range() {
+        call += 1;
+        return call === 1
+          ? Promise.resolve({ data: firstPage })
+          : Promise.resolve({ error: { message: "page 2 boom" } });
+      },
+    };
+    const client = {
+      schema: () => ({ from: () => builder }),
+    } as unknown as ResupplySupabaseClient;
+    expect(await listActiveOrgIds(client)).toEqual([]);
   });
 
   it("pages past the implicit row cap (no silent truncation)", async () => {
