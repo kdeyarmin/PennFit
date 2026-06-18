@@ -932,7 +932,7 @@ const FEATURES: Feature[] = [
   {
     icon: <Receipt size={22} />,
     title: "Revenue Cycle + AI Claims",
-    body: "Real-time 270/271 eligibility, AI claim scrubbing, auto-submission of the 837P, and a denials worklist ranked by recoverable dollars × win probability.",
+    body: "Real-time 270/271 eligibility, AI claim scrubbing, one-click Office Ally auto-submission — or a downloadable 837P for any clearinghouse — and a denials worklist ranked by recoverable dollars × win probability.",
     tag: "AI",
     gold: true,
   },
@@ -1187,7 +1187,7 @@ const OUTCOMES: OutcomeCard[] = [
       caption: "First-pass clean claims — higher is better",
     },
     points: [
-      "AI scrubs every 837P before submission — fewer rejects out the door",
+      "AI scrubs every 837P clean, then auto-submits via Office Ally — or download it for any clearinghouse",
       "Denial worklist ranked by recoverable dollars × win probability",
       "AI eligibility checks cut denials up to 42%; each rework costs $25–$118",
     ],
@@ -1214,8 +1214,8 @@ const CLAIMS_FLOW: {
   },
   {
     icon: <Receipt size={16} />,
-    label: "Auto-submit",
-    sub: "to the clearinghouse",
+    label: "Submit or export",
+    sub: "Office Ally auto-submit · or download the 837P",
   },
   {
     icon: <RefreshCw size={16} />,
@@ -2165,7 +2165,7 @@ function Manifesto() {
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Will it work with our billing system?",
-    a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV, submits 837P claims through the Office Ally clearinghouse, and posts ERAs back automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
+    a: "Yes. Breathe exchanges patient and worklist data with PacWare over CSV and builds standard ASC X12 5010 837P claims. Once the AI scrubs them clean you have a choice: submit automatically through the built-in Office Ally integration, or download the 837P and upload it to the clearinghouse of your choice. Either way, ERAs (835) post back and reconcile automatically. PacWare stays your system of record for the warehouse; Breathe runs the resupply and revenue engine on top.",
   },
   {
     q: "Can we import our current patients?",
