@@ -661,6 +661,7 @@ export function BreatheHome() {
       <Hero />
       <IntegrationsStrip />
       <Pillars />
+      <ResupplyEngine />
       <Lifecycle />
       <Capabilities />
       <Replaces />
@@ -1122,6 +1123,100 @@ function Pillars() {
         </div>
         <div className="bx-pillars">
           {PILLARS.map((p) => (
+            <article
+              className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
+              key={p.title}
+            >
+              <div className="bx-pillar-top">
+                <span className="bx-pillar-ic">{p.icon}</span>
+                <span className="bx-pillar-metric">
+                  <b>{p.metric}</b>
+                  <small>{p.metricSub}</small>
+                </span>
+              </div>
+              <h3 className="bx-pillar-title">{p.title}</h3>
+              <p className="bx-pillar-body">{p.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────── Proprietary resupply engine ─────────────────── */
+/*
+ * The revenue centerpiece: a dedicated band that explains HOW Breathe grows
+ * resupply — the proprietary, behavioral-science-based reasoning engine that
+ * gets patients to reorder across text, email, and an AI phone call with
+ * almost no staff time. Placed right under the value pillars because, for a
+ * DME, this is the single clearest line from "software" to "more revenue".
+ * Reuses the existing .bx-pillar grid so it needs no new CSS.
+ */
+const ENGINE_STEPS: {
+  icon: React.ReactNode;
+  metric: string;
+  metricSub: string;
+  title: string;
+  body: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <BrainCircuit size={22} />,
+    metric: "AI",
+    metricSub: "reasoning",
+    title: "It reasons — it doesn't just remind",
+    body: "Grounded in the behavioral science of timing, habit, and friction, the engine reasons about each patient: who's due, the right moment to reach them, the right channel, and how gently or firmly to ask. Every patient gets the nudge most likely to turn into an order — not a generic blast.",
+    gold: true,
+  },
+  {
+    icon: <Waypoints size={22} />,
+    metric: "3",
+    metricSub: "channels, escalating",
+    title: "Text → email → AI phone call",
+    body: "A friendly text first, then a follow-up email, then — if they still haven't ordered — a natural-sounding AI voice call that talks them through it. Each touch is worded with a little more urgency, and an unanswered call retries before anyone on your team is ever involved.",
+  },
+  {
+    icon: <Zap size={22} />,
+    metric: "1-tap",
+    metricSub: "to reorder",
+    title: "Reordering takes one tap",
+    body: "Reply YES to a text, tap a secure link in the email, or just say “yes” on the call. No login, no forms, no portal — the order ships to the address on file. Making it effortless is the whole point: the easier it is to say yes, the more patients do.",
+  },
+  {
+    icon: <TrendingUp size={22} />,
+    metric: "~0",
+    metricSub: "human touch",
+    title: "Recurring revenue, on autopilot",
+    body: "Every refill window that would have quietly slipped becomes a placed order — captured automatically, around the clock. Your team only ever sees the rare exception, so resupply revenue grows without adding headcount or hours on the phone.",
+  },
+];
+
+function ResupplyEngine() {
+  return (
+    <section className="bx-section" id="resupply-engine">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> The resupply engine
+          </span>
+          <h2 className="bx-h2">
+            A proprietary engine that turns refills into revenue
+          </h2>
+          <p className="bx-lede">
+            Breathe's resupply engine is a proprietary, behavioral-science-based
+            reasoning system that gets patients to reorder their supplies from
+            you — automatically. It reads each patient's eligibility and reorder
+            window, then reasons about the message, the channel, and the moment
+            most likely to land: a text, a follow-up email, and a natural AI
+            phone call when it helps. Every touch is one tap from a placed
+            order, and the rare exception is the only thing your team ever
+            touches. It's exactly how resupply revenue grows — with almost no
+            human in the loop.
+          </p>
+        </div>
+        <div className="bx-pillars">
+          {ENGINE_STEPS.map((p) => (
             <article
               className={`bx-pillar bx-reveal${p.gold ? " gold" : ""}`}
               key={p.title}
