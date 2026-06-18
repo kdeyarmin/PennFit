@@ -1,4 +1,4 @@
--- 0394_reminder_escalation_voice_flag — Control Center toggle for the
+-- 0395_reminder_escalation_voice_flag — Control Center toggle for the
 -- AUTOMATED VOICE tier of the resupply-reminder escalation ladder.
 --
 -- Adds the `reminder_escalation.voice` feature flag. The daily escalation
