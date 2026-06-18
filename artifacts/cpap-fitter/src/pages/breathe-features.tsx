@@ -601,15 +601,9 @@ function BottomLine() {
         </div>
         <div className="bx-price-cta bx-reveal">
           <span>Want the number for your panel?</span>
-          {/* Plain anchor (full navigation), not a Wouter <Link>: the ROI
-              calculator lives in a #roi section on the /breathe page, and
-              Wouter's pushState navigation would not trigger the browser's
-              hash jump. A real navigation does — and the Breathe homepage's
-              useInitialHashScroll settles the scroll once its lazy content
-              has mounted. */}
-          <a className="bx-btn bx-btn-primary" href="/breathe#roi">
+          <Link className="bx-btn bx-btn-primary" href="/breathe/roi">
             Open the ROI calculator <ArrowRight size={16} />
-          </a>
+          </Link>
         </div>
       </div>
     </section>
