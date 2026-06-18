@@ -214,6 +214,77 @@ describe("resolveAudience — SMS channel", () => {
     expect(noPhone.suppressionReason).toBe("no_phone");
   });
 
+  it("suppresses known non-mobile (landline/voip) and allows mobile/unknown", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "service",
+      channel: "sms",
+      patients: [
+        {
+          id: "mob",
+          email: null,
+          phone: "+12155550001",
+          phoneLineType: "mobile",
+          status: "active",
+          insurancePayer: null,
+        },
+        {
+          id: "land",
+          email: null,
+          phone: "+12155550002",
+          phoneLineType: "landline",
+          status: "active",
+          insurancePayer: null,
+        },
+        {
+          id: "voip",
+          email: null,
+          phone: "+12155550003",
+          phoneLineType: "voip",
+          status: "active",
+          insurancePayer: null,
+        },
+        {
+          id: "unk",
+          email: null,
+          phone: "+12155550004",
+          phoneLineType: null,
+          status: "active",
+          insurancePayer: null,
+        },
+      ],
+    });
+    const byId = (id: string) =>
+      r.recipients.find((x) => x.recipientId === id)!;
+    expect(byId("mob").status).toBe("pending");
+    expect(byId("unk").status).toBe("pending"); // allow-unknown
+    expect(byId("land").status).toBe("suppressed");
+    expect(byId("land").suppressionReason).toBe("phone_not_mobile");
+    expect(byId("voip").status).toBe("suppressed");
+    expect(byId("voip").suppressionReason).toBe("phone_not_mobile");
+  });
+
+  it("ignores line type entirely for the email channel", () => {
+    const r = resolveAudience({
+      audienceKind: "all_active_patients",
+      audiencePayer: null,
+      category: "service",
+      channel: "email",
+      patients: [
+        {
+          id: "land",
+          email: "x@example.test",
+          phone: "+12155550002",
+          phoneLineType: "landline",
+          status: "active",
+          insurancePayer: null,
+        },
+      ],
+    });
+    expect(r.recipients[0]!.status).toBe("pending");
+  });
+
   it("respects shop-customer SMS opt-out for marketing/service", () => {
     const r = resolveAudience({
       audienceKind: "all_active_shop_customers",

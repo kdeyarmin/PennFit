@@ -879,6 +879,10 @@ export interface Database {
           birthday_email_year_sent: number | null;
           sleep_anniversary_year_sent: number | null;
           timezone: string;
+          /** Phone line type (migration 0397). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -4905,6 +4909,10 @@ export interface Database {
           caregiver_revoked_at: string | null;
           // E.164 phone captured at Stripe Checkout (migration 0247).
           phone_e164: string | null;
+          /** Phone line type (migration 0397). NULL = never classified. */
+          phone_line_type: "mobile" | "landline" | "voip" | "unknown" | null;
+          phone_line_type_source: "lookup" | "manual" | null;
+          phone_line_type_checked_at: string | null;
           created_at: string;
           updated_at: string;
         };

@@ -76,7 +76,7 @@ router.get(
       supabase
         .from("patients")
         .select(
-          "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, insurance_payer, cadence_override_days, channel_preference, location_id, created_at, updated_at, portal_auth_user_id, portal_invited_at",
+          "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, phone_line_type, phone_line_type_source, email, insurance_payer, cadence_override_days, channel_preference, location_id, created_at, updated_at, portal_auth_user_id, portal_invited_at",
         )
         .eq("id", id)
         .limit(1)
@@ -233,6 +233,8 @@ router.get(
       lastName: patient.legal_last_name ?? "",
       status: patient.status,
       hasPhone: patient.phone_e164 != null,
+      phoneLineType: patient.phone_line_type ?? null,
+      phoneLineTypeSource: patient.phone_line_type_source ?? null,
       hasEmail: patient.email != null,
       insurancePayer: patient.insurance_payer,
       cadenceOverrideDays: patient.cadence_override_days,

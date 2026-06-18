@@ -56,6 +56,7 @@ import {
   customArgsFor,
   TICK_INTERVAL_SECONDS,
 } from "../../lib/bulk-campaigns/dispatch-helpers.js";
+import { isKnownNonMobileLineType } from "../../lib/bulk-campaigns/resolve-audience.js";
 import { logger } from "../../lib/logger.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
@@ -502,51 +503,35 @@ export async function processTick(
       failed += 1;
       continue;
     }
-    // Re-check opt-out at send time. resolve-audience filters at
-    // enqueue, but a patient who unsubscribes / texts STOP between the
-    // campaign's resolveAudience pass and this tick (campaigns can run
-    // for hours) would otherwise still receive the message. Email
-    // compliance categories (recall / HIPAA notice) intentionally bypass
-    // the marketing/service gate; a non-active patient (STOP) is an
-    // absolute opt-out on either channel.
-    const optedOut = await isRecipientOptedOut(
+    // Re-check at send time. resolve-audience filters at enqueue, but a
+    // campaign that runs for hours can ship to a recipient who opted out
+    // (STOP / unsubscribe / pref flip) or whose number was newly classified
+    // as a landline since enqueue. Email compliance categories bypass the
+    // marketing/service opt-out gate; a non-active patient (STOP) is an
+    // absolute opt-out on either channel. For SMS, a KNOWN non-mobile line
+    // (landline/voip) is suppressed too — "SMS only to cellular".
+    const recheck = await recheckRecipientAtSend(
       supabase,
       row.recipient_kind,
       row.recipient_id,
       campaign.category,
       channel,
     );
-    if (optedOut) {
-      const { error: supErr } = await supabase
-        .from("bulk_campaign_recipients")
-        .update({
-          status: "suppressed",
-          suppression_reason: "opted_out_at_send_time",
-        })
-        .eq("id", row.id);
-      if (supErr) {
-        log.error(
-          { err: supErr.message, recipientId: row.id, campaignId: campaign.id },
-          "bulk_campaigns.tick: suppression update failed — marking recipient failed",
-        );
-        const { error: failMarkErr } = await supabase
-          .from("bulk_campaign_recipients")
-          .update({ status: "failed", error: supErr.message.slice(0, 500) })
-          .eq("id", row.id);
-        if (failMarkErr) {
-          log.error(
-            {
-              err: failMarkErr.message,
-              recipientId: row.id,
-              campaignId: campaign.id,
-            },
-            "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
-          );
-        }
-        failed += 1;
-        continue;
-      }
-      suppressedAtSend += 1;
+    const atSendSuppression: string | null = recheck.optedOut
+      ? "opted_out_at_send_time"
+      : channel === "sms" && isKnownNonMobileLineType(recheck.lineType)
+        ? "phone_not_mobile_at_send_time"
+        : null;
+    if (atSendSuppression) {
+      const result = await suppressRecipientAtSend(
+        supabase,
+        row.id,
+        campaign.id,
+        atSendSuppression,
+        log,
+      );
+      if (result === "suppressed") suppressedAtSend += 1;
+      else failed += 1;
       continue;
     }
     try {
@@ -843,47 +828,96 @@ async function rollbackRecipientsToPending(
 }
 
 /**
- * Re-check whether a recipient is opted-out at SEND time. The resolver
- * did this at enqueue time, but a campaign that runs for hours can ship to
- * a recipient who opted out (texted STOP / unsubscribed / flipped a pref)
- * in between — this gate closes that window.
+ * Suppress a recipient at SEND time with the given reason. Returns
+ * "suppressed" on success; on a failed suppression UPDATE it parks the
+ * recipient as "failed" (so a stale-lease reclaim doesn't re-send) and
+ * returns "failed". Shared by the opt-out and not-mobile at-send gates.
+ */
+async function suppressRecipientAtSend(
+  supabase: OrgScopedClient,
+  rowId: string,
+  campaignId: string,
+  reason: string,
+  log: typeof logger,
+): Promise<"suppressed" | "failed"> {
+  const { error: supErr } = await supabase
+    .from("bulk_campaign_recipients")
+    .update({ status: "suppressed", suppression_reason: reason })
+    .eq("id", rowId);
+  if (!supErr) return "suppressed";
+  log.error(
+    { err: supErr.message, recipientId: rowId, campaignId },
+    "bulk_campaigns.tick: suppression update failed — marking recipient failed",
+  );
+  const { error: failMarkErr } = await supabase
+    .from("bulk_campaign_recipients")
+    .update({ status: "failed", error: supErr.message.slice(0, 500) })
+    .eq("id", rowId);
+  if (failMarkErr) {
+    log.error(
+      { err: failMarkErr.message, recipientId: rowId, campaignId },
+      "bulk_campaigns.tick: failed-mark update also failed — recipient status is stale",
+    );
+  }
+  return "failed";
+}
+
+interface AtSendRecheck {
+  /** Recipient opted out since enqueue (STOP/unsubscribe or pref flip). */
+  optedOut: boolean;
+  /** Current classified phone line type, or null when unknown. */
+  lineType: "mobile" | "landline" | "voip" | "unknown" | null;
+}
+
+const NOT_OPTED_OUT: AtSendRecheck = { optedOut: false, lineType: null };
+
+/**
+ * Re-check a recipient at SEND time. The resolver did this at enqueue time,
+ * but a campaign that runs for hours can ship to a recipient who opted out
+ * (STOP / unsubscribe / pref flip) or whose number was newly classified as a
+ * landline in between — this gate closes that window. One query returns both
+ * the opt-out decision and the current line type (the SMS path consults the
+ * latter to keep "SMS only to cellular" true even for late classifications).
  *
- * Two opt-out sources, by recipient kind:
- *   * patient — the only opt-out signal on the patients table is a
- *     non-'active' status (paused = texted STOP / unsubscribed). That's an
- *     ABSOLUTE opt-out on either channel and is NOT bypassed by the
+ * Opt-out sources, by recipient kind:
+ *   * patient — the only opt-out signal is a non-'active' status (paused =
+ *     STOP/unsubscribed). ABSOLUTE on either channel; NOT bypassed by the
  *     compliance category.
  *   * shop_customer — the per-channel communication_preferences flags
- *     (sms/email × marketing/service). The compliance category bypasses
- *     these, mirroring the enqueue-time resolver.
+ *     (sms/email × marketing/service). Compliance bypasses these, mirroring
+ *     the enqueue-time resolver.
  *
- * Posture: any error here (Supabase blip, deleted row, malformed prefs
- * JSON) returns `false` (= not opted-out, proceed). A failed re-check
- * should not silently block a send the enqueue-time gate already cleared.
+ * Posture: any error (Supabase blip, deleted row, malformed prefs JSON)
+ * returns the not-opted-out / unknown-line-type default — a failed re-check
+ * should not block a send the enqueue-time gate already cleared, and unknown
+ * line types are allowed under the allow-unknown SMS policy.
  */
-async function isRecipientOptedOut(
+async function recheckRecipientAtSend(
   supabase: OrgScopedClient,
   kind: string,
   id: string,
   category: string,
   channel: "email" | "sms",
-): Promise<boolean> {
+): Promise<AtSendRecheck> {
   if (kind === "patient") {
     try {
       const { data } = await supabase
         .from("patients")
-        .select("status")
+        .select("status, phone_line_type")
         .eq("id", id)
         .limit(1)
         .maybeSingle();
-      if (!data) return false;
-      return data.status !== "active";
+      if (!data) return NOT_OPTED_OUT;
+      return {
+        optedOut: data.status !== "active",
+        lineType: (data.phone_line_type as AtSendRecheck["lineType"]) ?? null,
+      };
     } catch {
-      return false;
+      return NOT_OPTED_OUT;
     }
   }
 
-  if (kind !== "shop_customer") return false;
+  if (kind !== "shop_customer") return NOT_OPTED_OUT;
 
   // Which preference key gates this category on this channel? Mirrors the
   // policy in lib/bulk-campaigns/resolve-audience.ts. Compliance bypasses.
@@ -897,23 +931,25 @@ async function isRecipientOptedOut(
           ? "smsTransactional"
           : "emailResupplyReminders"
         : null;
-  if (!prefKey) return false;
 
   try {
     const { data } = await supabase
       .from("shop_customers")
-      .select("communication_preferences")
+      .select("communication_preferences, phone_line_type")
       .eq("customer_id", id)
       .limit(1)
       .maybeSingle();
+    if (!data) return NOT_OPTED_OUT;
+    const lineType =
+      (data.phone_line_type as AtSendRecheck["lineType"]) ?? null;
     const prefs =
-      data && typeof data.communication_preferences === "object"
+      typeof data.communication_preferences === "object"
         ? (data.communication_preferences as Record<string, unknown> | null)
         : null;
-    if (!prefs) return false;
-    return prefs[prefKey] === false;
+    const optedOut = Boolean(prefKey && prefs && prefs[prefKey] === false);
+    return { optedOut, lineType };
   } catch {
-    return false;
+    return NOT_OPTED_OUT;
   }
 }
 

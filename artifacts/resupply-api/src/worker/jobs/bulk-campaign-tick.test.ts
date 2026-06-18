@@ -303,6 +303,9 @@ function stageSingleRecipientTick(opts: {
   /** Status the patient opt-out re-check SELECT returns (patient kind
    *  only). Defaults to "active" so the default recipient is sendable. */
   patientStatus?: string;
+  /** phone_line_type the patient re-check SELECT returns (default null =
+   *  unknown → allowed for SMS). Set 'landline'/'voip' to exercise the gate. */
+  patientLineType?: string | null;
   claimTable?: string;
 }) {
   const campaign = makeCampaign(opts.campaign ?? {});
@@ -327,9 +330,15 @@ function stageSingleRecipientTick(opts: {
   stageDb(prefTable, "select", {
     data:
       prefTable === "patients"
-        ? { status: opts.patientStatus ?? "active" }
+        ? {
+            status: opts.patientStatus ?? "active",
+            phone_line_type: opts.patientLineType ?? null,
+          }
         : opts.patientPrefs !== undefined
-          ? { communication_preferences: opts.patientPrefs }
+          ? {
+              communication_preferences: opts.patientPrefs,
+              phone_line_type: opts.patientLineType ?? null,
+            }
           : null,
   });
   // 5. Status update on recipient (sent / suppressed / failed)
@@ -1017,6 +1026,58 @@ describe("processTick — SMS channel", () => {
     const sentUpdate = updates.find((u) => u.status === "sent");
     expect(sentUpdate).toBeDefined();
     expect(sentUpdate!.vendor_message_id).toBe("sm-msg-1");
+  });
+
+  it("suppresses an SMS recipient whose number is a known landline (at send)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-ll-1",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      // The number was classified a landline since enqueue.
+      patientLineType: "landline",
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).not.toHaveBeenCalled();
+    const updates = getWrites("bulk_campaign_recipients", "update") as Array<
+      Record<string, unknown>
+    >;
+    const suppression = updates.find(
+      (u) =>
+        u.status === "suppressed" &&
+        u.suppression_reason === "phone_not_mobile_at_send_time",
+    );
+    expect(suppression).toBeDefined();
+  });
+
+  it("still sends an SMS to an unknown line type (allow-unknown policy)", async () => {
+    stageSingleRecipientTick({
+      campaign: { category: "marketing", channel: "sms" },
+      recipient: {
+        recipient_kind: "patient",
+        recipient_id: "pat-unk-1",
+        recipient_email: null,
+        recipient_phone: "+12155551212",
+      },
+      patientLineType: null, // not yet classified
+    });
+
+    await processTick(
+      makeBoss() as never,
+      { campaignId: "camp-1" },
+      testLog as never,
+    );
+
+    expect(smsSendMock).toHaveBeenCalledTimes(1);
   });
 
   it("pauses the campaign when SMS is not configured (Twilio creds unset)", async () => {

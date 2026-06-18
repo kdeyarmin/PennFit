@@ -46,6 +46,18 @@ export type Category = "marketing" | "service" | "compliance";
 
 export type Channel = "email" | "sms";
 
+/** Classified phone line type (resupply.{patients,shop_customers}). */
+export type PhoneLineType = "mobile" | "landline" | "voip" | "unknown";
+
+/** SMS is suppressed only for a KNOWN non-mobile line (landline / VoIP).
+ *  'mobile' and the not-yet-known states (null / 'unknown') are allowed,
+ *  per the allow-unknown / block-known-non-mobile policy. */
+export function isKnownNonMobileLineType(
+  lt: PhoneLineType | null | undefined,
+): boolean {
+  return lt === "landline" || lt === "voip";
+}
+
 export type AudienceKind =
   | "all_active_shop_customers"
   | "all_active_patients"
@@ -68,6 +80,8 @@ export interface ShopCustomerCandidate {
   emailLower: string | null;
   /** E.164 phone captured at checkout (migration 0247); null when unset. */
   phoneE164?: string | null;
+  /** Classified line type (migration 0397); gates SMS to non-landline. */
+  phoneLineType?: PhoneLineType | null;
   /** The full communication_preferences jsonb, or null when the
    *  customer hasn't ever set them. Null is treated as the default
    *  set (see DEFAULT_COMMUNICATION_PREFERENCES on the schema). */
@@ -84,6 +98,8 @@ export interface PatientCandidate {
   email: string | null;
   /** E.164 phone (patients.phone_e164); null when unset. */
   phone?: string | null;
+  /** Classified line type (migration 0397); gates SMS to non-landline. */
+  phoneLineType?: PhoneLineType | null;
   status: string;
   insurancePayer: string | null;
 }
@@ -100,6 +116,7 @@ export interface ResolvedRecipient {
 export type SuppressionReason =
   | "no_email"
   | "no_phone"
+  | "phone_not_mobile"
   | "opted_out_marketing"
   | "opted_out_service"
   | "opted_out_sms_marketing"
@@ -175,6 +192,10 @@ export function resolveAudience(
       push("suppressed", channel === "sms" ? "no_phone" : "no_email");
       continue;
     }
+    if (channel === "sms" && isKnownNonMobileLineType(c.phoneLineType)) {
+      push("suppressed", "phone_not_mobile");
+      continue;
+    }
     const prefs = c.communicationPreferences ?? {};
     if (input.category === "marketing") {
       if (channel === "sms" && prefs.smsMarketing === false) {
@@ -248,6 +269,10 @@ export function resolveAudience(
     }
     if (!contact) {
       push("suppressed", channel === "sms" ? "no_phone" : "no_email");
+      continue;
+    }
+    if (channel === "sms" && isKnownNonMobileLineType(p.phoneLineType)) {
+      push("suppressed", "phone_not_mobile");
       continue;
     }
     // Patient comm-prefs live elsewhere (no jsonb on patients itself).

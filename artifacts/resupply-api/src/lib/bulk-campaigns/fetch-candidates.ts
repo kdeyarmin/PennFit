@@ -61,12 +61,13 @@ const BATCH = 1000;
 /** Columns the patient candidate projection needs across every patient
  *  audience. Includes phone for the SMS channel. */
 const PATIENT_CANDIDATE_COLUMNS =
-  "id, email, phone_e164, status, insurance_payer";
+  "id, email, phone_e164, phone_line_type, status, insurance_payer";
 
 type PatientRow = {
   id: string;
   email: string | null;
   phone_e164: string | null;
+  phone_line_type: PatientCandidate["phoneLineType"];
   status: string;
   insurance_payer: string | null;
 };
@@ -76,6 +77,7 @@ function toPatientCandidate(r: PatientRow): PatientCandidate {
     id: r.id,
     email: r.email,
     phone: r.phone_e164,
+    phoneLineType: r.phone_line_type,
     status: r.status,
     insurancePayer: r.insurance_payer,
   };
@@ -112,7 +114,7 @@ export async function fetchAudienceCandidates(
       const { data, error } = await supabase
         .from("shop_customers")
         .select(
-          "customer_id, email_lower, phone_e164, communication_preferences",
+          "customer_id, email_lower, phone_e164, phone_line_type, communication_preferences",
         )
         .order("customer_id", { ascending: true })
         .range(from, from + BATCH - 1);
@@ -123,6 +125,8 @@ export async function fetchAudienceCandidates(
           id: r.customer_id,
           emailLower: r.email_lower,
           phoneE164: r.phone_e164,
+          phoneLineType:
+            r.phone_line_type as ShopCustomerCandidate["phoneLineType"],
           communicationPreferences:
             r.communication_preferences as ShopCustomerCandidate["communicationPreferences"],
         });
@@ -200,7 +204,7 @@ export async function fetchAudienceCandidates(
       const { data, error } = await supabase
         .from("shop_customers")
         .select(
-          "customer_id, email_lower, phone_e164, communication_preferences",
+          "customer_id, email_lower, phone_e164, phone_line_type, communication_preferences",
         )
         .in("customer_id", slice);
       if (error) throw error;
@@ -209,6 +213,8 @@ export async function fetchAudienceCandidates(
           id: r.customer_id,
           emailLower: r.email_lower,
           phoneE164: r.phone_e164,
+          phoneLineType:
+            r.phone_line_type as ShopCustomerCandidate["phoneLineType"],
           communicationPreferences:
             r.communication_preferences as ShopCustomerCandidate["communicationPreferences"],
         });

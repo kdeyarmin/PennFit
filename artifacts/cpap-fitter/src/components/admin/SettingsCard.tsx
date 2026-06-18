@@ -34,6 +34,7 @@ import { Input, Label, Select } from "@/components/admin/Input";
 import { LOCATIONS_QUERY_KEY, listLocations } from "@/lib/admin/locations-api";
 
 type ChannelChoice = "" | "sms" | "email" | "voice";
+type LineTypeChoice = "" | "mobile" | "landline" | "voip" | "unknown";
 
 export function SettingsCard({
   patient,
@@ -58,6 +59,9 @@ export function SettingsCard({
   );
   const [locationId, setLocationId] = useState<string>(
     patient.locationId ?? "",
+  );
+  const [phoneLineType, setPhoneLineType] = useState<LineTypeChoice>(
+    (patient.phoneLineType ?? "") as LineTypeChoice,
   );
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -95,12 +99,14 @@ export function SettingsCard({
     );
     setChannel((patient.channelPreference ?? "") as ChannelChoice);
     setLocationId(patient.locationId ?? "");
+    setPhoneLineType((patient.phoneLineType ?? "") as LineTypeChoice);
     setError(null);
   }, [
     patient.insurancePayer,
     patient.cadenceOverrideDays,
     patient.channelPreference,
     patient.locationId,
+    patient.phoneLineType,
   ]);
 
   function buildPatch(): {
@@ -144,6 +150,12 @@ export function SettingsCard({
     const locOnServer = patient.locationId ?? "";
     if (multiLocationEnabled && locationId !== locOnServer) {
       body.locationId = locationId === "" ? null : locationId;
+    }
+    // phone line type: empty clears the manual override (lets the Twilio
+    // Lookup backfill re-classify); a concrete value is a manual override.
+    const ltOnServer = patient.phoneLineType ?? "";
+    if (phoneLineType !== ltOnServer) {
+      body.phoneLineType = phoneLineType === "" ? null : phoneLineType;
     }
     return { body, error: null };
   }
@@ -293,6 +305,31 @@ export function SettingsCard({
           />
           <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Voice is admin-initiated only.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="patient-line-type">Phone line type</Label>
+          <Select
+            id="patient-line-type"
+            value={phoneLineType}
+            options={[
+              { value: "mobile", label: "Mobile (cell)" },
+              { value: "landline", label: "Landline" },
+              { value: "voip", label: "VoIP" },
+              { value: "unknown", label: "Unknown" },
+            ]}
+            emptyOptionLabel={
+              patient.hasPhone ? "Auto (Twilio Lookup)" : "No phone on file"
+            }
+            onChange={(e) => setPhoneLineType(e.target.value as LineTypeChoice)}
+            disabled={isPending || !patient.hasPhone}
+          />
+          <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+            {patient.phoneLineTypeSource === "manual"
+              ? "Manually set. Bulk SMS only sends to mobile."
+              : patient.phoneLineType
+                ? "Auto-classified by Twilio. Bulk SMS only sends to mobile."
+                : "Not yet classified. Bulk SMS only sends to mobile."}
           </p>
         </div>
         {multiLocationEnabled && (
