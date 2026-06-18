@@ -321,11 +321,6 @@ const AdminOperationsPage = lazyWithRetry(() =>
     default: m.AdminOperationsPage,
   })),
 );
-const AdminAccountSetupPage = lazyWithRetry(() =>
-  import("@/pages/admin/account-setup").then((m) => ({
-    default: m.AdminAccountSetupPage,
-  })),
-);
 const AdminReportsPage = lazyWithRetry(() =>
   import("@/pages/admin/admin-reports").then((m) => ({
     default: m.AdminReportsPage,
@@ -499,11 +494,6 @@ const AdminBillingHubPage = lazyWithRetry(() =>
 const AdminBillingPackagePage = lazyWithRetry(() =>
   import("@/pages/admin/admin-billing-package").then((m) => ({
     default: m.AdminBillingPackagePage,
-  })),
-);
-const AdminPlatformBillingPage = lazyWithRetry(() =>
-  import("@/pages/admin/admin-platform-billing").then((m) => ({
-    default: m.AdminPlatformBillingPage,
   })),
 );
 const AdminBillingAiQueuePage = lazyWithRetry(() =>
@@ -1146,10 +1136,6 @@ function AdminConsole() {
             />
             <Route path="/admin/team" component={AdminTeamPage} />
             <Route path="/admin/operations" component={AdminOperationsPage} />
-            <Route
-              path="/admin/account-setup"
-              component={AdminAccountSetupPage}
-            />
             <Route path="/admin/reports" component={AdminReportsPage} />
             <Route
               path="/admin/control-center"
@@ -1186,10 +1172,6 @@ function AdminConsole() {
             <Route
               path="/admin/system/configuration"
               component={AdminSystemConfigurationPage}
-            />
-            <Route
-              path="/admin/platform-billing"
-              component={AdminPlatformBillingPage}
             />
             <Route
               path="/admin/bot-playground"

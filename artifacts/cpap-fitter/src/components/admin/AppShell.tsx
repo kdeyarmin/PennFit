@@ -1166,7 +1166,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             label: "Settings",
             icon: Settings,
             matchPrefix: "/admin/settings",
-            hint: "Practice settings & integrations",
+            hint: "Toggle the client-only demo sandbox",
           },
           {
             href: "/admin/company-information",
@@ -1226,20 +1226,15 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         ],
       },
       {
-        // Set-and-forget surfaces, in launch order: work the checklist,
-        // enter vendor credentials, test the connections, switch the
-        // features on, then rehearse the bots.
+        // Set-and-forget surfaces: enter your own integration
+        // credentials, switch features on, then rehearse the bots. The
+        // deployment launch checklist, platform packages/pricing, and
+        // shared infrastructure all live on the platform super-admin
+        // console — they're global, not per-tenant.
         label: "Setup & advanced",
         icon: SlidersHorizontal,
-        hint: "Launch checklist, vendor credentials & connection tests, feature switches, bot rehearsal",
+        hint: "Your integration credentials, feature switches, and bot rehearsal",
         tabs: [
-          {
-            href: "/admin/account-setup",
-            label: "Account Setup",
-            icon: ClipboardCheck,
-            matchPrefix: "/admin/account-setup",
-            hint: "New-account / production launch checklist",
-          },
           {
             href: "/admin/system/configuration",
             label: "Configuration",
@@ -1247,14 +1242,6 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
             matchPrefix: "/admin/system/configuration",
             requiredPermission: "system.config.manage",
             hint: "Your branding and your own integration accounts (therapy-cloud, clearinghouse)",
-          },
-          {
-            href: "/admin/platform-billing",
-            label: "Platform billing",
-            icon: CircleDollarSign,
-            matchPrefix: "/admin/platform-billing",
-            requiredPermission: "system.config.manage",
-            hint: "Super-admin tenant packages, add-ons, pricing overrides, and usage tracking",
           },
           {
             href: "/admin/control-center",
