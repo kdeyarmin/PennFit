@@ -79,55 +79,58 @@ export function demoPlatformBillingSummary() {
   };
 }
 
-/** GET /platform/billing/activity — who changed what, when. */
-export function demoPlatformBillingActivity() {
+/** GET /platform/billing/activity — who changed what, when. Pass a
+ *  `tenantId` to scope the feed to a single tenant (mirrors the backend
+ *  org_id filter). */
+export function demoPlatformBillingActivity(tenantId?: string | null) {
   const min = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
+  const all = [
+    {
+      id: "evt-1",
+      tenantId: "demo-tenant-1",
+      tenantName: "Penn Home Medical Supply",
+      action: "tenant.billing.subscription.selected",
+      actor: "tenant" as const,
+      operatorEmail: "owner@pennpaps.example",
+      summary: "Switched to the Growth plan",
+      metadata: { planCode: "growth" },
+      occurredAt: min(6),
+    },
+    {
+      id: "evt-2",
+      tenantId: "demo-tenant-1",
+      tenantName: "Penn Home Medical Supply",
+      action: "tenant.billing.addon.updated",
+      actor: "tenant" as const,
+      operatorEmail: "owner@pennpaps.example",
+      summary: "Set Additional staff seat to 2",
+      metadata: { addonCode: "additional_seat", quantity: 2 },
+      occurredAt: min(20),
+    },
+    {
+      id: "evt-3",
+      tenantId: "demo-tenant-2",
+      tenantName: "Acme Sleep DME",
+      action: "platform.billing.subscription.updated",
+      actor: "platform" as const,
+      operatorEmail: "demo.admin@cmbreathe.example",
+      summary: "Assigned the Launch plan",
+      metadata: { planCode: "launch" },
+      occurredAt: min(40),
+    },
+    {
+      id: "evt-4",
+      tenantId: "demo-tenant-2",
+      tenantName: "Acme Sleep DME",
+      action: "platform.billing.addon.updated",
+      actor: "platform" as const,
+      operatorEmail: "demo.admin@cmbreathe.example",
+      summary: "Set AI voice agent / IVR to 1",
+      metadata: { addonCode: "ai_voice_agent", quantity: 1 },
+      occurredAt: min(120),
+    },
+  ];
   return {
-    activity: [
-      {
-        id: "evt-1",
-        tenantId: "demo-tenant-1",
-        tenantName: "Penn Home Medical Supply",
-        action: "tenant.billing.subscription.selected",
-        actor: "tenant" as const,
-        operatorEmail: "owner@pennpaps.example",
-        summary: "Switched to the Growth plan",
-        metadata: { planCode: "growth" },
-        occurredAt: min(6),
-      },
-      {
-        id: "evt-2",
-        tenantId: "demo-tenant-1",
-        tenantName: "Penn Home Medical Supply",
-        action: "tenant.billing.addon.updated",
-        actor: "tenant" as const,
-        operatorEmail: "owner@pennpaps.example",
-        summary: "Set Additional staff seat to 2",
-        metadata: { addonCode: "additional_seat", quantity: 2 },
-        occurredAt: min(20),
-      },
-      {
-        id: "evt-3",
-        tenantId: "demo-tenant-2",
-        tenantName: "Acme Sleep DME",
-        action: "platform.billing.subscription.updated",
-        actor: "platform" as const,
-        operatorEmail: "demo.admin@cmbreathe.example",
-        summary: "Assigned the Launch plan",
-        metadata: { planCode: "launch" },
-        occurredAt: min(40),
-      },
-      {
-        id: "evt-4",
-        tenantId: "demo-tenant-2",
-        tenantName: "Acme Sleep DME",
-        action: "platform.billing.addon.updated",
-        actor: "platform" as const,
-        operatorEmail: "demo.admin@cmbreathe.example",
-        summary: "Set AI voice agent / IVR to 1",
-        metadata: { addonCode: "ai_voice_agent", quantity: 1 },
-        occurredAt: min(120),
-      },
-    ],
+    activity: tenantId ? all.filter((e) => e.tenantId === tenantId) : all,
   };
 }

@@ -2029,6 +2029,11 @@ const billingActivityQuery = z.object({
       if (!Number.isFinite(n) || n <= 0) return 25;
       return Math.min(n, 100);
     }),
+  // Optional tenant filter — scopes the feed to a single org so the panel
+  // can show one tenant's billing history. `.catch` keeps a bad/empty
+  // tenantId from failing the whole parse (which would also drop a valid
+  // `limit`): an invalid value just disables the filter (→ unfiltered).
+  tenantId: z.string().uuid().optional().catch(undefined),
 });
 
 interface BillingEventRow {
@@ -2049,17 +2054,20 @@ router.get(
   async (req, res): Promise<void> => {
     const parsed = billingActivityQuery.safeParse(req.query);
     const limit = parsed.success ? parsed.data.limit : 25;
+    const tenantId = parsed.success ? parsed.data.tenantId : undefined;
     const raw = await rawClient();
     if (!raw) {
       res.status(503).json({ error: "tenant_directory_unavailable" });
       return;
     }
-    const { data, error } = await raw
+    let query = raw
       .schema("resupply")
       .from("tenant_billing_events")
       .select(
         "id, org_id, action, actor, operator_email, summary, metadata, occurred_at",
-      )
+      );
+    if (tenantId) query = query.eq("org_id", tenantId);
+    const { data, error } = await query
       .order("occurred_at", { ascending: false })
       .limit(limit);
     if (error) {
