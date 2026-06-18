@@ -213,7 +213,7 @@ export function BreatheRoi() {
             Size the <span className="grad-em">return.</span>
           </>
         }
-        sub="Estimate what Breathe gives back on your own panel — staff hours, revenue-cycle recovery, resupply growth, and the seven point tools you stop paying for."
+        sub="Estimate what Breathe gives back on your own numbers — staff hours, revenue-cycle recovery, resupply growth, and the seven point tools you stop paying for."
       />
       <Roi />
       <ClosingCta />
@@ -1706,10 +1706,10 @@ function Pricing() {
             Pick a package, <em>add only what you need</em>
           </h2>
           <p className="bx-lede">
-            Transparent subscription tiers sized to your panel — month-to-month,
-            with onboarding and migration included and your data always
-            exportable (back out to PacWare too). License premium modules à la
-            carte.
+            Transparent subscription tiers sized to your patient base —
+            month-to-month, with onboarding and migration included and your data
+            always exportable (back out to PacWare too). License premium modules
+            à la carte.
           </p>
         </div>
         <PricingPlans />
@@ -1739,7 +1739,7 @@ function PricingHome() {
             One platform, <em>packaged for your size</em>
           </h2>
           <p className="bx-lede">
-            Subscription tiers sized to your panel — month-to-month, with
+            Subscription tiers sized to your patient base — month-to-month, with
             onboarding and migration included. Add premium modules only when you
             need them.
           </p>
@@ -1785,7 +1785,7 @@ const SECURITY: { icon: React.ReactNode; title: string; body: string }[] = [
   {
     icon: <Server size={20} />,
     title: "Tenant isolation",
-    body: "Multi-tenant by architecture: your brand, sending domain, and patient panel are cleanly separated from every other operator.",
+    body: "Multi-tenant by architecture: your brand, sending domain, and patient data are cleanly separated from every other operator.",
   },
   {
     icon: <Network size={20} />,
@@ -1976,7 +1976,7 @@ function ClosingCta() {
           <p>
             See Breathe run a live resupply order, scrub a claim, and book a
             telehealth visit in one walkthrough — tailored to your payers and
-            your patient panel.
+            your patients.
           </p>
           <div className="bx-cta-row">
             <a
