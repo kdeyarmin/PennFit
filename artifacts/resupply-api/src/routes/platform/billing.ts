@@ -527,6 +527,19 @@ router.post(
         status: "canceled",
         updated_at: new Date().toISOString(),
         updated_by_email: req.adminEmail ?? null,
+        // MOVE the Stripe linkage off the canceled row onto the new active
+        // row below. tenant_billing_subscriptions has a partial UNIQUE index
+        // on stripe_subscription_id (migration 0363), so the same id can
+        // live on only one row — leaving it here would make the carry-forward
+        // insert violate the index and fail the plan change.
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+        stripe_account_ref: null,
+        stripe_status: null,
+        current_period_start: null,
+        current_period_end: null,
+        last_invoice_id: null,
+        last_invoice_status: null,
       })
       .eq("org_id", req.orgId)
       .in("status", ["active", "trialing", "past_due"]);
@@ -1143,6 +1156,18 @@ router.put(
         status: "canceled",
         updated_at: new Date().toISOString(),
         updated_by_email: req.platformAdminEmail ?? null,
+        // MOVE the Stripe linkage off the canceled row onto the new active
+        // row below — the partial UNIQUE index on stripe_subscription_id
+        // (migration 0363) allows the id on only one row, so leaving it here
+        // would make the carry-forward insert violate the index.
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+        stripe_account_ref: null,
+        stripe_status: null,
+        current_period_start: null,
+        current_period_end: null,
+        last_invoice_id: null,
+        last_invoice_status: null,
       })
       .eq("org_id", param.data.id)
       .in("status", ["active", "trialing", "past_due"]);

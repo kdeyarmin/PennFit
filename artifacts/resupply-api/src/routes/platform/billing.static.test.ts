@@ -69,6 +69,16 @@ describe("platform billing route wiring", () => {
     );
   });
 
+  it("moves (nulls) the Stripe subscription id off the canceled row", () => {
+    // tenant_billing_subscriptions has a partial UNIQUE index on
+    // stripe_subscription_id (migration 0363). Both plan-change routes carry
+    // the id onto the new active row, so the canceled row MUST release it —
+    // otherwise the carry-forward insert violates the index and the plan
+    // change fails for any Stripe-synced tenant. Asserted on both routes.
+    const nulls = SRC.match(/stripe_subscription_id: null/g) ?? [];
+    expect(nulls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("counts active locations by is_active, not a nonexistent status column", () => {
     // resupply.locations has `is_active` (boolean), no `status` column —
     // filtering on `status` 400s in PostgREST and 500s the whole tenant
