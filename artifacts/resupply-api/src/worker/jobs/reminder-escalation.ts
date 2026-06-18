@@ -275,7 +275,13 @@ export async function runReminderEscalationScan(
  * step). Reading the flag + config here keeps the planner pure.
  */
 async function resolveLadderForOrg(orgId: string): Promise<readonly string[]> {
-  const voiceConfigured = readVoiceConfigOrNull()?.twilioPhoneNumber != null;
+  // "Configured" must agree EXACTLY with the voice send job's guard
+  // (`!config.twilioPhoneNumber`): an empty-string TWILIO_PHONE_NUMBER is
+  // falsy. A `!= null` check would treat "" as configured and add the voice
+  // tier to the ladder, but the send job skips the empty number — stalling
+  // the ladder on a voice step that never completes (it creates no
+  // conversation, so the ladder never advances to the CSR hand-off).
+  const voiceConfigured = Boolean(readVoiceConfigOrNull()?.twilioPhoneNumber);
   if (
     voiceConfigured &&
     (await isFeatureEnabled("reminder_escalation.voice", orgId))
