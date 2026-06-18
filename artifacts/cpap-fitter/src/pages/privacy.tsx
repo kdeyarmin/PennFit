@@ -41,8 +41,9 @@ export function Privacy() {
         </CardHeader>
         <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed pt-6">
           <p>
-            This Privacy Policy describes how <LegalName /> ("<LegalName />",
-            "we," "us," or "our") — operator of the <WebsiteHost /> CPAP mask
+            This Privacy Policy describes how <LegalName /> ("
+            <LegalName />
+            ", "we," "us," or "our") — operator of the <WebsiteHost /> CPAP mask
             fitting and resupply service (the "Service") — handles information
             you provide while using the Service.
           </p>
@@ -75,8 +76,8 @@ export function Privacy() {
               Data Transmitted
             </h3>
             <p>
-              The only data transmitted from your device to <BrandName />'s
-              servers are:
+              The only data transmitted from your device to <BrandName />
+              's servers are:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>

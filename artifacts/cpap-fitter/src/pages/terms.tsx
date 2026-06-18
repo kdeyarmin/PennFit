@@ -44,8 +44,9 @@ export function Terms() {
             These Terms of Service ("Terms") govern your use of the{" "}
             <BrandName /> website, mask-fitting tool, ordering system, and
             SMS/text-messaging notifications (collectively, the "Service")
-            operated by <LegalName /> ("<LegalName />", "we," "us," or "our")
-            at <WebsiteHost />. By using the Service,
+            operated by <LegalName /> ("
+            <LegalName />
+            ", "we," "us," or "our") at <WebsiteHost />. By using the Service,
             you agree to these Terms. If you do not agree, please do not use the
             Service.
           </p>
@@ -78,8 +79,8 @@ export function Terms() {
               questionnaire responses to suggest a CPAP mask. Recommendations
               are informational only and do not constitute medical advice or a
               prescription. Final mask selection, sizing, and fitting are
-              subject to your prescriber's orders and <BrandName />'s clinical
-              review.
+              subject to your prescriber's orders and <BrandName />
+              's clinical review.
             </p>
           </section>
 
