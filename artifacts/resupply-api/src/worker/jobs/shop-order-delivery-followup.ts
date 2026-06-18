@@ -64,6 +64,7 @@ import {
 } from "@workspace/resupply-telecom";
 import { logger } from "../../lib/logger";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom.js";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding.js";
 import { recordOutboundMessageUsage } from "../../lib/metering/usage.js";
 import {
   createQueueWithDlq,
@@ -364,9 +365,11 @@ async function deliveryFollowupSweepForOrg(
         const smsClient = createTwilioSmsClient(
           await resolveTenantSmsClientOptions(orgId),
         );
+        // Tenant brand when the patient's first name is unknown — never the
+        // seed tenant's "PennPaps" for another tenant's customer.
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : "PennPaps";
+          : (await resolveBrandingByOrgId(orgId)).storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: how is your new CPAP setup going? Reply YES if it works, or NO and we'll start a return. Reply STOP to opt out.`,

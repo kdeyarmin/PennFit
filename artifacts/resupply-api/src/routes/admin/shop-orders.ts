@@ -69,6 +69,7 @@ import { getPickupLocationsByIds } from "../../lib/pickup/locations";
 import { sendPushToCustomer } from "../../lib/web-push";
 import { resolveSmsRecipientForShopOrder } from "../../lib/shop-orders-sms-resolver";
 import { resolveTenantSmsClientOptions } from "../../lib/messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { autoSendPatientPacketOnDelivery } from "../../lib/patient-packet/auto-send-on-delivery";
 import { evaluatePaperworkGateForCustomer } from "../../lib/paperwork/require-signed-paperwork";
 import {
@@ -472,9 +473,11 @@ async function sendShippingNotificationIfNew(args: {
         const smsClient = createTwilioSmsClient(
           await resolveTenantSmsClientOptions(orgId),
         );
+        // Tenant brand when the patient's first name is unknown — never the
+        // seed tenant's "PennPaps" for another tenant's customer.
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : "PennPaps";
+          : (await resolveBrandingByOrgId(orgId)).storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: your CPAP supplies just shipped (${claimedRow.tracking_carrier} ${claimedRow.tracking_number}). Reply STOP to opt out.`,

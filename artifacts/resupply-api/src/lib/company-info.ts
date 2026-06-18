@@ -91,18 +91,29 @@ export interface CompanyInfo {
   source: "database" | "environment" | "fallback";
 }
 
-// Historical hardcoded values — kept byte-identical to what shipped
-// before this module existed so an unseeded environment renders exactly
-// what it used to.
+// Platform-identity fallback for an UNCONFIGURED tenant — used only when
+// no `dme_organization` row exists (and no RESUPPLY_PRACTICE_NAME env).
+//
+// Brand architecture: the platform is **CareMetric Breathe** (cmbreathe.com).
+// "Penn Home Medical Supply" / storefront brand "PennPaps" is ONE TENANT, not
+// the platform default — so an unseeded environment, or a second tenant that
+// hasn't filled in Company Information, falls back to the NEUTRAL platform
+// identity rather than inheriting the seed tenant's brand. The seed tenant
+// (Penn) carries its own brand in its `dme_organization` row (source =
+// "database"), so this fallback never changes Penn's patient-facing copy.
+//
+// The platform is not itself a DME with a patient support line, so there is
+// no platform phone — `phoneE164`/`phoneDisplay` are blank in the fallback
+// (a configured tenant always supplies its own). The historical Penn literals
+// live on only as the `identityReplacements()` needles below, which rewrite
+// the brand-baked source text to a DB-backed tenant's own values.
 const DEFAULTS = {
-  name: "PennPaps",
-  // The registered DME business name. "PennPaps" is only the online
-  // storefront brand; official paperwork carries the legal name.
-  legalName: "Penn Home Medical Supply",
-  phoneE164: "+18144710627",
-  phoneDisplay: "(814) 471-0627",
-  supportEmail: "support@pennpaps.com",
-  generalEmail: "info@pennpaps.com",
+  name: "CareMetric Breathe",
+  legalName: "CareMetric Breathe",
+  phoneE164: "",
+  phoneDisplay: "",
+  supportEmail: "support@cmbreathe.com",
+  generalEmail: "support@cmbreathe.com",
   supportHours: "Mon–Fri 9a–5p ET",
 } as const;
 

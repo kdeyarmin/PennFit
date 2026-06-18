@@ -249,7 +249,7 @@ router.post(
     const baseUrl =
       (await resolveTenantBaseUrl(req.orgId)) ??
       (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-        "https://pennpaps.com");
+        "https://cmbreathe.com");
 
     const result = await dispatchBackInStockForProduct({
       productId,

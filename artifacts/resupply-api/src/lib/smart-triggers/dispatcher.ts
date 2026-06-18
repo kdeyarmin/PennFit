@@ -37,6 +37,10 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import {
+  applyCompanyIdentityToText,
+  getCompanyInfo,
+} from "../company-info.js";
 import { createTenantSendgridClient } from "../email/tenant-sender.js";
 import {
   createTwilioSmsClient,
@@ -184,6 +188,13 @@ export async function runSmartTriggerSendDue(
   }
 
   const supabase = getOrgScopedClient(orgId);
+
+  // Brand the rendered body copy to the tenant at the I/O boundary: the
+  // renderers bake the seed tenant's "Penn Home Medical Supply" sign-off and
+  // a pennpaps.com link as placeholders. applyCompanyIdentityToText rewrites
+  // them to a DB-backed tenant's own brand/site (no-op for the seed tenant
+  // and for any unconfigured environment).
+  const companyInfo = await getCompanyInfo(orgId);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -441,9 +452,18 @@ export async function runSmartTriggerSendDue(
           () =>
             sg!.sendEmail({
               to: contact,
-              subject: renderers.subjectForKind(row.kind as TriggerKind),
-              text: renderers.textBody(greeting, row.kind as TriggerKind),
-              html: renderers.htmlBody(greeting, row.kind as TriggerKind),
+              subject: applyCompanyIdentityToText(
+                renderers.subjectForKind(row.kind as TriggerKind),
+                companyInfo,
+              ),
+              text: applyCompanyIdentityToText(
+                renderers.textBody(greeting, row.kind as TriggerKind),
+                companyInfo,
+              ),
+              html: applyCompanyIdentityToText(
+                renderers.htmlBody(greeting, row.kind as TriggerKind),
+                companyInfo,
+              ),
               customArgs: {
                 kind: "smart_trigger",
                 trigger_kind: row.kind,
@@ -470,7 +490,10 @@ export async function runSmartTriggerSendDue(
           () =>
             sms!.sendSms({
               to: contact,
-              body: renderers.smsBody(firstName, row.kind as TriggerKind),
+              body: applyCompanyIdentityToText(
+                renderers.smsBody(firstName, row.kind as TriggerKind),
+                companyInfo,
+              ),
             }),
           {
             attempts: 3,

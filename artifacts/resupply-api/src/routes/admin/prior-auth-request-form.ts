@@ -32,6 +32,7 @@ import {
 import { buildPaRequestPdf } from "../../lib/billing/pa-request-render";
 import { signPaRequestFaxToken } from "../../lib/fax-document-token";
 import { logger } from "../../lib/logger";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { requirePermission } from "../../middlewares/requireAdmin";
 import { getFaxPublicBaseUrl, isFaxConfigured } from "./physician-fax-outreach";
 
@@ -159,7 +160,12 @@ router.post(
     const token = signPaRequestFaxToken(patientId, paId);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+    // back to the platform default. isFaxConfigured() already verified the
+    // platform TELNYX_FAX_FROM_NUMBER is set.
+    const fromNumber =
+      (await resolveTenantFaxFrom(orgId)) ??
+      process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let faxId: string;
     try {

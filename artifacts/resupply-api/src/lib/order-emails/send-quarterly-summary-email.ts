@@ -31,7 +31,7 @@ import {
   resolveTenantBaseUrl,
 } from "../tenant-branding.js";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface QuarterlyFields {
   nightsRecorded: number;
