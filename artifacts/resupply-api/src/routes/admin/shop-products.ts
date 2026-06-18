@@ -260,7 +260,7 @@ router.patch(
       const baseUrl =
         (await resolveTenantBaseUrl(req.orgId)) ??
         (process.env.SHOP_PUBLIC_BASE_URL?.replace(/\/$/, "") ||
-          "https://pennpaps.com");
+          "https://cmbreathe.com");
       const priceLabel =
         typeof projected.price?.unitAmount === "number"
           ? `$${(projected.price.unitAmount / 100).toFixed(2)}`

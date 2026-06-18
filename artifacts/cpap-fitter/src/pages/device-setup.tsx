@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { LegalName } from "@/components/company-contact";
 import {
   BookOpen,
   Package,
@@ -517,7 +518,7 @@ export function DeviceSetup() {
               <Phone className="w-5 h-5" />
             </div>
             <h3 className="font-semibold tracking-tight">
-              Call Penn Home Medical Supply for
+              Call <LegalName /> for
             </h3>
             <ul className="text-sm text-muted-foreground leading-relaxed space-y-1.5 list-disc list-inside">
               <li>Equipment that arrived damaged or doesn't power on</li>

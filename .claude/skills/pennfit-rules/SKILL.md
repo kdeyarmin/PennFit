@@ -101,10 +101,21 @@ degraded responses (e.g. delivery-failures returns
 `auditEventsUnavailable: true`); the `/readyz` DB probe uses
 `feature_flags`, not `audit_log`.
 
-### R6 — One From address
+### R6 — One From per tenant, through the shared client
 Every outbound email funnels through `lib/resupply-email`'s
-`createSendgridClient()`; `SENDGRID_FROM_EMAIL` is `info@pennpaps.com`.
-Don't construct a second SendGrid client or hardcode a different From.
+`createSendgridClient()`; don't construct a second SendGrid client or
+hardcode a From. The **platform default From is the CareMetric Breathe
+identity `noreply@cmbreathe.com`** (`DEFAULT_SENDGRID_FROM_EMAIL`), NOT the
+seed tenant — Penn pins its own `info@pennpaps.com` via
+`organizations.from_email` (migration 0377). Patient/user-facing senders
+that know their `orgId` use `createTenantSendgridClient(orgId)` /
+`resolveTenantSender(orgId)` (tenant From, platform fallback);
+internal/ops/auth mail stays on the platform default. Same platform-vs-tenant
+split for SMS/voice/fax (`resolveTenantSmsFrom`/`resolveTenantVoiceFrom`/
+`resolveTenantFaxFrom`) and for brand copy (`applyCompanyIdentityToText` /
+`resolveBrandingByOrgId`). The `company-info.ts` unconfigured fallback and
+patient-facing link defaults are the platform (`CareMetric Breathe` /
+`https://cmbreathe.com`), never PennPaps.
 
 ### R7 — Admin theme stays scoped
 Admin tokens (`--penn-navy`, …) live in `artifacts/cpap-fitter/src/admin.css`

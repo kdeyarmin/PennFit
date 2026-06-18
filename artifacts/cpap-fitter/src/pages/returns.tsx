@@ -19,7 +19,7 @@ export function ReturnsPage() {
   const contact = useCompanyContact();
   useDocumentTitle(
     "Returns & refunds",
-    "Penn Home Medical Supply return policy — 30 days for unopened supplies, 30-day fit guarantee on masks and cushions, free exchange shipping.",
+    `${contact.legalName} return policy — 30 days for unopened supplies, 30-day fit guarantee on masks and cushions, free exchange shipping.`,
   );
 
   return (
@@ -29,7 +29,7 @@ export function ReturnsPage() {
           <PackageCheck className="w-7 h-7 text-primary" />
         </div>
         <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          PennPaps · Returns &amp; Refunds
+          {contact.name} · Returns &amp; Refunds
         </p>
         <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand">
           Returns &amp; refunds
@@ -204,7 +204,7 @@ export function ReturnsPage() {
             href={`tel:${contact.phoneE164}`}
             className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
           >
-            <Phone className="w-4 h-4" /> Call Penn Home Medical Supply
+            <Phone className="w-4 h-4" /> Call {contact.legalName}
           </a>
           <a
             href={`mailto:${contact.email}`}

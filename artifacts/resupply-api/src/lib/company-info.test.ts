@@ -214,17 +214,20 @@ describe("getCompanyInfo", () => {
     const info = await getCompanyInfo();
     expect(info.source).toBe("environment");
     expect(info.name).toBe("Env Practice");
-    expect(info.supportEmail).toBe("support@pennpaps.com");
+    // Contact fields fall back to the neutral PLATFORM identity, not the
+    // seed tenant's (PennPaps) — an unconfigured tenant must not inherit it.
+    expect(info.supportEmail).toBe("support@cmbreathe.com");
   });
 
-  it("degrades to the hardcoded defaults on a DB error", async () => {
+  it("degrades to the platform identity on a DB error", async () => {
     stageSupabaseResponse("dme_organization", "select", {
       error: { message: "boom" },
     });
     const info = await getCompanyInfo();
     expect(info.source).toBe("fallback");
-    expect(info.name).toBe("PennPaps");
-    expect(info.supportPhoneDisplay).toBe("(814) 471-0627");
+    // CareMetric Breathe — the platform identity, NOT the seed tenant brand.
+    expect(info.name).toBe("CareMetric Breathe");
+    expect(info.supportPhoneDisplay).toBe("");
   });
 });
 

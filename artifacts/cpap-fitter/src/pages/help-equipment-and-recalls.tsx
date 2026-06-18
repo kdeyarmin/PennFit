@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, AccountShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -22,10 +23,7 @@ const steps: HelpStep[] = [
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/account"
-        caption="My equipment lives under the Therapy & supplies tab."
-      >
+      <Screenshot caption="My equipment lives under the Therapy & supplies tab.">
         <AccountShot />
       </Screenshot>
     ),
@@ -79,7 +77,7 @@ export function HelpEquipmentAndRecalls() {
       title="Register equipment & get recall alerts"
       Icon={Stethoscope}
       minutes="2 min"
-      metaDescription="How to register your CPAP, BiPAP, or accessory device on PennPaps so you're alerted if a manufacturer recall ever matches your serial number."
+      metaDescription="How to register your CPAP, BiPAP, or accessory device so you're alerted if a manufacturer recall ever matches your serial number."
       intro="Sixty seconds of typing now means you hear immediately if your machine is ever recalled — and better compatibility suggestions every time you shop."
       summary={
         <>
@@ -90,7 +88,9 @@ export function HelpEquipmentAndRecalls() {
         </>
       }
       prerequisites={[
-        "A PennPaps account, signed in.",
+        <>
+          A <BrandName /> account, signed in.
+        </>,
         "The serial number from the label on your device.",
       ]}
       steps={steps}
@@ -110,7 +110,13 @@ export function HelpEquipmentAndRecalls() {
         },
         {
           q: "Does registering share my information with the manufacturer?",
-          a: "No. Registration stays on your PennPaps account and is used to match recall notices to you and improve compatibility suggestions — nothing is sent to the manufacturer.",
+          a: (
+            <>
+              No. Registration stays on your <BrandName /> account and is used
+              to match recall notices to you and improve compatibility
+              suggestions — nothing is sent to the manufacturer.
+            </>
+          ),
         },
       ]}
       related={[

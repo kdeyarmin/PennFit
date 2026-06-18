@@ -22,6 +22,8 @@ import {
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { openPennBot } from "@/lib/chat-events";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName } from "@/components/company-contact";
 
 const priceTierLabel: Record<string, string> = {
   budget: "Budget",
@@ -36,9 +38,10 @@ const priceTierColor: Record<string, string> = {
 };
 
 export function Masks() {
+  const c = useCompanyContact();
   useDocumentTitle(
     "Mask catalog",
-    "Browse the full PennPaps CPAP mask catalog: nasal, nasal pillow, full face, and hybrid masks with sizing, weight, noise level, and price tier.",
+    `Browse the full ${c.name} CPAP mask catalog: nasal, nasal pillow, full face, and hybrid masks with sizing, weight, noise level, and price tier.`,
   );
   const { data, isLoading, isError, refetch } = useListMasks();
   const [filter, setFilter] = useState<MaskEntryType | "all">("all");
@@ -59,7 +62,7 @@ export function Masks() {
           <div className="inline-flex items-center gap-3 mb-3">
             <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              PennPaps · Catalog
+              <BrandName /> · Catalog
             </span>
           </div>
           <h1 className="text-display text-4xl md:text-5xl font-bold tracking-tight mb-2 text-gradient-brand">
