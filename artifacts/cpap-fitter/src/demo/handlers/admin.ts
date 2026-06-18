@@ -23,6 +23,13 @@ import {
   demoSystemInfo,
 } from "../fixtures/admin";
 import { findDemoProduct } from "../fixtures/products";
+import {
+  demoSelectableAddons,
+  demoSelectablePlans,
+  demoSelectPlan,
+  demoTenantBilling,
+  demoUpdateAddon,
+} from "../fixtures/billing-package";
 
 function intParam(
   req: { query: URLSearchParams },
@@ -148,6 +155,25 @@ export const adminHandlers: DemoHandler[] = [
   route("GET", "/resupply-api/admin/billing/director-summary", () =>
     json(demoBillingDirectorSummary()),
   ),
+
+  // ── tenant billing package: plan + add-on self-service ───────────
+  route("GET", "/resupply-api/admin/billing/package", () =>
+    json(demoTenantBilling()),
+  ),
+  route("GET", "/resupply-api/admin/billing/plans", () =>
+    json(demoSelectablePlans()),
+  ),
+  route("GET", "/resupply-api/admin/billing/addons", () =>
+    json(demoSelectableAddons()),
+  ),
+  route("POST", "/resupply-api/admin/billing/subscription", (req) => {
+    const body = req.json<{ planCode?: string }>() ?? {};
+    return json(demoSelectPlan(body.planCode));
+  }),
+  route("PUT", "/resupply-api/admin/billing/addons", (req) => {
+    const body = req.json<{ addonCode?: string; quantity?: number }>() ?? {};
+    return json(demoUpdateAddon(body.addonCode, body.quantity));
+  }),
   route("GET", "/api/admin/orders", (req) =>
     json(
       demoAdminOrders(intParam(req, "page", 1), intParam(req, "pageSize", 25)),

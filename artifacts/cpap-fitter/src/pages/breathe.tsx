@@ -45,6 +45,7 @@ import {
   ShieldCheck,
   Sparkles,
   Stethoscope,
+  Store,
   TrendingUp,
   Video,
   Waypoints,
@@ -93,6 +94,8 @@ function BreatheShell({ children }: { children: React.ReactNode }) {
   useRevealOnScroll();
   useNoIndex();
   useSmoothScroll();
+  useInitialHashScroll();
+
   return (
     <div className="breathe-page">
       <div className="bx-grain" aria-hidden="true" />
@@ -558,6 +561,8 @@ export function BreatheHome() {
     <BreatheShell>
       <Hero />
       <IntegrationsStrip />
+      <Lifecycle />
+      <Capabilities />
       <Replaces />
       <PricingHome />
       <ClosingCta />
@@ -585,8 +590,10 @@ export function BreatheProduct() {
         sub="From the first intake call to the last reconciled claim — see the console, the automations, and the AI that run a modern DME business."
       />
       <Lifecycle />
+      <DayInLife />
       <ProductShowcase />
       <Features />
+      <RevenueCycle />
       <AiBento />
       <ClosingCta />
     </BreatheShell>
@@ -612,6 +619,7 @@ export function BreatheCompare() {
         sub="Legacy DME systems bolt modules onto decades-old cores. See the line-by-line difference — and what it means for each person on your team."
       />
       <Comparison />
+      <WhyDifferent />
       <Roles />
       <ClosingCta />
     </BreatheShell>
@@ -1014,6 +1022,95 @@ function Lifecycle() {
   );
 }
 
+/* ───────────────────────── A day on Breathe ───────────────────────── */
+/*
+ * The concrete "what does it actually do" story — one operating day told
+ * as the events the platform handles on its own, from before the team
+ * logs in to the owner's end-of-day read. Every beat maps to shipped
+ * functionality (nightly therapy sync, the resupply worklist, the AI
+ * voice agent, the unified inbox + email auto-reply, Office Ally
+ * submission + ERA posting, the therapy board + video visits, AI referral
+ * intake + CMN drafting, and the live owner dashboards/KPI alerts).
+ */
+const DAY: {
+  icon: React.ReactNode;
+  time: string;
+  title: string;
+  body: string;
+  gold?: boolean;
+}[] = [
+  {
+    icon: <RefreshCw size={20} />,
+    time: "Before anyone logs in",
+    title: "The day builds itself overnight",
+    body: "The nightly sync pulls adherence from ResMed, Philips, and 3B; the resupply engine assembles an eligibility-ranked worklist; and the AI voice agent has already answered after-hours calls and booked the reorders behind them.",
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    time: "8:30 AM",
+    title: "Coordinators open one inbox",
+    body: "SMS, email, and inbound faxes are already triaged to the right patient. High-confidence email questions were answered automatically overnight; the rest wait as drafts, so reps start on exceptions instead of a backlog.",
+  },
+  {
+    icon: <Receipt size={20} />,
+    time: "10:00 AM",
+    title: "Billing works dollars, not a queue",
+    body: "Clean 837P claims auto-submit through Office Ally, this morning's ERAs auto-post, and the denials worklist is already ranked by recoverable dollars × win probability — the biggest recoveries first.",
+    gold: true,
+  },
+  {
+    icon: <Video size={20} />,
+    time: "1:00 PM",
+    title: "Clinical reaches the right patients",
+    body: "The therapy board surfaces three patients slipping in their first month. An RT launches a video visit with a one-tap link — no scheduling tool, no app for the patient to install.",
+  },
+  {
+    icon: <FileStack size={20} />,
+    time: "3:00 PM",
+    title: "New business walks in by fax",
+    body: "A referral fax arrives; AI extracts the patient and clinical details and pre-fills intake. The CMN drafts from therapy data and routes for e-signature — the order moves without anyone re-keying paper.",
+    gold: true,
+  },
+  {
+    icon: <LineChart size={20} />,
+    time: "End of day",
+    title: "The owner sees the real number",
+    body: "Margin, DSO, and collections are live — not a month-old export. A KPI alert already flagged the one payer trending toward trouble, while the rest of the business ran itself.",
+  },
+];
+
+function DayInLife() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <CalendarClock size={13} /> A day on Breathe
+          </span>
+          <h2 className="bx-h2">What the platform does while you work</h2>
+          <p className="bx-lede">
+            The same operating day, told as the work the system handles on its
+            own — so your team spends the hours on patients, not on stitching
+            tools together.
+          </p>
+        </div>
+        <ol className="bx-day bx-reveal">
+          {DAY.map((d) => (
+            <li className={`bx-day-item${d.gold ? " gold" : ""}`} key={d.time}>
+              <span className="bx-day-dot">{d.icon}</span>
+              <div className="bx-day-body">
+                <span className="bx-day-time">{d.time}</span>
+                <h3>{d.title}</h3>
+                <p>{d.body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Product showcase ───────────────────────── */
 const SIDE_NAV: { icon: React.ReactNode; label: string; active?: boolean }[] = [
   { icon: <Gauge size={15} />, label: "Today", active: true },
@@ -1397,6 +1494,23 @@ const FEATURES: Feature[] = [
     title: "Analytics & KPIs",
     body: "Margin, DSO, LTV/CAC, payer profitability, team throughput, and NPS — live, with KPI alerts that page you before a number becomes a problem.",
   },
+  {
+    icon: <Store size={22} />,
+    title: "Branded Storefront & Shop",
+    body: "Your own CPAP storefront with catalog, cart, Stripe checkout, subscriptions, returns, and reviews — plus live insurance benefit estimates before a patient pays.",
+  },
+  {
+    icon: <Workflow size={22} />,
+    title: "Automation & Rules",
+    body: "Smart triggers and routing rules fire the right outreach the moment an event happens, while KPI alerts and goal tracking keep leadership ahead of every number.",
+  },
+  {
+    icon: <FileStack size={22} />,
+    title: "AI Referral Intake",
+    body: "Drop in a referral fax and AI extracts the patient and clinical details to pre-fill intake — no manual re-keying, and the paperwork pipeline takes it from there.",
+    tag: "AI",
+    gold: true,
+  },
 ];
 
 function Features() {
@@ -1529,6 +1643,292 @@ function AiBento() {
   );
 }
 
+/* ───────────────────────── Revenue cycle deep-dive ───────────────────────── */
+/*
+ * The RCM drill-down for the product tour — DME lives or dies on getting
+ * paid, so the claims pipeline gets its own section. The flow steps and
+ * worklist cards map to the real Office Ally EDI path (270/271, 837P,
+ * 999/277CA, 835/ERA) plus the shipped A/R worklists (prior auth via
+ * Da Vinci PAS, secondary/COB, capped rentals, timely filing, statements,
+ * payer profitability). Reuses .bx-pipeline + .bx-caps so no new CSS.
+ */
+const RCM_FLOW: { icon: React.ReactNode; label: string; sub: string }[] = [
+  { icon: <BadgeCheck size={18} />, label: "Eligibility", sub: "270 / 271" },
+  { icon: <Sparkles size={18} />, label: "AI scrub", sub: "pre-flight" },
+  { icon: <Receipt size={18} />, label: "Submit", sub: "837P" },
+  { icon: <FileStack size={18} />, label: "Acknowledge", sub: "999 / 277CA" },
+  { icon: <CircleDollarSign size={18} />, label: "Post", sub: "835 / ERA" },
+  { icon: <TrendingUp size={18} />, label: "Denials", sub: "ranked by $" },
+  { icon: <LineChart size={18} />, label: "A/R", sub: "aging & forecast" },
+];
+
+const RCM_WORKLISTS: Capability[] = [
+  {
+    icon: <ClipboardSignature size={20} />,
+    title: "Electronic prior auth",
+    summary: "FHIR submission through Da Vinci PAS, with SLA tracking.",
+    points: [
+      "Submit auth requests electronically, not by fax-and-wait",
+      "Missed / at-risk SLA worklist with renewal tracking",
+    ],
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Secondary & COB",
+    summary: "Roll the primary's leftover balance to the secondary payer.",
+    points: [
+      "Coordination-of-benefits worklist",
+      "Patient responsibility calculated automatically",
+    ],
+  },
+  {
+    icon: <CalendarClock size={20} />,
+    title: "Capped rentals",
+    summary: "13- and 36-month Medicare cycles, handled.",
+    points: [
+      "Cycle tracking with KH / KI / KX modifier rotation",
+      "Advance-notice automation before each cycle turns",
+    ],
+  },
+  {
+    icon: <LineChart size={20} />,
+    title: "A/R & timely filing",
+    summary: "Nothing ages out or misses a filing window.",
+    points: [
+      "0 / 30 / 60 / 90 aging buckets",
+      "Days-left-to-file countdown + collections forecast",
+    ],
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    title: "Patient statements",
+    summary: "Send balances by email or SMS — compliantly.",
+    points: [
+      "Signed statement links delivered to the patient",
+      "Consent- and quiet-hours-aware sending",
+    ],
+  },
+  {
+    icon: <CircleDollarSign size={20} />,
+    title: "Payer profitability",
+    summary: "Net yield by payer: billed → allowed → collected.",
+    points: [
+      "Denial rate and DSO broken out per payer",
+      "Margin reported net of captured product cost",
+    ],
+  },
+];
+
+function RevenueCycle() {
+  return (
+    <section className="bx-section" id="revenue-cycle">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Revenue cycle, in depth
+          </span>
+          <h2 className="bx-h2">
+            Get paid the first time — <em>automated end to end</em>
+          </h2>
+          <p className="bx-lede">
+            From real-time eligibility to posted cash, the whole claim lifecycle
+            runs on the same patient record. Specialists review exceptions; the
+            platform does the keying, the submission, the posting, and the
+            prioritizing.
+          </p>
+        </div>
+
+        <div className="bx-pipeline bx-reveal">
+          <div className="bx-pipeline-line">
+            <span className="bx-pipeline-pulse" />
+          </div>
+          <ol className="bx-pipeline-nodes">
+            {RCM_FLOW.map((s) => (
+              <li className="bx-pipe-node" key={s.label}>
+                <span className="bx-pipe-dot">{s.icon}</span>
+                <span className="bx-pipe-label">{s.label}</span>
+                <span className="bx-pipe-idx">{s.sub}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="bx-caps" style={{ marginTop: 56 }}>
+          {RCM_WORKLISTS.map((c) => (
+            <article className="bx-cap bx-reveal" key={c.title}>
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Capabilities ───────────────────────── */
+/*
+ * The plain-language answer to "what does this software actually do?" —
+ * the real product surface grouped into eight capability areas, each with
+ * concrete sub-features. This is the homepage's core explainer; the
+ * /breathe/product Features grid and the /breathe/features role page go
+ * deeper. Copy is grounded in shipped functionality (resupply engine,
+ * Office Ally RCM, therapy-cloud monitoring, the AI workforce, storefront,
+ * telehealth, analytics), not aspiration.
+ */
+type Capability = {
+  icon: React.ReactNode;
+  title: string;
+  summary: string;
+  points: string[];
+  gold?: boolean;
+};
+
+const CAPABILITIES: Capability[] = [
+  {
+    icon: <RefreshCw size={20} />,
+    title: "Resupply engine",
+    summary: "Never miss a replacement window across your whole panel.",
+    points: [
+      "Eligibility-aware reminders by SMS, email & voice",
+      "One-tap signed reorder links — no login, no friction",
+      "Subscriptions, autopay & cart-abandonment recovery",
+    ],
+  },
+  {
+    icon: <Receipt size={20} />,
+    title: "Revenue cycle & claims",
+    summary: "Get paid the first time, faster — end to end.",
+    points: [
+      "Real-time 270/271 eligibility & re-verification",
+      "AI-scrubbed 837P auto-submitted via Office Ally",
+      "835/ERA auto-posting + denials ranked by $ recoverable",
+      "Prior auth, A/R aging, timely-filing & capped rentals",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Stethoscope size={20} />,
+    title: "Therapy monitoring",
+    summary: "See who's slipping off therapy before they quit.",
+    points: [
+      "Nightly ResMed, Philips & 3B adherence pulls",
+      "CMS 90-day compliance cohorts & RT interventions",
+      "Provider-ready usage reports & recall tracking",
+    ],
+  },
+  {
+    icon: <MessageSquare size={20} />,
+    title: "Patient communications",
+    summary: "Every conversation in one inbox, fully logged.",
+    points: [
+      "Unified SMS, MMS, email & inbound-fax inbox",
+      "Cases, routing rules, macros & message templates",
+      "Bulk campaigns, alerts & cadence playbooks",
+    ],
+  },
+  {
+    icon: <BrainCircuit size={20} />,
+    title: "AI workforce",
+    summary: "AI that does the work — not just the talking.",
+    points: [
+      "24/7 voice agent confirms coverage & places orders",
+      "Storefront chatbot + high-confidence email auto-reply",
+      "Referral auto-intake from faxes, post-call summaries",
+      "An in-app admin copilot for your whole team",
+    ],
+    gold: true,
+  },
+  {
+    icon: <ScanFace size={20} />,
+    title: "Storefront & fitter",
+    summary: "A branded shop that converts shoppers to patients.",
+    points: [
+      "On-device AI mask fitting from the phone camera",
+      "Catalog, cart, Stripe checkout, returns & reviews",
+      "Live insurance benefit estimates before checkout",
+    ],
+  },
+  {
+    icon: <Video size={20} />,
+    title: "Telehealth",
+    summary: "Face-to-face setups and follow-ups, no friction.",
+    points: [
+      "Built-in video visits for setups, fittings & check-ins",
+      "One-tap patient join by text or email — no app",
+      "Scheduled, reminded & summarized automatically",
+    ],
+  },
+  {
+    icon: <LineChart size={20} />,
+    title: "Analytics & automation",
+    summary: "Run the business on live signal, not last month's export.",
+    points: [
+      "Margin, DSO, LTV/CAC & payer-profitability dashboards",
+      "KPI alerts, goal tracking & live staffing load",
+      "Smart triggers, rules & CSV / PDF / QuickBooks export",
+    ],
+  },
+];
+
+function Capabilities() {
+  return (
+    <section className="bx-section" id="capabilities">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Workflow size={13} /> Everything it does
+          </span>
+          <h2 className="bx-h2">One platform runs the entire DME business</h2>
+          <p className="bx-lede">
+            Resupply, revenue cycle, clinical monitoring, patient communication,
+            a branded storefront, telehealth, and an AI workforce — every
+            workflow on the same patient record. No exports, no swivel-chair, no
+            patients lost between systems.
+          </p>
+        </div>
+        <div className="bx-caps">
+          {CAPABILITIES.map((c) => (
+            <article
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want the full tour — every screen and automation?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/product">
+            Explore the platform <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── Comparison ───────────────────────── */
 type Cell = "yes" | "no" | "partial";
 type CompareRow = {
@@ -1580,9 +1980,37 @@ const COMPARE_ROWS: CompareRow[] = [
     cols: ["partial", "partial", "no"],
   },
   {
+    label: "Electronic prior authorization",
+    sub: "FHIR · Da Vinci PAS",
+    breathe: "yes",
+    cols: ["partial", "no", "partial"],
+  },
+  {
+    label: "Built-in branded storefront & shop",
+    sub: "catalog · cart · checkout",
+    breathe: "yes",
+    cols: ["partial", "partial", "no"],
+  },
+  {
+    label: "AI referral intake from faxes",
+    breathe: "yes",
+    cols: ["no", "no", "no"],
+  },
+  {
+    label: "Owner analytics",
+    sub: "margin · DSO · LTV/CAC",
+    breathe: "yes",
+    cols: ["partial", "partial", "partial"],
+  },
+  {
     label: "Modern, unified UI",
     breathe: "yes",
     cols: ["no", "partial", "yes"],
+  },
+  {
+    label: "Transparent, month-to-month pricing",
+    breathe: "yes",
+    cols: ["no", "no", "partial"],
   },
   {
     label: "Typical implementation",
@@ -1681,6 +2109,82 @@ function Comparison() {
           of 2026 and is provided for illustration. All marks are property of
           their respective owners.
         </p>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Why it's different ───────────────────────── */
+/*
+ * The "why the table looks like that" payoff — the three structural
+ * choices behind every checkmark above. Reuses the .bx-caps card grid.
+ */
+const DIFFERENCES: Capability[] = [
+  {
+    icon: <BrainCircuit size={20} />,
+    title: "AI in the core, not an add-on",
+    summary: "Intelligence ships in the product — never licensed separately.",
+    points: [
+      "Voice agent, claim scrubbing, and mask fitting are built in",
+      "No bolt-on module to buy to get the AI",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Database size={20} />,
+    title: "One patient record, not seven integrations",
+    summary: "Every workflow reads and writes the same data.",
+    points: [
+      "Intake → resupply → claims → clinical on one timeline",
+      "No exports, no swivel-chair, no patients lost between tools",
+    ],
+  },
+  {
+    icon: <CircleDollarSign size={20} />,
+    title: "Priced like one platform",
+    summary: "Transparent, month-to-month — and your data stays yours.",
+    points: [
+      "No per-module upsells or multi-year lock-in",
+      "Export on demand, including back out to PacWare",
+    ],
+  },
+];
+
+function WhyDifferent() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <Sparkles size={13} /> The difference, in three ideas
+          </span>
+          <h2 className="bx-h2">Why the table looks like that</h2>
+          <p className="bx-lede">
+            Those checkmarks aren&apos;t a longer feature list — they come from
+            three structural choices a decades-old core can&apos;t retrofit.
+          </p>
+        </div>
+        <div className="bx-caps bx-caps-3">
+          {DIFFERENCES.map((c) => (
+            <article
+              className={`bx-cap bx-reveal${c.gold ? " gold" : ""}`}
+              key={c.title}
+            >
+              <div className="bx-cap-head">
+                <span className="bx-cap-ic">{c.icon}</span>
+                <div>
+                  <h3>{c.title}</h3>
+                  <p className="bx-cap-summary">{c.summary}</p>
+                </div>
+              </div>
+              <ul className="bx-cap-list">
+                {c.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -1793,6 +2297,12 @@ function Roles() {
               </div>
             </div>
           ))}
+        </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want every feature mapped to the seat that uses it?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/features">
+            See what the software does, by role <ArrowRight size={16} />
+          </Link>
         </div>
       </div>
     </section>
@@ -2532,6 +3042,42 @@ function useSmoothScroll() {
     return () => {
       root.style.scrollBehavior = prev;
     };
+  }, []);
+}
+
+/**
+ * Scrolls to the URL hash target on mount. A deep link / cross-page
+ * navigation like `/breathe#roi` would otherwise land at the top of the
+ * page, because this surface is lazy-loaded — the browser's native hash
+ * jump fires before the React content (and the `#roi` section) has
+ * mounted. We retry on a few animation frames until the target exists,
+ * then scroll to it (honoring prefers-reduced-motion). No hash, or a
+ * hash that never resolves, is a silent no-op.
+ */
+function useInitialHashScroll() {
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash === "#" || hash === "#top") return;
+    let frame = 0;
+    let tries = 0;
+    const tryScroll = () => {
+      let el: Element | null;
+      try {
+        el = document.querySelector(hash);
+      } catch {
+        return; // malformed selector — nothing to do
+      }
+      if (el) {
+        el.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "start",
+        });
+        return;
+      }
+      if (tries++ < 60) frame = requestAnimationFrame(tryScroll);
+    };
+    frame = requestAnimationFrame(tryScroll);
+    return () => cancelAnimationFrame(frame);
   }, []);
 }
 
