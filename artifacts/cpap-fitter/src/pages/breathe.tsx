@@ -1231,9 +1231,14 @@ const CLAIMS_FLOW: {
 ];
 
 function OutcomeBars({ bar, gold }: { bar: OutcomeBar; gold?: boolean }) {
+  // Expose the comparison to assistive tech as a single image label rather
+  // than hiding the chart: e.g. "Resupply order rate: Reactive outreach 20%,
+  // Breathe automation 50%." The decorative bars themselves carry no text.
+  const metric = bar.caption.split(" — ")[0];
+  const ariaLabel = `${metric}: ${bar.fromLabel} ${bar.from}${bar.unit}, ${bar.toLabel} ${bar.to}${bar.unit}.`;
   return (
-    <div className="bx-ob" aria-hidden="true">
-      <div className="bx-ob-row">
+    <div className="bx-ob" role="img" aria-label={ariaLabel}>
+      <div className="bx-ob-row" aria-hidden="true">
         <span className="bx-ob-tag">{bar.fromLabel}</span>
         <span className="bx-ob-track">
           <i
@@ -1246,7 +1251,7 @@ function OutcomeBars({ bar, gold }: { bar: OutcomeBar; gold?: boolean }) {
           {bar.unit}
         </span>
       </div>
-      <div className="bx-ob-row">
+      <div className="bx-ob-row" aria-hidden="true">
         <span className="bx-ob-tag">{bar.toLabel}</span>
         <span className="bx-ob-track">
           <i
@@ -1259,7 +1264,9 @@ function OutcomeBars({ bar, gold }: { bar: OutcomeBar; gold?: boolean }) {
           {bar.unit}
         </span>
       </div>
-      <div className="bx-ob-axis">{bar.caption}</div>
+      <div className="bx-ob-axis" aria-hidden="true">
+        {bar.caption}
+      </div>
     </div>
   );
 }
