@@ -15,6 +15,19 @@
 //   pnpm --filter @workspace/scripts auth:bootstrap-admin \
 //     --email=alice@example.com --role=admin
 //
+// Bootstrapping the FIRST platform super-admin in a fresh environment:
+//   add --platform-admin to also grant the platform tier
+//   (resupply.platform_admins, migration 0355) at account-creation time:
+//
+//   pnpm --filter @workspace/scripts auth:bootstrap-admin \
+//     --email=owner@example.com --role=admin --platform-admin
+//
+//   This is the order-correct home for the platform grant: a one-shot
+//   data migration that grants by email (e.g. 0383) runs once and is a
+//   no-op if the account doesn't exist YET — so it can't grant an admin
+//   who is bootstrapped later. Doing it here, where the user row is
+//   guaranteed to exist, closes that gap.
+//
 // Behaviour:
 //   * If `resupply_auth.users` already has a row for the email, we report
 //     the current role + status and (with --force) update the
@@ -51,6 +64,7 @@ interface ParsedArgs {
   email: string;
   role: "admin" | "agent";
   force: boolean;
+  platformAdmin: boolean;
   productName: string;
   publicBaseUrl: string;
   uiPathPrefix: string;
@@ -80,6 +94,12 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (roleRaw !== "admin" && roleRaw !== "agent") {
     fail("--role must be 'admin' or 'agent' (default: admin).");
   }
+  const platformAdmin = flags.has("platform-admin");
+  if (platformAdmin && roleRaw !== "admin") {
+    fail(
+      "--platform-admin requires --role=admin (the platform tier is admin-only).",
+    );
+  }
   const productName = args.get("product") ?? "PennPaps";
   const publicBaseUrl =
     args.get("base-url") ??
@@ -96,11 +116,36 @@ function parseArgs(argv: string[]): ParsedArgs {
     email: email!,
     role: roleRaw as "admin" | "agent",
     force: flags.has("force"),
+    platformAdmin,
     productName,
     publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
     uiPathPrefix,
     sendEmail: !flags.has("no-email"),
   };
+}
+
+/**
+ * Idempotently grant the PLATFORM super-admin tier
+ * (resupply.platform_admins, migration 0355) to an existing auth user.
+ * `ignoreDuplicates` makes a re-run a no-op, so the log says "Ensured"
+ * (not "Granted") — the row is present afterward either way.
+ */
+async function grantPlatformAdmin(
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  userId: string,
+  emailLower: string,
+): Promise<void> {
+  const { error } = await supabase
+    .schema("resupply")
+    .from("platform_admins")
+    .upsert(
+      { auth_user_id: userId, granted_by_email: "auth:bootstrap-admin" },
+      { onConflict: "auth_user_id", ignoreDuplicates: true },
+    );
+  if (error) throw error;
+  process.stdout.write(
+    `[auth:bootstrap-admin] Ensured platform super-admin for ${emailLower}.\n`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -164,6 +209,24 @@ async function main(): Promise<void> {
       // account-takeover link for an existing admin without any
       // explicit confirmation. Refuse unless --force is supplied so
       // the operation is intentional.
+      //
+      // EXCEPTION: a bare `--platform-admin` invocation for an already-
+      // active admin just wants to grant the platform tier — that needs
+      // no new password link, so grant it idempotently and exit cleanly
+      // without touching credentials. (Without this, granting an admin
+      // bootstrapped before this flag would require --force, which DOES
+      // reset their password — the case Codex flagged.) A revoked user
+      // still falls through to the refusal so the operator clears that
+      // with --force first.
+      if (argsParsed.platformAdmin && existing.status !== "revoked") {
+        await grantPlatformAdmin(supabase, userId, emailLower);
+        process.stdout.write(
+          `[auth:bootstrap-admin] Done. user=${userId} already exists ` +
+            `(role=${argsParsed.role}, status=${existing.status}); no ` +
+            `password link issued.\n`,
+        );
+        return;
+      }
       fail(
         `User ${emailLower} already exists with role=${argsParsed.role} and ` +
           `status=${existing.status}. Re-running would issue a new ` +
@@ -189,6 +252,17 @@ async function main(): Promise<void> {
     });
     userId = inserted.id;
     finalStatus = inserted.status;
+  }
+
+  // Grant the PLATFORM super-admin tier when requested. This is the
+  // order-correct home for the grant: the auth user row is guaranteed to
+  // exist by this point (we just created it, or found it on a --force
+  // role-change / reactivation path), so unlike a one-shot data migration
+  // it can never run "too early" in a brand-new environment. The
+  // same-role no-force path is handled earlier (it grants and returns
+  // without issuing a password link).
+  if (argsParsed.platformAdmin) {
+    await grantPlatformAdmin(supabase, userId, emailLower);
   }
 
   // Issue a short-lived password_reset token. The bootstrap link is a
