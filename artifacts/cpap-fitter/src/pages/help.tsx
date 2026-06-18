@@ -587,16 +587,18 @@ export function Help() {
             <Sparkles className="w-4 h-4" />
             Ask PennBot
           </Button>
-          <a href={`tel:${contact.phoneE164}`}>
-            <Button
-              size="lg"
-              variant="outline"
-              className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60 gap-2"
-            >
-              <PhoneCall className="w-4 h-4" />
-              {contact.phoneDisplay}
-            </Button>
-          </a>
+          {contact.phoneE164 && (
+            <a href={`tel:${contact.phoneE164}`}>
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60 gap-2"
+              >
+                <PhoneCall className="w-4 h-4" />
+                {contact.phoneDisplay}
+              </Button>
+            </a>
+          )}
         </div>
       </section>
     </div>

@@ -15,12 +15,16 @@ function buildSteps(contact: CompanyContact): HelpStep[] {
       body: (
         <p>
           Call{" "}
-          <a
-            href={`tel:${contact.phoneE164}`}
-            className="text-primary hover:underline"
-          >
-            {contact.phoneDisplay}
-          </a>
+          {contact.phoneE164 ? (
+            <a
+              href={`tel:${contact.phoneE164}`}
+              className="text-primary hover:underline"
+            >
+              {contact.phoneDisplay}
+            </a>
+          ) : (
+            "our resupply line"
+          )}
           . Our voice assistant answers right away — day or night — and our team
           is available Monday–Friday, 9a–5p ET. The same number is in the site
           footer and on every reminder text we send.

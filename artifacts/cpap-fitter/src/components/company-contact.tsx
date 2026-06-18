@@ -58,9 +58,11 @@ export function SupportEmailText() {
   return <>{c.email}</>;
 }
 
-/** The support phone as a tel: link. */
+/** The support phone as a tel: link. Renders nothing when no phone is set
+ *  (the platform default has none) — never an empty, inaccessible tel link. */
 export function SupportPhoneLink({ className }: { className?: string }) {
   const c = useCompanyContact();
+  if (!c.phoneE164) return null;
   return (
     <a className={className} href={`tel:${c.phoneE164}`}>
       {c.phoneDisplay}

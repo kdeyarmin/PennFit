@@ -241,21 +241,23 @@ export function OrderSuccess() {
             Questions about your order?
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <a
-              href={`tel:${contact.phoneE164}`}
-              className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
-              data-testid="order-success-phone"
-            >
-              <div className="h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center shrink-0">
-                <Phone className="w-3.5 h-3.5" />
-              </div>
-              <span className="flex flex-col leading-tight">
-                <span className="font-medium text-foreground">
-                  {contact.phoneDisplay}
+            {contact.phoneE164 && (
+              <a
+                href={`tel:${contact.phoneE164}`}
+                className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
+                data-testid="order-success-phone"
+              >
+                <div className="h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center shrink-0">
+                  <Phone className="w-3.5 h-3.5" />
+                </div>
+                <span className="flex flex-col leading-tight">
+                  <span className="font-medium text-foreground">
+                    {contact.phoneDisplay}
+                  </span>
+                  <span className="text-xs">Call {contact.name}</span>
                 </span>
-                <span className="text-xs">Call {contact.name}</span>
-              </span>
-            </a>
+              </a>
+            )}
             <a
               href={`mailto:${contact.email}`}
               className="flex items-center gap-2.5 text-muted-foreground hover:text-primary transition-colors"
