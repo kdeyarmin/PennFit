@@ -1,4 +1,4 @@
--- 0394_reminder_escalation_voice_flag — Control Center toggle for the
+-- 0396_reminder_escalation_voice_flag — Control Center toggle for the
 -- AUTOMATED VOICE tier of the resupply-reminder escalation ladder.
 --
 -- Adds the `reminder_escalation.voice` feature flag. The daily escalation
@@ -23,7 +23,7 @@
 -- it must be an explicit opt-in: a tenant owner turns it on from Control
 -- Center once they're comfortable letting the agent call patients. When OFF
 -- (or when the voice path is unconfigured) the ladder stays SMS → email →
--- CSR alert — the exact pre-0394 behavior — so a single-tenant deploy that
+-- CSR alert — the exact pre-0396 behavior — so a single-tenant deploy that
 -- never flips this is completely unchanged. INSERT … ON CONFLICT DO NOTHING
 -- keeps re-runs idempotent and never clobbers an admin's intentional toggle.
 --
