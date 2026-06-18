@@ -96,7 +96,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
   const platformAdmin = flags.has("platform-admin");
   if (platformAdmin && roleRaw !== "admin") {
-    fail("--platform-admin requires --role=admin (the platform tier is admin-only).");
+    fail(
+      "--platform-admin requires --role=admin (the platform tier is admin-only).",
+    );
   }
   const productName = args.get("product") ?? "PennPaps";
   const publicBaseUrl =
