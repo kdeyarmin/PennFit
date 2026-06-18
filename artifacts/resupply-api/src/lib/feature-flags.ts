@@ -74,6 +74,7 @@ export const FEATURE_FLAG_KEYS = [
   "resupply.usage_compliance_check",
   "resupply.auto_order_drafts",
   "reminder_escalation.dispatcher",
+  "reminder_escalation.voice",
   "storefront.auto_reminder_enrollment",
   "alerts.auto_dispatch",
   "therapy_fleet.auto_outreach",
