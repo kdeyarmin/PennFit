@@ -582,11 +582,20 @@ function PlanCatalogCard({ plan }: { plan: BillingPlan }) {
             >
               {save.isPending ? "Saving…" : "Save"}
             </button>
-            <button
               onClick={() => {
                 resetForm();
                 setEditing(false);
                 setMessage(null);
+                setName(plan.name);
+                setMonthly(centsToDollarInput(plan.monthlyPriceCents));
+                setOnboarding(centsToDollarInput(plan.onboardingFeeCents));
+                setIsPublic(plan.isPublic !== false);
+                setAllowances(
+                  Object.fromEntries(
+                    Object.entries(plan.allowances).map(([k, v]) => [k, String(v)]),
+                  ),
+                );
+                setFeatures(plan.features.join("\n"));
               }}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
             >
