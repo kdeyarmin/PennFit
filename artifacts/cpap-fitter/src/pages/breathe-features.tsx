@@ -66,7 +66,11 @@ const IMPACT_META: Record<
   { label: string; short: string; icon: React.ReactNode }
 > = {
   time: { label: "Saves time", short: "Time", icon: <Clock size={13} /> },
-  money: { label: "Cuts cost", short: "Cost", icon: <CircleDollarSign size={13} /> },
+  money: {
+    label: "Cuts cost",
+    short: "Cost",
+    icon: <CircleDollarSign size={13} />,
+  },
   revenue: {
     label: "Grows revenue",
     short: "Revenue",
@@ -461,9 +465,9 @@ function Intro() {
           </h1>
           <p className="bx-hero-sub bx-reveal in">
             Breathe is the AI-native operating platform that runs the entire DME
-            lifecycle. Below is the honest breakdown: for each role on your team,
-            exactly what the platform does — and whether each capability saves
-            time, cuts cost, or grows revenue.
+            lifecycle. Below is the honest breakdown: for each role on your
+            team, exactly what the platform does — and whether each capability
+            saves time, cuts cost, or grows revenue.
           </p>
           <div className="bx-hero-cta bx-reveal in">
             <a className="bx-btn bx-btn-primary" href="#demo">
