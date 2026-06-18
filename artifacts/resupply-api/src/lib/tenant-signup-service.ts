@@ -69,6 +69,19 @@ export type SelfServeSignupResult =
   | { ok: true; slug: string; signInUrl: string }
   | { ok: false; reason: SelfServeSignupFailure; message: string };
 
+/**
+ * Strip trailing "/" from a base URL in a single linear pass. The
+ * obvious `s.replace(/\/+$/, "")` is a polynomial-ReDoS shape on
+ * uncontrolled input (the base URL is derived from the request Host
+ * header) — a long run of slashes makes the anchored `+$` backtrack
+ * O(n²). A char scan is O(n) with no backtracking.
+ */
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return s.slice(0, end);
+}
+
 /** Turn a free-text organization name into a URL-safe slug. */
 export function slugifyOrgName(name: string): string {
   return name
@@ -118,7 +131,7 @@ export async function createSelfServeTenant(
   // platform site), not the tenant-pinned auth default.
   const linkBaseUrl =
     input.baseUrl && /^https?:\/\//i.test(input.baseUrl)
-      ? input.baseUrl.replace(/\/+$/, "")
+      ? stripTrailingSlashes(input.baseUrl)
       : deps.publicBaseUrl;
 
   // Password policy mirrors the auth lib (length beats complexity:
