@@ -27,6 +27,17 @@
 //     assistant's escalate_to_human lands somewhere visible and the
 //     /account → Messages thread isn't empty).
 //   * 2 sample patients for the admin patients list.
+//   * 2 signature packets for those patients — one completed (with
+//     acknowledged documents + a captured signature) and one still
+//     outstanding — so /admin/patient-packets and the packets tab on a
+//     patient chart aren't empty.
+//   * 2 chart documents (a reviewed sleep study, an unreviewed insurance
+//     card) so /admin/patients/:id Documents lists real rows.
+//
+// All sample rows are tagged with the seed tenant's org_id
+// (organizations.slug = SEED_ORG_SLUG); every table here is
+// tenant-scoped (NOT NULL org_id) on the multi-tenant schema, so the
+// seed resolves the tenant first and fails fast if it isn't onboarded.
 //   By default each customer also gets a real auth login (role
 //   "customer", status active, email verified) so you can actually sign
 //   in as them and chat with the account assistant.
@@ -40,7 +51,11 @@
 // --force) is set, so it can never silently scribble fake data into a
 // real environment.
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  resolveSeedOrgId,
+  SEED_ORG_SLUG,
+} from "@workspace/resupply-db";
 import {
   hashPassword,
   normalizeEmail,
@@ -362,6 +377,159 @@ const PATIENTS: SamplePatient[] = [
   },
 ];
 
+// Email recorded as the packet's sender. Plain text (no FK) — clearly
+// fictional so it can't be mistaken for a real operator.
+const SEED_ADMIN_EMAIL = "demo.admin@example.com";
+
+// Packet document content version. Matches the live template version
+// (`V` in artifacts/resupply-api/src/lib/patient-packet/templates.ts) so
+// the seeded snapshots line up with the current catalog; if the catalog
+// version bumps, these are still valid historical snapshots.
+const PACKET_CONTENT_VERSION = "2026-06-06.v1";
+
+type PatientPacketStatus = "draft" | "sent" | "viewed" | "completed";
+
+interface SamplePacketDocument {
+  id: string;
+  documentKey: string;
+  title: string;
+  sortOrder: number;
+  requiresSignature: boolean;
+}
+
+interface SamplePacket {
+  id: string;
+  patientId: string;
+  title: string;
+  status: PatientPacketStatus;
+  recipientName: string;
+  recipientEmail: string;
+  recipientPhone: string;
+  sentAt: string;
+  firstViewedAt: string | null;
+  completedAt: string | null;
+  documents: SamplePacketDocument[];
+  // Present only on completed packets.
+  signature: {
+    id: string;
+    signerName: string;
+    signerRelationship: string;
+    signedAt: string;
+  } | null;
+}
+
+// The standard onboarding document set (a subset of the live catalog —
+// the welcome letter plus the two acknowledgement documents).
+const ONBOARDING_DOCS: Omit<SamplePacketDocument, "id">[] = [
+  {
+    documentKey: "welcome_instructions",
+    title: "Welcome & Equipment Use Instructions",
+    sortOrder: 0,
+    requiresSignature: false,
+  },
+  {
+    documentKey: "assignment_of_benefits",
+    title: "Assignment of Benefits & Authorization to Bill Insurance",
+    sortOrder: 1,
+    requiresSignature: true,
+  },
+  {
+    documentKey: "notice_of_privacy_practices",
+    title: "Notice of Privacy Practices — Acknowledgement of Receipt",
+    sortOrder: 2,
+    requiresSignature: true,
+  },
+];
+
+const PACKETS: SamplePacket[] = [
+  {
+    // Completed onboarding packet for Pat — has acknowledged documents
+    // and a captured signature, so the packet detail view is fully
+    // populated.
+    id: "5a3b1e00-0f00-4000-8000-000000000701",
+    patientId: "5a3b1e00-0e00-4000-8000-000000000601",
+    title: "Welcome packet — Pat Testpatient",
+    status: "completed",
+    recipientName: "Pat Testpatient",
+    recipientEmail: "sample.pat@example.com",
+    recipientPhone: "+18145550201",
+    sentAt: daysAgo(10),
+    firstViewedAt: daysAgo(9),
+    completedAt: daysAgo(9),
+    documents: ONBOARDING_DOCS.map((d, i) => ({
+      ...d,
+      id: `5a3b1e00-1000-4000-8000-0000000007${(10 + i).toString(16).padStart(2, "0")}`,
+    })),
+    signature: {
+      id: "5a3b1e00-1100-4000-8000-000000000901",
+      signerName: "Pat Testpatient",
+      signerRelationship: "self",
+      signedAt: daysAgo(9),
+    },
+  },
+  {
+    // Outstanding packet for Sam — sent and viewed but not yet signed,
+    // so it shows up in the "awaiting signature" worklist.
+    id: "5a3b1e00-0f00-4000-8000-000000000702",
+    patientId: "5a3b1e00-0e00-4000-8000-000000000602",
+    title: "Onboarding documents — Sam Exampleton",
+    status: "viewed",
+    recipientName: "Sam Exampleton",
+    recipientEmail: "sample.sam@example.com",
+    recipientPhone: "+18145550202",
+    sentAt: daysAgo(2),
+    firstViewedAt: daysAgo(1),
+    completedAt: null,
+    documents: ONBOARDING_DOCS.map((d, i) => ({
+      ...d,
+      id: `5a3b1e00-1000-4000-8000-0000000007${(20 + i).toString(16).padStart(2, "0")}`,
+    })),
+    signature: null,
+  },
+];
+
+interface SampleChartDocument {
+  id: string;
+  patientId: string;
+  objectKey: string;
+  documentType: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+}
+
+const CHART_DOCUMENTS: SampleChartDocument[] = [
+  {
+    // Reviewed sleep study on Pat's chart.
+    id: "5a3b1e00-1200-4000-8000-000000000a01",
+    patientId: "5a3b1e00-0e00-4000-8000-000000000601",
+    objectKey: "sample/patient-documents/pat-sleep-study.pdf",
+    documentType: "sleep_study",
+    filename: "sleep-study-report.pdf",
+    contentType: "application/pdf",
+    sizeBytes: 248_000,
+    reviewedAt: daysAgo(15),
+    reviewNote: "AHI 32 — qualifies for CPAP. (sample)",
+    createdAt: daysAgo(16),
+  },
+  {
+    // Unreviewed insurance card on Sam's chart (badges as needs-review).
+    id: "5a3b1e00-1200-4000-8000-000000000a02",
+    patientId: "5a3b1e00-0e00-4000-8000-000000000602",
+    objectKey: "sample/patient-documents/sam-insurance-card.jpg",
+    documentType: "insurance_card",
+    filename: "insurance-card-front.jpg",
+    contentType: "image/jpeg",
+    sizeBytes: 102_400,
+    reviewedAt: null,
+    reviewNote: null,
+    createdAt: daysAgo(3),
+  },
+];
+
 // Lazily constructed so `--dry-run` works without SUPABASE_* env set
 // (getSupabaseServiceRoleClient validates env eagerly). Only the clean
 // and real-seed paths build the client.
@@ -369,6 +537,27 @@ let _supabase: ReturnType<typeof getSupabaseServiceRoleClient> | null = null;
 function db(): ReturnType<typeof getSupabaseServiceRoleClient> {
   if (!_supabase) _supabase = getSupabaseServiceRoleClient();
   return _supabase;
+}
+
+// Every table this script writes is tenant-scoped: `org_id` is NOT NULL
+// on the multi-tenant schema, so each row must carry the seed tenant's
+// id or the upsert fails the not-null constraint. Resolve it once (the
+// db helper caches it) and fail fast with an actionable message if the
+// seed tenant hasn't been onboarded yet.
+let _orgId: string | null = null;
+async function resolveOrgId(): Promise<string> {
+  if (_orgId) return _orgId;
+  const id = await resolveSeedOrgId();
+  if (!id) {
+    fail(
+      `no seed tenant found (organizations.slug='${SEED_ORG_SLUG}'). ` +
+        "Onboard it first (pnpm --filter @workspace/scripts tenant:onboard) " +
+        "before seeding sample data.",
+    );
+  }
+  _orgId = id;
+  out(`tenant org_id=${id}`);
+  return id;
 }
 
 function check(label: string, error: unknown): void {
@@ -390,6 +579,14 @@ async function runClean(): Promise<void> {
   const customerIds = CUSTOMERS.map((c) => c.customerId);
   const subIds = SUBSCRIPTIONS.map((s) => s.id);
   const patientIds = PATIENTS.map((p) => p.id);
+  const packetIds = PACKETS.map((p) => p.id);
+  const packetSignatureIds = PACKETS.flatMap((p) =>
+    p.signature ? [p.signature.id] : [],
+  );
+  const packetDocumentIds = PACKETS.flatMap((p) =>
+    p.documents.map((d) => d.id),
+  );
+  const chartDocumentIds = CHART_DOCUMENTS.map((d) => d.id);
 
   // Children first to respect FKs.
   check(
@@ -450,6 +647,48 @@ async function runClean(): Promise<void> {
         .from("shop_customers")
         .delete()
         .in("customer_id", customerIds)
+    ).error,
+  );
+  // Packet children (signatures + documents) before the packets, and
+  // packets + chart documents before the patients they reference.
+  check(
+    "delete patient_packet_signatures",
+    (
+      await db()
+        .schema("resupply")
+        .from("patient_packet_signatures")
+        .delete()
+        .in("id", packetSignatureIds)
+    ).error,
+  );
+  check(
+    "delete patient_packet_documents",
+    (
+      await db()
+        .schema("resupply")
+        .from("patient_packet_documents")
+        .delete()
+        .in("id", packetDocumentIds)
+    ).error,
+  );
+  check(
+    "delete patient_packets",
+    (
+      await db()
+        .schema("resupply")
+        .from("patient_packets")
+        .delete()
+        .in("id", packetIds)
+    ).error,
+  );
+  check(
+    "delete patient_documents",
+    (
+      await db()
+        .schema("resupply")
+        .from("patient_documents")
+        .delete()
+        .in("id", chartDocumentIds)
     ).error,
   );
   check(
@@ -513,8 +752,17 @@ async function runSeed(): Promise<void> {
       `  1 in-app conversation with ${CONVERSATION.messages.length} messages`,
     );
     out(`  ${PATIENTS.length} patients`);
+    out(
+      `  ${PACKETS.length} signature packets (${PACKETS.reduce((n, p) => n + p.documents.length, 0)} documents)`,
+    );
+    out(`  ${CHART_DOCUMENTS.length} chart documents`);
     return;
   }
+
+  // Every table below is tenant-scoped (NOT NULL org_id); resolve the
+  // seed tenant up front so every row can be tagged. Fails fast if the
+  // tenant hasn't been onboarded.
+  const orgId = await resolveOrgId();
 
   // Logins first so we can bind auth_user_id onto the shop_customers row.
   if (withLogins) {
@@ -549,6 +797,7 @@ async function runSeed(): Promise<void> {
         cpap_device_json: c.device,
         // Non-null only when a login was successfully created above.
         auth_user_id: c.authUserId,
+        org_id: orgId,
         created_at: daysAgo(120),
         updated_at: nowIso,
       });
@@ -580,6 +829,7 @@ async function runSeed(): Promise<void> {
           CUSTOMERS.find((c) => c.customerId === o.customerId)?.shipping ??
           null,
         paid_at: o.paidAt,
+        org_id: orgId,
         created_at: o.paidAt,
         updated_at: nowIso,
       });
@@ -604,6 +854,7 @@ async function runSeed(): Promise<void> {
           unit_amount_cents: item.unitAmountCents,
           currency: "usd",
           paid_at: o.paidAt,
+          org_id: orgId,
           created_at: o.paidAt,
         });
       check(`upsert shop_order_items ${itemId}`, iErr);
@@ -625,6 +876,7 @@ async function runSeed(): Promise<void> {
         items: s.items,
         current_period_end: s.currentPeriodEnd,
         cancel_at_period_end: s.cancelAtPeriodEnd,
+        org_id: orgId,
         created_at: daysAgo(60),
         updated_at: nowIso,
       });
@@ -643,6 +895,7 @@ async function runSeed(): Promise<void> {
       channel: "in_app",
       status: "awaiting_patient",
       last_message_at: lastMsg.createdAt,
+      org_id: orgId,
       created_at: CONVERSATION.messages[0].createdAt,
       updated_at: nowIso,
     });
@@ -655,6 +908,7 @@ async function runSeed(): Promise<void> {
       sender_role: m.senderRole,
       body: m.body,
       sent_at: m.createdAt,
+      org_id: orgId,
       created_at: m.createdAt,
     });
     check(`upsert messages ${m.id}`, error);
@@ -676,12 +930,110 @@ async function runSeed(): Promise<void> {
         email: p.email,
         status: "active",
         timezone: "America/New_York",
+        org_id: orgId,
         created_at: daysAgo(200),
         updated_at: nowIso,
       });
     check(`upsert patients ${p.id}`, error);
   }
   out(`✓ ${PATIENTS.length} patients`);
+
+  // signature packets (+ documents + signature)
+  let packetDocCount = 0;
+  for (const pk of PACKETS) {
+    const { error: pkErr } = await db()
+      .schema("resupply")
+      .from("patient_packets")
+      .upsert({
+        id: pk.id,
+        patient_id: pk.patientId,
+        title: pk.title,
+        status: pk.status,
+        recipient_name: pk.recipientName,
+        recipient_email: pk.recipientEmail,
+        recipient_phone: pk.recipientPhone,
+        link_version: 1,
+        sent_at: pk.sentAt,
+        first_viewed_at: pk.firstViewedAt,
+        completed_at: pk.completedAt,
+        expires_at: daysFromNow(20),
+        reminder_count: 0,
+        created_by_email: SEED_ADMIN_EMAIL,
+        org_id: orgId,
+        created_at: pk.sentAt,
+        updated_at: nowIso,
+      });
+    check(`upsert patient_packets ${pk.id}`, pkErr);
+
+    for (const d of pk.documents) {
+      const acknowledged = pk.status === "completed" && d.requiresSignature;
+      const { error: dErr } = await db()
+        .schema("resupply")
+        .from("patient_packet_documents")
+        .upsert({
+          id: d.id,
+          packet_id: pk.id,
+          document_key: d.documentKey,
+          title: d.title,
+          content_version: PACKET_CONTENT_VERSION,
+          sort_order: d.sortOrder,
+          requires_signature: d.requiresSignature,
+          acknowledged,
+          acknowledged_at: acknowledged ? pk.completedAt : null,
+          org_id: orgId,
+          created_at: pk.sentAt,
+        });
+      check(`upsert patient_packet_documents ${d.id}`, dErr);
+      packetDocCount += 1;
+    }
+
+    if (pk.signature) {
+      const signedKeys = pk.documents
+        .filter((d) => d.requiresSignature)
+        .map((d) => d.documentKey);
+      const { error: sErr } = await db()
+        .schema("resupply")
+        .from("patient_packet_signatures")
+        .upsert({
+          id: pk.signature.id,
+          packet_id: pk.id,
+          signer_name: pk.signature.signerName,
+          signer_relationship: pk.signature.signerRelationship,
+          consent_esign: true,
+          acknowledged_document_keys: signedKeys,
+          signed_at: pk.signature.signedAt,
+          org_id: orgId,
+          created_at: pk.signature.signedAt,
+        });
+      check(`upsert patient_packet_signatures ${pk.signature.id}`, sErr);
+    }
+  }
+  out(`✓ ${PACKETS.length} signature packets (${packetDocCount} documents)`);
+
+  // chart documents (metadata only — the object bytes are not uploaded;
+  // the list view renders from these rows, a download would 404)
+  for (const d of CHART_DOCUMENTS) {
+    const { error } = await db()
+      .schema("resupply")
+      .from("patient_documents")
+      .upsert({
+        id: d.id,
+        patient_id: d.patientId,
+        object_key: d.objectKey,
+        document_type: d.documentType,
+        filename: d.filename,
+        content_type: d.contentType,
+        size_bytes: d.sizeBytes,
+        reviewed_at: d.reviewedAt,
+        review_note: d.reviewNote,
+        legal_hold: false,
+        org_id: orgId,
+        created_at: d.createdAt,
+        updated_at: nowIso,
+      });
+    check(`upsert patient_documents ${d.id}`, error);
+  }
+  out(`✓ ${CHART_DOCUMENTS.length} chart documents`);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────
