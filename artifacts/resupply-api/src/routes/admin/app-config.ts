@@ -41,6 +41,7 @@ import {
   invalidateAppConfigCache,
   invalidateTenantConfigCache,
 } from "../../lib/app-config/store";
+import { normalizeConfigValueForSave } from "../../lib/app-config/validators";
 import {
   buildSettingView,
   loadDbState,
@@ -165,7 +166,7 @@ router.put(
       .upsert(
         {
           key,
-          value: parsed.data.value,
+          value: normalizeConfigValueForSave(key, parsed.data.value),
           updated_by_user_id: req.adminUserId ?? null,
           updated_by_email: req.adminEmail ?? null,
           updated_at: nowIso,
