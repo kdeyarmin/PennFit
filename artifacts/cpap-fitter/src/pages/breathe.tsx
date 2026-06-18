@@ -2123,7 +2123,7 @@ function useInitialHashScroll() {
     let frame = 0;
     let tries = 0;
     const tryScroll = () => {
-      let el: Element | null = null;
+      let el: Element | null;
       try {
         el = document.querySelector(hash);
       } catch {
