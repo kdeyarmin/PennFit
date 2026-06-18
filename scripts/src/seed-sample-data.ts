@@ -32,7 +32,12 @@
 //     outstanding — so /admin/patient-packets and the packets tab on a
 //     patient chart aren't empty.
 //   * 2 chart documents (a reviewed sleep study, an unreviewed insurance
-//     card) so /admin/patients/:id Documents lists real rows.
+//     card) so /admin/patients/:id Documents lists real rows. Placeholder
+//     file bytes are uploaded to the private bucket so the documents are
+//     actually downloadable (not just metadata).
+//   * Additional admin-surface rows so the most prominent worklists aren't
+//     empty: patient chart notes, insurance coverages, prescriptions, a
+//     referral-inbox review, a shop customer note, and a shop return.
 //
 // All sample rows are tagged with the seed tenant's org_id
 // (organizations.slug = SEED_ORG_SLUG); every table here is
@@ -488,14 +493,41 @@ const PACKETS: SamplePacket[] = [
   },
 ];
 
+// Tiny but structurally-valid placeholder file bytes so the seeded chart
+// documents actually open in the admin viewer instead of 404-ing. The
+// download path streams whatever bytes live in storage and sets the
+// content-type from the DB row, so a minimal PDF / 1×1 JPEG is enough.
+const SAMPLE_PDF_BYTES = Buffer.from(
+  [
+    "%PDF-1.4",
+    "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
+    "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj",
+    "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj",
+    "trailer<</Root 1 0 R>>",
+    "%%EOF",
+    "",
+  ].join("\n"),
+  "utf8",
+);
+// A valid 1×1-pixel baseline JPEG.
+const SAMPLE_JPEG_BYTES = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof" +
+    "Hh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAAB" +
+    "AAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwD/2Q==",
+  "base64",
+);
+
 interface SampleChartDocument {
   id: string;
   patientId: string;
+  /** Canonical `/objects/<path>` key the download endpoint resolves;
+   *  the bytes are uploaded to `<path>` in the private bucket. */
   objectKey: string;
   documentType: string;
   filename: string;
   contentType: string;
-  sizeBytes: number;
+  /** Placeholder bytes uploaded to storage so the file is downloadable. */
+  bytes: Buffer;
   reviewedAt: string | null;
   reviewNote: string | null;
   createdAt: string;
@@ -506,11 +538,11 @@ const CHART_DOCUMENTS: SampleChartDocument[] = [
     // Reviewed sleep study on Pat's chart.
     id: "5a3b1e00-1200-4000-8000-000000000a01",
     patientId: "5a3b1e00-0e00-4000-8000-000000000601",
-    objectKey: "sample/patient-documents/pat-sleep-study.pdf",
+    objectKey: "/objects/sample/patient-documents/pat-sleep-study.pdf",
     documentType: "sleep_study",
     filename: "sleep-study-report.pdf",
     contentType: "application/pdf",
-    sizeBytes: 248_000,
+    bytes: SAMPLE_PDF_BYTES,
     reviewedAt: daysAgo(15),
     reviewNote: "AHI 32 — qualifies for CPAP. (sample)",
     createdAt: daysAgo(16),
@@ -519,16 +551,237 @@ const CHART_DOCUMENTS: SampleChartDocument[] = [
     // Unreviewed insurance card on Sam's chart (badges as needs-review).
     id: "5a3b1e00-1200-4000-8000-000000000a02",
     patientId: "5a3b1e00-0e00-4000-8000-000000000602",
-    objectKey: "sample/patient-documents/sam-insurance-card.jpg",
+    objectKey: "/objects/sample/patient-documents/sam-insurance-card.jpg",
     documentType: "insurance_card",
     filename: "insurance-card-front.jpg",
     contentType: "image/jpeg",
-    sizeBytes: 102_400,
+    bytes: SAMPLE_JPEG_BYTES,
     reviewedAt: null,
     reviewNote: null,
     createdAt: daysAgo(3),
   },
 ];
+
+// Strip the `/objects/` prefix to get the storage path the bytes live at.
+function storagePathFor(objectKey: string): string {
+  return objectKey.replace(/^\/objects\//u, "");
+}
+
+// ── Additional admin surfaces (chart + shop worklists) ──────────────
+// A focused, patient-anchored set so the most prominent "empty" admin
+// pages render real rows: chart notes, insurance, prescriptions, the
+// referral inbox, plus a shop customer note and a return.
+
+const PAT_ID = "5a3b1e00-0e00-4000-8000-000000000601";
+const SAM_ID = "5a3b1e00-0e00-4000-8000-000000000602";
+
+interface SamplePatientNote {
+  id: string;
+  patientId: string;
+  body: string;
+  createdAt: string;
+}
+
+const PATIENT_NOTES: SamplePatientNote[] = [
+  {
+    id: "5a3b1e00-1300-4000-8000-000000000b01",
+    patientId: PAT_ID,
+    body: "Patient called about mask fit — advised smaller cushion, shipping under comfort guarantee. (sample)",
+    createdAt: daysAgo(12),
+  },
+  {
+    id: "5a3b1e00-1300-4000-8000-000000000b02",
+    patientId: SAM_ID,
+    body: "New referral intake. Awaiting signed Rx before first shipment. (sample)",
+    createdAt: daysAgo(2),
+  },
+];
+
+interface SampleCoverage {
+  id: string;
+  patientId: string;
+  rank: "primary" | "secondary";
+  payerName: string;
+  planName: string;
+  memberId: string;
+  groupNumber: string;
+  relationship: "self";
+  effectiveDate: string;
+  inNetwork: boolean;
+  deductibleCents: number;
+  deductibleMetCents: number;
+  verifiedAt: string | null;
+}
+
+const COVERAGES: SampleCoverage[] = [
+  {
+    id: "5a3b1e00-1400-4000-8000-000000000c01",
+    patientId: PAT_ID,
+    rank: "primary",
+    payerName: "Medicare Part B",
+    planName: "Original Medicare",
+    memberId: "1EG4-TE5-MK72",
+    groupNumber: "—",
+    relationship: "self",
+    effectiveDate: "2020-01-01",
+    inNetwork: true,
+    deductibleCents: 24000,
+    deductibleMetCents: 24000,
+    verifiedAt: daysAgo(14),
+  },
+  {
+    id: "5a3b1e00-1400-4000-8000-000000000c02",
+    patientId: SAM_ID,
+    rank: "primary",
+    payerName: "Highmark BCBS",
+    planName: "PPO Blue",
+    memberId: "HMK998877665",
+    groupNumber: "GRP-44821",
+    relationship: "self",
+    effectiveDate: "2025-01-01",
+    inNetwork: true,
+    deductibleCents: 150000,
+    deductibleMetCents: 42000,
+    verifiedAt: null,
+  },
+];
+
+interface SamplePrescription {
+  id: string;
+  patientId: string;
+  itemSku: string;
+  cadenceDays: number;
+  validFrom: string;
+  validUntil: string;
+  status: "active";
+  hcpcsCode: string;
+}
+
+const PRESCRIPTIONS: SamplePrescription[] = [
+  {
+    id: "5a3b1e00-1500-4000-8000-000000000d01",
+    patientId: PAT_ID,
+    itemSku: "airfit-p10-cushion",
+    cadenceDays: 90,
+    validFrom: daysAgo(200).slice(0, 10),
+    validUntil: daysFromNow(165).slice(0, 10),
+    status: "active",
+    hcpcsCode: "A7032",
+  },
+  {
+    id: "5a3b1e00-1500-4000-8000-000000000d02",
+    patientId: SAM_ID,
+    itemSku: "dreamwear-full-face",
+    cadenceDays: 90,
+    validFrom: daysAgo(60).slice(0, 10),
+    validUntil: daysFromNow(305).slice(0, 10),
+    status: "active",
+    hcpcsCode: "A7030",
+  },
+];
+
+const REFERRAL_REVIEW = {
+  id: "5a3b1e00-1600-4000-8000-000000000e01",
+  source: "fax" as const,
+  status: "extracted" as const,
+  // Must match the ReferralExtraction schema the admin reviewer renders
+  // (artifacts/cpap-fitter/src/lib/admin/referral-reviews-api.ts): the UI
+  // dereferences extraction.patient.firstName / .sleepStudy / .confidence
+  // directly, so a flat shape crashes the page.
+  extraction: {
+    patient: {
+      firstName: "Jamie",
+      lastName: "Newpatient",
+      dob: "1972-02-18",
+      phone: "+18145550150",
+      email: "sample.jamie@example.com",
+      address: {
+        line1: "12 Sample Lane",
+        line2: null,
+        city: "Altoona",
+        state: "PA",
+        postalCode: "16601",
+      },
+    },
+    insurance: {
+      payerName: "Medicare Part B",
+      planName: "Original Medicare",
+      memberId: "1EG4-TE5-MK72",
+      groupNumber: null,
+      policyholderName: "Jamie Newpatient",
+      policyholderRelationship: "self",
+    },
+    secondaryInsurance: null,
+    order: [{ description: "CPAP full-face mask resupply", hcpcs: "A7030" }],
+    sleepStudy: {
+      studyDate: "2026-05-20",
+      studyType: "In-lab polysomnography",
+      ahi: 28,
+      rdi: 31,
+      odi: 22,
+      totalSleepMinutes: 372,
+      interpretingPhysician: "Dr. Quinn Sleepwell",
+    },
+    physician: {
+      name: "Dr. Quinn Sleepwell",
+      npi: "1234567893",
+      phone: "+18145550190",
+      fax: "+18145550191",
+      clinic: "Allegheny Sleep Clinic",
+    },
+    documents: [
+      {
+        type: "physician_order",
+        pageStart: 1,
+        pageEnd: 1,
+        title: "Physician order",
+      },
+      {
+        type: "sleep_study",
+        pageStart: 2,
+        pageEnd: 4,
+        title: "Sleep study report",
+      },
+    ],
+    summary:
+      "Sample extracted referral for Jamie Newpatient — OSA, CPAP full-face resupply. Awaiting CSR acceptance.",
+    confidence: {
+      patient: "high",
+      insurance: "medium",
+      order: "high",
+      sleepStudy: "medium",
+    },
+  },
+  extractionModel: "sample-seed",
+  createdAt: daysAgo(1),
+};
+
+interface SampleCustomerNote {
+  id: string;
+  customerId: string;
+  body: string;
+  createdAt: string;
+}
+
+const SHOP_CUSTOMER_NOTES: SampleCustomerNote[] = [
+  {
+    id: "5a3b1e00-1700-4000-8000-000000000f01",
+    customerId: "sample-cust-alex",
+    body: "VIP — long-time resupply customer. Prefers email over SMS. (sample)",
+    createdAt: daysAgo(30),
+  },
+];
+
+const SHOP_RETURN = {
+  id: "sample-return-jordan-1",
+  customerId: "sample-cust-jordan",
+  orderId: "5a3b1e00-0a00-4000-8000-000000000201",
+  sessionId: "cs_test_sample_jordan_1",
+  status: "requested" as const,
+  reason: "defective",
+  reasonNote: "Cushion arrived with a torn seam. (sample)",
+  createdAt: daysAgo(5),
+};
 
 // Lazily constructed so `--dry-run` works without SUPABASE_* env set
 // (getSupabaseServiceRoleClient validates env eagerly). Only the clean
@@ -588,7 +841,96 @@ async function runClean(): Promise<void> {
   );
   const chartDocumentIds = CHART_DOCUMENTS.map((d) => d.id);
 
-  // Children first to respect FKs.
+  // Children first to respect FKs. The additional-surface rows are all
+  // leaf children of patients / shop_customers / shop_orders, so remove
+  // them before those parents are deleted below.
+  check(
+    "delete patient_notes",
+    (
+      await db()
+        .schema("resupply")
+        .from("patient_notes")
+        .delete()
+        .in(
+          "id",
+          PATIENT_NOTES.map((n) => n.id),
+        )
+    ).error,
+  );
+  check(
+    "delete insurance_coverages",
+    (
+      await db()
+        .schema("resupply")
+        .from("insurance_coverages")
+        .delete()
+        .in(
+          "id",
+          COVERAGES.map((c) => c.id),
+        )
+    ).error,
+  );
+  check(
+    "delete prescriptions",
+    (
+      await db()
+        .schema("resupply")
+        .from("prescriptions")
+        .delete()
+        .in(
+          "id",
+          PRESCRIPTIONS.map((rx) => rx.id),
+        )
+    ).error,
+  );
+  check(
+    "delete referral_reviews",
+    (
+      await db()
+        .schema("resupply")
+        .from("referral_reviews")
+        .delete()
+        .eq("id", REFERRAL_REVIEW.id)
+    ).error,
+  );
+  check(
+    "delete shop_customer_notes",
+    (
+      await db()
+        .schema("resupply")
+        .from("shop_customer_notes")
+        .delete()
+        .in(
+          "id",
+          SHOP_CUSTOMER_NOTES.map((n) => n.id),
+        )
+    ).error,
+  );
+  check(
+    "delete shop_returns",
+    (
+      await db()
+        .schema("resupply")
+        .from("shop_returns")
+        .delete()
+        .eq("id", SHOP_RETURN.id)
+    ).error,
+  );
+
+  // Best-effort removal of the uploaded chart-document bytes.
+  const cleanBucket = (
+    process.env.SUPABASE_STORAGE_BUCKET_PRIVATE ?? ""
+  ).trim();
+  if (cleanBucket) {
+    const paths = CHART_DOCUMENTS.map((d) => storagePathFor(d.objectKey));
+    const { error: rmErr } = await db().storage.from(cleanBucket).remove(paths);
+    if (rmErr) {
+      process.stderr.write(
+        `${TAG} WARN: could not remove sample storage objects: ${rmErr.message}\n`,
+      );
+    }
+  }
+
   check(
     "delete messages",
     (
@@ -755,7 +1097,13 @@ async function runSeed(): Promise<void> {
     out(
       `  ${PACKETS.length} signature packets (${PACKETS.reduce((n, p) => n + p.documents.length, 0)} documents)`,
     );
-    out(`  ${CHART_DOCUMENTS.length} chart documents`);
+    out(`  ${CHART_DOCUMENTS.length} chart documents (+ uploaded file bytes)`);
+    out(`  ${PATIENT_NOTES.length} patient notes`);
+    out(`  ${COVERAGES.length} insurance coverages`);
+    out(`  ${PRESCRIPTIONS.length} prescriptions`);
+    out(`  1 referral review`);
+    out(`  ${SHOP_CUSTOMER_NOTES.length} shop customer notes`);
+    out(`  1 shop return`);
     return;
   }
 
@@ -1010,9 +1358,25 @@ async function runSeed(): Promise<void> {
   }
   out(`✓ ${PACKETS.length} signature packets (${packetDocCount} documents)`);
 
-  // chart documents (metadata only — the object bytes are not uploaded;
-  // the list view renders from these rows, a download would 404)
+  // chart documents — upload placeholder bytes first (best-effort) so
+  // the file is downloadable, then write the metadata row pointing at it.
+  const bucket = (process.env.SUPABASE_STORAGE_BUCKET_PRIVATE ?? "").trim();
+  let uploadedBytes = 0;
   for (const d of CHART_DOCUMENTS) {
+    if (bucket) {
+      const path = storagePathFor(d.objectKey);
+      const { error: upErr } = await db()
+        .storage.from(bucket)
+        .upload(path, d.bytes, { contentType: d.contentType, upsert: true });
+      if (upErr) {
+        process.stderr.write(
+          `${TAG} WARN: could not upload ${path} to bucket ${bucket}: ${upErr.message} ` +
+            "(the document row is still seeded; download will 404 until bytes exist)\n",
+        );
+      } else {
+        uploadedBytes += 1;
+      }
+    }
     const { error } = await db()
       .schema("resupply")
       .from("patient_documents")
@@ -1023,7 +1387,7 @@ async function runSeed(): Promise<void> {
         document_type: d.documentType,
         filename: d.filename,
         content_type: d.contentType,
-        size_bytes: d.sizeBytes,
+        size_bytes: d.bytes.length,
         reviewed_at: d.reviewedAt,
         review_note: d.reviewNote,
         legal_hold: false,
@@ -1033,7 +1397,135 @@ async function runSeed(): Promise<void> {
       });
     check(`upsert patient_documents ${d.id}`, error);
   }
-  out(`✓ ${CHART_DOCUMENTS.length} chart documents`);
+  if (!bucket) {
+    process.stderr.write(
+      `${TAG} WARN: SUPABASE_STORAGE_BUCKET_PRIVATE unset — chart document ` +
+        "bytes not uploaded; downloads will 404 until the bucket is configured.\n",
+    );
+  }
+  out(
+    `✓ ${CHART_DOCUMENTS.length} chart documents (${uploadedBytes} files uploaded)`,
+  );
+
+  // patient chart notes
+  for (const n of PATIENT_NOTES) {
+    const { error } = await db()
+      .schema("resupply")
+      .from("patient_notes")
+      .upsert({
+        id: n.id,
+        patient_id: n.patientId,
+        author_email: SEED_ADMIN_EMAIL,
+        body: n.body,
+        org_id: orgId,
+        created_at: n.createdAt,
+      });
+    check(`upsert patient_notes ${n.id}`, error);
+  }
+  out(`✓ ${PATIENT_NOTES.length} patient notes`);
+
+  // insurance coverages
+  for (const c of COVERAGES) {
+    const { error } = await db()
+      .schema("resupply")
+      .from("insurance_coverages")
+      .upsert({
+        id: c.id,
+        patient_id: c.patientId,
+        rank: c.rank,
+        payer_name: c.payerName,
+        plan_name: c.planName,
+        member_id: c.memberId,
+        group_number: c.groupNumber,
+        policyholder_relationship: c.relationship,
+        effective_date: c.effectiveDate,
+        in_network: c.inNetwork,
+        deductible_cents: c.deductibleCents,
+        deductible_met_cents: c.deductibleMetCents,
+        verified_at: c.verifiedAt,
+        org_id: orgId,
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+    check(`upsert insurance_coverages ${c.id}`, error);
+  }
+  out(`✓ ${COVERAGES.length} insurance coverages`);
+
+  // prescriptions
+  for (const rx of PRESCRIPTIONS) {
+    const { error } = await db()
+      .schema("resupply")
+      .from("prescriptions")
+      .upsert({
+        id: rx.id,
+        patient_id: rx.patientId,
+        item_sku: rx.itemSku,
+        cadence_days: rx.cadenceDays,
+        valid_from: rx.validFrom,
+        valid_until: rx.validUntil,
+        status: rx.status,
+        hcpcs_code: rx.hcpcsCode,
+        org_id: orgId,
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+    check(`upsert prescriptions ${rx.id}`, error);
+  }
+  out(`✓ ${PRESCRIPTIONS.length} prescriptions`);
+
+  // referral review (the referral inbox)
+  const { error: refErr } = await db()
+    .schema("resupply")
+    .from("referral_reviews")
+    .upsert({
+      id: REFERRAL_REVIEW.id,
+      source: REFERRAL_REVIEW.source,
+      status: REFERRAL_REVIEW.status,
+      extraction: REFERRAL_REVIEW.extraction,
+      extraction_model: REFERRAL_REVIEW.extractionModel,
+      extracted_at: REFERRAL_REVIEW.createdAt,
+      org_id: orgId,
+      created_at: REFERRAL_REVIEW.createdAt,
+      updated_at: nowIso,
+    });
+  check("upsert referral_reviews", refErr);
+  out("✓ 1 referral review");
+
+  // shop customer notes
+  for (const n of SHOP_CUSTOMER_NOTES) {
+    const { error } = await db()
+      .schema("resupply")
+      .from("shop_customer_notes")
+      .upsert({
+        id: n.id,
+        customer_id: n.customerId,
+        body: n.body,
+        author_email: SEED_ADMIN_EMAIL,
+        org_id: orgId,
+        created_at: n.createdAt,
+      });
+    check(`upsert shop_customer_notes ${n.id}`, error);
+  }
+  out(`✓ ${SHOP_CUSTOMER_NOTES.length} shop customer notes`);
+
+  // shop return
+  const { error: retErr } = await db()
+    .schema("resupply")
+    .from("shop_returns")
+    .upsert({
+      id: SHOP_RETURN.id,
+      customer_id: SHOP_RETURN.customerId,
+      order_id: SHOP_RETURN.orderId,
+      stripe_session_id: SHOP_RETURN.sessionId,
+      status: SHOP_RETURN.status,
+      reason: SHOP_RETURN.reason,
+      reason_note: SHOP_RETURN.reasonNote,
+      org_id: orgId,
+      created_at: SHOP_RETURN.createdAt,
+      updated_at: nowIso,
+    });
+  check("upsert shop_returns", retErr);
+  out("✓ 1 shop return");
 }
 
 // ── Main ─────────────────────────────────────────────────────────────
