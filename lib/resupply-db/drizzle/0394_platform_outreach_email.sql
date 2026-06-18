@@ -25,6 +25,14 @@
 CREATE TABLE IF NOT EXISTS "resupply"."platform_contacts" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "email" varchar(320) NOT NULL,
+  -- Case-folded copy of `email`, maintained by the DB. Uniqueness +
+  -- import upserts key off this REAL column (not an expression index):
+  -- PostgREST `.upsert(..., { onConflict })` can only target a column /
+  -- named constraint, so a `UNIQUE (lower(email))` expression index would
+  -- be invisible to it and the idempotent-import upsert would fail. A
+  -- STORED generated column keeps `email` displaying in its original case
+  -- while giving a real unique key.
+  "email_lower" varchar(320) GENERATED ALWAYS AS (lower("email")) STORED,
   "name" varchar(200),
   "company" varchar(200),
   "tags" text[] NOT NULL DEFAULT '{}',
@@ -36,13 +44,12 @@ CREATE TABLE IF NOT EXISTS "resupply"."platform_contacts" (
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "platform_contacts_source_enum"
-    CHECK ("source" IN ('manual', 'import'))
+    CHECK ("source" IN ('manual', 'import')),
+  -- One row per email address (case-insensitive). A named UNIQUE
+  -- constraint (not an expression index) so import upserts can target it
+  -- via onConflict: "email_lower".
+  CONSTRAINT "platform_contacts_email_lower_unique" UNIQUE ("email_lower")
 );
-
--- One row per email address (case-insensitive). Upserts on import key
--- off this so re-importing the same list is idempotent.
-CREATE UNIQUE INDEX IF NOT EXISTS "platform_contacts_email_unique"
-  ON "resupply"."platform_contacts" (lower("email"));
 
 -- Tag filtering for "contacts_by_tag" audiences.
 CREATE INDEX IF NOT EXISTS "platform_contacts_tags_idx"

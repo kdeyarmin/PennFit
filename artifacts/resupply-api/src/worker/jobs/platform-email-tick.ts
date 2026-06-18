@@ -88,10 +88,9 @@ export async function processTick(
     .limit(1)
     .maybeSingle();
   if (cErr) {
-    log.error(
-      { err: cErr.message },
-      "platform_email.tick: campaign read failed",
-    );
+    // Log the error OBJECT under `err` (not `.message`) so pino's error
+    // serializer + redaction rules apply — a raw string bypasses them.
+    log.error({ err: cErr }, "platform_email.tick: campaign read failed");
     throw cErr;
   }
   if (!campaign) {
@@ -143,10 +142,7 @@ export async function processTick(
     .in("status", PENDING_STATUSES)
     .limit(batchSize);
   if (pErr) {
-    log.error(
-      { err: pErr.message },
-      "platform_email.tick: pending fetch failed",
-    );
+    log.error({ err: pErr }, "platform_email.tick: pending fetch failed");
     throw pErr;
   }
   if (!pendingRows || pendingRows.length === 0) {
@@ -174,7 +170,7 @@ export async function processTick(
         "id, recipient_email, recipient_kind, recipient_ref, send_attempts",
       );
     if (claimErr) {
-      log.error({ err: claimErr.message }, "platform_email.tick: claim failed");
+      log.error({ err: claimErr }, "platform_email.tick: claim failed");
       throw claimErr;
     }
     if (data) claimed.push(...data);
@@ -194,11 +190,16 @@ export async function processTick(
   try {
     sendgridClient = createSendgridClient();
   } catch (err) {
-    // Email not configured — roll the claim back and bail so a later
-    // tick retries once credentials exist.
+    // Email not configured. Roll the claim back to 'pending', then RETHROW
+    // so pg-boss retries this tick (with backoff, eventually DLQ) — rather
+    // than returning, which would end the on-demand self-re-enqueue chain
+    // and strand the campaign in 'sending' with no future tick. The
+    // rollback means the retry (or a manual resume) re-claims a clean
+    // batch; the stale-'sending' lease is a backstop if the rollback
+    // itself fails.
     log.error(
       { err, campaignId: campaign.id },
-      "platform_email.tick: SendGrid not configured — rolling back claim",
+      "platform_email.tick: SendGrid not configured — rolling back claim and failing tick for retry",
     );
     await supabase
       .schema("resupply")
@@ -208,7 +209,7 @@ export async function processTick(
         "id",
         claimed.map((r) => r.id),
       );
-    return;
+    throw err instanceof Error ? err : new Error(String(err));
   }
 
   const baseUrl = platformPublicBaseUrl();
@@ -275,7 +276,7 @@ export async function processTick(
         // duplicate re-send via the stale-lease reclaim.
         log.error(
           {
-            err: finalizeErr.message,
+            err: finalizeErr,
             recipientId: row.id,
             vendorMessageId: result.messageId,
           },
@@ -426,7 +427,7 @@ async function markCampaignSent(campaignId: string): Promise<boolean> {
     .select("id");
   if (error) {
     logger.error(
-      { err: error.message, campaignId },
+      { err: error, campaignId },
       "platform_email.tick: markCampaignSent update failed",
     );
     return false;

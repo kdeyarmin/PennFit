@@ -2365,6 +2365,9 @@ export interface Database {
         Row: {
           id: string;
           email: string;
+          // DB-generated STORED column (lower(email)); the real unique key
+          // import upserts target via onConflict. Never written by app code.
+          email_lower: string;
           name: string | null;
           company: string | null;
           tags: string[];

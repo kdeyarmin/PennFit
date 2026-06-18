@@ -230,12 +230,15 @@ router.post(
         source: "import" as const,
         created_by_email: req.platformAdminEmail ?? null,
       }));
-      // ignoreDuplicates keeps existing rows intact (fill-only): the
-      // unique index is on lower(email), so re-importing is idempotent.
+      // ignoreDuplicates keeps existing rows intact (fill-only). Conflict
+      // target is the generated `email_lower` column (case-insensitive
+      // unique key) — a real column/constraint, which PostgREST requires
+      // for onConflict (an expression index can't be targeted). We don't
+      // write email_lower; the DB derives it from `email`.
       const { data, error } = await supabase
         .schema("resupply")
         .from("platform_contacts")
-        .upsert(slice, { onConflict: "email", ignoreDuplicates: true })
+        .upsert(slice, { onConflict: "email_lower", ignoreDuplicates: true })
         .select("id");
       if (error) throw error;
       imported += (data ?? []).length;
