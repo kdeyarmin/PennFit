@@ -175,7 +175,7 @@ export function BreatheProduct() {
       <Features />
       <RevenueCycle />
       <AiBento />
-      <Outcomes />
+      <Outcomes showClaimsEngine={false} />
       <ClosingCta />
     </BreatheShell>
   );
@@ -1383,7 +1383,12 @@ function OutcomeBars({ bar, gold }: { bar: OutcomeBar; gold?: boolean }) {
   );
 }
 
-function Outcomes() {
+function Outcomes({ showClaimsEngine = true }: { showClaimsEngine?: boolean }) {
+  // The "Inside the AI claims engine" flow is the only claims pipeline on the
+  // home page, but on the product tour the dedicated RevenueCycle section
+  // already renders a richer pipeline a couple of sections up — so we suppress
+  // this one there (showClaimsEngine={false}) to avoid two near-identical
+  // claim-flow visualizations on the same page. The metric bars stay either way.
   return (
     <section className="bx-section" id="outcomes">
       <div className="bx-shell">
@@ -1425,32 +1430,34 @@ function Outcomes() {
           ))}
         </div>
 
-        <div className="bx-claims-engine bx-reveal">
-          <div className="bx-claims-engine-head">
-            <BrainCircuit size={15} /> Inside the AI claims engine
+        {showClaimsEngine ? (
+          <div className="bx-claims-engine bx-reveal">
+            <div className="bx-claims-engine-head">
+              <BrainCircuit size={15} /> Inside the AI claims engine
+            </div>
+            <ol className="bx-claims-flow">
+              {CLAIMS_FLOW.map((s, i) => (
+                <li
+                  className={`bx-claims-step${s.gold ? " gold" : ""}`}
+                  key={s.label}
+                >
+                  <span className="bx-claims-ic">{s.icon}</span>
+                  <span className="bx-claims-meta">
+                    <b>{s.label}</b>
+                    <i>{s.sub}</i>
+                  </span>
+                  {i < CLAIMS_FLOW.length - 1 ? (
+                    <ArrowRight
+                      className="bx-claims-arrow"
+                      size={15}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ol>
           </div>
-          <ol className="bx-claims-flow">
-            {CLAIMS_FLOW.map((s, i) => (
-              <li
-                className={`bx-claims-step${s.gold ? " gold" : ""}`}
-                key={s.label}
-              >
-                <span className="bx-claims-ic">{s.icon}</span>
-                <span className="bx-claims-meta">
-                  <b>{s.label}</b>
-                  <i>{s.sub}</i>
-                </span>
-                {i < CLAIMS_FLOW.length - 1 ? (
-                  <ArrowRight
-                    className="bx-claims-arrow"
-                    size={15}
-                    aria-hidden="true"
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </div>
+        ) : null}
 
         <p className="bx-outcomes-foot">
           Illustrative ranges drawn from published DME and healthcare
