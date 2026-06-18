@@ -14,7 +14,7 @@ import {
 export function demoPlatformMe() {
   return {
     userId: "demo-platform-admin-1",
-    email: "demo.owner@pennfit.example",
+    email: "demo.admin@cmbreathe.example",
   };
 }
 
@@ -57,17 +57,22 @@ export function demoPlatformTenantBilling() {
 
 /** GET /platform/billing/summary — fleet MRR rollup. */
 export function demoPlatformBillingSummary() {
+  // Internally consistent with the backend aggregator
+  // (artifacts/resupply-api/src/lib/fleet-billing.ts): mrrCents is the sum of
+  // per-tenant recurring (plan + add-ons), addonMrrCents is a subset of it,
+  // sum(byPlan.mrrCents) === mrrCents, and arpuCents = round(mrr / paying).
+  // Penn = Growth ($1,899) + $98 add-ons; Acme = Launch ($799), no add-ons.
   return {
-    mrrCents: 568900,
+    mrrCents: 279600,
     addonMrrCents: 9800,
     atRiskMrrCents: 0,
-    arpuCents: 284450,
+    arpuCents: 139800,
     payingTenants: 2,
     trialingTenants: 0,
     pastDueTenants: 0,
     unsubscribedTenants: 0,
     byPlan: [
-      { planCode: "growth", planName: "Growth", tenants: 1, mrrCents: 189900 },
+      { planCode: "growth", planName: "Growth", tenants: 1, mrrCents: 199700 },
       { planCode: "launch", planName: "Launch", tenants: 1, mrrCents: 79900 },
     ],
     generatedAt: new Date().toISOString(),
@@ -88,7 +93,7 @@ export function demoPlatformBillingActivity() {
         operatorEmail: "owner@pennpaps.example",
         summary: "Switched to the Growth plan",
         metadata: { planCode: "growth" },
-        occurredAt: min(8),
+        occurredAt: min(6),
       },
       {
         id: "evt-2",
@@ -99,7 +104,7 @@ export function demoPlatformBillingActivity() {
         operatorEmail: "owner@pennpaps.example",
         summary: "Set Additional staff seat to 2",
         metadata: { addonCode: "additional_seat", quantity: 2 },
-        occurredAt: min(7),
+        occurredAt: min(20),
       },
       {
         id: "evt-3",
@@ -107,7 +112,7 @@ export function demoPlatformBillingActivity() {
         tenantName: "Acme Sleep DME",
         action: "platform.billing.subscription.updated",
         actor: "platform" as const,
-        operatorEmail: "demo.owner@pennfit.example",
+        operatorEmail: "demo.admin@cmbreathe.example",
         summary: "Assigned the Launch plan",
         metadata: { planCode: "launch" },
         occurredAt: min(40),
@@ -118,7 +123,7 @@ export function demoPlatformBillingActivity() {
         tenantName: "Acme Sleep DME",
         action: "platform.billing.addon.updated",
         actor: "platform" as const,
-        operatorEmail: "demo.owner@pennfit.example",
+        operatorEmail: "demo.admin@cmbreathe.example",
         summary: "Set AI voice agent / IVR to 1",
         metadata: { addonCode: "ai_voice_agent", quantity: 1 },
         occurredAt: min(120),
