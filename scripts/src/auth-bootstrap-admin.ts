@@ -15,6 +15,19 @@
 //   pnpm --filter @workspace/scripts auth:bootstrap-admin \
 //     --email=alice@example.com --role=admin
 //
+// Bootstrapping the FIRST platform super-admin in a fresh environment:
+//   add --platform-admin to also grant the platform tier
+//   (resupply.platform_admins, migration 0355) at account-creation time:
+//
+//   pnpm --filter @workspace/scripts auth:bootstrap-admin \
+//     --email=owner@example.com --role=admin --platform-admin
+//
+//   This is the order-correct home for the platform grant: a one-shot
+//   data migration that grants by email (e.g. 0383) runs once and is a
+//   no-op if the account doesn't exist YET — so it can't grant an admin
+//   who is bootstrapped later. Doing it here, where the user row is
+//   guaranteed to exist, closes that gap.
+//
 // Behaviour:
 //   * If `resupply_auth.users` already has a row for the email, we report
 //     the current role + status and (with --force) update the
@@ -51,6 +64,7 @@ interface ParsedArgs {
   email: string;
   role: "admin" | "agent";
   force: boolean;
+  platformAdmin: boolean;
   productName: string;
   publicBaseUrl: string;
   uiPathPrefix: string;
@@ -80,6 +94,10 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (roleRaw !== "admin" && roleRaw !== "agent") {
     fail("--role must be 'admin' or 'agent' (default: admin).");
   }
+  const platformAdmin = flags.has("platform-admin");
+  if (platformAdmin && roleRaw !== "admin") {
+    fail("--platform-admin requires --role=admin (the platform tier is admin-only).");
+  }
   const productName = args.get("product") ?? "PennPaps";
   const publicBaseUrl =
     args.get("base-url") ??
@@ -96,6 +114,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     email: email!,
     role: roleRaw as "admin" | "agent",
     force: flags.has("force"),
+    platformAdmin,
     productName,
     publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
     uiPathPrefix,
@@ -189,6 +208,25 @@ async function main(): Promise<void> {
     });
     userId = inserted.id;
     finalStatus = inserted.status;
+  }
+
+  // Optionally grant the PLATFORM super-admin tier (resupply.platform_admins,
+  // migration 0355). This is the order-correct home for the grant: the auth
+  // user row is guaranteed to exist by this point (we just created or found
+  // it), so unlike a one-shot data migration it can never run "too early" in
+  // a brand-new environment. Idempotent — re-running is a no-op.
+  if (argsParsed.platformAdmin) {
+    const { error } = await supabase
+      .schema("resupply")
+      .from("platform_admins")
+      .upsert(
+        { auth_user_id: userId, granted_by_email: "auth:bootstrap-admin" },
+        { onConflict: "auth_user_id", ignoreDuplicates: true },
+      );
+    if (error) throw error;
+    process.stdout.write(
+      `[auth:bootstrap-admin] Granted platform super-admin to ${emailLower}.\n`,
+    );
   }
 
   // Issue a short-lived password_reset token. The bootstrap link is a
