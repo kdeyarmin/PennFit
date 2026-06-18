@@ -272,6 +272,17 @@ describe("platform-billing-api", () => {
     );
   });
 
+  test("fetchPlatformBillingActivity scopes the feed to a tenant when given", async () => {
+    fetchMock.mockResolvedValue(okJson({ activity: [] }));
+
+    await fetchPlatformBillingActivity(10, "org-123");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/resupply-api/platform/billing/activity?limit=10&tenantId=org-123",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   test("throws ApiError with parsed server details for non-OK responses", async () => {
     fetchMock.mockResolvedValue(
       errorJson(403, { error: "platform_admin_required" }),

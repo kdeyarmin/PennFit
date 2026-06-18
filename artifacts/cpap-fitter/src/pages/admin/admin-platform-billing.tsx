@@ -931,20 +931,47 @@ function CatalogPreview({
 /** Recent tenant-billing changes across the fleet — surfaces the
  *  tenant.billing.* / platform.billing.* events the logAudit stub can't show.
  *  Polls every 60s; degrades to a quiet empty/error state. */
-function RecentBillingActivity() {
+function RecentBillingActivity({
+  tenants,
+}: {
+  tenants: Array<{ id: string; label: string }>;
+}) {
+  const [tenantId, setTenantId] = useState<string>("");
   const activity = useQuery({
-    queryKey: ["platform-billing", "activity"],
-    queryFn: () => fetchPlatformBillingActivity(25),
+    queryKey: ["platform-billing", "activity", tenantId || "all"],
+    queryFn: () => fetchPlatformBillingActivity(25, tenantId || undefined),
     refetchInterval: 60_000,
   });
   return (
     <Card className="p-5" data-testid="platform-billing-activity">
-      <h2 className="font-semibold text-slate-950">Recent billing activity</h2>
-      <p className="mt-1 text-sm text-slate-600">
-        Plan and add-on changes across every tenant — who changed what, and
-        when. Self-service tenant changes and super-admin assignments both show
-        here.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-950">
+            Recent billing activity
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Plan and add-on changes across every tenant — who changed what, and
+            when. Self-service tenant changes and super-admin assignments both
+            show here.
+          </p>
+        </div>
+        <label className="text-sm text-slate-600">
+          <span className="sr-only">Filter by tenant</span>
+          <select
+            data-testid="activity-tenant-filter"
+            className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900"
+            value={tenantId}
+            onChange={(e) => setTenantId(e.target.value)}
+          >
+            <option value="">All tenants</option>
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {activity.isPending ? (
         <div className="mt-4">
           <Spinner label="Loading activity…" />
@@ -954,7 +981,11 @@ function RecentBillingActivity() {
           Could not load billing activity.
         </p>
       ) : activity.data.activity.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">No billing changes yet.</p>
+        <p className="mt-4 text-sm text-slate-500">
+          {tenantId
+            ? "No billing changes for this tenant yet."
+            : "No billing changes yet."}
+        </p>
       ) : (
         <ul className="mt-4 divide-y divide-slate-100">
           {activity.data.activity.map((e: BillingActivityEvent) => (
@@ -1077,7 +1108,13 @@ export function AdminPlatformBillingPage() {
           </div>
         </Card>
       </div>
-      <RecentBillingActivity />
+      <RecentBillingActivity
+        tenants={tenantRows.map(({ tenant }) => ({
+          id: tenant.id,
+          label:
+            tenant.storefrontName || tenant.name || tenant.slug || tenant.id,
+        }))}
+      />
       <CatalogPreview plans={plans} addons={addons} />
       {tenantRows.map(({ tenant }) => (
         <TenantEditor

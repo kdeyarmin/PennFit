@@ -126,6 +126,9 @@ describe("platform billing route wiring", () => {
     // All four mutation routes feed the activity panel.
     const recorded = SRC.match(/await recordBillingEvent\(/g) ?? [];
     expect(recorded.length).toBeGreaterThanOrEqual(4);
+    // The activity feed is filterable to a single tenant (org_id).
+    expect(SRC).toContain("tenantId: z.string().uuid().optional()");
+    expect(SRC).toContain('query.eq("org_id", tenantId)');
   });
 
   it("exposes the cost/proration preview endpoints for both surfaces", () => {
