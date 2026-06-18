@@ -84,12 +84,24 @@ router.post(
     // tenant — otherwise a non-seed tenant's patient would hear the seed
     // "PennPaps" name. A miss degrades to the seed/sync identity, so a
     // tenant-context gap never breaks the call. No-op for the seed tenant.
-    const companyInfo = patientId
-      ? await getCompanyInfo(
-          (await resolveOrgIdForSignedRecord("patients", patientId)) ??
-            undefined,
-        )
-      : await getCompanyInfo();
+    //
+    // Fail-soft: this is a Twilio webhook, so a tenant-lookup hiccup
+    // (PostgREST/network) must NEVER 500 — that would drop the patient's
+    // check-in call. resolveOrgIdForSignedRecord isn't itself guarded, so
+    // catch here and fall back to the default brand. (getCompanyInfo is
+    // already fail-soft and never throws.)
+    let orgId: string | null = null;
+    if (patientId) {
+      try {
+        orgId = await resolveOrgIdForSignedRecord("patients", patientId);
+      } catch (err) {
+        logger.warn(
+          { err },
+          "voice.checkin_twiml: tenant resolution failed; using default brand",
+        );
+      }
+    }
+    const companyInfo = await getCompanyInfo(orgId ?? undefined);
     const brand = (text: string): string =>
       applyCompanyIdentityToText(text, companyInfo);
     const script = brand(voiceScriptForDay(day));

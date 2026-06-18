@@ -566,13 +566,23 @@ async function sendEmail(
   }
   const greeting = greetingFor(row.firstName);
   try {
+    // Plain-text subject/body: chars are literal, so brand directly. HTML:
+    // htmlBodyForDay strips <>& from its own inputs to keep markup well-formed,
+    // so brand the HTML with HTML-escaped tenant values — otherwise a tenant
+    // DBA name containing & < > (e.g. "Smith & Sons") would re-introduce raw
+    // markup into the rendered email.
     const brand = (text: string): string =>
       applyCompanyIdentityToText(text, clients.companyInfo);
+    const brandHtml = (html: string): string =>
+      applyCompanyIdentityToText(
+        html,
+        htmlEscapeCompanyInfo(clients.companyInfo),
+      );
     const r = await clients.sg.sendEmail({
       to: row.email,
       subject: brand(subjectForDay(day)),
       text: brand(textBodyForDay(day, greeting)),
-      html: brand(htmlBodyForDay(day, greeting)),
+      html: brandHtml(htmlBodyForDay(day, greeting)),
       customArgs: { kind: "onboarding_checkin", day },
     });
     return {
@@ -923,6 +933,30 @@ export function stampFieldForDay(
     case "day90":
       return "day90_sent_at";
   }
+}
+
+/**
+ * HTML-escape the tenant-configured CompanyInfo fields that
+ * `applyCompanyIdentityToText` substitutes into copy, so branding an
+ * already-rendered HTML body can't re-introduce raw `< > &` markup via a
+ * free-text DBA / legal name (e.g. "Smith & Sons"). Only the values that
+ * feed the brand/contact replacements are escaped; `websiteUrl` is left
+ * alone because the replacement derives an HTML-safe host from it and
+ * escaping would break `new URL()` parsing.
+ */
+export function htmlEscapeCompanyInfo(info: CompanyInfo): CompanyInfo {
+  const esc = (s: string): string =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    ...info,
+    name: esc(info.name),
+    legalName: esc(info.legalName),
+    supportEmail: esc(info.supportEmail),
+    generalEmail: esc(info.generalEmail),
+    supportPhoneDisplay: esc(info.supportPhoneDisplay),
+    supportPhoneE164: esc(info.supportPhoneE164),
+    supportHours: esc(info.supportHours),
+  };
 }
 
 export function subjectForDay(label: OnboardingDayLabel): string {
