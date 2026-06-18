@@ -31,7 +31,10 @@
  * needing to call a tool.
  */
 
-import { applyCompanyIdentityToText } from "../company-info.js";
+import {
+  applyCompanyIdentityToText,
+  type CompanyInfo,
+} from "../company-info.js";
 
 const CUSTOMER_GREETING_GUIDE = `
 Persona:
@@ -676,9 +679,10 @@ const MAX_CUSTOMER_SYSTEM_PROMPT_CHARS = 40_000;
  * Static fallback reply when the OpenAI key isn't configured (dev or
  * a misconfigured deploy). The route surfaces it with `offline: true`.
  */
-export function customerOfflineFallbackReply(): string {
+export function customerOfflineFallbackReply(info?: CompanyInfo): string {
   return applyCompanyIdentityToText(
     "I'm not available to chat right now. For account or order questions, please call (814) 471-0627 (Mon-Fri 9-5 ET) or email support@pennpaps.com. Your /account page shows your orders, subscriptions, and saved device.",
+    info,
   );
 }
 
@@ -779,6 +783,7 @@ function formatAccountContextSection(ctx: CustomerChatAccountContext): string {
  */
 export function buildCustomerChatSystemPrompt(
   ctx: CustomerChatAccountContext,
+  info?: CompanyInfo,
 ): string {
   const prompt = [
     `You are PennBot Account Assistant, the signed-in customer support chatbot for PennPaps.com (Penn Home Medical Supply). Help patients with their orders, subscriptions, devices, and supplies.`,
@@ -798,9 +803,11 @@ export function buildCustomerChatSystemPrompt(
     .map((s) => s.trim())
     .join("\n\n");
 
-  // Rewrite the historical brand/contact strings to the admin-saved
-  // company identity (no-op until the org row exists).
-  const rewritten = applyCompanyIdentityToText(prompt);
+  // Rewrite the historical brand/contact strings to the tenant's saved
+  // company identity. Pass `info` (getCompanyInfo(orgId)) on per-request
+  // surfaces; omitting it falls back to the warm seed identity, so direct
+  // callers (bot playground, tests) are unchanged.
+  const rewritten = applyCompanyIdentityToText(prompt, info);
   if (rewritten.length > MAX_CUSTOMER_SYSTEM_PROMPT_CHARS) {
     throw new Error(
       `customerChatKnowledge: system prompt is ${rewritten.length} chars, ` +

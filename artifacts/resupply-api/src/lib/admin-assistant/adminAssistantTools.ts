@@ -39,6 +39,7 @@ import { logger } from "../logger.js";
 import {
   applyCompanyIdentityToText,
   applyPlatformBrandingForOrg,
+  getCompanyInfo,
 } from "../company-info.js";
 
 /** Cap tool rounds per user turn so a runaway model can't recurse. */
@@ -221,10 +222,16 @@ async function buildSuggestionEmail(
 
   // Normalize platform/assistant brand tokens (PennPilot → the tenant's
   // admin-assistant name, PennFit → CareMetric Breathe) and the tenant's
-  // own brand (PennPaps → saved company name). No-ops for the Penn Home
-  // Medical Supply tenant, whose configured names are the originals.
+  // own brand (PennPaps → saved company name). Resolve THIS tenant's
+  // identity so a second tenant's suggestion email carries its own
+  // company name, not the seed's. No-ops for the Penn Home Medical
+  // Supply tenant, whose configured names are the originals.
+  const companyInfo = await getCompanyInfo(orgId);
   const brand = async (s: string): Promise<string> =>
-    applyCompanyIdentityToText(await applyPlatformBrandingForOrg(s, orgId));
+    applyCompanyIdentityToText(
+      await applyPlatformBrandingForOrg(s, orgId),
+      companyInfo,
+    );
   return {
     subject: await brand(subject),
     text: await brand(text),
