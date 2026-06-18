@@ -54,9 +54,10 @@ export interface BillingPreview {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-/** Whole days between two instants, floored at 0. */
+/** Whole days between two instants, truncated toward zero and floored at 0
+ *  (a partial day does not count as a full day). */
 function dayspan(fromMs: number, toMs: number): number {
-  return Math.max(0, Math.round((toMs - fromMs) / MS_PER_DAY));
+  return Math.max(0, Math.floor((toMs - fromMs) / MS_PER_DAY));
 }
 
 /**

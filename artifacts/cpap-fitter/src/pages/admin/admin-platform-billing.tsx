@@ -21,6 +21,7 @@ import {
   type BillingPlan,
   type PlatformTenantBillingRow,
 } from "@/lib/admin/platform-billing-api";
+import { formatAppDateTime } from "@/lib/utils";
 
 const METRIC_LABELS: Record<string, string> = {
   activePatients: "Active patients",
@@ -383,9 +384,18 @@ function TenantEditor({
                   defaultValue={qty}
                   type="number"
                   min={0}
+                  step={1}
                   className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
                   onBlur={async (e) => {
-                    const next = Number(e.currentTarget.value || 0);
+                    // Normalize to a non-negative integer — the API schema
+                    // expects an int, so an empty/decimal/NaN field would
+                    // otherwise 400. Reflect the cleaned value back into the
+                    // input so the UI matches what we'll send.
+                    const parsed = Number(e.currentTarget.value);
+                    const next = Number.isFinite(parsed)
+                      ? Math.max(0, Math.floor(parsed))
+                      : 0;
+                    e.currentTarget.value = String(next);
                     if (next === qty) return;
                     // Cost/proration preview before committing the change.
                     try {
@@ -549,9 +559,7 @@ function RecentBillingActivity() {
               <div className="text-right text-xs text-slate-500">
                 <div>{e.operatorEmail ?? "—"}</div>
                 <time dateTime={e.occurredAt}>
-                  {new Date(e.occurredAt).toLocaleString(undefined, {
-                    timeZone: "America/New_York",
-                  })}
+                  {formatAppDateTime(e.occurredAt)}
                 </time>
               </div>
             </li>
