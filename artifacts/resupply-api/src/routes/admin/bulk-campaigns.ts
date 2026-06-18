@@ -776,6 +776,18 @@ router.post(
         : null;
     const regenSegment: PatientSegmentFilter | null =
       segParse && segParse.success ? segParse.data : null;
+    // Refuse rather than wipe: a patient_segment campaign whose stored filter
+    // no longer parses would otherwise resolve to zero candidates, and the
+    // delete-then-reinsert below would silently destroy the drafted audience
+    // and report success. Bail with a clear error instead.
+    if (campaign.audience_kind === "patient_segment" && !regenSegment) {
+      res.status(409).json({
+        error: "invalid_segment_filter",
+        message:
+          "This campaign's stored segment filter is missing or invalid. Cancel and create a fresh draft to rebuild the audience.",
+      });
+      return;
+    }
     const regenChannel: Channel = campaign.channel === "sms" ? "sms" : "email";
 
     const { shopCandidates, patientCandidates } = await fetchAudienceCandidates(
@@ -898,6 +910,7 @@ router.get(
         "recipient_kind",
         "recipient_id",
         "recipient_email",
+        "recipient_phone",
         "status",
         "suppression_reason",
         "created_at",
@@ -917,7 +930,7 @@ router.get(
       const { data, error } = await supabase
         .from("bulk_campaign_recipients")
         .select(
-          "recipient_kind, recipient_id, recipient_email, status, suppression_reason, created_at",
+          "recipient_kind, recipient_id, recipient_email, recipient_phone, status, suppression_reason, created_at",
         )
         .eq("campaign_id", idCheck.data)
         .order("created_at", { ascending: true })
@@ -932,6 +945,7 @@ router.get(
             r.recipient_kind,
             r.recipient_id,
             r.recipient_email,
+            r.recipient_phone ?? "",
             r.status,
             r.suppression_reason ?? "",
             r.created_at,
