@@ -149,6 +149,30 @@ const draftBody = z
       message:
         "complianceAttestation (≥ 10 chars) is required when category=compliance.",
     },
+  )
+  // Block MARKETING SMS to patient audiences. Patients have no per-patient
+  // SMS-marketing consent flag yet (tracked as a follow-up), so a marketing
+  // text to a patient audience can't demonstrate prior express written
+  // consent (TCPA). Shop customers DO carry an smsMarketing preference (the
+  // resolver gates on it), so all_active_shop_customers — and a manual list
+  // of only shop customers — is allowed. Service/compliance SMS to patients
+  // (transactional reminders, recalls) is unaffected.
+  .refine(
+    (b) => {
+      if (b.channel !== "sms" || b.category !== "marketing") return true;
+      const patientBearing =
+        b.audienceKind !== "all_active_shop_customers" &&
+        !(
+          b.audienceKind === "manual_list" &&
+          (b.manualPatientIds?.length ?? 0) === 0
+        );
+      return !patientBearing;
+    },
+    {
+      path: ["channel"],
+      message:
+        "Marketing SMS to patients isn't supported yet (no per-patient SMS-marketing consent on file). Send marketing as email, target shop customers, or use a service/compliance category.",
+    },
   );
 
 router.post(
