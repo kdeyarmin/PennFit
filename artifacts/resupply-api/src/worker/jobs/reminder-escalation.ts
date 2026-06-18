@@ -366,16 +366,24 @@ async function escalationScanForOrg(
     }
   }
 
-  // Patient contactability for the candidate episodes — so the planner can
-  // skip ladder channels the patient can't receive (SMS/voice need a phone,
-  // email needs an address) and always reach the CSR hand-off instead of
-  // stalling on an un-deliverable step. Chunk the patient-id IN list (~200
-  // ids) and page within each chunk, like the reads above. Patients are
-  // active (the scan only opened conversations for active ones), but a row
-  // could have lost a contact field since; default-reachable on a miss.
-  const reachByPatient = new Map<
+  // Patient status + contactability for the candidate episodes. Two uses:
+  //   1. STATUS — only escalate ACTIVE patients. A patient who texted STOP is
+  //      paused; the send helpers already no-op a non-active patient (no
+  //      conversation written), so without this filter the ladder would
+  //      re-enqueue a send to an opted-out patient every tick forever (never
+  //      reaching CSR) — wasted work AND a failure to respect the opt-out at
+  //      the planning layer. The hourly scan already filters `status=active`;
+  //      mirror it here.
+  //   2. CAPABILITY — skip ladder channels the patient can't receive
+  //      (SMS/voice need a phone, email needs an address) so the ladder always
+  //      reaches the CSR hand-off instead of stalling on an un-deliverable
+  //      step.
+  // Chunk the patient-id IN list (~200 ids) and page within each chunk, like
+  // the reads above. Default active + reachable on a row miss so a transient
+  // read blip never suppresses (or, for status, silently drops) outreach.
+  const infoByPatient = new Map<
     string,
-    { hasPhone: boolean; hasEmail: boolean }
+    { status: string; hasPhone: boolean; hasEmail: boolean }
   >();
   const patientIds = [...new Set(episodes.map((e) => e.patientId))];
   for (let i = 0; i < patientIds.length; i += 200) {
@@ -383,14 +391,15 @@ async function escalationScanForOrg(
     for (let from = 0; ; from += PAGE_SIZE) {
       const { data, error } = await supabase
         .from("patients")
-        .select("id, phone_e164, email")
+        .select("id, status, phone_e164, email")
         .in("id", idChunk)
         .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
       if (error) throw error;
       if (!data || data.length === 0) break;
       for (const p of data) {
-        reachByPatient.set(p.id, {
+        infoByPatient.set(p.id, {
+          status: p.status,
           hasPhone: p.phone_e164 != null && p.phone_e164.length > 0,
           hasEmail: p.email != null && p.email.length > 0,
         });
@@ -398,16 +407,22 @@ async function escalationScanForOrg(
       if (data.length < PAGE_SIZE) break;
     }
   }
-  for (const ep of episodes) {
-    const reach = reachByPatient.get(ep.patientId);
+  // Escalate only ACTIVE patients (respect the STOP opt-out), and stamp each
+  // surviving episode with its patient's channel capability.
+  const activeEpisodes = episodes.filter(
+    (ep) => (infoByPatient.get(ep.patientId)?.status ?? "active") === "active",
+  );
+  if (activeEpisodes.length === 0) return;
+  for (const ep of activeEpisodes) {
+    const info = infoByPatient.get(ep.patientId);
     // Default-reachable when a patient row wasn't returned (don't suppress
     // outreach on a transient miss).
-    ep.hasPhone = reach?.hasPhone ?? true;
-    ep.hasEmail = reach?.hasEmail ?? true;
+    ep.hasPhone = info?.hasPhone ?? true;
+    ep.hasEmail = info?.hasEmail ?? true;
   }
 
   const actions = planReminderEscalations({
-    episodes,
+    episodes: activeEpisodes,
     conversations,
     nowMs: now.getTime(),
     delayMs: ESCALATION_DELAY_DAYS * DAY_MS,

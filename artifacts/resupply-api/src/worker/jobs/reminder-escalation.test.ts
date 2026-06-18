@@ -323,3 +323,17 @@ describe("runReminderEscalationScan — per-tenant fan-out", () => {
     );
   });
 });
+
+// Opt-out + capability: the runner must read patient status (to escalate only
+// ACTIVE patients — respecting the STOP opt-out the send helpers no-op on) and
+// contactability (to feed the planner's channel-skip). A behavioural test
+// needs a paged Supabase mock; pin the invariants via source like above.
+describe("runReminderEscalationScan — patient status + capability read", () => {
+  it("reads patient status + contact fields for the candidate patients", () => {
+    expect(SRC).toContain('.select("id, status, phone_e164, email")');
+  });
+
+  it("escalates only ACTIVE patients (respects the STOP opt-out)", () => {
+    expect(SRC).toContain('?.status ?? "active") === "active"');
+  });
+});

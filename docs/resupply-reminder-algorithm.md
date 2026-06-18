@@ -230,8 +230,9 @@ episode.
   address. An email-only patient skips the SMS/voice tiers and reaches the CSR
   hand-off directly, instead of the ladder stalling forever on an
   un-deliverable step.
-- **Opt-out is sticky:** a STOP pauses the patient; they leave every ladder
-  until they re-subscribe.
+- **Opt-out is sticky:** a STOP pauses the patient; the escalation sweep
+  escalates only `active` patients, so a paused patient leaves every ladder
+  (no further sends, no wasted re-enqueues) until they re-subscribe.
 - **Fail soft:** if a channel isn't configured (no Twilio / SendGrid / voice
   keys) the corresponding step logs and exits cleanly — it never breaks the
   deploy or the rest of the ladder.
