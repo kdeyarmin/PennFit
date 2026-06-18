@@ -2895,6 +2895,50 @@
   white-space: nowrap;
 }
 
+/* Collapsible add-on explainer: the row becomes a <details> whose <summary>
+   carries the existing name/price layout plus a down-arrow that flips open
+   to reveal a brief benefit blurb. */
+.bx-addon-item {
+  border-top: 1px solid var(--bx-line);
+}
+.bx-addon-item > .bx-addon-row {
+  border-top: none;
+  cursor: pointer;
+  list-style: none;
+}
+.bx-addon-item > .bx-addon-row::-webkit-details-marker {
+  display: none;
+}
+.bx-addon-item > .bx-addon-row:hover .bx-addon-name {
+  color: var(--bx-text);
+}
+.bx-addon-caret {
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--bx-text-dim);
+  transition: transform 0.2s ease;
+}
+.bx-addon-item[open] > .bx-addon-row .bx-addon-caret {
+  transform: rotate(180deg);
+  color: var(--bx-cyan);
+}
+.bx-addon-detail {
+  padding: 2px 0 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-addon-detail p {
+  margin: 0 0 6px;
+}
+.bx-addon-detail p:last-child {
+  margin-bottom: 0;
+}
+.bx-addon-detail strong {
+  color: var(--bx-text);
+  font-weight: 600;
+}
+
 /* Add-ons teaser (landing page) */
 .bx-addons-teaser {
   display: flex;
