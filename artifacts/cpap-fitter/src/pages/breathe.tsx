@@ -293,10 +293,32 @@ function DemoGateModal({
   source: string;
   onClose: () => void;
 }) {
-  // Esc to close + body scroll-lock while open.
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Esc to close, body scroll-lock, a focus trap (keyboard users can't
+  // tab out to the page behind), and focus restored to the trigger on
+  // close.
   useEffect(() => {
+    const prevFocused = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !modalRef.current) return;
+      const focusables = modalRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -304,12 +326,14 @@ function DemoGateModal({
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      prevFocused?.focus?.();
     };
   }, [onClose]);
 
   return (
     <div className="bx-modal-backdrop" role="presentation" onClick={onClose}>
       <div
+        ref={modalRef}
         className="bx-modal"
         role="dialog"
         aria-modal="true"
@@ -362,8 +386,73 @@ export function BreatheSignup() {
   );
 }
 
+// Cloudflare Turnstile — optional. The widget only renders (and a token
+// is then required) when VITE_TURNSTILE_SITE_KEY is configured; otherwise
+// the backend skips verification too (fail-soft, server + client agree).
+const TURNSTILE_SITE_KEY = (
+  import.meta.env as Record<string, string | undefined>
+).VITE_TURNSTILE_SITE_KEY;
+
+type TurnstileApi = {
+  render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+  remove: (id: string) => void;
+};
+function getTurnstile(): TurnstileApi | undefined {
+  return (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+}
+
+/** Renders a Turnstile widget when a site key is set; yields its token. */
+function useTurnstile() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [token, setToken] = useState("");
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    let widgetId: string | undefined;
+    let cancelled = false;
+    const render = () => {
+      const ts = getTurnstile();
+      if (cancelled || !ts || !ref.current || ref.current.childElementCount > 0)
+        return;
+      widgetId = ts.render(ref.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (t: string) => setToken(t),
+        "error-callback": () => setToken(""),
+        "expired-callback": () => setToken(""),
+      });
+    };
+    if (getTurnstile()) {
+      render();
+    } else {
+      const id = "cf-turnstile-script";
+      let script = document.getElementById(id) as HTMLScriptElement | null;
+      if (!script) {
+        script = document.createElement("script");
+        script.id = id;
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener("load", render);
+    }
+    return () => {
+      cancelled = true;
+      const ts = getTurnstile();
+      if (ts && widgetId !== undefined) {
+        try {
+          ts.remove(widgetId);
+        } catch {
+          /* widget already removed */
+        }
+      }
+    };
+  }, []);
+  return { ref, token, enabled: Boolean(TURNSTILE_SITE_KEY) };
+}
+
 function SignupSection() {
   const { open: openDemoGate } = useDemoGate();
+  const turnstile = useTurnstile();
   const [org, setOrg] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -395,6 +484,11 @@ function SignupSection() {
       setStatus("error");
       return;
     }
+    if (turnstile.enabled && !turnstile.token) {
+      setErr("Please complete the verification below.");
+      setStatus("error");
+      return;
+    }
     setStatus("submitting");
     setErr("");
     try {
@@ -405,6 +499,7 @@ function SignupSection() {
           orgName: org.trim(),
           email: email.trim(),
           password,
+          captchaToken: turnstile.token || undefined,
           website: hpRef.current?.value || undefined,
         }),
       });
@@ -515,6 +610,9 @@ function SignupSection() {
                 required
               />
             </label>
+            {turnstile.enabled ? (
+              <div ref={turnstile.ref} className="bx-turnstile" />
+            ) : null}
             {status === "error" ? (
               <p className="bx-demoform-err" role="alert">
                 {err}

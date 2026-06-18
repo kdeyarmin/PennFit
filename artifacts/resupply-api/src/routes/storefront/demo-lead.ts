@@ -16,8 +16,9 @@
 // Shape mirrors /newsletter/subscribe: anonymous (no session/CSRF —
 // nothing to replay), honeypot field `website`, per-IP rate limited at
 // the app level. PHI: none — a volunteered marketing address, never
-// logged. Persistence is best-effort: a DB hiccup must never block the
-// visitor from entering the demo, so the route always resolves 200.
+// logged. A malformed email still 400s; the best-effort guarantee
+// applies only to PERSISTENCE — once validation passes, a DB hiccup is
+// swallowed and the route resolves 200 so the demo always opens.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";

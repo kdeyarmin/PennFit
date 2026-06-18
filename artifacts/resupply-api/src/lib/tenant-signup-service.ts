@@ -14,8 +14,9 @@
 //     (the auth user stays status='invited'; sign-in gates on verified).
 //   * Password policy (>=12 chars) is enforced at the route Zod boundary
 //     and re-checked here.
-//   * Already-verified email → rejected ("sign in instead") rather than
-//     silently moving an existing admin between orgs.
+//   * Only an UNVERIFIED ADMIN INVITE is reusable; any other existing
+//     account (verified, non-admin, or locked/revoked) is rejected
+//     ("sign in instead") rather than hijacked or left unusable.
 //   * Global tables are written through the seed-org chokepoint
 //     (getOrgScopedClient(seed).raw()) — never a direct service-role
 //     acquisition (tenant-isolation guard).
@@ -47,6 +48,14 @@ export type SelfServeSignupInput = {
   slug: string;
   adminEmail: string;
   password: string;
+  /**
+   * Origin the signup was submitted from (e.g. https://cmbreathe.com).
+   * Used to build the verification + sign-in links so a new PLATFORM
+   * tenant is sent to the platform host — NOT the tenant-pinned
+   * `SHOP_PUBLIC_BASE_URL` (pennpaps.com) the shared auth deps default
+   * to. Falls back to that default when absent/invalid.
+   */
+  baseUrl?: string;
 };
 
 export type SelfServeSignupFailure =
@@ -105,6 +114,12 @@ export async function createSelfServeTenant(
   input: SelfServeSignupInput,
 ): Promise<SelfServeSignupResult> {
   const deps = getAuthDeps();
+  // Send verify/sign-in links to the host the signup came from (the
+  // platform site), not the tenant-pinned auth default.
+  const linkBaseUrl =
+    input.baseUrl && /^https?:\/\//i.test(input.baseUrl)
+      ? input.baseUrl.replace(/\/+$/, "")
+      : deps.publicBaseUrl;
 
   // Password policy mirrors the auth lib (length beats complexity:
   // >= 12 chars). The route also enforces this at the Zod boundary; the
@@ -142,15 +157,26 @@ export async function createSelfServeTenant(
   }
   const raw = getOrgScopedClient(seedOrgId).raw();
 
-  // 1. Reject an already-verified account before creating anything, so a
-  //    bounced signup never leaves an orphan org behind.
+  // 1. Resolve any existing auth user BEFORE creating an org (so a
+  //    rejected signup never orphans an org). Only an UNVERIFIED ADMIN
+  //    INVITE is reusable: a verified account, a non-admin (e.g. a
+  //    storefront customer), or a locked/revoked user would either be
+  //    hijacked or yield an unusable tenant (requireAdmin rejects
+  //    non-admin roles), so reject those with the same neutral message.
   const existing = await deps.repo.findUserByEmail(emailLower);
-  if (existing && existing.emailVerifiedAt) {
-    return {
-      ok: false,
-      reason: "email_taken",
-      message: "An account with this email already exists. Sign in instead.",
-    };
+  if (existing) {
+    const reusableInvite =
+      existing.role === "admin" &&
+      existing.emailVerifiedAt == null &&
+      existing.status !== "locked" &&
+      existing.status !== "revoked";
+    if (!reusableInvite) {
+      return {
+        ok: false,
+        reason: "email_taken",
+        message: "An account with this email already exists. Sign in instead.",
+      };
+    }
   }
 
   // 2. Create the organization. The unique slug index turns a duplicate
@@ -247,7 +273,7 @@ export async function createSelfServeTenant(
   const ctx: AuthEmailContext = {
     productName: PRODUCT_NAME,
     signatureName: PRODUCT_NAME,
-    publicBaseUrl: deps.publicBaseUrl,
+    publicBaseUrl: linkBaseUrl,
     uiPathPrefix: UI_PATH_PREFIX,
   };
   const rendered = renderVerifyEmail(ctx, token.raw, ttlMs);
@@ -329,6 +355,6 @@ export async function createSelfServeTenant(
   return {
     ok: true,
     slug: input.slug,
-    signInUrl: `${deps.publicBaseUrl}${UI_PATH_PREFIX}/sign-in`,
+    signInUrl: `${linkBaseUrl}${UI_PATH_PREFIX}/sign-in`,
   };
 }

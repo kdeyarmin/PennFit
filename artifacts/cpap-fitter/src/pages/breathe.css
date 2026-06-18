@@ -3045,6 +3045,9 @@
   justify-content: center;
   margin-top: 4px;
 }
+.bx-turnstile {
+  min-height: 65px;
+}
 .bx-signup-alt {
   font-size: 13.5px;
   color: var(--bx-text-dim);

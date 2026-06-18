@@ -77,12 +77,18 @@ router.post("/tenant-signup", async (req, res) => {
     return;
   }
 
+  // Build links from the host the signup came from (the platform site),
+  // so a new platform tenant isn't sent to the tenant-pinned auth default.
+  const host = req.get("host");
+  const baseUrl = host ? `${req.protocol}://${host}` : undefined;
+
   try {
     const result = await createSelfServeTenant({
       orgName,
       slug,
       adminEmail: email,
       password,
+      baseUrl,
     });
     if (result.ok) {
       res.status(201).json({
