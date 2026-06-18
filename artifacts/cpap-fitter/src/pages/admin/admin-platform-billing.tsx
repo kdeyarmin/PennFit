@@ -328,17 +328,24 @@ function TenantEditor({
           onClick={async () => {
             // Cost/proration preview before committing the plan change. A
             // custom monthly override skips the preview (it isn't catalog
-            // priced); falls back to a plain confirm if the preview fails.
+            // priced); on a preview failure we still show a plain confirm so
+            // a save never commits without acknowledgement.
             if (!monthly.trim()) {
+              const planName =
+                plans.find((p) => p.code === planCode)?.name ?? planCode;
+              const who =
+                tenant.storefrontName || tenant.name || tenant.slug;
+              let message = `Switch ${who} to the ${planName} plan? This updates their Stripe billing.`;
               try {
                 const preview = await previewTenantBillingChange(tenant.id, {
                   kind: "plan",
                   planCode,
                 });
-                if (!window.confirm(buildPreviewConfirm(preview))) return;
+                message = buildPreviewConfirm(preview);
               } catch {
-                // preview unavailable — fall through and save
+                // preview unavailable — keep the static fallback message
               }
+              if (!window.confirm(message)) return;
             }
             savePlan.mutate();
           }}
@@ -397,7 +404,13 @@ function TenantEditor({
                       : 0;
                     e.currentTarget.value = String(next);
                     if (next === qty) return;
-                    // Cost/proration preview before committing the change.
+                    // Cost/proration preview before committing the change; on
+                    // a preview failure we still show a plain confirm so a
+                    // save never commits without acknowledgement.
+                    let message =
+                      next === 0
+                        ? `Remove ${addon.name} from this tenant?`
+                        : `Set ${addon.name} to ${next} for this tenant?`;
                     try {
                       const preview = await previewTenantBillingChange(
                         tenant.id,
@@ -407,10 +420,11 @@ function TenantEditor({
                           quantity: next,
                         },
                       );
-                      if (!window.confirm(buildPreviewConfirm(preview))) return;
+                      message = buildPreviewConfirm(preview);
                     } catch {
-                      // preview unavailable — fall through and save
+                      // preview unavailable — keep the static fallback message
                     }
+                    if (!window.confirm(message)) return;
                     saveAddon.mutate({
                       addonCode: addon.code,
                       quantity: next,

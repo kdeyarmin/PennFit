@@ -586,13 +586,17 @@ async function buildBillingPreview(
       .maybeSingle();
     if (error || !addon) return { ok: false, error: "addon_not_found" };
     const existing = state.addonByCode.get(change.addonCode);
-    // Catalog rate for a not-yet-active add-on; keep the existing (possibly
-    // custom) unit price when one is already on the subscription.
-    const unitCents =
-      existing?.unitCents ??
-      ((addon.recurring_price_cents as number | null) ?? 0);
-    const currentContribution = (existing?.quantity ?? 0) * unitCents;
-    const newContribution = change.quantity * unitCents;
+    const catalogUnit = (addon.recurring_price_cents as number | null) ?? 0;
+    // The current line bills at whatever unit is on the subscription today —
+    // which may be a platform-set custom price.
+    const currentUnit = existing?.unitCents ?? catalogUnit;
+    // The new line bills at the CATALOG rate: both UI save paths driven by
+    // this preview clear any custom price (tenant self-service writes
+    // custom_recurring_price_cents=null; the platform add-on editor sends no
+    // custom price), so the projected total must use catalog pricing or it
+    // would mis-state what the save actually charges.
+    const currentContribution = (existing?.quantity ?? 0) * currentUnit;
+    const newContribution = change.quantity * catalogUnit;
     newMonthlyCents =
       currentMonthlyCents - currentContribution + newContribution;
     changeLabel =
