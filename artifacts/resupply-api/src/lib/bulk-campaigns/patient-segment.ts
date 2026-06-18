@@ -1,7 +1,7 @@
 // Composable patient-segment filter spec for bulk campaigns.
 //
 // `audience_kind='patient_segment'` campaigns carry one of these specs in
-// the `bulk_campaigns.audience_filter` jsonb column (migration 0395). The
+// the `bulk_campaigns.audience_filter` jsonb column (migration 0396). The
 // criteria are ANDed together: a patient is in the audience only when they
 // satisfy EVERY criterion that's set. An unset criterion is ignored.
 //

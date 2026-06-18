@@ -236,21 +236,39 @@ correctness, not style:
   `audit_log` onto `feature_flags`.
 - **One From address per tenant — still through the shared client.**
   Every outbound email funnels through `lib/resupply-email`'s
-  `createSendgridClient()`; don't bypass it. The platform default From is
-  `SENDGRID_FROM_EMAIL` (`info@pennpaps.com`, the seed tenant's address +
-  the fallback for any tenant without its own). **G6 (Phase 2)** relaxed
-  the historical "one global From" rule to **per-tenant**: a tenant's
-  `organizations.from_email` / `from_name` (migration 0360) override the
-  default. Resolve a tenant's sender with `resolveTenantSender(orgId)` /
-  `createTenantSendgridClient(orgId)`
-  (`artifacts/resupply-api/src/lib/email/tenant-sender.ts`) at any callsite
-  that knows its `orgId` — these still go through `createSendgridClient()`
-  (which already accepts `fromEmail`/`fromName`). A NULL `from_email`
-  leaves the platform default in place, so single-tenant is unchanged.
-  Deliverability still requires the tenant's sending **domain** to be
-  authenticated in SendGrid (SPF/DKIM) — storing an unauthenticated
-  `from_email` sends but lands in spam, so enabling a tenant sender is
-  gated on domain auth out of band.
+  `createSendgridClient()`; don't bypass it. The **platform default From is
+  the CareMetric Breathe identity, `noreply@cmbreathe.com`** — the
+  `DEFAULT_SENDGRID_FROM_EMAIL` / `DEFAULT_SENDGRID_FROM_NAME` constants in
+  `lib/resupply-email/src/client.ts`, used when `SENDGRID_FROM_EMAIL` is
+  unset and a tenant has no sender of its own. It is **NOT** the seed
+  tenant's address: the Penn Home Medical Supply tenant pins its own
+  `info@pennpaps.com` / "Penn Home Medical Supply" via its
+  `organizations.from_email` / `from_name` (seeded by migration 0377), so a
+  second (unconfigured) tenant inherits `noreply@cmbreathe.com`, never Penn's
+  address. **G6 (Phase 2)** relaxed the historical "one global From" rule to
+  **per-tenant**: a tenant's `organizations.from_email` / `from_name`
+  (migration 0360) override the platform default. Resolve a tenant's sender
+  with `resolveTenantSender(orgId)` / `createTenantSendgridClient(orgId)`
+  (`artifacts/resupply-api/src/lib/email/tenant-sender.ts`) at any
+  patient/user-facing callsite that knows its `orgId` — these still go
+  through `createSendgridClient()` (which accepts `fromEmail`/`fromName`).
+  Internal/ops/auth mail (password resets, operator digests, alerts) stays
+  on the platform default by design. A NULL `from_email` leaves the platform
+  default (`noreply@cmbreathe.com`) in place. Deliverability still requires
+  the tenant's sending **domain** to be authenticated in SendGrid (SPF/DKIM)
+  — storing an unauthenticated `from_email` sends but lands in spam, so
+  enabling a tenant sender is gated on domain auth out of band. The same
+  platform-vs-tenant split applies to the other outgoing channels: outbound
+  SMS/voice/fax resolve the tenant's own number via
+  `resolveTenantSmsFrom`/`resolveTenantVoiceFrom`/`resolveTenantFaxFrom`
+  (migrations 0364/0368, platform Twilio/Telnyx number as the fallback), and
+  patient-facing copy (SMS/voice/email/chatbot/PDF) is branded to the tenant
+  at the I/O boundary via `applyCompanyIdentityToText(text,
+getCompanyInfo(orgId))` / `resolveBrandingByOrgId(orgId)`. The unconfigured
+  fallback identity in `company-info.ts` is the **platform** (CareMetric
+  Breathe / `cmbreathe.com`), not PennPaps. Patient-facing link fallbacks
+  default to `https://cmbreathe.com`, overridden by the tenant's verified
+  custom domain (`resolveTenantBaseUrl`).
 - **Admin theme stays scoped.** Admin tokens (`--penn-navy`, etc.) live
   in `src/admin.css` under `.admin-root`. Every admin surface must wrap
   its outer `<div>` with `className="admin-root"` so it doesn't clobber

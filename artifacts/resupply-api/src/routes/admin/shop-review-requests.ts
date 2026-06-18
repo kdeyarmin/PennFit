@@ -178,7 +178,7 @@ router.post(
     const baseUrl =
       process.env.SHOP_PUBLIC_BASE_URL ??
       process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
-      "https://pennpaps.com";
+      "https://cmbreathe.com";
 
     const unclaim = async (id: string): Promise<void> => {
       const { error: unclaimErr } = await supabase

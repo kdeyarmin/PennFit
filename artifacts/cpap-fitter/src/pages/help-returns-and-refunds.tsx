@@ -6,6 +6,7 @@ import {
   type HelpStep,
 } from "@/components/help/help-article-shell";
 import { Screenshot, ReturnsShot } from "@/components/help/help-screens";
+import { BrandName } from "@/components/company-contact";
 
 const steps: HelpStep[] = [
   {
@@ -18,15 +19,12 @@ const steps: HelpStep[] = [
         </Link>{" "}
         (in the footer under Patient Services). The page explains what&apos;s
         eligible and starts your request — including the{" "}
-        <strong>60-day comfort guarantee</strong> on masks fitted through
-        PennPaps.
+        <strong>60-day comfort guarantee</strong> on masks fitted through{" "}
+        <BrandName />.
       </p>
     ),
     shot: (
-      <Screenshot
-        url="pennpaps.com/returns"
-        caption="The returns page leads with the 60-day comfort guarantee, then walks you through the request."
-      >
+      <Screenshot caption="The returns page leads with the 60-day comfort guarantee, then walks you through the request.">
         <ReturnsShot />
       </Screenshot>
     ),
@@ -82,7 +80,7 @@ export function HelpReturnsAndRefunds() {
       title="Returns, exchanges & refunds"
       Icon={RotateCcw}
       minutes="3 min"
-      metaDescription="How to return or exchange a PennPaps order: start a return, pick the order and item, choose a reason, and use the 60-day mask comfort guarantee."
+      metaDescription="How to return or exchange an order: start a return, pick the order and item, choose a reason, and use the 60-day mask comfort guarantee."
       intro="If something isn't right, returns are straightforward — and your mask is backed by a 60-day comfort guarantee. Here's how to start a return or exchange."
       summary={
         <>
@@ -106,7 +104,14 @@ export function HelpReturnsAndRefunds() {
       faqs={[
         {
           q: "What is the 60-day comfort guarantee?",
-          a: "If a mask fitted through PennPaps doesn't feel right after you've adjusted it, we'll exchange it for an alternative within the first 60 days at no charge — even if it's been worn.",
+          a: (
+            <>
+              If a mask fitted through <BrandName /> doesn&apos;t feel right
+              after you&apos;ve adjusted it, we&apos;ll exchange it for an
+              alternative within the first 60 days at no charge — even if
+              it&apos;s been worn.
+            </>
+          ),
         },
         {
           q: "How long do refunds take?",

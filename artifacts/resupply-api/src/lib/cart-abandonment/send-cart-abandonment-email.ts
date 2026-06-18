@@ -37,7 +37,7 @@ import {
   resolveTenantBaseUrl,
 } from "../tenant-branding.js";
 
-const DEFAULT_BASE_URL = "https://pennpaps.com";
+const DEFAULT_BASE_URL = "https://cmbreathe.com";
 
 export interface SendCartAbandonmentEmailInput {
   toEmail: string;
@@ -46,7 +46,7 @@ export interface SendCartAbandonmentEmailInput {
   currency: string;
   /**
    * Optional override for the public base URL. Defaults to
-   * SHOP_PUBLIC_BASE_URL env var, falling back to https://pennpaps.com
+   * SHOP_PUBLIC_BASE_URL env var, falling back to https://cmbreathe.com
    * so links emitted from preview/staging deploys still resolve to
    * production.
    */

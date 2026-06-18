@@ -66,8 +66,7 @@ const categories: HelpCategory[] = [
     id: "getting-started",
     eyebrow: "Start here",
     title: "Getting Started",
-    caption:
-      "Find the right mask and understand how PennPaps matches it to your face.",
+    caption: "Find the right mask and understand how we match it to your face.",
     topics: [
       {
         href: "/help/find-your-mask",
@@ -294,7 +293,7 @@ export function Help() {
   const contact = useCompanyContact();
   useDocumentTitle(
     "Help Center",
-    "Step-by-step guides for every PennPaps feature: the Virtual Mask Fitter, ordering, the supply shop, order tracking, accounts, resupply reminders, insurance estimates, and returns.",
+    `Step-by-step guides for every ${contact.name} feature: the Virtual Mask Fitter, ordering, the supply shop, order tracking, accounts, resupply reminders, insurance estimates, and returns.`,
   );
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -321,7 +320,7 @@ export function Help() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <LifeBuoy className="w-4 h-4" />
-            <span>PennPaps Help Center</span>
+            <span>{contact.name} Help Center</span>
           </div>
         </div>
         <div className="flex justify-center">
@@ -337,9 +336,10 @@ export function Help() {
           How can we help?
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          Short, screenshot-by-screenshot guides for every part of PennPaps —
-          the Virtual Mask Fitter, ordering and checkout, tracking, your
-          account, resupply reminders, insurance estimates, and returns.
+          Short, screenshot-by-screenshot guides for every part of{" "}
+          {contact.name} — the Virtual Mask Fitter, ordering and checkout,
+          tracking, your account, resupply reminders, insurance estimates, and
+          returns.
         </p>
         <p className="text-sm text-muted-foreground">
           Just need a quick answer?{" "}
@@ -587,16 +587,18 @@ export function Help() {
             <Sparkles className="w-4 h-4" />
             Ask PennBot
           </Button>
-          <a href={`tel:${contact.phoneE164}`}>
-            <Button
-              size="lg"
-              variant="outline"
-              className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60 gap-2"
-            >
-              <PhoneCall className="w-4 h-4" />
-              {contact.phoneDisplay}
-            </Button>
-          </a>
+          {contact.phoneE164 && (
+            <a href={`tel:${contact.phoneE164}`}>
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60 gap-2"
+              >
+                <PhoneCall className="w-4 h-4" />
+                {contact.phoneDisplay}
+              </Button>
+            </a>
+          )}
         </div>
       </section>
     </div>

@@ -44,6 +44,7 @@ import {
 
 import { signManualDocumentPacketFaxToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { resolveTenantFaxFrom } from "../../lib/messaging/tenant-telecom";
 import { getManualDocumentTypeDef } from "../../lib/manual-documents/catalog.js";
 import {
   loadManualDocumentPacketRow,
@@ -728,7 +729,11 @@ router.post(
     const token = signManualDocumentPacketFaxToken(packet.id);
     const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
     const statusCallbackUrl = `${baseUrl}/resupply-api/fax/webhook`;
-    const fromNumber = process.env.TELNYX_FAX_FROM_NUMBER!.trim();
+    // Prefer the tenant's own provisioned fax DID (migration 0368); fall
+    // back to the platform default isFaxConfigured() already verified is set.
+    const fromNumber =
+      (await resolveTenantFaxFrom(orgId)) ??
+      process.env.TELNYX_FAX_FROM_NUMBER!.trim();
 
     let vendorRef: string;
     try {

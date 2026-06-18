@@ -16,6 +16,12 @@ import { Link } from "wouter";
 import { ArrowLeft, MessageCircle, ShieldCheck } from "lucide-react";
 
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
+import { useCompanyContact } from "@/lib/contact";
+import {
+  BrandName,
+  LegalName,
+  WebsiteHost,
+} from "@/components/company-contact";
 
 interface Props {
   /**
@@ -33,6 +39,26 @@ interface Props {
 
 export function AuthLayout({ variant, children }: Props) {
   const isAdmin = variant === "admin";
+  const c = useCompanyContact();
+  // Website host as a plain string (mirrors <WebsiteHost/>'s logic) for
+  // contexts that require a string rather than a ReactNode — e.g. the
+  // "Back to <host>" escape-link label below.
+  const websiteHost = (() => {
+    const fromUrl = (() => {
+      if (!c.websiteUrl) return null;
+      try {
+        return new URL(c.websiteUrl).host.replace(/^www\./, "");
+      } catch {
+        return null;
+      }
+    })();
+    return (
+      fromUrl ??
+      (typeof window !== "undefined"
+        ? window.location.host.replace(/^www\./, "")
+        : "")
+    );
+  })();
   return (
     <div
       className="min-h-screen flex flex-col"
@@ -48,15 +74,15 @@ export function AuthLayout({ variant, children }: Props) {
           >
             <img
               src={pennLogo}
-              alt="Penn Home Medical Supply"
+              alt={c.legalName}
               className="h-9 w-auto rounded-md"
             />
             <span className="hidden sm:flex flex-col leading-tight">
               <span className="font-semibold text-sm text-[hsl(var(--penn-navy-deep))]">
-                PennPaps<span className="text-muted-foreground">.com</span>
+                <BrandName />
               </span>
               <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                {isAdmin ? "Staff sign-in" : "Penn Home Medical Supply"}
+                {isAdmin ? "Staff sign-in" : <LegalName />}
               </span>
             </span>
           </Link>
@@ -67,7 +93,7 @@ export function AuthLayout({ variant, children }: Props) {
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             <span className="hidden sm:inline">
-              {isAdmin ? "Back to PennPaps.com" : "Back to home"}
+              {isAdmin ? `Back to ${websiteHost}` : "Back to home"}
             </span>
             <span className="sm:hidden">Home</span>
           </Link>
@@ -94,7 +120,7 @@ export function AuthLayout({ variant, children }: Props) {
                 href="/"
                 className="hover:text-[hsl(var(--penn-navy))] transition-colors"
               >
-                PennPaps.com
+                <WebsiteHost />
               </Link>
               <span aria-hidden="true">·</span>
               <Link

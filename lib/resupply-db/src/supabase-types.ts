@@ -4245,7 +4245,7 @@ export interface Database {
             | "manual_list";
           audience_payer: string | null;
           /** Composable patient-segment spec; set only when
-           * audience_kind='patient_segment' (migration 0395). Shape owned by
+           * audience_kind='patient_segment' (migration 0396). Shape owned by
            * lib/bulk-campaigns/patient-segment.ts. */
           audience_filter: Json | null;
           channel: "email" | "sms";
@@ -4282,7 +4282,7 @@ export interface Database {
           recipient_kind: "patient" | "shop_customer";
           recipient_id: string;
           recipient_email: string | null;
-          /** E.164 destination snapshot for SMS campaigns (migration 0395);
+          /** E.164 destination snapshot for SMS campaigns (migration 0396);
            * NULL for email campaigns and no-phone recipients. */
           recipient_phone: string | null;
           status:

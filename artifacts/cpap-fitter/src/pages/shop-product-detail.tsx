@@ -51,6 +51,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useCompanyContact } from "@/lib/contact";
+import { BrandName } from "@/components/company-contact";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { toast } from "@/hooks/use-toast";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
@@ -90,6 +92,7 @@ const BODY_MAX = 2000;
 type LoadState = "loading" | "ready" | "not_found" | "error";
 
 export function ShopProductDetail({ productId }: { productId: string }) {
+  const company = useCompanyContact();
   const [product, setProduct] = useState<ShopProductView | null>(null);
   // Full catalog kept around so RecentlyViewedStrip can resolve other
   // products by id without firing a second list request.
@@ -127,7 +130,9 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   }, []);
 
   useDocumentTitle(
-    product ? `${product.name} — PennPaps shop` : "Product — PennPaps shop",
+    product
+      ? `${product.name} — ${company.name} shop`
+      : `Product — ${company.name} shop`,
     product?.tagline ?? product?.description ?? undefined,
   );
 
@@ -190,16 +195,16 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     }
     return {
       openGraph: {
-        title: `${product.name} — Penn Home Medical Supply`,
+        title: `${product.name} — ${company.legalName}`,
         description,
         type: "product",
         url,
-        siteName: "Penn Home Medical Supply",
+        siteName: company.legalName,
         image: absoluteImage,
       } as const,
       jsonLd,
     };
-  }, [product, reviewPages?.aggregate]);
+  }, [product, reviewPages?.aggregate, company.legalName]);
 
   useDocumentMeta({
     openGraph: seoMeta.openGraph,
@@ -558,6 +563,7 @@ function Hero({
 }) {
   const { addItem } = useCart();
   const { toast } = useToast();
+  const company = useCompanyContact();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [mode, setMode] = useState<"one_time" | "subscription">(
@@ -580,7 +586,7 @@ function Hero({
       try {
         await navigator.share({
           title: product.name,
-          text: product.tagline ?? `${product.name} at PennPaps`,
+          text: product.tagline ?? `${product.name} at ${company.name}`,
           url,
         });
         return;
@@ -1069,7 +1075,7 @@ function ReviewsSection({
                   Want to write a review?
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Sign in with your PennPaps account to leave one.
+                  Sign in with your <BrandName /> account to leave one.
                 </p>
               </div>
               <Link
