@@ -95,13 +95,18 @@ describe("rendered scripts", () => {
       "day90",
     ];
     for (const day of labels) {
-      const body = smsBodyForDay(day, "Hi Anna");
-      expect(body.length).toBeGreaterThan(20);
-      expect(body).toContain("PennPaps");
+      // Seed brand → unchanged copy.
+      const seed = smsBodyForDay(day, "Hi Anna", "PennPaps");
+      expect(seed.length).toBeGreaterThan(20);
+      expect(seed).toContain("PennPaps");
+      // A second tenant's brand threads through (no "PennPaps" leak).
+      const tenantB = smsBodyForDay(day, "Hi Anna", "Foo DME");
+      expect(tenantB).toContain("Foo DME");
+      expect(tenantB).not.toContain("PennPaps");
     }
   });
 
-  it("renders a voice script for every cadence label", () => {
+  it("renders a voice script for every cadence label, branded per tenant", () => {
     const labels: OnboardingDayLabel[] = [
       "day3",
       "day7",
@@ -110,9 +115,10 @@ describe("rendered scripts", () => {
       "day90",
     ];
     for (const day of labels) {
-      const script = voiceScriptForDay(day);
+      const script = voiceScriptForDay(day, "Foo DME");
       expect(script.length).toBeGreaterThan(40);
-      expect(script.toLowerCase()).toContain("penn paps");
+      expect(script).toContain("Foo DME");
+      expect(script).not.toContain("Penn Paps");
     }
   });
 
