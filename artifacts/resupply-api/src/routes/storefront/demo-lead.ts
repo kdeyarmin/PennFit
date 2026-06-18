@@ -22,7 +22,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 
@@ -51,26 +51,40 @@ router.post("/demo-lead", async (req, res) => {
 
   // Best-effort persistence. We capture the lead when we can but never
   // surface a failure to the visitor — the demo opens regardless.
+  //
+  // newsletter_subscribers is a GLOBAL (public-schema) marketing table,
+  // and the Breathe site is served on the platform apex where no tenant
+  // resolves by host — so we write through the org-scoped chokepoint with
+  // the SEED org (the same pattern auth-deps / platform routes use for
+  // global tables). This keeps us off a direct service-role acquisition.
   try {
-    const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .schema("public")
-      .from("newsletter_subscribers")
-      .upsert(
-        {
-          email,
-          source: source && source.length > 0 ? source : "breathe-demo",
-          updated_at: new Date().toISOString(),
-          unsubscribed_at: null,
-        },
-        { onConflict: "email" },
-      );
-    if (error) {
-      // Log the failure shape only — never the address.
+    const seedOrgId = await resolveSeedOrgId();
+    if (!seedOrgId) {
       logger.error(
-        { event: "demo_lead_capture_failed", pgCode: error.code ?? null },
-        "demo lead upsert failed",
+        { event: "demo_lead_capture_no_seed_org" },
+        "demo lead capture: seed org unresolved",
       );
+    } else {
+      const supabase = getOrgScopedClient(seedOrgId).raw();
+      const { error } = await supabase
+        .schema("public")
+        .from("newsletter_subscribers")
+        .upsert(
+          {
+            email,
+            source: source && source.length > 0 ? source : "breathe-demo",
+            updated_at: new Date().toISOString(),
+            unsubscribed_at: null,
+          },
+          { onConflict: "email" },
+        );
+      if (error) {
+        // Log the failure shape only — never the address.
+        logger.error(
+          { event: "demo_lead_capture_failed", pgCode: error.code ?? null },
+          "demo lead upsert failed",
+        );
+      }
     }
   } catch (err) {
     // Supabase env unset (preview) or a transient client error: swallow.
