@@ -1676,8 +1676,8 @@ const FEATURES: Feature[] = [
   },
   {
     icon: <ScanFace size={22} />,
-    title: "On-Device AI Mask Fitting",
-    body: "Patients get fitted for the right mask from their phone camera. Facial measurements are computed on-device — images never leave the browser.",
+    title: "Virtual Mask Fitter",
+    body: "Patients fit themselves at home from their phone camera — no staff time on in-person fittings and no sample masks opened just to be thrown away. AI facial measurements pick the perfect mask and size more accurately than eyeballing it, and images never leave the browser.",
     tag: "AI",
     gold: true,
   },
@@ -1774,8 +1774,8 @@ const AI_CELLS: Ai[] = [
   },
   {
     icon: <ScanFace size={20} />,
-    title: "On-device mask fitting",
-    body: "Facial measurements computed in the browser — the image never leaves the phone.",
+    title: "Virtual mask fitter",
+    body: "Patients self-fit at home — perfect mask and size, no wasted sample masks. Measurements are computed in the browser; the image never leaves the phone.",
   },
   {
     icon: <Bot size={20} />,
@@ -2228,12 +2228,12 @@ function RevenueCycle() {
 /* ───────────────────────── Capabilities ───────────────────────── */
 /*
  * The plain-language answer to "what does this software actually do?" —
- * the real product surface grouped into eight capability areas, each with
+ * the real product surface grouped into nine capability areas, each with
  * concrete sub-features. This is the homepage's core explainer; the
  * /breathe/product Features grid and the /breathe/features role page go
  * deeper. Copy is grounded in shipped functionality (resupply engine,
- * Office Ally RCM, therapy-cloud monitoring, the AI workforce, storefront,
- * telehealth, analytics), not aspiration.
+ * Office Ally RCM, therapy-cloud monitoring, the AI workforce, the virtual
+ * mask fitter, storefront, telehealth, analytics), not aspiration.
  */
 type Capability = {
   icon: React.ReactNode;
@@ -2300,11 +2300,23 @@ const CAPABILITIES: Capability[] = [
   },
   {
     icon: <ScanFace size={20} />,
-    title: "Storefront & fitter",
+    title: "Virtual mask fitter",
+    summary: "Patients fit themselves at home — staff never run a fitting.",
+    points: [
+      "Self-serve on-device AI fitting from the patient's own phone",
+      "Precise facial measurements pick the perfect mask & size",
+      "No staff time spent on in-person fittings",
+      "No sample masks opened, tried on & thrown away",
+    ],
+    gold: true,
+  },
+  {
+    icon: <Store size={20} />,
+    title: "Storefront & shop",
     summary: "A branded shop that converts shoppers to patients.",
     points: [
-      "On-device AI mask fitting from the phone camera",
       "Catalog, cart, Stripe checkout, returns & reviews",
+      "Subscriptions, autopay & cart-abandonment recovery",
       "Live insurance benefit estimates before checkout",
     ],
   },

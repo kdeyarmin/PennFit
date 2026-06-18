@@ -988,17 +988,21 @@
   margin-top: 22px;
 }
 .bx-replace-pill {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 500;
   color: var(--bx-text);
   padding: 9px 16px;
   border: 1px solid var(--bx-line);
   border-radius: 100px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.05);
   position: relative;
 }
 .bx-replace-pill s {
-  text-decoration-color: rgba(246, 167, 34, 0.85);
-  text-decoration-thickness: 1.5px;
+  /* Keep the words fully legible — a thin, semi-transparent line reads as
+     "replaced" without striking the text out of readability. */
+  color: var(--bx-text);
+  text-decoration-color: rgba(246, 167, 34, 0.6);
+  text-decoration-thickness: 1px;
 }
 
 /* ───────────────────── Lifecycle pipeline ───────────────────── */
