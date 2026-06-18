@@ -144,6 +144,7 @@ function Nav() {
 /* ───────────────────────── Hero ───────────────────────── */
 function Hero() {
   const onMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (prefersReducedMotion()) return;
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width - 0.5) * 2;
     const py = ((e.clientY - r.top) / r.height - 0.5) * 2;
@@ -275,6 +276,14 @@ function IntegrationsStrip() {
           <Plug size={13} /> Connected to the device clouds, clearinghouses, and
           billing systems you already run
         </p>
+        {/* The marquee duplicates the list for the animation, so it is
+            aria-hidden; this visually-hidden list exposes the partner
+            names to assistive tech exactly once. */}
+        <ul className="bx-sr-only">
+          {INTEGRATIONS.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
       </div>
       <div className="bx-marquee" aria-hidden="true">
         <div className="bx-marquee-track">
@@ -514,7 +523,10 @@ function ProductShowcase() {
         </div>
 
         <div className="bx-app-frame bx-reveal">
-          <div className="bx-app">
+          {/* Decorative illustrative UI — hidden from assistive tech so the
+              sample sidebar/worklist text is not announced as real content
+              (the section heading + caption convey the message). */}
+          <div className="bx-app" aria-hidden="true">
             <div className="bx-app-top">
               <span className="bx-app-dots">
                 <i />
@@ -549,7 +561,7 @@ function ProductShowcase() {
                 <div className="bx-app-pilot">
                   <Bot size={14} />
                   <span>
-                    <b>PennPilot</b>
+                    <b>CareMetric Copilot</b>
                     <i>AI copilot · ready</i>
                   </span>
                 </div>
@@ -817,7 +829,7 @@ const AI_CELLS: Ai[] = [
   },
   {
     icon: <Bot size={20} />,
-    title: "PennPilot copilot",
+    title: "CareMetric Copilot",
     body: "An in-app assistant that answers “where do I…?” and surfaces the next best action for staff.",
   },
   {
@@ -1651,16 +1663,25 @@ function useNoIndex() {
 }
 
 /**
+ * True when the user has asked the OS to minimize non-essential motion.
+ * Centralizes the check shared by the scroll, count-up, and hero-parallax
+ * effects so they all honor the preference identically.
+ */
+function prefersReducedMotion() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+  );
+}
+
+/**
  * Enables smooth anchor scrolling for the in-page nav while Breathe is
  * mounted, restoring the prior value on unmount so it never leaks onto
  * other SPA routes. Skipped entirely under prefers-reduced-motion.
  */
 function useSmoothScroll() {
   useEffect(() => {
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return;
+    if (prefersReducedMotion()) return;
     const root = document.documentElement;
     const prev = root.style.scrollBehavior;
     root.style.scrollBehavior = "smooth";
@@ -1722,10 +1743,7 @@ function CountUp({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
+    if (prefersReducedMotion()) {
       setVal(to);
       return;
     }

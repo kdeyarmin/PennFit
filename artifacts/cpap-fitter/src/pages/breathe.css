@@ -167,6 +167,19 @@
   padding: 0 24px;
 }
 
+/* Visually hidden, but available to assistive tech. */
+.bx-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Keyboard focus — visible cyan ring on every interactive element. */
 .breathe-page a:focus-visible,
 .breathe-page button:focus-visible,
