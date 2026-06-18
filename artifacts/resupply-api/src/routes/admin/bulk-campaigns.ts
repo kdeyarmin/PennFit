@@ -304,7 +304,9 @@ router.post(
         channel: b.channel,
         category: b.category,
         template_key: b.templateKey,
-        segment: patientSegment ? summarizePatientSegment(patientSegment) : null,
+        segment: patientSegment
+          ? summarizePatientSegment(patientSegment)
+          : null,
         total: resolved.totals.total,
         pending: resolved.totals.pending,
         suppressed: resolved.totals.suppressed,

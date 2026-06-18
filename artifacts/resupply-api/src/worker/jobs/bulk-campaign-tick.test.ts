@@ -366,7 +366,9 @@ beforeEach(() => {
   smsSendMock.mockClear();
   smsSendMock.mockResolvedValue({ messageSid: "sm-msg-1" });
   createTwilioSmsClientMock.mockClear();
-  createTwilioSmsClientMock.mockImplementation(() => ({ sendSms: smsSendMock }));
+  createTwilioSmsClientMock.mockImplementation(() => ({
+    sendSms: smsSendMock,
+  }));
   testLog.info.mockClear();
   testLog.warn.mockClear();
   testLog.error.mockClear();
@@ -1018,12 +1020,11 @@ describe("processTick — SMS channel", () => {
   });
 
   it("pauses the campaign when SMS is not configured (Twilio creds unset)", async () => {
-    const { readSmsConfigOrNull } = await import(
-      "../../lib/messaging/messaging-config.js"
-    );
-    (readSmsConfigOrNull as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-      null,
-    );
+    const { readSmsConfigOrNull } =
+      await import("../../lib/messaging/messaging-config.js");
+    (
+      readSmsConfigOrNull as unknown as ReturnType<typeof vi.fn>
+    ).mockReturnValueOnce(null);
 
     const campaign = makeCampaign({ channel: "sms" });
     const recipient = makeRecipient({

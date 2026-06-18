@@ -1,4 +1,4 @@
--- 0394 — Bulk-campaign patient segments + SMS channel.
+-- 0395 — Bulk-campaign patient segments + SMS channel.
 --
 -- Extends the existing bulk-campaigns engine (migrations 0082/0083) in
 -- two ways so tenants can send mass SMS *or* email to a finely-targeted

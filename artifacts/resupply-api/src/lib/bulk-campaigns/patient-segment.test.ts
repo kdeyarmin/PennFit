@@ -63,9 +63,9 @@ describe("segmentHasEquipmentCriteria", () => {
       true,
     );
     expect(segmentHasEquipmentCriteria({ deviceClasses: ["cpap"] })).toBe(true);
-    expect(
-      segmentHasEquipmentCriteria({ equipmentModelContains: "P10" }),
-    ).toBe(true);
+    expect(segmentHasEquipmentCriteria({ equipmentModelContains: "P10" })).toBe(
+      true,
+    );
   });
 
   it("is false when only non-equipment fields are set", () => {

@@ -1,7 +1,7 @@
 // Composable patient-segment filter spec for bulk campaigns.
 //
 // `audience_kind='patient_segment'` campaigns carry one of these specs in
-// the `bulk_campaigns.audience_filter` jsonb column (migration 0394). The
+// the `bulk_campaigns.audience_filter` jsonb column (migration 0395). The
 // criteria are ANDed together: a patient is in the audience only when they
 // satisfy EVERY criterion that's set. An unset criterion is ignored.
 //
@@ -65,10 +65,7 @@ export const patientSegmentFilterSchema = z
   .object({
     /** Match patients with an ACTIVE equipment asset from any of these
      *  manufacturers (case-insensitive). */
-    manufacturers: z
-      .array(z.string().trim().min(1).max(80))
-      .max(50)
-      .optional(),
+    manufacturers: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
     /** Match patients with an ACTIVE equipment asset of any of these
      *  device classes. */
     deviceClasses: z

@@ -476,7 +476,9 @@ describe("fetchAudienceCandidates — patient_segment", () => {
       },
       then: (resolve: (r: QueryResult) => unknown) => {
         const rows = state.from === 0 ? (tables[state.table] ?? []) : [];
-        return Promise.resolve(resolve({ data: rows as unknown[], error: null }));
+        return Promise.resolve(
+          resolve({ data: rows as unknown[], error: null }),
+        );
       },
     };
     return builder as unknown as import("@workspace/resupply-db").OrgScopedClient;

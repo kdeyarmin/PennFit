@@ -406,8 +406,9 @@ export async function processTick(
         customArgs: Record<string, string>;
       }) => Promise<{ messageId: string }>)
     | null = null;
-  let sendSms: ((to: string, body: string) => Promise<{ messageId: string }>) | null =
-    null;
+  let sendSms:
+    | ((to: string, body: string) => Promise<{ messageId: string }>)
+    | null = null;
 
   if (channel === "email") {
     const { createTenantSendgridClient } =
@@ -447,7 +448,8 @@ export async function processTick(
     const { resolveTenantSmsClientOptions } =
       await import("../../lib/messaging/tenant-telecom.js");
     const tenantOpts = await resolveTenantSmsClientOptions(orgId);
-    const { createTwilioSmsClient } = await import("@workspace/resupply-telecom");
+    const { createTwilioSmsClient } =
+      await import("@workspace/resupply-telecom");
     const smsClient = createTwilioSmsClient({
       accountSid: smsCfg.twilioAccountSid,
       authToken: smsCfg.twilioAuthToken,

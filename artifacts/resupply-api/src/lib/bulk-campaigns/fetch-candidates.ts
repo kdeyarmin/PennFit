@@ -60,7 +60,8 @@ const BATCH = 1000;
 
 /** Columns the patient candidate projection needs across every patient
  *  audience. Includes phone for the SMS channel. */
-const PATIENT_CANDIDATE_COLUMNS = "id, email, phone_e164, status, insurance_payer";
+const PATIENT_CANDIDATE_COLUMNS =
+  "id, email, phone_e164, status, insurance_payer";
 
 type PatientRow = {
   id: string;
@@ -110,7 +111,9 @@ export async function fetchAudienceCandidates(
     for (let from = 0; ; from += BATCH) {
       const { data, error } = await supabase
         .from("shop_customers")
-        .select("customer_id, email_lower, phone_e164, communication_preferences")
+        .select(
+          "customer_id, email_lower, phone_e164, communication_preferences",
+        )
         .order("customer_id", { ascending: true })
         .range(from, from + BATCH - 1);
       if (error) throw error;
@@ -196,7 +199,9 @@ export async function fetchAudienceCandidates(
       const slice = shopIds.slice(i, i + BATCH);
       const { data, error } = await supabase
         .from("shop_customers")
-        .select("customer_id, email_lower, phone_e164, communication_preferences")
+        .select(
+          "customer_id, email_lower, phone_e164, communication_preferences",
+        )
         .in("customer_id", slice);
       if (error) throw error;
       for (const r of data ?? []) {

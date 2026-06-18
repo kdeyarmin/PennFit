@@ -386,8 +386,8 @@ function NewCampaignModal({
           {channel === "sms" && (
             <p className="text-[10px] text-muted-foreground mt-1">
               Sends via Twilio. Only recipients with a phone on file are
-              reached; opted-out (STOP) patients are always suppressed. Keep
-              the SMS template short and include opt-out wording.
+              reached; opted-out (STOP) patients are always suppressed. Keep the
+              SMS template short and include opt-out wording.
             </p>
           )}
         </div>
@@ -593,8 +593,8 @@ function NewCampaignModal({
             aria-label="Template key"
           />
           <p className="text-[10px] text-muted-foreground mt-1">
-            From the Message Templates library — must already exist as an
-            active <strong>{CHANNEL_LABEL[channel]}</strong> template.
+            From the Message Templates library — must already exist as an active{" "}
+            <strong>{CHANNEL_LABEL[channel]}</strong> template.
           </p>
         </div>
 

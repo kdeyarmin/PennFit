@@ -57,7 +57,7 @@ export type AudienceKind =
   // patient audience — the payer-filter guard below only fires for
   // by_patient_payer.
   | "by_therapy_cohort"
-  // Composable patient segment (migration 0394). The route resolves the
+  // Composable patient segment (migration 0395). The route resolves the
   // segment to patient candidates via fetch-candidates; this resolver
   // treats them like any other patient audience.
   | "patient_segment"
