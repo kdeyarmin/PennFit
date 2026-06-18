@@ -22,6 +22,7 @@ import {
   KeyRound,
   LineChart,
   Lock,
+  Menu,
   MessageSquare,
   Mic,
   Minus,
@@ -41,6 +42,7 @@ import {
   Video,
   Waypoints,
   Workflow,
+  X,
   Zap,
 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -281,6 +283,11 @@ const NAV_LINKS: { href: string; label: string }[] = [
 
 function Nav() {
   const [loc] = useLocation();
+  const [open, setOpen] = useState(false);
+  // Close the mobile menu on any route change so it never lingers open.
+  useEffect(() => {
+    setOpen(false);
+  }, [loc]);
   return (
     <nav className="bx-nav">
       <div className="bx-shell bx-nav-inner">
@@ -305,7 +312,42 @@ function Nav() {
             Request a demo
           </a>
         </div>
+        <button
+          type="button"
+          className="bx-nav-toggle"
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          aria-controls="bx-nav-mobile"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <X size={22} /> : <Menu size={22} />}
+        </button>
       </div>
+      {open ? (
+        <div className="bx-nav-mobile" id="bx-nav-mobile">
+          <div className="bx-shell bx-nav-mobile-inner">
+            {NAV_LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={
+                  "bx-nav-mobile-link" + (loc === l.href ? " is-active" : "")
+                }
+                onClick={() => setOpen(false)}
+              >
+                {l.label}
+              </Link>
+            ))}
+            <a
+              className="bx-btn bx-btn-primary bx-nav-mobile-demo"
+              href="#demo"
+              onClick={() => setOpen(false)}
+            >
+              Request a demo
+            </a>
+          </div>
+        </div>
+      ) : null}
     </nav>
   );
 }

@@ -277,9 +277,59 @@
 .bx-nav-links a.bx-nav-anchor.is-active::after {
   width: 100%;
 }
+/* Mobile menu (toggle hidden on desktop; the page-nav links collapse into
+   a dropdown under 900px so the split-out routes stay reachable on phones). */
+.bx-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  border: 1px solid var(--bx-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bx-text);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.bx-nav-toggle:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.bx-nav-mobile {
+  border-bottom: 1px solid var(--bx-line);
+  background: var(--bx-panel-3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.bx-nav-mobile-inner {
+  display: flex;
+  flex-direction: column;
+  padding-top: 6px;
+  padding-bottom: 18px;
+}
+.bx-nav-mobile-link {
+  color: var(--bx-text-dim);
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px 6px;
+  border-bottom: 1px solid var(--bx-line);
+  transition: color 0.18s ease;
+}
+.bx-nav-mobile-link:hover,
+.bx-nav-mobile-link.is-active {
+  color: var(--bx-cyan);
+}
+.bx-nav-mobile-demo {
+  margin-top: 16px;
+  justify-content: center;
+}
 @media (max-width: 900px) {
-  .bx-nav-links .bx-nav-anchor {
+  .bx-nav-links {
     display: none;
+  }
+  .bx-nav-toggle {
+    display: inline-flex;
   }
 }
 
@@ -2716,5 +2766,57 @@
   .bx-wave i,
   .bx-bento-wave i {
     height: 60%;
+  }
+}
+
+/* ───────────────────── Responsive refinements ───────────────────── */
+/* Product-tour mock console: the fixed 212px sidebar + multi-column panels
+   are illegible on phones, so collapse them down progressively. */
+@media (max-width: 760px) {
+  .bx-app-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bx-app-cols {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .bx-app-body {
+    grid-template-columns: 1fr;
+  }
+  .bx-app-side {
+    display: none;
+  }
+  .bx-app-main {
+    padding: 18px 16px 20px;
+  }
+}
+@media (max-width: 420px) {
+  .bx-app-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .bx-app-search {
+    display: none;
+  }
+}
+
+/* Tighten vertical rhythm + side gutters on small screens. */
+@media (max-width: 600px) {
+  .bx-section {
+    padding: 72px 0;
+  }
+  .bx-shell {
+    padding: 0 18px;
+  }
+  .bx-section-head {
+    margin-bottom: 40px;
+  }
+  .bx-hero {
+    padding: 40px 0 64px;
+  }
+  .bx-pagehead {
+    padding: 44px 0 0;
   }
 }
