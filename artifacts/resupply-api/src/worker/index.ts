@@ -638,10 +638,8 @@ async function doStartWorker(): Promise<void> {
   // on-demand tick model as bulk campaigns: enqueued by the
   // /platform/email-campaigns/:id/start endpoint, self-re-enqueues until
   // drained, paused, or cancelled.
-  await safeRegister(
-    "registerPlatformEmailTickJob",
-    registrationFailures,
-    () => registerPlatformEmailTickJob(boss),
+  await safeRegister("registerPlatformEmailTickJob", registrationFailures, () =>
+    registerPlatformEmailTickJob(boss),
   );
 
   // Nightly bulk refresh of every active therapy-cloud link. Runs at

@@ -14,8 +14,19 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { verifyPlatformUnsubscribeToken } from "../../lib/platform-outreach/unsubscribe-token";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// Public, unauthenticated endpoint — bound by a per-IP fixed window so a
+// leaked link or a scanner can't hammer it. The token is HMAC-signed
+// (enumeration-proof), so a generous budget still lets a real recipient
+// click through (and re-click) without friction.
+const unsubscribeLimiter = rateLimit({
+  name: "platform_unsubscribe",
+  windowMs: 60_000,
+  max: 30,
+});
 
 function page(title: string, message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
@@ -29,6 +40,7 @@ h1{font-size:18px;margin:0 0 8px}p{font-size:14px;color:#566;margin:0}</style></
 
 router.get(
   "/platform-unsubscribe",
+  unsubscribeLimiter,
   async (req: Request, res: Response): Promise<void> => {
     res.setHeader("Cache-Control", "no-store");
     const token = typeof req.query.t === "string" ? req.query.t : "";

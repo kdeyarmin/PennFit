@@ -82,6 +82,20 @@ EXCLUDES=(
   # (clearinghouse_credentials) IS read through getOrgScopedClient(orgId).
   # A reviewed global-table exception, like requireAdmin above.
   --glob '!**/lib/billing/identity-resolver.ts'
+  # Platform outreach (super-admin broadcast) operates EXCLUSIVELY on
+  # platform-GLOBAL tables — platform_contacts / platform_email_campaigns
+  # / platform_email_recipients (migration 0394) have NO org_id and belong
+  # to the platform operator, not any tenant. Every callsite is gated by
+  # requirePlatformAdmin (the cross-tenant tier above requireAdmin), which
+  # deliberately does NOT attach req.orgId. Like the dme_organization and
+  # organizations directory reads, these go through the unscoped
+  # service-role client by design; there is no tenant to scope to. Reviewed
+  # global-table exceptions.
+  --glob '!**/lib/platform-outreach/**'
+  --glob '!**/routes/platform/outreach-contacts.ts'
+  --glob '!**/routes/platform/outreach-campaigns.ts'
+  --glob '!**/routes/platform/unsubscribe.ts'
+  --glob '!**/worker/jobs/platform-email-tick.ts'
 )
 
 # Match a CALL (open paren) so bare `import { getSupabaseServiceRoleClient }`
