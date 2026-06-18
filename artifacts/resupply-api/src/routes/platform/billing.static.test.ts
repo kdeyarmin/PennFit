@@ -40,6 +40,13 @@ describe("platform billing route wiring", () => {
     expect(SRC).toContain("syncTenantStripeSubscription");
     // Auditable so the super-admin portal can see who chose what.
     expect(SRC).toContain("tenant.billing.subscription.selected");
+    // Switching plans must carry the live Stripe linkage forward so the
+    // sync UPDATES the existing subscription rather than creating a second
+    // one (which would double-bill the tenant).
+    expect(SRC).toContain("Preserve the live Stripe linkage");
+    expect(SRC).toContain(
+      "stripe_subscription_id: prior?.stripe_subscription_id",
+    );
   });
 
   it("counts active locations by is_active, not a nonexistent status column", () => {

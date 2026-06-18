@@ -485,6 +485,27 @@ router.post(
       res.status(403).json({ error: "plan_not_self_selectable" });
       return;
     }
+    // Carry the existing Stripe identity forward when switching plans. The
+    // new active row must keep the prior stripe_customer_id /
+    // stripe_subscription_id / stripe_account_ref so the subsequent
+    // syncTenantStripeSubscription() UPDATES the existing Stripe
+    // subscription (swapping its line items to the new plan) instead of
+    // creating a second one — leaving the old subscription billing would
+    // double-charge the tenant.
+    const { data: prior, error: priorErr } = await raw
+      .schema("resupply")
+      .from("tenant_billing_subscriptions")
+      .select(
+        "stripe_customer_id, stripe_subscription_id, stripe_account_ref, stripe_status, current_period_start, current_period_end, last_invoice_id, last_invoice_status",
+      )
+      .eq("org_id", req.orgId)
+      .in("status", ["active", "trialing", "past_due"])
+      .limit(1)
+      .maybeSingle();
+    if (priorErr) {
+      res.status(500).json({ error: "subscription_update_failed" });
+      return;
+    }
     const { error: cancelErr } = await raw
       .schema("resupply")
       .from("tenant_billing_subscriptions")
@@ -508,6 +529,15 @@ router.post(
         status: "active",
         notes: "",
         updated_by_email: req.adminEmail ?? null,
+        // Preserve the live Stripe linkage from the plan being replaced.
+        stripe_customer_id: prior?.stripe_customer_id ?? null,
+        stripe_subscription_id: prior?.stripe_subscription_id ?? null,
+        stripe_account_ref: prior?.stripe_account_ref ?? null,
+        stripe_status: prior?.stripe_status ?? null,
+        current_period_start: prior?.current_period_start ?? null,
+        current_period_end: prior?.current_period_end ?? null,
+        last_invoice_id: prior?.last_invoice_id ?? null,
+        last_invoice_status: prior?.last_invoice_status ?? null,
       });
     if (insErr) {
       res.status(500).json({ error: "subscription_update_failed" });
