@@ -1426,26 +1426,30 @@ function PlatformShell({
           backgroundColor: "hsl(var(--surface-2))",
         }}
       >
-        <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-x-4 gap-y-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className="text-sm font-bold tracking-tight"
+              className="text-sm font-bold tracking-tight truncate"
               style={{ color: "hsl(var(--ink-1))" }}
             >
               CareMetric Breathe
             </span>
             <Badge variant="info">Platform</Badge>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Link
               href="/admin"
-              className="text-xs font-medium"
+              className="text-xs font-medium whitespace-nowrap"
               style={{ color: "hsl(var(--penn-navy))" }}
             >
               Admin console
             </Link>
             {email && (
-              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              <span
+                className="text-xs truncate hidden sm:inline"
+                style={{ color: "hsl(var(--ink-3))" }}
+                title={email}
+              >
                 {email}
               </span>
             )}
@@ -1501,7 +1505,10 @@ function PlatformNav() {
       }}
       aria-label="Platform navigation"
     >
-      <div className="mx-auto max-w-5xl px-4 flex items-center gap-1">
+      {/* On narrow screens the eight tabs exceed the viewport width, so the
+          row scrolls horizontally instead of overflowing the page. Items
+          stay on one line (`whitespace-nowrap` + `shrink-0`). */}
+      <div className="mx-auto max-w-5xl px-4 flex items-center gap-1 overflow-x-auto">
         {PLATFORM_NAV.map((item) => {
           const active =
             item.href === "/platform"
@@ -1512,7 +1519,7 @@ function PlatformNav() {
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className="text-xs font-medium px-3 py-2.5 -mb-px border-b-2"
+              className="text-xs font-medium px-3 py-2.5 -mb-px border-b-2 whitespace-nowrap shrink-0"
               style={{
                 color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-3))",
                 borderColor: active ? "hsl(var(--penn-navy))" : "transparent",
