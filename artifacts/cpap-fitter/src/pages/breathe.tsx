@@ -1150,6 +1150,12 @@ function Roles() {
             </div>
           ))}
         </div>
+        <div className="bx-price-cta bx-reveal">
+          <span>Want every feature mapped to the seat that uses it?</span>
+          <Link className="bx-btn bx-btn-primary" href="/breathe/features">
+            See what the software does, by role <ArrowRight size={16} />
+          </Link>
+        </div>
       </div>
     </section>
   );
