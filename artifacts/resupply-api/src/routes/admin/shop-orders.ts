@@ -474,10 +474,12 @@ async function sendShippingNotificationIfNew(args: {
           await resolveTenantSmsClientOptions(orgId),
         );
         // Tenant brand when the patient's first name is unknown — never the
-        // seed tenant's "PennPaps" for another tenant's customer.
+        // seed tenant's "PennPaps" for another tenant's customer. Resolved
+        // once (cached, fail-soft); the greeting doesn't depend on it.
+        const brand = await resolveBrandingByOrgId(orgId);
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : (await resolveBrandingByOrgId(orgId)).storefrontName;
+          : brand.storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: your CPAP supplies just shipped (${claimedRow.tracking_carrier} ${claimedRow.tracking_number}). Reply STOP to opt out.`,

@@ -366,10 +366,12 @@ async function deliveryFollowupSweepForOrg(
           await resolveTenantSmsClientOptions(orgId),
         );
         // Tenant brand when the patient's first name is unknown — never the
-        // seed tenant's "PennPaps" for another tenant's customer.
+        // seed tenant's "PennPaps" for another tenant's customer. Resolved
+        // once (cached, fail-soft); the greeting doesn't depend on it.
+        const brand = await resolveBrandingByOrgId(orgId);
         const greeting = smsRecipient.patientFirstName
           ? `Hi ${smsRecipient.patientFirstName}`
-          : (await resolveBrandingByOrgId(orgId)).storefrontName;
+          : brand.storefrontName;
         await smsClient.sendSms({
           to: smsRecipient.phoneE164,
           body: `${greeting}: how is your new CPAP setup going? Reply YES if it works, or NO and we'll start a return. Reply STOP to opt out.`,
