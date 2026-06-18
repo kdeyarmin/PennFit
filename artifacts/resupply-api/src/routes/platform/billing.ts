@@ -13,6 +13,8 @@ import {
   type BillingPreview,
 } from "../../lib/billing-preview";
 import {
+  recurringLineCents,
+  recurringPriceCents,
   summarizeFleetBilling,
   type FleetBillingTenant,
 } from "../../lib/fleet-billing";
@@ -457,7 +459,11 @@ async function recordBillingEvent(
     if (error) throw error;
   } catch (err) {
     logger.warn(
-      { event: "tenant_billing_event_insert_failed", action: event.action, err },
+      {
+        event: "tenant_billing_event_insert_failed",
+        action: event.action,
+        err,
+      },
       "tenant_billing_events insert failed (platform activity panel will miss this change)",
     );
   }
@@ -508,10 +514,10 @@ async function loadRecurringState(
     current_period_end: string | null;
     billing_plans: { monthly_price_cents: number | null } | null;
   } | null;
-  const planMonthlyCents =
-    subRow?.custom_monthly_price_cents ??
-    subRow?.billing_plans?.monthly_price_cents ??
-    0;
+  const planMonthlyCents = recurringPriceCents(
+    subRow?.custom_monthly_price_cents,
+    subRow?.billing_plans?.monthly_price_cents,
+  );
 
   const addonByCode = new Map<
     string,
@@ -521,17 +527,20 @@ async function loadRecurringState(
   for (const a of (addons.data ?? []) as unknown as Array<{
     quantity: number | null;
     custom_recurring_price_cents: number | null;
-    billing_addons: { code: string; recurring_price_cents: number | null } | null;
+    billing_addons: {
+      code: string;
+      recurring_price_cents: number | null;
+    } | null;
   }>) {
     const code = a.billing_addons?.code;
     if (!code) continue;
     const quantity = a.quantity ?? 0;
-    const unitCents =
-      a.custom_recurring_price_cents ??
-      a.billing_addons?.recurring_price_cents ??
-      0;
+    const unitCents = recurringPriceCents(
+      a.custom_recurring_price_cents,
+      a.billing_addons?.recurring_price_cents,
+    );
     addonByCode.set(code, { quantity, unitCents });
-    addonsTotalCents += unitCents * Math.max(0, quantity);
+    addonsTotalCents += recurringLineCents(unitCents, quantity);
   }
 
   return {
@@ -590,7 +599,8 @@ async function buildBillingPreview(
     // custom) unit price when one is already on the subscription.
     const unitCents =
       existing?.unitCents ??
-      ((addon.recurring_price_cents as number | null) ?? 0);
+      (addon.recurring_price_cents as number | null) ??
+      0;
     const currentContribution = (existing?.quantity ?? 0) * unitCents;
     const newContribution = change.quantity * unitCents;
     newMonthlyCents =

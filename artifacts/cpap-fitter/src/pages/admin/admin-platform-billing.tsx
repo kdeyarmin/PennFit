@@ -118,6 +118,11 @@ function TenantEditor({
   );
   const [notes, setNotes] = useState(tenant.billing.subscription?.notes ?? "");
   const [message, setMessage] = useState<string | null>(null);
+  // Guard the async preview windows so a fast second click (Save plan) or a
+  // blur→refocus→blur (add-on input) can't open a duplicate confirm + fire a
+  // second mutation while the preview fetch is still in flight.
+  const [previewingPlan, setPreviewingPlan] = useState(false);
+  const [previewingAddon, setPreviewingAddon] = useState<string | null>(null);
   const savePlan = useMutation({
     mutationFn: () =>
       updateTenantPlan(tenant.id, {
@@ -326,10 +331,14 @@ function TenantEditor({
         </label>
         <button
           onClick={async () => {
+            // Ignore re-entrant clicks while a preview is in flight or the
+            // save is committing.
+            if (savePlan.isPending || previewingPlan) return;
             // Cost/proration preview before committing the plan change. A
             // custom monthly override skips the preview (it isn't catalog
             // priced); falls back to a plain confirm if the preview fails.
             if (!monthly.trim()) {
+              setPreviewingPlan(true);
               try {
                 const preview = await previewTenantBillingChange(tenant.id, {
                   kind: "plan",
@@ -338,14 +347,16 @@ function TenantEditor({
                 if (!window.confirm(buildPreviewConfirm(preview))) return;
               } catch {
                 // preview unavailable — fall through and save
+              } finally {
+                setPreviewingPlan(false);
               }
             }
             savePlan.mutate();
           }}
-          disabled={savePlan.isPending}
+          disabled={savePlan.isPending || previewingPlan}
           className="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {savePlan.isPending ? "Saving…" : "Save plan"}
+          {savePlan.isPending || previewingPlan ? "Saving…" : "Save plan"}
         </button>
       </div>
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}
@@ -385,8 +396,12 @@ function TenantEditor({
                   type="number"
                   min={0}
                   step={1}
-                  className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                  disabled={saveAddon.isPending || previewingAddon !== null}
+                  className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm disabled:opacity-60"
                   onBlur={async (e) => {
+                    // Ignore re-entrant blurs while a preview is in flight or
+                    // a save is committing (blur→refocus→blur).
+                    if (saveAddon.isPending || previewingAddon !== null) return;
                     // Normalize to a non-negative integer — the API schema
                     // expects an int, so an empty/decimal/NaN field would
                     // otherwise 400. Reflect the cleaned value back into the
@@ -398,6 +413,7 @@ function TenantEditor({
                     e.currentTarget.value = String(next);
                     if (next === qty) return;
                     // Cost/proration preview before committing the change.
+                    setPreviewingAddon(addon.code);
                     try {
                       const preview = await previewTenantBillingChange(
                         tenant.id,
@@ -410,6 +426,8 @@ function TenantEditor({
                       if (!window.confirm(buildPreviewConfirm(preview))) return;
                     } catch {
                       // preview unavailable — fall through and save
+                    } finally {
+                      setPreviewingAddon(null);
                     }
                     saveAddon.mutate({
                       addonCode: addon.code,
