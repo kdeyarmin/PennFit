@@ -47,6 +47,15 @@ export interface PlaceCallInput {
    * agent / loop-bug bills a few cents instead of an hour.
    */
   timeLimit?: number;
+  /**
+   * Enable Twilio Answering Machine Detection. When set, Twilio reports an
+   * `AnsweredBy` verdict (human | machine_start | machine_end_* | fax |
+   * unknown) on the status callback so the caller can tell a live answer from
+   * voicemail. Omit for the interactive admin click-to-dial (a CSR is on the
+   * line); the automated reorder call sets `"DetectMessageEnd"`. No effect on
+   * the TwiML/agent flow beyond the added verdict.
+   */
+  machineDetection?: "Enable" | "DetectMessageEnd";
 }
 
 export interface PlaceCallResult {
@@ -114,6 +123,7 @@ export interface RawTwilioSdk {
       statusCallbackMethod?: "POST" | "GET";
       record?: boolean;
       timeLimit?: number;
+      machineDetection?: string;
     }): Promise<{ sid: string }>;
   };
 }
@@ -181,6 +191,12 @@ export function createTwilioClient(
           // storage.
           record: false,
           timeLimit: input.timeLimit ?? DEFAULT_TIME_LIMIT_SECONDS,
+          // Answering Machine Detection — only when the caller opts in
+          // (the automated reorder call); omitted leaves Twilio's default
+          // (no detection) for the interactive click-to-dial path.
+          ...(input.machineDetection
+            ? { machineDetection: input.machineDetection }
+            : {}),
         });
         return { sid: res.sid };
       } catch (err) {

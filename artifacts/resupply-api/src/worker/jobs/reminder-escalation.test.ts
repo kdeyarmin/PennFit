@@ -6,6 +6,8 @@ import { describe, it, expect } from "vitest";
 
 import {
   planReminderEscalations,
+  resolveEscalationTiming,
+  isVoiceCallConnected,
   ESCALATION_LADDER,
   ESCALATION_LADDER_WITH_VOICE,
   type EscalationConvRow,
@@ -194,13 +196,55 @@ describe("planReminderEscalations — voice tier", () => {
     });
   });
 
-  it("hands off to a CSR only after voice is also tried", () => {
+  it("RETRIES voice after one unanswered call (below the attempt cap)", () => {
+    // sms + email done, one voice attempt that didn't connect → dial again
+    // rather than hand off (cap is 2).
     const actions = plan(
       [{ id: "e1", patientId: "p1" }],
       [
         { episodeId: "e1", channel: "sms", createdAtMs: NOW - 9 * DAY },
         { episodeId: "e1", channel: "email", createdAtMs: NOW - 6 * DAY },
         { episodeId: "e1", channel: "voice", createdAtMs: NOW - 3 * DAY },
+      ],
+      ESCALATION_LADDER_WITH_VOICE,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "send",
+      channel: "voice",
+      variant: "final",
+    });
+  });
+
+  it("hands off to a CSR after the voice attempt cap (2 unanswered calls)", () => {
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 12 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 9 * DAY },
+        { episodeId: "e1", channel: "voice", createdAtMs: NOW - 6 * DAY },
+        { episodeId: "e1", channel: "voice", createdAtMs: NOW - 3 * DAY },
+      ],
+      ESCALATION_LADDER_WITH_VOICE,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "csr_exhausted",
+      triedChannels: ["sms", "email", "voice"],
+    });
+  });
+
+  it("hands off to a CSR immediately once a call reaches a live person", () => {
+    // A single CONNECTED call ends the voice tier — no second dial.
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 9 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 6 * DAY },
+        {
+          episodeId: "e1",
+          channel: "voice",
+          createdAtMs: NOW - 3 * DAY,
+          voiceConnected: true,
+        },
       ],
       ESCALATION_LADDER_WITH_VOICE,
     );
@@ -287,6 +331,64 @@ describe("planReminderEscalations — channel capability", () => {
   });
 });
 
+describe("isVoiceCallConnected — live-answer detection", () => {
+  it("treats a completed call with no/​human verdict as connected", () => {
+    expect(isVoiceCallConnected("completed", null)).toBe(true);
+    expect(isVoiceCallConnected("completed", "human")).toBe(true);
+    expect(isVoiceCallConnected("completed", "unknown")).toBe(true);
+  });
+
+  it("treats voicemail / fax as NOT connected", () => {
+    expect(isVoiceCallConnected("completed", "machine_start")).toBe(false);
+    expect(isVoiceCallConnected("completed", "machine_end_beep")).toBe(false);
+    expect(isVoiceCallConnected("completed", "fax")).toBe(false);
+  });
+
+  it("treats non-completed terminals as NOT connected", () => {
+    expect(isVoiceCallConnected("no-answer", null)).toBe(false);
+    expect(isVoiceCallConnected("busy", null)).toBe(false);
+    expect(isVoiceCallConnected("failed", null)).toBe(false);
+    expect(isVoiceCallConnected(null, null)).toBe(false);
+  });
+});
+
+describe("resolveEscalationTiming — admin-tunable cadence", () => {
+  it("falls back to the defaults when unset", () => {
+    expect(resolveEscalationTiming(null, null)).toEqual({
+      delayDays: 3,
+      maxDays: 21,
+    });
+  });
+
+  it("parses valid admin values", () => {
+    expect(resolveEscalationTiming("5", "30")).toEqual({
+      delayDays: 5,
+      maxDays: 30,
+    });
+  });
+
+  it("clamps the step delay into 1..30", () => {
+    expect(resolveEscalationTiming("0", "21").delayDays).toBe(1);
+    expect(resolveEscalationTiming("999", "21").delayDays).toBe(30);
+  });
+
+  it("floors max-age at the step delay (a smaller max would stall everything)", () => {
+    // max (2) below delay (7) → floored to delay.
+    expect(resolveEscalationTiming("7", "2")).toEqual({
+      delayDays: 7,
+      maxDays: 7,
+    });
+  });
+
+  it("caps max-age at 120 and falls back on non-numeric input", () => {
+    expect(resolveEscalationTiming("3", "9999").maxDays).toBe(120);
+    expect(resolveEscalationTiming("abc", "xyz")).toEqual({
+      delayDays: 3,
+      maxDays: 21,
+    });
+  });
+});
+
 // Regression guard (structural source check): the episodes + conversations
 // reads in runReminderEscalationScan MUST keyset-page. PostgREST caps a
 // single response at ~1000 rows, so the previous raw .limit(5000) /
@@ -335,5 +437,20 @@ describe("runReminderEscalationScan — patient status + capability read", () =>
 
   it("escalates only ACTIVE patients (respects the STOP opt-out)", () => {
     expect(SRC).toContain('?.status ?? "active") === "active"');
+  });
+
+  it("reads the tenant's tunable cadence instead of the bare constants", () => {
+    expect(SRC).toContain("resolveEscalationTimingForOrg(orgId)");
+    // The planner must be fed the resolved values, not the constants.
+    expect(SRC).toContain("delayMs: delayDays * DAY_MS");
+    expect(SRC).toContain("maxMs: maxDays * DAY_MS");
+  });
+
+  it("reads voice-call disposition to drive the retry/exhaust decision", () => {
+    // Joins voice_calls by conversation_id via .raw() (rows are written
+    // webhook-side without org_id, so the org filter would miss them).
+    expect(SRC).toContain('.from("voice_calls")');
+    expect(SRC).toContain('.select("conversation_id, status, answered_by")');
+    expect(SRC).toContain("isVoiceCallConnected(");
   });
 });
