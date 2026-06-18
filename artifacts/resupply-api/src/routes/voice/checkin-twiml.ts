@@ -30,11 +30,8 @@ import { getOrgScopedClient } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
+import { resolveBrandingByOrgId } from "../../lib/tenant-branding";
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
-import {
-  applyCompanyIdentityToText,
-  getCompanyInfo,
-} from "../../lib/company-info";
 import { logger } from "../../lib/logger";
 import {
   readTwilioWebhookAuthTokenOrNull,
@@ -79,32 +76,26 @@ router.post(
     const patientId = (req.query["patientId"] ?? "").toString();
     const journeyId = (req.query["journeyId"] ?? "").toString();
 
-    // Webhook: no req.orgId. The patient id rode in the signed TwiML URL
-    // (globally unique), so resolve the spoken brand FROM the patient's
-    // tenant — otherwise a non-seed tenant's patient would hear the seed
-    // "PennPaps" name. A miss degrades to the seed/sync identity, so a
-    // tenant-context gap never breaks the call. No-op for the seed tenant.
+    // Brand the spoken script with the patient's tenant (the patient id rode
+    // in the signed URL). Seed / unresolved → "PennPaps", unchanged.
     //
     // Fail-soft: this is a Twilio webhook, so a tenant-lookup hiccup
     // (PostgREST/network) must NEVER 500 — that would drop the patient's
     // check-in call. resolveOrgIdForSignedRecord isn't itself guarded, so
-    // catch here and fall back to the default brand. (getCompanyInfo is
-    // already fail-soft and never throws.)
+    // catch here and fall back to the default brand (resolveBrandingByOrgId
+    // is already fail-soft).
     let orgId: string | null = null;
-    if (patientId) {
-      try {
-        orgId = await resolveOrgIdForSignedRecord("patients", patientId);
-      } catch (err) {
-        logger.warn(
-          { err },
-          "voice.checkin_twiml: tenant resolution failed; using default brand",
-        );
-      }
+    try {
+      orgId = await resolveOrgIdForSignedRecord("patients", patientId);
+    } catch (err) {
+      logger.warn(
+        { err },
+        "voice.checkin_twiml: tenant resolution failed; using default brand",
+      );
     }
-    const companyInfo = await getCompanyInfo(orgId ?? undefined);
-    const brand = (text: string): string =>
-      applyCompanyIdentityToText(text, companyInfo);
-    const script = brand(voiceScriptForDay(day));
+    const brandName = (await resolveBrandingByOrgId(orgId ?? undefined))
+      .storefrontName;
+    const script = voiceScriptForDay(day, brandName);
 
     // The press-1 callback URL embeds the same identifiers so we don't
     // have to rely on Twilio re-sending them. Dropping back through
@@ -133,7 +124,7 @@ router.post(
           `    <Say voice="Polly.Joanna">If you would like a member of our team to call you back, press 1 now. Otherwise just hang up.</Say>`,
           `  </Gather>`,
           // <Gather> falls through here on timeout — no input, hang up.
-          `  <Say voice="Polly.Joanna">${escapeXmlText(brand("Thanks for using Penn Paps. Goodbye."))}</Say>`,
+          `  <Say voice="Polly.Joanna">Thanks for using ${escapeXmlText(brandName)}. Goodbye.</Say>`,
           `  <Hangup/>`,
           `</Response>`,
         ].join("\n"),

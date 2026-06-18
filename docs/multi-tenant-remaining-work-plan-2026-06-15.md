@@ -170,21 +170,25 @@ affect a second tenant's From identity.
 
 **Patient-facing brand-string tail — now addressed (2026-06-18).** The
 brand-literal patient-facing _copy_ (distinct from the From identity) is now
-rewritten to the tenant's saved name/contact at the I/O boundary via
-`applyCompanyIdentityToText(text, getCompanyInfo(orgId))`: the onboarding
-check-in **day-copy** (SMS + email + voice scripts in `checkin-dispatcher` —
-branded once-per-dispatch through `BuiltClients.companyInfo`), the
-**check-in IVR** `<Say>` script + goodbye (`voice/checkin-twiml`, tenant resolved
-from the signed patient id), the **inbound-reorder** shop greeting + human-transfer
-line (`voice/inbound-reorder`, tenant from the called number), and the
-fitter-order concierge **SMS** (`storefront/orders`). `applyCompanyIdentityToText`
-now also rewrites the TTS-spaced `"Penn Paps"` spelling for a non-seed tenant,
-not just camel-cased `"PennPaps"`; the spaced spelling is **left intact for the
-seed tenant** so PennPaps keeps its deliberate two-word TTS pronunciation. All
-are no-ops for the seed tenant (`info.name === "PennPaps"`) and for any unseeded
-environment (`source !== "database"`). The branded text substituted into the
-inbound-reorder transfer `<Say>` is XML-escaped (a tenant brand with `&`/`<`/`>`
-must not produce malformed TwiML).
+branded to the tenant at the I/O boundary. The onboarding check-in flow uses the
+parametric `brandName` resolved once per dispatch via
+`resolveBrandingByOrgId(orgId).storefrontName` (seed → "PennPaps"), threaded
+through `BuiltClients.brandName` into the **SMS** + **voice** day-copy builders
+(`smsBodyForDay`/`voiceScriptForDay`) and the **check-in IVR** `<Say>` script +
+goodbye (`voice/checkin-twiml`, tenant resolved from the signed patient id). The
+check-in **email** day-copy is likewise branded by substituting `brandName` into
+the rendered subject/text/HTML — the HTML body uses an **HTML-escaped** brand
+(`htmlEscape`) so a tenant DBA like "Smith & Sons" can't re-introduce raw markup
+that `htmlBodyForDay` deliberately strips. The check-in IVR org lookup is
+**fail-soft** (try/catch → default brand) so a transient PostgREST/network hiccup
+never 500s the Twilio webhook and drops the call. The **inbound-reorder** shop
+greeting + human-transfer line (`voice/inbound-reorder`, tenant from the called
+number) and the fitter-order concierge **SMS** (`storefront/orders`) brand via
+`applyCompanyIdentityToText(text, getCompanyInfo(orgId))`; the transfer `<Say>` is
+XML-escaped. `applyCompanyIdentityToText` also rewrites the TTS-spaced
+`"Penn Paps"` spelling for a non-seed tenant (left intact for the seed so PennPaps
+keeps its two-word pronunciation). All paths are no-ops for the seed tenant and
+for any unseeded environment.
 
 **Still open after this branch (tracked):** the small sender/SMS tail noted
 above. The G1 `reminder_subscriptions` global-table resolution is

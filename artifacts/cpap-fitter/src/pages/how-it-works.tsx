@@ -150,6 +150,31 @@ export function HowItWorks() {
           matches you to the right CPAP mask — plus how to get the most accurate
           fit.
         </p>
+        {/* Primary, above-the-fold CTA. The full how-it-works explainer
+            runs long, so surface the actual "start the fitter" action up
+            top — the camera-capture flow begins at /consent — instead of
+            burying it under the FAQ at the bottom of the page. */}
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+          <Link href="/consent">
+            <Button
+              size="lg"
+              className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow gap-2"
+              data-testid="how-it-works-hero-start"
+            >
+              <Camera className="w-5 h-5" />
+              Get fitted for a mask
+            </Button>
+          </Link>
+          <Link href="/shop">
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
+            >
+              Shop CPAP supplies
+            </Button>
+          </Link>
+        </div>
       </header>
 
       {/* Tutorial video */}

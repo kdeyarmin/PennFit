@@ -48,11 +48,6 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
-import {
-  applyCompanyIdentityToText,
-  getCompanyInfo,
-  type CompanyInfo,
-} from "./company-info.js";
 import { isOutsideSmsSendWindow } from "./comm-prefs";
 import { createTenantSendgridClient } from "./email/tenant-sender.js";
 import { isFeatureEnabled } from "./feature-flags";
@@ -61,6 +56,7 @@ import {
   resolveTenantSmsClientOptions,
   resolveTenantVoiceFrom,
 } from "./messaging/tenant-telecom";
+import { resolveBrandingByOrgId } from "./tenant-branding";
 import { withRetry } from "./with-retry";
 
 export interface CheckinActor {
@@ -566,18 +562,15 @@ async function sendEmail(
   }
   const greeting = greetingFor(row.firstName);
   try {
-    // Plain-text subject/body: chars are literal, so brand directly. HTML:
-    // htmlBodyForDay strips <>& from its own inputs to keep markup well-formed,
-    // so brand the HTML with HTML-escaped tenant values — otherwise a tenant
-    // DBA name containing & < > (e.g. "Smith & Sons") would re-introduce raw
-    // markup into the rendered email.
-    const brand = (text: string): string =>
-      applyCompanyIdentityToText(text, clients.companyInfo);
-    const brandHtml = (html: string): string =>
-      applyCompanyIdentityToText(
-        html,
-        htmlEscapeCompanyInfo(clients.companyInfo),
-      );
+    // Brand the day-copy to the tenant's storefront name (seed → "PennPaps",
+    // a no-op). Plain-text subject/body take the raw name; the HTML body
+    // takes an HTML-escaped name so a tenant DBA like "Smith & Sons" can't
+    // re-introduce raw markup (htmlBodyForDay strips <>& from its own inputs
+    // specifically to keep the template well-formed).
+    const brand = (s: string): string =>
+      s.split("PennPaps").join(clients.brandName);
+    const brandHtml = (s: string): string =>
+      s.split("PennPaps").join(htmlEscape(clients.brandName));
     const r = await clients.sg.sendEmail({
       to: row.email,
       subject: brand(subjectForDay(day)),
@@ -625,9 +618,10 @@ async function sendSms(
       () =>
         clients.sms!.client.sendSms({
           to: row.phoneE164!,
-          body: applyCompanyIdentityToText(
-            smsBodyForDay(day, greetingFor(row.firstName)),
-            clients.companyInfo,
+          body: smsBodyForDay(
+            day,
+            greetingFor(row.firstName),
+            clients.brandName,
           ),
           // No status callback URL — onboarding SMS attempts are tracked
           // in patient_checkin_attempts, not the conversations table.
@@ -806,22 +800,17 @@ interface BuiltClients {
     from: string;
     publicBaseUrl: string;
   } | null;
-  // The tenant's effective company identity, resolved once per dispatch.
-  // The brand-literal day-copy ("PennPaps") is rewritten to this tenant's
-  // name/contact at the I/O boundary so a non-seed tenant's patients never
-  // hear/read the seed brand. No-op for the seed tenant (info.name ===
-  // "PennPaps") and for any unseeded environment (source !== "database").
-  companyInfo: CompanyInfo;
+  /** Tenant storefront brand for the SMS/voice day-copy (seed → "PennPaps"). */
+  brandName: string;
 }
 
 async function buildClients(
   orgId: string,
   publicBaseUrlOverride?: string,
 ): Promise<BuiltClients> {
-  // Resolve the tenant's company identity once. The day-copy body builders
-  // stay brand-literal ("PennPaps"); the SMS/email/voice senders rewrite that
-  // to this tenant's saved name/contact via applyCompanyIdentityToText.
-  const companyInfo = await getCompanyInfo(orgId);
+  // The tenant's storefront brand threads into the SMS/voice day-copy so a
+  // second tenant's patients see/hear their own name (seed → "PennPaps").
+  const brandName = (await resolveBrandingByOrgId(orgId)).storefrontName;
 
   let sg: BuiltClients["sg"] = null;
   try {
@@ -894,7 +883,7 @@ async function buildClients(
     }
   }
 
-  return { sg, sms, voice, companyInfo };
+  return { sg, sms, voice, brandName };
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -935,28 +924,11 @@ export function stampFieldForDay(
   }
 }
 
-/**
- * HTML-escape the tenant-configured CompanyInfo fields that
- * `applyCompanyIdentityToText` substitutes into copy, so branding an
- * already-rendered HTML body can't re-introduce raw `< > &` markup via a
- * free-text DBA / legal name (e.g. "Smith & Sons"). Only the values that
- * feed the brand/contact replacements are escaped; `websiteUrl` is left
- * alone because the replacement derives an HTML-safe host from it and
- * escaping would break `new URL()` parsing.
- */
-export function htmlEscapeCompanyInfo(info: CompanyInfo): CompanyInfo {
-  const esc = (s: string): string =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return {
-    ...info,
-    name: esc(info.name),
-    legalName: esc(info.legalName),
-    supportEmail: esc(info.supportEmail),
-    generalEmail: esc(info.generalEmail),
-    supportPhoneDisplay: esc(info.supportPhoneDisplay),
-    supportPhoneE164: esc(info.supportPhoneE164),
-    supportHours: esc(info.supportHours),
-  };
+/** HTML-escape a tenant-configured brand name before it is substituted
+ * into an already-rendered HTML email body, so a free-text DBA name
+ * containing `< > &` (e.g. "Smith & Sons") can't break the template. */
+export function htmlEscape(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export function subjectForDay(label: OnboardingDayLabel): string {
@@ -1023,38 +995,42 @@ export function htmlBodyForDay(
 export function smsBodyForDay(
   label: OnboardingDayLabel,
   greeting: string,
+  brandName: string,
 ): string {
   // SMS bodies are intentionally short (<160 chars where possible) so
   // they render as a single segment on most carriers.
   switch (label) {
     case "day1":
     case "day3":
-      return `${greeting}, this is PennPaps. You're a few days into therapy — common early issues are mask leaks and dry mouth. Reply HELP if anything is uncomfortable.`;
+      return `${greeting}, this is ${brandName}. You're a few days into therapy — common early issues are mask leaks and dry mouth. Reply HELP if anything is uncomfortable.`;
     case "day7":
-      return `${greeting}, PennPaps here — one week in! Most patients hit a comfort issue by now. Reply HELP and we'll triage.`;
+      return `${greeting}, ${brandName} here — one week in! Most patients hit a comfort issue by now. Reply HELP and we'll triage.`;
     case "day30":
-      return `${greeting}, PennPaps — you're 30 days in. Cushion seals degrade fast in the first month; reply YES for a replacement on file.`;
+      return `${greeting}, ${brandName} — you're 30 days in. Cushion seals degrade fast in the first month; reply YES for a replacement on file.`;
     case "day60":
-      return `${greeting}, PennPaps — 60 day check-in. If usage has dipped, reply HELP and we'll re-fit your mask.`;
+      return `${greeting}, ${brandName} — 60 day check-in. If usage has dipped, reply HELP and we'll re-fit your mask.`;
     case "day90":
-      return `${greeting}, PennPaps — 90 days! You've cleared the adherence threshold. Reply HELP if you'd like a follow-up call.`;
+      return `${greeting}, ${brandName} — 90 days! You've cleared the adherence threshold. Reply HELP if you'd like a follow-up call.`;
   }
 }
 
-export function voiceScriptForDay(label: OnboardingDayLabel): string {
+export function voiceScriptForDay(
+  label: OnboardingDayLabel,
+  brandName: string,
+): string {
   // Read aloud by Twilio's <Say> verb. Keep under ~30 seconds.
   switch (label) {
     case "day1":
     case "day3":
-      return "Hi, this is an automated check-in from Penn Paps. You are a few days into your therapy. Most patients run into a comfort issue this week. If anything feels off — mask leaks, dry mouth, or pressure feeling too strong — please call us back, or reply to the text message we just sent. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are a few days into your therapy. Most patients run into a comfort issue this week. If anything feels off — mask leaks, dry mouth, or pressure feeling too strong — please call us back, or reply to the text message we just sent. Thank you.`;
     case "day7":
-      return "Hi, this is an automated check-in from Penn Paps. You are one week into your therapy. If you are running into any issues with comfort, mask seal, or the machine itself, please call us back. We can usually resolve it in a single call. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are one week into your therapy. If you are running into any issues with comfort, mask seal, or the machine itself, please call us back. We can usually resolve it in a single call. Thank you.`;
     case "day30":
-      return "Hi, this is an automated check-in from Penn Paps. You are 30 days into your therapy. You may be due for a fresh mask cushion. Please call us back to confirm a replacement, or reply yes to the text message we just sent. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are 30 days into your therapy. You may be due for a fresh mask cushion. Please call us back to confirm a replacement, or reply yes to the text message we just sent. Thank you.`;
     case "day60":
-      return "Hi, this is an automated check-in from Penn Paps. You are 60 days into your therapy. If your usage has dipped recently, a quick mask refit is usually the fix. Please call us back if anything has changed. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. You are 60 days into your therapy. If your usage has dipped recently, a quick mask refit is usually the fix. Please call us back if anything has changed. Thank you.`;
     case "day90":
-      return "Hi, this is an automated check-in from Penn Paps. Congratulations — you are 90 days into your therapy. Insurance now considers you adherent. If you would like a follow-up call with one of our therapists, please call us back. Thank you.";
+      return `Hi, this is an automated check-in from ${brandName}. Congratulations — you are 90 days into your therapy. Insurance now considers you adherent. If you would like a follow-up call with one of our therapists, please call us back. Thank you.`;
   }
 }
 

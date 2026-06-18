@@ -6,10 +6,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { applyCompanyIdentityToText, type CompanyInfo } from "./company-info";
 import {
   htmlBodyForDay,
-  htmlEscapeCompanyInfo,
+  htmlEscape,
   isWithinCallWindow,
   nextDueCheckin,
   smsBodyForDay,
@@ -98,13 +97,18 @@ describe("rendered scripts", () => {
       "day90",
     ];
     for (const day of labels) {
-      const body = smsBodyForDay(day, "Hi Anna");
-      expect(body.length).toBeGreaterThan(20);
-      expect(body).toContain("PennPaps");
+      // Seed brand → unchanged copy.
+      const seed = smsBodyForDay(day, "Hi Anna", "PennPaps");
+      expect(seed.length).toBeGreaterThan(20);
+      expect(seed).toContain("PennPaps");
+      // A second tenant's brand threads through (no "PennPaps" leak).
+      const tenantB = smsBodyForDay(day, "Hi Anna", "Foo DME");
+      expect(tenantB).toContain("Foo DME");
+      expect(tenantB).not.toContain("PennPaps");
     }
   });
 
-  it("renders a voice script for every cadence label", () => {
+  it("renders a voice script for every cadence label, branded per tenant", () => {
     const labels: OnboardingDayLabel[] = [
       "day3",
       "day7",
@@ -113,9 +117,10 @@ describe("rendered scripts", () => {
       "day90",
     ];
     for (const day of labels) {
-      const script = voiceScriptForDay(day);
+      const script = voiceScriptForDay(day, "Foo DME");
       expect(script.length).toBeGreaterThan(40);
-      expect(script.toLowerCase()).toContain("penn paps");
+      expect(script).toContain("Foo DME");
+      expect(script).not.toContain("Penn Paps");
     }
   });
 
@@ -126,38 +131,22 @@ describe("rendered scripts", () => {
   });
 
   it("keeps the branded HTML well-formed when a tenant brand contains '&'", () => {
-    // A second tenant with an XML-special char in its DBA name must not
-    // re-introduce raw markup into the rendered email — html branding uses
-    // HTML-escaped tenant values (htmlEscapeCompanyInfo).
-    const info: CompanyInfo = {
-      name: "Smith & Sons CPAP",
-      legalName: "Smith & Sons CPAP LLC",
-      phoneE164: "+15551234567",
-      phoneDisplay: "(555) 123-4567",
-      supportPhoneE164: "+15551234567",
-      supportPhoneDisplay: "(555) 123-4567",
-      supportEmail: "help@smith.example",
-      generalEmail: "info@smith.example",
-      billingEmail: "billing@smith.example",
-      faxE164: null,
-      websiteUrl: "https://smith.example",
-      supportHours: "Mon–Fri 9a–5p ET",
-      assistantStorefrontName: "PennBot",
-      assistantAdminName: "PennPilot",
-      address: null,
-      organizationalNpi: null,
-      source: "database",
-    };
-    const html = applyCompanyIdentityToText(
-      htmlBodyForDay("day90", "Hi Anna"),
-      htmlEscapeCompanyInfo(info),
-    );
+    // A second tenant with an XML-special char in its storefront name must
+    // not re-introduce raw markup into the rendered email — the HTML body
+    // brands with an HTML-escaped name (htmlEscape), matching how sendEmail
+    // substitutes clients.brandName into htmlBodyForDay output.
+    const brandName = "Smith & Sons CPAP";
+    const html = htmlBodyForDay("day90", "Hi Anna")
+      .split("PennPaps")
+      .join(htmlEscape(brandName));
     // The brand substitutes in HTML-escaped, so the literal "&" never lands
     // raw next to "Sons" — it is encoded as "&amp;".
     expect(html).toContain("Smith &amp; Sons CPAP");
     expect(html).not.toContain("Smith & Sons CPAP");
-    // The plain-text/subject branders keep the raw "&" (correct for text).
-    expect(htmlEscapeCompanyInfo(info).name).toBe("Smith &amp; Sons CPAP");
+    // Plain-text subject/body keep the raw "&" (correct for text/plain).
+    expect(subjectForDay("day90").split("PennPaps").join(brandName)).toContain(
+      "Smith & Sons CPAP",
+    );
   });
 });
 

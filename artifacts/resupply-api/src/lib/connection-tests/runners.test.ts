@@ -277,6 +277,67 @@ describe("runSmsTest", () => {
       upstream: { status: 400, code: 21211 },
     });
   });
+
+  it("gives the empty-Sender-Pool hint on a synchronous 21704 reject", async () => {
+    // Twilio rejects at create time when the Messaging Service has no
+    // sender. The operator must be told to add a number to the pool — NOT
+    // the generic toll-free/10DLC verification advice.
+    const deps = makeDeps({
+      createTwilioSmsClient: vi.fn().mockReturnValue({
+        sendSms: vi
+          .fn()
+          .mockRejectedValue(
+            new TwilioApiError(
+              "The Messaging Service contains no phone numbers",
+              400,
+              21704,
+            ),
+          ),
+      }),
+    });
+    const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "sms",
+      code: "upstream_error",
+      upstream: { status: 400, code: 21704 },
+    });
+    if (!r.ok) {
+      expect(r.message).toContain("Sender Pool");
+      expect(r.message).not.toContain("toll-free");
+    }
+  });
+
+  it("gives the empty-Sender-Pool hint when 21704 fails asynchronously", async () => {
+    // The production symptom from the field: Twilio ACCEPTS the message
+    // (returns a SID) and then fails it with 21704 because the "CareMetric
+    // AI" Messaging Service has no sender in its pool. The result must
+    // surface the pool fix, not the toll-free/10DLC default.
+    const deps = makeDeps({
+      createTwilioSmsClient: vi.fn().mockReturnValue({
+        sendSms: vi.fn().mockResolvedValue({ messageSid: "SM_1" }),
+        confirmDelivery: vi.fn().mockResolvedValue({
+          status: "failed",
+          errorCode: 21704,
+          errorMessage: "The Messaging Service contains no phone numbers",
+          terminal: true,
+          delivered: false,
+        }),
+      }),
+    });
+    const r = await runSmsTest(cfg, { to: "+12155551212" }, deps);
+    expect(r).toMatchObject({
+      ok: false,
+      channel: "sms",
+      code: "upstream_error",
+      upstream: { code: 21704 },
+    });
+    if (!r.ok) {
+      expect(r.message).toContain("21704");
+      expect(r.message).toContain("Sender Pool");
+      expect(r.message).not.toContain("toll-free");
+    }
+  });
 });
 
 describe("runVoiceTest", () => {
