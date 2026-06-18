@@ -239,7 +239,7 @@ router.post("/voice/inbound-reorder", signatureMiddleware, async (req, res) => {
         [
           '<?xml version="1.0" encoding="UTF-8"?>',
           "<Response>",
-          `<Say>${brand("Hi! Welcome to your PennPaps reorder line. ")}`,
+          `<Say>${escapeXmlText(brand("Hi! Welcome to your PennPaps reorder line. "))}`,
           "Connecting you to our team now.</Say>",
           `<Dial timeout="20">${SUPPORT_DIAL_E164}</Dial>`,
           "</Response>",
@@ -571,6 +571,14 @@ async function identifyCaller(
     case "none":
       return { patientId: null, shopCustomerId: null, ambiguous: false };
   }
+}
+
+// A tenant's saved brand name is substituted into the transfer <Say> below;
+// escape it so a name containing & < > can't produce malformed TwiML (which
+// Twilio rejects, dropping the human-transfer call). Mirrors the helper in
+// voice/checkin-twiml.ts.
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export default router;
