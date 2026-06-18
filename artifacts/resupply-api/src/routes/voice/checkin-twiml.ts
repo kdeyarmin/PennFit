@@ -26,9 +26,10 @@ import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getOrgScopedClient, resolveSeedOrgId } from "@workspace/resupply-db";
+import { getOrgScopedClient } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
+import { resolveOrgIdForSignedRecord } from "../../lib/storefront/signed-link-org";
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
 import {
@@ -155,10 +156,14 @@ router.post(
       ? dayRaw
       : null;
 
-    // Webhook: no req.orgId. Resolve the seed tenant; on miss degrade to
-    // the same Goodbye hangup this handler already returns for an unknown
-    // patient, so a tenant-context gap never 5xx-loops Twilio.
-    const orgId = await resolveSeedOrgId();
+    // Webhook: no req.orgId. The patient id rode in the signed TwiML URL and
+    // is globally unique, so resolve the tenant FROM the patient record (not
+    // the seed org) — otherwise a non-seed tenant's check-in call dead-ends
+    // because the scoped patient lookup below would filter to the seed org.
+    // A miss falls back to seed and degrades to the same Goodbye hangup this
+    // handler already returns for an unknown patient, so a tenant-context gap
+    // never 5xx-loops Twilio.
+    const orgId = await resolveOrgIdForSignedRecord("patients", patientId);
     if (!orgId) {
       res
         .status(200)
