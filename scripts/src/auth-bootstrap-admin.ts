@@ -278,23 +278,31 @@ async function main(): Promise<void> {
   try {
     const seedOrgId = await resolveSeedOrgId();
     if (seedOrgId) {
-      const { data: existingAdminRow } = await supabase
+      const { data: existingAdminRow, error: findErr } = await supabase
         .schema("resupply")
         .from("admin_users")
         .select("id, org_id, auth_user_id")
         .eq("email_lower", emailLower)
         .maybeSingle();
+      // supabase-js returns { error } rather than throwing, so surface it
+      // explicitly to reach the catch (otherwise a failed read looks like
+      // "no row" and the link silently skips).
+      if (findErr) throw findErr;
       if (!existingAdminRow) {
-        await supabase.schema("resupply").from("admin_users").insert({
-          email_lower: emailLower,
-          role: argsParsed.role,
-          status: "active",
-          auth_user_id: userId,
-          org_id: seedOrgId,
-          accepted_at: new Date().toISOString(),
-        });
+        const { error: insertErr } = await supabase
+          .schema("resupply")
+          .from("admin_users")
+          .insert({
+            email_lower: emailLower,
+            role: argsParsed.role,
+            status: "active",
+            auth_user_id: userId,
+            org_id: seedOrgId,
+            accepted_at: new Date().toISOString(),
+          });
+        if (insertErr) throw insertErr;
       } else if (!existingAdminRow.org_id || !existingAdminRow.auth_user_id) {
-        await supabase
+        const { error: updateErr } = await supabase
           .schema("resupply")
           .from("admin_users")
           .update({
@@ -303,6 +311,7 @@ async function main(): Promise<void> {
             updated_at: new Date().toISOString(),
           })
           .eq("email_lower", emailLower);
+        if (updateErr) throw updateErr;
       }
     }
   } catch (err) {

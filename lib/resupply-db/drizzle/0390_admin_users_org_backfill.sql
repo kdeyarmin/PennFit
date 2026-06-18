@@ -37,8 +37,11 @@ WHERE u."role" IN ('admin', 'agent')
   AND EXISTS (SELECT 1 FROM "resupply"."organizations"
               WHERE "slug" = 'penn-home-medical')
 ON CONFLICT ("email_lower") DO UPDATE SET
-  -- Link the auth user only when missing; never overwrite an existing
-  -- role/status (preserves a deliberate downgrade). org_id is already
-  -- non-null on the existing row, so it stays as-is.
-  "auth_user_id" = COALESCE(au."auth_user_id", EXCLUDED."auth_user_id"),
-  "updated_at"   = now();
+  -- Link the auth user. Never overwrite an existing role/status (preserves a
+  -- deliberate downgrade); org_id is already non-null on the existing row, so
+  -- it stays as-is. The WHERE gates the write to rows that actually need the
+  -- backfill, so a re-run (every row already linked) is a true no-op — no
+  -- spurious updated_at churn.
+  "auth_user_id" = EXCLUDED."auth_user_id",
+  "updated_at"   = now()
+WHERE au."auth_user_id" IS NULL;
