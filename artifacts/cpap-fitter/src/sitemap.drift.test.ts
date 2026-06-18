@@ -77,6 +77,10 @@ const EXCLUDED_EXACT = new Set([
   // reserved for the first tenant (Penn Home Medical Supply), so this
   // route must NOT appear in the tenant's sitemap.
   "/breathe",
+  // Companion to /breathe — the role-by-role "what the software does"
+  // breakdown. Same separate-brand B2B surface, also noindex, so it is
+  // excluded from the tenant sitemap for the same reason.
+  "/breathe/features",
 ]);
 
 function staticRoutePaths(): string[] {
