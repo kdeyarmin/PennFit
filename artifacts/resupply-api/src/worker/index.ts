@@ -28,6 +28,7 @@
 import PgBoss from "pg-boss";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
+import { registerReminderVoiceJob } from "./jobs/reminder-voice.js";
 import { registerReminderEscalationJob } from "./jobs/reminder-escalation.js";
 import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
 import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
@@ -36,6 +37,7 @@ import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
+import { registerPlatformEmailTickJob } from "./jobs/platform-email-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerReferralReviewExtractJob } from "./jobs/referral-review-extract.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
@@ -416,9 +418,17 @@ async function doStartWorker(): Promise<void> {
   await safeRegister("registerReminderJobs", registrationFailures, () =>
     registerReminderJobs(boss),
   );
+  // Automated-voice tier of the escalation ladder (reminders.place-call).
+  // Only ever enqueued by the escalation scan below; registered first so
+  // its queue exists before anything sends to it. Handler tolerates an
+  // unconfigured voice path (log + exit-0).
+  await safeRegister("registerReminderVoiceJob", registrationFailures, () =>
+    registerReminderVoiceJob(boss),
+  );
   // Daily multi-channel escalation for unanswered reminders (#7).
   // Additive companion to the hourly scan; feature-flagged
-  // (reminder_escalation.dispatcher) and reuses the SEND_* queues.
+  // (reminder_escalation.dispatcher) and reuses the SEND_* queues, plus the
+  // opt-in voice tier (reminder_escalation.voice).
   await safeRegister(
     "registerReminderEscalationJob",
     registrationFailures,
@@ -631,6 +641,14 @@ async function doStartWorker(): Promise<void> {
   // is drained, paused, or cancelled.
   await safeRegister("registerBulkCampaignTickJob", registrationFailures, () =>
     registerBulkCampaignTickJob(boss),
+  );
+
+  // Platform outreach email send worker (super-admin broadcast). Same
+  // on-demand tick model as bulk campaigns: enqueued by the
+  // /platform/email-campaigns/:id/start endpoint, self-re-enqueues until
+  // drained, paused, or cancelled.
+  await safeRegister("registerPlatformEmailTickJob", registrationFailures, () =>
+    registerPlatformEmailTickJob(boss),
   );
 
   // Nightly bulk refresh of every active therapy-cloud link. Runs at

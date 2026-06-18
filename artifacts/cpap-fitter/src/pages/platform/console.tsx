@@ -73,6 +73,7 @@ import { Table, type Column } from "@/components/admin/Table";
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
+import { PlatformOutreachPage } from "@/pages/platform/outreach";
 import { AdminPlatformBillingPage } from "@/pages/admin/admin-platform-billing";
 import { AdminAccountSetupPage } from "@/pages/admin/account-setup";
 import { PlatformSystemInfoPage } from "@/pages/admin/admin-settings";
@@ -1474,6 +1475,7 @@ function PlatformShell({
 const PLATFORM_NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/platform", label: "Dashboard" },
   { href: "/platform/tenants", label: "Tenants" },
+  { href: "/platform/outreach", label: "Outreach" },
   { href: "/platform/billing", label: "Billing" },
   { href: "/platform/support", label: "Support" },
   { href: "/platform/integrations", label: "Global integrations" },
@@ -1573,6 +1575,7 @@ function PlatformConsole() {
       <Switch>
         <Route path="/platform" component={PlatformDashboard} />
         <Route path="/platform/tenants" component={TenantDirectory} />
+        <Route path="/platform/outreach" component={PlatformOutreachPage} />
         <Route path="/platform/billing" component={AdminPlatformBillingPage} />
         <Route path="/platform/support" component={PlatformSupport} />
         {/* Legacy "Fleet overview" URL — folded into the Dashboard. */}

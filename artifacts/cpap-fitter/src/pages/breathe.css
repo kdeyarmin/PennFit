@@ -988,17 +988,21 @@
   margin-top: 22px;
 }
 .bx-replace-pill {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 500;
   color: var(--bx-text);
   padding: 9px 16px;
   border: 1px solid var(--bx-line);
   border-radius: 100px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.05);
   position: relative;
 }
 .bx-replace-pill s {
-  text-decoration-color: rgba(246, 167, 34, 0.85);
-  text-decoration-thickness: 1.5px;
+  /* Keep the words fully legible — a thin, semi-transparent line reads as
+     "replaced" without striking the text out of readability. */
+  color: var(--bx-text);
+  text-decoration-color: rgba(246, 167, 34, 0.6);
+  text-decoration-thickness: 1px;
 }
 
 /* ───────────────────── Lifecycle pipeline ───────────────────── */
@@ -2893,6 +2897,50 @@
   font-weight: 600;
   color: var(--bx-text);
   white-space: nowrap;
+}
+
+/* Collapsible add-on explainer: the row becomes a <details> whose <summary>
+   carries the existing name/price layout plus a down-arrow that flips open
+   to reveal a brief benefit blurb. */
+.bx-addon-item {
+  border-top: 1px solid var(--bx-line);
+}
+.bx-addon-item > .bx-addon-row {
+  border-top: none;
+  cursor: pointer;
+  list-style: none;
+}
+.bx-addon-item > .bx-addon-row::-webkit-details-marker {
+  display: none;
+}
+.bx-addon-item > .bx-addon-row:hover .bx-addon-name {
+  color: var(--bx-text);
+}
+.bx-addon-caret {
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--bx-text-dim);
+  transition: transform 0.2s ease;
+}
+.bx-addon-item[open] > .bx-addon-row .bx-addon-caret {
+  transform: rotate(180deg);
+  color: var(--bx-cyan);
+}
+.bx-addon-detail {
+  padding: 2px 0 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--bx-text-dim);
+}
+.bx-addon-detail p {
+  margin: 0 0 6px;
+}
+.bx-addon-detail p:last-child {
+  margin-bottom: 0;
+}
+.bx-addon-detail strong {
+  color: var(--bx-text);
+  font-weight: 600;
 }
 
 /* Add-ons teaser (landing page) */
