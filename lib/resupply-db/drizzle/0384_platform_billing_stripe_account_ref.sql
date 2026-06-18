@@ -1,4 +1,4 @@
--- 0383_platform_billing_stripe_account_ref — track which Stripe ACCOUNT
+-- 0384_platform_billing_stripe_account_ref — track which Stripe ACCOUNT
 -- each synced platform-billing object belongs to.
 --
 -- Stripe object IDs (products, prices, customers, subscriptions) are
