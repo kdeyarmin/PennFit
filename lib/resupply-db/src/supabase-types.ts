@@ -2375,6 +2375,9 @@ export interface Database {
           created_by_user_id: string | null;
           dismissed_reason: string | null;
           shop_order_id: string | null;
+          // Migration 0392: the sign-&-pay order request an approved draft
+          // produced (the shop_orders row backfills shop_order_id on payment).
+          csr_order_request_id: string | null;
           created_at: string;
           updated_at: string;
         };

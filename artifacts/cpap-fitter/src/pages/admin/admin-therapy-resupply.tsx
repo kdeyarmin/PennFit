@@ -7,10 +7,18 @@
 // combined re-fit + resupply opportunities. Each row links to the
 // patient so a CSR can place the order. Exportable to CSV.
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Download, PackageCheck, Wind } from "lucide-react";
+import {
+  ClipboardList,
+  Download,
+  PackageCheck,
+  PackagePlus,
+  Send,
+  Wind,
+  X,
+} from "lucide-react";
 
 import { Card, KpiCard } from "@/components/admin/Card";
 import { Badge, humanizeStatus } from "@/components/admin/Badge";
@@ -18,12 +26,23 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import {
+  approveResupplyDraft,
+  createResupplyDrafts,
+  dismissResupplyDraft,
   getResupplySummary,
   getResupplyOpportunities,
+  listResupplyDrafts,
   resupplyOpportunitiesCsvUrl,
+  type ApproveDraftInput,
+  type ResupplyDraft,
   type ResupplyOpportunity,
   type SupplyCategory,
 } from "@/lib/admin/therapy-resupply-api";
+
+// Selection / dedup key — mirrors the server's
+// (patient, category, next-eligible-date) draft key.
+const oppKey = (o: ResupplyOpportunity): string =>
+  `${o.patientId}|${o.category}|${o.nextEligibleDate ?? ""}`;
 
 // Horizon options: 0 = eligible now / overdue; the rest add a "due
 // soon" lookahead so a CSR can batch upcoming orders.
@@ -52,6 +71,8 @@ const SOURCE_LABELS: Record<string, string> = {
   philips_care: "Philips Care",
   react_health: "React Health",
 };
+
+const inputCls = "w-full rounded-md border px-2 py-1.5 text-sm";
 
 const SUPPLY_NAMES: Record<string, string> = {
   mask: "Mask",
@@ -84,6 +105,45 @@ export function AdminTherapyResupplyPage() {
   });
 
   const s = summaryQ.data?.summary;
+
+  const queryClient = useQueryClient();
+  // Selected opportunities (by dedup key) to stage as drafts.
+  const [selected, setSelected] = useState<Map<string, ResupplyOpportunity>>(
+    new Map(),
+  );
+  const toggle = (o: ResupplyOpportunity) =>
+    setSelected((prev) => {
+      const next = new Map(prev);
+      const k = oppKey(o);
+      if (next.has(k)) next.delete(k);
+      else next.set(k, o);
+      return next;
+    });
+
+  const draftsQ = useQuery({
+    queryKey: ["admin", "therapy-resupply", "drafts", "proposed"],
+    queryFn: () => listResupplyDrafts("proposed", 200),
+    refetchOnWindowFocus: false,
+  });
+
+  const createDrafts = useMutation({
+    mutationFn: () =>
+      createResupplyDrafts(
+        Array.from(selected.values()).map((o) => ({
+          patientId: o.patientId,
+          category: o.category,
+          source: o.source,
+          sourceDescription: o.description,
+          nextEligibleDate: o.nextEligibleDate,
+        })),
+      ),
+    onSuccess: () => {
+      setSelected(new Map());
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "therapy-resupply", "drafts"],
+      });
+    },
+  });
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -174,28 +234,53 @@ export function AdminTherapyResupplyPage() {
         title="Items eligible for replacement"
         subtitle="Most-overdue first; high-leak mask interfaces float to the top. Click a patient to place the order."
       >
-        <div className="flex flex-wrap gap-2 mb-4">
-          {CATEGORY_FILTERS.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              onClick={() => setCategory(c.value)}
-              className="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor:
-                  category === c.value
-                    ? "hsl(var(--penn-navy))"
-                    : "hsl(var(--surface-1))",
-                color: category === c.value ? "white" : "hsl(var(--ink-2))",
-                borderColor:
-                  category === c.value
-                    ? "hsl(var(--penn-navy))"
-                    : "hsl(var(--line-1))",
-              }}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div className="flex flex-wrap gap-2">
+            {CATEGORY_FILTERS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setCategory(c.value)}
+                className="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+                style={{
+                  backgroundColor:
+                    category === c.value
+                      ? "hsl(var(--penn-navy))"
+                      : "hsl(var(--surface-1))",
+                  color: category === c.value ? "white" : "hsl(var(--ink-2))",
+                  borderColor:
+                    category === c.value
+                      ? "hsl(var(--penn-navy))"
+                      : "hsl(var(--line-1))",
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {createDrafts.isError ? (
+              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Couldn’t stage drafts — try again.
+              </span>
+            ) : createDrafts.data ? (
+              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Staged {createDrafts.data.staged}
+                {createDrafts.data.skipped > 0
+                  ? ` · ${createDrafts.data.skipped} already pending`
+                  : ""}
+              </span>
+            ) : null}
+            <Button
+              intent="primary"
+              size="sm"
+              disabled={selected.size === 0 || createDrafts.isPending}
+              onClick={() => createDrafts.mutate()}
             >
-              {c.label}
-            </button>
-          ))}
+              <PackagePlus className="h-4 w-4" /> Create drafts
+              {selected.size > 0 ? ` (${selected.size})` : ""}
+            </Button>
+          </div>
         </div>
 
         {listQ.isPending ? (
@@ -211,18 +296,44 @@ export function AdminTherapyResupplyPage() {
             to date.
           </p>
         ) : (
-          <OpportunitiesTable opportunities={listQ.data.opportunities} />
+          <OpportunitiesTable
+            opportunities={listQ.data.opportunities}
+            selected={selected}
+            onToggle={toggle}
+          />
         )}
       </Card>
+
+      {/* ── Draft review queue ────────────────────────────────────── */}
+      <DraftsReviewCard
+        drafts={draftsQ.data?.drafts ?? []}
+        isPending={draftsQ.isPending}
+        isError={draftsQ.isError}
+        error={draftsQ.error}
+        onRetry={() => void draftsQ.refetch()}
+      />
     </div>
   );
 }
 
 function OpportunitiesTable({
   opportunities,
+  selected,
+  onToggle,
 }: {
   opportunities: ResupplyOpportunity[];
+  selected: Map<string, ResupplyOpportunity>;
+  onToggle: (o: ResupplyOpportunity) => void;
 }) {
+  const allSelected =
+    opportunities.length > 0 &&
+    opportunities.every((o) => selected.has(oppKey(o)));
+  const toggleAll = () => {
+    for (const o of opportunities) {
+      const isSel = selected.has(oppKey(o));
+      if (allSelected ? isSel : !isSel) onToggle(o);
+    }
+  };
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -231,6 +342,14 @@ function OpportunitiesTable({
             className="text-left border-b"
             style={{ borderColor: "hsl(var(--line-1))" }}
           >
+            <th scope="col" className="py-2 w-8">
+              <input
+                type="checkbox"
+                aria-label="Select all listed opportunities"
+                checked={allSelected}
+                onChange={toggleAll}
+              />
+            </th>
             <th scope="col" className="py-2 font-semibold">
               Patient
             </th>
@@ -255,6 +374,14 @@ function OpportunitiesTable({
               className="border-b"
               style={{ borderColor: "hsl(var(--line-2))" }}
             >
+              <td className="py-2">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${o.patientName || o.patientId}`}
+                  checked={selected.has(oppKey(o))}
+                  onChange={() => onToggle(o)}
+                />
+              </td>
               <td className="py-2">
                 <Link
                   href={`/admin/patients/${o.patientId}`}
@@ -319,4 +446,354 @@ function DueBadge({
     return <Badge variant="warning">Due today</Badge>;
   }
   return <Badge variant="info">In {days}d</Badge>;
+}
+
+function DraftsReviewCard({
+  drafts,
+  isPending,
+  isError,
+  error,
+  onRetry,
+}: {
+  drafts: ResupplyDraft[];
+  isPending: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [approving, setApproving] = useState<ResupplyDraft | null>(null);
+  const invalidate = () =>
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "therapy-resupply", "drafts"],
+    });
+
+  const dismiss = useMutation({
+    mutationFn: (id: string) => dismissResupplyDraft(id),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <Card
+      title="Draft review queue"
+      subtitle="Proposals staged from opportunities (manually or by the daily auto-draft job). Review, then approve into a sign-&-pay checkout link the patient pays — nothing is charged until they do."
+    >
+      {isPending ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={onRetry} />
+      ) : drafts.length === 0 ? (
+        <p className="text-sm py-3" style={{ color: "hsl(var(--ink-3))" }}>
+          No drafts waiting. Select opportunities above and choose “Create
+          drafts”, or enable the daily auto-draft job in System Configuration.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr
+                className="text-left border-b"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+              >
+                <th scope="col" className="py-2 font-semibold">
+                  Patient
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Item
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Eligible
+                </th>
+                <th scope="col" className="py-2 font-semibold">
+                  Origin
+                </th>
+                <th scope="col" className="py-2 font-semibold text-right">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((d) => (
+                <tr
+                  key={d.id}
+                  className="border-b"
+                  style={{ borderColor: "hsl(var(--line-2))" }}
+                >
+                  <td className="py-2">
+                    <Link
+                      href={`/admin/patients/${d.patientId}`}
+                      className="font-medium hover:underline"
+                      style={{ color: "hsl(var(--penn-navy))" }}
+                    >
+                      {d.patientName || d.patientId.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="py-2">
+                    <span className="font-medium">
+                      {SUPPLY_NAMES[d.category] ?? humanizeStatus(d.category)}
+                    </span>
+                    {d.sourceDescription && (
+                      <span
+                        className="block text-xs"
+                        style={{ color: "hsl(var(--ink-3))" }}
+                      >
+                        {d.sourceDescription}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 text-xs">{d.nextEligibleDate ?? "—"}</td>
+                  <td className="py-2">
+                    <Badge variant={d.origin === "auto" ? "info" : "muted"}>
+                      {d.origin === "auto" ? "Auto" : "Manual"}
+                    </Badge>
+                  </td>
+                  <td className="py-2">
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        intent="primary"
+                        size="sm"
+                        onClick={() => setApproving(d)}
+                      >
+                        <Send className="h-4 w-4" /> Approve & send
+                      </Button>
+                      <Button
+                        intent="secondary"
+                        size="sm"
+                        disabled={dismiss.isPending}
+                        onClick={() => dismiss.mutate(d.id)}
+                      >
+                        <X className="h-4 w-4" /> Dismiss
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {approving && (
+        <ApproveDraftModal
+          draft={approving}
+          onClose={() => setApproving(null)}
+          onDone={() => {
+            setApproving(null);
+            invalidate();
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function ApproveDraftModal({
+  draft,
+  onClose,
+  onDone,
+}: {
+  draft: ResupplyDraft;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const defaultDescription =
+    draft.sourceDescription ||
+    SUPPLY_NAMES[draft.category] ||
+    humanizeStatus(draft.category);
+  const [customerName, setCustomerName] = useState(draft.patientName ?? "");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [description, setDescription] = useState(defaultDescription);
+  const [quantity, setQuantity] = useState(1);
+  const [priceDollars, setPriceDollars] = useState("");
+  const [note, setNote] = useState("");
+
+  const approve = useMutation({
+    mutationFn: () => {
+      const unitAmountCents = Math.round(Number(priceDollars) * 100);
+      const body: ApproveDraftInput = {
+        customerName: customerName.trim(),
+        customerEmail: customerEmail.trim() || null,
+        customerPhone: customerPhone.trim() || null,
+        items: [{ description: description.trim(), quantity, unitAmountCents }],
+        noteToCustomer: note.trim() || null,
+        deliver: true,
+      };
+      return approveResupplyDraft(draft.id, body);
+    },
+  });
+
+  const priceValid = Number(priceDollars) > 0;
+  const recipientValid =
+    customerEmail.trim().length > 0 || customerPhone.trim().length > 0;
+  const canSubmit =
+    customerName.trim().length >= 2 &&
+    description.trim().length > 0 &&
+    priceValid &&
+    recipientValid &&
+    !approve.isPending;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Approve resupply draft"
+    >
+      <div
+        className="w-full max-w-md rounded-xl p-5 space-y-3"
+        style={{
+          backgroundColor: "hsl(var(--surface-1))",
+          border: "1px solid hsl(var(--line-1))",
+        }}
+      >
+        <div className="flex items-start justify-between">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <ClipboardList className="h-5 w-5" /> Approve & send checkout
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {approve.data ? (
+          <div className="space-y-3">
+            <p className="text-sm">
+              Order <strong>{approve.data.orderReference}</strong> created and
+              the checkout link was {approve.data.emailSent ? "emailed" : ""}
+              {approve.data.emailSent && approve.data.smsSent ? " and " : ""}
+              {approve.data.smsSent ? "texted" : ""}
+              {!approve.data.emailSent && !approve.data.smsSent
+                ? "generated"
+                : ""}{" "}
+              to the patient.
+            </p>
+            <p
+              className="text-xs break-all"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              {approve.data.link}
+            </p>
+            <div className="flex justify-end">
+              <Button intent="primary" size="sm" onClick={onDone}>
+                Done
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+              Confirm the line item and where to send the sign-&-pay link. The
+              patient is charged only when they complete checkout.
+            </p>
+            <Field label="Customer name">
+              <input
+                className={inputCls}
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Email">
+                <input
+                  className={inputCls}
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                />
+              </Field>
+              <Field label="Phone">
+                <input
+                  className={inputCls}
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                />
+              </Field>
+            </div>
+            <Field label="Item">
+              <input
+                className={inputCls}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Quantity">
+                <input
+                  className={inputCls}
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={quantity}
+                  onChange={(e) =>
+                    setQuantity(Math.max(1, Number(e.target.value) || 1))
+                  }
+                />
+              </Field>
+              <Field label="Unit price (USD)">
+                <input
+                  className={inputCls}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceDollars}
+                  onChange={(e) => setPriceDollars(e.target.value)}
+                />
+              </Field>
+            </div>
+            <Field label="Note (optional)">
+              <input
+                className={inputCls}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </Field>
+            {!recipientValid && (
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Enter an email or phone to send the link.
+              </p>
+            )}
+            {approve.isError && (
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                Couldn’t create the order — check the details and try again.
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button intent="secondary" size="sm" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                intent="primary"
+                size="sm"
+                disabled={!canSubmit}
+                onClick={() => approve.mutate()}
+              >
+                <Send className="h-4 w-4" /> Approve & send
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span
+        className="block text-xs mb-1 font-medium"
+        style={{ color: "hsl(var(--ink-2))" }}
+      >
+        {label}
+      </span>
+      {children}
+    </label>
+  );
 }
