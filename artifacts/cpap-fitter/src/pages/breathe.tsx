@@ -3267,9 +3267,6 @@ function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
   );
 }
 
-/** The à la carte add-on catalog, grouped by category. `groups` defaults
- *  to the static ADDON_GROUPS but is fed live catalog data by the Pricing
- *  section when the public pricing endpoint responds. */
 /** A single add-on line. When a plain-language explainer is available (the
  *  shared ADDON_DETAILS map, keyed by catalog code, or the add-on's own
  *  description) the row becomes a collapsible <details> with a down-arrow
@@ -3317,6 +3314,9 @@ function PricingAddonRow({ item }: { item: AddonItem }) {
   );
 }
 
+/** The à la carte add-on catalog, grouped by category. `groups` defaults
+ *  to the static ADDON_GROUPS but is fed live catalog data by the Pricing
+ *  section when the public pricing endpoint responds. */
 function PricingAddons({
   groups = ADDON_GROUPS,
 }: {
@@ -3332,7 +3332,7 @@ function PricingAddons({
           <div className="bx-addon-group" key={g.group}>
             <div className="bx-addon-group-name">{g.group}</div>
             {g.items.map((it) => (
-              <PricingAddonRow item={it} key={it.name} />
+              <PricingAddonRow item={it} key={it.code ?? it.name} />
             ))}
           </div>
         ))}
