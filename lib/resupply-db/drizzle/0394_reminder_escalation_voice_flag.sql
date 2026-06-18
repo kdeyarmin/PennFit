@@ -30,11 +30,15 @@
 -- Per ADR 003 — versioned hand-authored migration. Idempotent.
 -- Keep in sync with FEATURE_FLAG_KEYS in
 -- artifacts/resupply-api/src/lib/feature-flags.ts.
+--
+-- feature_flags is PER-TENANT since migration 0350 (PK re-keyed from (key)
+-- to (org_id, key)), so seed one row per organization and conflict on
+-- (org_id, key) — a bare ON CONFLICT (key) no longer matches a constraint.
 
-INSERT INTO resupply.feature_flags (key, enabled, description, category)
-VALUES
-  ('reminder_escalation.voice',
-   false,
-   'Automated phone-call tier for the resupply-reminder escalation ladder. When ON (and the voice path is configured), an episode still unanswered after the SMS and email reminders gets an automated AI resupply check-in call before the ladder raises a CSR "call them" alert. Placed inside the patient''s local 9am–8pm window. When OFF, the ladder is SMS → email → CSR alert.',
-   'Voice & AI')
-ON CONFLICT (key) DO NOTHING;
+INSERT INTO resupply.feature_flags ("org_id", "key", "enabled", "description", "category")
+SELECT o."id", v."key", v."enabled", v."description", v."category"
+FROM "resupply"."organizations" o
+CROSS JOIN (VALUES
+  ('reminder_escalation.voice', false, 'Automated phone-call tier for the resupply-reminder escalation ladder. When ON (and the voice path is configured), an episode still unanswered after the SMS and email reminders gets an automated AI resupply check-in call before the ladder raises a CSR "call them" alert. Placed inside the patient''s local 9am–8pm window. When OFF, the ladder is SMS → email → CSR alert.', 'Voice & AI')
+) AS v("key", "enabled", "description", "category")
+ON CONFLICT ("org_id", "key") DO NOTHING;
