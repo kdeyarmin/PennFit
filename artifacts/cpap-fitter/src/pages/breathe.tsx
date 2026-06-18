@@ -19,9 +19,7 @@ import {
   Gauge,
   GitBranch,
   Headphones,
-  Infinity as InfinityIcon,
   KeyRound,
-  LifeBuoy,
   LineChart,
   Lock,
   MessageSquare,
@@ -138,6 +136,7 @@ export function BreatheHome() {
       <Hero />
       <IntegrationsStrip />
       <Replaces />
+      <PricingHome />
       <ClosingCta />
     </BreatheShell>
   );
@@ -1469,29 +1468,190 @@ function Roi() {
 }
 
 /* ───────────────────────── Pricing ───────────────────────── */
-const PRICING: { icon: React.ReactNode; title: string; body: string }[] = [
+// Canonical platform catalog, mirrored from the billing seed in migration
+// 0362 (resupply.billing_plans / billing_addons). Launch/Growth/Scale are
+// is_public=true so their prices are shown; Enterprise is is_custom, so it
+// shows "Custom" and never the internal number. Keep in sync if the seed
+// prices change.
+const PLANS: {
+  name: string;
+  price: string;
+  cadence: string;
+  setup: string;
+  blurb: string;
+  highlights: string[];
+  featured?: boolean;
+}[] = [
   {
-    icon: <InfinityIcon size={20} />,
-    title: "One all-in price",
-    body: "Voice agent, AI claims, telehealth, mask fitting, documents — every module is included. No per-feature licensing, no surprise add-ons.",
+    name: "Launch",
+    price: "$799",
+    cadence: "/mo",
+    setup: "+ $2,500 one-time onboarding",
+    blurb: "Branded storefront and core resupply automation for a small DME.",
+    highlights: [
+      "5 staff seats · 500 active patients · 1 location",
+      "Branded CPAP storefront + mask fitter",
+      "Shop, cart, checkout, and order tracking",
+      "Resupply reminders + subscription tracking",
+    ],
   },
   {
-    icon: <CircleDollarSign size={20} />,
-    title: "Priced to your panel",
-    body: "You pay for your active patients and seats, not a wall of SKUs. As you grow, the math stays simple and predictable.",
+    name: "Growth",
+    price: "$1,899",
+    cadence: "/mo",
+    setup: "+ $5,000 one-time onboarding",
+    blurb:
+      "Full resupply operations, outreach, documents, and billing worklists.",
+    highlights: [
+      "15 seats · 3,000 patients · 3 locations",
+      "Everything in Launch",
+      "Bulk campaigns, patient packets + e-signature",
+      "Eligibility, prior auth, CMN/DIF, and A/R worklists",
+    ],
+    featured: true,
   },
   {
-    icon: <CalendarClock size={20} />,
-    title: "Month-to-month",
-    body: "No multi-year lock-in. Your patients, orders, and history stay yours and exportable — including back out to PacWare.",
+    name: "Scale",
+    price: "$3,999",
+    cadence: "/mo",
+    setup: "+ $10,000 one-time onboarding",
+    blurb:
+      "Multi-location automation, analytics, and AI controls at higher volume.",
+    highlights: [
+      "40 seats · 10,000 patients · 10 locations",
+      "Everything in Growth",
+      "Advanced financial, funnel, and LTV/CAC analytics",
+      "Automation rules, Control Center, bot playground",
+    ],
   },
   {
-    icon: <LifeBuoy size={20} />,
-    title: "Onboarding included",
-    body: "Data migration and white-glove launch support come with the platform, not on a separate professional-services invoice.",
+    name: "Enterprise",
+    price: "Custom",
+    cadence: "",
+    setup: "Contracted volume + SLA",
+    blurb:
+      "For high-volume DME operations needing custom integration and support.",
+    highlights: [
+      "Everything in Scale",
+      "Custom integration + migration plan",
+      "Advanced security and account controls",
+      "Dedicated success manager + priority SLA",
+    ],
   },
 ];
 
+const ADDON_GROUPS: {
+  group: string;
+  items: { name: string; price: string }[];
+}[] = [
+  {
+    group: "Premium modules",
+    items: [
+      { name: "AI voice agent / IVR", price: "$499/mo" },
+      { name: "Advanced billing automation", price: "$699/mo" },
+      { name: "Advanced analytics suite", price: "$399/mo" },
+      { name: "Multi-location management", price: "$499/mo" },
+      { name: "Fax automation", price: "$199/mo" },
+      { name: "Dedicated success manager", price: "$1,000/mo" },
+    ],
+  },
+  {
+    group: "Capacity",
+    items: [
+      { name: "Additional staff seat", price: "$49/mo" },
+      { name: "Active-patient block (+500)", price: "$99/mo" },
+      { name: "Additional location", price: "$199/mo" },
+      { name: "Extra storage (+100 GB)", price: "$25/mo" },
+    ],
+  },
+  {
+    group: "Usage bundles",
+    items: [
+      { name: "SMS / email bundle (1,000)", price: "$50" },
+      { name: "AI text bundle (1,000)", price: "$40" },
+      { name: "Claims / eligibility bundle (1,000)", price: "$75" },
+    ],
+  },
+  {
+    group: "Integrations & one-time",
+    items: [
+      { name: "Additional therapy-cloud vendor", price: "$299/mo" },
+      { name: "Custom integration", price: "from $5,000" },
+      { name: "Data migration package", price: "$2,500–$15,000" },
+      { name: "Custom domain + branding setup", price: "$500" },
+    ],
+  },
+];
+
+/** The four subscription packages. Reused on the landing page + pricing page. */
+function PricingPlans() {
+  return (
+    <div className="bx-plan-grid">
+      {PLANS.map((p) => (
+        <div
+          className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
+          key={p.name}
+        >
+          {p.featured ? (
+            <span className="bx-plan-badge">Most popular</span>
+          ) : null}
+          <div className="bx-plan-name">{p.name}</div>
+          <div className="bx-plan-price">
+            <span className="bx-plan-amt">{p.price}</span>
+            {p.cadence ? (
+              <span className="bx-plan-cadence">{p.cadence}</span>
+            ) : null}
+          </div>
+          <div className="bx-plan-setup">{p.setup}</div>
+          <p className="bx-plan-blurb">{p.blurb}</p>
+          <ul className="bx-plan-list">
+            {p.highlights.map((h) => (
+              <li key={h}>
+                <Check size={15} />
+                {h}
+              </li>
+            ))}
+          </ul>
+          <a
+            className={
+              "bx-btn bx-btn-sm " +
+              (p.featured ? "bx-btn-primary" : "bx-btn-ghost")
+            }
+            href="#demo"
+          >
+            {p.price === "Custom" ? "Talk to sales" : "Request a demo"}
+          </a>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The à la carte add-on catalog, grouped by category. */
+function PricingAddons() {
+  return (
+    <div className="bx-addons bx-reveal">
+      <div className="bx-addons-head">
+        <Plug size={15} /> Add-ons — license only what you need
+      </div>
+      <div className="bx-addon-groups">
+        {ADDON_GROUPS.map((g) => (
+          <div className="bx-addon-group" key={g.group}>
+            <div className="bx-addon-group-name">{g.group}</div>
+            {g.items.map((it) => (
+              <div className="bx-addon-row" key={it.name}>
+                <span className="bx-addon-name">{it.name}</span>
+                <span className="bx-addon-price">{it.price}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Full pricing — packages + the complete add-on catalog (pricing page). */
 function Pricing() {
   return (
     <section className="bx-section" id="pricing">
@@ -1501,28 +1661,57 @@ function Pricing() {
             <CircleDollarSign size={13} /> Pricing
           </span>
           <h2 className="bx-h2">
-            Pricing that <em>respects operators</em>
+            Pick a package, <em>add only what you need</em>
           </h2>
           <p className="bx-lede">
-            Legacy DME software charges by the module and meters every feature.
-            Breathe is one platform, one price — built so the value you sized in
-            the calculator above is the value you actually keep.
+            Transparent subscription tiers sized to your panel — month-to-month,
+            with onboarding and migration included and your data always
+            exportable (back out to PacWare too). License premium modules à la
+            carte.
           </p>
         </div>
-        <div className="bx-price-grid">
-          {PRICING.map((p) => (
-            <div className="bx-price-card bx-reveal" key={p.title}>
-              <div className="bx-price-ic">{p.icon}</div>
-              <h3>{p.title}</h3>
-              <p>{p.body}</p>
-            </div>
-          ))}
-        </div>
+        <PricingPlans />
+        <PricingAddons />
         <div className="bx-price-cta bx-reveal">
-          <span>Want the number for your panel?</span>
+          <span>Not sure which package fits?</span>
           <a className="bx-btn bx-btn-primary" href="#demo">
             Get a tailored quote <ArrowRight size={16} />
           </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Landing-page pricing — packages up front with an add-ons teaser; the full
+   catalog lives on /breathe/pricing. */
+function PricingHome() {
+  return (
+    <section className="bx-section">
+      <div className="bx-shell">
+        <div className="bx-section-head center bx-reveal">
+          <span className="bx-eyebrow">
+            <CircleDollarSign size={13} /> Pricing
+          </span>
+          <h2 className="bx-h2">
+            One platform, <em>packaged for your size</em>
+          </h2>
+          <p className="bx-lede">
+            Subscription tiers sized to your panel — month-to-month, with
+            onboarding and migration included. Add premium modules only when you
+            need them.
+          </p>
+        </div>
+        <PricingPlans />
+        <div className="bx-addons-teaser bx-reveal">
+          <Plug size={15} />
+          <span>
+            Plus à la carte add-ons — AI voice agent, advanced billing
+            automation, extra seats, locations, and more.
+          </span>
+          <Link className="bx-addons-teaser-link" href="/breathe/pricing">
+            See full pricing &amp; add-ons <ArrowRight size={15} />
+          </Link>
         </div>
       </div>
     </section>
