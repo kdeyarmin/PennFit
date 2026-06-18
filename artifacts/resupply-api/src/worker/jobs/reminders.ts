@@ -124,9 +124,9 @@ export const SEND_EMAIL_JOB = "reminders.send-email";
  * TTL = 22h (intentionally less than 24h so the next-day scan can
  * resend cleanly when a patient's cadence is daily).
  */
-async function tryClaimReminderDedupKey(
+export async function tryClaimReminderDedupKey(
   supabase: OrgScopedClient,
-  channel: "sms" | "email",
+  channel: "sms" | "email" | "voice",
   patientId: string,
   episodeId: string,
   jobId: string,
@@ -209,7 +209,7 @@ async function tryClaimReminderDedupKey(
   );
 }
 
-async function releaseReminderDedupKey(
+export async function releaseReminderDedupKey(
   supabase: OrgScopedClient,
   key: string,
   jobId: string,
@@ -292,7 +292,7 @@ function daysBetween(earlier: Date, later: Date): number {
  */
 const QUIET_HOURS_START = 9; // 09:00 local — earliest send
 const QUIET_HOURS_END = 20; // 20:00 local — latest send (exclusive)
-function isWithinQuietHours(now: Date, timezone: string): boolean {
+export function isWithinQuietHours(now: Date, timezone: string): boolean {
   let hour: number;
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {

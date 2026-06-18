@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   planReminderEscalations,
   ESCALATION_LADDER,
+  ESCALATION_LADDER_WITH_VOICE,
   type EscalationConvRow,
   type EscalationEpisodeRow,
 } from "./reminder-escalation";
@@ -27,6 +28,7 @@ const MAX = 21 * DAY;
 function plan(
   episodes: EscalationEpisodeRow[],
   conversations: EscalationConvRow[],
+  ladder: readonly string[] = ESCALATION_LADDER,
 ) {
   return planReminderEscalations({
     episodes,
@@ -34,7 +36,7 @@ function plan(
     nowMs: NOW,
     delayMs: DELAY,
     maxMs: MAX,
-    ladder: ESCALATION_LADDER,
+    ladder,
   });
 }
 
@@ -69,7 +71,10 @@ describe("planReminderEscalations", () => {
         { episodeId: "e1", channel: "email", createdAtMs: NOW - 5 * DAY },
       ],
     );
-    expect(actions[0]!.tier).toEqual({ kind: "csr_exhausted" });
+    expect(actions[0]!.tier).toEqual({
+      kind: "csr_exhausted",
+      triedChannels: ["sms", "email"],
+    });
   });
 
   it("does not escalate before the delay window", () => {
@@ -93,12 +98,30 @@ describe("planReminderEscalations", () => {
     expect(actions).toEqual([]);
   });
 
-  it("uses the earliest touch to measure age", () => {
-    // Earliest SMS is only 1 day old → too soon, even though a later
-    // conversation exists.
+  it("uses the max-age cap against the earliest touch", () => {
+    // Earliest touch is 30 days old (past the 21-day max) even though a
+    // later touch exists 2 days ago — we stop nagging on the FIRST-touch age.
     const actions = plan(
       [{ id: "e1", patientId: "p1" }],
-      [{ episodeId: "e1", channel: "sms", createdAtMs: NOW - 1 * DAY }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 30 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 2 * DAY },
+      ],
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it("spaces steps out against the MOST RECENT touch", () => {
+    // First touch is old (10d) but the most recent reminder was just 1 day
+    // ago → too soon for the next step, even though the ladder isn't
+    // exhausted. This is what keeps the ladder from firing on back-to-back
+    // days.
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 10 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 1 * DAY },
+      ],
     );
     expect(actions).toEqual([]);
   });
@@ -120,7 +143,55 @@ describe("planReminderEscalations", () => {
       actions.map((a) => [a.episodeId, a.tier]),
     );
     expect(byEpisode.e1).toEqual({ kind: "send", channel: "email" });
-    expect(byEpisode.e2).toEqual({ kind: "csr_exhausted" });
+    expect(byEpisode.e2).toEqual({
+      kind: "csr_exhausted",
+      triedChannels: ["sms", "email"],
+    });
+  });
+});
+
+describe("planReminderEscalations — voice tier", () => {
+  it("escalates to voice after SMS + email when the voice ladder is active", () => {
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 8 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 4 * DAY },
+      ],
+      ESCALATION_LADDER_WITH_VOICE,
+    );
+    expect(actions[0]!.tier).toEqual({ kind: "send", channel: "voice" });
+  });
+
+  it("hands off to a CSR only after voice is also tried", () => {
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "sms", createdAtMs: NOW - 9 * DAY },
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 6 * DAY },
+        { episodeId: "e1", channel: "voice", createdAtMs: NOW - 3 * DAY },
+      ],
+      ESCALATION_LADDER_WITH_VOICE,
+    );
+    expect(actions[0]!.tier).toEqual({
+      kind: "csr_exhausted",
+      triedChannels: ["sms", "email", "voice"],
+    });
+  });
+
+  it("ignores a voice conversation when voice is NOT in the ladder", () => {
+    // A manual admin call (voice) shouldn't count toward the text-only
+    // ladder: the episode still has SMS untried-as-second-step, so it
+    // escalates SMS→email as usual and a stray voice row is ignored.
+    const actions = plan(
+      [{ id: "e1", patientId: "p1" }],
+      [
+        { episodeId: "e1", channel: "email", createdAtMs: NOW - 5 * DAY },
+        { episodeId: "e1", channel: "voice", createdAtMs: NOW - 4 * DAY },
+      ],
+      ESCALATION_LADDER,
+    );
+    expect(actions[0]!.tier).toEqual({ kind: "send", channel: "sms" });
   });
 });
 

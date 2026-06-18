@@ -28,6 +28,7 @@
 import PgBoss from "pg-boss";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
+import { registerReminderVoiceJob } from "./jobs/reminder-voice.js";
 import { registerReminderEscalationJob } from "./jobs/reminder-escalation.js";
 import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
 import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
@@ -416,9 +417,17 @@ async function doStartWorker(): Promise<void> {
   await safeRegister("registerReminderJobs", registrationFailures, () =>
     registerReminderJobs(boss),
   );
+  // Automated-voice tier of the escalation ladder (reminders.place-call).
+  // Only ever enqueued by the escalation scan below; registered first so
+  // its queue exists before anything sends to it. Handler tolerates an
+  // unconfigured voice path (log + exit-0).
+  await safeRegister("registerReminderVoiceJob", registrationFailures, () =>
+    registerReminderVoiceJob(boss),
+  );
   // Daily multi-channel escalation for unanswered reminders (#7).
   // Additive companion to the hourly scan; feature-flagged
-  // (reminder_escalation.dispatcher) and reuses the SEND_* queues.
+  // (reminder_escalation.dispatcher) and reuses the SEND_* queues, plus the
+  // opt-in voice tier (reminder_escalation.voice).
   await safeRegister(
     "registerReminderEscalationJob",
     registrationFailures,
