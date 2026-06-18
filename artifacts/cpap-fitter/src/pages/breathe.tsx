@@ -2092,6 +2092,99 @@ const PLANS: {
   },
 ];
 
+// ── Live pricing from the platform billing catalog ──────────────────
+// The super-admin edits plan + add-on prices in the platform portal and
+// they land here with no redeploy (GET /api/platform/pricing). Fail-soft:
+// a missing/empty response falls back to the static PLANS / ADDON_GROUPS
+// copy in this file.
+interface PublicPlan {
+  code: string;
+  name: string;
+  description: string | null;
+  monthlyPriceCents: number | null;
+  onboardingFeeCents: number | null;
+  isCustom: boolean;
+  allowances: Record<string, number>;
+  features: string[];
+}
+interface PublicAddon {
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  recurringPriceCents: number | null;
+  oneTimeMinCents: number | null;
+  oneTimeMaxCents: number | null;
+  unitLabel: string | null;
+}
+interface PublicPricing {
+  plans: PublicPlan[];
+  addons: PublicAddon[];
+}
+
+function usePublicPricing(): PublicPricing | null {
+  const [data, setData] = useState<PublicPricing | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/platform/pricing", { headers: { Accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: unknown) => {
+        if (cancelled) return;
+        const b = body as { plans?: unknown; addons?: unknown } | null;
+        const plans = b?.plans;
+        if (Array.isArray(plans) && plans.length > 0) {
+          setData({
+            plans: plans as PublicPlan[],
+            addons: Array.isArray(b?.addons)
+              ? (b!.addons as PublicAddon[])
+              : [],
+          });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return data;
+}
+
+function dollars(cents: number): string {
+  const v = cents / 100;
+  // Whole dollars render without decimals ("$799"); fractional amounts
+  // keep cents ("$799.50") so we never misstate a non-round price.
+  return Number.isInteger(v)
+    ? `$${v.toLocaleString("en-US")}`
+    : `$${v.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+}
+
+type PlanCard = (typeof PLANS)[number];
+
+function liveToPlanCards(plans: PublicPlan[]): PlanCard[] {
+  return plans.map((p) => ({
+    name: p.name,
+    // Custom/Enterprise tiers never show a concrete public price — even if
+    // a negotiated amount is stored, the marketing page says "Custom".
+    price: p.isCustom
+      ? "Custom"
+      : p.monthlyPriceCents == null
+        ? "Contact us"
+        : dollars(p.monthlyPriceCents),
+    cadence: p.isCustom || p.monthlyPriceCents == null ? "" : "/mo",
+    setup: p.isCustom
+      ? "Contracted volume + SLA"
+      : p.onboardingFeeCents != null && p.onboardingFeeCents > 0
+        ? `+ ${dollars(p.onboardingFeeCents)} one-time onboarding`
+        : "Onboarding included",
+    blurb: p.description ?? "",
+    highlights: p.features.slice(0, 6),
+    featured: p.code.toLowerCase() === "growth",
+  }));
+}
+
 const ADDON_GROUPS: {
   group: string;
   items: { name: string; price: string }[];
@@ -2135,11 +2228,48 @@ const ADDON_GROUPS: {
   },
 ];
 
-/** The four subscription packages. Reused on the landing page + pricing page. */
-function PricingPlans() {
+const ADDON_CATEGORY_LABELS: Record<string, string> = {
+  premium: "Premium modules",
+  capacity: "Capacity",
+  usage: "Usage bundles",
+  integration: "Integrations & one-time",
+  one_time: "Integrations & one-time",
+};
+
+function addonPrice(a: PublicAddon): string {
+  if (a.recurringPriceCents != null)
+    return `${dollars(a.recurringPriceCents)}/mo`;
+  if (
+    a.oneTimeMinCents != null &&
+    a.oneTimeMaxCents != null &&
+    a.oneTimeMaxCents !== a.oneTimeMinCents
+  )
+    return `${dollars(a.oneTimeMinCents)}–${dollars(a.oneTimeMaxCents)}`;
+  if (a.oneTimeMinCents != null) return `from ${dollars(a.oneTimeMinCents)}`;
+  return "—";
+}
+
+function liveToAddonGroups(addons: PublicAddon[]): typeof ADDON_GROUPS {
+  const order: string[] = [];
+  const byLabel = new Map<string, { name: string; price: string }[]>();
+  for (const a of addons) {
+    const label = ADDON_CATEGORY_LABELS[a.category ?? ""] ?? "Add-ons";
+    if (!byLabel.has(label)) {
+      byLabel.set(label, []);
+      order.push(label);
+    }
+    byLabel.get(label)!.push({ name: a.name, price: addonPrice(a) });
+  }
+  return order.map((group) => ({ group, items: byLabel.get(group)! }));
+}
+
+/** The four subscription packages. Reused on the landing page + pricing page.
+ *  `cards` defaults to the static PLANS but is fed live catalog data by the
+ *  Pricing section when the public pricing endpoint responds. */
+function PricingPlans({ cards = PLANS }: { cards?: PlanCard[] }) {
   return (
     <div className="bx-plan-grid">
-      {PLANS.map((p) => (
+      {cards.map((p) => (
         <div
           className={"bx-plan bx-reveal" + (p.featured ? " featured" : "")}
           key={p.name}
@@ -2179,15 +2309,21 @@ function PricingPlans() {
   );
 }
 
-/** The à la carte add-on catalog, grouped by category. */
-function PricingAddons() {
+/** The à la carte add-on catalog, grouped by category. `groups` defaults
+ *  to the static ADDON_GROUPS but is fed live catalog data by the Pricing
+ *  section when the public pricing endpoint responds. */
+function PricingAddons({
+  groups = ADDON_GROUPS,
+}: {
+  groups?: typeof ADDON_GROUPS;
+}) {
   return (
     <div className="bx-addons bx-reveal">
       <div className="bx-addons-head">
         <Plug size={15} /> Add-ons — license only what you need
       </div>
       <div className="bx-addon-groups">
-        {ADDON_GROUPS.map((g) => (
+        {groups.map((g) => (
           <div className="bx-addon-group" key={g.group}>
             <div className="bx-addon-group-name">{g.group}</div>
             {g.items.map((it) => (
@@ -2203,8 +2339,16 @@ function PricingAddons() {
   );
 }
 
-/* Full pricing — packages + the complete add-on catalog (pricing page). */
+/* Full pricing — packages + the complete add-on catalog. Tiers + add-on
+   prices are driven by the live billing catalog (/api/platform/pricing)
+   when available, falling back to the static PLANS / ADDON_GROUPS copy. */
 function Pricing() {
+  const live = usePublicPricing();
+  const cards = live ? liveToPlanCards(live.plans) : PLANS;
+  const groups =
+    live && live.addons.length > 0
+      ? liveToAddonGroups(live.addons)
+      : ADDON_GROUPS;
   return (
     <section className="bx-section" id="pricing">
       <div className="bx-shell">
@@ -2222,8 +2366,8 @@ function Pricing() {
             à la carte.
           </p>
         </div>
-        <PricingPlans />
-        <PricingAddons />
+        <PricingPlans cards={cards} />
+        <PricingAddons groups={groups} />
         <div className="bx-price-cta bx-reveal">
           <span>Not sure which package fits?</span>
           <a className="bx-btn bx-btn-primary" href="#demo">
