@@ -3296,8 +3296,8 @@ const STEPS: {
   {
     icon: <Zap size={20} />,
     n: "03",
-    title: "Go live, white-glove",
-    body: "Your team starts in a console they grasp in minutes. We stay on the line through the first resupply run and the first claim batch.",
+    title: "Go live the same day",
+    body: "Your team starts in a console they grasp in minutes — no training project to schedule. An in-app assistant answers \"how do I…\" questions right where the work happens, and email support is a message away through your first resupply run and first claim batch.",
   },
 ];
 
